@@ -1,483 +1,1599 @@
 {
-  "info": {
-    "name": "Direct SPI (without PO) — Stage 01 to Put-away",
-    "description": "SUPPLIER PURCHASE INVOICE RAISED WITHOUT A PURCHASE ORDER.\n\nA Direct SPI is identified by `purchase_order_id IS NULL`. There is NO type flag and none should be added — everything conditional in this module keys off that null, and a second column saying the same thing is a second thing to keep in step.\n\nWhat the purchase order used to supply now lives on the invoice itself: the shipment, the procurement case, TDS and the payment ledger.\n\n─────────────────────────────────────────────────────────────\nBEFORE YOU START\n─────────────────────────────────────────────────────────────\n1. Migrations — both already applied on the dev database:\n     2026_10_29_000001_direct_spi_links_tds_and_gst_approval\n     2026_10_29_000002_allow_payments_against_a_direct_spi\n   Verify:  php artisan migrate:status | grep 2026_10_29\n\n2. Run folder 00 first. Login stores `token` and `branchId`.\n\n3. Folders are numbered in execution order. 01 captures `spiId`,\n   04 captures `spiItemId`, 05 captures `boxId`. Later calls read\n   them from collection variables — do not skip ahead.\n\n─────────────────────────────────────────────────────────────\nSEEDED TEST DATA (client 1)\n─────────────────────────────────────────────────────────────\n  vendorId 3    S-003 — GST gate = approval_required. The ONLY state a\n                senior can approve. Vendors 4 and 6 are `clear`;\n                1, 2, 5, 7, 9, 10 are `blocked`. Both are refused.\n  shipment 11   DSHP-001, carries proforma_invoice_id 4\n  warehouse 1   WH-001, branch 3\n\n─────────────────────────────────────────────────────────────\nKNOWN GAPS — read before reporting a bug\n─────────────────────────────────────────────────────────────\nA. document_type is REQUIRED by the API but is NOT collected by the\n   Direct SPI setup modal (which asks only shipment, procurement,\n   supplier). Every request here sends it explicitly. Not cosmetic:\n   `international` short-circuits the GST gate to `clear`, and it is\n   one of the two fields frozen once a senior approval exists.\n\nB. A Direct SPI does NOT consume PI quantity. p2p_supplier_invoice_items\n   has pi_item_id, but Stage 2 derives it from the PO line\n   (`$po->pi_item_id`) and a direct line has no PO line — so it saves\n   as null. pending_qty on the PI never decreases, and two Direct SPIs\n   can each claim the same units. See folder 04.\n\nC. PAYMENTS ARE BLOCKED for a Direct SPI. The endpoints exist but\n   refuse it outright: \"is a standalone invoice — it has no purchase\n   order to pay against.\" The tables are open (purchase_order_id is\n   nullable on both, supplier_invoice_id added to p2p_po_payments) but\n   PoPaymentRequestController still takes a PurchaseOrder throughout.\n   See folder 08.\n\nD. ZOHO SYNC returns 501 for a standalone invoice — a pre-existing\n   stub, not a regression. The schema is ready; only the sync is\n   missing.\n\nE. procurement_request_id is accepted but NOT validated against the\n   `procurements` table, by request, while Step 02 is unwired. Restore\n   the tenant fence when real ids start arriving.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "variable": [
-    { "key": "baseUrl", "value": "http://127.0.0.1:8000/api" },
-    { "key": "email", "value": "" },
-    { "key": "password", "value": "" },
-    { "key": "token", "value": "" },
-    { "key": "branchId", "value": "" },
-    { "key": "vendorId", "value": "3", "description": "S-003 — gate = approval_required" },
-    { "key": "shipmentOrderId", "value": "11", "description": "DSHP-001 — tenant-fenced; a foreign id returns 422" },
-    { "key": "procurementId", "value": "4", "description": "NOT fenced at present (gap E)" },
-    { "key": "procurementCode", "value": "PC-002" },
-    { "key": "warehouseId", "value": "1", "description": "WH-001, branch 3" },
-    { "key": "productId", "value": "80" },
-    { "key": "piItemId", "value": "5" },
-    { "key": "approverUserId", "value": "", "description": "Active user of this client, in the invoice's branch, not you, not a client_admin" },
-    { "key": "spiId", "value": "" },
-    { "key": "spiItemId", "value": "" },
-    { "key": "boxId", "value": "" }
-  ],
-  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] },
-  "item": [
-
-    {
-      "name": "00 · Setup",
-      "item": [
-        {
-          "name": "Login",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "const b = pm.response.json();",
-            "if (b.token) pm.collectionVariables.set('token', b.token);",
-            "if (b.user && b.user.branch_id) pm.collectionVariables.set('branchId', String(b.user.branch_id));",
-            "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));"
-          ] } }],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}" }
-          }
-        },
-        {
-          "name": "Shipment list (Step 01 dropdown)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/orders/shipments", "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "shipments"] },
-            "description": "Returns id, code, customer, consignee, opportunity_code, proforma_invoice_id, pi_number.\n\nShared with the PO create modal — these are master lookups, not PO data. Do NOT build an SPI twin: the same supplier would then read differently on two screens."
-          }
-        },
-        {
-          "name": "Supplier list (Step 03 dropdown)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/orders/suppliers", "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "suppliers"] }
-          }
-        },
-        {
-          "name": "Supplier detail — ALSO answers the GST gate",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/orders/suppliers/{{vendorId}}", "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "suppliers", "{{vendorId}}"] },
-            "description": "Call this on mount AND on every supplier change.\n\nTHERE IS NO GST-GATE ENDPOINT, by design. The browser computes the gate from the scrutiny and filing dates in THIS response, against a 3-month cutoff, exactly as PurchaseOrderService::gstGate() does server-side:\n\n  no scrutiny, or scrutiny older than 3 months  -> blocked\n  scrutiny current but filing older than 3 mo   -> approval_required\n  both current                                  -> clear\n  document_type = international                 -> clear (short-circuit)\n\nCompare CALENDAR DATES, not rounded months. 2.96 months rounds to 3.0 and would block a supplier a day early.\n\nThe Evidence Vault (document completeness) is a SEPARATE, slower call. Fire it but do not await it — only the compliance card needs it, and awaiting both leaves the form on \"Loading…\"."
-          }
-        }
-      ]
+    "info": {
+        "name": "Direct SPI (without PO) — Stage 01 to Put-away",
+        "description": "SUPPLIER PURCHASE INVOICE RAISED WITHOUT A PURCHASE ORDER.\n\nA Direct SPI is identified by `purchase_order_id IS NULL`. There is NO type flag and none should be added — everything conditional in this module keys off that null, and a second column saying the same thing is a second thing to keep in step.\n\nWhat the purchase order used to supply now lives on the invoice itself: the shipment, the procurement case, TDS and the payment ledger.\n\n─────────────────────────────────────────────────────────────\nBEFORE YOU START\n─────────────────────────────────────────────────────────────\n1. Migrations — both already applied on the dev database:\n     2026_10_29_000001_direct_spi_links_tds_and_gst_approval\n     2026_10_29_000002_allow_payments_against_a_direct_spi\n   Verify:  php artisan migrate:status | grep 2026_10_29\n\n2. Run folder 00 first. Login stores `token` and `branchId`.\n\n3. Folders are numbered in execution order. 01 captures `spiId`,\n   04 captures `spiItemId`, 05 captures `boxId`. Later calls read\n   them from collection variables — do not skip ahead.\n\n─────────────────────────────────────────────────────────────\nSEEDED TEST DATA (client 1)\n─────────────────────────────────────────────────────────────\n  vendorId 3    S-003 — GST gate = approval_required. The ONLY state a\n                senior can approve. Vendors 4 and 6 are `clear`;\n                1, 2, 5, 7, 9, 10 are `blocked`. Both are refused.\n  shipment 11   DSHP-001, carries proforma_invoice_id 4\n  warehouse 1   WH-001, branch 3\n\n─────────────────────────────────────────────────────────────\nKNOWN GAPS — read before reporting a bug\n─────────────────────────────────────────────────────────────\nA. document_type is REQUIRED by the API but is NOT collected by the\n   Direct SPI setup modal (which asks only shipment, procurement,\n   supplier). Every request here sends it explicitly. Not cosmetic:\n   `international` short-circuits the GST gate to `clear`, and it is\n   one of the two fields frozen once a senior approval exists.\n\nB. A Direct SPI does NOT consume PI quantity. p2p_supplier_invoice_items\n   has pi_item_id, but Stage 2 derives it from the PO line\n   (`$po->pi_item_id`) and a direct line has no PO line — so it saves\n   as null. pending_qty on the PI never decreases, and two Direct SPIs\n   can each claim the same units. See folder 04.\n\nC. PAYMENTS ARE BLOCKED for a Direct SPI. The endpoints exist but\n   refuse it outright: \"is a standalone invoice — it has no purchase\n   order to pay against.\" The tables are open (purchase_order_id is\n   nullable on both, supplier_invoice_id added to p2p_po_payments) but\n   PoPaymentRequestController still takes a PurchaseOrder throughout.\n   See folder 08.\n\nD. ZOHO SYNC returns 501 for a standalone invoice — a pre-existing\n   stub, not a regression. The schema is ready; only the sync is\n   missing.\n\nE. procurement_request_id is accepted but NOT validated against the\n   `procurements` table, by request, while Step 02 is unwired. Restore\n   the tenant fence when real ids start arriving.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
-
-    {
-      "name": "01 · Stage 01 — create the Direct SPI",
-      "item": [
+    "variable": [
         {
-          "name": "Create — With Shipment ID",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('201 Created', () => pm.response.to.have.status(201));",
-            "const d = pm.response.json().data;",
-            "pm.collectionVariables.set('spiId', String(d.id));",
-            "pm.test('is a Direct SPI', () => pm.expect(d.purchase_order_id).to.eql(null));",
-            "pm.test('opens as a draft', () => pm.expect(d.status).to.eql('draft'));",
-            "pm.test('shipment persisted', () => pm.expect(Number(d.shipment_order_id)).to.eql(Number(pm.collectionVariables.get('shipmentOrderId'))));",
-            "pm.test('procurement persisted', () => pm.expect(d.procurement_request_code).to.not.eql(null));"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi", "host": ["{{baseUrl}}"], "path": ["p2p", "spi"] },
-            "body": { "mode": "raw", "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": {{shipmentOrderId}},\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}" },
-            "description": "THIS IS THE \"CREATE DRAFT\" CALL. There is no separate mark-as-draft endpoint: the row is born with status=draft and stage_completed=1, and the code is allocated here.\n\nThe modal's Confirm & Continue should call exactly this after Steps 01–03.\n\n`purchase_order_id: null` is what makes it direct.\n\nAll three links are OPTIONAL at the API — \"All Other's (Without Shipment ID)\" is a real answer to Step 01, not a skipped question.\n\nshipment_order_id is TENANT-FENCED: an id belonging to another client returns 422, not a silent accept."
-          }
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
         },
         {
-          "name": "Create — All Other's (no shipment)",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi", "host": ["{{baseUrl}}"], "path": ["p2p", "spi"] },
-            "body": { "mode": "raw", "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": null,\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}" },
-            "description": "No shipment means NO PROFORMA INVOICE, so there is no PI quantity to check in Stage 02 — that stage becomes free entry. Run this variant separately; it does not overwrite {{spiId}}."
-          }
+            "key": "email",
+            "value": ""
         },
         {
-          "name": "Read it back",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}"] }
-          }
+            "key": "password",
+            "value": ""
         },
         {
-          "name": "Update Stage 01",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-1", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "stage-1"] },
-            "body": { "mode": "raw", "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": {{shipmentOrderId}},\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}" },
-            "description": "Same validator as create. Editable only while the invoice is a draft.\n\nTWO GUARDS LIVE HERE:\n  · the purchase order cannot be re-pointed once items exist\n  · the supplier and document_type freeze once a GST approval exists (folder 02)"
-          }
+            "key": "token",
+            "value": ""
         },
         {
-          "name": "422 · tenant fence (expected failure)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('422 refused', () => pm.response.to.have.status(422));"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi", "host": ["{{baseUrl}}"], "path": ["p2p", "spi"] },
-            "body": { "mode": "raw", "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"shipment_order_id\": 999999999\n}" },
-            "description": "MUST return 422. An unscoped ['nullable','integer'] would accept this, including another client's row — the exact bug the warehouse_id rule in this validator documents."
-          }
+            "key": "branchId",
+            "value": ""
+        },
+        {
+            "key": "vendorId",
+            "value": "3",
+            "description": "S-003 — gate = approval_required"
+        },
+        {
+            "key": "shipmentOrderId",
+            "value": "11",
+            "description": "DSHP-001 — tenant-fenced; a foreign id returns 422"
+        },
+        {
+            "key": "procurementId",
+            "value": "4",
+            "description": "NOT fenced at present (gap E)"
+        },
+        {
+            "key": "procurementCode",
+            "value": "PC-002"
+        },
+        {
+            "key": "warehouseId",
+            "value": "1",
+            "description": "WH-001, branch 3"
+        },
+        {
+            "key": "productId",
+            "value": "80"
+        },
+        {
+            "key": "piItemId",
+            "value": "5"
+        },
+        {
+            "key": "approverUserId",
+            "value": "",
+            "description": "Active user of this client, in the invoice's branch, not you, not a client_admin"
+        },
+        {
+            "key": "spiId",
+            "value": ""
+        },
+        {
+            "key": "spiItemId",
+            "value": ""
+        },
+        {
+            "key": "boxId",
+            "value": ""
+        },
+        {
+            "key": "approvalId",
+            "value": ""
+        },
+        {
+            "key": "spiWithPoId",
+            "value": "5"
         }
-      ]
-    },
-
-    {
-      "name": "02 · GST senior approval",
-      "item": [
-        {
-          "name": "Who can approve",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": {
-              "raw": "{{baseUrl}}/p2p/orders/gst-approvals/approvers?branch_id={{branchId}}",
-              "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "gst-approvals", "approvers"],
-              "query": [{ "key": "branch_id", "value": "{{branchId}}" }]
-            },
-            "description": "Shared with the PO flow. Pick an id for {{approverUserId}}: active, this client, this branch, not yourself, not a client_admin."
-          }
-        },
-        {
-          "name": "Raise against the Direct SPI",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/gst-approval/request", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "gst-approval", "request"] },
-            "body": { "mode": "raw", "raw": "{\n  \"requested_to\": {{approverUserId}},\n  \"note\": \"Supplier's last GST return is overdue — please approve.\"\n}" },
-            "description": "THE ONLY NEW ENDPOINT IN THIS FEATURE.\n\nThe gate is re-read LIVE from the supplier, so only an overdue RETURN can be approved past:\n  blocked           -> 422, refresh the supplier's GST scrutiny first\n  clear             -> 422, nothing to approve\n  approval_required -> 201\n\nAlso refused (all shared with the PO):\n  · a request is already pending or approved\n  · approver is not an active user of this client\n  · approver is in another branch, or is a client_admin\n  · you cannot approve your own request\n  · a PO-BACKED invoice — send its order instead, or one supplier\n    risk ends up with two approvals free to disagree"
-          }
-        },
-        {
-          "name": "Decide (as the approver)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/orders/gst-approvals/:approval", "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "gst-approvals", ":approval"], "variable": [{ "key": "approval", "value": "" }] },
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"approved\",\n  \"reason\": \"Checked with the supplier — filing is in progress.\"\n}" },
-            "description": "Log in as {{approverUserId}} first — only the named senior may decide. Use the approval id returned above.\n\nA REJECTED request goes back to the SAME senior on the next attempt; the requester does not get to shop around for a softer approver."
-          }
-        },
-        {
-          "name": "422 · supplier locked after approval (expected failure)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('422 refused', () => pm.response.to.have.status(422));",
-            "pm.test('both fields named', () => {",
-            "  const e = pm.response.json().errors || {};",
-            "  pm.expect(e).to.have.property('vendor_id');",
-            "  pm.expect(e).to.have.property('document_type');",
-            "});"
-          ] } }],
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-1", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "stage-1"] },
-            "body": { "mode": "raw", "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": 4,\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}}\n}" },
-            "description": "RUN AFTER the request above succeeds. Works on a PENDING request too — you do not need the senior to decide first.\n\nThe senior approved THIS supplier's overdue filing. Swapping the supplier afterwards would leave the approval vouching for a risk nobody assessed.\n\ndocument_type is locked in the same guard, and that half matters more: gstGate() returns `clear` outright for an international document, so a domestic -> international flip would step around the approval WITHOUT the supplier moving at all."
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "03 · PI quantity (shipment-linked only)",
-      "item": [
-        {
-          "name": "PI lines + pending qty",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/orders/shipments/{{shipmentOrderId}}/pi-lines", "host": ["{{baseUrl}}"], "path": ["p2p", "orders", "shipments", "{{shipmentOrderId}}", "pi-lines"] },
-            "description": "WHERE STAGE 02's ITEM DETAIL COMES FROM.\n\nPer line: pi_item_id, product_id, product_code, product_name, hsn_code, uom, rate, gst_pct, description, pi_quantity, ordered_qty, PENDING_QTY.\nPlus `held_by` — which POs hold the rest, so an empty Stage 02 explains itself instead of showing a bare zero.\n\nA shipment with no PI returns proforma_invoice_id: null and lines: [] — it does not error.\n\nHELD = a PO that is submitted OR has a pending/approved GST approval, AND is not cancelled. That last clause was added with this work: a cancelled PO with an approved request held PI quantity for ever, so no later PO or Direct SPI could claim it.\n\nCAVEAT: `exclude_po` takes a PO id only. A Direct SPI has none, so on EDIT it cannot exclude its own lines and pending_qty reads low. Needs an exclude_spi equivalent."
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "04 · Stage 02 — items",
-      "item": [
-        {
-          "name": "Save items (JSON)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('200', () => pm.response.to.have.status(200));",
-            "const d = pm.response.json().data;",
-            "const items = d.items || [];",
-            "if (items.length) pm.collectionVariables.set('spiItemId', String(items[0].id));",
-            "pm.test('GAP B — pi_item_id is null on a direct line', () => {",
-            "  if (items.length) pm.expect(items[0].pi_item_id).to.eql(null);",
-            "});"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "items"] },
-            "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    {\n      \"po_item_id\": null,\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 0.1,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 66,\n      \"sgst_amount\": 66,\n      \"igst_amount\": 0,\n      \"line_total\": 132132\n    }\n  ],\n  \"taxable_total\": 132000,\n  \"total_cgst\": 66,\n  \"total_sgst\": 66,\n  \"total_igst\": 0,\n  \"grand_total\": 132132\n}" },
-            "description": "THE WHOLE GRID SAVES AT ONCE — never row by row. The header totals are rolled up from the lines in the same transaction, so a partial save would leave the two disagreeing.\n\nTHE TOTALS YOU SEND ARE OVERWRITTEN. rollupTotals() recomputes taxable_total, total_cgst/sgst/igst and grand_total by SUMming the saved lines. If your arithmetic is off, the LINES win — read the response, not your payload.\n\nTHE SERVER DOES NOT SPLIT GST. cgst/sgst vs igst is decided by the caller from the supplier's state code. Interstate: igst_amount = 132, cgst = sgst = 0.\n\n`po_item_id: null` — a direct line stands on its own, and that field was ALREADY nullable, so Stage 02 needed no change for this feature.\n\nWhat does NOT apply to a direct line: qty_open / qty_over / closed all come from the PO balance. There is no order to exceed, so over-supply detection is simply absent.\n\n>>> GAP B: pi_item_id saves as NULL. writeItems() derives it from the PO\n>>> line (`$po->pi_item_id`) and a direct line has none. Re-run folder 03\n>>> after this and pending_qty is UNCHANGED — the units are on the invoice\n>>> but invisible to the PI ledger, so two Direct SPIs can claim the same\n>>> quantity. Fix needs: accept items.*.pi_item_id, store it, and teach\n>>> orderedByPiItem() to count Direct SPI lines."
-          }
-        },
-        {
-          "name": "Save items + attachments (form-data)",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "items"] },
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                { "key": "items[0][product_id]", "value": "{{productId}}", "type": "text" },
-                { "key": "items[0][qty_spi]", "value": "11", "type": "text" },
-                { "key": "items[0][rate]", "value": "12000", "type": "text" },
-                { "key": "items[0][gst_pct]", "value": "0.1", "type": "text" },
-                { "key": "items[0][taxable_amount]", "value": "132000", "type": "text" },
-                { "key": "items[0][cgst_amount]", "value": "66", "type": "text" },
-                { "key": "items[0][sgst_amount]", "value": "66", "type": "text" },
-                { "key": "items[0][igst_amount]", "value": "0", "type": "text" },
-                { "key": "items[0][line_total]", "value": "132132", "type": "text" },
-                { "key": "taxable_total", "value": "132000", "type": "text" },
-                { "key": "total_cgst", "value": "66", "type": "text" },
-                { "key": "total_sgst", "value": "66", "type": "text" },
-                { "key": "total_igst", "value": "0", "type": "text" },
-                { "key": "grand_total", "value": "132132", "type": "text" },
-                { "key": "invoice_file", "type": "file", "src": [] },
-                { "key": "eway_file", "type": "file", "src": [] }
-              ]
-            },
-            "description": "Same endpoint, multipart. POST rather than PUT because PHP does not populate $_FILES on a PUT.\n\nDO NOT set Content-Type by hand — the client adds multipart/form-data with the boundary. Setting it manually drops the boundary and Laravel sees an empty body.\n\nOMIT po_item_id entirely. In form-data every value is text, so \"null\" arrives as a 4-character string and fails the integer rule.\n\nBoth files are optional: pdf/jpg/jpeg/png/webp, max 10 MB."
-          }
-        },
-        {
-          "name": "Submit the invoice",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/submit", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "submit"] },
-            "description": "Moves the invoice off draft. Stage 01 is no longer editable afterwards — isEditable() keys off the draft status."
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "05 · Stage 03 — boxes & sticker",
-      "item": [
-        {
-          "name": "Packing summary",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/packing-summary", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "packing-summary"] },
-            "description": "PO-INDEPENDENT ALREADY. Reads SupplierInvoiceItem and p2p_spi_box_items; never the order. qty_pending = qty_spi - qty_packed.\n\nNothing in Stage 03 or Stage 04 was changed for Direct SPI — they were already keyed to the invoice."
-          }
-        },
-        {
-          "name": "Next box codes (preview)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes/next-codes", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "boxes", "next-codes"] },
-            "description": "Preview only — the code that lands in the database is allocated on save."
-          }
-        },
-        {
-          "name": "Create a box",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "const d = pm.response.json().data;",
-            "if (d && d.id) pm.collectionVariables.set('boxId', String(d.id));"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "boxes"] },
-            "body": { "mode": "raw", "raw": "{\n  \"scenario\": \"s1\",\n  \"condition\": \"perfect\",\n  \"length_cm\": 40,\n  \"width_cm\": 30,\n  \"height_cm\": 20,\n  \"net_weight_kg\": 5,\n  \"gross_weight_kg\": 5.4,\n  \"items\": [\n    { \"supplier_invoice_item_id\": {{spiItemId}}, \"quantity\": 11 }\n  ]\n}" },
-            "description": "SCENARIOS\n  s1  1 product  -> 1 box        (refused with more than 1 product)\n  s2  1 product  -> many boxes   (refused with more than 1 product)\n  s3  many products -> 1 box     (refused with fewer than 2 products)\n\nCONDITION: perfect | minor | major | severe."
-          }
-        },
-        {
-          "name": "Sticker PDF",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes/{{boxId}}/sticker/download", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "boxes", "{{boxId}}", "sticker", "download"] },
-            "description": "CHECK ON A DIRECT SPI: the PROCUREMENT box must print the invoice's own code, not a dash. It reads `spi.procurement_request_code ?? po?.procurement_request_code` — before this work a direct SPI printed a dash for a carton that IS against a case.\n\nPURCHASE ORDER correctly stays a dash — there is no order.\n\nThe QR carries a SIGNED URL (HMAC), not the box code. The put-away scanner matches on that URL — do not swap it for bare text.\n\nStamps sticker_printed_at on first download: a label in hand is a label about to go on a carton."
-          }
-        },
-        {
-          "name": "Complete Stage 03",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-3", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "stage-3"] }
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "06 · Stage 04 — temporary put-away",
-      "item": [
-        {
-          "name": "Storage type (Our WH / 3PL)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/storage-type", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "storage-type"] },
-            "body": { "mode": "raw", "raw": "{\n  \"storage_type\": \"own\",\n  \"warehouse_id\": {{warehouseId}}\n}" },
-            "description": "The Temporary Storage Selection modal: storage type -> warehouse -> confirm. `own` enables the full put-away flow with rack/shelf allocation; a third-party warehouse is summary-only."
-          }
-        },
-        {
-          "name": "Put-away board",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/board", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "putaway", "board"] },
-            "description": "Driven from the BOXES, so a box nobody has started still appears. ZERO PO references anywhere in the four SpiPutaway* controllers."
-          }
-        },
-        {
-          "name": "Where may this box go",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": {
-              "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/locations?box_id={{boxId}}&mode=tree",
-              "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "putaway", "locations"],
-              "query": [{ "key": "box_id", "value": "{{boxId}}" }, { "key": "mode", "value": "tree" }]
-            },
-            "description": "Without `mode` only the two counts the opening modal needs; with it the whole tree AND the recommendation.\n\nIf eligible comes back 0, the response carries a `diagnosis` block saying WHY — requirement met nowhere, met separately but never together, or handling fine and it is space or a lock."
-          }
-        },
-        {
-          "name": "Scan a sticker",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/scan", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "putaway", "scan"] },
-            "body": { "mode": "raw", "raw": "{\n  \"code\": \"PASTE THE QR URL FROM THE STICKER PDF\"\n}" },
-            "description": "POST, not PUT: each scan stamps its own timestamp, so it is not idempotent.\n\nSend the FULL SIGNED URL from the sticker, not the box code — the scanner matches on that payload."
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "07 · Summary",
-      "item": [
-        {
-          "name": "Temporary Putaway Summary",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "const h = (pm.response.json().data || {}).header || {};",
-            "pm.test(\"spi_type = 'Direct SPI'\", () => pm.expect(h.spi_type).to.eql('Direct SPI'));",
-            "pm.test('shipment_id resolved', () => pm.expect(h.shipment_id).to.not.eql(null));",
-            "pm.test('procurement_id resolved', () => pm.expect(h.procurement_id).to.not.eql(null));"
-          ] } }],
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/summary", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "summary"] },
-            "description": "THREE THINGS TO CHECK on a Direct SPI:\n\n  spi_type       'Direct SPI'  — derived from the null order, not a flag\n  shipment_id    the Step 01 shipment, NOT null\n  procurement_id the Step 02 code, NOT null\n\nBoth used to resolve ONLY through the purchase order, so a Direct SPI reported neither even when both had been chosen. They now read the invoice first and fall back to the order.\n\n  opportunity_id stays null, correctly — it comes from the PI, which comes from the order."
-          }
-        },
-        {
-          "name": "Packed boxes",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": {
-              "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/packed-boxes?page=1&per_page=10",
-              "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "packed-boxes"],
-              "query": [{ "key": "page", "value": "1" }, { "key": "per_page", "value": "10" }]
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}"
             }
-          }
-        },
-        {
-          "name": "Evidence vault (this invoice)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/evidence-vault", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "evidence-vault"] },
-            "description": "The SUPPLIER's vault is a different endpoint: /segment-uploads/supplier/{id}/vault."
-          }
-        }
-      ]
+        ]
     },
-
-    {
-      "name": "08 · Payments — BLOCKED for Direct SPI",
-      "item": [
+    "item": [
         {
-          "name": "Payment history (works)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "const d = pm.response.json().data;",
-            "pm.test('po block is null', () => pm.expect(d.po).to.eql(null));",
-            "pm.test('ledger falls back to the invoice', () => pm.expect(d.ledger.source).to.eql('supplier_invoice'));"
-          ] } }],
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "payment-requests"] },
-            "description": "THE READ SIDE WORKS. p2p_po_payment_requests already carries supplier_invoice_id, so the per-invoice history is genuinely keyed to the invoice.\n\n`ledger` is new and is what the screen should read. The ceiling used to be returned only as `po`, which is null on a Direct SPI, leaving nothing to validate against. `ledger` NAMES its source:\n\n  source = purchase_order     PO-backed: the order's balance, unchanged\n  source = supplier_invoice   Direct: the invoice's own tds/paid/balance\n\nnet_payable = grand_total - tds_amount on both sides. TDS is cut on the TAXABLE base, not the grand total — GST is not subject to TDS.\n\npaid_amount is NULL until the first payment. \"The ledger has not been opened\" is not the same as a zero balance, which is why the column has no 0.00 default."
-          }
+            "name": "00 · Setup",
+            "item": [
+                {
+                    "name": "Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "if (b.user && b.user.branch_id) pm.collectionVariables.set('branchId', String(b.user.branch_id));",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Shipment list (Step 01 dropdown)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/shipments",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "shipments"
+                            ]
+                        },
+                        "description": "Returns id, code, customer, consignee, opportunity_code, proforma_invoice_id, pi_number.\n\nShared with the PO create modal — these are master lookups, not PO data. Do NOT build an SPI twin: the same supplier would then read differently on two screens."
+                    }
+                },
+                {
+                    "name": "Supplier list (Step 03 dropdown)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/suppliers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "suppliers"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Supplier detail — ALSO answers the GST gate",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/suppliers/{{vendorId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "suppliers",
+                                "{{vendorId}}"
+                            ]
+                        },
+                        "description": "Call this on mount AND on every supplier change.\n\nTHERE IS NO GST-GATE ENDPOINT, by design. The browser computes the gate from the scrutiny and filing dates in THIS response, against a 3-month cutoff, exactly as PurchaseOrderService::gstGate() does server-side:\n\n  no scrutiny, or scrutiny older than 3 months  -> blocked\n  scrutiny current but filing older than 3 mo   -> approval_required\n  both current                                  -> clear\n  document_type = international                 -> clear (short-circuit)\n\nCompare CALENDAR DATES, not rounded months. 2.96 months rounds to 3.0 and would block a supplier a day early.\n\nThe Evidence Vault (document completeness) is a SEPARATE, slower call. Fire it but do not await it — only the compliance card needs it, and awaiting both leaves the form on \"Loading…\"."
+                    }
+                },
+                {
+                    "name": "SPI list — all tabs & filters",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi?po_mode=without_po&shipment_mode=with_shipment&status=draft&vendor_id={{vendorId}}&from=2026-10-01&to=2026-10-31&q=SPI&page=1&per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi"
+                            ],
+                            "query": [
+                                {
+                                    "key": "po_mode",
+                                    "value": "without_po",
+                                    "description": "with_po | without_po. Omit for the All SPI's tab."
+                                },
+                                {
+                                    "key": "shipment_mode",
+                                    "value": "with_shipment",
+                                    "description": "with_shipment | without_shipment. Sub-filter on top of po_mode."
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "draft",
+                                    "description": "draft | mapped | grn_pending | closed | cancelled"
+                                },
+                                {
+                                    "key": "vendor_id",
+                                    "value": "{{vendorId}}",
+                                    "description": "integer"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "2026-10-01",
+                                    "description": "YYYY-MM-DD"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "2026-10-31",
+                                    "description": "YYYY-MM-DD"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "SPI",
+                                    "description": "free text, max 120"
+                                },
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "THE LIST SCREEN — every tab and filter is this one endpoint.\n\nTABS (po_mode + shipment_mode)\n  All SPI's .................. omit po_mode entirely\n  With Purchase Order SPI .... po_mode=with_po\n  Without PO (Direct SPI) .... po_mode=without_po\n    With Shipment ID ......... + shipment_mode=with_shipment\n    All Other Transactions ... + shipment_mode=without_shipment\n\nshipment_mode is a SUB-filter, not a replacement — it applies on top of\npo_mode, and works under with_po too, since a PO-backed SPI can also be\nwith or without a shipment.\n\nALL ACCEPTED PARAMETERS (there are no others)\n  po_mode        with_po | without_po\n  shipment_mode  with_shipment | without_shipment\n  status         draft | mapped | grn_pending | closed | cancelled\n  vendor_id      integer\n  from, to       dates (YYYY-MM-DD)\n  q              free text, max 120 — SPI number, supplier, PO or status\n  page           integer, min 1\n  per_page       integer\n\nMIND THE UNDERSCORES. `withpo` returns 422, not a full list. A mistyped\nfilter used to be ignored in silence and return every row, which reads as a\nbroken tab rather than a typo in the URL.\n\nEVERY RESPONSE CARRIES THE SAME `counts` BLOCK — with_po, without_po,\nwith_shipment, without_shipment — so one request feeds all the tab badges.\nThe sub-tab counts add up to their parent.\n\nKNOWN GAP — the Direct SPI sub-tabs are WRONG today:\n  applyShipmentMode() asks the PURCHASE ORDER for the shipment\n    whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'))\n  A Direct SPI has no PO, so that is always false. No Direct SPI can appear\n  under With Shipment ID — even one created with shipment_order_id set — and\n  all of them collapse into All Other Transactions.\n\n  Two row columns are blank for the same reason:\n    shipment_id     resolved from $po->shipment_order_id\n    procurement_id  read from $po->procurement_request_code\n\n  opportunity_id staying blank on a Direct SPI is CORRECT — it comes from\n  the proforma invoice, which comes from the order.\n\n  Needs the same `?? ` fallback already applied to the summary and the\n  carton sticker: the invoice's own column first, then the order."
+                    }
+                }
+            ]
         },
         {
-          "name": "422 · raise a payment request (expected failure)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('422 refused — GAP C', () => pm.response.to.have.status(422));"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "payment-requests"] },
-            "body": { "mode": "raw", "raw": "{\n  \"payment_type\": \"advance\",\n  \"requested_amount\": 10000,\n  \"requested_to\": {{approverUserId}},\n  \"reason\": \"Advance against the direct invoice\"\n}" },
-            "description": "EXPECTED 422: \"... is a standalone invoice — it has no purchase order to pay against.\"\n\nstoreFromSpi() reads the invoice's purchase_order_id and hands over to the PO flow. With no order there is nothing to hand to.\n\nThe SCHEMA is ready (purchase_order_id nullable on both payment tables, supplier_invoice_id on p2p_po_payments). What is missing is the controller: payable() gates on PO state (isCancelled / status=submitted / signingStarted), saveTds() computes on $order->taxable_total and writes to the order, and the SPI is validated as BELONGING to a PO.\n\nIt needs the same subject-based refactor already applied to PoGstApprovalController."
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "09 · Zoho — stub",
-      "item": [
-        {
-          "name": "501 · Zoho sync (expected failure)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('501 — GAP D', () => pm.response.to.have.status(501));"
-          ] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/zoho-sync", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "zoho-sync"] },
-            "description": "EXPECTED 501: \"Zoho sync for standalone invoices is not wired up yet.\"\n\nPRE-EXISTING STUB, not a regression. The schema is ready — zoho_bill_id, zoho_bill_number, zoho_status, zoho_error and zoho_synced_at are already on the invoice, and ownsZohoBill() already returns isStandalone(), so a Direct SPI is ALREADY the owner of its own bill by design. Only the sync code is missing.\n\nA PO-backed invoice is refused differently: its bill belongs to the order."
-          }
+            "name": "01 · Stage 01 — create the Direct SPI",
+            "item": [
+                {
+                    "name": "Create — With Shipment ID",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                                    "const d = pm.response.json().data;",
+                                    "pm.collectionVariables.set('spiId', String(d.id));",
+                                    "pm.test('is a Direct SPI', () => pm.expect(d.purchase_order_id).to.eql(null));",
+                                    "pm.test('opens as a draft', () => pm.expect(d.status).to.eql('draft'));",
+                                    "pm.test('shipment persisted', () => pm.expect(Number(d.shipment_order_id)).to.eql(Number(pm.collectionVariables.get('shipmentOrderId'))));",
+                                    "pm.test('procurement persisted', () => pm.expect(d.procurement_request_code).to.not.eql(null));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": {{shipmentOrderId}},\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}"
+                        },
+                        "description": "THIS IS THE \"CREATE DRAFT\" CALL. There is no separate mark-as-draft endpoint: the row is born with status=draft and stage_completed=1, and the code is allocated here.\n\nThe modal's Confirm & Continue should call exactly this after Steps 01–03.\n\n`purchase_order_id: null` is what makes it direct.\n\nAll three links are OPTIONAL at the API — \"All Other's (Without Shipment ID)\" is a real answer to Step 01, not a skipped question.\n\nshipment_order_id is TENANT-FENCED: an id belonging to another client returns 422, not a silent accept."
+                    }
+                },
+                {
+                    "name": "Create — All Other's (no shipment)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": null,\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}"
+                        },
+                        "description": "No shipment means NO PROFORMA INVOICE, so there is no PI quantity to check in Stage 02 — that stage becomes free entry. Run this variant separately; it does not overwrite {{spiId}}."
+                    }
+                },
+                {
+                    "name": "Read it back",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Stage 01",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "stage-1"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}},\n\n  \"shipment_order_id\": {{shipmentOrderId}},\n  \"procurement_request_id\": {{procurementId}},\n  \"procurement_request_code\": \"{{procurementCode}}\"\n}"
+                        },
+                        "description": "Same validator as create. Editable only while the invoice is a draft.\n\nTWO GUARDS LIVE HERE:\n  · the purchase order cannot be re-pointed once items exist\n  · the supplier and document_type freeze once a GST approval exists (folder 02)"
+                    }
+                },
+                {
+                    "name": "422 · tenant fence (expected failure)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('422 refused', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendorId}},\n  \"document_type\": \"domestic\",\n  \"shipment_order_id\": 999999999\n}"
+                        },
+                        "description": "MUST return 422. An unscoped ['nullable','integer'] would accept this, including another client's row — the exact bug the warehouse_id rule in this validator documents."
+                    }
+                }
+            ]
         },
         {
-          "name": "Zoho tracker",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/zoho-tracker", "host": ["{{baseUrl}}"], "path": ["p2p", "spi", "{{spiId}}", "zoho-tracker"] },
-            "description": "Says WHY there is no bill, rather than showing an empty state."
-          }
+            "name": "02 · GST senior approval",
+            "item": [
+                {
+                    "name": "C0 · Who can approve (pick the senior)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/gst-approvals/approvers?branch_id={{branchId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "gst-approvals",
+                                "approvers"
+                            ]
+                        },
+                        "description": "Active users of this client, minus the caller, with department and designation. The id you pick goes in requested_to below. A Direct SPI approval stops at the branch head, so the senior must sit in the invoice's branch."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "const list = b.data || [];",
+                                    "// Anyone but the caller, active, in this branch. Take the first.",
+                                    "if (list.length) pm.collectionVariables.set('approverUserId', String(list[0].id));",
+                                    "pm.test('an approver exists', () => pm.expect(list.length).to.be.above(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "C · Raise the approval against the SPI",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/gst-approval/request",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "gst-approval",
+                                "request"
+                            ]
+                        },
+                        "description": "Only a DIRECT SPI may raise its own: a PO-backed invoice is refused (422) and sends its order instead — one supplier risk, one approval.\n\nrequested_to is required, EXCEPT when the last approval on this invoice was rejected: it then goes back to the same senior and any requested_to sent is ignored.\n\nRefused (422) when: the invoice is cancelled · no supplier on Stage 01 · GST scrutiny itself is older than 3 months (nobody can approve past that — update the scrutiny) · the gate is already clear (nothing to approve) · one is already pending · already approved · the approver is not an active user of this client, is outside the invoice's branch, or is you.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"requested_to\": {{approverUserId}},\n  \"note\": \"Supplier's last GST return is overdue — please approve.\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('201 raised', () => pm.response.to.have.status(201));",
+                                    "const d = (pm.response.json().data) || {};",
+                                    "if (d.id) pm.collectionVariables.set('approvalId', String(d.id));",
+                                    "pm.test('hangs off the invoice, not an order', () => {",
+                                    "  pm.expect(d.purchase_order_id).to.eql(null);",
+                                    "  pm.expect(String(d.supplier_invoice_id)).to.eql(pm.collectionVariables.get('spiId'));",
+                                    "  pm.expect(d.subject_type).to.eql('supplier_invoice');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "R · This invoice's approvals (history + live gate)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/gst-approvals",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "gst-approvals"
+                            ]
+                        },
+                        "description": "The requester's view: every approval ever raised against THIS invoice, newest first, plus the GST gate read live.\n\nTenant-fenced on client_id, so another client's invoice id gives 404. Not branch-fenced — the approver may sit in another branch and the requester still needs the history.\n\nAlongside the rows, `gst` carries { gate, gstin, scrutiny_date, filing_date, stale_months }. gate is why the approval exists at all: approval_required means the return is overdue, blocked means the scrutiny itself is stale and no senior can approve past it."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('newest first', () => {",
+                                    "  const ids = (b.data || []).map(r => r.id);",
+                                    "  pm.expect(ids).to.eql(ids.slice().sort((a, z) => z - a));",
+                                    "});",
+                                    "// gate: blocked | approval_required | clear — read live, not at request time.",
+                                    "pm.test('gate present', () => pm.expect(b.gst).to.be.an('object'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "R · Approver inbox (pending, then history)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/gst-approvals?history=0&per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "gst-approvals"
+                            ]
+                        },
+                        "description": "Run this AS THE APPROVER (log in as the user in approverUserId). It lists only requests sent to the caller.\n\nQuery: history=0 (default) → still pending, oldest request first; history=1 → decided only, newest decision first. per_page 1–50, default 10.\n\nOne row shape for either subject: po_code carries the INVOICE code when subject_type is supplier_invoice, and po_date carries invoice_date. supplier_invoice_id tells you which it was. gst_last_filing_date is null for a Direct SPI — that column lives on the PO."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const rows = pm.response.json().data || [];",
+                                    "// An SPI-raised row must appear here. It used to be dropped by an",
+                                    "// inner join on p2p_purchase_orders.",
+                                    "const mine = rows.find(r => String(r.id) === pm.collectionVariables.get('approvalId'));",
+                                    "pm.test('the SPI-raised request is visible', () => pm.expect(mine).to.not.eql(undefined));",
+                                    "if (mine) pm.test('shown as an invoice', () => pm.expect(mine.subject_type).to.eql('supplier_invoice'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "R · One approval (the decision screen)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/gst-approvals/{{approvalId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "gst-approvals",
+                                "{{approvalId}}"
+                            ]
+                        },
+                        "description": "Readable by the approver OR the requester; anyone else gets 403.\n\nThe `po` block is the subject's header whichever it is — for a Direct SPI it carries the invoice code, invoice_date as po_date, its totals and its own shipment_code / procurement_code. The order-only terms (po_type, mode_of_transport, Incoterm, ports, shipping / packaging / other charges, physical_inspection) come back null, so the screen keeps one shape and prints a dash. tax_mode is derived from total_igst, not stored.\n\n`lines` are the invoice's items, each with its own description / HSN / UOM. `gst` is the gate read live, so the senior sees today's position, not the one at request time. `can_decide` is true only for the chosen senior, while pending, and while the invoice is neither cancelled nor deleted."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const d = pm.response.json().data || {};",
+                                    "pm.test('the invoice is the subject', () => pm.expect(d.po.subject_type).to.eql('supplier_invoice'));",
+                                    "pm.test('invoice references resolve', () => {",
+                                    "  pm.expect(d.po.code).to.be.a('string');",
+                                    "  // From the SPI's own columns, not through a PO.",
+                                    "  pm.expect(d.po).to.have.property('shipment_code');",
+                                    "  pm.expect(d.po).to.have.property('procurement_code');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "U · Decide — approve or reject (as the approver)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/gst-approvals/{{approvalId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "gst-approvals",
+                                "{{approvalId}}"
+                            ]
+                        },
+                        "description": "The field is `decision`, not status: approved | rejected. `reason` is required either way, max 1000 chars.\n\nOnly the senior it was sent to may decide (403 otherwise), only while pending (422 if already decided), and not if the invoice has been cancelled or deleted.\n\nA PO caches the verdict in its own gst_approval_* columns. A Direct SPI has none by design — this approval row IS the record, read back through the invoice's approvals. So after this call, re-read 'R · This invoice's approvals' rather than looking for a field on the invoice.\n\nRejected does not free the invoice: raising again goes back to the SAME senior, and any requested_to you send is ignored.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"decision\": \"approved\",\n  \"reason\": \"Checked with the supplier — filing is in progress.\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const d = pm.response.json().data || {};",
+                                    "pm.test('decided', () => {",
+                                    "  pm.expect(d.status).to.eql('approved');",
+                                    "  pm.expect(d.decided_at).to.not.eql(null);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "422 · a PO-backed invoice cannot raise its own",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiWithPoId}}/gst-approval/request",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiWithPoId}}",
+                                "gst-approval",
+                                "request"
+                            ]
+                        },
+                        "description": "Set spiWithPoId to any SPI that HAS a purchase_order_id. Its supplier risk is the order's, and the order's approval already covers this invoice; allowing both would leave two approvals free to disagree.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"requested_to\": {{approverUserId}}\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('422 refused', () => pm.response.to.have.status(422));",
+                                    "pm.test('points at the order', () => pm.expect(pm.response.json().message).to.include('purchase order'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "422 · supplier locked once sent to a senior",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "stage-1"
+                            ]
+                        },
+                        "description": "Once an approval is pending OR approved, the supplier and document_type are frozen: the senior judged THAT supplier's GST. Changing either would leave an approval describing a risk the invoice no longer carries.\n\nAll the other Stage 01 fields stay editable. To change the supplier, the approval has to be rejected first.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": 4,\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouseId}}\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('422 refused', () => pm.response.to.have.status(422));",
+                                    "pm.test('both fields named', () => {",
+                                    "  const e = pm.response.json().errors || {};",
+                                    "  pm.expect(e).to.have.property('vendor_id');",
+                                    "  pm.expect(e).to.have.property('document_type');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ],
+            "description": "GST senior approval, raised against the SPI id.\n\nIt exists because the supplier's last GST return is overdue: the gate reads the latest vendor_gst_scrutiny row against a 3-month cutoff and answers blocked / approval_required / clear. Only approval_required can be sent to a senior. An international invoice short-circuits to clear and needs no approval at all.\n\nCreate and the per-invoice history are keyed on {{spiId}}. Reading one and deciding it are keyed on the APPROVAL id, under /p2p/orders/ — one approver screen serves both documents, so there is no /p2p/spi mirror for them.\n\nOrder to run: C0 → C → R (history) → log in as the approver → R (inbox) → R (one) → U."
+        },
+        {
+            "name": "03 · PI quantity (shipment-linked only)",
+            "item": [
+                {
+                    "name": "PI lines + pending qty",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/shipments/{{shipmentOrderId}}/pi-lines",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "shipments",
+                                "{{shipmentOrderId}}",
+                                "pi-lines"
+                            ]
+                        },
+                        "description": "WHERE STAGE 02's ITEM DETAIL COMES FROM.\n\nPer line: pi_item_id, product_id, product_code, product_name, hsn_code, uom, rate, gst_pct, description, pi_quantity, ordered_qty, PENDING_QTY.\nPlus `held_by` — which POs hold the rest, so an empty Stage 02 explains itself instead of showing a bare zero.\n\nA shipment with no PI returns proforma_invoice_id: null and lines: [] — it does not error.\n\nHELD = a PO that is submitted OR has a pending/approved GST approval, AND is not cancelled. That last clause was added with this work: a cancelled PO with an approved request held PI quantity for ever, so no later PO or Direct SPI could claim it.\n\nCAVEAT: `exclude_po` takes a PO id only. A Direct SPI has none, so on EDIT it cannot exclude its own lines and pending_qty reads low. Needs an exclude_spi equivalent."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "04 · Stage 02 — items",
+            "item": [
+                {
+                    "name": "Save items (JSON)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const d = pm.response.json().data;",
+                                    "const items = d.items || [];",
+                                    "if (items.length) pm.collectionVariables.set('spiItemId', String(items[0].id));",
+                                    "pm.test('GAP B — pi_item_id is null on a direct line', () => {",
+                                    "  if (items.length) pm.expect(items[0].pi_item_id).to.eql(null);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "items"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"items\": [\n    {\n      \"po_item_id\": null,\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 0.1,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 66,\n      \"sgst_amount\": 66,\n      \"igst_amount\": 0,\n      \"line_total\": 132132\n    }\n  ],\n  \"taxable_total\": 132000,\n  \"total_cgst\": 66,\n  \"total_sgst\": 66,\n  \"total_igst\": 0,\n  \"grand_total\": 132132\n}"
+                        },
+                        "description": "THE WHOLE GRID SAVES AT ONCE — never row by row. The header totals are rolled up from the lines in the same transaction, so a partial save would leave the two disagreeing.\n\nTHE TOTALS YOU SEND ARE OVERWRITTEN. rollupTotals() recomputes taxable_total, total_cgst/sgst/igst and grand_total by SUMming the saved lines. If your arithmetic is off, the LINES win — read the response, not your payload.\n\nTHE SERVER DOES NOT SPLIT GST. cgst/sgst vs igst is decided by the caller from the supplier's state code. Interstate: igst_amount = 132, cgst = sgst = 0.\n\n`po_item_id: null` — a direct line stands on its own, and that field was ALREADY nullable, so Stage 02 needed no change for this feature.\n\nWhat does NOT apply to a direct line: qty_open / qty_over / closed all come from the PO balance. There is no order to exceed, so over-supply detection is simply absent.\n\n>>> GAP B: pi_item_id saves as NULL. writeItems() derives it from the PO\n>>> line (`$po->pi_item_id`) and a direct line has none. Re-run folder 03\n>>> after this and pending_qty is UNCHANGED — the units are on the invoice\n>>> but invisible to the PI ledger, so two Direct SPIs can claim the same\n>>> quantity. Fix needs: accept items.*.pi_item_id, store it, and teach\n>>> orderedByPiItem() to count Direct SPI lines."
+                    }
+                },
+                {
+                    "name": "Save items + attachments (form-data)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "items"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "items[0][product_id]",
+                                    "value": "{{productId}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][qty_spi]",
+                                    "value": "11",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][rate]",
+                                    "value": "12000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][gst_pct]",
+                                    "value": "0.1",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][taxable_amount]",
+                                    "value": "132000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][cgst_amount]",
+                                    "value": "66",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][sgst_amount]",
+                                    "value": "66",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][igst_amount]",
+                                    "value": "0",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[0][line_total]",
+                                    "value": "132132",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "taxable_total",
+                                    "value": "132000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "total_cgst",
+                                    "value": "66",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "total_sgst",
+                                    "value": "66",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "total_igst",
+                                    "value": "0",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "grand_total",
+                                    "value": "132132",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "invoice_file",
+                                    "type": "file",
+                                    "src": []
+                                },
+                                {
+                                    "key": "eway_file",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "description": "Same endpoint, multipart. POST rather than PUT because PHP does not populate $_FILES on a PUT.\n\nDO NOT set Content-Type by hand — the client adds multipart/form-data with the boundary. Setting it manually drops the boundary and Laravel sees an empty body.\n\nOMIT po_item_id entirely. In form-data every value is text, so \"null\" arrives as a 4-character string and fails the integer rule.\n\nBoth files are optional: pdf/jpg/jpeg/png/webp, max 10 MB."
+                    }
+                },
+                {
+                    "name": "Submit the invoice",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/submit",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "submit"
+                            ]
+                        },
+                        "description": "Moves the invoice off draft. Stage 01 is no longer editable afterwards — isEditable() keys off the draft status."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "05 · Stage 03 — boxes & sticker",
+            "item": [
+                {
+                    "name": "Packing summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/packing-summary",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "packing-summary"
+                            ]
+                        },
+                        "description": "PO-INDEPENDENT ALREADY. Reads SupplierInvoiceItem and p2p_spi_box_items; never the order. qty_pending = qty_spi - qty_packed.\n\nNothing in Stage 03 or Stage 04 was changed for Direct SPI — they were already keyed to the invoice."
+                    }
+                },
+                {
+                    "name": "Next box codes (preview)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes/next-codes",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "boxes",
+                                "next-codes"
+                            ]
+                        },
+                        "description": "Preview only — the code that lands in the database is allocated on save."
+                    }
+                },
+                {
+                    "name": "Create a box",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = pm.response.json().data;",
+                                    "if (d && d.id) pm.collectionVariables.set('boxId', String(d.id));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "boxes"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scenario\": \"s1\",\n  \"condition\": \"perfect\",\n  \"length_cm\": 40,\n  \"width_cm\": 30,\n  \"height_cm\": 20,\n  \"net_weight_kg\": 5,\n  \"gross_weight_kg\": 5.4,\n  \"items\": [\n    { \"supplier_invoice_item_id\": {{spiItemId}}, \"quantity\": 11 }\n  ]\n}"
+                        },
+                        "description": "SCENARIOS\n  s1  1 product  -> 1 box        (refused with more than 1 product)\n  s2  1 product  -> many boxes   (refused with more than 1 product)\n  s3  many products -> 1 box     (refused with fewer than 2 products)\n\nCONDITION: perfect | minor | major | severe."
+                    }
+                },
+                {
+                    "name": "Sticker PDF",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/boxes/{{boxId}}/sticker/download",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "boxes",
+                                "{{boxId}}",
+                                "sticker",
+                                "download"
+                            ]
+                        },
+                        "description": "CHECK ON A DIRECT SPI: the PROCUREMENT box must print the invoice's own code, not a dash. It reads `spi.procurement_request_code ?? po?.procurement_request_code` — before this work a direct SPI printed a dash for a carton that IS against a case.\n\nPURCHASE ORDER correctly stays a dash — there is no order.\n\nThe QR carries a SIGNED URL (HMAC), not the box code. The put-away scanner matches on that URL — do not swap it for bare text.\n\nStamps sticker_printed_at on first download: a label in hand is a label about to go on a carton."
+                    }
+                },
+                {
+                    "name": "Complete Stage 03",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/stage-3",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "stage-3"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "06 · Stage 04 — temporary put-away",
+            "item": [
+                {
+                    "name": "Storage type (Our WH / 3PL)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/storage-type",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "storage-type"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"storage_type\": \"own\",\n  \"warehouse_id\": {{warehouseId}}\n}"
+                        },
+                        "description": "The Temporary Storage Selection modal: storage type -> warehouse -> confirm. `own` enables the full put-away flow with rack/shelf allocation; a third-party warehouse is summary-only."
+                    }
+                },
+                {
+                    "name": "Put-away board",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/board",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "putaway",
+                                "board"
+                            ]
+                        },
+                        "description": "Driven from the BOXES, so a box nobody has started still appears. ZERO PO references anywhere in the four SpiPutaway* controllers."
+                    }
+                },
+                {
+                    "name": "Where may this box go",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/locations?box_id={{boxId}}&mode=tree",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "putaway",
+                                "locations"
+                            ],
+                            "query": [
+                                {
+                                    "key": "box_id",
+                                    "value": "{{boxId}}"
+                                },
+                                {
+                                    "key": "mode",
+                                    "value": "tree"
+                                }
+                            ]
+                        },
+                        "description": "Without `mode` only the two counts the opening modal needs; with it the whole tree AND the recommendation.\n\nIf eligible comes back 0, the response carries a `diagnosis` block saying WHY — requirement met nowhere, met separately but never together, or handling fine and it is space or a lock."
+                    }
+                },
+                {
+                    "name": "Scan a sticker",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/putaway/scan",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "putaway",
+                                "scan"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"code\": \"PASTE THE QR URL FROM THE STICKER PDF\"\n}"
+                        },
+                        "description": "POST, not PUT: each scan stamps its own timestamp, so it is not idempotent.\n\nSend the FULL SIGNED URL from the sticker, not the box code — the scanner matches on that payload."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "07 · Summary",
+            "item": [
+                {
+                    "name": "Temporary Putaway Summary",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const h = (pm.response.json().data || {}).header || {};",
+                                    "pm.test(\"spi_type = 'Direct SPI'\", () => pm.expect(h.spi_type).to.eql('Direct SPI'));",
+                                    "pm.test('shipment_id resolved', () => pm.expect(h.shipment_id).to.not.eql(null));",
+                                    "pm.test('procurement_id resolved', () => pm.expect(h.procurement_id).to.not.eql(null));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/summary",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "summary"
+                            ]
+                        },
+                        "description": "THREE THINGS TO CHECK on a Direct SPI:\n\n  spi_type       'Direct SPI'  — derived from the null order, not a flag\n  shipment_id    the Step 01 shipment, NOT null\n  procurement_id the Step 02 code, NOT null\n\nBoth used to resolve ONLY through the purchase order, so a Direct SPI reported neither even when both had been chosen. They now read the invoice first and fall back to the order.\n\n  opportunity_id stays null, correctly — it comes from the PI, which comes from the order."
+                    }
+                },
+                {
+                    "name": "Packed boxes",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/packed-boxes?page=1&per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "packed-boxes"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Evidence vault (this invoice)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/evidence-vault",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "evidence-vault"
+                            ]
+                        },
+                        "description": "The SUPPLIER's vault is a different endpoint: /segment-uploads/supplier/{id}/vault."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "08 · Payments — BLOCKED for Direct SPI",
+            "item": [
+                {
+                    "name": "Payment history (works)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = pm.response.json().data;",
+                                    "pm.test('po block is null', () => pm.expect(d.po).to.eql(null));",
+                                    "pm.test('ledger falls back to the invoice', () => pm.expect(d.ledger.source).to.eql('supplier_invoice'));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "payment-requests"
+                            ]
+                        },
+                        "description": "THE READ SIDE WORKS. p2p_po_payment_requests already carries supplier_invoice_id, so the per-invoice history is genuinely keyed to the invoice.\n\n`ledger` is new and is what the screen should read. The ceiling used to be returned only as `po`, which is null on a Direct SPI, leaving nothing to validate against. `ledger` NAMES its source:\n\n  source = purchase_order     PO-backed: the order's balance, unchanged\n  source = supplier_invoice   Direct: the invoice's own tds/paid/balance\n\nnet_payable = grand_total - tds_amount on both sides. TDS is cut on the TAXABLE base, not the grand total — GST is not subject to TDS.\n\npaid_amount is NULL until the first payment. \"The ledger has not been opened\" is not the same as a zero balance, which is why the column has no 0.00 default."
+                    }
+                },
+                {
+                    "name": "422 · raise a payment request (expected failure)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('422 refused — GAP C', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "payment-requests"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"payment_type\": \"advance\",\n  \"requested_amount\": 10000,\n  \"requested_to\": {{approverUserId}},\n  \"reason\": \"Advance against the direct invoice\"\n}"
+                        },
+                        "description": "EXPECTED 422: \"... is a standalone invoice — it has no purchase order to pay against.\"\n\nstoreFromSpi() reads the invoice's purchase_order_id and hands over to the PO flow. With no order there is nothing to hand to.\n\nThe SCHEMA is ready (purchase_order_id nullable on both payment tables, supplier_invoice_id on p2p_po_payments). What is missing is the controller: payable() gates on PO state (isCancelled / status=submitted / signingStarted), saveTds() computes on $order->taxable_total and writes to the order, and the SPI is validated as BELONGING to a PO.\n\nIt needs the same subject-based refactor already applied to PoGstApprovalController."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "09 · Zoho — stub",
+            "item": [
+                {
+                    "name": "501 · Zoho sync (expected failure)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('501 — GAP D', () => pm.response.to.have.status(501));"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/zoho-sync",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "zoho-sync"
+                            ]
+                        },
+                        "description": "EXPECTED 501: \"Zoho sync for standalone invoices is not wired up yet.\"\n\nPRE-EXISTING STUB, not a regression. The schema is ready — zoho_bill_id, zoho_bill_number, zoho_status, zoho_error and zoho_synced_at are already on the invoice, and ownsZohoBill() already returns isStandalone(), so a Direct SPI is ALREADY the owner of its own bill by design. Only the sync code is missing.\n\nA PO-backed invoice is refused differently: its bill belongs to the order."
+                    }
+                },
+                {
+                    "name": "Zoho tracker",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/zoho-tracker",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "zoho-tracker"
+                            ]
+                        },
+                        "description": "Says WHY there is no bill, rather than showing an empty state."
+                    }
+                }
+            ]
         }
-      ]
-    }
-  ]
+    ]
 }

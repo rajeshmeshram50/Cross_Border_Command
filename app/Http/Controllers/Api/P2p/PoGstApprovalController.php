@@ -50,9 +50,31 @@ class PoGstApprovalController extends Controller
         return PurchaseOrder::withoutGlobalScope('tenant')->where('client_id', $clientId)->select('id');
     }
 
+    private function clientSpiIds(int $clientId)
+    {
+        return SupplierInvoice::withoutGlobalScope('tenant')->where('client_id', $clientId)->select('id');
+    }
+
+    /* An approval hangs off a PO or off a Direct SPI, never both. Fencing on
+       purchase_order_id alone dropped every SPI-raised row: NULL never matches
+       an IN (...), so show() and decide() answered 404. */
     private function findApproval(int $clientId, int $id): PoGstApproval
     {
-        return PoGstApproval::whereIn('purchase_order_id', $this->clientPoIds($clientId))->findOrFail($id);
+        return PoGstApproval::where(fn ($q) => $q
+            ->whereIn('purchase_order_id', $this->clientPoIds($clientId))
+            ->orWhereIn('supplier_invoice_id', $this->clientSpiIds($clientId)))
+            ->findOrFail($id);
+    }
+
+    /** The PO or the Direct SPI an approval was raised against. */
+    private function subjectOf(PoGstApproval $row, bool $withItems = false)
+    {
+        $q = $row->purchase_order_id
+            ? PurchaseOrder::withoutGlobalScope('tenant')->withTrashed()
+            : SupplierInvoice::withoutGlobalScope('tenant')->withTrashed();
+        if ($withItems) $q->with('items');
+
+        return $q->find($row->purchase_order_id ?: $row->supplier_invoice_id);
     }
 
     /* ══════════════════════════ REQUESTER ══════════════════════════ */
@@ -236,26 +258,40 @@ class PoGstApprovalController extends Controller
         $history = $request->boolean('history');
         $perPage = max(1, min(50, (int) $request->integer('per_page', 10)));
 
+        /* LEFT joins to both parents. An approval raised from a Direct SPI has
+           no purchase_order_id, and the inner join dropped it from this list. */
         $q = DB::table('p2p_po_gst_approvals as a')
-            ->join('p2p_purchase_orders as po', 'po.id', '=', 'a.purchase_order_id')
-            ->leftJoin('vendors as v', 'v.id', '=', 'po.vendor_id')
+            ->leftJoin('p2p_purchase_orders as po', 'po.id', '=', 'a.purchase_order_id')
+            ->leftJoin('p2p_supplier_invoices as spi', 'spi.id', '=', 'a.supplier_invoice_id')
+            ->leftJoin('vendors as v', fn ($j) => $j->whereRaw('v.id = COALESCE(po.vendor_id, spi.vendor_id)'))
             ->leftJoin('users as rq', 'rq.id', '=', 'a.requested_by')
             ->leftJoin('employees as re', fn ($j) => $j->on('re.user_id', '=', 'rq.id')->whereNull('re.deleted_at'))
             ->leftJoin('master_departments as rd', 'rd.id', '=', 're.department_id')
             ->leftJoin('master_designations as rg', 'rg.id', '=', 're.designation_id')
-            ->where('po.client_id', $user->client_id)
-            ->whereNull('po.deleted_at')
+            ->whereRaw('COALESCE(po.client_id, spi.client_id) = ?', [$user->client_id])
+            ->whereRaw('COALESCE(po.deleted_at, spi.deleted_at) IS NULL')
             ->where('a.requested_to', $user->id);
         if ($history) {
             $q->where('a.status', '!=', PoGstApproval::STATUS_PENDING)->orderByDesc('a.decided_at');
         } else {
             // A cancelled PO no longer needs a decision.
-            $q->where('a.status', PoGstApproval::STATUS_PENDING)->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)->orderByDesc('a.requested_at');
+            /* COALESCE, not po.status: NULL <> 'cancelled' evaluates to NULL,
+               which is not true, so every SPI-raised row fell out here too. */
+            $q->where('a.status', PoGstApproval::STATUS_PENDING)
+                ->whereRaw('COALESCE(po.status, spi.status) <> ?', [PurchaseOrder::STATUS_CANCELLED])
+                ->orderByDesc('a.requested_at');
         }
 
         $page = $q->select(
-            'a.id', 'a.purchase_order_id', 'a.status', 'a.request_note', 'a.reason', 'a.requested_at', 'a.decided_at',
-            'po.code as po_code', 'po.po_date', 'po.status as po_status', 'po.currency_code', 'po.grand_total',
+            'a.id', 'a.purchase_order_id', 'a.supplier_invoice_id', 'a.status', 'a.request_note', 'a.reason', 'a.requested_at', 'a.decided_at',
+            /* Same keys whichever the subject, so the Inbox keeps one row shape;
+               po_code carries the invoice code for a Direct SPI. */
+            DB::raw("CASE WHEN a.supplier_invoice_id IS NOT NULL THEN 'supplier_invoice' ELSE 'purchase_order' END as subject_type"),
+            DB::raw('COALESCE(po.code, spi.code) as po_code'),
+            DB::raw('COALESCE(po.po_date, spi.invoice_date) as po_date'),
+            DB::raw('COALESCE(po.status, spi.status) as po_status'),
+            DB::raw('COALESCE(po.currency_code, spi.currency_code) as currency_code'),
+            DB::raw('COALESCE(po.grand_total, spi.grand_total) as grand_total'),
             'po.gst_last_filing_date', 'v.vendor_code as supplier_code',
             DB::raw('COALESCE(v.legal_name, v.company_name) as supplier_name'),
             'rq.name as requested_by_name', DB::raw('COALESCE(rg.name, rq.designation) as requested_by_designation'),
@@ -283,44 +319,35 @@ class PoGstApprovalController extends Controller
         if (!in_array((int) $user->id, [(int) $row->requested_to, (int) $row->requested_by], true)) {
             return $this->fail('This request was not sent to you.', 403);
         }
-        $po = PurchaseOrder::withoutGlobalScope('tenant')->withTrashed()->with('items')->findOrFail($row->purchase_order_id);
+        $sub = $this->subjectOf($row, withItems: true);
+        if (!$sub) return $this->fail('The document this approval was raised against no longer exists.', 404);
+        $isPo = $sub instanceof PurchaseOrder;
 
         /* Enough of the supplier to judge it here: who they are, what type of
            supplier they are, where they sit and how to reach them. The senior
            was otherwise deciding on a code and a name. */
-        $vendor = $po->vendor_id ? DB::table('vendors as v')
+        $vendor = $sub->vendor_id ? DB::table('vendors as v')
             ->leftJoin('vendor_addresses as ad', fn ($j) => $j->on('ad.vendor_id', '=', 'v.id')->where('ad.is_primary', true))
             ->leftJoin('master_risk_levels as r', 'r.id', '=', 'v.risk_level_id')
             ->leftJoin('master_vendor_types as vt', 'vt.id', '=', 'v.vendor_type_id')
             ->leftJoin('master_states as st', 'st.id', '=', 'ad.state_id')
-            ->where('v.id', $po->vendor_id)->where('v.client_id', $user->client_id)
+            ->where('v.id', $sub->vendor_id)->where('v.client_id', $user->client_id)
             ->first(['v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number', 'v.supplier_category',
                 'v.primary_email', 'v.website', 'v.status', 'v.gst_applicable',
                 'ad.state_code', 'ad.city', 'ad.address_line', 'ad.contact_name', 'ad.contact_no', 'ad.email as contact_email',
                 'st.name as state_name', 'vt.name as vendor_type', 'r.name as risk_level']) : null;
 
-        $refs = $this->refs($po);
-        $live = $this->svc->lineDetails($po->items);
-        $inter = $po->tax_mode === 'inter';
+        $refs = $this->subjectRefs($sub);
+        /* A PO line stores only product_id, so its labels need a lookup. An SPI
+           line already carries its description, HSN and UOM. */
+        $live  = $isPo ? $this->svc->lineDetails($sub->items) : [];
+        $inter = $isPo ? $sub->tax_mode === 'inter' : (float) $sub->total_igst > 0;
 
         return $this->ok([
             'request' => $this->shapeRow($row, $this->names([$row->requested_by, $row->requested_to])),
             'can_decide' => (int) $row->requested_to === (int) $user->id && $row->status === PoGstApproval::STATUS_PENDING
-                && !$po->trashed() && !$po->isCancelled(),
-            'po' => [
-                'id' => $po->id, 'code' => $po->code, 'po_date' => $po->po_date?->toDateString(), 'status' => $po->trashed() ? 'deleted' : $po->status,
-                'po_type' => $po->po_type, 'document_type' => $po->document_type, 'link_type' => $po->link_type,
-                'currency_code' => $po->currency_code, 'exchange_rate' => (float) $po->exchange_rate,
-                'mode_of_transport' => $po->mode_of_transport, 'expected_delivery_date' => $po->expected_delivery_date?->toDateString(),
-                'delivery_location' => $po->delivery_location, 'payment_type' => $po->payment_type,
-                'inco_term' => $po->inco_term, 'port_of_loading' => $po->port_of_loading, 'port_of_discharge' => $po->port_of_discharge,
-                'tax_mode' => $po->tax_mode, 'physical_inspection' => $po->physical_inspection,
-                'taxable_total' => (float) $po->taxable_total, 'total_cgst' => (float) $po->total_cgst,
-                'total_sgst' => (float) $po->total_sgst, 'total_igst' => (float) $po->total_igst,
-                'shipping_charges' => (float) $po->shipping_charges, 'packaging_charges' => (float) $po->packaging_charges,
-                'other_charges' => (float) $po->other_charges, 'grand_total' => (float) $po->grand_total,
-                'created_by_name' => DB::table('users')->where('id', $po->created_by)->value('name'),
-            ] + $refs,
+                && !$sub->trashed() && !$sub->isCancelled(),
+            'po' => $this->subjectBlock($sub) + $refs,
             'supplier' => $vendor ? [
                 'id' => $vendor->id,
                 'code' => $vendor->vendor_code, 'name' => $vendor->legal_name ?: $vendor->company_name,
@@ -333,20 +360,20 @@ class PoGstApprovalController extends Controller
                 'risk' => $vendor->risk_level, 'category' => $vendor->supplier_category,
             ] : null,
             // Read live, so the senior sees today's position, not the one at request time.
-            'gst' => $po->vendor_id ? $this->svc->gstGate($po->vendor_id, $po->document_type === 'international') + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS] : null,
-            'lines' => $po->items->map(fn ($it) => [
+            'gst' => $sub->vendor_id ? $this->svc->gstGate($sub->vendor_id, $sub->document_type === 'international') + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS] : null,
+            'lines' => $sub->items->map(fn ($it) => [
                 'line_no' => $it->line_no,
                 'product_code' => $live[$it->id]['product_code'] ?? null,
-                'product_name' => $live[$it->id]['product_name'] ?? null,
-                'hsn_code' => $live[$it->id]['hsn_code'] ?? null,
-                'uom' => $live[$it->id]['uom'] ?? null,
-                'quantity' => (float) $it->quantity, 'rate' => (float) $it->rate, 'gst_pct' => (float) $it->gst_pct,
+                'product_name' => $live[$it->id]['product_name'] ?? $it->description,
+                'hsn_code' => $live[$it->id]['hsn_code'] ?? $it->hsn_code,
+                'uom' => $live[$it->id]['uom'] ?? $it->uom,
+                'quantity' => (float) ($it->quantity ?? $it->qty_spi), 'rate' => (float) $it->rate, 'gst_pct' => (float) $it->gst_pct,
                 'taxable_amount' => (float) $it->taxable_amount,
                 'gst_amount' => round((float) $it->cgst_amount + (float) $it->sgst_amount + (float) $it->igst_amount, 2),
                 'line_total' => (float) $it->line_total,
             ])->values()->all(),
             'tax_label' => $inter ? 'IGST' : 'CGST + SGST',
-            'history' => $po->gstApprovals()->orderByDesc('id')->get()->map(fn ($h) => $this->shapeRow($h, $this->names([$h->requested_by, $h->requested_to])))->all(),
+            'history' => $sub->gstApprovals()->orderByDesc('id')->get()->map(fn ($h) => $this->shapeRow($h, $this->names([$h->requested_by, $h->requested_to])))->all(),
         ]);
     }
 
@@ -362,24 +389,54 @@ class PoGstApprovalController extends Controller
 
         if ((int) $row->requested_to !== (int) $user->id) return $this->fail('Only the senior this was sent to can decide it.', 403);
         if ($row->status !== PoGstApproval::STATUS_PENDING) return $this->fail('This request is already ' . $row->status . '.');
-        $po = PurchaseOrder::withoutGlobalScope('tenant')->find($row->purchase_order_id);
-        if (!$po || $po->isCancelled()) return $this->fail('This PO was cancelled or deleted — there is nothing to decide.');
+        $sub = $this->subjectOf($row);
+        if (!$sub || $sub->trashed() || $sub->isCancelled()) {
+            return $this->fail('This ' . ($row->purchase_order_id ? 'PO' : 'invoice') . ' was cancelled or deleted — there is nothing to decide.');
+        }
 
-        $this->inTransaction('record the decision', function () use ($row, $po, $user, $data) {
+        $this->inTransaction('record the decision', function () use ($row, $sub, $user, $data) {
             $row->update(['status' => $data['decision'], 'reason' => $data['reason'], 'decided_at' => now()]);
-            $po->update(['gst_approval_status' => $data['decision'], 'gst_approval_by' => $user->id,
-                'gst_approval_at' => now(), 'updated_by' => $user->id]);
+            /* A PO caches the verdict in its own gst_approval_* columns. An SPI
+               has none on purpose: the approval row is the record, read back
+               through gstApprovals() — one place to keep in step, not two. */
+            $sub->update($sub instanceof PurchaseOrder
+                ? ['gst_approval_status' => $data['decision'], 'gst_approval_by' => $user->id,
+                   'gst_approval_at' => now(), 'updated_by' => $user->id]
+                : ['updated_by' => $user->id]);
         });
 
         $ok = $data['decision'] === PoGstApproval::STATUS_APPROVED;
         $this->notify((int) $row->requested_by, [
             'kind'       => $ok ? 'approved' : 'rejected',
-            'subject'    => "{$po->code} GST approval " . ($ok ? 'approved' : 'rejected'),
-            'message'    => "{$user->name} " . ($ok ? 'approved' : 'rejected') . " {$po->code}: {$data['reason']}",
-            'action_url' => '/p2p/order',
+            'subject'    => "{$sub->code} GST approval " . ($ok ? 'approved' : 'rejected'),
+            'message'    => "{$user->name} " . ($ok ? 'approved' : 'rejected') . " {$sub->code}: {$data['reason']}",
+            'action_url' => $row->purchase_order_id ? '/p2p/order' : '/p2p/spi',
         ]);
 
         return $this->ok($this->shapeRow($row->fresh(), $this->names([$row->requested_by, $row->requested_to])));
+    }
+
+    /**
+     * GET /p2p/spi/{id}/gst-approvals — every approval raised against one
+     * invoice, newest first. The screen that raised it needs its own history;
+     * the Inbox list is the approver's view, keyed on who it was sent to.
+     */
+    public function indexForInvoice(Request $request, int $id): JsonResponse
+    {
+        $user = $this->tenantUser($request);
+        $spi = SupplierInvoice::withoutGlobalScope('tenant')
+            ->where('client_id', $user->client_id)->findOrFail($id);
+
+        $rows = $spi->gstApprovals()->orderByDesc('id')->get();
+        $names = $this->names($rows->flatMap(fn ($r) => [$r->requested_by, $r->requested_to])->all());
+
+        // The gate alongside, read live: the reason the approval exists at all.
+        return $this->ok($rows->map(fn ($r) => $this->shapeRow($r, $names))->all(), 200, [
+            'gst' => $spi->vendor_id
+                ? $this->svc->gstGate((int) $spi->vendor_id, $spi->document_type === 'international')
+                    + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS]
+                : null,
+        ]);
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -395,6 +452,8 @@ class PoGstApprovalController extends Controller
         return [
             'id'                => $r->id,
             'purchase_order_id' => $r->purchase_order_id,
+            'supplier_invoice_id' => $r->supplier_invoice_id,
+            'subject_type'      => $r->supplier_invoice_id ? 'supplier_invoice' : 'purchase_order',
             'status'            => $r->status,
             'requested_by'      => $r->requested_by,
             'requested_by_name' => $names[$r->requested_by] ?? null,
@@ -405,6 +464,65 @@ class PoGstApprovalController extends Controller
             'reason'            => $r->reason,
             'decided_at'        => $r->decided_at?->toIso8601String(),
         ];
+    }
+
+    /** The header the senior decides on — same keys for either subject. */
+    private function subjectBlock($sub): array
+    {
+        if ($sub instanceof PurchaseOrder) {
+            return [
+                'id' => $sub->id, 'code' => $sub->code, 'po_date' => $sub->po_date?->toDateString(), 'status' => $sub->trashed() ? 'deleted' : $sub->status,
+                'po_type' => $sub->po_type, 'document_type' => $sub->document_type, 'link_type' => $sub->link_type,
+                'currency_code' => $sub->currency_code, 'exchange_rate' => (float) $sub->exchange_rate,
+                'mode_of_transport' => $sub->mode_of_transport, 'expected_delivery_date' => $sub->expected_delivery_date?->toDateString(),
+                'delivery_location' => $sub->delivery_location, 'payment_type' => $sub->payment_type,
+                'inco_term' => $sub->inco_term, 'port_of_loading' => $sub->port_of_loading, 'port_of_discharge' => $sub->port_of_discharge,
+                'tax_mode' => $sub->tax_mode, 'physical_inspection' => $sub->physical_inspection,
+                'taxable_total' => (float) $sub->taxable_total, 'total_cgst' => (float) $sub->total_cgst,
+                'total_sgst' => (float) $sub->total_sgst, 'total_igst' => (float) $sub->total_igst,
+                'shipping_charges' => (float) $sub->shipping_charges, 'packaging_charges' => (float) $sub->packaging_charges,
+                'other_charges' => (float) $sub->other_charges, 'grand_total' => (float) $sub->grand_total,
+                'created_by_name' => DB::table('users')->where('id', $sub->created_by)->value('name'),
+                'subject_type' => 'purchase_order', 'supplier_invoice_id' => null,
+            ];
+        }
+
+        /* A Direct SPI has no order terms: transport, Incoterm, ports and the
+           extra charges all live on the PO. Null rather than absent, so the
+           screen keeps one shape and simply prints a dash. */
+        return [
+            'id' => $sub->id, 'code' => $sub->code, 'po_date' => $sub->invoice_date?->toDateString(), 'status' => $sub->trashed() ? 'deleted' : $sub->status,
+            'po_type' => null, 'document_type' => $sub->document_type, 'link_type' => null,
+            'currency_code' => $sub->currency_code, 'exchange_rate' => (float) $sub->exchange_rate,
+            'mode_of_transport' => null, 'expected_delivery_date' => null,
+            'delivery_location' => null, 'payment_type' => null,
+            'inco_term' => null, 'port_of_loading' => null, 'port_of_discharge' => null,
+            // Derived, not stored: the server never splits GST, the caller does.
+            'tax_mode' => (float) $sub->total_igst > 0 ? 'inter' : 'intra', 'physical_inspection' => null,
+            'taxable_total' => (float) $sub->taxable_total, 'total_cgst' => (float) $sub->total_cgst,
+            'total_sgst' => (float) $sub->total_sgst, 'total_igst' => (float) $sub->total_igst,
+            'shipping_charges' => null, 'packaging_charges' => null,
+            'other_charges' => null, 'grand_total' => (float) $sub->grand_total,
+            'created_by_name' => DB::table('users')->where('id', $sub->created_by)->value('name'),
+            'subject_type' => 'supplier_invoice', 'supplier_invoice_id' => $sub->id,
+            'invoice_no' => $sub->invoice_no, 'stage_completed' => $sub->stage_completed,
+        ];
+    }
+
+    /** Shipment / opportunity / procurement references, from either subject. */
+    private function subjectRefs($sub): array
+    {
+        if ($sub instanceof PurchaseOrder) {
+            return $this->refs($sub) + ['procurement_code' => $sub->procurement_request_code];
+        }
+
+        $sh = $sub->shipment_order_id
+            ? DB::table('shipment_orders')->where('id', $sub->shipment_order_id)->first(['shipment_code'])
+            : null;
+
+        return ['shipment_code' => $sh->shipment_code ?? null, 'pi_code' => null,
+            'customer_name' => null, 'opportunity_code' => null,
+            'procurement_code' => $sub->procurement_request_code];
     }
 
     private function refs(PurchaseOrder $po): array
