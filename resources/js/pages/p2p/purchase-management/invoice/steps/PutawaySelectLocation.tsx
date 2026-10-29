@@ -204,8 +204,9 @@ function WarehouseCard({ wh }: { wh: SelectLocationWarehouse | null }) {
       {(wh.typeLabel || wh.own !== false) && (
         <span className="spiwh-type"><IcoWh />{wh.typeLabel || 'Own Warehouse'}</span>
       )}
+      {/* "Sq Ft", as the design writes it — no stop after Sq. */}
       {wh.areaSqft ? (
-        <span className="spiwh-area"><b>{wh.areaSqft.toLocaleString('en-IN')}</b> Sq. Ft</span>
+        <span className="spiwh-area"><b>{wh.areaSqft.toLocaleString('en-IN')}</b> Sq Ft</span>
       ) : null}
     </div>
   );

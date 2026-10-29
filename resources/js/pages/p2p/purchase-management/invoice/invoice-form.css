@@ -1203,31 +1203,46 @@
 .vti-adv-line1 .vti-dw-field { padding: 10px 12px; }
 .vti-adv-line2 { display: flex; }
 .vti-adv-line2 .vti-dw-field { flex: 1; padding: 10px 12px; }
-/* Expiry Date and MFG Date are plain date inputs, so the six cells are one
-   control in one cell and share a height. A native date field carries its own
-   padding and a fixed intrinsic width, both of which have to go for it to sit
-   in .vti-dw-field the way a text input does. */
-.vti-dw-inp--date {
-  width: 100%; min-width: 0; padding: 0; margin: 0;
-  background: transparent; border: none; line-height: 1.3;
+/* This is the "stripped flat in here" the date cells in BoxDrawer refer to.
+   MasterDatePicker ships as a 38px bordered box with its own surface and
+   shadow, and .vti-dw-field is already that box — nested, the two date cells
+   stand half again as tall as the four text cells, and a grid row takes its
+   tallest cell, so the whole band grows and the dates read as a different
+   kind of control. Flattened to the input they stand in for: no border, no
+   surface, no padding, the same type as .vti-dw-inp, calendar at the right.
+   .vs3t does the same to the same control for the box editor's table.
+
+   These rules ARE the fix the component keeps the picker for — without them
+   the box-in-a-box is back. Do not delete them while MasterDatePicker is
+   used here. */
+.vti-adv-line1 .master-datepicker-wrap { width: 100%; }
+.vti-adv-line1 .master-datepicker-toggle,
+.vti-adv-line1 .master-datepicker-toggle:hover:not([aria-disabled="true"]),
+.vti-adv-line1 .master-datepicker-toggle.open {
+  height: auto; min-height: 0; padding: 0; gap: 6px;
+  border: none; border-radius: 0; background: transparent; box-shadow: none;
+}
+.vti-adv-line1 .master-datepicker-value,
+.vti-adv-line1 .master-datepicker-placeholder { line-height: 1.3; }
+.vti-adv-line1 .master-datepicker-value {
+  font-size: 13px; font-weight: 700; color: #0c4a6e;
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
 }
-/* The calendar button, tinted to the cell rather than the browser's grey. */
-.vti-dw-inp--date::-webkit-calendar-picker-indicator {
-  cursor: pointer; opacity: .55; margin: 0; padding: 0;
-  filter: invert(42%) sepia(72%) saturate(1352%) hue-rotate(156deg) brightness(93%) contrast(92%);
+/* Matched to .vti-dw-inp::placeholder, so an empty date reads as the same
+   kind of blank as an empty Serial No. */
+.vti-adv-line1 .master-datepicker-placeholder {
+  font-size: 12px; font-weight: 400; color: rgba(6,182,212,.4);
+  font-family: 'DM Sans', system-ui, sans-serif;
 }
-.vti-dw-inp--date::-webkit-calendar-picker-indicator:hover { opacity: 1; }
-/* An unfilled date shows mm/dd/yyyy, which is the browser's own text, not a
-   placeholder — so it is dimmed here to read like one beside an empty
-   Serial No. It returns to full strength once a date is in. */
-.vti-dw-inp--date:not(:focus):invalid,
-.vti-dw-inp--date:not(:focus):placeholder-shown { color: rgba(6,182,212,.55); }
-[data-bs-theme="dark"] .vti-dw-inp--date::-webkit-calendar-picker-indicator {
-  filter: invert(82%) sepia(36%) saturate(628%) hue-rotate(137deg) brightness(101%) contrast(93%);
+.vti-adv-line1 .master-datepicker-icon { margin-left: auto; color: #0891b2; font-size: 14px; }
+/* The shared stylesheet forces a dark surface and border on the toggle at the
+   same specificity as the rule above; this one outranks it. */
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-toggle {
+  background: transparent; border: none; box-shadow: none;
 }
-[data-bs-theme="dark"] .vti-dw-inp--date:not(:focus):invalid,
-[data-bs-theme="dark"] .vti-dw-inp--date:not(:focus):placeholder-shown { color: rgba(103,232,249,.5); }
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-value { color: #e2e8f0; }
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-placeholder { color: rgba(103,232,249,.45); }
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-icon { color: #67e8f9; }
 .vti-s3-content .vti-dw-adv-fields { padding: 14px 18px 18px; }
 .vti-s3-content .vti-dw-adv-body.is-open { max-height: 480px; }
 .vti-dw-row2 { display: none; }
@@ -2073,6 +2088,30 @@
 .vti-dw-strip .vti-dw-unit-opt { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; min-width: 34px; border: none; border-radius: 7px; font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: rgba(255,255,255,.82); background: transparent; cursor: pointer; transition: all .14s ease; }
 .vti-dw-strip .vti-dw-unit-opt:hover:not(.is-active) { background: rgba(255,255,255,.16); color: #fff; }
 .vti-dw-strip .vti-dw-unit-opt.is-active { background: #fff; color: #0e7490; box-shadow: 0 1px 5px rgba(2,40,54,.25); }
+
+/* ── Scroll cost: the strip's blurs do nothing but cost ─────────────────────
+ * Five controls on this strip carry a backdrop-filter — Upload, Camera,
+ * Sticker, the CM/M toggle and the quantity pill. The strip is pinned at the
+ * top of the dialog while the form scrolls underneath it, which is the one
+ * case this stylesheet already calls the most expensive thing a scrolling
+ * surface can carry: every frame the compositor re-reads the pixels behind
+ * each of them and re-blurs them, and those pixels are moving, so none of it
+ * can be cached. Five of them, every frame.
+ *
+ * And here it buys nothing. What sits behind these controls is the strip's
+ * own teal gradient, which is opaque — blurring a smooth gradient returns
+ * the same gradient. The white tints, borders and shadows stay exactly as
+ * they are; only the sampling goes.
+ *
+ * Declared after every copy of the rules above — they appear twice in this
+ * file — so it holds whichever copy wins. */
+.vti-dw-strip .vti-dw-icon-btn,
+.vti-dw-strip .vti-dw-sticker-btn,
+.vti-dw-strip .vti-dw-unit-toggle,
+.vti-dw-strip .vti-dw-strip-qty {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
 /* ── Editable per-box quantity ──────────────────────────────────────────────
    The strip's QUANTITY becomes a field on a split, so units can be moved
    between cartons as they are filled.
@@ -3319,6 +3358,8 @@
 .cpd-scroll--rows {
   max-height: 500px;
   overflow-y: auto;
+  /* One gesture moves one surface — see the note on .vti-wrap--rows. */
+  overscroll-behavior: contain;
   /* The vertical bar was drawn OVER the table's right edge, so it crossed the
      sticky header band and left a notch in it where the teal stopped short.
      A stable gutter reserves the 8px outside the content box instead, so the
@@ -3397,6 +3438,12 @@
 .vti-wrap--rows {
   max-height: 500px;
   overflow-y: auto;
+  /* One gesture moves one surface. Without containment a wheel over this
+     table ran it to its end and then carried straight on into the form body
+     behind it, so a single scroll jumped two surfaces and the page appeared
+     to stutter past what you were reading. This is the same cure the Stage 04
+     panes carry; Stage 02's table has it too. */
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #bfe3ec transparent;
 }
@@ -6027,6 +6074,23 @@
 .s4-root .s4-panel__toggle,
 .s4-root #s4PaneScroll .s4-pane-footer,
 .s4-root .s4h-route { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Three more, found by listing every live blur in this file against what it
+   sits on. All three are white translucent chips on an OPAQUE gradient, so
+   the blur samples a smooth gradient and hands back the same gradient —
+   nothing to see, and the per-frame cost is paid anyway:
+ *
+ *   .s4pkc__stk   the Sticker button on every box card in the Pick-a-Box
+ *                 list — one blur layer per card, in the pane with the most
+ *                 scroll travel on this stage
+ *   .s4bj-step    the three Review / Select / Confirm cards, pinned at the
+ *                 top of the right pane while that pane scrolls
+ *   .s4rv-hk      the key chips on the review hero
+ *
+ * The tints, borders and shadows are untouched; only the sampling goes. */
+.s4-root .s4pkc__stk,
+.s4-root .s4bj-step,
+.s4-root .s4rv-hk { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 
 .s4-root .s4-grp-hdr { background: #F7F9FC; }
 .s4-root .s4-grp-hdr--dispatch { background: linear-gradient(100deg,#e8e9fb,#f3f5fb); }

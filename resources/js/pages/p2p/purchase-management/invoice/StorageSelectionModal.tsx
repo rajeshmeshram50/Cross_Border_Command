@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
+import Tooltip from '../../../../components/ui/Tooltip';
 import {
   IcoCase, IcoCheck, IcoChevronL, IcoChevronR, IcoPin, IcoTag, IcoWarehouse, IcoX,
 } from '../../icons';
@@ -121,9 +122,20 @@ export default function StorageSelectionModal({
             <div className="smod-head-sub">Choose where this invoice&rsquo;s goods will be stored</div>
           </div>
           <div className="smod-head-right">
-            <div className="smod-head-badge" title={referenceKind === 'po' ? 'PO' : 'Supplier'}>
-              {reference}
-            </div>
+            {/* The app's Tooltip, not a native `title`. The chip ellipsises,
+                so the hover is the only place the rest of the value exists —
+                and a native title waits about a second, renders in the OS's
+                own style, and is invisible on touch. This one matches every
+                other tooltip in the app and appears straight away. */}
+            <Tooltip
+              label={`${referenceKind === 'po' ? 'PO' : 'Supplier'}: ${reference}`}
+              /* Above the dialog. The pill is portalled to <body> and defaults
+                 to z-index 260000, while this modal's backdrop sits at
+                 10000021 — so it was rendering on every hover, just beneath
+                 the dialog it belongs to. */
+              zIndex={10000050}>
+              <div className="smod-head-badge">{reference}</div>
+            </Tooltip>
             <button type="button" className="smod-close" onClick={onClose} aria-label="Close"
               disabled={leaving} title={leaving ? 'Opening the invoice — please wait' : undefined}>
               <IcoX size={13} stroke={2.6} />
@@ -318,6 +330,11 @@ export default function StorageSelectionModal({
  * No size prop on the icon: `.smod-confirm-ico svg` fixes it at 16px, the same
  * way step 2's tile sizes its own glyph.
  */
+/* A supplier name is free text and some run to a couple of hundred
+   characters with nothing to break on, which ran straight out of the card
+   and past the dialog's edge. Cut at 30, with the whole value on hover. */
+const CONFIRM_VAL_MAX = 30;
+
 function ConfirmRow({
   icon, label, value, sub,
 }: {
@@ -326,12 +343,23 @@ function ConfirmRow({
   value: string;
   sub?: string;
 }) {
+  const long = value.length > CONFIRM_VAL_MAX;
+  const val = (
+    <div className="smod-confirm-val">
+      {long ? `${value.slice(0, CONFIRM_VAL_MAX).trimEnd()}…` : value}
+    </div>
+  );
   return (
     <div className="smod-confirm-row">
       <div className="smod-confirm-ico">{icon}</div>
       <div className="smod-confirm-main">
         <div className="smod-confirm-label">{label}</div>
-        <div className="smod-confirm-val">{value}</div>
+        {/* The app's Tooltip and the same z-index the header badge needs:
+            the pill is portalled to <body> at 260000 while this dialog sits
+            at 10000021, so without it the hover renders under the dialog it
+            belongs to. Only wrapped when there is something hidden to show —
+            a tooltip repeating what is already on screen is just noise. */}
+        {long ? <Tooltip label={value} zIndex={10000050}>{val}</Tooltip> : val}
         {sub && <div className="smod-confirm-sub">{sub}</div>}
       </div>
     </div>

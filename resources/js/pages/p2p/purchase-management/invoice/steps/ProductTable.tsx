@@ -104,6 +104,24 @@ export default function ProductTable({
     return () => { live = false; };
   }, [readOnly]);
 
+  /* "P-01 — Cooking Oil", not "P-01 — P-01 — Cooking Oil".
+
+     Some products are named with their own code in the master — the name is
+     literally "P-01 – Cooking Oil" — and prefixing the code to that printed
+     it twice in this select, with two different dashes, while the PI column
+     beside it showed the name once. The code is dropped from the front of the
+     name when it is already there; any of the dashes people type between the
+     two is accepted, and a name that merely starts with the same letters is
+     left alone because the separator has to be present. */
+  const optionLabel = (code: string, name: string) => {
+    const bare = String(name ?? '').trim();
+    const c = String(code ?? '').trim();
+    const stripped = c
+      ? bare.replace(new RegExp(`^${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[—–-]\\s*`, 'i'), '')
+      : bare;
+    return `${c} — ${truncate(stripped || bare, MATCH_NAME_MAX)}`;
+  };
+
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
     for (const l of lines) {
@@ -117,7 +135,7 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${l.code} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
+          label: optionLabel(l.code, l.poName),
           name: l.poName,
           productId: l.productId,
         });
@@ -133,7 +151,7 @@ export default function ProductTable({
       if (existing) { existing.master = p; continue; }
       seen.set(value, {
         value,
-        label: `${p.code} — ${truncate(p.name, MATCH_NAME_MAX)}`,
+        label: optionLabel(p.code, p.name),
         name: p.name,
         productId: p.id,
         master: p,
