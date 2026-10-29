@@ -161,10 +161,10 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
     const put = (row: Shelf) => setShelves(ss => ss.map(x => (x.apiId === s.apiId ? row : x)));
     setBusyIds(b => new Set(b).add(s.apiId));
     put({ ...s, status: activate ? 'active' : 'inactive' });
+    if (activate) toast.success(`${s.id} marked Active`);
+    else toast.warning(`${s.id} marked Inactive`, 'Its capacity leaves the rack totals above.');
     try {
       put(await shelfApi.setStatus(s.apiId, activate));
-      if (activate) toast.success(`${s.id} marked Active`);
-      else toast.warning(`${s.id} marked Inactive`, 'Its capacity leaves the rack totals above.');
     } catch (e) {
       put(s);
       toast.error('Could not change the status', e instanceof InventoryApiError ? e.message : 'Please try again.');

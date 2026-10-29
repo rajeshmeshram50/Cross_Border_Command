@@ -104,22 +104,30 @@ export default function ProductFlagMaster() {
   const rowCount = list.rows.length;
   useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
 
+  /* The switch and the toast go up on the click, not after the PUT — on live
+     the round-trip took 2–3 s before anything showed. A refused save flips
+     the row back and the error toast follows; the reload then syncs the tab
+     counts. */
+  const patchRows = list.patch;
   const [busyId, setBusyId] = useState<number | null>(null);
   const toggle = useCallback(async (f: ProductFlag) => {
     if (busyId) return;
     const activate = f.status !== 'active';
+    const put = (row: ProductFlag) => patchRows(rs => rs.map(r => (r.apiId === f.apiId ? row : r)));
     setBusyId(f.apiId);
+    put({ ...f, status: activate ? 'active' : 'inactive' });
+    if (activate) toast.success(`${f.id} marked Active`);
+    else toast.warning(`${f.id} marked Inactive`, 'It stays in the list, dimmed, and is no longer offered when packing boxes.');
     try {
       await productFlagApi.setStatus(f.apiId, activate);
-      if (activate) toast.success(`${f.id} marked Active`);
-      else toast.warning(`${f.id} marked Inactive`, 'It stays in the list, dimmed, and is no longer offered when packing boxes.');
       reload();
     } catch (e) {
+      put(f);
       toast.error('Could not change the status', e instanceof ProductFlagApiError ? e.message : 'Please try again.');
     } finally {
       setBusyId(null);
     }
-  }, [busyId, reload, toast]);
+  }, [busyId, patchRows, reload, toast]);
 
   const [formFor, setFormFor] = useState<ProductFlag | 'new' | null>(null);
 
