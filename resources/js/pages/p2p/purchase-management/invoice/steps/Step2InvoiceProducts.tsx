@@ -172,7 +172,15 @@ export default function Step2InvoiceProducts({
             </div>
           )}
           {/* Under the table, at the end of the row of controls it belongs to
-              — it undoes the Action column, so it sits on that side. */}
+              — it undoes the Action column, so it sits on that side.
+
+              Offered with a shipment too. It was briefly hidden there on the
+              reasoning that the lines are the PI's and nothing hand-added has
+              anything to match against — but the PI's products can fail to
+              load, and then the table is empty AND there is no way to put a
+              line on it, which leaves the invoice unfinishable. A product the
+              PI does not contain is a question for the match to raise, not a
+              reason to take away the only way to enter one. */}
           {onAddLine && !readOnly && (
             <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
               <IcoPlus /> Add Product

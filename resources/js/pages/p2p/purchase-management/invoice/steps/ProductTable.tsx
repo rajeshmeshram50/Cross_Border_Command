@@ -6,7 +6,7 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, withoutCodePrefix, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
 import { poLookupApi } from '../../order/api/po-api';
 import { toProduct, type ProductOpt } from '../../order/create-po/use-po-lookups';
@@ -133,7 +133,12 @@ export default function ProductTable({
       if (existing) { existing.master = p; continue; }
       seen.set(value, {
         value,
-        label: `${formatProductCode(p.code)} — ${truncate(p.name, MATCH_NAME_MAX)}`,
+        /* The lines above arrive with the code already stripped from their
+           name (withoutCodePrefix, where they are built from the PI/PO). The
+           master's own names have not been through that, and some of them do
+           carry their code — "P-01 – Cooking Oil" — which would print it
+           twice here and make the two halves of this one dropdown disagree. */
+        label: `${formatProductCode(p.code)} — ${truncate(withoutCodePrefix(p.name, p.code), MATCH_NAME_MAX)}`,
         name: p.name,
         productId: p.id,
         master: p,
