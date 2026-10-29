@@ -51,9 +51,10 @@ const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
 export default function Step1SupplierDetails({
   draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved,
-  poId = null, approval = null, onApprovalSent, onBusy, spiId = null,
+  poId = null, approval = null, onApprovalSent, onBusy, spiId = null, onRequestApproval,
 }: {
   spiId?: number | null;
+  onRequestApproval?: (body: { requested_to?: number; note?: string }) => Promise<unknown>;
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
   /* The purchase order this invoice bills, and the GST approval standing on
      it. The senior-approval request is raised against that order, exactly as
@@ -203,7 +204,9 @@ export default function Step1SupplierDetails({
     set({
       vendorId: id,
       ...draftFromSupplier(fresh),
-      ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
+      ...(gst ? draftFromScrutiny(gst)
+        : scrutinyRows ? { scrutinyDate: '', filingDate: '', gstNumber: '', gstStatus: '', remarks: '' }
+        : { scrutinyDate, filingDate }),
     });
     setVendorId(id);
     setVault(vaultTargetOf(fresh));
@@ -400,7 +403,7 @@ export default function Step1SupplierDetails({
           poId={poId}
           approval={approval}
           onSent={onApprovalSent}
-          onRequest={direct && spiId ? body => spiApi.gstApprovalRequest(spiId, body) : undefined}
+          onRequest={direct && spiId ? (onRequestApproval ?? (body => spiApi.gstApprovalRequest(spiId, body))) : undefined}
           /* Same checks, named for what the reader is actually looking at —
              the dialog otherwise says "this PO cannot proceed" on an invoice
              screen, which reads as the wrong dialog having opened. */

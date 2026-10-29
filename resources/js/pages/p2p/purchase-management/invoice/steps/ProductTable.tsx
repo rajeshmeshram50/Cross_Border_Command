@@ -109,7 +109,8 @@ export default function ProductTable({
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
     for (const l of lines) {
-      if (l.productId == null || (!l.code && !l.poName)) continue;
+      const lineName = l.poName || l.spiName;
+      if (l.productId == null || (!l.code && !lineName)) continue;
       const value = String(l.productId);
       /* The label is cut at the same 30 the PI column beside it uses. The
          select is a fixed-width control in a sticky column, so a long name
@@ -119,8 +120,8 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${formatProductCode(l.code)} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
-          name: l.poName,
+          label: `${formatProductCode(l.code)} — ${truncate(lineName, MATCH_NAME_MAX)}`,
+          name: lineName,
           productId: l.productId,
         });
       }
@@ -165,6 +166,10 @@ export default function ProductTable({
       });
     });
   }, [master, lines, onChange]);
+  const duplicateOf = useCallback(
+    (productId: number, at: number) => lines.some((l, j) => j !== at && l.productId === productId),
+    [lines],
+  );
   const exportSpi = taxMode === 'export';
   const inter = taxMode === 'inter' || exportSpi;
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -341,6 +346,7 @@ export default function ProductTable({
               <Row
                 key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
+                duplicateOf={twoWay ? duplicateOf : undefined}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
                 onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
@@ -382,8 +388,9 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  matched, onRemove, showAction,
+  matched, onRemove, showAction, duplicateOf,
 }: {
+  duplicateOf?: (productId: number, index: number) => boolean;
   line: ProductLine;
   index: number;
   /** Matches the header: no purchase order columns. */
@@ -403,6 +410,7 @@ const Row = memo(function Row({
   onRemove?: (index: number) => void;
   showAction: boolean;
 }) {
+  const rowToast = useToast();
   const t = lineTotals(line, taxMode, twoWay);
   const inter = taxMode === 'inter' || taxMode === 'export';
 
@@ -435,6 +443,10 @@ const Row = memo(function Row({
               onChange={v => {
                 const pick = catalogue.find(c => c.value === v);
                 if (!pick) return;
+                if (pick.productId != null && duplicateOf?.(pick.productId, index)) {
+                  rowToast.warning('Product already added', `${pick.label} is already on this invoice — change its quantity instead.`);
+                  return;
+                }
                 /* A line that came from the PI already carries its code, HSN,
                    GST and description from that document, and they are what
                    the match is being made against — picking a product here
