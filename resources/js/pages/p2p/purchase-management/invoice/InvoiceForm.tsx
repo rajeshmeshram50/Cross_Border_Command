@@ -18,7 +18,6 @@ import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
 import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
-/** The latest senior-approval request on a purchase order, as the PO sends it. */
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -38,10 +37,6 @@ const STAGES = [
   { title: 'Temporary Putaway Allocation', desc: 'Assign a temporary putaway location for each product' },
 ] as const;
 
-/* A Direct SPI has no purchase order and no GRN behind it, so its second
-   stage matches two documents rather than three: the shipment's proforma
-   invoice against the supplier's own invoice. The rail has to say which match
-   is being made, because the columns below it differ. */
 const DIRECT_STAGES: Record<number, { title: string; desc: string }> = {
   0: { title: 'Supplier Details', desc: 'Confirm the supplier this invoice is issued by' },
   1: {
@@ -50,10 +45,6 @@ const DIRECT_STAGES: Record<number, { title: string; desc: string }> = {
   },
 };
 
-/* An "All Other's" Direct SPI belongs to no shipment, so there is no proforma
-   invoice on the other side and nothing is being matched. Calling the stage a
-   2-Way Match and telling the user to match against "the PI of the shipment"
-   names a document this invoice has no connection to. */
 const UNMATCHED_STAGES: Record<number, { title: string; desc: string }> = {
   0: DIRECT_STAGES[0],
   1: {
@@ -73,9 +64,7 @@ export interface InvoiceFormInput {
   supplier: string;
   storage: StorageChoice;
   invoiceNo?: string;
-  /* Set for a Direct SPI, and only for one: its presence is what says this
-     invoice was never meant to have a purchase order behind it. */
-  direct?: { shipmentId?: string; procurementCode?: string; supplierCode?: string };
+  direct?: { shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string };
 }
 
 const BOX_FIELD_LABEL: Record<string, string> = {
@@ -94,60 +83,25 @@ export default function InvoiceForm({
   invoiceNo: string;
   onClose: () => void;
 }) {
-  /* A Direct SPI starts with NO supplier in the draft, even though the setup
-     named one: that name is a label, not a record, and the save is keyed on a
-     vendor id. Stage 1 is where the supplier is confirmed against the master,
-     which is what the design asks for — seeding the name here would lock that
-     field on a supplier the server has never heard of. The header pill still
-     shows the chosen name until a real one replaces it. */
   const { draft, set } = useInvoiceDraft({
     supplier: input.direct ? '' : input.supplier, poNo: input.poNo,
     shipmentId: input.direct?.shipmentId, procurementCode: input.direct?.procurementCode,
+    piNumber: input.direct?.shipmentPi,
   });
   const toast = useToast();
   const confirm = useConfirm();
 
-  /* The supplier this invoice is actually issued to: what the form opened
-     with, and after Stage 01 is saved, what was saved.
-     The dropdown writes straight to the draft, but nothing reaches the server
-     until Save & Next creates the SPI — so a supplier swapped and then closed
-     is a change that never happened, and the form should say so before the
-     window goes. A ref rather than state: it is read when Close is pressed,
-     never rendered, and making it state would re-render the whole wizard
-     every time a supplier lands. */
   const mappedSupplier = useRef(input.direct?.supplierCode ?? '');
 
-  /* No purchase order behind this invoice, now or ever: either it was set up
-     as a Direct SPI in this session, or it was saved as one and has no PO to
-     come back to. Several parts of the form read differently for it. */
-  /* A Direct SPI reads its supplier out of the master before step 1 can show
-     anything, which is the same kind of wait a With-PO invoice has while its
-     purchase order loads — so it gets the same answer: the full StageSkeleton,
-     not a few shimmer bars inside otherwise-real cards.
-     Step 1 stays mounted behind it (hidden, the way `saving` already does it)
-     because the lookup lives in that component's effect — unmount it and the
-     thing the skeleton is waiting for never runs. */
   const [directSupLoading, setDirectSupLoading] = useState(!!input.direct?.supplierCode);
 
-  /* The same wait, later: a supplier CHANGED in step 01 rather than resolved
-     when it opened. Everything on that step is the supplier master's to
-     state, so until the new record lands the step is showing the previous
-     company's legal name, address, contact and GST under the new name — the
-     wrong company's details presented as this one's. The skeleton covers it
-     for exactly as long as that is true. */
   const [supplierBusy, setSupplierBusy] = useState(false);
 
-  /* There is a PI behind this invoice only when it belongs to a shipment. A
-     With-PO invoice always has one; an "All Other's" Direct SPI never does. */
   const matchedToPi = !input.direct || !!draft.shipmentId;
 
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
 
-  /* The senior-approval request on the purchase order this invoice bills.
-     Re-read after one is sent, so the notice switches to "awaiting approval"
-     without reopening the invoice — the PO form does the same thing with the
-     same field. */
   const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
   const reloadApproval = useCallback(() => {
     if (!input.poId) return;
@@ -158,14 +112,6 @@ export default function InvoiceForm({
 
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
-  /* An "All Other's" Direct SPI starts with an EMPTY table. There is no
-     shipment, so there is no proforma invoice to copy lines from, and nothing
-     else on this screen knows what the supplier billed for — the products are
-     typed in here or they do not exist. Seeding the usual lines would have
-     put products on the invoice that no document ever put there, and the
-     totals under them would have been real money against a guess.
-     A saved invoice (spiId) and a With-PO one both load their own lines, so
-     they start empty for a different reason and already did. */
   const [lines, setLines] = useState<ProductLine[]>(
     input.poId || input.spiId || (input.direct && !input.direct.shipmentId) ? [] : PRODUCT_LINES,
   );
@@ -218,11 +164,6 @@ export default function InvoiceForm({
           setStage(spiViewOnlyReason(existing.status) ? 0 : resumeAt);
         }
         if (!poId) {
-          /* A Direct SPI has no purchase order by definition, so saying so is
-             not a failure — it is the type. That holds on the way in, where
-             `direct` carries the setup, and on the way back to a saved one,
-             which is recognised by having been stored without a purchase
-             order. Anything else reaching here really did lose its PO. */
           const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
           setNoPo(standalone);
           if (!standalone) setPoError('This invoice is not linked to a purchase order.');
@@ -241,13 +182,7 @@ export default function InvoiceForm({
         const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
         if (!live) return;
         set(draftFromPo(po, sup));
-        /* The GST approval standing on this order, for step 01's notice. The
-           PO form reads the same field off the same call. */
         setGstApproval(po.gst_approval ?? null);
-        /* The order's own supplier, arriving after the form opened. It is the
-           one this invoice is issued to until somebody picks another, so it
-           is the baseline the Close check compares against — without this,
-           a With-PO invoice would warn about a supplier nobody chose. */
         mappedSupplier.current = sup?.code ?? '';
 
         let rows = linesFromPo(po.items ?? [], open);
@@ -270,9 +205,6 @@ export default function InvoiceForm({
           setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
         }
         setLines(rows);
-        /* These rows are the invoice as it now stands. Anything removed
-           before them belonged to a different set of lines, and restoring it
-           into these would put back a product this invoice never had. */
         setRemovedLines([]);
 
         if (po.vendor_id) {
@@ -302,33 +234,18 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [warehouseId]);
 
-  /* The design's Action column. A line the supplier did not actually invoice
-     has to be removable here — it comes in from the PI, and without this the
-     only way to drop one was to leave it at zero, which still carries it into
-     the boxes and the put-away. */
-  /* What came off, so the banner under the table can put it back.
-     `at` is where the line sat: a restore returns it to its place in the
-     match rather than appending it to the bottom, which would renumber the
-     table against the PI it is being read beside. */
   const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
 
   const removeLine = useCallback((index: number) => {
     const line = lines[index];
     if (!line) return;
     setLines(ls => ls.filter((_, i) => i !== index));
-    /* Only kept where it means something. With no PI behind the invoice the
-       removed-products bar is not shown, so holding the lines would be a list
-       nothing can ever read or clear — it would simply grow for the life of
-       the form. */
     if (matchedToPi) setRemovedLines(r => [...r, { at: index, line }]);
   }, [lines, matchedToPi]);
 
   const restoreLines = useCallback(() => {
     setLines(ls => {
       const out = [...ls];
-      /* Lowest position first, so each line going back makes room for the
-         next. In removal order, a line taken from row 1 would be reinserted
-         after one taken from row 4 and both would land in the wrong place. */
       for (const r of [...removedLines].sort((a, b) => a.at - b.at)) {
         out.splice(Math.min(r.at, out.length), 0, r.line);
       }
@@ -341,9 +258,6 @@ export default function InvoiceForm({
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }, []);
 
-  /* The way back from the Action column above. The new row is empty, so the
-     product is chosen from the SPI column's picker the same way a mapped one
-     is changed — nothing about adding a line is a different kind of editing. */
   const addLine = useCallback(() => {
     setLines(ls => [...ls, blankLine()]);
   }, []);
@@ -353,10 +267,6 @@ export default function InvoiceForm({
 
   useScrollLock(true, '.spi-dt-overlay');
 
-  /* A save in flight blocks the jump too. .spi-dt-body carries inert while
-     saving, but the step rail and Close live in the HEADER above it, so
-     both stayed live: you could change stage, or shut the wizard, on top of
-     a request that was still writing the stage you just left. */
   const goTo = (i: number) => { if (saving) return; if (i <= reached) setStage(i); };
   const advance = () => {
     const next = stage + 1;
@@ -367,10 +277,6 @@ export default function InvoiceForm({
   const saveStage1 = async () => {
     if (spiId) { advance(); return; }
     if (!draft.vendorId) {
-      /* Which supplier is missing, and from where: a Direct SPI is waiting
-         for one to be picked, a With-PO invoice for one its order never
-         carried. The same wording for both sent people looking at the wrong
-         screen. */
       if (isDirect) {
         toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by before continuing.');
       } else {
@@ -388,7 +294,6 @@ export default function InvoiceForm({
       });
       setSpiId(spi.id);
       setSpiCode(spi.code);
-      /* Now it IS mapped, so closing after this is not losing anything. */
       mappedSupplier.current = draft.supplierCode;
       toast.success(`${spi.code} created`, 'Saved as a draft — continue with the invoice details.');
       advance();
@@ -437,10 +342,6 @@ export default function InvoiceForm({
         ? { ...l, spiItemId: saved[n++]?.id }
         : { ...l, spiItemId: undefined }));
       setLines(withIds);
-      /* Saved without them, so they are no longer "removed from this
-         invoice" — they are simply not on it. Leaving the banner up would
-         offer to restore a line into an invoice the server has already
-         written without it. */
       setRemovedLines([]);
       setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
       setFiles({});
@@ -626,7 +527,6 @@ export default function InvoiceForm({
     ? (putaway && putaway.total > 0
         ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
         : 'Put away every box first')
-    /* A disabled button that will not say why is the worst of both. */
     : stage === 1 && lines.length === 0
       ? 'Add at least one product before continuing'
       : undefined;
@@ -658,42 +558,17 @@ export default function InvoiceForm({
     }
   };
 
-  /* Step 01 will not hand over a supplier that is not clear to transact with.
-   *
-   * The three the supplier's own record can fail on: scrutiny out of date,
-   * the last GST return out of date, and case-to-case paperwork from earlier
-   * orders still unsigned. None of them is this invoice's doing and none can
-   * be fixed inside it — they are fixed on the supplier, which is why the
-   * banner above sends you there rather than offering to override.
-   *
-   * At step 01 rather than at submit: every later step is work done against
-   * this supplier, and work done against a supplier who turns out to be
-   * blocked is work thrown away.
-   *
-   * Returns the reason, not a boolean — the footer puts it on the button's
-   * hover, so a disabled control can say why. */
   const stage1Gate = useMemo(() => {
-    /* Direct SPI only. An invoice raised against a purchase order is billing
-       an order that already passed this check at its own submit — blocking it
-       here would stop an invoice for a supplier the PO was already cleared,
-       or senior-approved, against, and there is no second decision to make. */
     if (!isDirect || stage !== 0 || viewOnly || !draft.supplier) return null;
     const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
     if (gst.tone === 'stop') {
       return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
     }
-    /* The purchase order's own rule: an approved request clears the finding,
-       a pending one still holds. A stale SCRUTINY is never approved away —
-       the dialog offers no request for it — so it is checked before this. */
     if (gst.tone === 'warn' && gstApproval?.status !== 'approved') {
       return gstApproval?.status === 'pending'
         ? `Waiting for ${gstApproval.requested_to_name ?? 'the senior'} to approve ${draft.supplier}'s overdue GST return.`
         : `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
     }
-    /* Nothing excluded. On a purchase order the PO being raised is left out
-       of this count so it cannot block itself; an invoice raises no
-       case-to-case paperwork of its own, so everything outstanding against
-       the supplier counts. */
     const ctc = pendingCaseToCase(draft.vault ?? null, null);
     if (ctc.length) {
       return `${ctc.length} case-to-case document${ctc.length === 1 ? '' : 's'} for ${draft.supplier} `
@@ -702,36 +577,14 @@ export default function InvoiceForm({
     return null;
   }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
 
-  /* Stage 2 can now be left empty — on an All Other's Direct SPI it STARTS
-     empty — and an invoice with no products carries nothing into the boxes
-     or the put-away that come after it. The two stages behind it would have
-     been built from an empty list and read as finished. */
   const noProducts = stage === 1 && lines.length === 0;
   const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || !!stage1Gate || noProducts || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
-  /* Close, with the one thing worth stopping for.
-   *
-   * Picking a supplier in step 01 changes nothing on the server: the SPI is
-   * created by Save & Next, so a supplier chosen and then closed is simply
-   * discarded, with no trace that it was ever chosen. That is the one edit in
-   * this step that silently comes to nothing, so it is the one Close asks
-   * about. Everything else here either is already saved or is visibly still a
-   * draft.
-   *
-   * Only before the SPI exists and only on step 01: afterwards the supplier
-   * is mapped, and the question would be about nothing. */
   const closeForm = async () => {
     const picked = draft.supplierCode.trim();
     if (stage === 0 && !viewOnly && picked && picked !== mappedSupplier.current) {
       const supplierLine = draft.supplier ? `${picked} — ${draft.supplier}` : picked;
       const ok = await confirm({
         title: 'Close without mapping this supplier?',
-        /* The supplier on its own line, clipped to one.
-           A supplier's name is whatever the master holds, and the master holds
-           some long ones — set inside the sentence, a ninety-character name
-           wrapped into a block of text with the question buried above it, and
-           the two things the reader needs (WHICH supplier, and what happens if
-           they press Close) could not be told apart. The full name is on the
-           hover, so nothing is lost by clipping it. */
         message: <>
           <span
             title={supplierLine}
@@ -752,32 +605,16 @@ export default function InvoiceForm({
     onClose();
   };
 
-  /* Only reachable from step 02 onwards now — the button is not drawn on 01,
-     so the close branch it used to carry has nothing left to call it. */
   const goBack = () => setStage(stage - 1);
 
-  /* Step 01 is waiting on a supplier record — resolved as the form opened, or
-     changed since. Either way the step has nothing true to show, so the
-     skeleton stands in front of it. */
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
   const isLast = stage === STAGES.length - 1;
-  /* One stage, named for the invoice it belongs to. Stages the two types
-     share fall through to the common wording rather than being repeated. */
   const stageLabel = (i: number) =>
     (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i])) || STAGES[i];
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form spi-invform">
-      {/* One veil over the whole wizard while a save is in flight.
-          Guarding each control one at a time is a losing game - the body had
-          inert, but the step rail, Close and the footer each sat outside it
-          and had to be remembered separately, and the next control added
-          would have been forgotten too. A fixed sheet over the viewport
-          cannot be stepped around: no field edit, no tab change, no stage
-          jump, no second submit, whatever is added to the page later. It
-          also IS the loader, so the page says what it is doing in the one
-          place the user is looking. */}
       {saving && (
         <div className="spi-dt-veil" role="status" aria-live="polite">
           <span className="spi-dt-veil__spin" aria-hidden />
@@ -801,22 +638,9 @@ export default function InvoiceForm({
               </div>
             </div>
 
-            {/* What this invoice answers to, named left to right. A With-PO
-                invoice answers to its purchase order; a Direct SPI has none,
-                so it names the shipment it belongs to and the procurement
-                case it is raised under instead — two references in the one
-                slot, which is why the tints alternate from here on. */}
             <div className="spi-dt-pills">
               <HeadPill icon={<IcoRefLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
               <span className="spi-dt-dots">⋮</span>
-              {/* The shipment pill is dropped outright on an "All Other's"
-                  Direct SPI rather than shown reading "All Other's" — the
-                  header names what this invoice answers to, and a pill whose
-                  value is "there isn't one" is not a reference, it is a line
-                  of text that looks like a shipment at a glance.
-                  Built as a list because the tints alternate: hard-coded
-                  `alt` flags would have inverted every pill after the gap the
-                  moment one was removed. */}
               {isDirect ? (() => {
                 const pills = [
                   draft.shipmentId
@@ -901,16 +725,10 @@ export default function InvoiceForm({
                 )}
                 {stage === 0 && (
                   <Step1SupplierDetails draft={draft} set={set} error={poError} readOnly={viewOnly} direct={isDirect}
-                    /* Who the setup named, so step 1 can resolve them against
-                       the master and arrive filled in rather than asking the
-                       same question a second time. */
                     directSupplier={input.direct
                       ? { code: input.direct.supplierCode, name: input.supplier }
                       : undefined}
                     onResolved={() => setDirectSupLoading(false)}
-                    /* The order this invoice bills, and the senior-approval
-                       request standing on it — the same two the PO form hands
-                       its own GST notice, so the flow is identical here. */
                     poId={input.poId ?? null}
                     approval={gstApproval}
                     onApprovalSent={reloadApproval}
@@ -981,10 +799,6 @@ export default function InvoiceForm({
             </div>
           </div>
           <div className="spi-dt-foot-r">
-            {/* Only once there is a step to go back to. On step 01 this read
-                "Change Selection" and closed the form, which is what Close in
-                the header already does — two ways out of the same screen, one
-                of them wearing a back arrow. */}
             {stage > 0 && (
               <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
                 <IcoChevronL /> Back
@@ -995,9 +809,6 @@ export default function InvoiceForm({
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={nextBlocked}
-              /* The supplier's own reason comes first: it is the one a
-                 disabled button here is most likely to be carrying, and the
-                 only one with something the reader can go and do about it. */
               title={stage1Gate ?? mapHint}
               aria-busy={saving}
             >

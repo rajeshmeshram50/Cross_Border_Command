@@ -769,7 +769,13 @@ function PanelShell({ children }: { onClose?: () => void; children: React.ReactN
 }
 
 function ModalShell({ onClose, children }: { onClose?: () => void; children: React.ReactNode }) {
-  useScrollLock(true);
+  /* The dialog's own backdrop is exempt. The lock freezes whatever is
+     scrolling when it mounts, and the dialog is already in the DOM by then —
+     so on a short window, where the form opens tall enough to need its own
+     scrollbar, the body it is supposed to scroll in was frozen with the page
+     and everything below Box Core Details became unreachable. Every other
+     modal in the app names its overlay here for the same reason. */
+  useScrollLock(true, '.vti-dw-modal-backdrop');
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

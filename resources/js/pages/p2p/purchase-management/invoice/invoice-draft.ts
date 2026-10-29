@@ -14,9 +14,6 @@ export interface InvoiceDraft {
   paymentType: string;
   physInspection: boolean;
   taxMode: TaxMode | null;
-  /* The seven an international document carries. Domestic invoices leave
-     them empty and the form does not show them — the same rule the purchase
-     order applies, and the SPI copies the PO's values when it has one. */
   currency: string;
   exchangeRate: string;
   incoTerm: string;
@@ -28,19 +25,12 @@ export interface InvoiceDraft {
   vendorId: number | null;
   supplierDetail: SupplierDetail | null;
   legal: LegalView | null;
-  /* The Evidence Vault as the server sent it. `legal` is a summary of it and
-     cannot answer which case-to-case documents are still unsigned, which is
-     one of the things step 01 refuses to move past. Kept raw, as the PO draft
-     keeps it, so both read the same shape. */
   vault: Record<string, unknown> | null;
 
   supplier: string;
   supplierCode: string;
   poNumber: string;
   piNumber: string;
-  /* A Direct SPI's own references: the shipment it belongs to (empty for
-     "All Other's") and the procurement case it answers to. A With-PO invoice
-     leaves both empty — its purchase order already says all of this. */
   shipmentId: string;
   procurementCode: string;
   legalName: string;
@@ -174,7 +164,7 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
   };
 }
 
-export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmentId?: string; procurementCode?: string }) {
+export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmentId?: string; procurementCode?: string; piNumber?: string }) {
   const [draft, setDraft] = useState<InvoiceDraft>(() => ({
     poType: '',
     docType: '',
@@ -201,7 +191,7 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmen
     supplier: seed.supplier,
     supplierCode: '',
     poNumber: seed.poNo ?? '',
-    piNumber: '',
+    piNumber: seed.piNumber ?? '',
     shipmentId: seed.shipmentId ?? '',
     procurementCode: seed.procurementCode ?? '',
     legalName: '',

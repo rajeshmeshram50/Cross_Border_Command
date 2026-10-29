@@ -56,6 +56,22 @@ const EDIT_MODE: Record<Scenario, string> = {
   s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
 };
 
+/* The stand-in product line a mixed carton is described by. A carton holding
+   several SKUs has no one product, so the header names the carton itself —
+   anything else picks one of its contents and presents it as the box.
+   Shared so a carton reads the same when it is packed and when it is
+   reopened to edit. */
+const mixedCartonLineOf = (lines: ProductLine[], qty: number): ProductLine => ({
+  code: 'MIXED-CARTON',
+  hsn: `${lines.length} SKUs`,
+  piName: 'Mixed Master Carton',
+  poName: 'Mixed Master Carton',
+  spiName: 'Mixed Master Carton',
+  description: lines.map(l => l.spiName).join(', '),
+  piQty: qty, poQty: qty, spiQty: qty,
+  spiRate: 0, poRate: 0, gst: 0,
+});
+
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -287,16 +303,7 @@ export default function Step3BoxPackaging({
   const mixedQtyOf = (l: ProductLine) => mixedQty[l.code] ?? l.spiQty;
   const mixedContents = mixedLines.map(l => ({ line: l, qty: mixedQtyOf(l) }));
   const mixedCartonQty = mixedContents.reduce((n, c) => n + c.qty, 0);
-  const mixedCartonLine: ProductLine = {
-    code: 'MIXED-CARTON',
-    hsn: `${mixedLines.length} SKUs`,
-    piName: 'Mixed Master Carton',
-    poName: 'Mixed Master Carton',
-    spiName: 'Mixed Master Carton',
-    description: mixedLines.map(l => l.spiName).join(', '),
-    piQty: mixedCartonQty, poQty: mixedCartonQty, spiQty: mixedCartonQty,
-    spiRate: 0, poRate: 0, gst: 0,
-  };
+  const mixedCartonLine = mixedCartonLineOf(mixedLines, mixedCartonQty);
 
   const flagIdsFor = (data: BoxSaveData) => {
     const ids: number[] = [];
@@ -1078,7 +1085,17 @@ export default function Step3BoxPackaging({
         <BoxDrawer
           key={editingBox.id}
           boxId={editingBox.box_code}
-          line={editContents[0].line}
+          /* A mixed carton is named after the carton, exactly as it is while
+             being packed. Handing it the first content's line put ONE of the
+             products in the header — "Product · GreenBoost Organic Fertilizer"
+             over a box that also holds Whole Wheat Flour — so the dialog
+             opened describing the wrong thing. */
+          line={editingBox.scenario === 's3'
+            ? mixedCartonLineOf(
+              editContents.map(c => c.line),
+              editContents.reduce((n, c) => n + c.qty, 0),
+            )
+            : editContents[0].line}
           /* A mixed carton's "Total Qty" is the whole box, not whatever
              product happens to sit on the first row. */
           quantity={editingBox.scenario === 's3'

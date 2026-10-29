@@ -1,22 +1,7 @@
 import type { ReactNode } from 'react';
 import DirectSpiPicker, { type PickRow } from './DirectSpiPicker';
 import DirectSpiSupplierPicker from './DirectSpiSupplierPicker';
-import { SHIPMENTS, PROCUREMENTS, NEXT_PROCUREMENT, SUPPLIERS } from './direct-spi-data';
-
-/**
- * Direct SPI setup — the three things a standalone invoice needs before it can
- * be opened, ported from the Kryptone prototype's `.sdx-*` block.
- *
- * A Direct SPI has no purchase order to inherit from, so nothing about it is
- * implied: which shipment it belongs to (if any), which procurement case it is
- * billed against, and who the supplier is all have to be stated. The design
- * asks for them one at a time and keeps the later steps visibly locked, so the
- * order is obvious before you start rather than discovered by a validation
- * message at the end.
- *
- * This file is the PANEL. The modal around it (type cards, header, footer)
- * stays in MapInvoiceModal.
- */
+import { PROCUREMENTS, NEXT_PROCUREMENT, SUPPLIERS, useShipmentRows } from './direct-spi-data';
 
 export type ShipmentScope = 'with' | 'without';
 
@@ -25,7 +10,9 @@ export type ProcurementMode = 'link' | 'auto';
 export interface DirectSpiState {
   shipment: ShipmentScope | null;
   shipmentId: string | null;
-  /** Link an existing case, or take the next id in sequence. */
+  shipmentLabel?: string | null;
+  shipmentPi?: string | null;
+  shipmentDate?: string | null;
   procMode: ProcurementMode | null;
   procurementId: string | null;
   supplier: string | null;
@@ -35,29 +22,11 @@ export const EMPTY_DIRECT: DirectSpiState = {
   shipment: null, shipmentId: null, procMode: null, procurementId: null, supplier: null,
 };
 
-/* Step 02 (Procurement) is deferred — that side of a Direct SPI is not built
-   yet, so the step stays on screen as a permanently locked placeholder and the
-   flow runs 01 → 03.
-   It is ONE flag rather than three edits because the step is load-bearing in
-   three unrelated places: the card's own lock state, step 03's unlock gate,
-   and the ready check that drives Confirm. Freezing it by hand in the panel
-   alone would leave Confirm waiting on a step nobody can answer. Setting this
-   back to true restores the original 01 → 02 → 03 flow with nothing else to
-   put back. */
 export const PROCUREMENT_STEP_ENABLED = false;
 
-/* A step counts as answered only when its id RESOLVES to a row, not merely
-   when the field is non-empty. A value that no longer matches the list — a
-   supplier that has gone, a stale id left behind by an earlier shape of this
-   state — would otherwise tick the step and fill the ring while the summary
-   beside it read "Not selected" and the picker showed its placeholder. */
 export const directStepDone = (s: DirectSpiState) => ({
-  /* Step 1 is answered by picking either option — "All Other's" is an answer,
-     not an absence, so it counts as done the same as a shipment id would. */
   shipment: s.shipment === 'without'
-    || (s.shipment === 'with' && SHIPMENTS.some(r => r.code === s.shipmentId)),
-  /* Auto-create needs nothing more than the choice: the next id in sequence
-     is already known, so the step is answered as soon as it is picked. */
+    || (s.shipment === 'with' && !!s.shipmentId),
   procurement: s.procMode === 'auto'
     || (s.procMode === 'link' && PROCUREMENTS.some(r => r.code === s.procurementId)),
   supplier: SUPPLIERS.some(r => r.code === s.supplier),
@@ -65,8 +34,6 @@ export const directStepDone = (s: DirectSpiState) => ({
 
 export const directReady = (s: DirectSpiState) => {
   const d = directStepDone(s);
-  /* While the procurement step is frozen there is no way to answer it, so
-     requiring it would leave Confirm permanently dead. */
   return d.shipment && (!PROCUREMENT_STEP_ENABLED || d.procurement) && d.supplier;
 };
 
@@ -131,12 +98,9 @@ const IcoBolt = (
   </svg>
 );
 
-/** One row of the left-hand summary: what is decided, and what is still open. */
 function SumRow({ ico, label, value, code, badge, sub, done }: {
   ico: ReactNode; label: string; value: string;
-  /** The id, shown as its own chip rather than inside the sentence. */
   code?: string;
-  /** Whether a procurement case was picked or will be created. */
   badge?: 'existing' | 'new';
   sub?: string; done: boolean;
 }) {
@@ -157,7 +121,6 @@ function SumRow({ ico, label, value, code, badge, sub, done }: {
   );
 }
 
-/** The progress ring in the summary head. 0–100, drawn from a 22r circle. */
 function Ring({ pct }: { pct: number }) {
   const C = 2 * Math.PI * 22;
   return (
@@ -174,14 +137,8 @@ function Ring({ pct }: { pct: number }) {
 
 export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
   const done = directStepDone(state);
-  const shipment = SHIPMENTS.find(r => r.code === state.shipmentId);
   const procurement = PROCUREMENTS.find(r => r.code === state.procurementId);
   const supplier = SUPPLIERS.find(r => r.code === state.supplier);
-  /* Out of the steps that can actually be answered, not the four summary rows:
-     SPI Type is listed as context, not as progress — it is already decided by
-     the time this panel exists. With procurement frozen the denominator drops
-     to 2, so the ring still reaches 100% and "steps left" still counts down to
-     zero; against a fixed 3 it would have stalled at 67% on a complete form. */
   const steps = PROCUREMENT_STEP_ENABLED
     ? [done.shipment, done.procurement, done.supplier]
     : [done.shipment, done.supplier];
@@ -207,12 +164,8 @@ export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
           value={done.shipment
             ? (state.shipment === 'without' ? 'All Other’s' : '')
             : 'Not selected'}
-          sub={shipment?.title}
+          sub={state.shipment === 'with' ? state.shipmentLabel ?? undefined : undefined}
           done={done.shipment} />
-        {/* Frozen, it still has a row — the summary mirrors the steps, and a
-            missing row would read as a step that does not exist rather than
-            one that is not ready. "Not selected" would be wrong though: it
-            implies something the user could go and select. */}
         {PROCUREMENT_STEP_ENABLED ? (
           <SumRow ico={IcoCase} label="Procurement Case ID"
             code={done.procurement ? (state.procMode === 'auto' ? NEXT_PROCUREMENT : state.procurementId ?? undefined) : undefined}
@@ -232,17 +185,6 @@ export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
     </div>
   );
 }
-
-/* ── Loading state ──────────────────────────────────────────────────────────
-   The dialog widens to 1240 before the panel is mounted, which left an empty
-   half-screen for the length of that animation. These two stand in its place,
-   shaped like what replaces them — the ring, the four summary rows, the three
-   step cards — so the growth reads as the panel arriving rather than as a gap
-   that something later drops into.
-
-   Static markup and one CSS keyframe: no state, no timers, nothing to tear
-   down, and the arrays are module constants so a re-render reuses them.
-   ────────────────────────────────────────────────────────────────────────── */
 
 const SUM_ROWS = [0, 1, 2, 3];
 const STEP_CARDS = [0, 1, 2];
@@ -293,8 +235,6 @@ export function DirectSpiStepsSkeleton() {
             <div className="sdx-card sdxsk-card">
               <span className="sdxsk-bar" style={{ width: '22%', height: 7 }} />
               <span className="sdxsk-bar" style={{ width: '64%', height: 12, marginTop: 8 }} />
-              {/* Only the open step shows its options; the two beneath it are
-                  locked, and a short card is what the user will see there. */}
               {i === 0 && (
                 <div className="sdxsk-opts">
                   <span className="sdxsk-bar sdxsk-opt" />
@@ -309,7 +249,6 @@ export function DirectSpiStepsSkeleton() {
   );
 }
 
-/** A step card. `state` drives the node, the rule beneath it and the card. */
 function Step({ no, eyebrow, title, sub, state, tag, locked, children }: {
   no: string; eyebrow: string; title: ReactNode; sub?: string;
   state: 'active' | 'done' | 'locked'; tag?: ReactNode; locked?: string; children?: ReactNode;
@@ -356,9 +295,8 @@ export default function DirectSpiSetup({ state, onChange }: {
   onChange: (next: DirectSpiState) => void;
 }) {
   const done = directStepDone(state);
+  const ships = useShipmentRows(state.shipment === 'with');
   const picked = PROCUREMENTS.find(r => r.code === state.procurementId);
-  /* With procurement frozen, step 03 opens off step 01 — otherwise it waits
-     on a step that can never be answered and the wizard dead-ends at 02. */
   const supplierOpen = PROCUREMENT_STEP_ENABLED ? done.procurement : done.shipment;
 
   return (
@@ -399,22 +337,24 @@ export default function DirectSpiSetup({ state, onChange }: {
               ico={IcoDoc}
               title="All Other’s (Without Shipment ID)"
               sub="Not linked to any shipment"
-              /* Switching to "All Other's" drops a shipment id picked under the
-                 other branch — leaving it would submit a link the user has
-                 just said does not exist. */
-              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null })}
+              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null, shipmentLabel: null, shipmentPi: null, shipmentDate: null })}
             />
           </div>
 
-          {/* Only the shipment branch asks a second question — "All Other's"
-              is complete the moment it is chosen. */}
           {state.shipment === 'with' && (
             <div className="sdx-field">
               <div className="sdx-lbl">{IcoTruck} Select Shipment ID <span className="sdx-req">*</span></div>
               <DirectSpiPicker
-                rows={SHIPMENTS}
+                rows={ships.rows}
+                loading={ships.loading}
+                error={ships.error}
+                onRetry={ships.retry}
                 value={state.shipmentId}
-                onPick={code => onChange({ ...state, shipmentId: code })}
+                pickedRow={state.shipmentId ? { code: state.shipmentId, title: state.shipmentLabel ?? '', sub: state.shipmentDate ?? '' } : null}
+                onPick={code => {
+                  const r = ships.rows.find(x => x.code === code);
+                  onChange({ ...state, shipmentId: code, shipmentLabel: r?.title ?? null, shipmentPi: r?.piNumber ?? null, shipmentDate: r?.sub || null });
+                }}
                 placeholder="Select Shipment ID…"
                 noun="shipments"
                 ico={IcoTruck}
@@ -429,9 +369,6 @@ export default function DirectSpiSetup({ state, onChange }: {
           no="02"
           eyebrow="Step 02 · Procurement"
           title="Link a Procurement Case ID to this Direct SPI"
-          /* Frozen: locked regardless of step 01, and the card's body is not
-             rendered at all in the locked state (see Step), so the two options
-             below are unreachable rather than merely dimmed. */
           state={!PROCUREMENT_STEP_ENABLED ? 'locked' : done.shipment ? (done.procurement ? 'done' : 'active') : 'locked'}
           locked={!PROCUREMENT_STEP_ENABLED
             ? 'Coming soon — this step is not part of the current release'

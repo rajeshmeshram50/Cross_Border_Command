@@ -31,15 +31,10 @@ export default function InvoiceList() {
 
   const toggleBrief = useCallback(() => setBriefOpen(o => !o), []);
 
-  /* With-PO is the landing tab now that 'All' is gone - it is the
-     recommended route and the larger of the two. */
   const [scope, setScope] = useState<InvoiceScope>('with-po');
   const [shipScope, setShipScope] = useState<InvoiceShipmentScope>('with-shipment');
   const [query, setQuery] = useState('');
 
-  /* Only the Direct SPI tab narrows its columns — a row with no purchase
-     order behind it has nothing to put in the order's own columns, and a
-     blank column still takes its width from the ones that do say something. */
   const tabColumns = useMemo(() => invoiceColumnsFor(scope, shipScope), [scope, shipScope]);
 
   const debouncedQuery = useDebouncedValue(query.trim(), 400);
@@ -102,12 +97,10 @@ export default function InvoiceList() {
       poNo: storageFor.poNo,
       supplier: storageFor.supplier ?? '—',
       storage: choice,
-      /* A Direct SPI's whole context is these three answers, so they have to
-         survive the hand-off — dropped here, the form had no way to tell a
-         standalone invoice from one whose purchase order failed to load. */
       direct: storageFor.mode === 'without-po'
         ? {
           shipmentId: storageFor.shipmentId,
+          shipmentPi: storageFor.shipmentPi,
           procurementCode: storageFor.procurementCode,
           supplierCode: storageFor.supplierCode,
         }
@@ -271,9 +264,6 @@ export default function InvoiceList() {
               aria-label="Search invoices"
               autoComplete="off"
             />
-            {/* The PO list's own × . Without it, emptying the box means
-                selecting the text and deleting it, and until that is done a
-                filtered table reads as "no invoices". */}
             <SearchClear show={query} onClear={() => setQuery('')} />
           </div>
         </div>
@@ -312,10 +302,6 @@ export default function InvoiceList() {
           />
         )}
 
-        {/* Shown on an empty list too: it reads "No records" there, and the
-            rows-per-page choice stays where it was rather than vanishing with
-            the last row. Without it the card loses its bottom edge and simply
-            ends in white. */}
         <WorklistPager
           className="wl-teal"
           total={total}
@@ -363,11 +349,6 @@ export default function InvoiceList() {
   );
 }
 
-/* Two tabs, not three. Every SPI is either raised against a purchase order
-   or it is not, so "All SPI's" was the two beside it added together - a tab
-   that can never tell you anything the other two do not, while costing the
-   width that made their labels wrap. The 'all' scope itself stays in the type
-   and in the API: it is still what the server answers when no scope is sent. */
 const SCOPE_TABS: Array<{ key: InvoiceScope; label: string; icon: ReactNode }> = [
   {
     key: 'with-po',
