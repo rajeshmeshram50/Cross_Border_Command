@@ -1033,19 +1033,29 @@
   overflow-x: auto;
   border: 1px solid #e3eef3;
   border-radius: 11px;
-  scrollbar-width: thin;
-  scrollbar-color: #bfe3ec transparent;
 }
-/* `scrollbar-width: thin` is only honoured by newer Chrome, so the bar under
-   a 20-column table was still the platform default -- a heavy rail across the
-   full width of the widest thing on the page. The webkit rules give every
-   browser the same 8px. */
+/* The 8px bar, and why `scrollbar-width` is NOT set beside it.
+ *
+ * It used to be, with a note saying only newer Chrome honoured it so the
+ * webkit rules were there to cover the rest. The opposite turned out to be the
+ * problem: from Chrome 121 it IS honoured, and the moment either
+ * `scrollbar-width` or `scrollbar-color` is set to anything but `auto`, Chrome
+ * switches that element to the standard scrollbar and ignores every
+ * `::-webkit-scrollbar` rule on it. So the 8px stopped applying and the bar
+ * under the table went back to Chrome's own "thin" — a good deal heavier, and
+ * a visible rail the full width of the widest column.
+ *
+ * Declaring only the webkit rules keeps the 8px. Firefox has no such
+ * pseudo-element, so the standard properties are restored for it alone, below. */
 .cpd-scroll::-webkit-scrollbar { height: 8px; }
 .cpd-scroll::-webkit-scrollbar-track { background: transparent; }
 .cpd-scroll::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
 .cpd-scroll::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
 
-[data-bs-theme="dark"] .cpd-scroll { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+@supports not selector(::-webkit-scrollbar) {
+  .cpd-scroll { scrollbar-width: thin; scrollbar-color: #bfe3ec transparent; }
+  [data-bs-theme="dark"] .cpd-scroll { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+}
 [data-bs-theme="dark"] .cpd-scroll::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
 [data-bs-theme="dark"] .cpd-scroll::-webkit-scrollbar-thumb:hover { background: rgba(34, 211, 238, .5); }
 .cpd-tbl { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }

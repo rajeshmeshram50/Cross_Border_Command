@@ -201,8 +201,12 @@ export default function PackedProducts({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  if (boxes.length === 0) return null;
-
+  /* The card used to return null until the first box was saved, so Stage 3
+     opened with the Box Generation table and nothing beneath it, and where
+     the boxes would appear was something you had to already know. It stays
+     up in every SPI condition now, with its rail, its column headings and
+     its three zeroed counts, so the step shows the shape of the work before
+     any of it is done. */
   const countOf = (key: string) =>
     key === 'all' ? boxes.length : boxes.filter(b => b.scenario === key).length;
   const shown = scnTab === 'all' ? boxes : boxes.filter(b => b.scenario === scnTab);
@@ -308,18 +312,38 @@ export default function PackedProducts({
             {/* An empty scenario keeps the card's shape. Collapsing to a bare
                 header row reads as a table that broke rather than one with
                 nothing in it, and the rail above has already promised a
-                count of zero. */}
+                count of zero.
+
+                Two different emptinesses, and they need different wording.
+                Nothing packed at all is the step's starting state and should
+                say where boxes come from; a tab with none, on an invoice that
+                has boxes, is a filter finding nothing and should say where
+                the others are. Sending someone to the Box Generation System
+                when they have already used it reads as if their work were
+                lost. */}
             {shown.length === 0 && (
               <tr className="invf-pb-none-row">
                 <td colSpan={12}>
                   <div className="invf-pb-none">
                     <span className="invf-pb-none__i" aria-hidden><IcoBox size={20} stroke={2.1} /></span>
-                    <div className="invf-pb-none__t">No boxes packed this way</div>
-                    <div className="invf-pb-none__s">
-                      Nothing on this invoice used{' '}
-                      <b>{SCN_TABS.find(t => t.key === scnTab)?.label ?? 'this scenario'}</b>.
-                      {' '}The other tabs hold the {boxes.length} box{boxes.length === 1 ? '' : 'es'} that were saved.
-                    </div>
+                    {boxes.length === 0 ? (
+                      <>
+                        <div className="invf-pb-none__t">No boxes packed yet</div>
+                        <div className="invf-pb-none__s">
+                          Save a box in the <b>SPI Box Generation System</b> above and it will be
+                          listed here with its products, dimensions and condition.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="invf-pb-none__t">No boxes packed this way</div>
+                        <div className="invf-pb-none__s">
+                          Nothing on this invoice used{' '}
+                          <b>{SCN_TABS.find(t => t.key === scnTab)?.label ?? 'this scenario'}</b>.
+                          {' '}The other tabs hold the {boxes.length} box{boxes.length === 1 ? '' : 'es'} that were saved.
+                        </div>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

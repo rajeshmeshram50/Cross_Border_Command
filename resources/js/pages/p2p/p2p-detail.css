@@ -832,7 +832,16 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
   color:#fff; font-family:inherit; font-size:12.5px; font-weight:700;
   background: linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4); box-shadow: 0 4px 14px rgba(8,145,178,.34);
   transition:transform .15s, box-shadow .15s; }
-.spi-dt-btn-next:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(8,145,178,.46); }
+/* `:not(:disabled)`, as the green submit button beside it already has. Without
+   it a blocked Save & Next still lifted and brightened under the pointer,
+   which is the gesture that says "press me" — so the button both refused the
+   click and invited it. */
+.spi-dt-btn-next:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(8,145,178,.46); }
+/* It has always taken `disabled` - the step-01 supplier checks and every
+   in-flight save set it - but nothing drew it, so a refusing button looked
+   exactly like a working one and only the hover title said otherwise.
+   Same treatment as .spi-dt-btn-map, so the two footers agree. */
+.spi-dt-btn-next:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:grayscale(.2); }
 .spi-dt-btn-map { display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; cursor:pointer; border:none;
   color:#fff; font-family:inherit; font-size:12.5px; font-weight:700;
   background: linear-gradient(135deg,#059669,#10b981 55%,#34d399); box-shadow: 0 4px 14px rgba(16,185,129,.36);

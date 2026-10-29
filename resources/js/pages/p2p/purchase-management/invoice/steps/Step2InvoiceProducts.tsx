@@ -3,7 +3,7 @@ import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker'
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser, IcoVan } from '../../../icons';
+import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoPlus, IcoUndo, IcoUser, IcoVan } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
@@ -23,7 +23,8 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, onRemoveLine, taxMode, onPickFile, readOnly = false, direct = false,
+  draft, set, lines, onChangeLine, onRemoveLine, onAddLine, removedCount = 0, onRestoreLines,
+  taxMode, onPickFile, readOnly = false, direct = false, matched = true,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
@@ -31,6 +32,13 @@ export default function Step2InvoiceProducts({
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
   /** Drop a line the supplier did not invoice. The design's Action column. */
   onRemoveLine?: (index: number) => void;
+  /** There is a proforma invoice behind this table to match against. */
+  matched?: boolean;
+  /** Add one the PI never carried. Omitted when read-only. */
+  onAddLine?: () => void;
+  /** How many lines have been taken off, and the way to put them all back. */
+  removedCount?: number;
+  onRestoreLines?: () => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
   readOnly?: boolean;
@@ -114,7 +122,30 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
+            twoWay={direct} matched={matched}
+            sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
+          {/* Directly under the totals, because it is a statement about the
+              figures above it: they are short of a product the PI carried.
+              It stays for as long as anything is missing, rather than passing
+              like the toast does — the person who saves this invoice may not
+              be the person who removed the line. */}
+          {removedCount > 0 && onRestoreLines && !readOnly && (
+            <div className="invf-removed">
+              <span className="invf-removed__txt">
+                {removedCount} product{removedCount === 1 ? '' : 's'} removed from this invoice
+              </span>
+              <button type="button" className="invf-removed__btn" onClick={onRestoreLines}>
+                <IcoUndo /> Restore {removedCount === 1 ? 'it' : 'all'}
+              </button>
+            </div>
+          )}
+          {/* Under the table, at the end of the row of controls it belongs to
+              — it undoes the Action column, so it sits on that side. */}
+          {onAddLine && !readOnly && (
+            <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
+              <IcoPlus /> Add Product
+            </button>
+          )}
         </div>
       </div>
     </>

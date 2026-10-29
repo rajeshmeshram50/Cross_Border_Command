@@ -28,6 +28,11 @@ export interface InvoiceDraft {
   vendorId: number | null;
   supplierDetail: SupplierDetail | null;
   legal: LegalView | null;
+  /* The Evidence Vault as the server sent it. `legal` is a summary of it and
+     cannot answer which case-to-case documents are still unsigned, which is
+     one of the things step 01 refuses to move past. Kept raw, as the PO draft
+     keeps it, so both read the same shape. */
+  vault: Record<string, unknown> | null;
 
   supplier: string;
   supplierCode: string;
@@ -191,6 +196,7 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmen
     vendorId: null,
     supplierDetail: null,
     legal: null,
+    vault: null,
 
     supplier: seed.supplier,
     supplierCode: '',

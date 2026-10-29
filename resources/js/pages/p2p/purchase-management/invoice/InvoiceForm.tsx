@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -17,12 +17,13 @@ import Step3BoxPackaging from './steps/Step3BoxPackaging';
 import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
 import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
-import { legalFromVault } from '../order/create-po/supplier-checks';
+import { gstState, legalFromVault, pendingCaseToCase } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
-  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor,
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, itemsPayload, linesFromPo, taxModeFor,
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
@@ -43,6 +44,18 @@ const DIRECT_STAGES: Record<number, { title: string; desc: string }> = {
   1: {
     title: 'Invoice & Product Details (2-Way Match)',
     desc: 'Enter invoice details & match products against the PI of the shipment',
+  },
+};
+
+/* An "All Other's" Direct SPI belongs to no shipment, so there is no proforma
+   invoice on the other side and nothing is being matched. Calling the stage a
+   2-Way Match and telling the user to match against "the PI of the shipment"
+   names a document this invoice has no connection to. */
+const UNMATCHED_STAGES: Record<number, { title: string; desc: string }> = {
+  0: DIRECT_STAGES[0],
+  1: {
+    title: 'Invoice & Product Details',
+    desc: 'Enter invoice details & the products invoiced by the supplier',
   },
 };
 
@@ -89,6 +102,17 @@ export default function InvoiceForm({
     shipmentId: input.direct?.shipmentId, procurementCode: input.direct?.procurementCode,
   });
   const toast = useToast();
+  const confirm = useConfirm();
+
+  /* The supplier this invoice is actually issued to: what the form opened
+     with, and after Stage 01 is saved, what was saved.
+     The dropdown writes straight to the draft, but nothing reaches the server
+     until Save & Next creates the SPI — so a supplier swapped and then closed
+     is a change that never happened, and the form should say so before the
+     window goes. A ref rather than state: it is read when Close is pressed,
+     never rendered, and making it state would re-render the whole wizard
+     every time a supplier lands. */
+  const mappedSupplier = useRef(input.direct?.supplierCode ?? '');
 
   /* No purchase order behind this invoice, now or ever: either it was set up
      as a Direct SPI in this session, or it was saved as one and has no PO to
@@ -102,12 +126,26 @@ export default function InvoiceForm({
      thing the skeleton is waiting for never runs. */
   const [directSupLoading, setDirectSupLoading] = useState(!!input.direct?.supplierCode);
 
+  /* There is a PI behind this invoice only when it belongs to a shipment. A
+     With-PO invoice always has one; an "All Other's" Direct SPI never does. */
+  const matchedToPi = !input.direct || !!draft.shipmentId;
+
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
 
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
-  const [lines, setLines] = useState<ProductLine[]>(input.poId || input.spiId ? [] : PRODUCT_LINES);
+  /* An "All Other's" Direct SPI starts with an EMPTY table. There is no
+     shipment, so there is no proforma invoice to copy lines from, and nothing
+     else on this screen knows what the supplier billed for — the products are
+     typed in here or they do not exist. Seeding the usual lines would have
+     put products on the invoice that no document ever put there, and the
+     totals under them would have been real money against a guess.
+     A saved invoice (spiId) and a With-PO one both load their own lines, so
+     they start empty for a different reason and already did. */
+  const [lines, setLines] = useState<ProductLine[]>(
+    input.poId || input.spiId || (input.direct && !input.direct.shipmentId) ? [] : PRODUCT_LINES,
+  );
   const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
   const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
   const [spiId, setSpiId] = useState<number | null>(null);
@@ -180,6 +218,11 @@ export default function InvoiceForm({
         const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
         if (!live) return;
         set(draftFromPo(po, sup));
+        /* The order's own supplier, arriving after the form opened. It is the
+           one this invoice is issued to until somebody picks another, so it
+           is the baseline the Close check compares against — without this,
+           a With-PO invoice would warn about a supplier nobody chose. */
+        mappedSupplier.current = sup?.code ?? '';
 
         let rows = linesFromPo(po.items ?? [], open);
         if (existing) {
@@ -201,11 +244,15 @@ export default function InvoiceForm({
           setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
         }
         setLines(rows);
+        /* These rows are the invoice as it now stands. Anything removed
+           before them belonged to a different set of lines, and restoring it
+           into these would put back a product this invoice never had. */
+        setRemovedLines([]);
 
         if (po.vendor_id) {
           poLookupApi.supplierVault(po.vendor_id)
-            .then(v => { if (live) set({ legal: legalFromVault(v) }); })
-            .catch(() => { if (live) set({ legal: legalFromVault(null) }); });
+            .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
+            .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
         }
       } catch (e) {
         if (!live) return;
@@ -233,12 +280,42 @@ export default function InvoiceForm({
      has to be removable here — it comes in from the PI, and without this the
      only way to drop one was to leave it at zero, which still carries it into
      the boxes and the put-away. */
+  /* What came off, so the banner under the table can put it back.
+     `at` is where the line sat: a restore returns it to its place in the
+     match rather than appending it to the bottom, which would renumber the
+     table against the PI it is being read beside. */
+  const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
+
   const removeLine = useCallback((index: number) => {
+    const line = lines[index];
+    if (!line) return;
     setLines(ls => ls.filter((_, i) => i !== index));
-  }, []);
+    setRemovedLines(r => [...r, { at: index, line }]);
+  }, [lines]);
+
+  const restoreLines = useCallback(() => {
+    setLines(ls => {
+      const out = [...ls];
+      /* Lowest position first, so each line going back makes room for the
+         next. In removal order, a line taken from row 1 would be reinserted
+         after one taken from row 4 and both would land in the wrong place. */
+      for (const r of [...removedLines].sort((a, b) => a.at - b.at)) {
+        out.splice(Math.min(r.at, out.length), 0, r.line);
+      }
+      return out;
+    });
+    setRemovedLines([]);
+  }, [removedLines]);
 
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }, []);
+
+  /* The way back from the Action column above. The new row is empty, so the
+     product is chosen from the SPI column's picker the same way a mapped one
+     is changed — nothing about adding a line is a different kind of editing. */
+  const addLine = useCallback(() => {
+    setLines(ls => [...ls, blankLine()]);
   }, []);
 
   const [stage, setStage] = useState(0);
@@ -281,6 +358,8 @@ export default function InvoiceForm({
       });
       setSpiId(spi.id);
       setSpiCode(spi.code);
+      /* Now it IS mapped, so closing after this is not losing anything. */
+      mappedSupplier.current = draft.supplierCode;
       toast.success(`${spi.code} created`, 'Saved as a draft — continue with the invoice details.');
       advance();
     } catch (e) {
@@ -328,6 +407,11 @@ export default function InvoiceForm({
         ? { ...l, spiItemId: saved[n++]?.id }
         : { ...l, spiItemId: undefined }));
       setLines(withIds);
+      /* Saved without them, so they are no longer "removed from this
+         invoice" — they are simply not on it. Leaving the banner up would
+         offer to restore a line into an invoice the server has already
+         written without it. */
+      setRemovedLines([]);
       setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
       setFiles({});
       if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
@@ -512,7 +596,10 @@ export default function InvoiceForm({
     ? (putaway && putaway.total > 0
         ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
         : 'Put away every box first')
-    : undefined;
+    /* A disabled button that will not say why is the worst of both. */
+    : stage === 1 && lines.length === 0
+      ? 'Add at least one product before continuing'
+      : undefined;
 
   const finishStage3 = async () => {
     if (!spiId || saving) return;
@@ -541,13 +628,83 @@ export default function InvoiceForm({
     }
   };
 
-  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
-  const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
+  /* Step 01 will not hand over a supplier that is not clear to transact with.
+   *
+   * The three the supplier's own record can fail on: scrutiny out of date,
+   * the last GST return out of date, and case-to-case paperwork from earlier
+   * orders still unsigned. None of them is this invoice's doing and none can
+   * be fixed inside it — they are fixed on the supplier, which is why the
+   * banner above sends you there rather than offering to override.
+   *
+   * At step 01 rather than at submit: every later step is work done against
+   * this supplier, and work done against a supplier who turns out to be
+   * blocked is work thrown away.
+   *
+   * Returns the reason, not a boolean — the footer puts it on the button's
+   * hover, so a disabled control can say why. */
+  const stage1Gate = useMemo(() => {
+    if (stage !== 0 || viewOnly || !draft.supplier) return null;
+    const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
+    if (gst.tone === 'stop') {
+      return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
+    }
+    if (gst.tone === 'warn') {
+      return `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
+    }
+    /* Nothing excluded. On a purchase order the PO being raised is left out
+       of this count so it cannot block itself; an invoice raises no
+       case-to-case paperwork of its own, so everything outstanding against
+       the supplier counts. */
+    const ctc = pendingCaseToCase(draft.vault ?? null, null);
+    if (ctc.length) {
+      return `${ctc.length} case-to-case document${ctc.length === 1 ? '' : 's'} for ${draft.supplier} `
+        + `${ctc.length === 1 ? 'is' : 'are'} still unsigned. Sign ${ctc.length === 1 ? 'it' : 'them'} before this invoice can move on.`;
+    }
+    return null;
+  }, [stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault]);
+
+  /* Stage 2 can now be left empty — on an All Other's Direct SPI it STARTS
+     empty — and an invoice with no products carries nothing into the boxes
+     or the put-away that come after it. The two stages behind it would have
+     been built from an empty list and read as finished. */
+  const noProducts = stage === 1 && lines.length === 0;
+  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || !!stage1Gate || noProducts || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
+  /* Close, with the one thing worth stopping for.
+   *
+   * Picking a supplier in step 01 changes nothing on the server: the SPI is
+   * created by Save & Next, so a supplier chosen and then closed is simply
+   * discarded, with no trace that it was ever chosen. That is the one edit in
+   * this step that silently comes to nothing, so it is the one Close asks
+   * about. Everything else here either is already saved or is visibly still a
+   * draft.
+   *
+   * Only before the SPI exists and only on step 01: afterwards the supplier
+   * is mapped, and the question would be about nothing. */
+  const closeForm = async () => {
+    const picked = draft.supplierCode.trim();
+    if (stage === 0 && !viewOnly && picked && picked !== mappedSupplier.current) {
+      const ok = await confirm({
+        title: 'Close without mapping this supplier?',
+        message: <>
+          <strong>{picked}</strong>{draft.supplier ? ` — ${draft.supplier}` : ''} has been selected but not
+          saved, so it is not mapped to this invoice. Close now and the choice is discarded.
+        </>,
+        tone: 'danger',
+        confirmLabel: 'Close anyway',
+        cancelLabel: 'Keep editing',
+      });
+      if (!ok) return;
+    }
+    onClose();
+  };
+
+  const goBack = () => (stage === 0 ? void closeForm() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
   /* One stage, named for the invoice it belongs to. Stages the two types
      share fall through to the common wording rather than being repeated. */
-  const stageLabel = (i: number) => (isDirect && DIRECT_STAGES[i]) || STAGES[i];
+  const stageLabel = (i: number) =>
+    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i])) || STAGES[i];
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form spi-invform">
@@ -626,7 +783,7 @@ export default function InvoiceForm({
             </div>
 
             <div className="spi-dt-head-r">
-              <button type="button" className="spi-dt-btn-close" onClick={onClose} disabled={saving}
+              <button type="button" className="spi-dt-btn-close" onClick={() => void closeForm()} disabled={saving}
                 title={saving ? 'Saving — please wait' : undefined}><IcoX /> Close</button>
             </div>
           </div>
@@ -693,7 +850,9 @@ export default function InvoiceForm({
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
-                    onChangeLine={changeLine} onRemoveLine={removeLine} direct={isDirect} />
+                    matched={matchedToPi}
+                    onChangeLine={changeLine} onRemoveLine={removeLine} onAddLine={addLine}
+                    removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect} />
                 )}
                 {stage === 2 && (
                   <Step3BoxPackaging
@@ -762,7 +921,10 @@ export default function InvoiceForm({
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={nextBlocked}
-              title={mapHint}
+              /* The supplier's own reason comes first: it is the one a
+                 disabled button here is most likely to be carrying, and the
+                 only one with something the reader can go and do about it. */
+              title={stage1Gate ?? mapHint}
               aria-busy={saving}
             >
               {saving ? <WizSpinner /> : isLast ? <IcoCheck /> : null}

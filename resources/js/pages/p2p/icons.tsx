@@ -153,6 +153,15 @@ export const IcoHistory = (p: IconProps) => (
   </Svg>
 );
 
+/** Undo — the same circling arrow as IcoHistory without the clock hand, which
+ *  would read as "see what happened" rather than "put it back". */
+export const IcoUndo = (p: IconProps) => (
+  <Svg size={13} stroke={2.4} {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <polyline points="3 3 3 8 8 8" />
+  </Svg>
+);
+
 /** Reminder — the bell the Evidence Vault already uses to nudge a signer. */
 export const IcoBell = (p: IconProps) => (
   <Svg size={13} stroke={2.2} {...p}>

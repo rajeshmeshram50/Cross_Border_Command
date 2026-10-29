@@ -115,7 +115,15 @@ function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, str
      plausible length - 7 covers the shortest national numbers, 13 the longest
      with a country code typed in. 6-15 let a 15-digit number through, which
      is longer than E.164 allows for the whole number including its code. */
-  else if (india && !/^[6-9]\d{9}$/.test(mobile)) e.mobile = 'Enter a valid 10-digit mobile number';
+  /* Two messages, because the rule has two halves and one message could only
+     ever name one of them. "3534534345" IS ten digits, so being told to enter
+     a valid 10-digit number reads as though the form cannot count - and from
+     the outside it looks like the starting-digit rule was never written
+     (CS-939 #9). The length is checked first so the message names the problem
+     the user can see; only once the length is right does the first digit
+     become the thing that is wrong. */
+  else if (india && !/^\d{10}$/.test(mobile)) e.mobile = 'Mobile number must be exactly 10 digits';
+  else if (india && !/^[6-9]/.test(mobile)) e.mobile = 'An Indian mobile number starts with 6, 7, 8 or 9';
   else if (!india && !/^\d{7,13}$/.test(mobile)) e.mobile = 'Enter a mobile number of 7 to 13 digits';
   if (!d.email.trim()) e.email = 'Enter the email address';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) e.email = 'Enter a valid email address';

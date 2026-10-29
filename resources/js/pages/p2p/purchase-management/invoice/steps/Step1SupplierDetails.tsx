@@ -4,8 +4,10 @@ import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker'
 import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
 import { Shimmer } from '../../../../../components/ui/Shimmer';
 import {
-  SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
+  GST_STALE_MONTHS, SevIcon, cutoffDate, gstState, isRiskMandatory, monthsAgo, riskItems,
+  vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
+import GstNoticeModal, { type GstNotice } from '../../order/create-po/GstNoticeModal';
 import { poLookupApi, type SupplierOption } from '../../order/api/po-api';
 import { legalFromVault } from '../../order/create-po/supplier-checks';
 import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
@@ -14,6 +16,11 @@ import { useToast } from '../../../../../contexts/ToastContext';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
+
+/* The supplier master opened on one tab. AddSupplierFlow cannot do this — it
+   starts at the origin question and has no way in to a step — and the GST
+   notice's button promises the scrutiny itself, not the supplier's front page. */
+const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 
 const AddSupplierFlow = lazy(() => import('../../order/create-po/AddSupplierFlow'));
 const warmSupplierFlow = () => { void import('../../order/create-po/AddSupplierFlow'); };
@@ -206,7 +213,7 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
     setVendorId(id);
     setVault(vaultTargetOf(fresh));
     poLookupApi.supplierVault(id)
-      .then(v => set({ legal: legalFromVault(v) }))
+      .then(v => set({ vault: v, legal: legalFromVault(v) }))
       .catch(() => {});
     return fresh;
   };
@@ -311,9 +318,25 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
-  const gst = gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate);
+  const gst = gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate, 'invoice');
   const scrutinyAge = monthsAgo(scrutinyDate);
   const filingAge = monthsAgo(filingDate);
+
+  /* The banner's action. The PO carries the same check, but there it is a
+     gate on submission and lives in the footer of its last step; on an SPI
+     the supplier is settled in step 01, so this is where a stale scrutiny has
+     to be raised — telling someone at step 04 that the supplier they chose
+     three screens ago cannot be used is three screens too late.
+     The modal, the wording and the dates are the shared ones. */
+  const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
+  const [scrutinyOpen, setScrutinyOpen] = useState(false);
+  const openGstNotice = () => {
+    if (gst.tone !== 'stop' && gst.tone !== 'warn') return;
+    setGstNotice({
+      tone: gst.tone, supplier, code: supplierCode, scrutiny: scrutinyDate, filing: filingDate,
+      scrutinyAge, filingAge, cutoff: cutoffDate(), months: GST_STALE_MONTHS,
+    });
+  };
 
   const risks = useMemo(
     () => (hasSupplier
@@ -322,7 +345,7 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         filing: filingDate, scrutiny: scrutinyDate,
         legal: { done: legal.done, total: legal.total },
         international: docType === 'International',
-      }, physInspection)
+      }, physInspection, 'invoice')
       : []),
     [hasSupplier, riskLevel, category, gstStatus, gstNumber, filingDate, scrutinyDate, legal, docType, physInspection],
   );
@@ -345,6 +368,33 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         </Suspense>
       )}
 
+      {gstNotice && (
+        <GstNoticeModal
+          notice={gstNotice}
+          onClose={() => setGstNotice(null)}
+          /* No `poId`, so no senior-approval request: that flow is raised
+             against a purchase order and this invoice has none. The modal
+             already handles its absence — it shows the requirement and the
+             way to clear it, which is the whole of what step 01 can offer. */
+          onOpenScrutiny={!locked && editVendorId !== null ? () => setScrutinyOpen(true) : undefined}
+        />
+      )}
+      {scrutinyOpen && editVendorId !== null && (
+        <Suspense fallback={null}>
+          {/* Straight to the supplier's GST Scrutiny tab, which is what the
+              button in the modal promises. Closing re-reads the supplier, so
+              a scrutiny refreshed in there clears the banner behind it
+              without reopening the invoice. */}
+          <AddVendorModal
+            vendorId={editVendorId}
+            initialStep={2}
+            initialKycTab="gst"
+            scope={isInternational ? 'international' : 'domestic'}
+            onClose={() => { setScrutinyOpen(false); void refreshSupplier(); }}
+            onSubmit={() => { setScrutinyOpen(false); void refreshSupplier(); }}
+          />
+        </Suspense>
+      )}
       {editOpen && editVendorId !== null && (
         <Suspense fallback={null}>
           <AddSupplierFlow vendorId={editVendorId} onClose={() => setEditOpen(false)} onSaved={() => void refreshSupplier()} />
@@ -726,6 +776,16 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
                       </span>
                     )}
                   </span>
+                  {/* Only when there is something to act on — `action` is set
+                      on the stop and warn states and absent on the other two,
+                      so a cleared supplier shows the banner without a button
+                      asking to review nothing. */}
+                  {gst.action && (
+                    <button type="button" className={`invf-gst__act invf-gst__act--${gst.tone}`}
+                      onClick={openGstNotice}>
+                      {gst.action}
+                    </button>
+                  )}
                 </div>
                 {/* gstLocked, not `locked`/`hasPo`. These five were the only
                     fields in step 01 still gated on there being a purchase

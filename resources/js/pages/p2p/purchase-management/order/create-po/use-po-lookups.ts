@@ -35,7 +35,10 @@ const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 const active = (r: Row) => str(r.status || 'Active') === 'Active';
 const names = (rows: Row[], field: string) => [...new Set(rows.filter(active).map((r) => str(r[field])).filter(Boolean))];
 
-function toProduct(p: Row): ProductOpt {
+/* Exported for the supplier invoice's product table, which loads the master on
+   its own: a line added there starts empty and has to fill its code, HSN, GST
+   and description from somewhere, and that mapping should exist once. */
+export function toProduct(p: Row): ProductOpt {
   const gstRel = (p.gst_percentage ?? p.gstPercentage) as { percentage?: unknown } | null | undefined;
   return {
     id: num(p.id),

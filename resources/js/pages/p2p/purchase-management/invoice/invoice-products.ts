@@ -44,6 +44,21 @@ export interface ProductLine {
   gst: number;
 }
 
+/* A line with nothing on it yet, for "+ Add Product".
+ *
+ * A row removed here is gone from the draft, so without a way back the only
+ * remedy for a mistaken delete was to abandon the invoice and start again.
+ *
+ * It carries a `key` because the table keys its rows on `line.key ?? line.code`
+ * and a blank row has no code: two of them would key alike, and React would
+ * hand the second row the first one's inputs. */
+let blankSeq = 0;
+export const blankLine = (): ProductLine => ({
+  key: `new:${++blankSeq}`,
+  code: '', hsn: '', piName: '', poName: '', spiName: '', description: '',
+  piQty: 0, poQty: 0, spiQty: 0, spiRate: 0, poRate: 0, gst: 0,
+});
+
 /** The quantity this invoice is actually working against. */
 /* What this invoice is measured against. Normally the purchase order's open
    quantity; on a 2-way match there is no purchase order, so the baseline is
