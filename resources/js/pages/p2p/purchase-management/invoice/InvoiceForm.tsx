@@ -736,33 +736,33 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
-  /* The save skeleton, but only once a save has actually taken a moment.
-     Save & Next swapped the step for a skeleton of the next one the instant
-     it was clicked, and most saves come back in well under a tenth of a
-     second — so the step vanished and came back before it could be read,
-     which is the flash. Nothing is hidden for a quick save now: the button
-     spins, the body is inert, and the step simply changes. Past ~280ms the
-     wait is long enough to be worth showing, and the skeleton appears as
-     before. It clears the moment saving ends, so it never outlives the save. */
-  const [slowSave, setSlowSave] = useState(false);
-  useEffect(() => {
-    if (!saving) { setSlowSave(false); return; }
-    const t = window.setTimeout(() => setSlowSave(true), 280);
-    return () => window.clearTimeout(t);
-  }, [saving]);
-
-  /* The step the rail names while that skeleton is up.
-
-     The skeleton stands in for the step being opened, but the rail kept
-     ACTIVE on the step being left — so the body said "step 03 is coming" and
-     the breadcrumb above it said "you are on step 02", with step 02 not even
-     marked done. Whichever one you read, the other contradicted it. The rail
-     now moves with the skeleton: the step being opened is ACTIVE and the one
-     behind it is DONE, which is what the skeleton is already claiming.
-
-     `stage` itself does not move until the save returns, so a save that
-     fails leaves the user exactly where they were. */
-  const railStage = slowSave && stage + 1 < STAGES.length ? stage + 1 : stage;
+  /* A save does NOT replace the step with a skeleton.
+   *
+   * It used to: Save & Next swapped the body for a skeleton of the next step
+   * while the save was in flight. Three things went wrong with that, and all
+   * three come from the same mistake — a skeleton is for content that is
+   * being LOADED, and nothing here is loading. The step you are on is on
+   * screen already, filled in, and correct.
+   *
+   *   · it flashed, because most saves return in well under a tenth of a
+   *     second, so the step vanished and came back before it could be read;
+   *   · it contradicted the rail, which still named the step being left —
+   *     the body said "the next one is coming", the breadcrumb said "you are
+   *     still here", and with the body greyed out the rail is the only thing
+   *     left to read;
+   *   · it was the wrong SHAPE. The skeleton of the next step is not the
+   *     height of this one, so the card ended halfway down and left the rest
+   *     of the page blank — the page looked broken in the middle.
+   *
+   * Stage 01 of a Direct SPI makes the wait real — it saves, then fetches the
+   * PI's lines, two round trips — which is why this was so visible there.
+   *
+   * What the user gets instead is what the form already had: the Save button
+   * reads "Saving…" with its spinner, and the body is `inert`, so nothing can
+   * be typed or clicked into a form that is being written. The step then
+   * simply changes. Nothing to flash, nothing to contradict, no half page.
+   * Skeletons stay where they belong — `poLoading` on open, `boxesLoading`
+   * on stage 03 — where they really do stand in for content on its way. */
 
   const isLast = stage === STAGES.length - 1;
   const stageLabel = (i: number) =>
@@ -830,7 +830,7 @@ export default function InvoiceForm({
                 position="bottom"
               >
               <div
-                className={`spi-dt-step spi-dt-step--nav ${i === railStage ? 'is-active' : ''} ${i < railStage ? 'is-done' : ''}${saving ? ' is-busy' : ''}`}
+                className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}${saving ? ' is-busy' : ''}`}
                 role="button"
                 aria-disabled={saving}
                 tabIndex={saving ? -1 : 0}
@@ -839,8 +839,8 @@ export default function InvoiceForm({
               >
                 <div className="spi-dt-step-top">
                   <span className="spi-dt-step-lbl">STEP {pad2(i + 1)}</span>
-                  {i === railStage && <span className="spi-dt-step-badge">ACTIVE</span>}
-                  {i < railStage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
+                  {i === stage && <span className="spi-dt-step-badge">ACTIVE</span>}
+                  {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
                 </div>
                 <div className="spi-dt-step-big">{pad2(i + 1)}</div>
                 <div className="spi-dt-step-title">{stageLabel(i).title}</div>
@@ -857,9 +857,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {slowSave && <StageSkeleton stage={stage + 1} />}
-              {!slowSave && step1Busy && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={slowSave || step1Busy}>
+              {step1Busy && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
