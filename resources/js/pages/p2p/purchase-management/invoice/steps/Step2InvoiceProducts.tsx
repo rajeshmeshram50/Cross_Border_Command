@@ -172,8 +172,19 @@ export default function Step2InvoiceProducts({
             </div>
           )}
           {/* Under the table, at the end of the row of controls it belongs to
-              — it undoes the Action column, so it sits on that side. */}
-          {onAddLine && !readOnly && (
+              — it undoes the Action column, so it sits on that side.
+
+              Not offered on a Direct SPI that has a shipment behind it. The
+              lines are then the PI's lines and this step is a 2-way match
+              against that PI, so a product typed in here is one the document
+              does not contain: nothing to match it, and it still joins the
+              totals being reconciled. Without a shipment there is no document
+              at all and adding is the only way a line gets onto the invoice,
+              so the button stays there.
+
+              Removing a PI line is still allowed — the Restore banner above
+              puts it back, which is a line the PI does have. */}
+          {onAddLine && !readOnly && !(direct && draft.shipmentId) && (
             <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
               <IcoPlus /> Add Product
             </button>

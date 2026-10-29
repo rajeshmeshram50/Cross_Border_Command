@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\Inventory\Warehouse;
+use App\Models\ShipmentOrder;
 use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
@@ -134,6 +135,11 @@ class SupplierInvoice extends Model
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');
+    }
+    /** Direct SPI only — a PO-backed invoice reads its shipment through the order. */
+    public function shipmentOrder(): BelongsTo
+    {
+        return $this->belongsTo(ShipmentOrder::class, 'shipment_order_id');
     }
     public function vendor(): BelongsTo
     {

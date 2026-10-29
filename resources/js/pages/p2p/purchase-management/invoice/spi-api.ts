@@ -81,6 +81,15 @@ const SHIPMENT_MODE: Record<InvoiceShipmentScope, string> = {
   'with-shipment': 'with_shipment', 'without-shipment': 'without_shipment',
 };
 
+export type SpiGstApproval = {
+  id: number;
+  status: 'pending' | 'approved' | 'rejected';
+  reason: string | null;
+  requested_to_name: string | null;
+  requested_at: string | null;
+  decided_at?: string | null;
+};
+
 export type SpiStage1Body = {
   purchase_order_id: number | null;
   vendor_id: number;
@@ -130,13 +139,25 @@ function toFormData(body: Record<string, unknown>, files: Record<string, File | 
   return fd;
 }
 
-export type SpiDetailItem = SpiSavedItem & { qty_spi: string; rate: string; extra_qty: string | null };
+export type SpiDetailItem = SpiSavedItem & {
+  qty_spi: string; rate: string; extra_qty: string | null;
+  pi_item_id?: number | null; description?: string | null; hsn_code?: string | null; uom?: string | null;
+  qty_pi?: string | null; gst_pct?: string | null;
+};
 
 export type SpiDetail = {
   invoice: SpiHeader & {
     purchase_order_id: number | null;
     vendor_id: number;
     document_type: 'domestic' | 'international';
+    shipment_order_id?: number | null;
+    procurement_request_id?: number | null;
+    procurement_request_code?: string | null;
+    vendor?: { id: number; vendor_code: string | null; company_name: string | null } | null;
+    shipment_order?: {
+      id: number; shipment_code: string | null; created_at?: string | null;
+      proforma_invoice?: { id: number; code: string | null } | null;
+    } | null;
     invoice_no: string | null;
     invoice_date: string | null;
     invoice_file_name: string | null;
@@ -629,6 +650,14 @@ export const spiApi = {
   create: (body: SpiStage1Body) =>
     call('SPI create (Stage 01)', () => api.post('/p2p/spi', body),
       (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
+
+  gstApprovalRequest: (spiId: number, body: { requested_to?: number; note?: string }) =>
+    call('SPI GST approval request', () => api.post(`/p2p/spi/${spiId}/gst-approval/request`, body),
+      (b) => (b as { data?: unknown } | null)?.data),
+
+  gstApprovals: (spiId: number) =>
+    call('SPI GST approvals', () => api.get(`/p2p/spi/${spiId}/gst-approvals`),
+      (b) => ((b as { data?: SpiGstApproval[] } | null)?.data ?? [])),
 
   updateStage1: (id: number, body: SpiStage1Body) =>
     call('SPI update (Stage 01)', () => api.put(`/p2p/spi/${id}/stage-1`, body),

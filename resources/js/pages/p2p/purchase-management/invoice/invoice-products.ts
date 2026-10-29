@@ -192,7 +192,7 @@ export function formatProductCode(code: string | null | undefined): string {
   return m ? `${m[1].toUpperCase()}-${m[2].padStart(3, '0')}` : raw;
 }
 
-const withoutCodePrefix = (name: string, code: string | null | undefined) => {
+export const withoutCodePrefix = (name: string, code: string | null | undefined) => {
   if (!code) return name;
   const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return name.replace(new RegExp(`^\\s*${esc}\\s*[–—-]\\s*`), '') || name;

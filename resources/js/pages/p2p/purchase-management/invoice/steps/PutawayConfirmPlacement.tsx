@@ -292,11 +292,13 @@ export default function PutawayConfirmPlacement({
                                 .s4rv-flag is already written for exactly this
                                 case (invoice-form.css), so the rows need no
                                 CSS of their own. */}
-                            {box.flags.map((f, i) => (
-                              <div key={f} className={`invf-fpop__row${i % 2 ? ' is-alt' : ''}`}>
+                            <div className="invf-fpop__list">
+            {box.flags.map((f, i) => (
+                              <div key={f} className="invf-fpop__row">
                                 <span className="s4rv-flag">{f}</span>
                               </div>
                             ))}
+            </div>
                           </div>
                         </>,
                         document.body,

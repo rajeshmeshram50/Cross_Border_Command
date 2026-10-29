@@ -52,6 +52,7 @@
 /* The tone the banner is already wearing: red refuses, amber asks. */
 .invf-gst__act--stop { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 12px rgba(220, 38, 38, .34); }
 .invf-gst__act--warn { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217, 119, 6, .32); }
+.invf-gst__act--ok { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(5, 150, 105, .3); }
 .invf-gst__act:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .22); }
 .invf-gst__act:active { transform: translateY(0); }
 
@@ -801,17 +802,27 @@
 .vti-dw-save-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 8px; font-size: 11px; font-weight: 800; border: none; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 50%, #0e7490 100%); color: #fff; cursor: pointer; letter-spacing: .02em; box-shadow: 0 3px 12px rgba(6,182,212,.4), inset 0 1px 0 rgba(255,255,255,.22); transition: all .16s; white-space: nowrap; }
 .vti-dw-save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(6,182,212,.5); background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%); }
 .vti-dw-save-btn.is-saved { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 3px 12px rgba(5,150,105,.38); }
-.vti-dw-fields { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 14px 16px 16px; background: transparent; }
+/* 12px/14px, the design's own value — ours ran 14 top and 16 bottom, which
+   is 6 of the 7.4px this strip stood proud of the design's 79.97. */
+.vti-dw-fields { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 12px 14px; background: transparent; }
 .vti-dw-field-sep { display: none; }
-.vti-dw-field { display: flex; flex-direction: column; gap: 6px; background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%); border: 1.5px solid rgba(6,182,212,.2); border-radius: 10px; padding: 10px 12px; transition: all .16s; cursor: text; box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95); }
+.vti-dw-field { display: flex; flex-direction: column; gap: 6px; background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%); border: 1.5px solid rgba(6,182,212,.2); border-radius: 10px; padding: 10px 12px; transition: all .16s; cursor: text;
+  /* 3 border + 20 padding + 6 gap + 11 label + 16 input = 56, which with the
+     strip's 24 of padding gives 80 against the design's 79.97. */ box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95); }
 .vti-dw-field:hover { border-color: rgba(6,182,212,.5); background: #fff; box-shadow: 0 4px 14px rgba(6,182,212,.14), inset 0 1px 0 #fff; transform: translateY(-1px); }
 .vti-dw-field:focus-within { border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.15), 0 4px 14px rgba(6,182,212,.12); transform: translateY(-1px); }
 .vti-dw-field--auto { background: linear-gradient(145deg, #cffafe 0%, #a5f3fc 60%, #67e8f9 100%); border-color: #06b6d4; box-shadow: 0 2px 8px rgba(6,182,212,.2), inset 0 1px 0 rgba(255,255,255,.7); }
 .vti-dw-field--auto:hover { background: linear-gradient(145deg, #a5f3fc 0%, #67e8f9 100%); border-color: #0891b2; transform: translateY(-1px); }
-.vti-dw-field-lbl { font-size: 8px; font-weight: 800; color: #0891b2; opacity: .75; text-transform: uppercase; letter-spacing: .14em; display: flex; align-items: center; gap: 4px; white-space: nowrap; line-height: 1; }
+/* 11px stated, not `line-height: 1`. At 1 the label was 8px tall on its own
+   but the unit chip beside it measures 11.5 — 6.5px of type on 1.5px of
+   padding and a 1px border — and a flex row is as tall as its tallest child,
+   so the chip was setting this height unseen. Stating 11 caps it there. */
+.vti-dw-field-lbl { font-size: 8px; font-weight: 800; color: #0891b2; opacity: .75; text-transform: uppercase; letter-spacing: .14em; display: flex; align-items: center; gap: 4px; white-space: nowrap; line-height: 11px; }
 .vti-dw-unit-tag { font-size: 6.5px; font-weight: 800; color: #0891b2; background: rgba(6,182,212,.14); border-radius: 3px; padding: 1.5px 4px; text-transform: uppercase; border: 1px solid rgba(6,182,212,.25); }
 .vti-dw-auto-tag { font-size: 6.5px; font-weight: 800; color: #fff; letter-spacing: .04em; background: linear-gradient(135deg, #06b6d4, #0891b2); border-radius: 3px; padding: 2px 5px; text-transform: uppercase; box-shadow: 0 1px 4px rgba(6,182,212,.35); }
-.vti-dw-inp { border: none; padding: 0; background: transparent; width: 100%; outline: none; font-size: 13px; font-weight: 700; color: #0c4a6e; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; line-height: 1.3; }
+/* 16px, not 1.3 — a ratio on 13px gives 16.9, and a figure that is not a
+   whole pixel is a box that cannot be reasoned about. */
+.vti-dw-inp { border: none; padding: 0; background: transparent; width: 100%; outline: none; font-size: 13px; font-weight: 700; color: #0c4a6e; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; line-height: 16px; }
 .vti-dw-inp::placeholder { color: rgba(6,182,212,.4); font-weight: 400; font-size: 12px; font-family:'DM Sans',system-ui,sans-serif; }
 .vti-dw-inp--auto { color: #0e7490; font-weight: 800; cursor: default; }
 .vti-dw-row2-inner { display: flex; align-items: stretch; gap: 0; border-top: 1px solid rgba(6,182,212,.15); padding: 0; background: linear-gradient(108deg, #f8fdff 0%, #fbfeff 50%, #ffffff 100%); }
@@ -895,7 +906,6 @@
   text-align: left; cursor: pointer;
   transition: background .14s, border-color .14s;
 }
-.vti-flag-pop__row.is-alt { background: rgba(6,182,212,.05); }
 .vti-flag-pop__row:hover { background: rgba(6,182,212,.12); }
 .vti-flag-pop__row svg { flex-shrink: 0; }
 /* One colour for selection, the app's teal — not the flag's own. A per-flag
@@ -950,8 +960,6 @@
 }
 [data-bs-theme="dark"] .vti-flag-pop__title,
 [data-layout-mode="dark"] .vti-flag-pop__title { color: #67e8f9; }
-[data-bs-theme="dark"] .vti-flag-pop__row.is-alt,
-[data-layout-mode="dark"] .vti-flag-pop__row.is-alt { background: rgba(34,211,238,.07); }
 [data-bs-theme="dark"] .vti-flag-pop__row:hover,
 [data-layout-mode="dark"] .vti-flag-pop__row:hover { background: rgba(34,211,238,.16); }
 /* A custom flag's name is free text and can be any length. Capped with an
@@ -1196,6 +1204,46 @@
 .vti-adv-line1 .vti-dw-field { padding: 10px 12px; }
 .vti-adv-line2 { display: flex; }
 .vti-adv-line2 .vti-dw-field { flex: 1; padding: 10px 12px; }
+/* This is the "stripped flat in here" the date cells in BoxDrawer refer to.
+   MasterDatePicker ships as a 38px bordered box with its own surface and
+   shadow, and .vti-dw-field is already that box — nested, the two date cells
+   stand half again as tall as the four text cells, and a grid row takes its
+   tallest cell, so the whole band grows and the dates read as a different
+   kind of control. Flattened to the input they stand in for: no border, no
+   surface, no padding, the same type as .vti-dw-inp, calendar at the right.
+   .vs3t does the same to the same control for the box editor's table.
+
+   These rules ARE the fix the component keeps the picker for — without them
+   the box-in-a-box is back. Do not delete them while MasterDatePicker is
+   used here. */
+.vti-adv-line1 .master-datepicker-wrap { width: 100%; }
+.vti-adv-line1 .master-datepicker-toggle,
+.vti-adv-line1 .master-datepicker-toggle:hover:not([aria-disabled="true"]),
+.vti-adv-line1 .master-datepicker-toggle.open {
+  height: auto; min-height: 0; padding: 0; gap: 6px;
+  border: none; border-radius: 0; background: transparent; box-shadow: none;
+}
+.vti-adv-line1 .master-datepicker-value,
+.vti-adv-line1 .master-datepicker-placeholder { line-height: 1.3; }
+.vti-adv-line1 .master-datepicker-value {
+  font-size: 13px; font-weight: 700; color: #0c4a6e;
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+/* Matched to .vti-dw-inp::placeholder, so an empty date reads as the same
+   kind of blank as an empty Serial No. */
+.vti-adv-line1 .master-datepicker-placeholder {
+  font-size: 12px; font-weight: 400; color: rgba(6,182,212,.4);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.vti-adv-line1 .master-datepicker-icon { margin-left: auto; color: #0891b2; font-size: 14px; }
+/* The shared stylesheet forces a dark surface and border on the toggle at the
+   same specificity as the rule above; this one outranks it. */
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-toggle {
+  background: transparent; border: none; box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-value { color: #e2e8f0; }
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-placeholder { color: rgba(103,232,249,.45); }
+[data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-icon { color: #67e8f9; }
 .vti-s3-content .vti-dw-adv-fields { padding: 14px 18px 18px; }
 .vti-s3-content .vti-dw-adv-body.is-open { max-height: 480px; }
 .vti-dw-row2 { display: none; }
@@ -1628,17 +1676,40 @@
 /* The list behind the counter. Same shape as the Issuing Authorities popover
    it is modelled on: a titled card with padded, alternating rows. */
 .invf-fpop {
-  width: 260px; overflow-y: auto; overscroll-behavior: contain;
-  padding: 8px; border-radius: 12px;
+  /* Narrower, and sized to its chips rather than to a fixed 260: the widest
+     flag name is what this has to hold, not a column. */
+  width: max-content; min-width: 180px; max-width: 260px;
+  overscroll-behavior: contain;
+  padding: 9px 10px 10px; border-radius: 12px;
   background: #fff; border: 1.5px solid rgba(6,182,212,.35);
   box-shadow: 0 16px 40px rgba(8,47,73,.22);
 }
 .invf-fpop__title {
   font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
-  color: #0891b2; padding: 4px 8px 7px;
+  color: #8aa5b2; padding: 0 2px 7px;
 }
-.invf-fpop__row { padding: 5px 8px; border-radius: 8px; }
-.invf-fpop__row.is-alt { background: rgba(6,182,212,.05); }
+/* The list scrolls, not the card, so the "Product Flags (n)" heading stays
+   put instead of sliding away under its own rows. Five rows and the four
+   gaps between them, written in the row's own units rather than a flat
+   pixel height, so the cap cannot drift when the chip padding changes —
+   the sixth is cut at the fold, which is what says there is more. */
+.invf-fpop__list {
+  --fpop-row: 26px;
+  --fpop-gap: 4px;
+  display: flex; flex-direction: column; gap: var(--fpop-gap);
+  max-height: calc(var(--fpop-row) * 5 + var(--fpop-gap) * 4);
+  overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #b9dde8 transparent;
+}
+.invf-fpop__list::-webkit-scrollbar { width: 6px; }
+.invf-fpop__list::-webkit-scrollbar-thumb { background: #b9dde8; border-radius: 99px; }
+/* Plain rows. The zebra band under every other one was doing the work a
+   table needs across many columns, and this list has one: it turned six
+   chips into a striped block that read as heavier than the strip it was
+   explaining. The chips already carry their own colour — that is the
+   distinction, and a second one behind them only competes with it.
+   The rows are tighter too, since nothing has to sit inside a band any more. */
+.invf-fpop__row { padding: 3px 4px; border-radius: 8px; }
 .invf-fpop__row .invf-pb-flag { max-width: 100%; }
 /* The review panel lists its flags in here too, and this pop-over is
    portalled to <body> — outside .s4-root, where every .s4rv-* rule is scoped.
@@ -1650,13 +1721,19 @@
   font-size: 11px; font-weight: 800; letter-spacing: -.1px;
 }
 .invf-fpop .s4rv-flag svg { flex-shrink: 0; }
-.invf-fpop .s4rv-flag.is-haz { color: #fff; background: linear-gradient(135deg,#fbbf24,#d97706); border-color: transparent; }
-.invf-fpop .s4rv-flag.is-cold { color: #fff; background: linear-gradient(135deg,#22d3ee,#0891b2); border-color: transparent; }
-.invf-fpop .s4rv-flag.is-fragile { color: #fff; background: linear-gradient(135deg,#fb7185,#e11d48); border-color: transparent; }
+/* One calm chip for every flag in the LIST. On the strip each flag earns its
+   own colour, because there a glance has to pick one out. Stacked six deep in
+   a small card those same colours have nothing to distinguish them from —
+   they are all equally loud, so the list reads as a paint chart rather than
+   as the contents of a box. The icon still says which flag it is. */
+.invf-fpop .s4rv-flag.is-haz,
+.invf-fpop .s4rv-flag.is-cold,
+.invf-fpop .s4rv-flag.is-fragile {
+  color: #476b7e; background: #f1f8fa; border-color: #d8ecf2;
+}
 [data-bs-theme="dark"] .invf-fpop .s4rv-flag { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); color: #cbd5e1; }
 [data-bs-theme="dark"] .invf-fpop { background: #0f1b2a; border-color: rgba(34,211,238,.28); box-shadow: 0 16px 40px rgba(0,0,0,.6); }
 [data-bs-theme="dark"] .invf-fpop__title { color: #67e8f9; }
-[data-bs-theme="dark"] .invf-fpop__row.is-alt { background: rgba(34,211,238,.07); }
 .invf-packed .invf-packed-table td.invf-c-acts { white-space: nowrap; }
 .invf-packed .vti-packed-acts { display: inline-flex; align-items: center; gap: 8px; }
 /* The pencil is solid, not the outline button it inherits elsewhere: beside a
@@ -2012,6 +2089,30 @@
 .vti-dw-strip .vti-dw-unit-opt { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; min-width: 34px; border: none; border-radius: 7px; font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: rgba(255,255,255,.82); background: transparent; cursor: pointer; transition: all .14s ease; }
 .vti-dw-strip .vti-dw-unit-opt:hover:not(.is-active) { background: rgba(255,255,255,.16); color: #fff; }
 .vti-dw-strip .vti-dw-unit-opt.is-active { background: #fff; color: #0e7490; box-shadow: 0 1px 5px rgba(2,40,54,.25); }
+
+/* ── Scroll cost: the strip's blurs do nothing but cost ─────────────────────
+ * Five controls on this strip carry a backdrop-filter — Upload, Camera,
+ * Sticker, the CM/M toggle and the quantity pill. The strip is pinned at the
+ * top of the dialog while the form scrolls underneath it, which is the one
+ * case this stylesheet already calls the most expensive thing a scrolling
+ * surface can carry: every frame the compositor re-reads the pixels behind
+ * each of them and re-blurs them, and those pixels are moving, so none of it
+ * can be cached. Five of them, every frame.
+ *
+ * And here it buys nothing. What sits behind these controls is the strip's
+ * own teal gradient, which is opaque — blurring a smooth gradient returns
+ * the same gradient. The white tints, borders and shadows stay exactly as
+ * they are; only the sampling goes.
+ *
+ * Declared after every copy of the rules above — they appear twice in this
+ * file — so it holds whichever copy wins. */
+.vti-dw-strip .vti-dw-icon-btn,
+.vti-dw-strip .vti-dw-sticker-btn,
+.vti-dw-strip .vti-dw-unit-toggle,
+.vti-dw-strip .vti-dw-strip-qty {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
 /* ── Editable per-box quantity ──────────────────────────────────────────────
    The strip's QUANTITY becomes a field on a split, so units can be moved
    between cartons as they are filled.
@@ -3258,6 +3359,8 @@
 .cpd-scroll--rows {
   max-height: 500px;
   overflow-y: auto;
+  /* One gesture moves one surface — see the note on .vti-wrap--rows. */
+  overscroll-behavior: contain;
   /* The vertical bar was drawn OVER the table's right edge, so it crossed the
      sticky header band and left a notch in it where the teal stopped short.
      A stable gutter reserves the 8px outside the content box instead, so the
@@ -3336,6 +3439,12 @@
 .vti-wrap--rows {
   max-height: 500px;
   overflow-y: auto;
+  /* One gesture moves one surface. Without containment a wheel over this
+     table ran it to its end and then carried straight on into the form body
+     behind it, so a single scroll jumped two surfaces and the page appeared
+     to stutter past what you were reading. This is the same cure the Stage 04
+     panes carry; Stage 02's table has it too. */
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #bfe3ec transparent;
 }
@@ -3562,6 +3671,16 @@
 .s4-root .s4-tab[data-tab="damaged"].is-active { background: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea6c0a 100%); color: #fff; box-shadow: 0 4px 14px rgba(249,115,22,.38), 0 1px 4px rgba(249,115,22,.2), inset 0 1px 0 rgba(255,255,255,.18); }
 .s4-root .s4-tab.is-active .s4-tab__ico { background: rgba(255,255,255,.22); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
 .s4-root .s4-tab.is-active .s4-tab__count { background: rgba(255,255,255,.25); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+/* `flex: 1 0 700px` — grow into spare height, but never shrink below 700px.
+   The floor is the point: the right pane holds a 7-field grid, a remark row,
+   a product table and a pinned action bar, and below about 700px there is no
+   room for the table between the header and that bar. Letting the band
+   shrink freely (`flex: 1 1 auto`, which Full View can afford because it has
+   the whole window) crushed the pane until Box Product Details showed its
+   column headers and nothing else, with the action bar over them.
+
+   So when the window is shorter than the stage needs, the shortfall belongs
+   on the PAGE's scrollbar, not on the panes. Do not remove the floor. */
 .s4-root .s4-panels { display: flex; gap: 10px; align-items: stretch; flex: 1 0 700px; min-height: 0; }
 .s4-root .s4-panel { display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; transition: flex .3s cubic-bezier(.16,1,.3,1), box-shadow .2s; position: relative; }
 .s4-root .s4-panel--left { background: linear-gradient(180deg, #f0fdff 0%, #fafdfe 18%, #fff 40%); }
@@ -5166,8 +5285,26 @@
 .s4-root .s4wz-opt__ic { grid-area:ic; width:48px; height:48px; border-radius:14px; display:grid; place-items:center; color:#fff; }
 .s4-root .s4wz-opt--rack .s4wz-opt__ic { background:linear-gradient(135deg,#22d3ee,#0891b2); }
 .s4-root .s4wz-opt--norack .s4wz-opt__ic { background:linear-gradient(135deg,#fbbf24,#f59e0b); }
-.s4-root .s4wz-opt__radio { grid-area:radio; justify-self:end; align-self:center; width:17px; height:17px; border-radius:50%; border:1.5px solid #cbd5e1; background:#fff; }
-.s4-root .s4wz-opt.is-on .s4wz-opt__radio { border-color:#0891b2; box-shadow:inset 0 0 0 3.5px #0891b2; }
+/* 22px, and the chosen one is a filled teal disc with a white tick — not a
+   dot. The design marks the selected card with a check, which says "this is
+   the one" rather than "this is the one of two the cursor is nearest"; a
+   filled dot reads as a radio still waiting to be confirmed. The tick is
+   drawn from two borders on a rotated box rather than an SVG, because the
+   element is aria-hidden and empty: the state is already on the card. */
+.s4-root .s4wz-opt__radio {
+  grid-area: radio; justify-self: end; align-self: center; position: relative;
+  width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #cbd5e1; background: #fff;
+  transition: background .14s, border-color .14s;
+}
+.s4-root .s4wz-opt.is-on .s4wz-opt__radio {
+  border-color: #0891b2; background: #0891b2; box-shadow: 0 2px 6px -1px rgba(8,145,178,.5);
+}
+/* The tick is an <svg> in the markup now, so this only has to centre it and
+   colour it. The border-drawn ::after it replaces was correct in the
+   stylesheet and still did not appear on screen — rather than keep guessing
+   at why, the icon is rendered where it can be seen in the DOM. */
+.s4-root .s4wz-opt__radio { display: flex; align-items: center; justify-content: center; color: #fff; }
+.s4-root .s4wz-opt__radio svg { width: 13px; height: 13px; display: block; }
 .s4-root .s4wz-opt__t { grid-area:t; margin-top:4px; font-size:14.5px; font-weight:800; color:#0f172a; }
 .s4-root .s4wz-opt__rec { grid-area:rec; justify-self:start; font-size:9.5px; font-weight:800; letter-spacing:.04em; padding:2px 8px; border-radius:999px; background:#dcfce7; color:#047857; }
 .s4-root .s4wz-opt__s { grid-area:s; font-size:11.5px; font-weight:500; color:#64748b; line-height:1.45; }
@@ -5660,6 +5797,9 @@
 [data-bs-theme="dark"] .s4-root .s4vp-none,
 [data-bs-theme="dark"] .s4-root .s4pd-card__t { color: var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4wz-opt__radio { background: transparent; border-color: #41606d; }
+/* The filled state keeps its teal in dark too — restated because the rule
+   above would otherwise blank it back to transparent. */
+[data-bs-theme="dark"] .s4-root .s4wz-opt.is-on .s4wz-opt__radio { background: #0891b2; border-color: #22d3ee; }
 [data-bs-theme="dark"] .s4-root .s4mx-tr--hd { background: #13303c; border-bottom-color: var(--s4d-line); color: #7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4mx-row { border-bottom-color: rgba(255,255,255,.05); }
 [data-bs-theme="dark"] .s4-root .s4mx-tr { color: var(--s4d-tx); }
@@ -5935,6 +6075,23 @@
 .s4-root .s4-panel__toggle,
 .s4-root #s4PaneScroll .s4-pane-footer,
 .s4-root .s4h-route { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Three more, found by listing every live blur in this file against what it
+   sits on. All three are white translucent chips on an OPAQUE gradient, so
+   the blur samples a smooth gradient and hands back the same gradient —
+   nothing to see, and the per-frame cost is paid anyway:
+ *
+ *   .s4pkc__stk   the Sticker button on every box card in the Pick-a-Box
+ *                 list — one blur layer per card, in the pane with the most
+ *                 scroll travel on this stage
+ *   .s4bj-step    the three Review / Select / Confirm cards, pinned at the
+ *                 top of the right pane while that pane scrolls
+ *   .s4rv-hk      the key chips on the review hero
+ *
+ * The tints, borders and shadows are untouched; only the sampling goes. */
+.s4-root .s4pkc__stk,
+.s4-root .s4bj-step,
+.s4-root .s4rv-hk { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 
 .s4-root .s4-grp-hdr { background: #F7F9FC; }
 .s4-root .s4-grp-hdr--dispatch { background: linear-gradient(100deg,#e8e9fb,#f3f5fb); }
@@ -6685,11 +6842,23 @@
 /* Measurements. Read-only, so they are values on a tile rather than inputs —
    a disabled text box invites a click that will not do anything. */
 .s4-root .s4rv-flds { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 12px 14px; }
+/* 56px tall, built from stated parts rather than left to inherited
+   line-heights. The strip measured 89.56 against the design's 79.97 with the
+   SAME 12px/14px padding on both, so every one of those 9.59px was inside
+   these boxes — and none of it was written down: the label and the value
+   both took whatever line-height they inherited, which is why the box drifted.
+   2 border + 14 padding + 11 label + 5 gap + 18 value = 50. Measured against
+   the design side by side at the same zoom, ours stood about 7px proud; the
+   padding is where that sat, so it comes off there rather than out of the
+   type, which has to stay legible. The unit chip is 7.5px on 1px of padding,
+   so it fits the label's 11px line without pushing it open. */
 .s4-root .s4rv-fld {
   display: flex; flex-direction: column; gap: 5px; min-width: 0;
-  padding: 9px 11px; border-radius: 11px;
+  padding: 7px 12px; border-radius: 11px;
   background: linear-gradient(180deg, #f8fcfe, #f1f9fb); border: 1px solid #e0f0f5;
 }
+.s4-root .s4rv-fld__lbl { line-height: 11px; }
+.s4-root .s4rv-fld__v { line-height: 18px; }
 .s4-root .s4rv-fld.is-auto { background: linear-gradient(135deg, #cffafe, #a5f3fc); border-color: #67e8f9; }
 .s4-root .s4rv-fld__lbl { display: flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #6b8a97; }
 .s4-root .s4rv-fld__unit,
@@ -6706,7 +6875,10 @@
 .s4-root .s4rv-mark__lbl { font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #0891b2; opacity: .75; }
 .s4-root .s4rv-mark__v {
   align-self: flex-start; display: inline-flex; align-items: center;
-  padding: 7px 14px; border-radius: 10px; font-size: 11.5px; font-weight: 800; white-space: nowrap;
+  /* 3px shorter and 12px narrower than it was — measured against the design
+     at the same zoom. The sub-line carries the reduction in its line-height
+     rather than its size, so "As expected" stays readable. */
+  padding: 5px 11px; border-radius: 10px; font-size: 11px; font-weight: 800; white-space: nowrap;
   /* Both for the gloss below: it is absolutely placed, and it must be cut to
      the rounded corners rather than squaring them off. */
   position: relative; overflow: hidden;
@@ -7520,8 +7692,12 @@
   flex-direction: column; align-items: flex-start; gap: 2px;
   padding: 9px 16px; min-height: 48px; justify-content: center; line-height: 1.2;
 }
-.s4-root .s4rv-mark__v b { font-size: 12.5px; font-weight: 800; }
-.s4-root .s4rv-mark__v em { font-style: normal; font-size: 10px; font-weight: 600; opacity: .85; }
+/* The design's own values for this tile — 11.5 over 9.5 at weight 500, both
+   on line-height 1. Ours ran 12.5 over 10 on inherited line-heights, which is
+   where most of the extra height came from: a point of type on each line
+   costs far less than the leading around it. */
+.s4-root .s4rv-mark__v b { font-size: 11.5px; font-weight: 800; line-height: 1; }
+.s4-root .s4rv-mark__v em { font-style: normal; font-size: 9.5px; font-weight: 500; line-height: 1; opacity: .7; }
 /* "Nothing recorded", as a shape rather than two grey letters adrift in the
    cell — it has to sit on the same baseline as the buttons beside it. */
 .s4-root .s4rv-napill {
@@ -8019,19 +8195,10 @@
   box-shadow: 0 2px 8px rgba(8,145,178,.4);
   position: relative;
 }
-/* The tick is a DRAWN stroke with round caps, not two borders of an empty box
-   rotated 45°. That trick gives a thin mark with mitred corners and a sharp
-   point, which at 22px reads as a scratch on the disc; the design's has the
-   weight and the rounded ends of a pen stroke. A mask paints it, so the glyph
-   is one shape and the markup stays an empty span. */
-.s4-root .s4wz-opt.is-on .s4wz-opt__radio::after {
-  content: ''; position: absolute; inset: 0;
-  border: 0; margin: 0; transform: none;
-  background: #fff;
-  --s4-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
-  -webkit-mask: var(--s4-tick) center / 56% 56% no-repeat;
-  mask: var(--s4-tick) center / 56% 56% no-repeat;
-}
+/* The tick is an <svg> rendered in the span when the card is selected, so
+   there is no pseudo-element here any more. A mask-painted ::after lived at
+   this spot and was the reason the earlier border-drawn one never appeared:
+   two rules for the same pseudo-element, the later one winning silently. */
 /* A zero count is information, not a barrier: the card stays usable and only
    its count chip goes quiet. */
 .s4-root .s4wz-modal .s4wz-opt__n.is-none { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
@@ -10594,3 +10761,40 @@
 [data-bs-theme="dark"] .ord-table .ord-emptyrow > td { background: #0b1922; }
 [data-bs-theme="dark"] .ord-table .ord-emptybox b { color: #e2e8f0; }
 [data-bs-theme="dark"] .ord-table .ord-emptybox span { color: #7f9aa6; }
+
+
+/* ── Advanced Details toggle, to the design ──────────────────────────────────
+   It shares a rule with `.vti-dw-section-hd`, which is a full-width section
+   header and so carries a bottom border and no gap after its icon. As a
+   BUTTON this element is only as wide as its text, so that border came out as
+   a stub underlining the words — the design has the row open with no rule at
+   all — and the chevron sat hard against "Advanced Details" because the
+   shared rule has no gap.
+   ────────────────────────────────────────────────────────────────────────── */
+.vti-dw-advanced > .vti-dw-adv-toggle,
+.vti-dw-advanced > .vti-dw-adv-toggle.is-open {
+  width: 100%;
+  gap: 7px;
+  border-bottom: 0;
+}
+
+/* ── The app's calendar inside a drawer cell ─────────────────────────────────
+   The reason this picker was swapped out for a native date input: it carries
+   its own 38px bordered, filled box, and .vti-dw-field is already that box —
+   so the cell held a second one inside it, taller than its four neighbours
+   and visibly a different control.
+   Stripping the trigger flat in here fixes that without giving up the
+   calendar: no border, no fill, no height of its own, and the type matched to
+   the inputs beside it. The popover itself is untouched — it is portalled and
+   should look like every other calendar in the app.
+   ────────────────────────────────────────────────────────────────────────── */
+.vti-dw-field .master-datepicker-wrap { width: 100%; min-width: 0; }
+.vti-dw-field .master-datepicker-toggle {
+  min-height: 0; height: auto; padding: 0; gap: 6px;
+  border: 0; background: transparent; box-shadow: none; border-radius: 0;
+}
+.vti-dw-field .master-datepicker-value,
+.vti-dw-field .master-datepicker-placeholder {
+  font-size: 12.5px; font-weight: 700; letter-spacing: -.1px;
+}
+.vti-dw-field .master-datepicker-placeholder { font-weight: 500; }

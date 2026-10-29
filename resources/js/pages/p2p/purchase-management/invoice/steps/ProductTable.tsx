@@ -6,7 +6,7 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, withoutCodePrefix, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
 import { poLookupApi } from '../../order/api/po-api';
 import { toProduct, type ProductOpt } from '../../order/create-po/use-po-lookups';
@@ -117,7 +117,7 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${l.code} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
+          label: `${formatProductCode(l.code)} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
           name: l.poName,
           productId: l.productId,
         });
@@ -133,7 +133,12 @@ export default function ProductTable({
       if (existing) { existing.master = p; continue; }
       seen.set(value, {
         value,
-        label: `${p.code} — ${truncate(p.name, MATCH_NAME_MAX)}`,
+        /* The lines above arrive with the code already stripped from their
+           name (withoutCodePrefix, where they are built from the PI/PO). The
+           master's own names have not been through that, and some of them do
+           carry their code — "P-01 – Cooking Oil" — which would print it
+           twice here and make the two halves of this one dropdown disagree. */
+        label: `${formatProductCode(p.code)} — ${truncate(withoutCodePrefix(p.name, p.code), MATCH_NAME_MAX)}`,
         name: p.name,
         productId: p.id,
         master: p,
@@ -423,7 +428,7 @@ const Row = memo(function Row({
                   ? {
                     productId: pick.master!.id,
                     spiName: pick.master!.name,
-                    code: pick.master!.code,
+                    code: formatProductCode(pick.master!.code),
                     hsn: pick.master!.hsn,
                     gst: pick.master!.gst ?? 0,
                     description: pick.master!.description,
@@ -563,7 +568,7 @@ function ProdCell({ name, code, hsn, gst }: { name: string; code: string; hsn: s
         <div className="cpd-prod__nm">{short}</div>
       </Tooltip>
       <div className="cpd-prod__meta">
-        <span className="cpd-code">{code}</span>
+        <span className="cpd-code">{formatProductCode(code)}</span>
         <span className="cpd-kv">HSN <b>{hsn}</b></span>
         <span className="cpd-prod__dot" />
         <span className="cpd-kv">GST <b>{gst}%</b></span>

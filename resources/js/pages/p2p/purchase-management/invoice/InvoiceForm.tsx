@@ -15,7 +15,7 @@ import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
-import { draftFromPo, useInvoiceDraft } from './invoice-draft';
+import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
@@ -25,7 +25,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
-  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, itemsPayload, linesFromPo, taxModeFor,
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
@@ -64,7 +64,10 @@ export interface InvoiceFormInput {
   supplier: string;
   storage: StorageChoice;
   invoiceNo?: string;
-  direct?: { shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string };
+  direct?: {
+    shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string;
+    shipmentOrderId?: number; procurementRequestId?: number;
+  };
   openAtStage1?: boolean;
 }
 
@@ -98,15 +101,30 @@ export default function InvoiceForm({
 
   const [supplierBusy, setSupplierBusy] = useState(false);
 
-  const matchedToPi = !input.direct || !!draft.shipmentId;
-
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
+  const matchedToPi = !isDirect || !!draft.shipmentId;
 
   const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
   const savedVendor = useRef<number | null>(null);
+  const directLinks = useRef({
+    shipment_order_id: input.direct?.shipmentOrderId ?? null as number | null,
+    procurement_request_id: input.direct?.procurementRequestId ?? null as number | null,
+    procurement_request_code: input.direct?.procurementCode ?? null as string | null,
+  });
+  const latestSpiApproval = useCallback((id: number) => {
+    spiApi.gstApprovals(id)
+      .then(rows => {
+        const r = rows[0];
+        setGstApproval(r ? {
+          id: r.id, status: r.status, reason: r.reason, requested_to_name: r.requested_to_name,
+          requested_at: r.requested_at, decided_at: r.decided_at ?? null,
+        } : null);
+      })
+      .catch(() => {});
+  }, []);
   const reloadApproval = useCallback(() => {
-    if (!input.poId) return;
+    if (!input.poId) { if (spiIdRef.current) latestSpiApproval(spiIdRef.current); return; }
     poApi.show(input.poId)
       .then(po => setGstApproval(po.gst_approval ?? null))
       .catch(() => {});
@@ -115,11 +133,13 @@ export default function InvoiceForm({
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
   const [lines, setLines] = useState<ProductLine[]>(
-    input.poId || input.spiId || (input.direct && !input.direct.shipmentId) ? [] : PRODUCT_LINES,
+    input.poId || input.spiId || input.direct ? [] : PRODUCT_LINES,
   );
   const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
   const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
   const [spiId, setSpiId] = useState<number | null>(null);
+  const spiIdRef = useRef<number | null>(null);
+  spiIdRef.current = spiId;
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
   const [putaway, setPutaway] = useState<{ placed: number; total: number } | null>(null);
@@ -157,6 +177,7 @@ export default function InvoiceForm({
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
+          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
@@ -165,11 +186,80 @@ export default function InvoiceForm({
           setReached(resumeAt);
           setStage(spiViewOnlyReason(existing.status) || input.openAtStage1 ? 0 : resumeAt);
           savedVendor.current = existing.vendor_id ?? null;
+          if (!existing.purchase_order_id) {
+            directLinks.current = {
+              shipment_order_id: existing.shipment_order_id ?? directLinks.current.shipment_order_id,
+              procurement_request_id: existing.procurement_request_id ?? directLinks.current.procurement_request_id,
+              procurement_request_code: existing.procurement_request_code ?? directLinks.current.procurement_request_code,
+            };
+          }
         }
         if (!poId) {
           const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
           setNoPo(standalone);
           if (!standalone) setPoError('This invoice is not linked to a purchase order.');
+          if (standalone && existing) {
+            const so = existing.shipment_order ?? null;
+            set({
+              ...(so?.shipment_code ? { shipmentId: so.shipment_code } : {}),
+              ...(so?.proforma_invoice?.code ? { piNumber: so.proforma_invoice.code } : {}),
+              ...(existing.procurement_request_code ? { procurementCode: existing.procurement_request_code } : {}),
+              invoiceNumber: existing.invoice_no ?? '',
+              ...(existing.invoice_date ? { invoiceDate: existing.invoice_date.slice(0, 10) } : {}),
+              invoiceFile: existing.invoice_file_name ?? '',
+              ewayBillFile: existing.eway_file_name ?? '',
+            });
+            setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
+            if (!input.direct && existing.vendor_id) {
+              const vid = existing.vendor_id;
+              const [sup, scrutiny] = await Promise.all([
+                poLookupApi.supplier(vid).catch(() => null),
+                spiApi.vendorScrutiny(vid).catch(() => null),
+              ]);
+              if (!live) return;
+              if (sup) {
+                const gst = newestScrutiny(scrutiny);
+                set({
+                  vendorId: vid,
+                  ...draftFromSupplier(sup),
+                  ...(gst ? draftFromScrutiny(gst) : {}),
+                  docType: existing.document_type === 'international' ? 'International' : 'Domestic',
+                });
+                mappedSupplier.current = sup.code;
+              }
+              poLookupApi.supplierVault(vid)
+                .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
+                .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
+            }
+            if (existing.items.length) {
+              const pi = existing.shipment_order_id
+                ? await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => [])
+                : [];
+              if (!live) return;
+              const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
+              const byProduct = new Map(pi.map(l => [l.product_id, l]));
+              setLines(existing.items.map(it => {
+                const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
+                const name = withoutCodePrefix(m?.product_name ?? '', m?.product_code) || formatProductCode(m?.product_code);
+                return {
+                  key: `saved:${it.id}`,
+                  spiItemId: it.id,
+                  piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
+                  productId: it.product_id,
+                  code: formatProductCode(m?.product_code),
+                  hsn: it.hsn_code ?? m?.hsn_code ?? '',
+                  piName: name, poName: name, spiName: name,
+                  description: it.description ?? m?.description ?? '',
+                  uom: it.uom ?? undefined,
+                  piQty: Number(it.qty_pi ?? m?.pi_quantity) || 0, poQty: 0,
+                  spiQty: Number(it.qty_spi) || 0,
+                  spiRate: Number(it.rate) || 0, poRate: 0,
+                  gst: Number(it.gst_pct) || 0,
+                };
+              }));
+              setRemovedLines([]);
+            }
+          }
           return;
         }
         const [po, openLines] = await Promise.all([
@@ -279,7 +369,11 @@ export default function InvoiceForm({
 
   const saveStage1 = async () => {
     if (spiId) {
-      if (!isDirect || viewOnly || !draft.vendorId || draft.vendorId === savedVendor.current) { advance(); return; }
+      if (!isDirect || viewOnly) { advance(); return; }
+      if (!draft.vendorId) {
+        toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by before continuing.');
+        return;
+      }
       setSaving(true);
       try {
         await spiApi.updateStage1(spiId, {
@@ -287,9 +381,34 @@ export default function InvoiceForm({
           vendor_id: draft.vendorId,
           document_type: draft.docType === 'International' ? 'international' : 'domestic',
           warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+          ...directLinks.current,
         });
         savedVendor.current = draft.vendorId;
         mappedSupplier.current = draft.supplierCode;
+        const shipmentOrderId = directLinks.current.shipment_order_id;
+        if (shipmentOrderId && !lines.some(l => l.spiItemId != null)) {
+          const pi = await poApi.piLines(shipmentOrderId);
+          setLines(pi.lines.map(l => {
+            const name = withoutCodePrefix(l.product_name ?? '', l.product_code) || formatProductCode(l.product_code);
+            return {
+              key: `pi:${l.pi_item_id}`,
+              piItemId: l.pi_item_id,
+              productId: l.product_id ?? undefined,
+              code: formatProductCode(l.product_code),
+              hsn: l.hsn_code ?? '',
+              uom: l.uom ?? undefined,
+              piName: name, poName: name, spiName: name,
+              description: l.description ?? '',
+              piQty: Number(l.pi_quantity) || 0,
+              poQty: 0,
+              spiQty: Number(l.pending_qty) || 0,
+              spiRate: Number(l.rate) || 0,
+              poRate: Number(l.rate) || 0,
+              gst: Number(l.gst_pct) || 0,
+            };
+          }));
+          setRemovedLines([]);
+        }
         advance();
       } catch (e) {
         toast.error('Could not save Stage 01', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -631,6 +750,25 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
+  /* Save & Next in flight — the step shows the form shimmer until the next
+     one opens. This is the Create PO wizard's `advancing`, done its way:
+
+       · ONE shimmer, not a skeleton of the step being opened. The PO draws
+         the same two-section PoFormSkeleton every time, whichever step is
+         coming, so it is always the right height for the body it fills. A
+         per-stage skeleton is a different height from the step it replaces,
+         which is how the page came to end halfway down.
+       · no delay before it appears, and no moving the step rail. The PO does
+         neither, and both were my inventions.
+
+     It is derived rather than held in state: a save on any step but the last
+     IS an advance. Only `mapInvoice` saves from the last step, and that one
+     closes the form rather than opening another step, so it must not shimmer.
+
+     The step stays mounted underneath (hidden, not removed), so a save that
+     fails brings it back exactly as it was left — the PO's rule too. */
+  const advancing = saving && stage < STAGES.length - 1;
+
   const isLast = stage === STAGES.length - 1;
   const stageLabel = (i: number) =>
     (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i])) || STAGES[i];
@@ -691,10 +829,15 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
+              /* Off while saving: Tooltip wraps an aria-disabled trigger in an
+                 inline-flex span, which pulls the card out of the grid (it
+                 shrinks to its text) and makes it :last-child (it loses its
+                 arrow) for the length of the save. */
               <Tooltip
                 key={s.title}
-                label={saving ? 'Saving — please wait' : i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
+                label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
                 position="bottom"
+                disabled={saving}
               >
               <div
                 className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}${saving ? ' is-busy' : ''}`}
@@ -724,9 +867,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {saving && <StageSkeleton stage={stage + 1} />}
-              {!saving && step1Busy && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={saving || step1Busy}>
+              {(advancing || step1Busy) && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={advancing || step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -748,7 +890,8 @@ export default function InvoiceForm({
                     poId={input.poId ?? null}
                     approval={gstApproval}
                     onApprovalSent={reloadApproval}
-                    onBusy={setSupplierBusy} />
+                    onBusy={setSupplierBusy}
+                    spiId={spiId} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}

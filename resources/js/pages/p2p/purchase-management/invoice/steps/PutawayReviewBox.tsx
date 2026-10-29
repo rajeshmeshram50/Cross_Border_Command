@@ -150,11 +150,13 @@ function FlagRow({ flags }: { flags: string[] }) {
             {/* Every flag, not just the hidden ones: opened from a counter,
                 the question is what this box carries, and answering with the
                 tail alone makes you hold the first four in your head. */}
+            <div className="invf-fpop__list">
             {flags.map((f, i) => (
-              <div key={f} className={`invf-fpop__row${i % 2 ? ' is-alt' : ''}`}>
+              <div key={f} className="invf-fpop__row">
                 <FlagChip name={f} />
               </div>
             ))}
+            </div>
           </div>
         </>,
         document.body,

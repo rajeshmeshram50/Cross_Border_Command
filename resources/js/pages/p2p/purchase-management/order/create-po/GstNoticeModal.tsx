@@ -29,9 +29,10 @@ type Approval = NonNullable<PoDetail['gst_approval']>;
 
 /** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
 export default function GstNoticeModal({
-  notice, onClose, poId, approval, onSent, onOpenScrutiny, doc = 'PO',
+  notice, onClose, poId, approval, onSent, onOpenScrutiny, doc = 'PO', onRequest,
 }: {
   notice: GstNotice; onClose: () => void; poId?: number | null; approval?: Approval | null; onSent?: () => void;
+  onRequest?: (body: { requested_to?: number; note?: string }) => Promise<unknown>;
   /** Opens the supplier master on its GST Scrutiny tab; without it the button just closes. */
   onOpenScrutiny?: () => void;
   /** What this dialog is blocking. The checks are the same on all three; only
@@ -72,7 +73,7 @@ export default function GstNoticeModal({
     /* The request is raised ON a purchase order. On the PO itself that means
        "save it first"; anywhere else it means there is no order behind this
        document to raise one against, which is a different thing to say. */
-    if (!poId) {
+    if (!poId && !onRequest) {
       toast.warning(
         doc === 'PO' ? 'Save the PO first' : 'No purchase order to approve against',
         doc === 'PO'
@@ -84,10 +85,12 @@ export default function GstNoticeModal({
     if (!sendBackTo && !approverId) { setError('Select the senior to send this request to.'); return; }
     setSending(true);
     try {
-      await poApprovalApi.request(poId, {
+      const body = {
         ...(sendBackTo ? {} : { requested_to: Number(approverId) }),
         note: note.trim() || undefined,
-      });
+      };
+      if (onRequest) await onRequest(body);
+      else await poApprovalApi.request(poId!, body);
       const who = sendBackTo ?? approvers.find((a) => String(a.id) === approverId)?.name ?? 'the senior';
       toast.success('Sent for senior approval', `${who} will see it in their Inbox.`);
       onSent?.();

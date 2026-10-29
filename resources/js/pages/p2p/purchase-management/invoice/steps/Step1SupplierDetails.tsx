@@ -51,8 +51,9 @@ const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
 export default function Step1SupplierDetails({
   draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved,
-  poId = null, approval = null, onApprovalSent, onBusy,
+  poId = null, approval = null, onApprovalSent, onBusy, spiId = null,
 }: {
+  spiId?: number | null;
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
   /* The purchase order this invoice bills, and the GST approval standing on
      it. The senior-approval request is raised against that order, exactly as
@@ -399,6 +400,7 @@ export default function Step1SupplierDetails({
           poId={poId}
           approval={approval}
           onSent={onApprovalSent}
+          onRequest={direct && spiId ? body => spiApi.gstApprovalRequest(spiId, body) : undefined}
           /* Same checks, named for what the reader is actually looking at —
              the dialog otherwise says "this PO cannot proceed" on an invoice
              screen, which reads as the wrong dialog having opened. */
@@ -803,12 +805,19 @@ export default function Step1SupplierDetails({
                       approved, against. The finding above still reads, so
                       nothing is hidden; it simply stops being a gate on a
                       document that is not the one being gated. */}
-                  {direct && gst.action && (
-                    <button type="button" className={`invf-gst__act invf-gst__act--${gst.tone}`}
-                      onClick={openGstNotice}>
-                      {gst.action}
-                    </button>
-                  )}
+                  {direct && gst.action && (() => {
+                    const st = gst.tone === 'warn' ? approval?.status : undefined;
+                    return (
+                      <button type="button" className={`invf-gst__act invf-gst__act--${st === 'approved' ? 'ok' : gst.tone}`}
+                        onClick={openGstNotice}>
+                        {st === 'approved' && <IcoOk />}
+                        {st === 'approved' ? 'Senior approved'
+                          : st === 'pending' ? 'Awaiting senior approval'
+                          : st === 'rejected' ? 'Rejected — send again'
+                          : gst.action}
+                      </button>
+                    );
+                  })()}
                 </div>
                 {/* gstLocked, not `locked`/`hasPo`. These five were the only
                     fields in step 01 still gated on there being a purchase
