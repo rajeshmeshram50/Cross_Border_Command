@@ -120,6 +120,60 @@
   background: #0e7490;
   text-align: left;
 }
+/* The band's scrolling remainder. Transparent, NOT a solid fill: group cells
+   are deliberately left transparent so the thead's 110deg gradient runs
+   unbroken across the row, and only the pinned ones take a solid colour
+   because they scroll over the body. Painting this one #0e7490 put a flat
+   block in the middle of the gradient, a visibly different shade from the
+   band beside it. The 1px inset divider goes too, so no hairline splits what
+   reads as one bar. */
+.spi-prodtbl thead .cpd-grp-tail {
+  background: transparent;
+  box-shadow: none !important;
+}
+
+/* Description is a row-two cell now rather than a two-row span, so it lands
+   on the product headings' own line without any vertical-align trick — a
+   span can only be aligned against the PAIR of rows, so centred it floated
+   above them and bottomed it fell below.
+
+   Sr. No and Action keep their span, and they are centred EXPLICITLY. The
+   base rule gives every header cell `padding: 7px` with no vertical-align,
+   which leaves them on the browser's default of `middle` — but the two rows
+   they span are not the same height, and the band row's own
+   `padding: 7px 10px 6px` is 1px shorter at the bottom, so "middle" of the
+   pair lands a little below the optical centre. Stating it here with the
+   padding evened out puts them where they look centred. */
+.spi-prodtbl thead th[rowspan="2"] {
+  vertical-align: middle;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+/* The header's dividers, kept but softened — and opaque.
+   They were 22% white between the rows and 16% down the column edges, drawn
+   over cells left transparent so the thead's gradient could run across them.
+   A translucent line over a transparent cell shows what is behind it, and
+   behind a sticky header is the table body, so scrolling rows travelled
+   visibly through them.
+   #2b859d and #217f99 are roughly 12% and 8% white already resolved against
+   the band's #0e7490: lighter than before, so they read as a hint of
+   structure rather than a drawn grid, and solid, so nothing can come through.
+   The first cell of each row and the band's tail skip the vertical line —
+   one would fall at the table's own left edge, the other in the middle of
+   what reads as a single bar.
+   The seal under the bottom row is separate and stays whatever happens to
+   the rest: that edge is where the rows slide beneath the header. The pinned
+   cells restate it because their own box-shadow would otherwise replace it
+   at the two columns that never scroll away. */
+.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
+.spi-prodtbl thead tr.cpd-grp th,
+.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
+.spi-prodtbl thead tr.cpd-grp th:first-child,
+.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
+.spi-prodtbl thead tr:last-child th.cpd-stick {
+  box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
+}
 
 /* Four step cards across, not two.
 
@@ -3204,6 +3258,14 @@
 .cpd-scroll--rows {
   max-height: 500px;
   overflow-y: auto;
+  /* The vertical bar was drawn OVER the table's right edge, so it crossed the
+     sticky header band and left a notch in it where the teal stopped short.
+     A stable gutter reserves the 8px outside the content box instead, so the
+     bar runs in a lane of its own and the header reaches the full width of
+     what it is heading. The bar still spans the container's height - it
+     belongs to this box, and the header is inside it - but it no longer sits
+     on top of the header. */
+  scrollbar-gutter: stable;
 }
 /* No `scrollbar-width` here either, for the reason `.cpd-scroll` sets out:
    setting it makes Chrome ignore the 8px below and draw its own, heavier bar.

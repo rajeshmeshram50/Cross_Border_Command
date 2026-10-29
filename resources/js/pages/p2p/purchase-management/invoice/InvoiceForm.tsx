@@ -129,6 +129,14 @@ export default function InvoiceForm({
      thing the skeleton is waiting for never runs. */
   const [directSupLoading, setDirectSupLoading] = useState(!!input.direct?.supplierCode);
 
+  /* The same wait, later: a supplier CHANGED in step 01 rather than resolved
+     when it opened. Everything on that step is the supplier master's to
+     state, so until the new record lands the step is showing the previous
+     company's legal name, address, contact and GST under the new name — the
+     wrong company's details presented as this one's. The skeleton covers it
+     for exactly as long as that is true. */
+  const [supplierBusy, setSupplierBusy] = useState(false);
+
   /* There is a PI behind this invoice only when it belongs to a shipment. A
      With-PO invoice always has one; an "All Other's" Direct SPI never does. */
   const matchedToPi = !input.direct || !!draft.shipmentId;
@@ -748,6 +756,11 @@ export default function InvoiceForm({
      so the close branch it used to carry has nothing left to call it. */
   const goBack = () => setStage(stage - 1);
 
+  /* Step 01 is waiting on a supplier record — resolved as the form opened, or
+     changed since. Either way the step has nothing true to show, so the
+     skeleton stands in front of it. */
+  const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
+
   const isLast = stage === STAGES.length - 1;
   /* One stage, named for the invoice it belongs to. Stages the two types
      share fall through to the common wording rather than being repeated. */
@@ -872,8 +885,8 @@ export default function InvoiceForm({
           ) : (
             <>
               {saving && <StageSkeleton stage={stage + 1} />}
-              {!saving && stage === 0 && directSupLoading && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={saving || (stage === 0 && directSupLoading)}>
+              {!saving && step1Busy && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={saving || step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -900,7 +913,8 @@ export default function InvoiceForm({
                        its own GST notice, so the flow is identical here. */
                     poId={input.poId ?? null}
                     approval={gstApproval}
-                    onApprovalSent={reloadApproval} />
+                    onApprovalSent={reloadApproval}
+                    onBusy={setSupplierBusy} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
@@ -930,7 +944,7 @@ export default function InvoiceForm({
                 )}
                 {stage === 3 && (
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
-                    flagMaster={flagMaster} spiId={spiId}
+                    flagMaster={flagMaster} spiId={spiId} direct={isDirect}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
                     spiCode={spiCode}
                     onProgress={onPutawayProgress}

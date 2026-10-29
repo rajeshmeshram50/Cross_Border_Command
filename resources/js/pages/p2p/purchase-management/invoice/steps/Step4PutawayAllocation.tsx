@@ -1019,7 +1019,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     document.body);
 }
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, onProgress, onLoadBox }: {
+export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, direct = false, onProgress, onLoadBox }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
   lines?: ProductLine[];
@@ -1029,6 +1029,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   warehouseInfo?: SelectLocationWarehouse | null;
   spiCode?: string | null;
   readOnly?: boolean;
+  /** No purchase order behind this invoice — passed to the stage summary. */
+  direct?: boolean;
   onProgress?: (placed: number, total: number) => void;
   onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
 }) {
@@ -1598,7 +1600,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
-      {!fs && <StageSummary draft={draft} upto={3} />}
+      {!fs && <StageSummary draft={draft} upto={3} direct={direct} />}
       {!fs && <PutawayStageBrief warehouse={warehouse} />}
 
       <div className="spi-segrow">

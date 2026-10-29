@@ -221,12 +221,32 @@ export default function ProductTable({
           <thead>
             <tr className="cpd-grp">
               <th rowSpan={2} className="cpd-stick cpd-stick--1">Sr. No</th>
-              <th colSpan={matchCols + 1} className="cpd-stick cpd-grp-stick">
+              {/* The band is split so the PINNED half is exactly as wide as
+                  the column that is actually pinned.
+                  It carries `position: sticky; left: 42px`, but it used to
+                  span every product column while only ONE of them - the
+                  Product column at .cpd-stick--2 - is pinned. A sticky cell
+                  keeps the width of its whole span, so on scroll it stood
+                  still at some 470px while just 232px of column stood still
+                  beneath it, and the surplus painted straight over the next
+                  group: "QUANTITIES" lost its first six letters.
+                  The trailing cell holds no label and scrolls with the columns
+                  it covers, so unscrolled the band still reads as one bar. */}
+              <th colSpan={1} className="cpd-stick cpd-grp-stick">
                 {/* No mapping to name when there is nothing on the other
                     side: one product column is a list, not a match. */}
                 {!matched ? 'Product' : twoWay ? '2-Way Product Mapping' : '3-Way Product Mapping'}
               </th>
-              <th rowSpan={2} className="cpd-th-left">Description</th>
+              {matchCols > 0 && <th colSpan={matchCols} className="cpd-grp-tail" />}
+              {/* Description belongs to no group, but it is NOT a rowSpan of 2.
+                  Spanning both rows makes it a cell of its own whose text can
+                  only be centred, topped or bottomed against the PAIR of rows,
+                  never against the second one — centred it floated above the
+                  product headings, bottomed it fell below them. As an ordinary
+                  row-two cell under an empty group cell it is simply on the
+                  same line as PRODUCT (PI) and PRODUCT (SPI), which is what it
+                  sits beside. */}
+              <th className="cpd-grp-tail" />
               <th colSpan={matched ? (twoWay ? 4 : 5) : 1}>{matched ? 'Quantities' : 'Quantity'}</th>
               {/* Without a purchase order there is nothing to show under it:
                   the group goes rather than standing empty over the rows. */}
@@ -242,6 +262,7 @@ export default function ProductTable({
               {matched && <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
               {!twoWay && <th className="cpd-th-left">Product (PO)</th>}
               <th className={`cpd-th-left cpd-edh${matched ? '' : ' cpd-stick cpd-stick--2'}`}>Product (SPI)</th>
+              <th className="cpd-th-left">Description</th>
               {matched && <th>Qty (PI)</th>}
               {!twoWay && <th>Qty (PO)</th>}
               <th className="cpd-c cpd-edh">Qty (SPI)</th>

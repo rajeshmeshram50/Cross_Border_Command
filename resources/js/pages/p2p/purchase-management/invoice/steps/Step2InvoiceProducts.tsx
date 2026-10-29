@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
@@ -49,9 +49,37 @@ export default function Step2InvoiceProducts({
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
 
+  /* The reference pills on the Products head.
+   *
+   * The last two are the chain this invoice is matched against, and a Direct
+   * SPI raised without a shipment has no such chain: no shipment to name, and
+   * no proforma invoice behind one. Both pills would stand there reading "—",
+   * which says "this has a shipment id, it just isn't filled in" — the
+   * opposite of the truth on a tab whose whole definition is not having one.
+   *
+   * A With-PO invoice keeps both: its chain is the order and the PI behind it. */
+  const headPills = [
+    <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />,
+    <HeadPill key="name" icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />,
+    <HeadPill key="state" icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />,
+  ];
+  if (!direct) {
+    /* The purchase order is what a 3-way match is made against; the shipment
+       took that slot on a Direct SPI. */
+    headPills.push(
+      <HeadPill key="po" icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />,
+      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+    );
+  } else if (draft.shipmentId) {
+    headPills.push(
+      <HeadPill key="ship" icon={<IcoVan />} label="SHIPMENT ID" value={draft.shipmentId} alt mono />,
+      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+    );
+  }
+
   return (
     <>
-      <StageSummary draft={draft} upto={1} />
+      <StageSummary draft={draft} upto={1} direct={direct} />
 
       <div className={`spi-dt-sec ${invOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head cpf-clickable" onClick={() => setInvOpen(o => !o)}>
@@ -101,21 +129,16 @@ export default function Step2InvoiceProducts({
               {direct ? 'PI vs SPI product mapping & 2-way match' : 'PI vs PO vs SPI product mapping & 3-way match'}
             </div>
           </div>
+          {/* Built as a list so the ⋮ separators fall between whatever is
+              actually here. Written out inline, dropping a pill left its
+              divider behind and the strip ended on a dangling mark. */}
           <div className="spi-dt-pills">
-            <HeadPill icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />
-            <span className="spi-dt-dots">⋮</span>
-            {/* A Direct SPI has no purchase order to name here. The shipment
-                is what took its place as the thing this invoice belongs to,
-                so the slot carries that instead of an empty PO chip. */}
-            {direct
-              ? <HeadPill icon={<IcoVan />} label="SHIPMENT ID" value={draft.shipmentId || '—'} alt mono />
-              : <HeadPill icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />}
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />
+            {headPills.map((pill, i) => (
+              <Fragment key={pill.key}>
+                {i > 0 && <span className="spi-dt-dots">⋮</span>}
+                {pill}
+              </Fragment>
+            ))}
           </div>
           <span className={`cpf-chev ${prodOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
         </div>

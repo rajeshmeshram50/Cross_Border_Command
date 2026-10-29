@@ -15,34 +15,48 @@
    replacing the first; easing it keeps the one you clicked in front of you
    while it makes room. Scoped to --wide, which only this chooser uses, so no
    other .spi-mdl picks up a width transition. */
-/* max-height rides with the other two. The base dialog is 92vh and --sdx is
-   calc(100vh - 32px), so without it the box's vertical bound snapped the
-   instant the class landed while its width was still easing over 300ms — two
-   dimensions on two different clocks, which is most of what read as the
-   dialog breaking rather than growing. */
+/* max-height rides with the other two. It used to matter a great deal: the
+   base dialog was 92vh against --sdx's calc(100vh - 32px), so the box's
+   vertical bound snapped the instant the class landed while its width was
+   still easing over 300ms — two dimensions on two different clocks, which is
+   most of what read as the dialog breaking rather than growing.
+   The base now uses the same calc, so the two agree and there is nothing left
+   to jump. Kept because it costs nothing and the day they diverge again the
+   snap comes straight back. */
 .spi-mdl--wide {
   transition:
     max-width .3s cubic-bezier(.16,1,.3,1),
     width .3s cubic-bezier(.16,1,.3,1),
     max-height .3s cubic-bezier(.16,1,.3,1);
 }
-.spi-mdl.spi-mdl--sdx {
-  max-width: 1240px;
-  width: calc(100vw - 40px);
-  max-height: calc(100vh - 32px);
-  /* The base dialog scrolls as one box, so its scrollbar ran the full height
-     — over the coloured header and across the rounded corner. Here the shell
-     is a column that does not scroll at all and the body is the only scroll
-     container, so the header and footer stay put and the track starts beneath
-     the header. `min-height: 0` on the body is what lets it shrink to the
-     dialog instead of the band being crushed to fit. */
+/* The shell is a column and does not scroll; the body is the only scroll
+   container, so the header and footer stay put and the track starts beneath
+   the header. `min-height: 0` on the body is what lets it shrink to the
+   dialog instead of the band being crushed to fit.
+
+   On `--wide`, not `--sdx`: the dialog carries `--wide` in both states and
+   `--sdx` only once Direct is picked, so with this keyed to `--sdx` the TYPE
+   CHOOSER still scrolled as one box — its scrollbar ran the full height,
+   over the cyan header and across the rounded top corner, which is what it
+   was doing in the report. The structure is the same in both states, so the
+   rule belongs on the class both states have.
+   `.spi-mdl.spi-mdl--wide` is (0,2,0) so the base `.spi-mdl`'s own
+   `overflow-y: auto` loses to it whatever order the stylesheets land in. */
+.spi-mdl.spi-mdl--wide {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.spi-mdl--sdx > .spi-mdl-head,
-.spi-mdl--sdx > .spi-mdl-foot { flex: 0 0 auto; }
-.spi-mdl--sdx > .spi-mdl-body {
+/* All that is left for --sdx: the width it grows to once Direct is picked.
+   The column layout above is shared, and max-height now comes from the base
+   dialog, which carries the same calc. */
+.spi-mdl.spi-mdl--sdx {
+  max-width: 1240px;
+  width: calc(100vw - 40px);
+}
+.spi-mdl--wide > .spi-mdl-head,
+.spi-mdl--wide > .spi-mdl-foot { flex: 0 0 auto; }
+.spi-mdl--wide > .spi-mdl-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -51,11 +65,11 @@
   scrollbar-width: thin;
   scrollbar-color: #b9dde8 transparent;
 }
-.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar { width: 8px; }
-.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar-thumb {
+.spi-mdl--wide > .spi-mdl-body::-webkit-scrollbar { width: 8px; }
+.spi-mdl--wide > .spi-mdl-body::-webkit-scrollbar-thumb {
   background: #b9dde8; border-radius: 99px; border: 2px solid transparent; background-clip: content-box;
 }
-.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar-track { background: transparent; }
+.spi-mdl--wide > .spi-mdl-body::-webkit-scrollbar-track { background: transparent; }
 /* The panel is mounted only once the dialog has finished growing (see
    sdxReady in MapInvoiceModal), so it needs no delay of its own — it fades in
    where it lands. The cards beside it come with it, because the aside is what

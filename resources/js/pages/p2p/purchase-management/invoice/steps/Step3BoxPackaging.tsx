@@ -741,7 +741,7 @@ export default function Step3BoxPackaging({
 
   return (
     <StickerApiContext.Provider value={stickerApi}>
-      <StageSummary draft={draft} upto={2} />
+      <StageSummary draft={draft} upto={2} direct={direct} />
 
       <div className={`pkg-box ${pkgOpen ? '' : 'is-collapsed'}`}>
         <div className="pkg-box__header" onClick={() => setPkgOpen(o => !o)}>

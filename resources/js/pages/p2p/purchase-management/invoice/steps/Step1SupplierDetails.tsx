@@ -2,9 +2,8 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
-import { Shimmer } from '../../../../../components/ui/Shimmer';
 import {
-  GST_STALE_MONTHS, SevIcon, cutoffDate, gstState, isRiskMandatory, monthsAgo, riskItems,
+  GST_STALE_MONTHS, SevIcon, cutoffDate, gstState, monthsAgo, riskItems,
   vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
 import GstNoticeModal, { type GstNotice } from '../../order/create-po/GstNoticeModal';
@@ -30,7 +29,7 @@ const warmSupplierFlow = () => { void import('../../order/create-po/AddSupplierF
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import {
-  IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin,
+  IcoAlert, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin,
   IcoPencil, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn,
 } from '../../../icons';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
@@ -50,31 +49,9 @@ const GST_STATUSES = ['Active', 'Suspended', 'Cancelled'];
 const COUNTRIES = ['India', 'United Arab Emirates', 'Singapore', 'United States'];
 const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
-/* Every field in these two cards is filled from the supplier record, so while
-   that record is being fetched the honest thing on screen is the shape of what
-   is coming — not a grid of empty inputs, which reads as a form waiting for
-   you to type into it when in fact it is about to answer itself. 38px is the
-   height of .spi-dt-inp, so nothing moves when the real controls land. */
-const SUPPLIER_SK = ['SELECT SUPPLIER', 'COMPANY LEGAL NAME', 'SUPPLIER TYPE', 'RISK LEVEL', 'SUPPLIER CATEGORY'];
-const ADDRESS_SK = ['COUNTRY', 'STATE', 'STATE CODE', 'CITY', 'CONTACT PERSON NAME', 'DESIGNATION', 'CONTACT NUMBER', 'EMAIL ID'];
-function FieldSk({ label, full }: { label: string; full?: boolean }) {
-  return <Field label={label} full={full}><Shimmer height={38} radius={10} /></Field>;
-}
-
-const GUIDELINES = [
-  {
-    title: 'Physical inspection is mandatory',
-    note: 'Goods must be physically inspected and cleared by QA before the GRN is accepted into inventory.',
-  },
-  {
-    title: 'Payment against milestones only',
-    note: 'Release payment strictly against installation, goods delivery and 100% GST scrutiny — no advance.',
-  },
-];
-
 export default function Step1SupplierDetails({
   draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved,
-  poId = null, approval = null, onApprovalSent,
+  poId = null, approval = null, onApprovalSent, onBusy,
 }: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
   /* The purchase order this invoice bills, and the GST approval standing on
@@ -84,6 +61,10 @@ export default function Step1SupplierDetails({
   poId?: number | null;
   approval?: GstApproval | null;
   onApprovalSent?: () => void;
+  /* Raised while a supplier record is being fetched — picked by hand, swapped
+     for another, or refreshed after an edit. The form draws its full-step
+     skeleton over this step meanwhile. */
+  onBusy?: (busy: boolean) => void;
   /* A Direct SPI stands on its own: there is no purchase order to describe,
      so the whole Purchase Order section goes rather than standing there with
      nothing in its fields. */
@@ -319,14 +300,38 @@ export default function Step1SupplierDetails({
   }, [direct, hasSupplier, directSupplier?.code, directSupplier?.name]);
 
   /* A record is on its way in and none of these fields can be answered yet —
-     either the setup's supplier is being resolved, or one was just picked by
-     hand. Both go through loadSupplier, so both raise `picking`. */
-  const resolving = picking && !hasSupplier;
+     the setup's supplier being resolved, one picked by hand, or an existing
+     one being swapped for another. All three go through loadSupplier, so all
+     three raise `picking`.
+     The `&& !hasSupplier` that used to be here is why CHANGING a supplier
+     showed nothing: the old one is still in the draft while the new record
+     loads, so the step kept standing there with the previous supplier's legal
+     name, address, contact and GST under the new name in the picker. Those
+     are the wrong company's details presented as this one's, which is worse
+     than a shimmer — and the slower the server, the longer it reads as fact. */
+  const resolving = picking;
+
+  /* The whole step shimmers, not the cards one at a time.
+     Step 01 is the supplier master's to state from top to bottom — name,
+     legal name, address, contact, GST, legal status, risk — so while a record
+     is on its way in there is nothing on this screen that is still true.
+     Shimmering four cards and leaving the rest standing reads as a page half
+     stuck; the form already draws a full-step skeleton for the first load,
+     and this is the same wait, so it gets the same answer. */
+  useEffect(() => { onBusy?.(resolving); }, [resolving, onBusy]);
 
   /* Everything in step 01 is the supplier master's to state, so the moment a
      supplier is resolved the whole step reads. `locked` already covers the
      purchase-order and view-only cases; this adds the one that was missing. */
   const gstLocked = locked || hasSupplier;
+
+  /* A supplier is "ready" only once its record has actually landed. The two
+     summary cards below read entirely from that record - the legal percentage
+     and the six risk checks - so during a change `hasSupplier` alone would
+     keep showing the OLD supplier's verdict in the head while the body beside
+     it shimmers. A stale "All clear" on a new supplier is the one thing this
+     step must never say. */
+  const supplierReady = hasSupplier && !resolving;
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
@@ -567,12 +572,7 @@ export default function Step1SupplierDetails({
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
               <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {supCardOpen && resolving && (
-              <div className="spi-dt-grid4 cpf-grid5">
-                {SUPPLIER_SK.map(l => <FieldSk key={l} label={l} />)}
-              </div>
-            )}
-            {supCardOpen && !resolving && (
+            {supCardOpen && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
                   <div className="cpf-supsel">
@@ -654,13 +654,7 @@ export default function Step1SupplierDetails({
               <span className="spi-dt-fields-badge cpf-push">9 FIELDS</span>
               <span className={`cpf-chev ${addrOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {addrOpen && resolving && (
-              <div className="spi-dt-grid4">
-                <FieldSk label="REGISTERED OFFICE ADDRESS" full />
-                {ADDRESS_SK.map(l => <FieldSk key={l} label={l} />)}
-              </div>
-            )}
-            {addrOpen && !resolving && (
+            {addrOpen && (
               <div className="spi-dt-grid4">
                 <Field label="REGISTERED OFFICE ADDRESS" full>
                   <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Building / street / area / landmark, with PIN code"} readOnly={hasSupplier}
@@ -705,7 +699,7 @@ export default function Step1SupplierDetails({
               <div className="spi-dt-card-title">
                 <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status
               </div>
-              {hasSupplier ? (
+              {supplierReady ? (
                 <>
                   <span className={`cpf-push spi-dt-legal-badge ${legal.pct === 100 ? 'ok' : 'warn'}`}>
                     {legal.pct === 100 ? '100% Compliant' : `${legal.pct}% · Needs Review`}
@@ -860,8 +854,8 @@ export default function Step1SupplierDetails({
               <div className="spi-dt-card-title">
                 <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoAlert /></span> Supplier Risk Alert
               </div>
-              <span className={`cpf-risk__badge cpf-risk__badge--${riskSev} ${hasSupplier ? '' : 'cpf-hide'}`}>
-                {!hasSupplier ? ''
+              <span className={`cpf-risk__badge cpf-risk__badge--${riskSev} ${supplierReady ? '' : 'cpf-hide'}`}>
+                {!supplierReady ? ''
                   : nHigh ? `${nHigh} critical${nMed ? ` · ${nMed} warning` : ''}`
                     : nMed ? `${nMed} warning${nMed === 1 ? '' : 's'}`
                       : 'All clear'}
@@ -884,26 +878,15 @@ export default function Step1SupplierDetails({
                       </div>
                       <span className="cpf-risk__sum-score">{nOk}/{risks.length}</span>
                     </div>
-                    {isRiskMandatory({ risk: riskLevel, category }) && (
-                      <div className="cpf-guide">
-                        <div className="cpf-guide__hd">
-                          <span className="cpf-guide__ico"><IcoLock /></span>
-                          <span className="cpf-guide__t">Mandatory Guidelines</span>
-                          <span className="cpf-guide__tag">Enforced on this PO</span>
-                        </div>
-                        <div className="cpf-guide__list">
-                          {GUIDELINES.map(g => (
-                            <div key={g.title} className="cpf-guide__row">
-                              <span className="cpf-guide__ck"><IcoCheck /></span>
-                              <div>
-                                <div className="cpf-guide__rt">{g.title}</div>
-                                <div className="cpf-guide__rx">{g.note}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* No Mandatory Guidelines band here. Physical inspection
+                        before GRN acceptance and payment against milestones
+                        are rules the PURCHASE ORDER enforces - they are about
+                        how goods are accepted and how money is released, both
+                        of which are settled on the order, not on the invoice
+                        that follows it. On an SPI the band stated them as
+                        "Enforced on this PO" over a document that enforces
+                        neither. The PO's own copy in Step1LinkSupplier is
+                        untouched. */}
                     <div className="cpf-risk__list">
                       {risks.map(r => (
                         <div key={r.title} className={`cpf-risk__row cpf-risk__row--${r.sev}`}>
