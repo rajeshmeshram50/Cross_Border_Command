@@ -81,6 +81,15 @@ const SHIPMENT_MODE: Record<InvoiceShipmentScope, string> = {
   'with-shipment': 'with_shipment', 'without-shipment': 'without_shipment',
 };
 
+export type SpiGstApproval = {
+  id: number;
+  status: 'pending' | 'approved' | 'rejected';
+  reason: string | null;
+  requested_to_name: string | null;
+  requested_at: string | null;
+  decided_at?: string | null;
+};
+
 export type SpiStage1Body = {
   purchase_order_id: number | null;
   vendor_id: number;
@@ -641,6 +650,14 @@ export const spiApi = {
   create: (body: SpiStage1Body) =>
     call('SPI create (Stage 01)', () => api.post('/p2p/spi', body),
       (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
+
+  gstApprovalRequest: (spiId: number, body: { requested_to?: number; note?: string }) =>
+    call('SPI GST approval request', () => api.post(`/p2p/spi/${spiId}/gst-approval/request`, body),
+      (b) => (b as { data?: unknown } | null)?.data),
+
+  gstApprovals: (spiId: number) =>
+    call('SPI GST approvals', () => api.get(`/p2p/spi/${spiId}/gst-approvals`),
+      (b) => ((b as { data?: SpiGstApproval[] } | null)?.data ?? [])),
 
   updateStage1: (id: number, body: SpiStage1Body) =>
     call('SPI update (Stage 01)', () => api.put(`/p2p/spi/${id}/stage-1`, body),
