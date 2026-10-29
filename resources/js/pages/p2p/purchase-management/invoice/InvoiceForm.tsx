@@ -112,8 +112,19 @@ export default function InvoiceForm({
     procurement_request_id: input.direct?.procurementRequestId ?? null as number | null,
     procurement_request_code: input.direct?.procurementCode ?? null as string | null,
   });
+  const latestSpiApproval = useCallback((id: number) => {
+    spiApi.gstApprovals(id)
+      .then(rows => {
+        const r = rows[0];
+        setGstApproval(r ? {
+          id: r.id, status: r.status, reason: r.reason, requested_to_name: r.requested_to_name,
+          requested_at: r.requested_at, decided_at: r.decided_at ?? null,
+        } : null);
+      })
+      .catch(() => {});
+  }, []);
   const reloadApproval = useCallback(() => {
-    if (!input.poId) return;
+    if (!input.poId) { if (spiIdRef.current) latestSpiApproval(spiIdRef.current); return; }
     poApi.show(input.poId)
       .then(po => setGstApproval(po.gst_approval ?? null))
       .catch(() => {});
@@ -127,6 +138,8 @@ export default function InvoiceForm({
   const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
   const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
   const [spiId, setSpiId] = useState<number | null>(null);
+  const spiIdRef = useRef<number | null>(null);
+  spiIdRef.current = spiId;
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
   const [putaway, setPutaway] = useState<{ placed: number; total: number } | null>(null);
@@ -164,6 +177,7 @@ export default function InvoiceForm({
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
+          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
@@ -880,7 +894,8 @@ export default function InvoiceForm({
                     poId={input.poId ?? null}
                     approval={gstApproval}
                     onApprovalSent={reloadApproval}
-                    onBusy={setSupplierBusy} />
+                    onBusy={setSupplierBusy}
+                    spiId={spiId} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
