@@ -128,8 +128,17 @@ export default function Step2InvoiceProducts({
               figures above it: they are short of a product the PI carried.
               It stays for as long as anything is missing, rather than passing
               like the toast does — the person who saves this invoice may not
-              be the person who removed the line. */}
-          {removedCount > 0 && onRestoreLines && !readOnly && (
+              be the person who removed the line.
+
+              `matched` is the condition it hangs on, and the sentence above is
+              why: the bar reports a difference from the PI. With no shipment
+              there is no PI, every line was typed in here by hand, and a
+              deleted line is simply a line someone decided against — not
+              something the invoice is now short of. "Restore all" there would
+              offer to put back a document's products on an invoice that never
+              had a document behind it. The toast still covers the undo for a
+              mistaken click; it is the standing claim that does not hold. */}
+          {matched && removedCount > 0 && onRestoreLines && !readOnly && (
             <div className="invf-removed">
               <span className="invf-removed__txt">
                 {removedCount} product{removedCount === 1 ? '' : 's'} removed from this invoice

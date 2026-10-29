@@ -6,6 +6,7 @@ import { INVOICE_STEPS } from './steps';
 import { NEXT_INVOICE_NO } from './data';
 import type { StorageWarehouse } from './types';
 import { InvoiceTable } from './InvoiceTable';
+import { invoiceColumnsFor } from './columns';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
@@ -33,6 +34,11 @@ export default function InvoiceList() {
   const [scope, setScope] = useState<InvoiceScope>('all');
   const [shipScope, setShipScope] = useState<InvoiceShipmentScope>('with-shipment');
   const [query, setQuery] = useState('');
+
+  /* Only the Direct SPI tab narrows its columns — a row with no purchase
+     order behind it has nothing to put in the order's own columns, and a
+     blank column still takes its width from the ones that do say something. */
+  const tabColumns = useMemo(() => invoiceColumnsFor(scope, shipScope), [scope, shipScope]);
 
   const debouncedQuery = useDebouncedValue(query.trim(), 400);
 
@@ -300,6 +306,7 @@ export default function InvoiceList() {
             rows={list.rows} onAction={handleRowAction}
             startSr={start} scrollRef={scrollRef}
             loading={list.loading || list.replacing}
+            columns={tabColumns}
           />
         )}
 

@@ -290,8 +290,12 @@ export default function InvoiceForm({
     const line = lines[index];
     if (!line) return;
     setLines(ls => ls.filter((_, i) => i !== index));
-    setRemovedLines(r => [...r, { at: index, line }]);
-  }, [lines]);
+    /* Only kept where it means something. With no PI behind the invoice the
+       removed-products bar is not shown, so holding the lines would be a list
+       nothing can ever read or clear — it would simply grow for the life of
+       the form. */
+    if (matchedToPi) setRemovedLines(r => [...r, { at: index, line }]);
+  }, [lines, matchedToPi]);
 
   const restoreLines = useCallback(() => {
     setLines(ls => {
