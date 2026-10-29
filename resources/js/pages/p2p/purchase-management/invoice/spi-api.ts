@@ -130,7 +130,11 @@ function toFormData(body: Record<string, unknown>, files: Record<string, File | 
   return fd;
 }
 
-export type SpiDetailItem = SpiSavedItem & { qty_spi: string; rate: string; extra_qty: string | null };
+export type SpiDetailItem = SpiSavedItem & {
+  qty_spi: string; rate: string; extra_qty: string | null;
+  pi_item_id?: number | null; description?: string | null; hsn_code?: string | null; uom?: string | null;
+  qty_pi?: string | null; gst_pct?: string | null;
+};
 
 export type SpiDetail = {
   invoice: SpiHeader & {
@@ -140,6 +144,11 @@ export type SpiDetail = {
     shipment_order_id?: number | null;
     procurement_request_id?: number | null;
     procurement_request_code?: string | null;
+    vendor?: { id: number; vendor_code: string | null; company_name: string | null } | null;
+    shipment_order?: {
+      id: number; shipment_code: string | null; created_at?: string | null;
+      proforma_invoice?: { id: number; code: string | null } | null;
+    } | null;
     invoice_no: string | null;
     invoice_date: string | null;
     invoice_file_name: string | null;
