@@ -134,7 +134,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               animation: cfm-fade-in .18s ease both;
             }
             .cfm-popup {
-              width: 380px;
+              /* 380 was tight for anything naming a record. A confirm almost
+                 always quotes the thing it is about — a supplier, a document,
+                 a box — and at 380 a long name wrapped to four lines and
+                 pushed the actual question out of sight above it. */
+              width: 440px;
               max-width: calc(100vw - 24px);
               background: #fff;
               border-radius: 16px;
@@ -179,8 +183,13 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                box-sizing matters here: Cancel carries a 1px border and
                Confirm does not, so on content-box they would end at two
                different heights from the same rule. */
+            /* 10px, not a 999px pill. Every other button in the app sits
+               between 9 and 11 — the wizard footers, the add buttons, the
+               toolbars — so a fully round pair here read as borrowed from
+               somewhere else, and the roundness got louder as the dialog
+               widened and the buttons with it. */
             .cfm-btn {
-              flex: 1; border: none; border-radius: 999px;
+              flex: 1; border: none; border-radius: 10px;
               box-sizing: border-box; height: 40px; min-height: 40px;
               padding: 0 18px; font-size: 13px; font-weight: 600;
               cursor: pointer; transition: all .18s ease;

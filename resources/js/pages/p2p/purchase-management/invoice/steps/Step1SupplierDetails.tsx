@@ -8,7 +8,10 @@ import {
   vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
 import GstNoticeModal, { type GstNotice } from '../../order/create-po/GstNoticeModal';
-import { poLookupApi, type SupplierOption } from '../../order/api/po-api';
+import { poLookupApi, type PoDetail, type SupplierOption } from '../../order/api/po-api';
+
+/** The latest senior-approval request on the purchase order, as the PO sends it. */
+type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { legalFromVault } from '../../order/create-po/supplier-checks';
 import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
 import { spiApi } from '../spi-api';
@@ -69,8 +72,18 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved }: {
+export default function Step1SupplierDetails({
+  draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved,
+  poId = null, approval = null, onApprovalSent,
+}: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
+  /* The purchase order this invoice bills, and the GST approval standing on
+     it. The senior-approval request is raised against that order, exactly as
+     the PO form raises it — a Direct SPI has none, so there is nothing to
+     raise one on and the dialog says so in the PO's own words. */
+  poId?: number | null;
+  approval?: GstApproval | null;
+  onApprovalSent?: () => void;
   /* A Direct SPI stands on its own: there is no purchase order to describe,
      so the whole Purchase Order section goes rather than standing there with
      nothing in its fields. */
@@ -372,10 +385,15 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         <GstNoticeModal
           notice={gstNotice}
           onClose={() => setGstNotice(null)}
-          /* No `poId`, so no senior-approval request: that flow is raised
-             against a purchase order and this invoice has none. The modal
-             already handles its absence — it shows the requirement and the
-             way to clear it, which is the whole of what step 01 can offer. */
+          /* The purchase order's own flow, passed straight through: the
+             request is raised on the PO this invoice bills, which is the
+             same order the PO form would have raised it on, and the approval
+             already standing on that order is the one shown here. So a
+             scrutiny or filing cleared from either screen reads the same on
+             both. */
+          poId={poId}
+          approval={approval}
+          onSent={onApprovalSent}
           onOpenScrutiny={!locked && editVendorId !== null ? () => setScrutinyOpen(true) : undefined}
         />
       )}

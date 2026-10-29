@@ -1388,6 +1388,46 @@
   .cpf-form .spi-dt-head-r { flex-shrink: 0; }
 }
 
+/* The SECTION head has the same quarrel, and loses it at every width (QA #398).
+ *
+ * `.spi-dt-sec-mid` (the "Products · Product Details (3-Way Match)" block) and
+ * `.spi-dt-pills` beside it are both `flex: 1` with `min-width: 0`, so neither
+ * has a floor and the one with the wider content takes the room. Five chips
+ * carrying a supplier name, a PO number and a PI number always beat two short
+ * lines of text, so the title was squeezed until "Product Details (3-Way
+ * Match)" broke across two lines and its subtitle across two more — a 48px
+ * strip rendering as four stacked fragments.
+ *
+ * The 3-way match is where it shows first: it has five pills to the 2-way's
+ * four, and the longer title of the two.
+ *
+ * Same resolution the strip above already uses: the pills are REFERENCE, so
+ * they are the ones that give way and scroll. The heading keeps its line and
+ * ellipsises if it ever has to, which is still readable — a wrapped heading
+ * inside a fixed-height strip is not.
+ *
+ * Specificity beats the media query above (0,3,0 against its 0,2,0), so the
+ * section's pills scroll at every width while the top strip keeps its own
+ * 761–1500px rule. */
+.cpf-form .spi-dt-sec-mid { flex: 0 1 auto; }
+/* The title sits in a flex row beside "Products" and its divider, and a flex
+   child will not ellipsise while its min-width is `auto` — it reports its
+   whole text as its minimum and overflows instead. The two before it keep
+   their size; the heading is the part with room to give. */
+.cpf-form .spi-dt-sec-row { min-width: 0; }
+.cpf-form .spi-dt-sec-lbl,
+.cpf-form .spi-dt-sec-sep { flex-shrink: 0; }
+.cpf-form .spi-dt-sec-title,
+.cpf-form .spi-dt-sec-sub { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpf-form .spi-dt-sec-head .spi-dt-pills {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cpf-form .spi-dt-sec-head .spi-dt-pills::-webkit-scrollbar { display: none; }
+
 /* ── Table legibility ───────────────────────────────────────────────────────
    Both box tables size their columns to content. A product name is the one
    value long enough to wrap, and a wrapped name sets the height of the whole

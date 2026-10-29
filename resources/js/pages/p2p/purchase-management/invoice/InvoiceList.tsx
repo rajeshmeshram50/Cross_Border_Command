@@ -31,7 +31,9 @@ export default function InvoiceList() {
 
   const toggleBrief = useCallback(() => setBriefOpen(o => !o), []);
 
-  const [scope, setScope] = useState<InvoiceScope>('all');
+  /* With-PO is the landing tab now that 'All' is gone - it is the
+     recommended route and the larger of the two. */
+  const [scope, setScope] = useState<InvoiceScope>('with-po');
   const [shipScope, setShipScope] = useState<InvoiceShipmentScope>('with-shipment');
   const [query, setQuery] = useState('');
 
@@ -361,19 +363,12 @@ export default function InvoiceList() {
   );
 }
 
+/* Two tabs, not three. Every SPI is either raised against a purchase order
+   or it is not, so "All SPI's" was the two beside it added together - a tab
+   that can never tell you anything the other two do not, while costing the
+   width that made their labels wrap. The 'all' scope itself stays in the type
+   and in the API: it is still what the server answers when no scope is sent. */
 const SCOPE_TABS: Array<{ key: InvoiceScope; label: string; icon: ReactNode }> = [
-  {
-    key: 'all',
-    label: "All SPI's",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
-        <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
-        <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-      </svg>
-    ),
-  },
   {
     key: 'with-po',
     label: 'With Purchase Order SPI',

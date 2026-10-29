@@ -16,7 +16,10 @@ import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
 import { draftFromPo, useInvoiceDraft } from './invoice-draft';
-import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
+import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
+
+/** The latest senior-approval request on a purchase order, as the PO sends it. */
+type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
@@ -133,6 +136,18 @@ export default function InvoiceForm({
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
 
+  /* The senior-approval request on the purchase order this invoice bills.
+     Re-read after one is sent, so the notice switches to "awaiting approval"
+     without reopening the invoice — the PO form does the same thing with the
+     same field. */
+  const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
+  const reloadApproval = useCallback(() => {
+    if (!input.poId) return;
+    poApi.show(input.poId)
+      .then(po => setGstApproval(po.gst_approval ?? null))
+      .catch(() => {});
+  }, [input.poId]);
+
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
   /* An "All Other's" Direct SPI starts with an EMPTY table. There is no
@@ -218,6 +233,9 @@ export default function InvoiceForm({
         const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
         if (!live) return;
         set(draftFromPo(po, sup));
+        /* The GST approval standing on this order, for step 01's notice. The
+           PO form reads the same field off the same call. */
+        setGstApproval(po.gst_approval ?? null);
         /* The order's own supplier, arriving after the form opened. It is the
            one this invoice is issued to until somebody picks another, so it
            is the baseline the Close check compares against — without this,
@@ -652,8 +670,13 @@ export default function InvoiceForm({
     if (gst.tone === 'stop') {
       return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
     }
-    if (gst.tone === 'warn') {
-      return `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
+    /* The purchase order's own rule: an approved request clears the finding,
+       a pending one still holds. A stale SCRUTINY is never approved away —
+       the dialog offers no request for it — so it is checked before this. */
+    if (gst.tone === 'warn' && gstApproval?.status !== 'approved') {
+      return gstApproval?.status === 'pending'
+        ? `Waiting for ${gstApproval.requested_to_name ?? 'the senior'} to approve ${draft.supplier}'s overdue GST return.`
+        : `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
     }
     /* Nothing excluded. On a purchase order the PO being raised is left out
        of this count so it cannot block itself; an invoice raises no
@@ -665,7 +688,7 @@ export default function InvoiceForm({
         + `${ctc.length === 1 ? 'is' : 'are'} still unsigned. Sign ${ctc.length === 1 ? 'it' : 'them'} before this invoice can move on.`;
     }
     return null;
-  }, [stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault]);
+  }, [stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
 
   /* Stage 2 can now be left empty — on an All Other's Direct SPI it STARTS
      empty — and an invoice with no products carries nothing into the boxes
@@ -687,11 +710,26 @@ export default function InvoiceForm({
   const closeForm = async () => {
     const picked = draft.supplierCode.trim();
     if (stage === 0 && !viewOnly && picked && picked !== mappedSupplier.current) {
+      const supplierLine = draft.supplier ? `${picked} — ${draft.supplier}` : picked;
       const ok = await confirm({
         title: 'Close without mapping this supplier?',
+        /* The supplier on its own line, clipped to one.
+           A supplier's name is whatever the master holds, and the master holds
+           some long ones — set inside the sentence, a ninety-character name
+           wrapped into a block of text with the question buried above it, and
+           the two things the reader needs (WHICH supplier, and what happens if
+           they press Close) could not be told apart. The full name is on the
+           hover, so nothing is lost by clipping it. */
         message: <>
-          <strong>{picked}</strong>{draft.supplier ? ` — ${draft.supplier}` : ''} has been selected but not
-          saved, so it is not mapped to this invoice. Close now and the choice is discarded.
+          <span
+            title={supplierLine}
+            style={{
+              display: 'block', margin: '0 0 9px', fontWeight: 700, color: '#0f172a',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}
+          >{supplierLine}</span>
+          Selected but not saved, so it is not mapped to this invoice.
+          Close now and the choice is discarded.
         </>,
         tone: 'danger',
         confirmLabel: 'Close anyway',
@@ -852,7 +890,13 @@ export default function InvoiceForm({
                     directSupplier={input.direct
                       ? { code: input.direct.supplierCode, name: input.supplier }
                       : undefined}
-                    onResolved={() => setDirectSupLoading(false)} />
+                    onResolved={() => setDirectSupLoading(false)}
+                    /* The order this invoice bills, and the senior-approval
+                       request standing on it — the same two the PO form hands
+                       its own GST notice, so the flow is identical here. */
+                    poId={input.poId ?? null}
+                    approval={gstApproval}
+                    onApprovalSent={reloadApproval} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
