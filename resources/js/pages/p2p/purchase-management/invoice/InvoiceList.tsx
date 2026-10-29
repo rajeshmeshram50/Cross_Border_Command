@@ -20,7 +20,13 @@ import InvoicePaymentsModal from './InvoicePaymentsModal';
 const PutawaySummary = lazy(() => import('./PutawaySummary'));
 const InvoiceEvidenceVault = lazy(() => import('./InvoiceEvidenceVault'));
 import StorageSelectionModal, { type StorageChoice } from './StorageSelectionModal';
-import InvoiceForm, { type InvoiceFormInput } from './InvoiceForm';
+/* The form is the heaviest thing in this module by a wide margin — it carries
+   all four steps and invoice-form.css, which is 790 KB of source on its own —
+   and the list does not show it until someone opens an invoice. Imported
+   statically it was in the list's chunk, so every visit to the worklist paid
+   for a form most visits never open. */
+const InvoiceForm = lazy(() => import('./InvoiceForm'));
+import type { InvoiceFormInput } from './InvoiceForm';
 import type { InvoiceAction } from './cells/RowActions';
 import type { InvoiceRow, InvoiceScope, InvoiceShipmentScope } from './types';
 
@@ -343,7 +349,13 @@ export default function InvoiceList() {
       )}
 
       {formFor && (
-        <InvoiceForm input={formFor} invoiceNo={formFor.invoiceNo ?? NEXT_INVOICE_NO} onClose={closeForm} />
+        /* null, like the two lazy panels above: the form opens OVER the list,
+           so while its chunk arrives the worklist simply stays on screen. A
+           spinner here would need the form's own stylesheet, which is the
+           thing being deferred. */
+        <Suspense fallback={null}>
+          <InvoiceForm input={formFor} invoiceNo={formFor.invoiceNo ?? NEXT_INVOICE_NO} onClose={closeForm} />
+        </Suspense>
       )}
     </div>
   );

@@ -234,6 +234,46 @@ function Section({ kind, k, title, sub, pill, children }: {
   );
 }
 
+/** Section A while the engine ranks: ring and name, the capacity strip, the
+ *  fact grid, the parameter checks and the button, in the shapes they load as. */
+function SkSectionA({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="s4ra-top">
+        <div className="spi-dt-sk" style={{ width: 84, height: 84, borderRadius: '50%', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 110 }} />
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '60%', height: 15 }} />
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '80%' }} />
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 170, height: 18 }} />
+        </div>
+      </div>
+      <div className="spi-dt-sk" style={{ height: 92, borderRadius: 12 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        {Array.from({ length: 6 }, (_, i) => <div key={i} className="spi-dt-sk" style={{ height: 44, borderRadius: 10 }} />)}
+      </div>
+      <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 120 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+        {Array.from({ length: 4 }, (_, i) => <div key={i} className="spi-dt-sk" style={{ height: 46, borderRadius: 10 }} />)}
+      </div>
+      <div className="spi-dt-sk spi-dt-sk-field" />
+    </div>
+  );
+}
+
+/** Section B while the layout loads: the KPI tiles, the legend and a few zone rows. */
+function SkSectionB({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="s4cl-kpis">
+        {Array.from({ length: 5 }, (_, i) => <div key={i} className="spi-dt-sk" style={{ height: 46, borderRadius: 10 }} />)}
+      </div>
+      <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '55%' }} />
+      {Array.from({ length: 4 }, (_, i) => <div key={i} className="spi-dt-sk" style={{ height: 56, borderRadius: 12 }} />)}
+    </div>
+  );
+}
+
 export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, warehouse = null }: {
   box: SelectLocationBox;
   mode: 'rack' | 'norack' | null;
@@ -390,8 +430,8 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
         >
           {state.error ? (
             <div className="s4rl-empty">{state.error}</div>
-          ) : state.loading ? (
-            <div className="s4rl-empty">Ranking the shelves for this box…</div>
+          ) : state.loading || !state.data ? (
+            <SkSectionA label="Ranking the shelves for this box…" />
           ) : !rec ? (
             /* Nowhere eligible is an ANSWER, not an error, and the tree beside
                it says which condition each shelf failed. */
@@ -502,8 +542,8 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
         >
           {state.error ? (
             <div className="s4rl-empty">{state.error}</div>
-          ) : state.loading ? (
-            <div className="s4rl-empty">Reading the warehouse layout…</div>
+          ) : state.loading || !state.data ? (
+            <SkSectionB label="Reading the warehouse layout…" />
           ) : zones.length === 0 ? (
             <div className="s4rl-empty">No storage zones with racks in this warehouse.</div>
           ) : (
@@ -769,8 +809,8 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
         >
           {state.error ? (
             <div className="s4rl-empty">{state.error}</div>
-          ) : state.loading ? (
-            <div className="s4rl-empty">Ranking the zones for this box…</div>
+          ) : state.loading || !state.data ? (
+            <SkSectionA label="Ranking the zones for this box…" />
           ) : !rec ? (
             <NoFit
               what="floor zone"
@@ -877,8 +917,8 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
         >
           {state.error ? (
             <div className="s4rl-empty">{state.error}</div>
-          ) : state.loading ? (
-            <div className="s4rl-empty">Reading the zones…</div>
+          ) : state.loading || !state.data ? (
+            <SkSectionB label="Reading the zones…" />
           ) : zones.length === 0 ? (
             <div className="s4rl-empty">No direct storage zones (without rack) in this warehouse.</div>
           ) : (

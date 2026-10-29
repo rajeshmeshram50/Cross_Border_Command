@@ -408,11 +408,27 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/* One list per BOX, not one per item in it.
+
+   A flag belongs to the carton — there is one picker per box — and every item
+   in the box carries a copy of that same list, so flattening the items
+   repeated each flag once per product: a two-product carton flagged Hazardous
+   showed "Hazardous" twice, and the "+n" that counts the rest counted the
+   copies too. Deduped by name, first occurrence wins, exactly as
+   extraFlagNames and behavioursOf beside it already do. */
 function flagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
   const byId = new Map(master.map(f => [f.id, (f.flag_name ?? '').toLowerCase()]));
-  return items.flatMap(it => (Array.isArray(it.flags) ? it.flags : []))
-    .map(id => byId.get(Number(id)) ?? '')
-    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    for (const id of Array.isArray(it.flags) ? it.flags : []) {
+      const name = byId.get(Number(id)) ?? '';
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
 }
 
 const NAME_BEHAVIOUR: Record<string, string> = { hazardous: 'hazardous', 'cold chain': 'cold_chain', fragile: 'fragile' };
@@ -2623,7 +2639,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           <span className="s4wz-opt__d">{trait}</span>
                         </span>
                       </span>
-                      <span className="s4wz-opt__radio" aria-hidden />
+                      {/* A real tick, not a ::after drawn from two borders.
+                          The design marks the chosen card with a check, and an
+                          element that renders an icon when selected is far
+                          easier to see as correct than a pseudo-element whose
+                          absence can only be explained by reading CSS. */}
+                      <span className="s4wz-opt__radio" aria-hidden>
+                        {modePick === k && <IcoCheck />}
+                      </span>
                     </button>
                   ))}
                 </div>

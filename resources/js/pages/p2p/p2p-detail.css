@@ -12,11 +12,33 @@
 /* ── Wide table ────────────────────────────────────────────────────────── */
 .spi-tablewrap { overflow-x:auto; }
 /* Shimmer skeleton rows (list loading) */
-.spi-sk-bar { display:block; height:12px; border-radius:6px; position:relative; overflow:hidden; background:#e6f2f6; }
-.spi-sk-bar::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(255,255,255,.8), transparent); animation:spi-sk-shim 1.3s infinite; }
-@keyframes spi-sk-shim { 100% { transform:translateX(100%); } }
-[data-bs-theme="dark"] .spi-sk-bar { background: rgba(34,211,238,.1); }
-[data-bs-theme="dark"] .spi-sk-bar::after { background:linear-gradient(90deg, transparent, rgba(34,211,238,.14), transparent); }
+/* The skeleton bar sweeps its own gradient rather than sliding a white
+   overlay across itself. Three things made the old one flash:
+     - the keyframe declared only `100%`, so the implicit start was whatever
+       the element already had. At the end of every cycle the sweep snapped
+       back to the left edge with nothing easing it, which is the flicker;
+     - the highlight was 80% white over a pale #e6f2f6 base, so what crossed
+       the bar was close to a flare rather than a sheen;
+     - 1.3s with the default `ease` runs fast through the middle and lands
+       hard at both ends.
+   Sweeping `background-position` over a 400%-wide gradient has no start and
+   no end to snap between, and `ease-in-out` over 1.5s turns it at the edges.
+   Same technique the app's global `.shimmer` and the Direct SPI skeleton
+   already use, so all three now move alike. */
+@keyframes spi-sk-shim { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+.spi-sk-bar {
+  display: block; height: 12px; border-radius: 6px;
+  background: linear-gradient(90deg, #e4eff4 25%, #f3fafc 37%, #e4eff4 63%);
+  background-size: 400% 100%;
+  animation: spi-sk-shim 1.5s ease-in-out infinite;
+}
+[data-bs-theme="dark"] .spi-sk-bar {
+  background: linear-gradient(90deg, rgba(34,211,238,.08) 25%, rgba(34,211,238,.16) 37%, rgba(34,211,238,.08) 63%);
+  background-size: 400% 100%;
+}
+/* Stillness is the accessible fallback: the bars already say where the
+   content will land, so only the sweep has to go. */
+@media (prefers-reduced-motion: reduce) { .spi-sk-bar { animation: none; } }
 .spi-table { width:100%; border-collapse:collapse; white-space:nowrap; }
 .spi-table thead th { position:sticky; top:0; background: linear-gradient(180deg,#f0fbfd,#e6f8fc);
   color:#5F7D92; font-size:8.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
@@ -207,9 +229,22 @@
 .spi-dt-pill-txt { min-width:0; } /* let the value truncate instead of stretching the pill */
 
 /* Shimmer skeleton (wizard data loading) */
-.spi-dt-sk { position:relative; overflow:hidden; border-radius:8px; background:#e6f2f6; }
-.spi-dt-sk::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent); animation:spi-shimmer 1.3s infinite; }
-@keyframes spi-shimmer { 100% { transform:translateX(100%); } }
+/* The stage skeleton's bars — same rewrite as .spi-sk-bar above, and for the
+   same reasons. These two sit on screen together (the form's own skeleton and
+   the list's), so leaving one snapping while the other eased would have been
+   worse than either on its own. */
+@keyframes spi-shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+.spi-dt-sk {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e4eff4 25%, #f3fafc 37%, #e4eff4 63%);
+  background-size: 400% 100%;
+  animation: spi-shimmer 1.5s ease-in-out infinite;
+}
+[data-bs-theme="dark"] .spi-dt-sk {
+  background: linear-gradient(90deg, rgba(34,211,238,.08) 25%, rgba(34,211,238,.16) 37%, rgba(34,211,238,.08) 63%);
+  background-size: 400% 100%;
+}
+@media (prefers-reduced-motion: reduce) { .spi-dt-sk { animation: none; } }
 .spi-dt-spin { animation:spi-rot .7s linear infinite; flex-shrink:0; }
 @keyframes spi-rot { 100% { transform:rotate(360deg); } }
 
@@ -224,8 +259,10 @@
 .spi-dt-sk-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; }
 .spi-dt-sk-line { height:11px; border-radius:6px; }
 .spi-dt-sk-field { height:40px; border-radius:9px; }
-[data-bs-theme="dark"] .spi-dt-sk { background: rgba(34,211,238,.1); }
-[data-bs-theme="dark"] .spi-dt-sk::after { background:linear-gradient(90deg, transparent, rgba(34,211,238,.14), transparent); }
+/* The dark values live with the light ones above now. These two were the old
+   pair: a flat colour plus a sweep on ::after. Left here they would have won
+   on source order and painted the gradient back out to a solid block, which
+   is a skeleton that never moves. */
 
 /* ── Stage 04's skeleton ────────────────────────────────────────────────────
    It traces the stage it stands in for: four step cards, the tab rail, then
@@ -626,6 +663,18 @@
   background: linear-gradient(135deg,#06b6d4,#0891b2); box-shadow: 0 3px 8px rgba(8,145,178,.3); }
 .spi-dt-sec-ico-2 { background: linear-gradient(135deg,#22d3ee,#0e7490); }
 .spi-dt-sec-mid { flex:1; min-width:0; }
+/* The band's collapse control sits hard right, whichever of the two it is.
+   Neither carries a margin: they reach the right edge only because
+   .spi-dt-sec-mid above has `flex: 1`. That holds while the middle block is
+   there and stops the moment a band is built without one, or with its grow
+   cancelled by a narrow-width override — and then the control tucks itself
+   against the title in the middle of the band.
+   An auto left margin makes it independent of what it sits beside: a no-op
+   where the middle already grows, the fix where it does not. Stated here
+   rather than in one screen's stylesheet, because both the Create PO form
+   and the invoice form draw these bands and only one of them was covered. */
+.spi-dt-sec-head > .spi-dt-sec-toggle,
+.spi-dt-sec-head > .cpf-chev { margin-left: auto; }
 .spi-dt-sec-row { display:flex; align-items:center; gap:9px; }
 .spi-dt-sec-lbl { font-size:9.5px; font-weight:600; color:#0891b2; }
 .spi-dt-sec-sep { width:1px; height:13px; background:#a5e8f5; }

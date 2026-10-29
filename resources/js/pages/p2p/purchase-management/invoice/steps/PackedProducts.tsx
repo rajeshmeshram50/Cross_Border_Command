@@ -88,11 +88,13 @@ function FlagCell({ flags }: { flags: string[] }) {
             }}
           >
             <div className="invf-fpop__title">Product Flags ({flags.length})</div>
+            <div className="invf-fpop__list">
             {rest.map((f, i) => (
-              <div key={f} className={`invf-fpop__row${i % 2 ? ' is-alt' : ''}`}>
+              <div key={f} className="invf-fpop__row">
                 <span className="invf-pb-flag">{f}</span>
               </div>
             ))}
+            </div>
           </div>
         </>,
         document.body,

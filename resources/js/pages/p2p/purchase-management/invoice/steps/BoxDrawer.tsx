@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import useDismissPopover from '../../../../../hooks/useDismissPopover';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
-import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import {
   IcoBox, IcoCamera, IcoCheck, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn, IcoX,
 } from '../../../icons';
@@ -632,7 +632,7 @@ export default function BoxDrawer({
                               type="button"
                               role="checkbox"
                               aria-checked={on}
-                              className={`vti-flag-pop__row${on ? ' is-active' : ''}${i % 2 ? ' is-alt' : ''}`}
+                              className={`vti-flag-pop__row${on ? ' is-active' : ''}`}
                               onClick={() => toggleFlag(f.id)}
                             >
                               <span className="vti-flag-pop__box" aria-hidden>
@@ -667,6 +667,16 @@ export default function BoxDrawer({
                       {ADVANCED.map(f => (
                         <div className="vti-dw-field" key={f.key}>
                           <label className="vti-dw-field-lbl">{f.label}</label>
+                          {/* The app's own calendar, not the browser's. It was
+                              swapped for a native date input because it
+                              arrived with its own 38px bordered box inside a
+                              cell that is already a box — that is a styling
+                              problem, and it is solved in the stylesheet
+                              below (the trigger is stripped flat in here).
+                              Trading it away cost more than it saved: the
+                              native control writes mm/dd/yyyy against the
+                              dd-MMM-yyyy this app uses everywhere else, and
+                              it renders differently in every browser. */}
                           {f.type === 'date' ? (
                             <MasterDatePicker
                               value={boxIdentity[f.key] ?? ''}
@@ -675,7 +685,8 @@ export default function BoxDrawer({
                             />
                           ) : (
                             <input
-                              className="vti-dw-inp" type={f.type} placeholder={f.placeholder}
+                              className="vti-dw-inp"
+                              type={f.type} placeholder={f.placeholder}
                               value={boxIdentity[f.key] ?? ''}
                               onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
                             />
