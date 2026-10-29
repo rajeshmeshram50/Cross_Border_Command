@@ -32,13 +32,21 @@ class PoLookupController extends Controller
         $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
-            ->with(['primaryAddress:id,vendor_id,country_id', 'vendorType:id,name'])
+            ->with([
+                'primaryAddress:id,vendor_id,country_id,state_id,city', 'primaryAddress.state:id,name',
+                'vendorType:id,name', 'riskLevel:id,name', 'segments:id,name', 'segment:id,name',
+            ])
             ->orderBy('company_name')
-            ->get(['id', 'vendor_code', 'company_name', 'legal_name', 'vendor_type_id', 'supplier_category'])
+            ->get(['id', 'vendor_code', 'company_name', 'legal_name', 'vendor_type_id', 'supplier_category',
+                'risk_level_id', 'segment_id'])
             ->map(function ($v) use ($indiaId) {
-                $cid = optional($v->primaryAddress)->country_id;
+                $a = $v->primaryAddress;
+                $cid = optional($a)->country_id;
                 // No country yet → treat as domestic (the pre-onboarding default).
                 $docType = $cid ? (((int) $cid === (int) $indiaId) ? 'domestic' : 'international') : 'domestic';
+                // Same rule as supplier(): the pivot, else the legacy scalar segment_id.
+                $segNames = $v->segments->pluck('name')->filter()->unique()->values()->all();
+                if (empty($segNames) && $v->segment?->name) $segNames = [$v->segment->name];
                 return [
                     'id' => $v->id,
                     'code' => $v->vendor_code,
@@ -47,6 +55,10 @@ class PoLookupController extends Controller
                     // Create PO lists only suppliers of the PO's type and locks blacklisted ones.
                     'supplier_type' => $v->vendorType?->name,
                     'supplier_category' => $v->supplier_category,
+                    'segments' => $segNames,
+                    'city' => $a?->city,
+                    'state' => $a?->state?->name,
+                    'risk' => $v->riskLevel?->name,
                 ];
             });
         return response()->json(['status' => true, 'data' => $rows]);

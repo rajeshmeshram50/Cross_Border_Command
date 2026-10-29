@@ -563,6 +563,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
            one approval. Handled by PoGstApprovalController, which holds
            the rules both documents are judged by. */
         Route::post  ('/{id}/gst-approval/request', [\App\Http\Controllers\Api\P2p\PoGstApprovalController::class, 'storeForInvoice'])->whereNumber('id');
+        // Every approval raised against THIS invoice, newest first.
+        Route::get   ('/{id}/gst-approvals',        [\App\Http\Controllers\Api\P2p\PoGstApprovalController::class, 'indexForInvoice'])->whereNumber('id');
         /* Stage 02 — the grid, the totals AND the two attachments, in one save.
            POST rather than PUT because PHP does not populate $_FILES on a PUT;
            the same endpoint still accepts plain JSON when there are no files. */
