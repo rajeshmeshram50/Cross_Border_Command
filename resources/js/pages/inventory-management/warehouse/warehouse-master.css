@@ -1104,3 +1104,6 @@
 [data-bs-theme="dark"] .whm-saving__box { color: #67e8f9; }
 [data-bs-theme="dark"] .whm-saving__spin { border-color: rgba(34,211,238,.22); border-top-color: #22d3ee; }
 @media (prefers-reduced-motion: reduce) { .whm-saving__spin, .whm-btnspin { animation: none; } }
+.whm-label-pv { display: block; width: 100%; height: min(64vh, 620px); border: 0; background: #fff; }
+.whm-label-pv--load { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #0e7490; background: #f4fbfd; }
+[data-bs-theme="dark"] .whm-label-pv--load { background: rgba(15, 23, 42, .6); color: #67e8f9; }
