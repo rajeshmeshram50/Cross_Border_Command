@@ -3153,8 +3153,9 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
-/* Dark had no focus state of its own, so the light rule's white fill would
-   have flashed a white box on focus. Same teal ring, on the dark field. */
+/* Dark had no focus state of its own, and the dark base rule above outranks
+   the light :focus one, so a focused field in dark showed no ring at all.
+   Same teal ring, on the dark field. */
 [data-bs-theme="dark"] .vs3t .vs3-in:focus,
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown):focus {
   background: #0e2530; border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18);
