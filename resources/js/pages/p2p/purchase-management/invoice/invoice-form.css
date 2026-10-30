@@ -489,6 +489,36 @@
 
 }
 
+/* In the box modal the strip's layout follows what actually fits, not the
+   window's width. Left to plain wrapping, a strip a little too narrow left
+   the quantity stepper hanging alone on the right of the first row and the
+   buttons wrapped into a second row pushed to the right edge; a fixed modal
+   width threshold instead forced two rows even when everything fit (the
+   Mixed Master Carton strip, whose details are short). BoxDrawer measures
+   the details and the actions and sets one of two classes:
+   .is-oneline — details on the left, actions on the right of the same row,
+                 clear of the close button;
+   .is-stacked — details on the first row, every action on a second row
+                 starting under them.
+   Written against .vti-dw-modal so it outranks the window media queries. */
+.vti-dw-modal .vti-dw-strip.is-oneline { flex-wrap: nowrap; }
+.vti-dw-modal .vti-dw-strip.is-oneline .vti-dw-strip-left {
+  flex: 0 1 auto; width: auto; flex-wrap: nowrap; padding-right: 0;
+}
+.vti-dw-modal .vti-dw-strip.is-oneline .vti-dw-toolbar {
+  flex: 0 0 auto; width: auto; flex-wrap: nowrap;
+  margin: 0 0 0 auto;
+  padding: 0 62px 0 14px;
+}
+.vti-dw-modal .vti-dw-strip.is-stacked .vti-dw-strip-left { flex: 1 1 calc(100% - 4px); width: auto; }
+.vti-dw-modal .vti-dw-strip.is-stacked .vti-dw-toolbar {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 2px 16px 12px 20px;
+  justify-content: flex-start;
+}
+.vti-dw-modal .vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
+
 @media (max-width: 820px) {
 
   .vti-dw-strip .vti-dw-strip-sep { display: none; }
@@ -645,38 +675,39 @@
   white-space: nowrap;
 }
 
+/* "+N" for the flags that did not fit: a teal count circle, the same
+   treatment as the +N in the Packed Products table, instead of a
+   "+N more" pill. The count of selected flags among the hidden ones
+   sits on its corner. */
 .vti-flag-more {
+  position: relative;
   flex-shrink: 0;
-  display: inline-flex; align-items: center;
-  padding: 7px 14px;
-  border-radius: 20px;
-  border: 1.5px dashed rgba(100,116,139,.45);
-  background: rgba(148,163,184,.10);
-  color: #475569;
-  font-size: 11px; font-weight: 700; letter-spacing: .01em;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #0e7d9a, #0891b2);
+  color: #fff;
+  font-family: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: -.01em;
+  box-shadow: 0 2px 6px rgba(8,145,178,.3);
   cursor: pointer;
-  transition: all .18s;
+  transition: transform .12s, box-shadow .12s;
 }
-.vti-flag-more:hover {
-  border-color: #64748b;
-  background: rgba(148,163,184,.20);
-  color: #334155;
+.vti-flag-more:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(8,145,178,.42); }
+.vti-flag-more .vti-flag-more__on {
+  position: absolute; top: -4px; right: -4px;
+  margin: 0;
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 [data-bs-theme="dark"] .vti-flag-more,
 [data-layout-mode="dark"] .vti-flag-more {
-  border-color: rgba(148,163,184,.45);
-
-  background: #1e293b;
-  color: #cbd5e1;
-  box-shadow: none;
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
-[data-bs-theme="dark"] .vti-flag-more:hover,
-[data-layout-mode="dark"] .vti-flag-more:hover {
-  border-color: #94a3b8;
-  background: #334155;
-  color: #f1f5f9;
-}
+[data-bs-theme="dark"] .vti-flag-more .vti-flag-more__on,
+[data-layout-mode="dark"] .vti-flag-more .vti-flag-more__on { box-shadow: 0 0 0 2px #0f1b2a; }
 .vti-flag-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .18s; letter-spacing: .01em; position: relative; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.07), inset 0 1px 0 rgba(255,255,255,.8); }
 .vti-flag-btn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0%, transparent 100%); border-radius: 20px 20px 0 0; pointer-events: none; }
 .vti-flag-btn svg { flex-shrink: 0; transition: all .18s; }
@@ -1404,14 +1435,14 @@
 
 .vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
 .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn,
-.vti-dw-row2-inner .vti-dw-flags .vti-flag-btn,
-
-.vti-dw-row2-inner .vti-dw-flags .vti-flag-more {
+.vti-dw-row2-inner .vti-dw-flags .vti-flag-btn {
   height: 40px;
   min-height: 40px;
   padding-top: 0;
   padding-bottom: 0;
 }
+/* the +N circle: as tall as the 40px flag pills beside it */
+.vti-dw-row2-inner .vti-dw-flags .vti-flag-more { width: 40px; height: 40px; min-height: 40px; }
 
 .vti-dw-strip { display: flex; align-items: stretch; width: 100%; min-height: 0; background: linear-gradient(98deg, #0a5f75 0%, #0c6e87 30%, #0e7d9a 55%, #0891b2 75%, #0aa8cc 88%, #0fb8de 95%, #14c0e4 100%); border-bottom: none; box-shadow: 0 4px 20px rgba(8,145,178,.45), 0 2px 6px rgba(8,145,178,.3), inset 0 1px 0 rgba(255,255,255,.15); position: relative; overflow: hidden; box-sizing: border-box; }
 .vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
@@ -3250,40 +3281,6 @@
 .vti-dw-modal .vti-dw-strip .vti-dw-strip-item { padding: 9px 16px; }
 .vti-dw-modal .vti-dw-strip .vti-dw-strip-item.strip-product { max-width: 220px; }
 
-.ord-table.ord-table--empty { height: 100%; }
-.ord-table .ord-emptyrow > td {
-  padding: 0;
-  background: #fff;
-  border-bottom: 0;
-
-  vertical-align: middle;
-}
-.ord-table .ord-emptybox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 24px 20px;
-  text-align: center;
-}
-.ord-table .ord-emptybox b {
-  font-size: 13px;
-  font-weight: 800;
-  color: #0c4a6e;
-  letter-spacing: -.1px;
-}
-.ord-table .ord-emptybox span {
-  max-width: 430px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #64748b;
-  line-height: 1.55;
-}
-[data-bs-theme="dark"] .ord-table .ord-emptyrow > td { background: #0b1922; }
-[data-bs-theme="dark"] .ord-table .ord-emptybox b { color: #e2e8f0; }
-[data-bs-theme="dark"] .ord-table .ord-emptybox span { color: #7f9aa6; }
-
 .vti-dw-advanced > .vti-dw-adv-toggle,
 .vti-dw-advanced > .vti-dw-adv-toggle.is-open {
   width: 100%;
@@ -3319,3 +3316,103 @@
 [data-bs-theme="dark"] .stk-pv { border-color: rgba(148, 163, 184, .22); }
 [data-bs-theme="dark"] .stk-pv--load { background: rgba(15, 23, 42, .6); color: #67e8f9; }
 .cpf-supsel .cpf-suplock { flex: 1; min-width: 0; cursor: not-allowed; }
+
+/* Box modal, compact like the design. The popup ran far taller than the
+   prototype: Box Photos sat in a roomy panel of its own, Box Remark took a
+   header bar plus a tall input under it, and the rows, fields and remark
+   buttons all carried a few pixels of extra padding each. Everything here is
+   scoped to .vti-dw-modal, so the inline box panel in Stage 3 keeps its
+   layout. Nothing is removed — only tightened. */
+.vti-dw-modal .vti-dw-body { gap: 10px; padding-top: 10px; }
+
+/* Box Photos: one slim row */
+.vti-dw-modal .vti-dw-shots { margin: 0; padding: 6px 12px; gap: 10px; border-radius: 12px; }
+.vti-dw-modal .vti-dw-shot { width: 40px; height: 40px; border-radius: 8px; }
+.vti-dw-modal .vti-dw-shot__x { top: 2px; right: 2px; width: 14px; height: 14px; }
+
+/* Product Advance Details: header and rows a little tighter */
+.vti-dw-modal .vti-dw-section-hd { padding: 9px 16px; }
+.vti-dw-modal .vs3t > thead > tr > th { padding: 8px 6px; }
+.vti-dw-modal .vs3t > tbody > tr > td { padding: 7px 6px; }
+.vti-dw-modal .vs3t .vs3-in,
+.vti-dw-modal .vs3t .master-datepicker-toggle { height: 38px; min-height: 38px; }
+
+/* Box Remark: label and input on ONE line instead of a header bar with a
+   tall input below it */
+.vti-dw-modal .vs3-rmk {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px;
+}
+.vti-dw-modal .vs3-rmk__hd {
+  flex: 0 0 auto; margin: 0; padding: 0;
+  background: none; border-bottom: 0;
+}
+.vti-dw-modal .vs3-rmk__ico { width: 24px; height: 24px; border-radius: 7px; }
+.vti-dw-modal .vs3-rmk__body { flex: 1 1 auto; min-width: 0; padding: 0; }
+.vti-dw-modal .vs3-rmk__in { height: 38px; padding: 0 12px; }
+[data-bs-theme="dark"] .vti-dw-modal .vs3-rmk__hd { background: none; }
+
+/* Box Core Details: shorter field cards */
+.vti-dw-modal .vti-dw-fields { padding: 10px 14px; }
+.vti-dw-modal .vti-dw-field { padding: 8px 12px; gap: 5px; }
+
+/* Remark / Condition / Flags: less air above and inside the buttons */
+.vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section { padding: 10px 16px; }
+.vti-dw-modal .vti-dw-mini-title { margin-bottom: 8px; }
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; gap: 2px; }
+
+/* Box modal: Remark, Condition and Flags on ONE line, as the design has
+   them. With a custom flag and the +N circle the flags needed ~606px but got
+   ~597, so Stackable dropped to a second line; and the Flags title row was
+   20px tall (the + button) against 12px for the other two titles, so the
+   flag pills sat 8px lower than the buttons beside them. The remark and
+   condition buttons give up 4px a side, the flag pills 4px a side, and the
+   title row is pinned to the titles' 12px with the + overflowing it.
+   Narrower popups still wrap the flags rather than clip them. */
+.vti-dw-modal .vti-dw-mini-title-row { height: 12px; margin-bottom: 8px; overflow: visible; }
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn { padding-left: 14px; padding-right: 14px; }
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-flags .vti-flag-btn { padding-left: 12px; padding-right: 12px; }
+.vti-dw-modal .vti-dw-row2-inner .vti-dw-flags > .invf-flag-custom { min-width: 0; max-width: 100px; }
+.vti-dw-modal .vti-dw-flags { gap: 6px; row-gap: 8px; }
+.vti-dw-modal .vti-stack-toggle { height: 40px; box-sizing: border-box; padding: 0 14px 0 10px; }
+
+/* Smaller screens (a 1366x768 laptop at 100% gives a ~1340px popup): the
+   three sections need ~1570px side by side, so instead of the flags wrapping
+   inside a narrow column, Remark and Condition share the first line and
+   Product Flags takes a full-width line of its own. Measured against the
+   popup, not the window, since the popup stops at 1640px. */
+.vti-dw-modal { container: vtidw / inline-size; }
+@container vtidw (max-width: 1580px) {
+  .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section:nth-child(2) { flex: 1 1 auto; border-right: none; }
+  .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section:last-child {
+    flex: 1 1 100%; min-width: 0;
+    border-top: 1px solid rgba(6,182,212,.12);
+  }
+}
+[data-bs-theme="dark"] .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section:last-child { border-top-color: rgba(34,211,238,.12); }
+
+/* Narrow popups (a small or half-screen window). The flags line switches to
+   compact 34px pills (~520px for the three flags, a custom flag, +N and
+   Stackable), so it stays on one line down to a ~700px popup. Below 960px
+   Remark and Condition no longer fit side by side either, so every section
+   takes a full-width line rather than leaving Condition under Remark with
+   an empty bordered gap beside it. */
+@container vtidw (max-width: 1000px) {
+  .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section { padding-left: 12px; padding-right: 12px; }
+  .vti-dw-modal .vti-dw-row2-inner .vti-dw-flags { gap: 5px; }
+  .vti-dw-modal .vti-dw-row2-inner .vti-dw-flags .vti-flag-btn {
+    height: 34px; min-height: 34px; padding: 0 10px; gap: 5px; font-size: 10.5px;
+  }
+  .vti-dw-modal .vti-dw-row2-inner .vti-dw-flags > .invf-flag-custom { max-width: 88px; }
+  .vti-dw-modal .vti-dw-row2-inner .vti-dw-flags .vti-flag-more { width: 34px; height: 34px; min-height: 34px; font-size: 10.5px; }
+  .vti-dw-modal .vti-stack-toggle { height: 34px; padding: 0 10px 0 7px; gap: 6px; font-size: 10.5px; }
+}
+@container vtidw (max-width: 960px) {
+  .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section {
+    flex: 1 1 100%; min-width: 0; border-right: none;
+  }
+  .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section + .vti-dw-mini-section { border-top: 1px solid rgba(6,182,212,.12); }
+  [data-bs-theme="dark"] .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section + .vti-dw-mini-section { border-top-color: rgba(34,211,238,.12); }
+}
