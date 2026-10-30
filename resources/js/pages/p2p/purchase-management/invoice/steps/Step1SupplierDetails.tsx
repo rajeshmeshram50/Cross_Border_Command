@@ -162,10 +162,12 @@ export default function Step1SupplierDetails({
   const [refreshing, setRefreshing] = useState(false);
 
   const loadSupplier = async (id: number) => {
-    const [fresh, scrutinyRows] = await Promise.all([
-      poLookupApi.supplier(id),
-      spiApi.vendorScrutiny(id).catch(() => null),
-    ]);
+    const [fresh, scrutinyRows] = direct
+      ? await spiApi.vendorDetail(id).then(r => [r.detail, r.scrutiny] as const)
+      : await Promise.all([
+        poLookupApi.supplier(id),
+        spiApi.vendorScrutiny(id).catch(() => null),
+      ]);
     const gst = newestScrutiny(scrutinyRows);
     set({
       vendorId: id,
@@ -201,11 +203,16 @@ export default function Step1SupplierDetails({
   };
 
   const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const domesticList = useRef<Promise<SupplierOption[]> | null>(null);
+  const domesticSuppliers = () => {
+    domesticList.current ??= poLookupApi.suppliers('domestic').catch(e => { domesticList.current = null; throw e; });
+    return domesticList.current;
+  };
   const [picking, setPicking] = useState(false);
   useEffect(() => {
     if (!direct || hasPo || readOnly) return;
     let live = true;
-    poLookupApi.suppliers()
+    domesticSuppliers()
       .then(rows => { if (live) setSupplierOpts(rows); })
       .catch(() => { if (live) setSupplierOpts([]); });
     return () => { live = false; };
@@ -235,7 +242,7 @@ export default function Step1SupplierDetails({
     seeded.current = true;
     let live = true;
     setPicking(true);
-    poLookupApi.suppliers()
+    domesticSuppliers()
       .then(rows => {
         if (!live) return undefined;
         const hit = (want && rows.find(r => (r.code ?? '').trim().toLowerCase() === want))

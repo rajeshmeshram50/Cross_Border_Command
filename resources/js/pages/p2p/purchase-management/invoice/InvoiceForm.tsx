@@ -215,10 +215,9 @@ export default function InvoiceForm({
             setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
             if (!input.direct && existing.vendor_id) {
               const vid = existing.vendor_id;
-              const [sup, scrutiny] = await Promise.all([
-                poLookupApi.supplier(vid).catch(() => null),
-                spiApi.vendorScrutiny(vid).catch(() => null),
-              ]);
+              const [sup, scrutiny] = await spiApi.vendorDetail(vid)
+                .then(r => [r.detail, r.scrutiny] as const)
+                .catch(() => [null, null] as const);
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);

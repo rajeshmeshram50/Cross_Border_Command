@@ -1,7 +1,7 @@
 import type { GstScrutinyRow } from './invoice-draft';
 import axios from 'axios';
 import api from '../../../../api';
-import { PoApiError, type PoPaymentBody, type PoPaymentRow, type PoPaymentsPayload } from '../order/api/po-api';
+import { PoApiError, type PoPaymentBody, type PoPaymentRow, type PoPaymentsPayload, type SupplierDetail } from '../order/api/po-api';
 import type { ServerPageMeta } from '../../../../hooks/useServerList';
 import type {
   InvoiceInspectionStatus, InvoicePoType, InvoiceRiskLevel, InvoiceRow,
@@ -620,6 +620,44 @@ export const spiApi = {
         gst: Number(d.gst_percentage?.percentage ?? 0) || 0,
         uom: d.uom?.short_code ?? d.uom?.title ?? null,
       } as ProductRefresh;
+    }),
+
+  vendorDetail: (vendorId: number) =>
+    call('Supplier detail', () => api.get(`/vendors/${vendorId}`), (b) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = ((b as { data?: Record<string, any> } | null)?.data ?? {}) as Record<string, any>;
+      const a = (v.primary_address ?? {}) as Record<string, any>;
+      const scrutiny = (Array.isArray(v.gst_scrutiny) ? v.gst_scrutiny : []) as GstScrutinyRow[];
+      const latest = [...scrutiny].sort((x, y) => String(y.scrutiny_date ?? '').localeCompare(String(x.scrutiny_date ?? '')))[0];
+      const maps = (Array.isArray(v.product_mappings) ? v.product_mappings : []) as Array<{ product_id: number; purchase_price: number | null }>;
+      const segs = (Array.isArray(v.segments) ? v.segments : []) as Array<{ name?: string | null }>;
+      const detail: SupplierDetail = {
+        id: Number(v.id),
+        code: v.vendor_code ?? '',
+        name: v.company_name || v.legal_name || '',
+        legalName: v.legal_name ?? null,
+        type: v.vendor_type_name ?? null,
+        risk: v.risk_level_name ?? null,
+        category: v.supplier_category ?? null,
+        segments: segs.map(s => s.name ?? '').filter(Boolean),
+        mapped_product_ids: maps.map(m => Number(m.product_id)),
+        product_rates: Object.fromEntries(maps.filter(m => m.purchase_price != null).map(m => [Number(m.product_id), Number(m.purchase_price)])),
+        addr: a.address_line ?? null,
+        country: a.country_name ?? null,
+        state: a.state_name ?? null,
+        stateCode: a.state_code ?? null,
+        city: a.city ?? null,
+        contact: a.contact_name ?? null,
+        desig: a.designation ?? null,
+        phone: a.contact_no ?? null,
+        email: a.email ?? v.primary_email ?? null,
+        scrutiny: latest?.scrutiny_date ?? null,
+        gstNo: latest?.gst_number ?? v.gst_number ?? null,
+        gstStatus: latest?.status ?? null,
+        filing: latest?.last_filing_date ?? null,
+        remarks: latest?.prev_non_gst_2a_invoice || latest?.red_flags || null,
+      };
+      return { detail, scrutiny };
     }),
 
   vendorScrutiny: (vendorId: number) =>
