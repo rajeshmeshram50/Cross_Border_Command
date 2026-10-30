@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } 
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
+import { downloadFile } from '../../../utils/downloadFile';
 import { useToast } from '../../../contexts/ToastContext';
 import { useBranchSwitcher } from '../../../contexts/BranchSwitcherContext';
 import '../../p2p/p2p-detail.css';
@@ -89,6 +90,14 @@ const FIELD_FOR: Record<string, keyof Draft> = {
   contact_person: 'contact', contact_dial: 'mobile', contact_mobile: 'mobile', contact_email: 'email', card: 'card',
 };
 
+/* Field names as the form labels them, so the save toast can say WHICH field
+   is wrong instead of a bare count (CS-939 #9). */
+const FIELD_LABEL: Record<keyof Draft, string> = {
+  name: 'Warehouse Name', type: 'Warehouse Type', area: 'Area', address: 'Warehouse Address',
+  country: 'Country', state: 'State', city: 'City', pin: 'Pin Code', map: 'Google Location Link',
+  contact: 'Contact Person', mobile: 'Mobile Number', email: 'Email', card: 'Attachment',
+};
+
 function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, string>> {
   const e: Partial<Record<keyof Draft, string>> = {};
   const india = d.country === 'India';
@@ -122,8 +131,8 @@ function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, str
      (CS-939 #9). The length is checked first so the message names the problem
      the user can see; only once the length is right does the first digit
      become the thing that is wrong. */
-  else if (india && !/^\d{10}$/.test(mobile)) e.mobile = 'Mobile number must be exactly 10 digits';
-  else if (india && !/^[6-9]/.test(mobile)) e.mobile = 'An Indian mobile number starts with 6, 7, 8 or 9';
+  else if (india && !/^\d{10}$/.test(mobile)) e.mobile = `Mobile Number must be exactly 10 digits (after +91) — you entered ${mobile.length}`;
+  else if (india && !/^[6-9]/.test(mobile)) e.mobile = `Mobile Number must start with 6, 7, 8 or 9 — Indian mobile numbers do not begin with ${mobile[0]}`;
   else if (!india && !/^\d{7,13}$/.test(mobile)) e.mobile = 'Enter a mobile number of 7 to 13 digits';
   if (!d.email.trim()) e.email = 'Enter the email address';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) e.email = 'Enter a valid email address';
@@ -308,12 +317,12 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     const stateId = hasStates ? states.find(x => x.name === d.state)?.id : undefined;
     if (!e.state && hasStates && !stateId) e.state = 'Select the state';
     setErrors(e);
-    const bad = Object.keys(e).filter(k => e[k as keyof Draft]);
+    const bad = (Object.keys(e) as (keyof Draft)[]).filter(k => e[k]);
     if (bad.length) {
-      toast.error(
-        bad.length === 1 ? 'One field needs attention' : `${bad.length} fields need attention`,
-        'Each one is marked below.',
-      );
+      /* One bad field: name it and give its exact message. Several: name them
+         all - "each one is marked below" told the user nothing about what. */
+      if (bad.length === 1) toast.error(`Check ${FIELD_LABEL[bad[0]]}`, e[bad[0]]!);
+      else toast.error(`${bad.length} fields need attention`, bad.map(k => FIELD_LABEL[k]).join(', '));
       document.querySelector('.whm-addmdl .cpf-err')
         ?.closest('.spi-dt-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
@@ -562,7 +571,11 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                         form - the dialog holds unsaved input. */}
                     <a className="whm-file__act" href={cardHref} target="_blank" rel="noopener noreferrer"
                       title="View attachment" aria-label="View attachment"><IcoEye /></a>
+                    {/* Not a plain <a download>: the browser ignores that on a
+                        cross-origin URL or an inline-served file and just opens
+                        it (CS-939 #16). downloadFile blob-fetches, then saves. */}
                     <a className="whm-file__act" href={cardHref} download={d.card || 'attachment'}
+                      onClick={ev => { ev.preventDefault(); void downloadFile(cardHref, d.card || 'attachment'); }}
                       title="Download attachment" aria-label="Download attachment"><IcoDown /></a>
                   </>
                 )}

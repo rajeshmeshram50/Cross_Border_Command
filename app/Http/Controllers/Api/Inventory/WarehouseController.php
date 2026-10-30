@@ -492,7 +492,17 @@ class WarehouseController extends BaseInventoryController
             'contact_person' => ['required', 'string', 'max:150', "regex:/^\\p{L}[\\p{L}\\p{M}\\s.'-]*$/u"],
             'contact_dial'   => ['nullable', 'string', 'max:8'],
             // Digits only — the form strips spaces; 10 in India, 6–15 elsewhere.
-            'contact_mobile' => ['required', 'string', 'regex:/^\d{6,15}$/'],
+            'contact_mobile' => ['required', 'string', 'regex:/^\d{6,15}$/', function ($attr, $value, $fail) {
+                /* A +91 mobile is ten digits starting 6-9 (CS-939 #9) - the
+                   form checks this, so the API must too, with the same words. */
+                if (request()->input('contact_dial') !== '+91') return;
+                $v = (string) $value;
+                if (strlen($v) !== 10) {
+                    $fail('Mobile Number must be exactly 10 digits (after +91) — you entered ' . strlen($v));
+                } elseif (!preg_match('/^[6-9]/', $v)) {
+                    $fail('Mobile Number must start with 6, 7, 8 or 9 — Indian mobile numbers do not begin with ' . $v[0]);
+                }
+            }],
             'contact_email'  => ['required', 'email', 'max:120'],
             'card'           => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             /* No 'status': it changes only through setStatus(), which cascades
