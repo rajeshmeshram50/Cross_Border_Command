@@ -5307,7 +5307,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             </>
           )}
         </div>
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" onClick={() => setPreviewOpen(false)}
             className="btn rounded-pill px-3 fw-semibold"
             style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 13 }}>

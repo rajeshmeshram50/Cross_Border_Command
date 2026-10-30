@@ -584,9 +584,15 @@ export const MASTER_MODAL_CSS = `
   }
 
   /* ── HRMS fields in dark mode ──
-     Sunk 30% below the card read as near-black holes against the panel; the
-     module's own forms (employee onboarding) sit a shade ABOVE it instead.
-     .hrms-modal carries the decision so Master keeps its own tint. */
+     The module's own forms (employee onboarding) give the FIELD the card
+     background and sit it on a darker panel, so it reads as raised. HRMS
+     modals now do the same, with the same two variables, rather than
+     tinting the field to fake the difference against a panel of its own
+     colour. .hrms-modal carries the decision so Master keeps its own tint. */
+  [data-bs-theme="dark"] .hrms-modal .modal-content,
+  [data-layout-mode="dark"] .hrms-modal .modal-content {
+    background: color-mix(in srgb, #000 24%, var(--vz-card-bg));
+  }
   [data-bs-theme="dark"] .hrms-modal .master-field .form-control,
   [data-bs-theme="dark"] .hrms-modal .master-field .form-select,
   [data-bs-theme="dark"] .hrms-modal .master-select-toggle:not(:disabled),
@@ -595,14 +601,14 @@ export const MASTER_MODAL_CSS = `
   [data-layout-mode="dark"] .hrms-modal .master-field .form-select,
   [data-layout-mode="dark"] .hrms-modal .master-select-toggle:not(:disabled),
   [data-layout-mode="dark"] .hrms-modal .master-datepicker-toggle {
-    background: color-mix(in srgb, #6691e7 10%, var(--vz-card-bg)) !important;
+    background: var(--vz-card-bg) !important;
     border-color: var(--vz-border-color) !important;
     color: var(--vz-body-color) !important;
   }
   /* Focus keeps its violet ring over the same fill. */
   [data-bs-theme="dark"] .hrms-modal .master-field .form-control:focus,
   [data-layout-mode="dark"] .hrms-modal .master-field .form-control:focus {
-    background: color-mix(in srgb, #6691e7 10%, var(--vz-card-bg)) !important;
+    background: var(--vz-card-bg) !important;
   }
 
   /* Prefix-icon input groups */
