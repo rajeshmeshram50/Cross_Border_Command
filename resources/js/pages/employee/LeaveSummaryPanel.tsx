@@ -94,6 +94,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  /* The active status tab. 'All' first, the way every HRMS list opens. */
+  const [leaveTab, setLeaveTab] = useState<'All' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'>('All');
   const [approversFor, setApproversFor] = useState<number | null>(null);
   const [approversList, setApproversList] = useState<ApiLeaveApprover[]>([]);
   const [detailsType, setDetailsType] = useState<ApiEmployeeBalanceType | null>(null);
@@ -123,8 +125,21 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
 
   useEffect(() => { refetch(); }, [refetch]);
 
+  /* The pending card list above the table keeps its own section. */
   const pending = useMemo(() => requests.filter(r => r.status === 'Pending'), [requests]);
-  const history = useMemo(() => requests.filter(r => r.status !== 'Pending'), [requests]);
+  /* One row per status for the tab counts, and the rows the open tab shows.
+     A status outside the four known ones still lands under All. */
+  const leaveCounts = useMemo(() => ({
+    All:       requests.length,
+    Pending:   requests.filter(r => r.status === 'Pending').length,
+    Approved:  requests.filter(r => r.status === 'Approved').length,
+    Rejected:  requests.filter(r => r.status === 'Rejected').length,
+    Cancelled: requests.filter(r => r.status === 'Cancelled').length,
+  }), [requests]);
+  const shownRequests = useMemo(
+    () => leaveTab === 'All' ? requests : requests.filter(r => r.status === leaveTab),
+    [requests, leaveTab],
+  );
   /* Leave History columns for the shared DataTable — paging, sorting and the
      footer are the component's own, so there's no local page state here. */
   const historyColumns: DataTableColumn<ApiLeaveRequest>[] = useMemo(() => [
@@ -568,22 +583,36 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       </div>
 
       <div>
-        <h6 className="fw-bold mb-2 ep-sec-head">Leave History</h6>
+        <h6 className="fw-bold mb-2 ep-sec-head">Leave Requests</h6>
         {/* Shared DataTable — same component as Holidays, Hiring Requests and
             the rest of HRMS, so the header band, sortable columns and the
             "Showing X–Y of Z / Rows per page" footer match everywhere. */}
         <DataTable
-          data={history}
+          data={shownRequests}
           columns={historyColumns}
           loading={loading}
           accent="violet"
+          /* SR NO, which every other list in the module shows (QA 175). */
+          serial
+          /* Status tabs like the Leave module. They run over ALL requests, so
+             Pending appears here — it used to be filtered out and shown
+             nowhere. */
+          tabs={[
+            { key: 'All',       label: 'All Leaves', icon: 'ri-stack-line',           count: leaveCounts.All },
+            { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: leaveCounts.Pending },
+            { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: leaveCounts.Approved },
+            { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: leaveCounts.Rejected },
+            { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: leaveCounts.Cancelled },
+          ]}
+          activeTab={leaveTab}
+          onTabChange={k => setLeaveTab(k as typeof leaveTab)}
           /* .ep-hero, not .hr-cstrip, so the HRMS skin has to be named —
              without it the base skin's solid accent header band shows. */
           className="hr-dt"
           pageSize={10}
           minWidth={720}
           onRowClick={(r) => setDetailsRequestId(r.id)}
-          emptyMessage="No Leave history to show."
+          emptyMessage="No leave requests to show."
         />
       </div>
 
