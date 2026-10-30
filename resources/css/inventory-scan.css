@@ -415,3 +415,23 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* Enroll device · save lock, the Customer form's (.acm-save-lock) in the
+   app primary: a sheet over the dialog with a big ring and the word under
+   it. Sits inside .modal-content (position: relative), so it covers the
+   dialog only and rounds with it. */
+.isd-saving {
+  position: absolute; inset: 0; z-index: 60; border-radius: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(255, 255, 255, .62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  font-size: 13px; font-weight: 700; letter-spacing: .2px; color: var(--vz-primary, #405189);
+  cursor: progress;
+}
+.isd-saving__spin {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3.5px solid rgba(64, 81, 137, .22); border-top-color: var(--vz-primary, #405189);
+  animation: isdSaveSpin .7s linear infinite;
+}
+@keyframes isdSaveSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .isd-saving { background: rgba(11, 18, 32, .66); }
+@media (prefers-reduced-motion: reduce) { .isd-saving__spin { animation: none; } }

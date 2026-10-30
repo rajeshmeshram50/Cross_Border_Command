@@ -4,7 +4,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { HeadPill } from '../order/create-po/CreatePoForm';
 import {
   IcoBox, IcoBuilding, IcoCard, IcoChevron, IcoClock, IcoDoc, IcoLines, IcoList,
-  IcoPin, IcoShip, IcoTag, IcoTarget, IcoCart, IcoUser, IcoWarehouse, IcoX,
+  IcoPin, IcoShip, IcoTag, IcoTarget, IcoCart, IcoUser, IcoWarehouse, IcoX, IcoCalendar,
 } from '../../icons';
 import { money } from '../order/manage-payment/payment-shared';
 import { PoApiError } from '../order/api/po-api';
@@ -365,20 +365,20 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
             <HeadPill icon={<IcoDoc />} label="SPI ID" value={spiId} mono
               extra={<span className="pts-dot pts-dot--ok" title="Mapped" />} />
             {!noShip && (<>
-              <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
+              <HeadPill icon={<IcoTruck />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
                 extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
               <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
                 extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
             </>)}
-            <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={h?.procurementId || row.procurementId || '—'} alt mono
+            <HeadPill icon={<IcoCart />} label="PROCUREMENT CASE ID" value={h?.procurementId || row.procurementId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--warn" title="Procurement" />} />
             <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={whName}
-              extra={<span className="pts-badge">{ownWarehouse ? 'Own' : '3P'}</span>} />
+              extra={<span className={`pts-badge${ownWarehouse ? '' : ' pts-badge--3p'}`}>{ownWarehouse ? 'Own' : 'Third Party'}</span>} />
             <HeadPill icon={<IcoTag />} label="SPI TYPE" value={h?.spiType || (row.poNo ? 'PO + SPI' : 'Direct SPI')} alt />
-            <HeadPill icon={<IcoLines />} label="SPI DATE" value={(h?.spiDate || row.invoiceDate) ? shortDate(h?.spiDate || row.invoiceDate) : '—'} mono />
+            <HeadPill icon={<IcoCalendar />} label="SPI DATE" value={(h?.spiDate || row.invoiceDate) ? shortDate(h?.spiDate || row.invoiceDate) : '—'} mono />
             <HeadPill icon={<IcoBox />} label="BOXES" value={h ? String(h.boxes) : '…'} alt mono />
-            <HeadPill icon={<IcoCard />} label="PRODUCTS" value={h ? String(h.products) : '…'} mono />
-            <HeadPill icon={<IcoPin />} label="TOTAL QTY" value={h ? `${h.totalQty} U` : '…'} alt mono />
+            <HeadPill icon={<IcoBox />} label="PRODUCTS" value={h ? String(h.products) : '…'} mono />
+            <HeadPill icon={<IcoWarehouse />} label="TOTAL QTY" value={h ? `${h.totalQty} U` : '…'} alt mono />
           </div>
         </div>
 

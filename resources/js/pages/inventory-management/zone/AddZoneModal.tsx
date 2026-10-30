@@ -632,8 +632,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                 }}
               >
                 <button type="button" className={`whm-toggle${d.cold ? ' is-on' : ''}`}
-                  role="switch" aria-checked={d.cold} aria-label="Toggle cold chain"
-                  onClick={e => e.stopPropagation()}>
+                  role="switch" aria-checked={d.cold} aria-label="Toggle cold chain">
                   <span />
                 </button>
                 <span className="znm-tg__st">
@@ -655,8 +654,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             <Field label="Hazardous Allowed">
               <div className={`znm-tg${d.haz ? ' is-on' : ''}`} onClick={() => set({ haz: !d.haz })}>
                 <button type="button" className={`whm-toggle${d.haz ? ' is-on' : ''}`}
-                  role="switch" aria-checked={d.haz} aria-label="Toggle hazardous"
-                  onClick={e => e.stopPropagation()}>
+                  role="switch" aria-checked={d.haz} aria-label="Toggle hazardous">
                   <span />
                 </button>
                 <span className="znm-tg__st">{d.haz ? 'Allowed' : 'Not Allowed'}</span>

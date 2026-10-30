@@ -1650,8 +1650,36 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       .catch(() => {});
   }, [scanOpen]);
 
+  /* While anything scrolls, the stage stops reacting to the pointer and its
+     looping animations pause (.is-scrolling, step4.css). Rows, cards, tabs
+     and buttons kept sliding under a still mouse during a scroll, and each
+     one fired its hover — a lift, a shadow, a colour change — so every frame
+     of the scroll also repainted whatever had just entered or left the
+     pointer. Set on the element directly, not through state, so a scroll
+     never re-renders the stage; cleared 150ms after the last scroll event. */
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let idle: number | undefined;
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      // the stage's own panes, or the SPI body / page that carries it
+      if (!(t instanceof Node) || !(root.contains(t) || t.contains(root) || t === document)) return;
+      if (idle === undefined) root.classList.add('is-scrolling');
+      window.clearTimeout(idle);
+      idle = window.setTimeout(() => { root.classList.remove('is-scrolling'); idle = undefined; }, 150);
+    };
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('scroll', onScroll, { capture: true });
+      window.clearTimeout(idle);
+      root.classList.remove('is-scrolling');
+    };
+  }, []);
+
   return (
-    <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
+    <div ref={rootRef} className={`s4-root${fs ? ' is-fullview' : ''}`}>
       {!fs && <StageSummary draft={draft} upto={3} direct={direct} boxes={boxes} />}
       {!fs && <PutawayStageBrief warehouse={warehouse} />}
 

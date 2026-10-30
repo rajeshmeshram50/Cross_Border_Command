@@ -8,6 +8,7 @@ import SearchClear from '../../../components/ui/SearchClear';
 import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
+import { useCardFloor } from '../../../hooks/useCardFloor';
 import { useToast } from '../../../contexts/ToastContext';
 import { useServerList } from '../../../hooks/useServerList';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
@@ -91,6 +92,9 @@ export default function ProductFlagMaster() {
   const [query, setQuery] = useState('');
   const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
+  // CS-939 #17: the card reaches the bottom of the window even with no rows
+  const cardRef = useRef<HTMLDivElement>(null);
+  useCardFloor(cardRef, [briefOpen]);
 
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query.trim(), 400);
@@ -210,7 +214,7 @@ export default function ProductFlagMaster() {
         </div>
       </div>
 
-      <div className="spi-card ord-list">
+      <div className="spi-card ord-list" ref={cardRef}>
         <div className="spi-segrow">
           <div className="spi-seg" role="tablist" aria-label="Product flag status">
             {TABS.map(t => (

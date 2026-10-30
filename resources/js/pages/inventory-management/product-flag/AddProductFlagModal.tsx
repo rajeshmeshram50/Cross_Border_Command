@@ -76,9 +76,16 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
       return;
     }
     setSaving(true);
+    /* CS-950: a flag is two short fields and saves in a blink, so the save
+       sheet flashed for a frame and read as no loader at all. It stays up
+       for at least this long, alongside the request rather than after it. */
+    const minShown = new Promise(r => setTimeout(r, 600));
     try {
       const body = { flag_name: name.trim(), purpose: purpose.trim() };
-      const saved = editing ? await productFlagApi.update(flag!.apiId, body) : await productFlagApi.create(body);
+      const [saved] = await Promise.all([
+        editing ? productFlagApi.update(flag!.apiId, body) : productFlagApi.create(body),
+        minShown,
+      ]);
       toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
       onSaved?.(saved);
       onClose();
