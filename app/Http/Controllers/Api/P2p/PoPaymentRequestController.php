@@ -1063,6 +1063,9 @@ class PoPaymentRequestController extends Controller
         $pending  = $requests->where('status', PoPaymentRequest::STATUS_PENDING);
         $approved = $requests->where('status', PoPaymentRequest::STATUS_APPROVED);
 
+        /* One name lookup for every person in the list, not one per row. */
+        $names = $this->names($requests->pluck('requested_by')->merge($requests->pluck('requested_to'))->all());
+
         return [
             'spi' => [
                 'id'             => $invoice->id,
@@ -1087,11 +1090,31 @@ class PoPaymentRequestController extends Controller
                 'open_to_request' => $this->openToRequestForSpi($invoice),
             ],
             'requests_summary' => [
+                'total_requests'   => $requests->count(),
+                'approved_count'   => $approved->count(),
+                'pending_count'    => $pending->count(),
+                'rejected_count'   => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
+                'requested_amount' => round((float) $requests->sum('requested_amount'), 2),
+                'awaiting_amount'  => round((float) $pending->sum('requested_amount'), 2),
+                /* The approved total across ALL requests on this invoice - it
+                   was taken from the single open request before. */
+                'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
+                'approved_unpaid'  => round((float) $approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
+                'paid'             => $paid,
+                'open_to_request'  => max(0, $this->openToRequestForSpi($invoice)),
+                // Kept too, so callers reading the short keys still work.
                 'total'    => $requests->count(),
                 'pending'  => $pending->count(),
                 'approved' => $approved->count(),
                 'rejected' => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
             ],
+            /* The other requests on this invoice, shaped like the PO's list, so
+               the Linked requests panel fills for a Direct SPI too - and each
+               carries can_decide, so a sibling can be acted on without opening
+               it. */
+            'requests' => $requests
+                ->map(fn ($r) => $this->shapeRequest($r, $names))
+                ->values()->all(),
         ];
     }
     /**
