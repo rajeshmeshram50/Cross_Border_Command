@@ -56,7 +56,6 @@
 
 .cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail {
   background: #0b7c9b;
-  box-shadow: none !important;
 }
 
 .spi-prodtbl thead th[rowspan="2"] {
@@ -65,11 +64,11 @@
   padding-bottom: 7px;
 }
 
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th,
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 0; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { box-shadow: inset 1px 0 0 #217f99, inset 0 -1px 0 #2b859d, 0 1px 0 0 #0e7490; }
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th:first-child,
-.cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th.cpd-grp-tail { box-shadow: inset 0 -1px 0 #2b859d, 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th:first-child { box-shadow: 0 1px 0 0 #0e7490; }
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th.cpd-stick {
   box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
 }
@@ -443,6 +442,14 @@
   animation: vtiDwSpin .6s linear infinite;
 }
 [data-bs-theme="dark"] .vti-dw-saving { background: rgba(8,20,28,.6); }
+/* The strip is inert while saving (BoxDrawer); its controls dim so they do
+   not look usable. The Save button keeps full strength — it is what says
+   "Saving…". */
+.vti-dw-strip[inert] { cursor: progress; }
+.vti-dw-strip[inert] .vti-dw-qty,
+.vti-dw-strip[inert] .vti-dw-unit-toggle,
+.vti-dw-strip[inert] .vti-dw-icon-btn,
+.vti-dw-strip[inert] .vti-dw-sticker-btn { opacity: .55; }
 [data-bs-theme="dark"] .vti-dw-saving__box { background: #0f2630; border-color: rgba(34,211,238,.35); color: #7dd3e8; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
 
@@ -1841,6 +1848,41 @@
 .invf-stk__contents .invf-stk__mono { font-size: 10px; font-weight: 700; color: #0891b2; }
 
 .invf-stk .spi-mdl-cancel { display: inline-flex; align-items: center; gap: 6px; }
+/* Only the body scrolls. The base .spi-mdl scrolls as one box, so a mixed box
+   with a long contents list ran its scrollbar the full height of the dialog —
+   over the cyan header and through its rounded corner. Same cure as the SPI
+   type chooser (.spi-mdl--wide in direct-spi.css): the shell is a column that
+   does not scroll, header and footer hold, and the track starts under the
+   header. (0,2,0) so it beats the base `overflow-y: auto` in any load order. */
+.spi-mdl.invf-stk { display: flex; flex-direction: column; overflow: hidden; }
+.invf-stk > .spi-mdl-head,
+.invf-stk > .spi-mdl-foot { flex: 0 0 auto; }
+.invf-stk > .spi-mdl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b9dde8 transparent;
+}
+.invf-stk > .spi-mdl-body::-webkit-scrollbar { width: 8px; }
+.invf-stk > .spi-mdl-body::-webkit-scrollbar-track { background: transparent; }
+.invf-stk > .spi-mdl-body::-webkit-scrollbar-thumb { background: #b9dde8; border-radius: 999px; }
+[data-bs-theme="dark"] .invf-stk > .spi-mdl-body { scrollbar-color: rgba(34, 211, 238, .28) transparent; }
+[data-bs-theme="dark"] .invf-stk > .spi-mdl-body::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+/* PDF and Print Label side by side, one height. Both pad 10px, but PDF has a
+   1.5px border and Print Label none, and their icons are 13px and 14px — so
+   the pair came out at different heights. 40px is the SPI button height. */
+.invf-stk .spi-mdl-foot-btns .spi-mdl-cancel,
+.invf-stk .spi-mdl-foot-btns .spi-mdl-confirm {
+  box-sizing: border-box;
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
 
 [data-bs-theme="dark"] .vti-box,
 [data-bs-theme="dark"] .pkg-box {
@@ -1857,6 +1899,31 @@
   background: rgba(12, 38, 48, .7);
   border-color: rgba(34, 211, 238, .25);
   color: #7dd3fc;
+}
+/* The Packaging Scenarios chevron had no dark rule, so it stayed a white
+   tile. Same dark chevron as .cpf-chev (create-po.css); the white inset
+   sheen goes too, since on a dark tile it draws a bright line. */
+/* Not-yet-reached step cards in dark mode. p2p-detail.css fills them #142833,
+   a shade off the strip behind them, and the arrow cut takes the border with
+   it — so the cards, arrow and all, melted into the strip and only the text
+   said a step was there. A clearly lighter slab, so the shape is the outline,
+   and text bright enough to read. Upcoming cards only: the active and done
+   cards keep their own fills. Scoped to this form; the PO and Debit Note
+   wizards share the base rule. */
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) {
+  background: linear-gradient(135deg, #1e3a49 0%, #193140 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-lbl { color: #8fb3c4; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-big { color: #5b8196; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-title { color: #d3e1ea; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-desc { color: #93abba; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-ghost { color: rgba(148, 197, 220, .08); }
+[data-bs-theme="dark"] .pkg-toggle {
+  background: #13242e;
+  border-color: rgba(34, 211, 238, .25);
+  color: #67e8f9;
+  box-shadow: none;
 }
 
 [data-bs-theme="dark"] .vti-table th {
@@ -2418,8 +2485,22 @@
   overflow-y: auto;
 
   overscroll-behavior: contain;
-
-  scrollbar-gutter: stable;
+}
+.cpd-scroll--rows.is-overflowing { scrollbar-gutter: stable; }
+.cpd-scroll--rows.is-overflowing::-webkit-scrollbar-track:vertical {
+  margin-top: var(--spi-th, 0px);
+  margin-bottom: var(--spi-tf, 0px);
+}
+.cpd-scroll--rows::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.cpd-scroll--rows.is-overflowing {
+  background-image: linear-gradient(#0b7c9b, #0b7c9b), linear-gradient(#e8f8fc, #e8f8fc);
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  background-size: 8px var(--spi-th, 0px), 8px var(--spi-tf, 0px);
+  background-position: right 1px top 1px, right 1px bottom calc(1px + var(--spi-hb, 0px));
+}
+[data-bs-theme="dark"] .cpd-scroll--rows.is-overflowing {
+  background-image: linear-gradient(#0b7c9b, #0b7c9b), linear-gradient(#0d2e3b, #0d2e3b);
 }
 
 .cpd-scroll--rows::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -2435,6 +2516,14 @@
 .cpd-scroll--rows .cpd-tbl thead th.cpd-edh { background: #3291ab; }
 
 [data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+/* The totals row is sticky to the bottom of this box, and in dark its cells
+   were rgba(8,145,178,.16) (create-po.css) — a tint of whatever is behind
+   them, which here is the rows scrolling underneath. Their figures showed
+   through the totals and the two sets of numbers overprinted. Same colour
+   mixed down to an opaque one: .16 #0891b2 over the #0e1b24 row is #0d2e3b.
+   The grand total keeps its own solid gradient. Light mode was never
+   affected: its footer cells are already a solid gradient. */
+[data-bs-theme="dark"] .cpd-scroll--rows .cpd-tbl tfoot td:not(.cpd-foot-final) { background: #0d2e3b; }
 
 .vti-th-help {
   border-bottom: 1px dotted currentColor;
@@ -2459,6 +2548,23 @@
 .vti-wrap--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
 .vti-wrap--rows::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
 .vti-wrap--rows .vti-table thead { position: sticky; top: 0; z-index: 4; }
+
+/* The box generation card takes the height left above the footer, so one
+   product (or none) no longer leaves a band of empty page under the card —
+   the same fill the PO's documents step does with .cpf-fill.
+   Grow only, never shrink (`1 0 auto`): the card is overflow:hidden, so a
+   shrinkable one would clip its own rows instead of letting the form scroll.
+   Only this card: the packed-products card wears the same .vti-box chrome
+   and should keep its own height. */
+.cpf-form .cpf-stepwrap > .vti-box--fill { display: flex; flex-direction: column; flex: 1 0 auto; }
+.vti-box--fill > .vti-header,
+.vti-box--fill > .vti-selection-bar { flex-shrink: 0; }
+.vti-box--fill > .vti-table-wrap { flex: 1 0 auto; }
+/* Phones scroll the whole form, so there is no spare height to fill. */
+@media (max-width: 760px) {
+  .cpf-form .cpf-stepwrap > .vti-box--fill,
+  .vti-box--fill > .vti-table-wrap { flex: 0 0 auto; }
+}
 
 [data-bs-theme="dark"] .vti-wrap--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
 [data-bs-theme="dark"] .vti-wrap--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
@@ -2819,6 +2925,25 @@
 .spi-invform .spi-prodtbl .cpd-del {
   width: 40px; height: 40px; min-height: 40px;
 }
+/* Stage 02's refused-save red, for the two controls whose own border this
+   form restates: the date picker (MasterDatePicker's .invalid is (0,2,0)
+   and its orange-red is not the red the inputs beside it use) and the
+   product picker in the table (create-po.css pins it grey at (0,3,0)). Same
+   red, same ring as .spi-dt-inp.is-invalid, so the row of fields agrees. */
+.spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle,
+.spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle:hover:not([aria-disabled="true"]) {
+  border-color: #ef4444; background: #fef2f2; box-shadow: 0 0 0 3px rgba(239,68,68,.1);
+}
+.spi-invform .cpd-cell-err .cpd-pick .master-select-toggle { border-color: #ef4444; }
+[data-bs-theme="dark"] .spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle { background: rgba(239,68,68,.1); }
+[data-bs-theme="dark"] .spi-invform .cpd-cell-err .cpd-pick .master-select-toggle { border-color: #ef4444; }
+
+/* The header Close, beside the pills. create-po.css pins it at 42 under
+   `.cpf-form`, and that sheet can load after this one, so both form classes
+   are named here to win on specificity rather than on load order. */
+.cpf-form.spi-invform .spi-dt-btn-close {
+  height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0;
+}
 
 .spi-prodtbl .cpd-th-act { width: 74px; }
 .spi-prodtbl .cpd-td-act { text-align: center; }
@@ -2966,6 +3091,19 @@
   border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.18);
 }
 .vs3t .vs3-in:not(:placeholder-shown) { border-color: #22d3ee; background: #f0fdff; }
+/* The focus ring is the teal border and glow above, so the browser's own
+   outline goes. It was never switched off, and on keyboard focus (Tab from
+   one row into the next) Chrome drew its thick black ring over the field.
+   Restated for a field that already has text: the filled rule above comes
+   later at the same weight and took its border back to the paler #22d3ee
+   while the field was being typed in. */
+.vs3t .vs3-in:focus,
+.vs3t .vs3-in:focus-visible,
+.vs3t .master-datepicker-toggle:focus-visible { outline: none; }
+.vs3t .vs3-in:not(:placeholder-shown):focus {
+  border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.18);
+}
+.vs3t .master-datepicker-toggle:focus-visible { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.18); }
 .vs3t .master-datepicker-toggle .master-datepicker-value { font-size: 11.5px; font-weight: 700; color: #0c2c3a; }
 
 .vs3t .vs3-rm {
@@ -3015,6 +3153,13 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
+/* Dark had no focus state of its own, and the dark base rule above outranks
+   the light :focus one, so a focused field in dark showed no ring at all.
+   Same teal ring, on the dark field. */
+[data-bs-theme="dark"] .vs3t .vs3-in:focus,
+[data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown):focus {
+  background: #0e2530; border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+}
 [data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }
 
 .invf-pb-rail {
@@ -3157,25 +3302,18 @@
 }
 .vti-dw-field .master-datepicker-placeholder { font-weight: 500; }
 
-.spi-invform .spi-save-lock {
-  position: fixed; inset: 0; z-index: 1220;
-  display: flex; flex-direction: column; gap: 12px;
-  align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.62);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
-  cursor: progress;
+.spi-invform .spi-dt-file-txt { white-space: nowrap; text-overflow: ellipsis; }
+
+.spi-invform.cpf-form .spi-dt-foot {
+  position: relative; left: auto; right: auto; bottom: auto;
+  flex: 0 0 auto;
+  margin: 0 -12px;
 }
-.spi-invform .spi-save-lock-spinner {
-  width: 40px; height: 40px; border-radius: 50%;
-  border: 3.5px solid rgba(8, 145, 178, 0.22);
-  border-top-color: #0891b2;
-  animation: spiSaveSpin .7s linear infinite;
+.spi-invform.cpf-form .spi-dt-body { padding-bottom: 12px; }
+@media (max-width: 760px) {
+  .spi-invform.cpf-form .spi-dt-foot { margin: 0 -8px; }
 }
-.spi-invform .spi-save-lock-text { font-size: 13px; font-weight: 700; color: #0e7490; letter-spacing: .2px; }
-@keyframes spiSaveSpin { to { transform: rotate(360deg); } }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock { background: rgba(10, 22, 32, 0.66); }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock-spinner { border-color: rgba(34, 211, 238, 0.22); border-top-color: #22d3ee; }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock-text { color: #67e8f9; }
+
 .stk-pv { display: block; width: 100%; height: min(64vh, 620px); border: 1px solid #dcecf2; border-radius: 12px; background: #fff; }
 .stk-pv--load { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #0e7490; background: #f4fbfd; }
 [data-bs-theme="dark"] .stk-pv { border-color: rgba(148, 163, 184, .22); }

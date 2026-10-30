@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -15,9 +15,11 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true,
+  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true, rowIssues,
 }: {
   lines: ProductLine[];
+  /** Cells a refused Update & Next flagged, by line index. */
+  rowIssues?: Record<number, { product?: string; qty?: string }>;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
   onRemove?: (index: number) => void;
   readOnly?: boolean;
@@ -152,6 +154,35 @@ export default function ProductTable({
     }
   };
 
+  /* Whether the rows overflow the box's 500px cap. The scrollbar lane
+     (scrollbar-gutter) is reserved only then: reserved always, a table with a
+     row or two had an empty 8px white strip down its right edge, beside the
+     Action column, with no scrollbar ever coming to fill it.
+     It also hands the CSS the sticky header's and totals row's heights, and
+     the horizontal bar's: the vertical track is inset by the first two so the
+     scrollbar runs beside the rows only, not up past the header or down past
+     the totals. They are whatever the text makes them, so they are measured. */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [rowsOverflow, setRowsOverflow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => {
+      setRowsOverflow(el.scrollHeight > el.clientHeight + 1);
+      const cs = getComputedStyle(el);
+      const borders = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      el.style.setProperty('--spi-th', `${el.querySelector('thead')?.offsetHeight ?? 0}px`);
+      el.style.setProperty('--spi-tf', `${el.querySelector('tfoot')?.offsetHeight ?? 0}px`);
+      el.style.setProperty('--spi-hb', `${Math.max(0, el.offsetHeight - el.clientHeight - borders)}px`);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    const table = el.querySelector('table');
+    if (table) ro.observe(table);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       <div className="cpd-legend">
@@ -162,7 +193,7 @@ export default function ProductTable({
           : <>Tinted cells are editable — SPI product, quantity and rate. Costs and GST are calculated.</>}
       </div>
 
-      <div className="cpd-scroll cpd-scroll--rows">
+      <div ref={scrollRef} className={`cpd-scroll cpd-scroll--rows${rowsOverflow ? ' is-overflowing' : ''}`}>
         <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
 
         {(adding || editing != null) && (
@@ -242,11 +273,12 @@ export default function ProductTable({
               <Row
                 key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched} showPi={showPi}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
-                duplicateOf={twoWay ? duplicateOf : undefined}
+                duplicateOf={duplicateOf}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
                 onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
                 showAction={canRemove}
+                issue={rowIssues?.[i]}
               />
             ))}
           </tbody>
@@ -284,10 +316,12 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  matched, onRemove, showAction, duplicateOf, showPi = matched,
+  matched, onRemove, showAction, duplicateOf, showPi = matched, issue,
 }: {
   showPi?: boolean;
   duplicateOf?: (productId: number, index: number) => boolean;
+  /** This line's flagged cells — the same red cell and note the PO table uses. */
+  issue?: { product?: string; qty?: string };
   line: ProductLine;
   index: number;
   twoWay: boolean;
@@ -326,7 +360,7 @@ const Row = memo(function Row({
         </td>
       )}
 
-      <td className={`cpd-prodcell cpd-ed${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}`}>
+      <td className={`cpd-prodcell cpd-ed${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}${issue?.product ? ' cpd-cell-err' : ''}`}>
         <div className="cpd-prod cpd-prod--po">
           <div className="cpd-pick">
             <MasterSelect
@@ -380,6 +414,7 @@ const Row = memo(function Row({
               </button>
             </Tooltip>
           </div>
+          {issue?.product && <div className="cpd-cell-msg">{issue.product}</div>}
         </div>
       </td>
 
@@ -402,12 +437,14 @@ const Row = memo(function Row({
           {openQtyOf(line)}
         </td>
       )}
-      <td className="cpd-c cpd-ed">
+      <td className={`cpd-c cpd-ed${issue?.qty ? ' cpd-cell-err' : ''}`}>
         <input
           className="cpd-in cpd-in--num" type="number" min={0} readOnly={readOnly}
+          aria-invalid={!!issue?.qty || undefined}
           value={line.spiQty}
           onChange={e => patch({ spiQty: Number(e.target.value) || 0 })}
         />
+        {issue?.qty && <div className="cpd-cell-msg">{issue.qty}</div>}
       </td>
 
       {matched && (

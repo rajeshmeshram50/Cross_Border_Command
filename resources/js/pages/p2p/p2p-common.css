@@ -2814,6 +2814,19 @@
 }
 .spi-list .spi-head-btn { padding-left: 20px; padding-right: 20px; }
 
+/* Hover flicker on the row actions. On hover an .ord-btn lifts 1px
+   (order.css), which pulls its bottom edge out from under a pointer resting
+   on that edge — hover drops, the button settles back under the pointer,
+   hover returns, and it loops: the button blinks. A transparent strip 2px
+   below the button keeps the pointer inside it through the lift, so the
+   hover area no longer moves away from the mouse. The lift itself stays. */
+.spi-list .ord-btn { position: relative; }
+.spi-list .ord-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 -2px;
+}
+
 /* The pager's own controls. The two nav circles are buttons; the rows-per-page
    pill holds one, and the pill is what has the height, so the button fills it
    rather than stretching past it. The count pills beside them are not buttons,
@@ -2828,6 +2841,26 @@
   padding-top: 0; padding-bottom: 0;
 }
 .spi-list .tc-wl-rows-btn { height: 100%; }
+
+/* The SPI payment popups — Payment Requests History, Raise Request and Record
+   Payment — at the same 40px. They are built on the Purchase Order's .mpr-card,
+   whose own scale is 36 (footer) and 34 (TDS button), and the PO screens keep
+   that. The popups portal to <body>, outside .spi-list, so they are picked out
+   by their title ids instead: all three are "inv-…", which no PO popup uses. */
+.mpr-card[aria-labelledby^="inv-"] .spi-mdl-cancel,
+.mpr-card[aria-labelledby^="inv-"] .spi-mdl-confirm,
+.mpr-card[aria-labelledby^="inv-"] .cpay-add,
+.mpr-card[aria-labelledby^="inv-"] .mpr-tdsbtn,
+.mpr-card[aria-labelledby^="inv-"] .mpr-paybtn {
+  height: 40px; min-height: 40px;
+  padding-top: 0; padding-bottom: 0;
+  box-sizing: border-box;
+}
+.mpr-card[aria-labelledby^="inv-"] .mpr-hero__close,
+.mpr-card[aria-labelledby^="inv-"] .mpr-viewbtn {
+  width: 40px; height: 40px;
+  box-sizing: border-box;
+}
 
 /* Narrow screens: the base rule drops the tab to 11px on 7px 11px, which a
    stated 40px height would fight. The tab shrinks with it; the rail follows,

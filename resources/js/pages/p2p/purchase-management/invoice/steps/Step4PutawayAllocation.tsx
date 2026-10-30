@@ -1644,6 +1644,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       {!fs && <StageSummary draft={draft} upto={3} direct={direct} boxes={boxes} />}
       {!fs && <PutawayStageBrief warehouse={warehouse} />}
 
+      {/* One card holds the workspace: the tab row on top, the two panels
+          under it (the prototype's .s4b-wrap). Children are not re-indented
+          so the diff stays readable. */}
+      <div className="s4b-wrap">
       <div className="spi-segrow">
         <div className="spi-seg" role="tablist" aria-label="Box disposition">
           {TABS.map(t => (
@@ -2008,6 +2012,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
         </div>
       </div>
+      </div>
 
       <FsLayer host={fs ? panelsRef.current : null}>
       {scanOpen && scanTask && box && findSpot(loc.data, spot) && (() => {
@@ -2189,7 +2194,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       {qrBox && (
         <PutawayBoxSticker
           boxId={qrBox.code}
-          spiNumber={draft.invoiceNumber || '—'}
+          spiNumber={spiCode || '—'}
           scenario={STICKER_SCENARIO[qrBox.scenarioKey] ?? 'S1 — Single'}
           product={qrBox.name}
           code={qrBox.productCodes[0] ?? '—'}

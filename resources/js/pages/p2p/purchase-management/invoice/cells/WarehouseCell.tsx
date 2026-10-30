@@ -20,7 +20,7 @@ const PeopleIcon = () => (
 function WarehouseCellBase({
   name, kind,
 }: { name?: string; kind?: InvoiceWarehouseKind }) {
-  if (!name) return <span className="ord-dash">—</span>;
+  if (!name) return <span className="ord-dash">N/A</span>;
   const third = kind === 'third-party';
   return (
     <div className="ord-supplier">

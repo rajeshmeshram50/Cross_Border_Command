@@ -1,5 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../../components/ui/Tooltip';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
@@ -10,6 +12,53 @@ import type { ProductLine, TaxMode } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
+
+const FILE_NAME_MAX = 25;
+
+/* The server's own rule for invoice_file / eway_file (SupplierInvoiceController,
+   mimes:pdf,jpg,jpeg,png,webp max:10240). Checked here too, at the pick, so a
+   Word or Excel file is refused before it is ever attached rather than at
+   Update & Next. */
+const ATTACH_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+const ATTACH_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp';
+const ATTACH_MAX_MB = 10;
+
+function attachProblem(file: File): string | null {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (!ATTACH_EXT.includes(ext)) return `"${file.name}" is not allowed. Attach a PDF or an image (JPG, PNG, WEBP).`;
+  if (file.size > ATTACH_MAX_MB * 1024 * 1024) return `"${file.name}" is larger than ${ATTACH_MAX_MB} MB.`;
+  return null;
+}
+
+/** What Stage 02 still lacks, field by field. Rows are keyed by line index. */
+export interface Stage2Issues {
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  invoiceFile?: string;
+  rows: Record<number, { product?: string; qty?: string }>;
+}
+
+/* Everything that turns red on this step, in the order it appears on the
+   page — querySelector returns the first in document order, which is the
+   one to take the user to. */
+const INVALID_SEL = [
+  '.spi-invform .spi-dt-inp.is-invalid',
+  '.spi-invform .master-datepicker-wrap.invalid',
+  '.spi-invform .spi-dt-file.is-invalid',
+  '.spi-invform .cpd-cell-err',
+].join(', ');
+
+/** Scrolls the first flagged field to the middle of the view and puts the
+ *  cursor in it — an input directly, a picker or file row by its own control. */
+function focusFirstInvalid() {
+  const el = document.querySelector<HTMLElement>(INVALID_SEL);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  const target = el.matches('input')
+    ? el
+    : el.querySelector<HTMLElement>('input:not([type="hidden"]):not([hidden]), button:not(:disabled), [tabindex="0"]');
+  target?.focus({ preventScroll: true });
+}
 
 const ICON_PICK_UPLOAD = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -24,8 +73,13 @@ const ICON_PICK_CAMERA = (
 
 export default function Step2InvoiceProducts({
   draft, set, lines, onChangeLine, onRemoveLine, onAddLine, removedCount = 0, onRestoreLines,
-  taxMode, onPickFile, readOnly = false, direct = false, matched = true,
+  taxMode, onPickFile, readOnly = false, direct = false, matched = true, issues, check = 0,
 }: {
+  /** Shown only after an Update & Next has been refused; undefined before. */
+  issues?: Stage2Issues;
+  /** Goes up on every refused Update & Next — each one takes the user to the
+   *  first missing field again, even when the list itself has not changed. */
+  check?: number;
   draft: InvoiceDraft;
   set: SetDraft;
   lines: ProductLine[];
@@ -42,6 +96,20 @@ export default function Step2InvoiceProducts({
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
+
+  const openRef = useRef({ invOpen, prodOpen });
+  openRef.current = { invOpen, prodOpen };
+  useEffect(() => {
+    if (!check || !issues) return;
+    const inHead = !!(issues.invoiceNumber || issues.invoiceDate || issues.invoiceFile);
+    const inRows = Object.keys(issues.rows).length > 0;
+    let wait = 30;
+    if (inHead && !openRef.current.invOpen) { setInvOpen(true); wait = 320; }
+    else if (!inHead && inRows && !openRef.current.prodOpen) { setProdOpen(true); wait = 320; }
+    const t = window.setTimeout(focusFirstInvalid, wait);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [check]);
 
   const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
   const headPills = [
@@ -83,15 +151,22 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
-            <Field label="PURCHASE INVOICE NUMBER" req>
-              <input className="spi-dt-inp" placeholder="Supplier's own invoice number" readOnly={readOnly}
+            <Field label="PURCHASE INVOICE NUMBER" req error={issues?.invoiceNumber}>
+              <input className={`spi-dt-inp${issues?.invoiceNumber ? ' is-invalid' : ''}`}
+                placeholder="Supplier's own invoice number" readOnly={readOnly}
+                aria-invalid={!!issues?.invoiceNumber || undefined}
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
-            <Field label="PURCHASE INVOICE DATE" req>
-              <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly} />
+            <Field label="PURCHASE INVOICE DATE" req error={issues?.invoiceDate}>
+              {/* The supplier cannot bill before the order was placed. A Direct
+                  SPI has no purchase order, so nothing to hold it to. */}
+              <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
+                invalid={!!issues?.invoiceDate}
+                minDate={!direct && draft.poDate ? draft.poDate : undefined} />
             </Field>
-            <Field label="PURCHASE INVOICE ATTACHMENT" req>
-              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly} />
+            <Field label="PURCHASE INVOICE ATTACHMENT" req error={issues?.invoiceFile}>
+              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly}
+                invalid={!!issues?.invoiceFile} />
             </Field>
             <Field label="E-WAY BILL ATTACHMENT">
               <FilePick label="E-Way Bill" value={draft.ewayBillFile} onPick={f => onPickFile('eway', f)} disabled={readOnly} />
@@ -128,7 +203,7 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} matched={matched} hasPi={direct || poHasPi}
+            twoWay={direct} matched={matched} hasPi={direct || poHasPi} rowIssues={issues?.rows}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
           {matched && removedCount > 0 && onRestoreLines && !readOnly && (
             <div className="invf-removed">
@@ -151,12 +226,18 @@ export default function Step2InvoiceProducts({
   );
 }
 
-function FilePick({ label, value, onPick, disabled = false }: { label: string; value: string; onPick: (file: File) => void; disabled?: boolean }) {
+function FilePick({ label, value, onPick, disabled = false, invalid = false }: { label: string; value: string; onPick: (file: File) => void; disabled?: boolean; invalid?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
   const [camOpen, setCamOpen] = useState(false);
+  const toast = useToast();
+  const take = (f: File) => {
+    const problem = attachProblem(f);
+    if (problem) { toast.error('File type not allowed', problem); return; }
+    onPick(f);
+  };
 
   const openMenu = () => {
     const r = rowRef.current?.getBoundingClientRect();
@@ -192,8 +273,13 @@ function FilePick({ label, value, onPick, disabled = false }: { label: string; v
   }, [pickAt]);
 
   return (
-    <div ref={rowRef} className="spi-dt-file">
-      <span className="spi-dt-file-txt"><IcoPaperclip /> {value || 'Choose file…'}</span>
+    <div ref={rowRef} className={`spi-dt-file${invalid ? ' is-invalid' : ''}`}>
+      {/* Long names are cut at 25 characters; the full one is in the tooltip. */}
+      <Tooltip label={value && value.length > FILE_NAME_MAX ? value : undefined}>
+        <span className="spi-dt-file-txt">
+          <IcoPaperclip /> {value ? (value.length > FILE_NAME_MAX ? `${value.slice(0, FILE_NAME_MAX)}…` : value) : 'Choose file…'}
+        </span>
+      </Tooltip>
       <button
         type="button"
         ref={btnRef}
@@ -209,9 +295,10 @@ function FilePick({ label, value, onPick, disabled = false }: { label: string; v
         ref={ref}
         type="file"
         hidden
+        accept={ATTACH_ACCEPT}
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onPick(f);
+          if (f) take(f);
           e.target.value = '';
         }}
       />
@@ -241,7 +328,7 @@ function FilePick({ label, value, onPick, disabled = false }: { label: string; v
             subject={label}
             namePrefix={label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}
             max={1}
-            onAttach={shots => { if (shots[0]) onPick(shots[0]); setCamOpen(false); }}
+            onAttach={shots => { if (shots[0]) take(shots[0]); setCamOpen(false); }}
             onClose={() => setCamOpen(false)}
           />
         </Suspense>

@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
 import './invoice-form.css';
@@ -12,11 +13,12 @@ import {
   IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
-import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
+import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
+import { toProduct } from '../order/create-po/use-po-lookups';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase, vaultTargetOf } from '../order/create-po/supplier-checks';
@@ -217,7 +219,10 @@ export default function InvoiceForm({
               const vid = existing.vendor_id;
               const [sup, scrutiny] = await spiApi.vendorDetail(vid)
                 .then(r => [r.detail, r.scrutiny] as const)
-                .catch(() => [null, null] as const);
+                .catch(e => {
+                  toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
+                  return [null, null] as const;
+                });
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);
@@ -237,21 +242,27 @@ export default function InvoiceForm({
               const pi = existing.shipment_order_id
                 ? await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => [])
                 : [];
+              const master = existing.shipment_order_id
+                ? []
+                : await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
+              const byMaster = new Map(master.map(p => [p.id, p]));
               setLines(existing.items.map(it => {
                 const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
-                const name = withoutCodePrefix(m?.product_name ?? '', m?.product_code) || formatProductCode(m?.product_code);
+                const mp = m ? undefined : byMaster.get(it.product_id);
+                const code = m?.product_code ?? mp?.code ?? null;
+                const name = withoutCodePrefix(m?.product_name ?? mp?.name ?? '', code) || formatProductCode(code);
                 return {
                   key: `saved:${it.id}`,
                   spiItemId: it.id,
                   piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
                   productId: it.product_id,
-                  code: formatProductCode(m?.product_code),
-                  hsn: it.hsn_code ?? m?.hsn_code ?? '',
+                  code: formatProductCode(code),
+                  hsn: it.hsn_code ?? m?.hsn_code ?? mp?.hsn ?? '',
                   piName: name, poName: name, spiName: name,
-                  description: it.description ?? m?.description ?? '',
+                  description: it.description ?? m?.description ?? mp?.description ?? '',
                   uom: it.uom ?? undefined,
                   piQty: Number(it.qty_pi ?? m?.pi_quantity) || 0, poQty: 0,
                   spiQty: Number(it.qty_spi) || 0,
@@ -290,6 +301,31 @@ export default function InvoiceForm({
                 ? { ...l, spiQty: Number(it.qty_spi) || 0, spiRate: Number(it.rate) || 0, productId: it.product_id, spiItemId: it.id }
                 : { ...l, spiQty: 0 };
             });
+          }
+          const extras = existing.items.filter(i => i.po_item_id == null);
+          if (extras.length) {
+            const master = await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
+            if (!live) return;
+            const byMaster = new Map(master.map(p => [p.id, p]));
+            rows = [...rows, ...extras.map(it => {
+              const mp = byMaster.get(it.product_id);
+              const name = withoutCodePrefix(mp?.name ?? '', mp?.code) || formatProductCode(mp?.code) || (it.description ?? '');
+              return {
+                key: `saved:${it.id}`,
+                spiItemId: it.id,
+                piItemId: it.pi_item_id ?? null,
+                productId: it.product_id,
+                code: formatProductCode(mp?.code),
+                hsn: it.hsn_code ?? mp?.hsn ?? '',
+                piName: '', poName: '', spiName: name,
+                description: it.description ?? mp?.description ?? '',
+                uom: it.uom ?? undefined,
+                piQty: 0, poQty: 0,
+                spiQty: Number(it.qty_spi) || 0,
+                spiRate: Number(it.rate) || 0, poRate: 0,
+                gst: Number(it.gst_pct) || 0,
+              };
+            })];
           }
           set({
             invoiceNumber: existing.invoice_no ?? '',
@@ -488,6 +524,38 @@ export default function InvoiceForm({
     set(kind === 'invoice' ? { invoiceFile: file.name } : { ewayBillFile: file.name });
   }, [set]);
 
+  /* Stage 02's missing fields, worked out from what is on screen right now.
+     They stay hidden until Update & Next is refused once (`stage2Check`);
+     from then on each one clears the moment it is filled, since this is
+     recomputed on every edit rather than frozen at the click. */
+  const [stage2Check, setStage2Check] = useState(0);
+  const stage2Issues = useMemo<Stage2Issues>(() => {
+    const rows: Stage2Issues['rows'] = {};
+    if (isDirect) {
+      lines.forEach((l, i) => {
+        const r: Stage2Issues['rows'][number] = {};
+        if (l.productId == null) r.product = 'Select a product';
+        if (!(l.spiQty > 0)) r.qty = 'Enter at least 1';
+        if (r.product || r.qty) rows[i] = r;
+      });
+    } else if (lines.length && !lines.some(l => l.spiQty > 0)) {
+      lines.forEach((_, i) => { rows[i] = { qty: 'Enter a quantity' }; });
+    }
+    return {
+      invoiceNumber: draft.invoiceNumber.trim() ? undefined : 'Enter the purchase invoice number',
+      invoiceDate: !draft.invoiceDate
+        ? 'Pick the purchase invoice date'
+        : !isDirect && draft.poDate && draft.invoiceDate < draft.poDate
+          ? `Cannot be before the PO date (${formatDmy(draft.poDate)})`
+          : undefined,
+      invoiceFile: files.invoice_file || uploaded.invoice ? undefined : 'Attach the purchase invoice',
+      rows,
+    };
+  }, [isDirect, lines, draft.invoiceNumber, draft.invoiceDate, draft.poDate, files.invoice_file, uploaded.invoice]);
+  /* Turns the red on and sends the user to the first gap. Bumped on every
+     refusal, not set once, so a second click goes back to the field again. */
+  const flagStage2 = () => setStage2Check(n => n + 1);
+
   const saveStage2 = async () => {
     if (!spiId) { toast.warning('Save Stage 01 first', 'The invoice has not been created yet.'); return; }
     const missing = [
@@ -496,24 +564,36 @@ export default function InvoiceForm({
       !files.invoice_file && !uploaded.invoice && 'the purchase invoice attachment',
     ].filter(Boolean);
     if (missing.length) {
+      flagStage2();
       toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    /* The picker already greys out the days before the PO; this catches a
+       date saved before that rule, which the picker still shows. */
+    if (!isDirect && draft.poDate && draft.invoiceDate < draft.poDate) {
+      flagStage2();
+      toast.warning('Invoice date is before the PO date',
+        `The purchase invoice date cannot be earlier than the PO date (${formatDmy(draft.poDate)}).`);
       return;
     }
     if (isDirect) {
       const noProduct = lines.findIndex(l => l.productId == null);
       if (noProduct >= 0) {
+        flagStage2();
         toast.warning('Select a product', `Row ${noProduct + 1} has no product — pick one or remove the row.`);
         return;
       }
       const zero = lines.findIndex(l => !(l.spiQty > 0));
       if (zero >= 0) {
         const l = lines[zero];
+        flagStage2();
         toast.warning('Add a quantity', `Enter a quantity of at least 1 for ${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || `row ${zero + 1}`}, or remove the row.`);
         return;
       }
     }
     const payload = itemsPayload(lines, taxMode);
     if (payload.items.length === 0) {
+      flagStage2();
       toast.warning('Nothing to invoice', 'Enter a quantity above zero on at least one product line.');
       return;
     }
@@ -537,6 +617,7 @@ export default function InvoiceForm({
       setFiles({});
       if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
       else toast.success('Invoice details saved', `${saved.length} product line${saved.length === 1 ? '' : 's'} matched against ${draft.poNumber || 'the order'}.`);
+      setStage2Check(0);
       advance();
     } catch (e) {
       toast.error('Could not save Stage 02', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -856,7 +937,7 @@ export default function InvoiceForm({
     || STAGES[i];
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form spi-invform">
+    <div className={`spi-dt-overlay cpf-form spi-invform${saving ? ' is-saving' : ''}`} aria-busy={saving}>
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -945,8 +1026,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {step1Busy && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={step1Busy}>
+              {(step1Busy || advancing) && <StageSkeleton stage={step1Busy ? 0 : stage} />}
+              <div className="cpf-stepwrap" hidden={step1Busy || advancing}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -976,7 +1057,8 @@ export default function InvoiceForm({
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     matched={matchedToPi}
                     onChangeLine={changeLine} onRemoveLine={removeLine} onAddLine={addLine}
-                    removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect} />
+                    removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect}
+                    issues={stage2Check ? stage2Issues : undefined} check={stage2Check} />
                 )}
                 {stage === 2 && (
                   <Step3BoxPackaging
@@ -1078,12 +1160,6 @@ export default function InvoiceForm({
           </div>
         </div>
       </div>
-      {advancing && (
-        <div className="spi-save-lock" aria-live="polite" aria-busy="true">
-          <span className="spi-save-lock-spinner" />
-          <span className="spi-save-lock-text">{editing ? 'Updating…' : 'Saving…'}</span>
-        </div>
-      )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
       )}

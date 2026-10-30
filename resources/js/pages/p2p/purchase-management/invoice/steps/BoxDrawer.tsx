@@ -289,7 +289,10 @@ export default function BoxDrawer({
   return (
     <Shell onClose={variant === 'modal' ? onClose : undefined}>
 
-        <div className="vti-dw-strip">
+        {/* inert while saving, like the body below: the quantity stepper,
+            the unit toggle, Upload and Camera all live in this strip, outside
+            the body's veil, so the quantity could still be changed mid-save. */}
+        <div className="vti-dw-strip" inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
             <StripItem label="Box ID" className="strip-boxid">
@@ -405,7 +408,7 @@ export default function BoxDrawer({
           </div>
         )}
 
-        <div className="vti-dw-body">
+        <div className="vti-dw-body" inert={saving}>
           {saving && (
             <div className="vti-dw-saving" role="status" aria-live="polite">
               <span className="vti-dw-saving__box">
