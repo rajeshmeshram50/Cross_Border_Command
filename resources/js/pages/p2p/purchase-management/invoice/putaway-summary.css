@@ -13,18 +13,21 @@
   background: #fff;
   /* `.spi-mdl` rings itself in a 1.5px white edge, which the other P2P modals
      want and this card does not — the design has only the two shadows. */
-  box-shadow: 0 44px 110px rgba(6, 182, 212, .28), 0 10px 34px rgba(0, 0, 0, .22);
+  box-shadow: 0 24px 48px rgba(6, 182, 212, .22), 0 8px 20px rgba(0, 0, 0, .2);
 }
 
 [data-bs-theme="dark"] .pts-card {
-  box-shadow: 0 44px 110px rgba(0, 0, 0, .5), 0 10px 34px rgba(0, 0, 0, .34);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, .5), 0 8px 20px rgba(0, 0, 0, .34);
 }
 
+/* No backdrop blur: blurring the whole page behind a card this size is
+   re-computed on every scroll frame and made the popup stutter on machines
+   without a strong GPU. A slightly darker scrim reads the same. */
 .pts-backdrop {
   padding: 24px;
-  background: rgba(5, 18, 32, .62);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
+  background: rgba(5, 18, 32, .7);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .pts-card:focus {
@@ -267,6 +270,10 @@
   scrollbar-color: #8ecfdd transparent;
   padding: 13px 18px 16px;
   background: linear-gradient(180deg, #f4fbfe, #fff);
+  /* Own compositing layer, so scrolling the sections does not repaint the
+     card, its shadow and the hero with it. */
+  will-change: scroll-position;
+  contain: paint;
   display: flex;
   flex-direction: column;
   gap: 10px;

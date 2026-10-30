@@ -876,6 +876,13 @@ export default function Step3BoxPackaging({
                     ? 'Scenario 03 · Multiple Products → 1 Box'
                     : 'Scenario 01 · 1 Product → 1 Box';
                 const scenarioNo = split ? 'Scenario 02' : mixed ? 'Scenario 03' : 'Scenario 01';
+                /* A ticked row is headed for the master carton (Scenario 03),
+                   so its Sub-Box Count and + Single Box lock the way a packed
+                   mixed row's do, as the design has it — splitting or single-
+                   boxing it now would fight the Pack into 1 Box it is part of.
+                   Unticking frees them again. (A ticked row is never packed:
+                   only unpacked rows have a checkbox.) */
+                const mixedLock = mixed || isTicked;
                 return (
                   <Fragmentish key={line.code}>
                   <tr className={`vti-prod-row${pack ? ' is-open' : ''}${isTicked ? ' is-selected' : ''}`}>
@@ -953,10 +960,10 @@ export default function Step3BoxPackaging({
                       </>
                     )}
                     <td>
-                      {single || mixed ? (
+                      {single || mixedLock ? (
                         <div className="vti-scn-lock">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <div className="vti-subbox-cell">
@@ -978,10 +985,10 @@ export default function Step3BoxPackaging({
                       )}
                     </td>
                     <td>
-                      {split || mixed ? (
+                      {split || mixedLock ? (
                         <div className="vti-scn-lock">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <button type="button" className={`vti-btn-single${single ? ' is-on' : ''}`}
