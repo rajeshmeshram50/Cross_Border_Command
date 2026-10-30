@@ -559,13 +559,14 @@ export type PoPaymentRow = {
 export type PoPaymentBody = { amount: number; bank_name?: string; utr_cheque_number?: string; utr_cheque_date?: string; proof?: File | null };
 
 export type PayRequestListRow = {
-  id: number; code: string; purchase_order_id: number; payment_type: string; percentage: number | null;
+  id: number; code: string; purchase_order_id: number | null; payment_type: string; percentage: number | null;
   requested_amount: number; status: PayRequestStatus; approved_amount: number | null; paid_amount: number; due: number | null;
   requested_at: string | null; decided_at: string | null; decision_note: string | null;
   vendor_id: number | null; physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
   shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
   procurement_code: string | null;
-  po_code: string; po_date: string | null; po_status: PoStatus; link_type: LinkType | null;
+  po_code: string | null; po_date: string | null; po_status: PoStatus | null; link_type: LinkType | null;
+  spi?: { id: number; code: string; invoice_no: string | null; date: string | null; total: number } | null;
   currency_code: string; document_type: DocTypeKey | null;
   po_total: number; po_net: number; po_paid: number; po_balance: number;
   supplier_code: string | null; supplier_name: string | null; supplier_category: string | null;
@@ -579,7 +580,14 @@ export type PayRequestTab = 'all' | 'awaiting' | 'approved' | 'declined';
 export type PayRequestListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<PayRequestTab, number> };
 export type PayRequestDetail = {
   request: PayRequestListRow & { reason: string | null };
-  po: PoPaymentsPayload;
+  po: PoPaymentsPayload | null;
+  spi?: {
+    spi: {
+      id: number; code: string; grand_total: number; net_payable: number; paid: number; balance: number;
+      tds_amount: number; open_to_request: number;
+    };
+    requests_summary: { total: number; pending: number; approved: number; rejected: number };
+  } | null;
   payments: (PoPaymentRow & { payment_request_id: number })[];
 };
 
