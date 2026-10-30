@@ -376,7 +376,11 @@ class SpiBoxController extends Controller
             $spi->loadMissing([
                 'client:id,org_name',
                 'vendor:id,vendor_code,company_name,legal_name',
-                'purchaseOrder:id,code,po_date,procurement_request_code,created_at',
+                /* The three FOREIGN KEYS matter as much as the columns that
+                   print: a BelongsTo cannot resolve off a model whose key was
+                   not selected, and the label then shows a dash for a
+                   reference that exists. */
+                'purchaseOrder:id,code,po_date,procurement_request_code,created_at,shipment_order_id,proforma_invoice_id,lead_id',
             ]);
 
             if (!$box->sticker_printed_at) {
@@ -740,11 +744,16 @@ class SpiBoxController extends Controller
         $po?->loadMissing([
             'shipmentOrder.lead:id,opp_code',
             'shipmentOrder.proformaInvoice:id,code,created_at,customer_id,consignee_id',
+            'lead:id,opp_code,created_at',
+            'proformaInvoice:id,code,created_at,customer_id,consignee_id',
         ]);
 
         $shp  = $spi->shipmentOrder ?: $po?->shipmentOrder;
-        $pi   = $shp?->proformaInvoice;
-        $lead = $shp?->lead;
+        /* The order carries proforma_invoice_id and lead_id of its own, so it
+           is asked first; the shipment order answers for a Direct SPI, which
+           has no order to ask. */
+        $pi   = $po?->proformaInvoice ?: $shp?->proformaInvoice;
+        $lead = $po?->lead ?: $shp?->lead;
 
         return [
             'shp'  => ['code' => $shp?->shipment_code,  'date' => $this->day($shp?->created_at)],
