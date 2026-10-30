@@ -1,30 +1,35 @@
 {{--
     SPI Stage 03 — temporary put-away box sticker.
 
-    LAYOUT PORTED from Atharv's prototype (SPI_With_PO_Flow_2, the "Temporary
-    Putaway Sticker" face of the box sticker modal). Its order is kept exactly:
+    LAYOUT PORTED from the "Temporary Putaway Box" face. Its order is kept
+    exactly:
 
-        strip        Box ID  |  SPI Number
-        product      the box's product, "+N more" when it holds several
-        scan row     QR beside the three figures a picker reads — L×W×H,
-                     Qty, Gross Wt
-        footrow      Temporary Location + the TEMPORARY PUTAWAY status
+        head         TEMPORARY PUTAWAY BOX  |  condition chip
+        bar          BUSINESS REFERENCE      — 3 rows of three
+        bar          BOX CONDITION & PRODUCT FLAGS — 3 rows of three
+        bar          BOX LOCATION DETAILS    — a row of three, then four
+        qr           the QR, large and centred
+        caption      PUT-<box code>
 
-    Everything below that row is ours and has no equivalent on the prototype
-    face: the packing scenario, the product flags, the business references,
-    the full put-away path and the receiving check.
+    Two things the previous face carried are NOT on this one, by design, not
+    by omission: the product name, and the QR's URL printed as text. The
+    design leads with the carton's identity instead of its contents, and
+    captions the QR with the put-away code. A damaged QR is therefore
+    re-keyed from that code, not from the URL.
 
-    PRINT TREATMENT IS NOT PORTED, deliberately. The prototype is a screen
-    design — teal gradients, soft shadows, 9px radii. This sheet prints, and
-    on a thermal head there is no grey: every tint dithers. A dithered panel
-    behind the QR stops its quiet zone being quiet and the put-away scanner
-    starts failing on scuffed labels. So the gradients become solid black
-    bars, the tinted dim tiles become ruled boxes, and the status pill becomes
-    a black chip. Same hierarchy, same reading order, no halftones.
+    PRINT TREATMENT IS NOT PORTED, deliberately. The design is a screen
+    mock — rounded corners, soft greys. This sheet prints, and on a thermal
+    head there is no grey: every tint dithers. A dithered panel behind the QR
+    stops its quiet zone being quiet and the put-away scanner starts failing
+    on scuffed labels. So the chips become solid black, the tinted tiles
+    become ruled boxes, and the frame is square. Same hierarchy, same reading
+    order, no halftones.
 
-    A4 PORTRAIT, FULL BLEED: the design owns the whole sheet. No page padding
-    and no inset card — the black bars run edge to edge, which is also what
-    keeps them readable if the printer's head drifts.
+    A4 PORTRAIT, FRAMED: a 3pt rule around the label, 9pt clear of the paper
+    edge. The frame is the BODY's border, not a wrapper table — wrapping the
+    sheet in a table cell would put every block one level deeper, and deep
+    nesting is what dompdf measures badly (see below). The black bars run to
+    the frame, which keeps them readable if the printer's head drifts.
 
     ONE PAGE, and it has to stay one page: a sticker that breaks is a sticker
     the printer spits out twice with half the data on the second sheet. Three
@@ -36,8 +41,8 @@
       · NO deep nesting. Tables inside cells inside cells get measured badly —
         the version with the receiving panel as a table-in-a-cell-in-a-cell
         reported ~550pt of content for ~280pt of actual rows. Every block below
-        is a SIBLING table, one level deep, and the two-column rows hold plain
-        divs.
+        is a SIBLING table, one level deep, and the multi-column rows hold
+        plain divs.
       · PIN line-height on every label/value pair. DejaVu's default line box
         is about 1.45, so each two-line field carried ~7pt of air it did not
         need; across the sheet that was most of a 70pt overrun.
@@ -58,137 +63,94 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 0; }
+        /* The page margin is the gap OUTSIDE the frame; the frame itself is
+           the body's border. A wrapper table would have added a nesting level
+           to every block below it, which is what blew the page budget before. */
+        @page { margin: 6pt; }
 
         body {
             margin: 0;
             padding: 0;
             font-family: DejaVu Sans, sans-serif;
             color: #000;
-            font-size: 14.63pt;
+            font-size: 12pt;
+            border: 3pt solid #000;
+            border-radius: 10pt;
         }
 
         table { width: 100%; border-collapse: collapse; }
         td { vertical-align: top; }
 
-        /* ── Masthead ───────────────────────────────────────────────────────
-           The rule between the mark and the title is a cell border, not a
-           divider element: dompdf collapses an empty element of fixed width
-           when the row beside it grows. */
-        .mast td { padding: 6.8pt 15.6pt 4.9pt; }
-        .mast .brandcell { border-right: 1.95pt solid #000; text-align: center; }
-        .mast .org { font-size: 8.97pt; line-height: 1.1; letter-spacing: 0.98pt; padding-top: 3.9pt; }
-        .mast .print { font-size: 9.75pt; line-height: 1.1; text-align: right; }
-        .mast .title { font-size: 17.5pt; line-height: 1.15; font-weight: bold; letter-spacing: 0.39pt; text-align: center; padding-top: 1.95pt; }
-
-        /* The condition is the one thing read from two metres away. It sits
-           under the title rather than across the label so the mark keeps its
-           own column. */
-        .cond {
-            background: #000;
-            color: #fff;
-            font-size: 16.5pt;
-            line-height: 1.15;
-            font-weight: bold;
-            letter-spacing: 1.17pt;
-            text-align: center;
-            padding: 4.9pt 11.7pt;
-            margin-top: 4.9pt;
+        /* ── Head: title + condition chip ───────────────────────────────────
+           The chip is a cell, not a floated span: dompdf gives a float no
+           height and the row collapses behind it. */
+        .head td { padding: 13pt 15.6pt 9pt; }
+        .head .title {
+            font-size: 19pt; line-height: 1.1; font-weight: bold;
+            letter-spacing: 0.5pt;
         }
-
-        /* ── Prototype strip: Box ID | SPI Number ───────────────────────────
-           The prototype's teal gradient, as a solid bar. Both values are the
-           ones a picker reads out loud, so they are the largest mono text on
-           the sheet after the condition. */
-        .strip td { background: #000; color: #fff; padding: 5.4pt 15.6pt; }
-        .strip .sl { font-size: 7.8pt; line-height: 1.1; letter-spacing: 1.4pt; color: #d9d9d9; }
-        .strip .sv { font-size: 17.5pt; line-height: 1.15; font-weight: bold; letter-spacing: 0.5pt; padding-top: 1.2pt; }
-        .strip .right { text-align: right; }
-
-        /* ── Product name ── */
-        .pname {
-            font-size: 14.5pt;
-            line-height: 1.2;
-            font-weight: bold;
-            padding: 6.8pt 15.6pt 0;
-        }
-        .pname .more { font-size: 10.5pt; font-weight: normal; }
-
-        /* ── Scan row: QR left, the three figures right. Plain divs inside the
-             cells — a nested table here is what blew the page budget. ── */
-        .scan td { padding: 0; }
-        .scan .qrcell { text-align: center; padding: 7.8pt 11.7pt 0; width: 46%; }
-        .scan .dimcell { padding: 9.75pt 15.6pt 0 0; }
-
-        /* The prototype's three tinted tiles, ruled instead of filled. */
-        .dims td { border: 0.98pt solid #000; padding: 5.4pt 4pt; text-align: center; }
-        .dims .dl { font-size: 7.8pt; line-height: 1.05; letter-spacing: 0.7pt; color: #3a3a3a; }
-        .dims .dv { font-size: 13.5pt; line-height: 1.1; font-weight: bold; padding-top: 2.4pt; }
-
-        /* ── Footrow: temporary location + status chip ── */
-        .footrow td { padding: 7.8pt 15.6pt 0; }
-        .footrow .loc { font-size: 11.7pt; line-height: 1.15; font-weight: bold; }
-        .footrow .loc span { font-size: 9.36pt; font-weight: normal; letter-spacing: 0.78pt; color: #3a3a3a; }
-        .footrow .status {
-            background: #000;
-            color: #fff;
-            font-size: 9.75pt;
-            line-height: 1.1;
-            font-weight: bold;
-            letter-spacing: 1.17pt;
-            padding: 4.4pt 11.7pt;
-            text-align: center;
+        .head .chipcell { text-align: right; width: 42%; }
+        .head .chip {
+            display: inline-block;
+            background: #000; color: #fff;
+            font-size: 13pt; line-height: 1.15; font-weight: bold;
+            letter-spacing: 1pt;
+            padding: 6pt 16pt;
         }
 
         /* ── Section bars ── */
         .bar td {
-            background: #000;
-            color: #fff;
-            font-size: 10.53pt;
-            font-weight: bold;
-            letter-spacing: 1.17pt;
-            line-height: 1.1;
-            padding: 3.9pt 15.6pt;
+            background: #000; color: #fff;
+            font-size: 11pt; font-weight: bold;
+            letter-spacing: 1.1pt; line-height: 1.1;
+            padding: 4.6pt 15.6pt;
         }
-        .bar .note { text-align: right; font-weight: normal; letter-spacing: 0.78pt; }
 
         /* ── Field grids ── */
-        .grid td { padding: 3.9pt 15.6pt; }
-        .grid .k { font-size: 9.36pt; line-height: 1.05; letter-spacing: 0.78pt; color: #3a3a3a; }
-        .grid .v { font-size: 15.6pt; line-height: 1.1; font-weight: bold; padding-top: 0.98pt; }
-        .grid .v--sm { font-size: 13.65pt; }
-        .grid .v--xs { font-size: 11.7pt; }
-        .grid .dt { font-size: 9.36pt; line-height: 1.05; color: #3a3a3a; padding-top: 0.98pt; }
-        .grid--rule td { border-top: 0.98pt solid #000; }
-
-        .rcvbar {
-            background: #000;
-            color: #fff;
-            font-size: 10.53pt;
-            line-height: 1.1;
-            font-weight: bold;
-            letter-spacing: 1.17pt;
-            padding: 3.9pt 13.65pt;
+        .grid td { padding: 5.6pt 15.6pt; }
+        .grid .k {
+            font-size: 8.8pt; line-height: 1.05;
+            letter-spacing: 0.7pt; color: #3a3a3a;
         }
-        .rcv-f { padding: 3.4pt 13.65pt; }
-        .rcv-f + .rcv-f { border-top: 0.98pt solid #000; }
-        .rcv-f .rk { font-size: 7.8pt; line-height: 1.05; letter-spacing: 0.6pt; color: #3a3a3a; }
-        .rcv-f .rv { font-size: 10.5pt; line-height: 1.1; font-weight: bold; padding-top: 0.8pt; }
+        .grid .v {
+            font-size: 15pt; line-height: 1.12;
+            font-weight: bold; padding-top: 1.6pt;
+        }
+        .grid .v--sm { font-size: 12.6pt; }
+        .grid .dt {
+            font-size: 9pt; line-height: 1.05;
+            color: #3a3a3a; padding-top: 1.6pt;
+        }
+        /* A hairline between grid rows inside the same section, so three rows
+           of three read as rows rather than as nine loose fields. */
+        .grid--rule td { border-top: 0.8pt solid #9a9a9a; }
 
-        /* ── Footer ── */
-        .foot td { border-top: 1.95pt solid #000; padding: 4.9pt 15.6pt 6.8pt; text-align: center; }
-        .foot .code { font-size: 22pt; line-height: 1.1; font-weight: bold; letter-spacing: 1.95pt; }
-        .foot .seq { font-size: 10.14pt; line-height: 1.1; letter-spacing: 0.98pt; padding-top: 2.93pt; }
-        .foot .seq b { font-size: 14.63pt; letter-spacing: 0; }
-
-        /* word-break, or a 60-char URL runs off the label. */
-        .qr-url {
-            font-family: 'DejaVu Sans Mono', monospace;
-            font-size: 6.83pt;
-            color: #555;
-            line-height: 1.2;
-            word-break: break-all;
-            padding: 3.4pt 0 0;
+        /* ── QR + handling symbols ──
+           The symbols share the QR's row rather than sitting under it: the
+           row is the one place on the sheet with spare height, and a handler
+           reads them at the same glance as the code. */
+        .qrblock td { padding: 11pt 15.6pt 0; vertical-align: middle; }
+        .qrblock .qrcell { text-align: center; }
+        .qrblock .picto { text-align: center; padding: 0 4pt; }
+        /* Two lines are RESERVED on both captions whether or not they are
+           used. Without that, a one-line caption makes its tile shorter, and
+           a middle-aligned short tile puts its icon above the others —
+           four symbols on four different baselines. */
+        .picto-t {
+            font-size: 9pt; line-height: 1.1; font-weight: bold;
+            letter-spacing: 0.4pt; padding-top: 5pt;
+            height: 20pt;
+        }
+        .picto-s {
+            font-size: 7.6pt; line-height: 1.1;
+            letter-spacing: 0.3pt; color: #3a3a3a; padding-top: 1.4pt;
+            height: 17pt;
+        }
+        .caption td {
+            text-align: center;
+            padding: 7pt 15.6pt 10pt;
+            font-size: 26pt; line-height: 1.1;
+            font-weight: bold; letter-spacing: 2pt;
         }
     </style>
 </head>
@@ -198,173 +160,174 @@
     $or = fn ($v) => filled($v) ? $v : '—';
 @endphp
 
-{{-- ── Masthead ───────────────────────────────────────────────────────── --}}
-<table class="mast">
+{{-- ── Head ── --}}
+<table class="head">
     <tr>
-        <td class="brandcell" style="width: 42%;">
-            @if ($logo)
-                <img src="{{ $logo }}" alt="" width="187" height="60">
-            @endif
-            <div class="org">{{ strtoupper($brand ?: '') }}</div>
-        </td>
-        <td>
-            <div class="print">Print: {{ $printNo }}</div>
-            <div class="title">TEMPORARY PUTAWAY BOX</div>
-            <div class="cond">{{ strtoupper($conditionLabel) }}</div>
-        </td>
+        <td class="title">TEMPORARY PUTAWAY BOX</td>
+        <td class="chipcell"><span class="chip">{{ strtoupper($conditionLabel) }}</span></td>
     </tr>
 </table>
 
-{{-- ── Prototype strip ────────────────────────────────────────────────── --}}
-<table class="strip">
-    <tr>
-        <td>
-            <div class="sl">BOX ID</div>
-            <div class="sv">{{ $putawayCode }}</div>
-        </td>
-        <td class="right">
-            <div class="sl">SPI NUMBER</div>
-            <div class="sv">{{ $or($refs['spi']['code']) }}</div>
-        </td>
-    </tr>
-</table>
+{{-- ── Business reference ── --}}
+<table class="bar"><tr><td>BUSINESS REFERENCE</td></tr></table>
 
-{{-- ── Product name, as the prototype leads with ──────────────────────── --}}
-<div class="pname">
-    {{ $or($productName) }}@if ($moreProducts > 0)<span class="more"> +{{ $moreProducts }} more</span>@endif
-</div>
-
-{{-- ── Scan + the three figures a picker reads ────────────────────────── --}}
-<table class="scan">
-    <tr>
-        <td class="qrcell">
-            @if ($qr)
-                <img src="{{ $qr }}" alt="{{ $box->box_code }}" width="150" height="150">
-            @endif
-            {{-- The payload in text: a scuffed label can still be typed in. --}}
-            <div class="qr-url">{{ $qrUrl }}</div>
-        </td>
-        <td class="dimcell">
-            <table class="dims">
-                <tr>
-                    <td style="width: 40%;">
-                        <div class="dl">L×W×H (CM)</div>
-                        <div class="dv">{{ $or($dims) }}</div>
-                    </td>
-                    <td style="width: 30%;">
-                        <div class="dl">QTY</div>
-                        <div class="dv">{{ $boxQty }}</div>
-                    </td>
-                    <td>
-                        <div class="dl">GROSS WT</div>
-                        <div class="dv">{{ $or($grossWeight) }}</div>
-                    </td>
-                </tr>
-            </table>
-        </td>
-    </tr>
-</table>
-
-{{-- ── Temporary location + status ────────────────────────────────────── --}}
-<table class="footrow">
-    <tr>
-        <td>
-            <div class="loc"><span>TEMPORARY LOCATION</span><br>{{ $or($place['path']) }}</div>
-        </td>
-        <td style="width: 38%;">
-            <div class="status">TEMPORARY PUTAWAY</div>
-        </td>
-    </tr>
-</table>
-
-{{-- ── Packing scenario & product flags ───────────────────────────────── --}}
-<table class="bar" style="margin-top: 7.8pt;">
-    <tr>
-        <td>PACKING SCENARIO &amp; PRODUCT FLAGS</td>
-        <td class="note">BOX {{ $boxNo }} OF {{ $totalBoxes }}</td>
-    </tr>
-</table>
 <table class="grid">
     <tr>
-        <td style="width: 41%;"><div class="k">BOX PACKING SCENARIO</div><div class="v v--sm">{{ $scenarioLabel }}</div></td>
-        <td style="width: 31%;"><div class="k">NET WT. / GROSS WT.</div><div class="v v--sm">{{ $or($netWeight) }} / {{ $or($grossWeight) }}</div></td>
-        <td><div class="k">BOX CONDITION</div><div class="v v--sm">{{ $conditionLabel }}</div></td>
-    </tr>
-</table>
-<table class="grid grid--rule">
-    <tr>
-        <td style="width: 31%;"><div class="k">STORAGE CONDITION</div><div class="v v--xs">{{ $flags['storage'] }}</div></td>
-        <td style="width: 41%;"><div class="k">HAZARDOUS</div><div class="v v--sm">{{ $flags['hazardous'] }}</div></td>
-        <td><div class="k">STACKING</div><div class="v v--sm">{{ $flags['stacking'] }}{{ $flags['fragile'] ? ' · Fragile' : '' }}</div></td>
-    </tr>
-</table>
-
-{{-- ── Business reference ─────────────────────────────────────────────── --}}
-<table class="bar">
-    <tr>
-        <td>BUSINESS REFERENCE</td>
-        <td class="note">SYSTEM AUTO-PULLED</td>
-    </tr>
-</table>
-<table class="grid">
-    <tr>
-        @foreach ([['PROCUREMENT', 'procurement'], ['PURCHASE ORDER', 'po'], ['SUPPLIER INVOICE', 'spi']] as [$label, $key])
-            <td style="width: 33.33%;">
-                <div class="k">{{ $label }}</div>
-                <div class="v v--sm">{{ $or($refs[$key]['code']) }}</div>
-                <div class="dt">DT: {{ $or($refs[$key]['date']) }}</div>
+        @foreach (['shp', 'opp', 'proc'] as $k)
+            <td width="33%">
+                <div class="v v--sm">{{ $or($refs[$k]['code']) }}</div>
+                <div class="dt">DT: {{ $or($refs[$k]['date']) }}</div>
             </td>
         @endforeach
     </tr>
 </table>
 
-{{-- ── Box location details ───────────────────────────────────────────── --}}
-<table class="bar"><tr><td colspan="2">BOX LOCATION DETAILS</td></tr></table>
+<table class="grid grid--rule">
+    <tr>
+        @foreach (['pi', 'po', 'spi'] as $k)
+            <td width="33%">
+                <div class="v v--sm">{{ $or($refs[$k]['code']) }}</div>
+                <div class="dt">DT: {{ $or($refs[$k]['date']) }}</div>
+            </td>
+        @endforeach
+    </tr>
+</table>
+
+<table class="grid grid--rule">
+    <tr>
+        <td width="33%"><div class="v v--sm">{{ $or($parties['customer']) }}</div></td>
+        <td width="33%"><div class="v v--sm">{{ $or($parties['consignee']) }}</div></td>
+        <td width="33%"><div class="v v--sm">{{ $or($parties['supplier']) }}</div></td>
+    </tr>
+</table>
+
+{{-- ── Box condition & product flags ── --}}
+<table class="bar"><tr><td>BOX CONDITION &amp; PRODUCT FLAGS</td></tr></table>
+
 <table class="grid">
     <tr>
-        <td style="width: 34%;">
+        <td width="33%">
+            <div class="k">PUTAWAY BOX ID</div>
+            <div class="v">{{ $putawayCode }}</div>
+        </td>
+        <td width="34%">
+            <div class="k">BOX PACKING SCENARIO</div>
+            <div class="v v--sm">{{ $scenarioLabel }}</div>
+        </td>
+        <td width="33%">
+            <div class="k">BOX QTY</div>
+            <div class="v">{{ $boxQty }}</div>
+        </td>
+    </tr>
+</table>
+
+<table class="grid grid--rule">
+    <tr>
+        <td width="33%">
+            <div class="k">DIMENSIONS L&times;W&times;H (CM)</div>
+            <div class="v v--sm">{{ $or($dims) }}</div>
+        </td>
+        <td width="34%">
+            <div class="k">NET WT. / GROSS WT.</div>
+            <div class="v v--sm">{{ $or($netWeight) }} / {{ $or($grossWeight) }}</div>
+        </td>
+        <td width="33%">
+            <div class="k">BOX CONDITION</div>
+            <div class="v v--sm">{{ $conditionLabel }}</div>
+        </td>
+    </tr>
+</table>
+
+<table class="grid grid--rule">
+    <tr>
+        <td width="33%">
+            <div class="k">COLD CHAIN</div>
+            <div class="v v--sm">{{ $coldChain }}</div>
+        </td>
+        <td width="34%">
+            <div class="k">HAZARDOUS</div>
+            <div class="v v--sm">{{ $hazardLabel }}</div>
+        </td>
+        <td width="33%">
+            <div class="k">STACKING</div>
+            <div class="v v--sm">{{ $flags['stacking'] }}</div>
+        </td>
+    </tr>
+</table>
+
+{{-- ── Box location ── --}}
+<table class="bar"><tr><td>BOX LOCATION DETAILS</td></tr></table>
+
+<table class="grid">
+    <tr>
+        <td width="33%">
             <div class="k">WAREHOUSE (ID / NAME)</div>
-            <div class="v v--xs">{{ $or($place['warehouse']) }}@if ($place['whName']) / {{ $place['whName'] }}@endif</div>
+            <div class="v v--sm">{{ $or($place['warehouse']) }} / {{ $or($place['whName']) }}</div>
         </td>
-        <td style="width: 25%;"><div class="k">WH TYPE</div><div class="v v--xs">{{ $or($place['whType']) }}</div></td>
-        <td><div class="k">ALLOCATED DATE</div><div class="v v--xs">{{ $or($place['allocatedOn']) }}</div></td>
-    </tr>
-</table>
-<table class="grid grid--rule">
-    <tr>
-        <td style="width: 33.33%;"><div class="k">ZONE</div><div class="v v--sm">{{ $or($place['zone']) }}</div></td>
-        <td style="width: 33.33%;"><div class="k">RACK</div><div class="v v--sm">{{ $or($place['rack']) }}</div></td>
-        <td><div class="k">SHELF</div><div class="v v--sm">{{ $or($place['shelf']) }}</div></td>
+        <td width="34%">
+            <div class="k">PUTAWAY LOCATION</div>
+            <div class="v v--sm">{{ $or($place['path']) }}</div>
+        </td>
+        <td width="33%">
+            <div class="k">ALLOCATED DATE</div>
+            <div class="v v--sm">{{ $or($place['allocatedOn']) }}</div>
+        </td>
     </tr>
 </table>
 
-{{-- ── Receiving check ────────────────────────────────────────────────── --}}
-<table class="bar"><tr><td colspan="2">RECEIVING CHECK</td></tr></table>
-<table class="grid">
-    <tr>
-        <td style="width: 33.33%;">
-            <div class="k">RECEIVED ON</div>
-            <div class="v v--xs">{{ $or($receiving['onDate']) }}@if ($receiving['onTime']) | {{ $receiving['onTime'] }}@endif</div>
-        </td>
-        <td style="width: 33.33%;"><div class="k">RECEIVED BY</div><div class="v v--xs">{{ $or($receiving['by']) }}</div></td>
-        <td><div class="k">NEXT STAGE</div><div class="v v--xs">{{ $receiving['next'] }}</div></td>
-    </tr>
-</table>
 <table class="grid grid--rule">
     <tr>
-        <td style="width: 50%;"><div class="k">SPI CHECK</div><div class="v v--sm">{{ $receiving['spiCheck'] }}</div></td>
-        <td><div class="k">PHYSICAL CHECK</div><div class="v v--sm">{{ $receiving['physical'] }}</div></td>
+        <td width="25%">
+            <div class="k">WH TYPE</div>
+            <div class="v v--sm">{{ $or($place['whType']) }}</div>
+        </td>
+        <td width="25%">
+            <div class="k">ZONE</div>
+            <div class="v v--sm">{{ $or($place['zone']) }}</div>
+        </td>
+        <td width="25%">
+            <div class="k">RACK</div>
+            <div class="v v--sm">{{ $or($place['rack']) }}</div>
+        </td>
+        <td width="25%">
+            <div class="k">SHELF</div>
+            <div class="v v--sm">{{ $or($place['shelf']) }}</div>
+        </td>
     </tr>
 </table>
 
-{{-- ── Bottom edge ────────────────────────────────────────────────────── --}}
-<table class="foot">
+{{-- ── QR + caption ── --}}
+<table class="qrblock">
     <tr>
-        <td>
-            <div class="code">{{ $putawayCode }}</div>
-            <div class="seq">BOX NO. / TOTAL BOXES &nbsp;<b>{{ $boxNo }} / {{ $totalBoxes }}</b></div>
+        @php
+            // The QR yields width as symbols are added, so a caption has room
+            // to sit on one line instead of breaking mid-word.
+            $qrWidth = match (count($pictos)) { 0 => null, 1, 2 => '56%', default => '46%' };
+            /* Each cell loses 31.2pt to its own padding, so these are the
+               largest codes that still fit their column at A4 inside the
+               frame. A QR wider than its cell is scaled DOWN by dompdf and
+               stops being a whole number of modules, which is what makes a
+               printed code scan badly. */
+            $qrSize  = match (count($pictos)) { 0 => 330, 1, 2 => 300, default => 228 };
+        @endphp
+        <td class="qrcell" @if ($qrWidth) width="{{ $qrWidth }}" @endif>
+            @if ($qr)
+                <img src="{{ $qr }}" alt="{{ $box->box_code }}"
+                     width="{{ $qrSize }}" height="{{ $qrSize }}">
+            @endif
         </td>
+        @foreach ($pictos as $p)
+            <td class="picto">
+                <img src="{{ $p['svg'] }}" alt="{{ $p['title'] }}" width="72" height="72">
+                <div class="picto-t">{{ $p['title'] }}</div>
+                <div class="picto-s">{{ $p['sub'] }}</div>
+            </td>
+        @endforeach
     </tr>
+</table>
+
+<table class="caption">
+    <tr><td>{{ $putawayCode }}</td></tr>
 </table>
 
 </body>
