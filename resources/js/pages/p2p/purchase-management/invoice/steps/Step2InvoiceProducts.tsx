@@ -1,6 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
@@ -13,6 +14,21 @@ import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
 const FILE_NAME_MAX = 25;
+
+/* The server's own rule for invoice_file / eway_file (SupplierInvoiceController,
+   mimes:pdf,jpg,jpeg,png,webp max:10240). Checked here too, at the pick, so a
+   Word or Excel file is refused before it is ever attached rather than at
+   Update & Next. */
+const ATTACH_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+const ATTACH_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp';
+const ATTACH_MAX_MB = 10;
+
+function attachProblem(file: File): string | null {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (!ATTACH_EXT.includes(ext)) return `"${file.name}" is not allowed. Attach a PDF or an image (JPG, PNG, WEBP).`;
+  if (file.size > ATTACH_MAX_MB * 1024 * 1024) return `"${file.name}" is larger than ${ATTACH_MAX_MB} MB.`;
+  return null;
+}
 
 /** What Stage 02 still lacks, field by field. Rows are keyed by line index. */
 export interface Stage2Issues {
@@ -216,6 +232,12 @@ function FilePick({ label, value, onPick, disabled = false, invalid = false }: {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
   const [camOpen, setCamOpen] = useState(false);
+  const toast = useToast();
+  const take = (f: File) => {
+    const problem = attachProblem(f);
+    if (problem) { toast.error('File type not allowed', problem); return; }
+    onPick(f);
+  };
 
   const openMenu = () => {
     const r = rowRef.current?.getBoundingClientRect();
@@ -273,9 +295,10 @@ function FilePick({ label, value, onPick, disabled = false, invalid = false }: {
         ref={ref}
         type="file"
         hidden
+        accept={ATTACH_ACCEPT}
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onPick(f);
+          if (f) take(f);
           e.target.value = '';
         }}
       />
@@ -305,7 +328,7 @@ function FilePick({ label, value, onPick, disabled = false, invalid = false }: {
             subject={label}
             namePrefix={label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}
             max={1}
-            onAttach={shots => { if (shots[0]) onPick(shots[0]); setCamOpen(false); }}
+            onAttach={shots => { if (shots[0]) take(shots[0]); setCamOpen(false); }}
             onClose={() => setCamOpen(false)}
           />
         </Suspense>
