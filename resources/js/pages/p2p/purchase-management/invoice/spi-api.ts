@@ -397,8 +397,6 @@ export type PutawayTask = {
   box_scan_at?: string | null;
 };
 
-/** Legs scanned so far. completed_scans only moves when the task finishes,
- *  so a box read on its own shows up as box_scan_at alone. */
 export const taskScansDone = (t: PutawayTask): number =>
   Math.min(2, Math.max(Number(t.completed_scans) || 0, t.box_scan_at ? 1 : 0));
 
@@ -415,12 +413,9 @@ export type PutawayRow = {
   verify_method: string | null;
 };
 
-/** Why nothing fits. "0 of 2 eligible" is a count; this is the reason, and
- *  whether any location in the warehouse could ever take the box. */
 export type PutawayDiagnosis = {
   headline: string;
   detail: string;
-  /** Non-empty = a dead end no retry or mode switch can clear. */
   unsatisfiable: string[];
   needs: Array<{ key: string; label: string; locations: number }>;
   matching: number;

@@ -1,6 +1,5 @@
 import type { PoItem } from '../order/api/po-api';
 
-/** What /p2p/spi/orders/{po}/lines reports per line, as the grid needs it. */
 export type SpiPoOpen = { qty_open: number; qty_billed: number; qty_over: number; closed: boolean };
 export interface ProductLine {
   key?: string;
@@ -19,24 +18,9 @@ export interface ProductLine {
   productId?: number;
   piQty: number;
   poQty: number;
-  /**
-   * What THIS invoice may still bill on the line, from the server.
-   *
-   * Not the same as poQty once a second invoice exists: poQty is what the order
-   * asked for once, this is what is left after every other invoice took its
-   * share. Never negative — an over-supplied line has nothing left to give.
-   *
-   * Absent on the demo rows, which have no PO behind them; openQtyOf() falls
-   * back to poQty there.
-   */
   poOpenQty?: number;
-  /** How much every OTHER invoice on this PO has already billed. */
   poBilledQty?: number;
-  /** How far earlier invoices already went past the order. Shown as context,
-   *  never as this invoice EXTRA — that over-supply belongs to the invoice
-   *  that caused it. */
   poOverQty?: number;
-  /** Nothing left to invoice: the line is done, or already over-supplied. */
   poClosed?: boolean;
   spiQty: number;
   spiRate: number;
@@ -44,14 +28,6 @@ export interface ProductLine {
   gst: number;
 }
 
-/* A line with nothing on it yet, for "+ Add Product".
- *
- * A row removed here is gone from the draft, so without a way back the only
- * remedy for a mistaken delete was to abandon the invoice and start again.
- *
- * It carries a `key` because the table keys its rows on `line.key ?? line.code`
- * and a blank row has no code: two of them would key alike, and React would
- * hand the second row the first one's inputs. */
 let blankSeq = 0;
 export const blankLine = (): ProductLine => ({
   key: `new:${++blankSeq}`,
@@ -59,12 +35,6 @@ export const blankLine = (): ProductLine => ({
   piQty: 0, poQty: 0, spiQty: 0, spiRate: 0, poRate: 0, gst: 0,
 });
 
-/** The quantity this invoice is actually working against. */
-/* What this invoice is measured against. Normally the purchase order's open
-   quantity; on a 2-way match there is no purchase order, so the baseline is
-   the shipment's proforma invoice — which is the document the Direct SPI is
-   matched to. Measured against a PO it does not have, every line on a Direct
-   SPI would read as extra. */
 export const openQtyOf = (l: ProductLine, twoWay = false): number =>
   (twoWay ? l.piQty : l.poOpenQty ?? l.poQty);
 
@@ -119,10 +89,6 @@ export function lineTotals(l: ProductLine, mode: TaxMode = 'intra', twoWay = fal
     sgst,
     igst,
     cost: round2(base + gstAmount),
-    /* Measured against what is OPEN, not against the original order, and not
-       against what earlier invoices over-supplied. A line the previous invoice
-       covered is not missing again here; one it over-supplied opens at zero and
-       only counts as extra if THIS invoice bills against it. */
     missing: Math.max(0, openQtyOf(l, twoWay) - l.spiQty),
     extra: Math.max(0, l.spiQty - openQtyOf(l, twoWay)),
   };
@@ -133,7 +99,6 @@ export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra', twoWa
     const c = lineTotals(l, mode, twoWay);
     return {
       piQty: t.piQty + l.piQty,
-      // The open column, so the footer adds up to what the rows show.
       poQty: t.poQty + openQtyOf(l, twoWay),
       spiQty: t.spiQty + l.spiQty,
       missing: t.missing + c.missing,
@@ -198,18 +163,11 @@ export const withoutCodePrefix = (name: string, code: string | null | undefined)
   return name.replace(new RegExp(`^\\s*${esc}\\s*[–—-]\\s*`), '') || name;
 };
 
-/**
- * @param open  Per PO line, what the server says is left after every OTHER
- *              invoice on this order. Keyed by po_item_id. Empty when the PO
- *              has no invoices yet, and the row then opens on its full quantity.
- */
 export function linesFromPo(items: PoItem[], open: Record<number, SpiPoOpen>): ProductLine[] {
   return items.map(it => {
     const poQty = num(it.quantity);
     const o = open[it.id];
-    // No entry at all means nothing is invoiced yet, so the whole line is open.
     const poOpenQty = o ? o.qty_open : poQty;
-    // Pre-fill with what is left; a closed or over-supplied line opens at zero.
     const spiQty = Math.max(0, poOpenQty);
     const name = it.product_name ?? it.description ?? `Line ${it.line_no}`;
     return {
@@ -300,28 +258,11 @@ export function truncateDesc(text: string): string {
   return text.length <= DESC_MAX ? text : `${text.slice(0, DESC_MAX).trimEnd()}…`;
 }
 
-/**
- * Product names are free text and some are very long — a 60-character name
- * widens the column it sits in and pushes every control on the row off the
- * screen. Shorter than the description's 30: a name sits in a narrow column
- * with its HSN beneath it, where prose gets the width of a sentence.
- */
 export const NAME_MAX = 20;
 
-/**
- * The 3-way match table gives the name a column of its own, so it can carry
- * half again as much as NAME_MAX's narrow cells.
- *
- * A name is free text and plenty of them arrive with no spaces at all, which
- * is the case that actually breaks: a 60-character run cannot wrap, so the
- * column grows to fit it and pushes the quantity cells off the right of the
- * table. Cut it here and the full name stays on the cell's tooltip.
- */
 export const MATCH_NAME_MAX = 30;
 
 export function truncate(text: string, max: number): string {
-  /* One over is left whole: the ellipsis costs a character itself, so cutting
-     a 31-character name to 30 + "…" is the same width and two fewer letters. */
   return text.length <= max + 1 ? text : `${text.slice(0, max).trimEnd()}…`;
 }
 
@@ -329,9 +270,6 @@ export function truncateName(text: string): string {
   return truncate(text, NAME_MAX);
 }
 
-/* Cut at the same 30 the PI column beside it uses. The select is a fixed-width
-   control in a sticky column, so a long name neither wrapped nor ellipsised —
-   it simply ran past the control. */
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({
   value: l.code,
   label: `${l.code} — ${truncate(l.spiName, MATCH_NAME_MAX)}`,

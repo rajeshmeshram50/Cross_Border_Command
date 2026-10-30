@@ -10,17 +10,13 @@ import { formatDmy } from '../../../../utils/formatDmy';
 import type { StorageWarehouse } from './types';
 import '../../storage-modal.css';
 
-/** Where the invoice's goods will be staged. */
 export type StorageType = 'own' | 'third-party';
 
-/** What the wizard hands back once it is done. */
 export interface StorageChoice {
   type: StorageType;
-  /** The chosen site — only ever set when `type` is 'own'. */
   warehouse?: StorageWarehouse;
 }
 
-/** The wizard's three screens, in order. */
 const STEPS = ['Storage Type', 'Select Warehouse', 'Confirm'] as const;
 
 const STORAGE_LABEL: Record<StorageType, string> = {
@@ -28,62 +24,28 @@ const STORAGE_LABEL: Record<StorageType, string> = {
   'third-party': 'Third Party Warehouse',
 };
 
-/**
- * Temporary Storage Selection — the wizard that opens once an invoice has been
- * mapped, asking where its goods will sit before putaway.
- *
- * Steps 1 (storage type) and 2 (warehouse) are built. Step 3 (confirm) is not,
- * but the stepper renders all three from the first screen: a wizard that
- * reveals its steps one at a time hides how long the flow is.
- *
- * Portalled to document.body for the same reason as MapInvoiceModal — inside
- * the page it would sit within `.ord-table-scroll`, whose `overflow-x: auto`
- * clips any descendant, so the dialog would be cut off at the table's edge and
- * scroll sideways with the columns.
- */
 export default function StorageSelectionModal({
   reference, referenceKind, warehouses, warehousesState = 'ready', onClose, onNext,
 }: {
-  /** The PO or supplier the invoice was mapped to — the head chip. */
   reference: string;
-  /** Which of the two it is. The short form labels the chip and the long form
-   *  labels step 3's first row, so this is one prop rather than two strings
-   *  the caller could let disagree. */
   referenceKind: 'po' | 'supplier';
-  /** Our own sites, for step 2. Passed in rather than imported, so the wizard
-   *  holds no data of its own and swapping the fixture for an API response
-   *  touches the page, not this file. */
   warehouses: StorageWarehouse[];
   warehousesState?: 'idle' | 'loading' | 'ready' | 'failed';
   onClose: () => void;
   onNext: (choice: StorageChoice) => void | boolean | Promise<boolean | void>;
 }) {
   const [step, setStep] = useState(1);
-  /* Nothing is pre-selected on either screen: the two types lead to different
-     putaway flows, so a default would quietly answer the question for anyone
-     clicking straight through. */
   const [type, setType] = useState<StorageType | null>(null);
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
 
-  /* Locks the page behind the dialog. The shared hook locks <html> as well as
-     <body> — a body-only lock does not stop the background scrolling. */
   useScrollLock(true);
 
   const warehouse = warehouses.find(w => w.id === warehouseId);
 
-  /* A 3PL is someone else's building, so there is no site of OURS to pick:
-     that path runs 1 → 3 and step 2 never appears. Both directions have to
-     agree about it, which is why it is named once here. */
   const skipsWarehouse = type === 'third-party';
 
-  /* What the current step still needs before Next means anything. Step 3 only
-     reviews, so it is always ready. */
   const canAdvance = step === 1 ? !!type : step === 2 ? !!warehouseId : true;
 
-  /* Only the last step waits on anything: steps 1 and 2 change the step in the
-     same tick, so a spinner there would be a lie. Continue to Invoice hands off
-     to the parent, which loads the invoice form — that is the one click with a
-     gap behind it. Never cleared; the hand-off unmounts this dialog. */
   const [leaving, setLeaving] = useState(false);
 
   const advance = () => {
@@ -96,9 +58,6 @@ export default function StorageSelectionModal({
     setStep(step === 1 && skipsWarehouse ? 3 : step + 1);
   };
 
-  /* Going back clears what step 2 collected. Keeping a stale warehouse while
-     the user reconsiders the storage type is how you end up submitting a site
-     that was chosen under a different answer. */
   const back = () => {
     if (leaving) return;
     const to = step === 3 && skipsWarehouse ? 1 : step - 1;
@@ -107,9 +66,6 @@ export default function StorageSelectionModal({
   };
 
   return createPortal(
-    /* The backdrop closes on click, the dialog does not. Guarding on the target
-       rather than calling stopPropagation inside means the dialog's own content
-       needs no knowledge that it is in a modal. */
     <div
       className="smod-backdrop is-open"
       onClick={e => { if (!leaving && e.target === e.currentTarget) onClose(); }}
@@ -122,17 +78,8 @@ export default function StorageSelectionModal({
             <div className="smod-head-sub">Choose where this invoice&rsquo;s goods will be stored</div>
           </div>
           <div className="smod-head-right">
-            {/* The app's Tooltip, not a native `title`. The chip ellipsises,
-                so the hover is the only place the rest of the value exists —
-                and a native title waits about a second, renders in the OS's
-                own style, and is invisible on touch. This one matches every
-                other tooltip in the app and appears straight away. */}
             <Tooltip
               label={`${referenceKind === 'po' ? 'PO' : 'Supplier'}: ${reference}`}
-              /* Above the dialog. The pill is portalled to <body> and defaults
-                 to z-index 260000, while this modal's backdrop sits at
-                 10000021 — so it was rendering on every hover, just beneath
-                 the dialog it belongs to. */
               zIndex={10000050}>
               <div className="smod-head-badge">{reference}</div>
             </Tooltip>
@@ -148,23 +95,13 @@ export default function StorageSelectionModal({
             const n = i + 1;
             const state = n === step ? ' is-active' : n < step ? ' is-done' : '';
             return (
-              /* step / line / step alternate as siblings of one flex row — the
-                 line's fill is driven by `.is-done + .smod-step-line`, so it
-                 must be the step's actual next sibling and cannot be nested
-                 inside a wrapper. Hence a keyed Fragment. */
               <Fragment key={label}>
                 <div className={`smod-step${state}`}>
                   <div className="smod-step-num">
                     <span className="smod-step-digit">{n}</span>
-                    {/* Revealed by the is-done rules, which cross-fade it with
-                        the digit — so it is always in the DOM. */}
                     <IcoCheck size={17} stroke={3} className="smod-step-check" />
                   </div>
                   <div className="smod-step-txt">
-                    {/* Deliberately EMPTY. The caption word comes from
-                        `.smod-step-cap::after`, which switches between Pending,
-                        In progress and Completed off the step's state class.
-                        Text here would render twice. */}
                     <span className="smod-step-cap" />
                     <span className="smod-step-label">{label}</span>
                   </div>
@@ -197,18 +134,10 @@ export default function StorageSelectionModal({
                 [true, 'Live putaway status tracking'],
               ]}
             />
-            {/* Not built yet: the 3PL flow has no warehouse step and no
-                summary behind it, so choosing it would lead nowhere. Shown
-                greyed rather than removed, so the option is known to be
-                coming. */}
             <StorageCard
               disabled
               selected={type === 'third-party'}
               onSelect={() => setType('third-party')}
-              /* Slate, not teal. A 3PL is someone else's building, and the
-                 colour says so before the title does. The exact gradient the
-                 prototype sets inline on this one tile; everything else about
-                 the tile comes from `.smod-card-ico`. */
               iconStyle={{ background: 'linear-gradient(135deg,#64748B,#475569)' }}
               icon={<IcoCase size={19} stroke={2.2} />}
               title={STORAGE_LABEL['third-party']}
@@ -231,10 +160,6 @@ export default function StorageSelectionModal({
             Choose the warehouse where this invoice&rsquo;s goods will be temporarily staged.
           </div>
 
-          {/* A chooser, not a list. Every site was laid out in full whether or
-              not it was the one wanted, so the step grew with the number of
-              warehouses and the choice already made scrolled off the screen.
-              Closed it shows the one that was picked; open, all of them. */}
           <WarehousePicker
             warehouses={warehouses}
             state={warehousesState}
@@ -265,8 +190,6 @@ export default function StorageSelectionModal({
                 ? 'Full temporary putaway flow with Digital Warehouse enabled'
                 : 'External logistics partner (3PL)'}
             />
-            {/* A 3PL has no site of ours, so this row states that rather than
-                showing a blank where a warehouse would be. */}
             <ConfirmRow
               icon={<IcoPin />}
               label="Warehouse"
@@ -286,23 +209,12 @@ export default function StorageSelectionModal({
                 : 'Review and confirm your selection'}
           </div>
           <div className="smod-footer-btns">
-            {/* Back appears only from step 2 on — on step 1 there is nowhere to
-                go back to, and a dead button is worse than no button. */}
-            {/* Both are shut while the hand-off is in flight. The spinner on
-                Next said the dialog was busy, but Back, Cancel, the close ×
-                and a backdrop click were all still live behind it — any of
-                them would have unmounted or rewound the wizard while the
-                parent was already loading the invoice form from the choice it
-                had just been handed. */}
             {step > 1 && (
               <button type="button" className="smod-back" onClick={back} disabled={leaving}>
                 <IcoChevronL size={11} stroke={2.6} /> Back
               </button>
             )}
             <button type="button" className="smod-cancel" onClick={onClose} disabled={leaving}>Cancel</button>
-            {/* `.disabled` is a class, not the attribute — the stylesheet dims
-                it and sets pointer-events: none. aria-disabled carries the same
-                fact to a screen reader, which a class cannot. */}
             <button
               type="button"
               className={`smod-next${canAdvance && !leaving ? '' : ' disabled'}`}
@@ -310,8 +222,6 @@ export default function StorageSelectionModal({
               aria-busy={leaving}
               onClick={advance}
             >
-              {/* The last step's button names where it goes, because it leaves
-                  the wizard rather than moving inside it. */}
               {leaving
                 ? <><span className="smod-spin" aria-hidden />Opening invoice…</>
                 : <>{step === 3 ? 'Continue to Invoice' : 'Next'}<IcoChevronR size={11} stroke={2.6} /></>}
@@ -324,15 +234,6 @@ export default function StorageSelectionModal({
   );
 }
 
-/**
- * One line of step 3's summary.
- *
- * No size prop on the icon: `.smod-confirm-ico svg` fixes it at 16px, the same
- * way step 2's tile sizes its own glyph.
- */
-/* A supplier name is free text and some run to a couple of hundred
-   characters with nothing to break on, which ran straight out of the card
-   and past the dialog's edge. Cut at 30, with the whole value on hover. */
 const CONFIRM_VAL_MAX = 30;
 
 function ConfirmRow({
@@ -354,11 +255,6 @@ function ConfirmRow({
       <div className="smod-confirm-ico">{icon}</div>
       <div className="smod-confirm-main">
         <div className="smod-confirm-label">{label}</div>
-        {/* The app's Tooltip and the same z-index the header badge needs:
-            the pill is portalled to <body> at 260000 while this dialog sits
-            at 10000021, so without it the hover renders under the dialog it
-            belongs to. Only wrapped when there is something hidden to show —
-            a tooltip repeating what is already on screen is just noise. */}
         {long ? <Tooltip label={value} zIndex={10000050}>{val}</Tooltip> : val}
         {sub && <div className="smod-confirm-sub">{sub}</div>}
       </div>
@@ -366,21 +262,12 @@ function ConfirmRow({
   );
 }
 
-/**
- * One of our sites, as a row in step 2.
- *
- * The AVAILABLE badge is static for now: capacity is not modelled yet, and a
- * row that cannot be chosen would need a disabled state the design does not
- * show. When occupancy arrives this is the one place that changes.
- */
-/** City, state and postcode as one line. */
 const whWhere = (w: StorageWarehouse) =>
   [w.location, w.pincode].filter(Boolean).join(', ');
 
 const sqft = (n?: number) =>
   n == null ? null : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 
-/** One site, laid out in full — what the open list shows. */
 function WarehouseRow({
   warehouse: w, selected, onSelect,
 }: {
@@ -404,12 +291,9 @@ function WarehouseRow({
         <span className="smod-wh-code">{w.code ?? '—'}</span>
         {w.addedOn && <span className="smod-wh-since">{formatDmy(w.addedOn)}</span>}
       </span>
-      {/* No size prop: `.smod-wh-ico svg` sizes the glyph at 18px. */}
       <div className="smod-wh-ico"><IcoWarehouse stroke={2.2} /></div>
       <div className="smod-wh-text">
         <div className="smod-wh-name">{w.name}</div>
-        {/* Street first, then the place. Two sites in one city are told apart
-            by the street and nothing else. */}
         {w.address && <div className="smod-wh-addr">{w.address}</div>}
         <div className="smod-wh-loc"><IcoPin size={12} /> {whWhere(w)}</div>
       </div>
@@ -424,26 +308,17 @@ function WarehouseRow({
   );
 }
 
-/**
- * Step 2's warehouse chooser: closed it names the chosen site, open it lists
- * them all. The panel is inline rather than portalled — this modal does not
- * clip its own body, and a panel in the flow pushes the footer down instead
- * of floating over it.
- */
 function WarehousePicker({
   warehouses, state, value, onChange,
 }: {
   warehouses: StorageWarehouse[];
   state: 'idle' | 'loading' | 'ready' | 'failed';
-  /** Null until a site is picked; Back clears it. */
   value: string | null;
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const picked = warehouses.find(w => w.id === value) ?? null;
 
-  /* Escape shuts the list before it reaches the dialog, which would otherwise
-     close the whole wizard on the first press. */
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
@@ -481,11 +356,6 @@ function WarehousePicker({
         <span className="smod-wh-chev"><IcoChevronR size={13} /></span>
       </button>
 
-      {/* In the flow, under the trigger. It was portalled and positioned
-          against the trigger so the dialog would keep its exact size as the
-          design does — but portalling took it out of the dialog's stacking
-          context and it ended up behind the dialog's own dimmer. A list you
-          cannot see is worse than a dialog that grows. */}
       {open && !message && (
         <div className="smod-wh-panel" role="listbox">
           {warehouses.map(w => (
@@ -502,7 +372,6 @@ function WarehousePicker({
   );
 }
 
-/** One storage option. */
 function StorageCard({
   selected, onSelect, icon, iconStyle, title, sub, features, disabled,
 }: {
@@ -512,10 +381,7 @@ function StorageCard({
   iconStyle?: React.CSSProperties;
   title: string;
   sub: string;
-  /** [provided, label] — a tick when this type offers it, a cross when it does not. */
   features: Array<[boolean, string]>;
-  /** Not built yet. The card still shows what it will offer, greyed, with a
-   *  "Coming soon" tag — hiding it would leave no sign the option exists. */
   disabled?: boolean;
 }) {
   return (
@@ -527,9 +393,6 @@ function StorageCard({
       aria-disabled={disabled}
       title={disabled ? `${title} is not available yet` : undefined}
       tabIndex={disabled ? -1 : 0}
-      /* A div with a click handler is invisible to the keyboard. These two keys
-         make it behave like the radio it is standing in for; the card cannot be
-         a real <input> because the whole tile is the hit area. */
       onKeyDown={e => {
         if (disabled) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }

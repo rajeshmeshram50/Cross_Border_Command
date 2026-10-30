@@ -5,31 +5,11 @@ import type { InvoiceDraft } from '../invoice-draft';
 import type { SpiBox } from '../spi-api';
 import { SCN_LABEL } from './Step3BoxPackaging';
 
-/** A blank reads as "nothing was entered", not as an empty box. */
 const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
 
-/**
- * "What We Did in the Previous Stages" — the read-only recap every step after
- * the first opens with.
- *
- * Closed on arrival: it repeats what the user has just filled in, so it is
- * reference rather than something to read again. The Create PO form's own
- * summary behaves the same way.
- *
- * `upto` is how many stages are done, so Step 02 shows stage 01 only and the
- * later steps will add their own blocks beneath it.
- *
- * `direct` drops what a Direct SPI has no answer for. The summary recaps what
- * each stage recorded, and stage 01 of a Direct SPI never asks the purchase
- * order questions - the whole Purchase Order section is absent from that step
- * - so repeating them here produced eight rows of "Not provided" above the
- * first thing the user actually filled in.
- */
 export default function StageSummary({ draft, upto, direct = false, boxes = [] }: {
   draft: InvoiceDraft; upto: 1 | 2 | 3; direct?: boolean; boxes?: SpiBox[];
 }) {
-  /* Stage 03's recap. The stage records cartons, not fields, so it is counted
-     rather than read off the draft — the draft never held any of this. */
   const units = boxes.reduce(
     (n, b) => n + b.items.reduce((m, i) => m + (Number(i.quantity) || 0), 0),
     0,
@@ -78,7 +58,6 @@ export default function StageSummary({ draft, upto, direct = false, boxes = [] }
                 <RO label="Expected Delivery Date" value={dash(formatDmy(draft.deliveryDate))} />
                 <RO label="Delivery Location" value={dash(draft.deliveryLocation)} />
                 <RO label="Payment Type" value={dash(draft.paymentType)} />
-                {/* A boolean has no blank state, so it is never "Not provided". */}
                 <RO label="Physical Inspection Status" value={draft.physInspection ? 'Required' : 'Not Applicable'} />
               </Group>
             )}
@@ -113,17 +92,12 @@ export default function StageSummary({ draft, upto, direct = false, boxes = [] }
           </div>
         </div>
 
-        {/* Stage 02 appears only once it is behind the user. `upto` is what
-            each step passes, so a step never summarises itself. */}
         {upto >= 2 && (
           <div className="spi-dt-sumstep">
             <div className="spi-dt-sumstep-hd">
               <div className="spi-dt-sumstep-hd-l">
                 <span className="spi-dt-sumstep-num">02</span>
                 <span className="spi-dt-sumstep-title">
-                  {/* The stage rail already names the match this invoice is
-                      making; the recap of that stage must not name a
-                      different one. */}
                   Invoice &amp; Product Details ({direct || !draft.piNumber ? '2' : '3'}-Way Match)
                 </span>
               </div>
@@ -140,10 +114,6 @@ export default function StageSummary({ draft, upto, direct = false, boxes = [] }
           </div>
         )}
 
-        {/* Stage 03. The header has always counted this stage in "3 stages
-            done", but the body stopped at stage 02 — so stage 04 opened on a
-            recap that was short of the stage immediately behind it, which is
-            the one the operator is about to put away. */}
         {upto >= 3 && (
           <div className="spi-dt-sumstep">
             <div className="spi-dt-sumstep-hd">
@@ -178,9 +148,6 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function RO({ label, value, full }: { label: string; value: string; full?: boolean }) {
-  /* The dash prefix is the one marker of a missing value, so the muted style
-     is derived from it rather than passed separately — the two cannot
-     disagree about whether a field was filled. */
   const missing = value.startsWith('—');
   return (
     <div className={`spi-dt-ro ${full ? 'spi-dt-ro-full' : ''}`}>

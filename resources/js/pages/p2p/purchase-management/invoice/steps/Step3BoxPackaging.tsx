@@ -14,9 +14,6 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import { putId, type ProductFlagOption, type SpiBox, type SpiBoxBody, type SpiBoxItem } from '../spi-api';
 
-/* Checkbox, Sr. No, Product, Description, Qty, Remaining, Missing, Extra,
-   Sub-Box Count, Actions. Code moved into the product cell and the disabled
-   Mode select went with the design, so this came down from 11. */
 const BOX_TABLE_COLUMNS = 10;
 
 type Packing =
@@ -52,9 +49,6 @@ const normFlag = (name: string | null | undefined) => (name ?? '').toLowerCase()
 
 const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
-/* The two halves of a scenario's name — "Scenario 03" and what it does.
-   Exported because stage 04's recap of this stage has to call a carton by the
-   same name this stage gave it. */
 export const SCN_LABEL: Record<Scenario, [string, string]> = {
   s1: ['Scenario 01', '1 Product → 1 Box'],
   s2: ['Scenario 02', '1 Product → Multiple Boxes'],
@@ -65,11 +59,6 @@ const EDIT_MODE: Record<Scenario, string> = {
   s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
 };
 
-/* The stand-in product line a mixed carton is described by. A carton holding
-   several SKUs has no one product, so the header names the carton itself —
-   anything else picks one of its contents and presents it as the box.
-   Shared so a carton reads the same when it is packed and when it is
-   reopened to edit. */
 const mixedCartonLineOf = (lines: ProductLine[], qty: number): ProductLine => ({
   code: 'MIXED-CARTON',
   hsn: `${lines.length} SKUs`,
@@ -105,9 +94,6 @@ export default function Step3BoxPackaging({
   onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
   onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
   onFlagsChanged?: () => void;
-  /* A Direct SPI is a 2-way match, so what is missing or extra is counted
-     against the shipment's PI rather than a purchase order. The packing
-     itself is the same work either way. */
   direct?: boolean;
 }) {
   const toast = useToast();
@@ -370,9 +356,6 @@ export default function Step3BoxPackaging({
       if (id.mfg && id.mfg > today) return `${c.line.spiName}: the MFG date is in the future.`;
     }
     if (data.remark !== 'correct') {
-      /* One note for the carton, whichever scenario it is: a mixed carton
-         used to demand a reason against every product in it, which is three
-         ways of writing the same sentence about one box. */
       const reasons = !!data.boxIdentity.remarks.trim();
       const label = { damaged: 'Damaged / Rejected', mismatched: 'Mismatched', extra: 'Extra Quantity' }[data.remark];
       if (!reasons) return `${label} needs a note saying what was found — add it in Remarks.`;
@@ -395,9 +378,6 @@ export default function Step3BoxPackaging({
       flags: ids,
       photos: data.photos,
       items: contents.map(c => {
-        /* The identifiers stay per product — a serial or a batch belongs to
-           the unit. The note does not: it is the box's, so every item in the
-           carton carries the same one. */
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
         const note = data.note ?? '';
         return {
@@ -624,8 +604,6 @@ export default function Step3BoxPackaging({
   }, [editingId]);
   const [dropped, setDropped] = useState<string[]>([]);
   const [editQty, setEditQty] = useState<number | null>(null);
-  /* A mixed carton has no single quantity, so the strip stepper is no use to
-     it — each product carries its own, and the edits live here until Save. */
   const [editQtyBy, setEditQtyBy] = useState<Record<string, number>>({});
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
@@ -673,8 +651,6 @@ export default function Step3BoxPackaging({
     .map(c => (editingBox?.scenario === 's3' && editQtyBy[c.line.code] != null
       ? { ...c, qty: editQtyBy[c.line.code] } : c));
 
-  /* What this box may hold of a product: what it already holds plus whatever
-     of the line is still unpacked. Anything more would bill past the SPI. */
   const editMaxOf = (code: string) => {
     const item = editingBox?.items.find(i => codeOfItem.get(i.supplier_invoice_item_id) === code);
     const orig = Number(item?.quantity) || 0;
@@ -850,10 +826,6 @@ export default function Step3BoxPackaging({
         )}
 
         <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
-          {/* `vti-boxgen` names this table apart from the packed-products one
-              beside it, which wears the same chrome. They no longer have the
-              same columns in the same places, and the shared rules key off
-              position. */}
           <table className="vti-table vti-boxgen">
             <thead>
               <tr>
@@ -932,11 +904,6 @@ export default function Step3BoxPackaging({
                           <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
                             <div className="vti-prod-name">{truncateName(line.spiName)}</div>
                           </Tooltip>
-                          {/* The design keeps the code with the product, not in
-                              a column of its own: it identifies this row rather
-                              than answering a question of its own, and sitting
-                              beside the HSN and the GST it reads as one line of
-                              identifiers under the name. */}
                           <div className="vti-prod-meta">
                             <span className="vti-code">{line.code}</span>
                             <span className="vti-prod-sku">HSN <b>{line.hsn}</b></span>
@@ -1104,19 +1071,12 @@ export default function Step3BoxPackaging({
         <BoxDrawer
           key={editingBox.id}
           boxId={editingBox.box_code}
-          /* A mixed carton is named after the carton, exactly as it is while
-             being packed. Handing it the first content's line put ONE of the
-             products in the header — "Product · GreenBoost Organic Fertilizer"
-             over a box that also holds Whole Wheat Flour — so the dialog
-             opened describing the wrong thing. */
           line={editingBox.scenario === 's3'
             ? mixedCartonLineOf(
               editContents.map(c => c.line),
               editContents.reduce((n, c) => n + c.qty, 0),
             )
             : editContents[0].line}
-          /* A mixed carton's "Total Qty" is the whole box, not whatever
-             product happens to sit on the first row. */
           quantity={editingBox.scenario === 's3'
             ? editContents.reduce((n, c) => n + c.qty, 0)
             : editContents[0].qty}
@@ -1138,17 +1098,6 @@ export default function Step3BoxPackaging({
               ...(readOnly ? {} : {
                 onContentQtyChange: (code: string, qty: number) =>
                   setEditQtyBy(m => ({ ...m, [code]: Math.min(editMaxOf(code), Math.max(1, qty)) })),
-                /* Per-row remove IS offered on a packed box. This column used
-                   to be a dash on the reasoning that changing what is in a
-                   carton means unpacking it — but the Action column then had
-                   nothing in it on every row, which reads as a column that is
-                   broken rather than one that is deliberately empty.
-
-                   dropFromBox already carries the guards that made the dash
-                   feel safe: it refuses to empty a box, refuses to leave a
-                   mixed carton with one product, and confirms before taking
-                   anything out. So the rule still holds — you just hear it
-                   when you try, instead of being left to guess. */
                 onRemoveContent: dropFromBox,
               }),
             }

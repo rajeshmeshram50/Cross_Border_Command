@@ -14,13 +14,6 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-/* Stage 4 is the heaviest thing in this form by a wide margin - 127 KB of
-   source of its own, five put-away panels behind it, and step4.css, which was
-   71% of invoice-form.css. Three of the four stages never touch it, and a
-   Direct SPI that is only being drafted never leaves stage 1, so loading it
-   with the form made every invoice pay for a stage most never reach.
-   Vite resolves the chunk's stylesheet before the module promise settles, so
-   the stage does not paint unstyled while its CSS is still arriving. */
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
@@ -849,14 +842,6 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
-  /* Save & Next in flight — the Customer form's save lock (spinner + text
-     over a blurred page) covers the form until the next step opens. The step
-     stays visible and mounted under it, so a save that fails leaves it exactly
-     as it was.
-
-     It is derived rather than held in state: a save on any step but the last
-     IS an advance. Only `mapInvoice` saves from the last step, and that one
-     closes the form rather than opening another step, so it must not lock. */
   const advancing = saving && stage < STAGES.length - 1;
 
   const isLast = stage === STAGES.length - 1;
@@ -924,10 +909,6 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
-              /* Off while saving: Tooltip wraps an aria-disabled trigger in an
-                 inline-flex span, which pulls the card out of the grid (it
-                 shrinks to its text) and makes it :last-child (it loses its
-                 arrow) for the length of the save. */
               <Tooltip
                 key={s.title}
                 label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
@@ -1015,9 +996,6 @@ export default function InvoiceForm({
                     spiCode={spiCode}
                   />
                 )}
-                {/* The stage's own skeleton while its chunk arrives — the same
-                    one the form shows while a stage's data loads, so reaching
-                    put-away looks like every other wait in this form. */}
                 {stage === 3 && (
                   <Suspense fallback={<StageSkeleton stage={3} />}>
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}

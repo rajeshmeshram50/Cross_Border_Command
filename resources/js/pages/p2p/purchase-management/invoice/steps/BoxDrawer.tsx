@@ -144,7 +144,6 @@ export default function BoxDrawer({
   contents?: BoxContent[];
   onRemoveContent?: (code: string) => void;
   onContentQtyChange?: (code: string, qty: number) => void;
-  /** Per-product ceiling for the content steppers. */
   contentQtyMaxOf?: (code: string) => number;
   onClearContents?: () => void;
   onSave?: (data: BoxSaveData) => void;
@@ -182,11 +181,6 @@ export default function BoxDrawer({
   const hiddenCustomFlags = customFlags.slice(CUSTOM_FLAGS_SHOWN);
   const hiddenOnCount = hiddenCustomFlags.filter(f => flags.includes(f.id)).length;
   const [flagPop, setFlagPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
-  /* `inside` matters: the hook closes on any scroll EXCEPT one that starts
-     inside the popover, and it finds the popover by this selector. It defaults
-     to '.clm-pop', which is CLM's class and matches nothing here — so every
-     wheel tick over this list counted as an outside scroll and shut the panel.
-     With 50+ flags the list is the one thing you have to scroll. */
   useDismissPopover(!!flagPop, () => setFlagPop(null), { inside: '.vti-flag-pop' });
   const [temp, setTemp] = useState<TempRange>(initial?.temp ?? { min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
@@ -385,12 +379,6 @@ export default function BoxDrawer({
             </button>
           </Tooltip>
           </div>
-          {/* A direct child of the STRIP, not of the toolbar. The toolbar is
-              position: relative for its own z-index, so a × inside it anchors
-              to the toolbar — which is why pinning it to top/right put it at
-              the corner of the button row rather than the corner of the strip.
-              Out here the strip is the containing block and the corner is the
-              corner. */}
           {onClose && variant === 'modal' && (
             <Tooltip label="Close without saving">
               <button type="button" className="vti-dw-modal-x" onClick={onClose} disabled={saving} aria-label="Close">
@@ -418,13 +406,6 @@ export default function BoxDrawer({
         )}
 
         <div className="vti-dw-body">
-          {/* While a save is in flight the fields must stop accepting input:
-              a quantity or an identifier typed after collect() has run is not
-              in the request, so it would be silently dropped and the form
-              would show a value the server never received. The veil also says
-              the save IS running — the Save button's "Saving…" is in the strip
-              overhead, easy to miss when you are looking at the row you just
-              edited. */}
           {saving && (
             <div className="vti-dw-saving" role="status" aria-live="polite">
               <span className="vti-dw-saving__box">
@@ -669,16 +650,6 @@ export default function BoxDrawer({
                       {ADVANCED.map(f => (
                         <div className="vti-dw-field" key={f.key}>
                           <label className="vti-dw-field-lbl">{f.label}</label>
-                          {/* The app's own calendar, not the browser's. It was
-                              swapped for a native date input because it
-                              arrived with its own 38px bordered box inside a
-                              cell that is already a box — that is a styling
-                              problem, and it is solved in the stylesheet
-                              below (the trigger is stripped flat in here).
-                              Trading it away cost more than it saved: the
-                              native control writes mm/dd/yyyy against the
-                              dd-MMM-yyyy this app uses everywhere else, and
-                              it renders differently in every browser. */}
                           {f.type === 'date' ? (
                             <MasterDatePicker
                               value={boxIdentity[f.key] ?? ''}
@@ -782,12 +753,6 @@ function PanelShell({ children }: { onClose?: () => void; children: React.ReactN
 }
 
 function ModalShell({ onClose, children }: { onClose?: () => void; children: React.ReactNode }) {
-  /* The dialog's own backdrop is exempt. The lock freezes whatever is
-     scrolling when it mounts, and the dialog is already in the DOM by then —
-     so on a short window, where the form opens tall enough to need its own
-     scrollbar, the body it is supposed to scroll in was frozen with the page
-     and everything below Box Core Details became unreachable. Every other
-     modal in the app names its overlay here for the same reason. */
   useScrollLock(true, '.vti-dw-modal-backdrop');
   useEffect(() => {
     if (!onClose) return;
@@ -795,12 +760,6 @@ function ModalShell({ onClose, children }: { onClose?: () => void; children: Rea
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  /* No backdrop-click close. This form holds unsaved input — dimensions,
-     identifiers, remarks, flags — and a stray click beside it threw the lot
-     away with no warning and no undo. It has an × in its header and a Save
-     beside it, so there is already a way out that the operator means to take.
-     The four dialogs this one opens (Cold Chain, Sticker, Camera, Add Flag)
-     all made the same call. */
   return createPortal(
     <div className="vti-dw-modal-backdrop">
       <div className="vti-dw-modal" role="dialog" aria-modal="true">
