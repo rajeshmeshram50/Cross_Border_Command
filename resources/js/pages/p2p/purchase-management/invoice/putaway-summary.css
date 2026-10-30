@@ -1522,3 +1522,4 @@
    last one cannot square off a corner inside the rounded bar. */
 .pts-pills .spi-dt-pill:first-child { border-radius: 16px 0 0 16px; }
 .pts-pills .spi-dt-pill:last-child  { border-radius: 0 16px 16px 0; }
+.pts-temp.pts-temp--ok { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }

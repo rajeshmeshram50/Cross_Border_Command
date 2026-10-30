@@ -74,7 +74,39 @@ export interface PutawaySummaryData {
     poAmount: number | null;
     spiAmount: number;
   };
+  financials: PutawayFinancials | null;
   boxes: PutawayBox[];
+}
+
+export interface PutawayPayment {
+  id: number;
+  amount: number;
+  bank: string;
+  reference: string;
+  referenceDate: string;
+  paidOn: string;
+  requestCode: string;
+  proofName: string;
+  proofUrl: string;
+}
+
+export interface PutawayFinancials {
+  source: 'purchase_order' | 'supplier_invoice';
+  code: string;
+  spiAmount: number;
+  spiBase: number;
+  spiGst: number;
+  poAmount: number | null;
+  tdsPercentage: number;
+  tdsAmount: number;
+  tdsApplies: boolean;
+  netPayable: number;
+  paid: number;
+  balance: number;
+  paidPct: number;
+  settled: boolean;
+  requests: { total: number; pending: number; approved: number; rejected: number; requested: number; approvedAmt: number; readyToPay: number };
+  payments: PutawayPayment[];
 }
 
 type Raw = Record<string, unknown>;
@@ -123,6 +155,42 @@ const toProduct = (p: Raw): PutawayProduct => {
   };
 };
 
+const toFinancials = (f: Raw | null | undefined): PutawayFinancials | null => {
+  if (!f) return null;
+  const q = (f.requests ?? {}) as Raw;
+  return {
+    source: str(f.source) === 'purchase_order' ? 'purchase_order' : 'supplier_invoice',
+    code: str(f.code),
+    spiAmount: num(f.spi_amount),
+    spiBase: num(f.spi_base),
+    spiGst: num(f.spi_gst),
+    poAmount: f.po_amount == null ? null : num(f.po_amount),
+    tdsPercentage: num(f.tds_percentage),
+    tdsAmount: num(f.tds_amount),
+    tdsApplies: !!f.tds_applies,
+    netPayable: num(f.net_payable),
+    paid: num(f.paid_amount),
+    balance: num(f.balance_amount),
+    paidPct: num(f.paid_pct),
+    settled: !!f.settled,
+    requests: {
+      total: num(q.total), pending: num(q.pending), approved: num(q.approved), rejected: num(q.rejected),
+      requested: num(q.requested), approvedAmt: num(q.approved_amt), readyToPay: num(q.ready_to_pay),
+    },
+    payments: ((f.payments ?? []) as Raw[]).map(p => ({
+      id: num(p.id),
+      amount: num(p.amount),
+      bank: str(p.bank_name),
+      reference: str(p.utr_cheque_number),
+      referenceDate: day(p.utr_cheque_date),
+      paidOn: day(p.paid_on),
+      requestCode: str(p.payment_request_code),
+      proofName: str(p.proof_name),
+      proofUrl: str(p.proof_url),
+    })),
+  };
+};
+
 const toSummary = (d: Raw, ids: Map<string, number>): PutawaySummaryData => {
   const h = (d.header ?? {}) as Raw;
   const a = (d.analytics ?? {}) as Raw;
@@ -167,6 +235,7 @@ const toSummary = (d: Raw, ids: Map<string, number>): PutawaySummaryData => {
       poAmount: r.po_amount == null ? null : num(r.po_amount),
       spiAmount: num(r.spi_amount),
     },
+    financials: toFinancials(d.financials as Raw | null | undefined),
     boxes: ((d.boxes ?? []) as Raw[]).map(b => {
       const code = str(b.box_id);
       const loc = locations.get(code) ?? {};

@@ -792,7 +792,23 @@ export function toInvoiceRow(r: SpiListRow): InvoiceRow {
 export type SpiPaymentSummary = {
   spi: { id: number; code: string; base_amount: number; gst_amount: number; grand_total: number; paid_amount: number; balance: number };
   po: { id: number; code: string; grand_total: number; tds_amount: number; net_payable: number; paid_amount: number; balance_amount: number } | null;
-  requests: Array<{ id: number; status: string }>;
+  requests: SpiPayRequestRow[];
+  ledger?: {
+    source: string; code: string; grand_total: number; tds_amount: number;
+    net_payable: number; paid_amount: number; balance_amount: number;
+    tds_percentage?: number; tds_saved?: boolean; tds_locked?: boolean; tds_locked_by?: string | null; tds_applies?: boolean;
+  } | null;
+  requests_summary?: {
+    total: number; requested_amount: number; awaiting: number; approved_amount: number;
+    paid_amount: number; ready_to_pay: number;
+  } | null;
+};
+
+export type SpiPayRequestRow = {
+  id: number; code?: string; status: string; payment_type?: string; percentage?: number | null;
+  requested_amount?: number; requested_to?: number | { id: number; name?: string | null; role?: string | null } | null;
+  requested_to_name?: string | null; requested_at?: string | null;
+  approved_amount?: number | null; paid_amount?: number; due?: number | null;
 };
 
 export type SpiRaiseBody = {
@@ -821,6 +837,10 @@ export const spiPaymentApi = {
   raise: (spiId: number, body: SpiRaiseBody) =>
     call('Raise SPI payment request', () => api.post(`/p2p/spi/${spiId}/payment-requests`, body),
       (b) => (b as { data: PoPaymentsPayload }).data),
+
+  saveTds: (spiId: number, body: { tds_amount: number }) =>
+    call('Save SPI TDS', () => api.put(`/p2p/spi/${spiId}/tds`, body),
+      (b) => (b as { data: Record<string, unknown> }).data),
 
   addPayment: (spiId: number, requestId: number, body: PoPaymentBody) =>
     call('Record SPI payment', () => api.post(`/p2p/spi/${spiId}/payment-requests/${requestId}/payments`,
