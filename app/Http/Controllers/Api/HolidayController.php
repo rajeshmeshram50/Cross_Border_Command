@@ -51,7 +51,11 @@ class HolidayController extends Controller
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($request->filled('holiday_group_id')) {
-            $q->where('holiday_group_id', (int) $request->query('holiday_group_id'));
+            /* A comma list, because the filter panel allows more than one group
+               (QA 8). One id still arrives as a one-element array, so an older
+               caller is unaffected. */
+            $ids = array_values(array_filter(array_map('intval', explode(',', (string) $request->query('holiday_group_id')))));
+            $q->whereIn('holiday_group_id', $ids ?: [0]);
         }
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {

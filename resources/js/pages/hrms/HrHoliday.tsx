@@ -11,7 +11,6 @@ import Tooltip from '../../components/ui/Tooltip';
 import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import SearchClear from '../../components/ui/SearchClear';
-import TablePager, { pageSlice, usePager } from '../../components/ui/TablePager';
 import '../../../css/recruitment.css';
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
@@ -114,12 +113,15 @@ export default function HrHoliday() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
-  const [groupFilter, setGroupFilter] = useState('All');
+  /* A list, because the popup allows more than one group (QA 8). Empty is
+     this filter's way of saying All. */
+  const [groupFilter, setGroupFilter] = useState<string[]>([]);
   // Group / Type / Year moved out of the toolbar into one Filter popup, the
   // Leave Management pattern. Three selects were the whole reason this
   // toolbar could not hold a single line.
   const [filterOpen, setFilterOpen] = useState(false);
-  const activeFilterCount = [groupFilter, typeFilter, yearFilter].filter(v => v !== 'All').length;
+  const activeFilterCount = groupFilter.length
+    + [typeFilter, yearFilter].filter(v => v !== 'All').length;
 
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState<number>(() => {
@@ -162,7 +164,7 @@ export default function HrHoliday() {
           ...(search.trim() ? { search: search.trim() } : {}),
           ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
           ...(yearFilter !== 'All' ? { year: yearFilter } : {}),
-          ...(groupFilter !== 'All' ? { holiday_group_id: groupFilter } : {}),
+          ...(groupFilter.length ? { holiday_group_id: groupFilter.join(',') } : {}),
         },
       });
       if (token !== reqRef.current) return;
@@ -179,7 +181,7 @@ export default function HrHoliday() {
       if (token === reqRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, search, typeFilter, yearFilter, groupFilter]);
+  }, [page, perPage, search, typeFilter, yearFilter, groupFilter.join(',')]);
 
   const refreshAll = () => { fetchGroups(); fetchHolidays(); };
 
@@ -328,7 +330,9 @@ export default function HrHoliday() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [inUseGroupIds, groups, dark]);
 
-  const targetGroupId =groupFilter !== 'All' ? Number(groupFilter) : null;
+  /* Only a single picked group can pre-fill a new holiday's group; with
+     several filtered at once there is no one answer. */
+  const targetGroupId = groupFilter.length === 1 ? Number(groupFilter[0]) : null;
 
   const handleDelete = async (row: HolidayRow) => {
     const ok = await confirmDialog({
@@ -520,17 +524,21 @@ export default function HrHoliday() {
                     <i className="ri-download-2-line" />Template
                   </button>
                 </Tooltip>
-                <button type="button" className="cand-pill-btn cand-pill-btn--green" onClick={() => fileRef.current?.click()} disabled={importing}>
-                  {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
-                </button>
+                <Tooltip label="Import holidays from a filled-in Excel template — download the template first if you have not">
+                  <button type="button" className="cand-pill-btn cand-pill-btn--green" onClick={() => fileRef.current?.click()} disabled={importing}>
+                    {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
+                  </button>
+                </Tooltip>
                 <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
                   <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => setManageGroupsOpen(true)}>
                     <i className="ri-folder-add-line" />Groups
                   </button>
                 </Tooltip>
-                <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
-                  <i className="ri-add-line" />Add Holiday
-                </button>
+                <Tooltip label="Add a single holiday to a group">
+                  <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
+                    <i className="ri-add-line" />Add Holiday
+                  </button>
+                </Tooltip>
               </div>
             </div>
 
@@ -542,9 +550,10 @@ export default function HrHoliday() {
               serial
               accent="violet"
 
-              fitToViewport
-              autoFitRows
-              minAutoRows={10}
+              /* No viewport stretch: the card hugs its rows so the pager sits
+                 directly under the last one. Stretching left a band of empty
+                 table between the rows and the pagination whenever the page
+                 was not full. (#125) */
               minWidth={1395}
               loading={loading}
               serverPagination={{
@@ -559,7 +568,7 @@ export default function HrHoliday() {
               emptyMessage={
                 <>
                   <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {(search.trim() || typeFilter !== 'All' || yearFilter !== 'All' || groupFilter !== 'All')
+                  {(search.trim() || typeFilter !== 'All' || yearFilter !== 'All' || groupFilter.length)
                     ? 'No holidays match your filters'
                     : 'No holidays yet — click Add Holiday or Import Excel to get started'}
                 </>
@@ -768,7 +777,6 @@ function HolidayModal({
         </div>
 
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
           <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
             {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}{editing ? 'Update Holiday' : 'Save Holiday'}
           </button>
@@ -796,7 +804,7 @@ function ManageGroupsModal({
   const [nameErr, setNameErr] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
-  const pager = usePager(groups.length);
+
 
   useEffect(() => {
     if (!isOpen) { setEditing(null); setName(''); setDescription(''); setStatus('Active'); setNameErr(''); setFormOpen(false); }
@@ -863,6 +871,76 @@ function ManageGroupsModal({
     }
   };
 
+  /* The same column shape the page's own table uses, so the popup reads as
+     one of the module's tables rather than a bespoke list. Sr No comes from
+     <DataTable serial>, and the pager rides inside the card. (Holiday #125) */
+  const groupColumns = useMemo<DataTableColumn<HolidayGroup>[]>(() => [
+    {
+      header: 'Code',
+      id: 'code',
+      accessorFn: (g: HolidayGroup) => g.code || `HGRP-${g.id}`,
+      meta: { width: 120 },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Group Name',
+      accessorKey: 'name',
+      meta: { wrap: true },
+      cell: info => {
+        const g = info.row.original;
+        /* Cut at a character budget rather than clamped to two lines: the
+           clamp kept the text in the cell but let a long name take twice the
+           height of every other row. (Holiday #5) */
+        return <TruncText text={g.name} max={34} className="fw-bold fs-13 d-block" clip />;
+      },
+    },
+    {
+      /* Its own column rather than a second line under the name: the row was
+         carrying two sizes of text in one cell while the space between Group
+         Name and Holidays sat empty. */
+      header: 'Description',
+      accessorKey: 'description',
+      meta: { wrap: true },
+      cell: info => {
+        const d = info.row.original.description;
+        return d
+          ? <TruncText text={d} max={60} className="text-muted fs-13 d-block" clip />
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Holidays',
+      id: 'holidays',
+      accessorFn: (g: HolidayGroup) => g.holidays_count ?? 0,
+      meta: { width: 100, align: 'center' },
+      cell: info => <span className="fs-13">{String(info.getValue() ?? 0)}</span>,
+    },
+    {
+      header: 'Actions',
+      id: 'actions',
+      enableSorting: false,
+      meta: { width: 110, align: 'center' },
+      cell: info => {
+        const g = info.row.original;
+        const inUse = (g.employees_count ?? 0) > 0;
+        return (
+          <div className="rec-row-actions justify-content-center">
+            <Tooltip label="Edit"><button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => startEdit(g)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+            </button></Tooltip>
+            <Tooltip label={inUse ? `Assigned to ${g.employees_count} employee${g.employees_count === 1 ? '' : 's'} — reassign them first` : 'Delete'}>
+              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-disabled={inUse}
+                onClick={() => { if (inUse) return; remove(g); }}
+                style={inUse ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+              </button>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+  ], [startEdit, remove]);
+
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
       modalClassName="rec-form-modal master-modal hrms-modal" contentClassName="rec-form-content border-0">
@@ -901,68 +979,18 @@ function ManageGroupsModal({
 
         <div style={{ padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
 
-          <div className="rec-list-scroll" style={{ maxHeight: 320 }}>
-            <table className="rec-list-table align-middle table-nowrap mb-0">
-              <thead>
-                <tr>
-                  <th className="text-center" style={{ width: 64 }}>Sr No</th>
-                  <th style={{ width: 110 }}>Code</th>
-                  <th>Group Name</th>
-                  <th style={{ width: 90 }}>Holidays</th>
-                  <th className="text-center" style={{ width: 100 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-4 text-muted">No groups yet — click “Add Group” to create one.</td></tr>
-                ) : pageSlice(groups, pager.page, pager.pageSize).map((g, idx) => (
-                  <tr key={g.id}>
-                    <td className="text-center text-muted fs-13">{pager.page * pager.pageSize + idx + 1}</td>
-                    <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
-                    {/* Cut at a character budget rather than clamped to two
-                        lines. The clamp kept the text inside the cell but let
-                        a long name take twice the height of every other row,
-                        so the popup's rows no longer lined up — which is the
-                        half of this the ticket asks for. One line each now,
-                        with the full value on hover. (Holiday #5) */}
-                    <td>
-                      <TruncText text={g.name} max={30} className="fw-bold fs-13 d-block" clip />
-                      {g.description && (
-                        <TruncText text={g.description} max={40} className="text-muted d-block" style={{ fontSize: 11.5 }} clip />
-                      )}
-                    </td>
-                    <td className="fs-13">{g.holidays_count ?? 0}</td>
-                    <td className="text-center">
-                      <div className="rec-row-actions justify-content-center">
-                        <Tooltip label="Edit"><button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => startEdit(g)}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                        </button></Tooltip>
-                        {(() => {
-                          const inUse = (g.employees_count ?? 0) > 0;
-                          return (
-                            <Tooltip label={inUse ? `Assigned to ${g.employees_count} employee${g.employees_count === 1 ? '' : 's'} — reassign them first` : 'Delete'}>
-                              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-disabled={inUse}
-                                onClick={() => { if (inUse) return; remove(g); }}
-                                style={inUse ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                              </button>
-                            </Tooltip>
-                          );
-                        })()}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <TablePager
-            total={groups.length}
-            page={pager.page}
-            pageSize={pager.pageSize}
-            onPage={pager.setPage}
-            onPageSize={pager.setPageSize}
+          <DataTable<HolidayGroup>
+            data={groups}
+            columns={groupColumns}
+            /* The toolbar has no tabs, so without these the search floats alone
+               on the right. Says what the ROWS are — the popup header above
+               already says what the screen is for. */
+            title="Groups"
+            subtitle="Each one holds its own holiday list"
+            serial={{ header: 'Sr No' }}
+            accent="violet"
+            minWidth={620}
+            emptyMessage="No groups yet — click “Add Group” to create one."
           />
         </div>
 
@@ -1015,7 +1043,9 @@ function ManageGroupsModal({
  * Group / Type / Year, each single-select, where "no selection" means All.
  * Commits a draft on Apply so the list reloads once, not once per select. */
 type HolidayFacetKey = 'group' | 'type' | 'year';
-export type HolidayFilterValues = { group: string; type: string; year: string };
+/* `group` is a list — that facet allows several groups at once (QA 8);
+   type and year stay single-select. */
+export type HolidayFilterValues = { group: string[]; type: string; year: string };
 
 const HOLIDAY_FACET_ICONS: Record<HolidayFacetKey, ReactNode> = {
   group: (
@@ -1086,11 +1116,17 @@ export function HolidayFilterModal({
       // Drop any 'All' sentinel — an empty selection already means All.
       .filter(o => o.value !== 'All');
 
-  const facetCount = (k: HolidayFacetKey) => (draft[k] !== 'All' ? 1 : 0);
+  const isMulti = (k: HolidayFacetKey) => k === 'group';
+  /* Each picked value counts, the way every other filter popup counts. */
+  const facetCount = (k: HolidayFacetKey) =>
+    isMulti(k) ? draft.group.length : (draft[k] !== 'All' ? 1 : 0);
   const selectedCount = FACETS.reduce((n, f) => n + facetCount(f.key), 0);
-  const isChecked = (value: string) => draft[active] === value;
-  // Re-clicking the chosen option clears it back to All.
-  const pick = (value: string) => setDraft(prev => ({ ...prev, [active]: prev[active] === value ? 'All' : value }));
+  const isChecked = (value: string) =>
+    isMulti(active) ? draft.group.includes(value) : draft[active] === value;
+  // Re-clicking a chosen option clears it: back to All, or out of the list.
+  const pick = (value: string) => setDraft(prev => isMulti(active)
+    ? { ...prev, group: prev.group.includes(value) ? prev.group.filter(v => v !== value) : [...prev.group, value] }
+    : { ...prev, [active]: prev[active] === value ? 'All' : value });
 
   const currentList = optsFor(active);
   const searched = search.trim()
@@ -1099,7 +1135,7 @@ export function HolidayFilterModal({
 
   const onApplyClick = () => { onApply(draft); onClose(); };
   const onReset = () => {
-    const cleared: HolidayFilterValues = { group: 'All', type: 'All', year: 'All' };
+    const cleared: HolidayFilterValues = { group: [], type: 'All', year: 'All' };
     setDraft(cleared);
     onApply(cleared);
   };
@@ -1178,13 +1214,13 @@ export function HolidayFilterModal({
                   return (
                     <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
                       <input
-                        type="radio"
+                        type={isMulti(active) ? 'checkbox' : 'radio'}
                         name={`holiday-facet-${active}`}
                         checked={checked}
                         readOnly
                         onClick={() => pick(opt.value)}
                       />
-                      <span className="lfm-check lfm-check-round" aria-hidden="true">
+                      <span className={`lfm-check ${isMulti(active) ? '' : 'lfm-check-round'}`} aria-hidden="true">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
