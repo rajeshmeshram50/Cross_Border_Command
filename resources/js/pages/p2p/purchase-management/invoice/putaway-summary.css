@@ -156,7 +156,7 @@
   overflow-x: auto;
   scrollbar-width: thin;
   border: 1px solid rgba(255, 255, 255, .26);
-  border-radius: 13px;
+  border-radius: 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .08));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 5px 18px rgba(2, 44, 54, .14);
 }
@@ -256,18 +256,24 @@
 
 /* "Own" / "3P" beside the warehouse: solid white on the teal bar, which is
    the one thing in the strip that is meant to stand out of it. */
+/* Sized as the design draws it: a small tag beside the value, not a
+   button-sized pill — 8px type on a 2px / 7px pad. A third-party warehouse
+   reads "Third Party" in amber, as the design has it. */
 .pts-badge {
   flex-shrink: 0;
   margin-left: 8px;
-  padding: 3px 9px;
+  padding: 2px 7px;
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
+  line-height: 1.2;
   letter-spacing: .03em;
+  white-space: nowrap;
   color: #0e7490;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(3, 37, 48, .22);
+  box-shadow: 0 1px 3px rgba(3, 37, 48, .18);
 }
+.pts-badge--3p { color: #c2410c; }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 
@@ -1510,3 +1516,9 @@
 [data-bs-theme="dark"] .pts-fail__ico { background: rgba(239, 68, 68, .18); color: #fca5a5; }
 [data-bs-theme="dark"] .pts-fail b { color: #fecaca; }
 [data-bs-theme="dark"] .pts-fail > span:last-child { color: #fca5a5; }
+
+/* The strip's two ends, rounded as the design draws them: 16px on the bar,
+   and the end pills follow the same curve so a hover fill on the first or
+   last one cannot square off a corner inside the rounded bar. */
+.pts-pills .spi-dt-pill:first-child { border-radius: 16px 0 0 16px; }
+.pts-pills .spi-dt-pill:last-child  { border-radius: 0 16px 16px 0; }

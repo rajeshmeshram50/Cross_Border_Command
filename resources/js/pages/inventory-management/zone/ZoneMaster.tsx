@@ -11,6 +11,7 @@ import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
+import { useCardFloor } from '../../../hooks/useCardFloor';
 import { useToast } from '../../../contexts/ToastContext';
 import { ZoneApiError, zoneApi, type Zone, type ZoneCounts, type ZoneTab, type ZoneWarehouse } from './zone-data';
 
@@ -128,6 +129,9 @@ export default function ZoneMaster() {
   const [query, setQuery] = useState('');
   const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
+  // CS-939 #17: the card reaches the bottom of the window even with no rows
+  const cardRef = useRef<HTMLDivElement>(null);
+  useCardFloor(cardRef, [briefOpen]);
 
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query.trim(), 400);
@@ -274,7 +278,7 @@ export default function ZoneMaster() {
         </div>
       </div>
 
-      <div className="spi-card ord-list">
+      <div className="spi-card ord-list" ref={cardRef}>
         <div className="spi-segrow">
           <div className="spi-seg" role="tablist" aria-label="Zone type">
             {TABS.map(t => (
