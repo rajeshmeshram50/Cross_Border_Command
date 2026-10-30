@@ -303,14 +303,16 @@
   background: #fff;
   flex-shrink: 0;
 }
+/* 40px tall, 12.5px label — the module button size (QA 176). */
 .lvr-btn-ghost {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 16px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; min-height: 40px; padding: 0 16px;
   border-radius: 8px;
   background: #fff;
   border: 1px solid #e5e7eb;
   color: #374151;
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -403,13 +405,14 @@
 }
 
 .lvr-btn-primary {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 18px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; min-height: 40px; padding: 0 18px;
   border-radius: 8px;
   background: linear-gradient(135deg, #5a3fd1, #7c5cfc);
   border: none;
   color: #fff;
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(124, 92, 252, 0.28);

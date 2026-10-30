@@ -6991,7 +6991,10 @@
 }
 /* Inactive pills carried --dt-a-700 (#6d28d9): dark violet, legible on the
    light trough and nearly invisible once the trough went dark. */
-[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off { color: #c4b5fd; }
+/* Borderless in dark too: the base dark .dt-tab.off adds a white outline,
+   and the ev rail is a soft-trough strip where only the active pill is
+   drawn. Unselected tabs carry no border (QA 191, 192). */
+[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off { color: #c4b5fd; background: transparent; border-color: transparent; box-shadow: none; }
 [data-bs-theme="dark"] .ev-tabstrip .dt-tab.off:hover {
   background: rgba(167, 139, 250, 0.12);
   color: #ddd6fe;

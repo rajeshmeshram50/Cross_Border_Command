@@ -1550,3 +1550,4 @@
   .pts-pills .spi-dt-pill-txt { min-width: 0; }
   .pts-pills .spi-dt-pill-val { overflow: hidden; text-overflow: ellipsis; }
 }
+.pts-temp.pts-temp--ok { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }

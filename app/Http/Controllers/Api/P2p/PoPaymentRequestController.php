@@ -195,11 +195,14 @@ class PoPaymentRequestController extends Controller
             // Row lock: a payment saved at the same moment cannot slip in under the old TDS.
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
 
-            /* Once money has moved the deduction is settled — changing it would
-               rewrite what was already paid against. */
-            if ((float) $locked->paid_amount > 0) {
+            /* Settled by a payment OR by an approval — the same two gates the
+               PO uses. An approval counts because it was given against the net
+               payable as it stood. */
+            if ($lock = self::spiTdsLockedBy((int) $locked->id)) {
                 abort(response()->json(['status' => false,
-                    'message' => "A payment has already been recorded on {$locked->code} — the TDS cannot be changed now.",
+                    'message' => $lock === 'payment'
+                        ? "TDS cannot be changed — a payment has already been recorded against {$locked->code}."
+                        : "TDS cannot be changed — a payment request on {$locked->code} has already been approved. It was approved against the current net payable.",
                 ], 422));
             }
 
@@ -379,12 +382,12 @@ class PoPaymentRequestController extends Controller
      * still owes. The payment row carries supplier_invoice_id with a NULL
      * purchase_order_id — the same shape the request uses.
      */
-    private function savePaymentForSpi(Request $request, SupplierInvoice $invoice, int $req): JsonResponse
+    private function savePaymentForSpi(Request $request, SupplierInvoice $invoice, int $req, ?int $paymentId = null): JsonResponse
     {
         $user = $this->tenantUser($request);
 
         if ($invoice->isCancelled()) {
-            return $this->fail("{$invoice->code} is cancelled — nothing can be paid against it.");
+            return $this->fail("{$invoice->code} is cancelled — its payments can no longer be changed.");
         }
 
         $row = PoPaymentRequest::withoutGlobalScope('tenant')
@@ -394,6 +397,15 @@ class PoPaymentRequestController extends Controller
         if (!$row) {
             return $this->fail("That payment request was not raised against {$invoice->code}.", 404);
         }
+
+        /* The payment being edited, when this is an update. firstOrFail so a bad
+           id is a 404 rather than a silent create. */
+        $existing = $paymentId
+            ? PoPayment::withoutGlobalScope('tenant')->whereNull('purchase_order_id')
+                ->where('supplier_invoice_id', $invoice->id)->where('payment_request_id', $row->id)
+                ->whereKey($paymentId)->firstOrFail()
+            : null;
+        if ($existing && ($blocked = $this->zohoLocked($existing))) return $blocked;
 
         if ($row->status !== PoPaymentRequest::STATUS_APPROVED) {
             return $this->fail($row->status === PoPaymentRequest::STATUS_PENDING
@@ -422,23 +434,26 @@ class PoPaymentRequestController extends Controller
         ]);
 
         $utr = !empty($data['utr_cheque_number']) ? strtoupper($data['utr_cheque_number']) : null;
-        if ($clash = $this->utrClash($utr, (int) $invoice->client_id, null)) return $clash;
+        if ($clash = $this->utrClash($utr, (int) $invoice->client_id, $existing)) return $clash;
 
         $amount = round((float) $data['amount'], 2);
         $file = $request->file('proof');
         $path = $file?->store("p2p/spi-payments/{$invoice->id}", 'public');
 
-        $saved = $this->inTransaction('record the payment', function () use ($invoice, $row, $user, $data, $amount, $utr, $file, $path) {
+        $saved = $this->inTransaction($existing ? 'update the payment' : 'record the payment', function () use ($invoice, $row, $existing, $user, $data, $amount, $utr, $file, $path) {
             // Serialise payments on the invoice so two people cannot both pass the balance check.
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
             $req = PoPaymentRequest::whereKey($row->id)->first();
 
+            // The row being edited does not count against its own room.
             $others = (float) PoPayment::withoutGlobalScope('tenant')
-                ->where('payment_request_id', $req->id)->sum('amount');
+                ->where('payment_request_id', $req->id)
+                ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
             $room = round((float) $req->approved_amount - $others, 2);
 
             $spiOthers = (float) PoPayment::withoutGlobalScope('tenant')
-                ->whereNull('purchase_order_id')->where('supplier_invoice_id', $locked->id)->sum('amount');
+                ->whereNull('purchase_order_id')->where('supplier_invoice_id', $locked->id)
+                ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
             $spiRoom = round((float) $locked->grand_total - (float) $locked->tds_amount - $spiOthers, 2);
 
             if ($amount > $room + 0.001) {
@@ -461,15 +476,17 @@ class PoPaymentRequestController extends Controller
             ];
             if ($path) $attrs += ['proof_path' => $path, 'proof_name' => $file->getClientOriginalName()];
 
-            $payment = PoPayment::create($attrs + [
-                'client_id'           => $locked->client_id,
-                'branch_id'           => $locked->branch_id,
-                /* NULL, deliberately — this payment belongs to the invoice. */
-                'purchase_order_id'   => null,
-                'supplier_invoice_id' => $locked->id,
-                'payment_request_id'  => $req->id,
-                'created_by'          => $user->id,
-            ]);
+            $payment = $existing
+                ? tap($existing)->update($attrs)
+                : PoPayment::create($attrs + [
+                    'client_id'           => $locked->client_id,
+                    'branch_id'           => $locked->branch_id,
+                    /* NULL, deliberately — this payment belongs to the invoice. */
+                    'purchase_order_id'   => null,
+                    'supplier_invoice_id' => $locked->id,
+                    'payment_request_id'  => $req->id,
+                    'created_by'          => $user->id,
+                ]);
 
             $this->refreshSpiPaymentTotals($locked);
 
@@ -479,7 +496,50 @@ class PoPaymentRequestController extends Controller
         return $this->ok([
             'payment' => $this->shapePayment($saved->fresh()),
             'summary' => $this->spiPayload($invoice->fresh()),
-        ], 201);
+        ], $existing ? 200 : 201);
+    }
+
+    /**
+     * POST /p2p/spi/{id}/payment-requests/{req}/payments/{payment} — edit a
+     * Direct-SPI payment. POST, not PUT: a corrected proof arrives multipart.
+     */
+    public function updatePaymentFromSpi(Request $request, int $spi, int $req, int $payment): JsonResponse
+    {
+        $invoice = SupplierInvoice::findOrFail($spi);
+        if ($invoice->purchase_order_id) {
+            return $this->fail("{$invoice->code} is raised against a purchase order — edit the payment on that order instead.", 422);
+        }
+        return $this->savePaymentForSpi($request, $invoice, $req, $payment);
+    }
+
+    /**
+     * DELETE /p2p/spi/{id}/payment-requests/{req}/payments/{payment} — remove a
+     * Direct-SPI payment and re-derive the invoice ledger.
+     */
+    public function destroyPaymentFromSpi(Request $request, int $spi, int $req, int $payment): JsonResponse
+    {
+        $user    = $this->tenantUser($request);
+        $invoice = SupplierInvoice::findOrFail($spi);
+        if ($invoice->purchase_order_id) {
+            return $this->fail("{$invoice->code} is raised against a purchase order — delete the payment on that order instead.", 422);
+        }
+        if ($invoice->isCancelled()) {
+            return $this->fail("{$invoice->code} is cancelled — its payments can no longer be changed.");
+        }
+
+        $row = PoPayment::withoutGlobalScope('tenant')->whereNull('purchase_order_id')
+            ->where('supplier_invoice_id', $invoice->id)->where('payment_request_id', $req)
+            ->whereKey($payment)->firstOrFail();
+        if ($blocked = $this->zohoLocked($row)) return $blocked;
+
+        $this->inTransaction('delete the payment', function () use ($invoice, $row, $user) {
+            $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
+            $row->update(['updated_by' => $user->id]);
+            $row->delete();
+            $this->refreshSpiPaymentTotals($locked);
+        });
+
+        return $this->ok(['summary' => $this->spiPayload($invoice->fresh())]);
     }
 
     /**
@@ -1060,6 +1120,9 @@ class PoPaymentRequestController extends Controller
         $pending  = $requests->where('status', PoPaymentRequest::STATUS_PENDING);
         $approved = $requests->where('status', PoPaymentRequest::STATUS_APPROVED);
 
+        /* One name lookup for every person in the list, not one per row. */
+        $names = $this->names($requests->pluck('requested_by')->merge($requests->pluck('requested_to'))->all());
+
         return [
             'spi' => [
                 'id'             => $invoice->id,
@@ -1072,9 +1135,9 @@ class PoPaymentRequestController extends Controller
                 'tds_percentage' => (float) $invoice->tds_percentage,
                 'tds_amount'     => $tds,
                 'tds_saved'      => (bool) $invoice->tds_updated_at,
-                /* Settled once money has moved — changing it would rewrite what
-                   was already paid against. */
-                'tds_locked'     => $paid > 0,
+                /* By a payment or by an approval — see spiTdsLockedBy(). */
+                'tds_locked'     => self::spiTdsLockedBy((int) $invoice->id) !== null,
+                'tds_locked_by'  => self::spiTdsLockedBy((int) $invoice->id),
                 'tds_applies'    => !$invoice->isInternational(),
                 'net_payable'    => $net,
                 'paid'           => $paid,
@@ -1084,11 +1147,31 @@ class PoPaymentRequestController extends Controller
                 'open_to_request' => $this->openToRequestForSpi($invoice),
             ],
             'requests_summary' => [
+                'total_requests'   => $requests->count(),
+                'approved_count'   => $approved->count(),
+                'pending_count'    => $pending->count(),
+                'rejected_count'   => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
+                'requested_amount' => round((float) $requests->sum('requested_amount'), 2),
+                'awaiting_amount'  => round((float) $pending->sum('requested_amount'), 2),
+                /* The approved total across ALL requests on this invoice - it
+                   was taken from the single open request before. */
+                'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
+                'approved_unpaid'  => round((float) $approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
+                'paid'             => $paid,
+                'open_to_request'  => max(0, $this->openToRequestForSpi($invoice)),
+                // Kept too, so callers reading the short keys still work.
                 'total'    => $requests->count(),
                 'pending'  => $pending->count(),
                 'approved' => $approved->count(),
                 'rejected' => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
             ],
+            /* The other requests on this invoice, shaped like the PO's list, so
+               the Linked requests panel fills for a Direct SPI too - and each
+               carries can_decide, so a sibling can be acted on without opening
+               it. */
+            'requests' => $requests
+                ->map(fn ($r) => $this->shapeRequest($r, $names))
+                ->values()->all(),
         ];
     }
     /**
@@ -1210,6 +1293,29 @@ class PoPaymentRequestController extends Controller
      *
      * @return 'payment'|'approval'|null
      */
+    /**
+     * What has settled the TDS on a DIRECT invoice: a payment, an approval,
+     * or nothing yet.
+     *
+     * The mirror of tdsLockedBy(). An APPROVAL locks it as firmly as a
+     * payment does: the approver agreed an amount against the net payable as
+     * it stood, and moving the deduction afterwards changes what they agreed
+     * to without asking them.
+     */
+    public static function spiTdsLockedBy(int $spiId): ?string
+    {
+        $paid = PoPayment::withoutGlobalScope('tenant')
+            ->whereNull('purchase_order_id')->where('supplier_invoice_id', $spiId)->exists();
+        if ($paid) return 'payment';
+
+        $approved = PoPaymentRequest::withoutGlobalScope('tenant')
+            ->whereNull('purchase_order_id')->where('supplier_invoice_id', $spiId)
+            ->where('status', PoPaymentRequest::STATUS_APPROVED)
+            ->exists();
+
+        return $approved ? 'approval' : null;
+    }
+
     private function tdsLockedBy(int $poId): ?string
     {
         if ($this->paymentRows($poId)->exists()) return 'payment';

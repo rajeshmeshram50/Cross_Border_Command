@@ -339,6 +339,7 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
   const boxes = data?.boxes ?? [];
   const totals = data?.analytics;
   const refs = data?.references;
+  const fin = data?.financials ?? null;
   const noPo = !row.poNo && !refs?.po.code;
   const noShip = noPo && !(h?.shipmentId || row.shipmentId);
   const whName = h?.warehouse?.name || row.warehouseName || '—';
@@ -450,6 +451,61 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
               <AmountCard tone="spiv" label="SPI Amount" value={money(refs?.spiAmount ?? 0)} sub="Supplier Invoice" />
             </div>
           </Section>
+
+          {fin && (
+          <Section
+            icon={<IcoCard />}
+            prefix={spiId}
+            title="Payments & Financials"
+            meta={`${fin.payments.length} payment${fin.payments.length === 1 ? '' : 's'}`}
+            sub={fin.source === 'purchase_order'
+              ? `Paid on ${fin.code} — this invoice is settled through its purchase order.`
+              : 'What is owed on this invoice and every payment made against it.'}
+            right={<span className={`pts-temp${fin.settled ? ' pts-temp--ok' : ''}`}>{fin.settled ? 'Settled' : `${fin.paidPct}% paid`}</span>}
+          >
+            <div className="pts-tiles">
+              <Tile tone="spi" value={money(fin.source === 'purchase_order' && fin.poAmount != null ? fin.poAmount : fin.spiAmount)}
+                label={fin.source === 'purchase_order' ? 'PO Amount' : 'SPI Amount'} />
+              <Tile tone="prod" value={money(fin.spiGst)} label="GST" />
+              <Tile tone="dmg" value={fin.tdsApplies ? money(fin.tdsAmount) : '—'}
+                label={fin.tdsApplies ? `TDS (${fin.tdsPercentage}%)` : 'TDS — not applicable'} />
+              <Tile tone="boxes" value={money(fin.netPayable)} label="Net Payable" />
+              <Tile tone="qty" value={money(fin.paid)} label="Paid" />
+              <Tile tone="haz" value={money(fin.balance)} label="Balance" />
+              <Tile tone="cold" value={money(fin.requests.readyToPay)} label="Ready To Pay" />
+              <Tile tone="mis" value={String(fin.requests.total)}
+                label={`Requests · ${fin.requests.approved} approved · ${fin.requests.pending} pending`} />
+            </div>
+            <div className="pts-tblwrap" style={{ marginTop: 12 }}>
+              <table className="pts-tbl">
+                <thead>
+                  <tr>
+                    <th>Sr. No</th><th>Paid On</th><th>Payment Request</th><th>Amount</th>
+                    <th>Bank</th><th>UTR / Cheque No.</th><th>UTR / Cheque Date</th><th>Proof</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fin.payments.length === 0 ? (
+                    <tr><td colSpan={8} className="pts-dim">No payments have been recorded yet.</td></tr>
+                  ) : fin.payments.map((p, i) => (
+                    <tr key={p.id}>
+                      <td><span className="pts-sr">{i + 1}</span></td>
+                      <td>{p.paidOn ? shortDate(p.paidOn) : '—'}</td>
+                      <td>{p.requestCode ? <span className="pts-chip pts-chip--code">{p.requestCode}</span> : <span className="pts-dim">—</span>}</td>
+                      <td><b>{money(p.amount)}</b></td>
+                      <td className="pts-l">{p.bank || '—'}</td>
+                      <td><span className="pts-mono">{p.reference || '—'}</span></td>
+                      <td>{p.referenceDate ? shortDate(p.referenceDate) : '—'}</td>
+                      <td>{p.proofUrl
+                        ? <a href={p.proofUrl} target="_blank" rel="noreferrer">{p.proofName || 'View'}</a>
+                        : <span className="pts-dim">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+          )}
 
           <Section
             icon={<IcoWarehouse />}

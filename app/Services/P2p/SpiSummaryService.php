@@ -6,6 +6,8 @@ use App\Models\Inventory\ProductFlag;
 use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiBoxAttachment;
 use App\Models\P2p\SpiBoxItem;
+use App\Models\P2p\PoPayment;
+use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\SupplierInvoice;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +42,7 @@ class SpiSummaryService
             'analytics'  => $this->analytics($spi, $boxes),
             'parties'    => $this->parties($spi),
             'references' => $this->references($spi),
+            'financials' => $this->financials($spi),
             'locations'  => $this->locations($boxes, $places),
             'boxes'      => $this->boxDetails($boxes, $places, $spi),
         ];
@@ -442,15 +445,13 @@ class SpiSummaryService
     private function header(SupplierInvoice $spi, $boxes, array $places): array
     {
         $po = $spi->purchaseOrder;
-        $pi = $po?->proforma_invoice_id
-            ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
-            : null;
         /* The invoice's own shipment first. A Direct SPI captures it at
            Step 01 of its setup; before that column existed this could only
            come from the order, so a Direct SPI reported no shipment even
            when one had been chosen. */
         $shipId = $spi->shipment_order_id ?? $po?->shipment_order_id;
         $ship = $shipId ? DB::table('shipment_orders')->find($shipId) : null;
+        $pi = $this->piFor($spi, $po, $ship);
 
         return [
             'spi_id'         => $spi->code,
@@ -500,14 +501,36 @@ class SpiSummaryService
         ];
     }
 
-    /** Customer and consignee come from the PI behind the order; the supplier is the invoice's own. */
+    /**
+     * The proforma invoice this SPI hangs off.
+     *
+     * The ORDER first, which stays authoritative while it exists; then the
+     * SHIPMENT, which carries the same id and is all a Direct SPI has. Read
+     * off the order alone, a Direct SPI had no PI - and so no opportunity,
+     * customer or consignee - however complete its Step 01 was.
+     */
+    private function piFor(SupplierInvoice $spi, $po, $ship = null)
+    {
+        if ($po?->proforma_invoice_id) {
+            return DB::table('proforma_invoices')->find($po->proforma_invoice_id);
+        }
+
+        if ($ship === null) {
+            $shipId = $spi->shipment_order_id ?? $po?->shipment_order_id;
+            $ship = $shipId ? DB::table('shipment_orders')->find($shipId) : null;
+        }
+
+        return $ship?->proforma_invoice_id
+            ? DB::table('proforma_invoices')->find($ship->proforma_invoice_id)
+            : null;
+    }
+
+    /** Customer and consignee come from the PI behind the order or its shipment; the supplier is the invoice's own. */
     private function parties(SupplierInvoice $spi): array
     {
         $out = [];
         $po  = $spi->purchaseOrder;
-        $pi  = $po?->proforma_invoice_id
-            ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
-            : null;
+        $pi  = $this->piFor($spi, $po);
 
         if ($pi?->customer_id) {
             $c = DB::table('customers')->find($pi->customer_id);
@@ -544,13 +567,118 @@ class SpiSummaryService
         return $out;
     }
 
+    /**
+     * What is owed on this invoice, and against which document.
+     *
+     * A PO-backed invoice is paid on its ORDER — the deduction, the payments
+     * and the balance all live there, and the invoice is a line of evidence
+     * against it. A Direct SPI is paid on itself. `source` says which, so a
+     * screen never has to guess which figures it is reading.
+     *
+     * TDS is cut on taxable_total, not grand_total: it is not deducted on GST.
+     */
+    private function financials(SupplierInvoice $spi): array
+    {
+        $po = $spi->purchaseOrder;
+        $ledger = $po ?: $spi;
+
+        $gst = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
+
+        $total = round((float) $ledger->grand_total, 2);
+        $tds   = round((float) $ledger->tds_amount, 2);
+        $net   = round($total - $tds, 2);
+        $paid  = round((float) $ledger->paid_amount, 2);
+
+        $requests = PoPaymentRequest::withoutGlobalScope('tenant')
+            ->when($po, fn ($q) => $q->where('purchase_order_id', $po->id))
+            ->when(!$po, fn ($q) => $q->whereNull('purchase_order_id')->where('supplier_invoice_id', $spi->id))
+            ->get();
+        $approved = $requests->where('status', 'approved');
+
+        return [
+            /* 'purchase_order' or 'supplier_invoice' — which document the money
+               moves on, and therefore which figures these are. */
+            'source'         => $po ? 'purchase_order' : 'supplier_invoice',
+            'code'           => $ledger->code,
+            'currency_code'  => $ledger->currency_code ?: 'INR',
+
+            /* The invoice's own value, whichever document is paid. */
+            'spi_amount'     => round((float) $spi->grand_total, 2),
+            'spi_base'       => round((float) $spi->taxable_total, 2),
+            'spi_gst'        => $gst,
+            'po_amount'      => $po ? round((float) $po->grand_total, 2) : null,
+
+            'tds_percentage' => (float) $ledger->tds_percentage,
+            'tds_amount'     => $tds,
+            'tds_saved'      => (bool) $ledger->tds_updated_at,
+            'tds_applies'    => $ledger->document_type !== 'international',
+
+            'net_payable'    => $net,
+            'paid_amount'    => $paid,
+            'balance_amount' => round($net - $paid, 2),
+            'paid_pct'       => $net > 0 ? (int) round($paid / $net * 100) : 0,
+            'settled'        => $net > 0 && $paid >= $net - 0.001,
+
+            'requests' => [
+                'total'        => $requests->count(),
+                'pending'      => $requests->where('status', 'pending')->count(),
+                'approved'     => $approved->count(),
+                'rejected'     => $requests->where('status', 'rejected')->count(),
+                'requested'    => round((float) $requests->sum('requested_amount'), 2),
+                'approved_amt' => round((float) $approved->sum('approved_amount'), 2),
+                /* Approved, not yet paid — what can be released right now. */
+                'ready_to_pay' => round((float) $approved->sum(
+                    fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)
+                ), 2),
+            ],
+
+            /* The transfers themselves. The totals above say 40,000 is paid;
+               these say it was two payments, when, against which request and
+               with what proof. */
+            'payments' => $this->paymentEntries($spi, $po, $requests),
+        ];
+    }
+
+    /**
+     * Every payment on this invoice's ledger, newest last.
+     *
+     * Read from the same document the ledger is on — the ORDER for a PO-backed
+     * invoice, the INVOICE for a Direct one — and tagged with the request each
+     * was released against, because a request may be paid in instalments.
+     */
+    private function paymentEntries(SupplierInvoice $spi, $po, $requests): array
+    {
+        $rows = PoPayment::withoutGlobalScope('tenant')
+            ->when($po, fn ($q) => $q->where('purchase_order_id', $po->id))
+            ->when(!$po, fn ($q) => $q->whereNull('purchase_order_id')->where('supplier_invoice_id', $spi->id))
+            ->orderBy('id')
+            ->get();
+
+        $codes = $requests->pluck('code', 'id');
+
+        return $rows->map(fn ($p) => [
+            'id'                => $p->id,
+            'amount'            => (float) $p->amount,
+            'bank_name'         => $p->bank_name,
+            'utr_cheque_number' => $p->utr_cheque_number,
+            'utr_cheque_date'   => $p->utr_cheque_date?->toDateString(),
+            'proof_name'        => $p->proof_name,
+            'proof_url'         => $p->proof_path ? file_url($p->proof_path) : null,
+            'paid_on'           => $p->created_at?->toDateString(),
+            /* Which release this transfer belongs to — one approval can be
+               paid in parts. */
+            'payment_request_id'   => $p->payment_request_id,
+            'payment_request_code' => $codes[$p->payment_request_id] ?? null,
+        ])->values()->all();
+    }
+
     /** PI / PO / SPI, each with its date, and the two amounts. */
     private function references(SupplierInvoice $spi): array
     {
         $po = $spi->purchaseOrder;
-        $pi = $po?->proforma_invoice_id
-            ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
-            : null;
+        /* Through the shared resolver: the order first, then the shipment. Read
+           off the order alone this stayed null on a Direct SPI. */
+        $pi = $this->piFor($spi, $po);
 
         return [
             'pi'         => ['code' => $pi->code ?? null, 'date' => $pi->created_at ?? null],

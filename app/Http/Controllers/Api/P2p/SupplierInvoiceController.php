@@ -808,8 +808,24 @@ class SupplierInvoiceController extends Controller
              * up from the request rows itself — the summary it was given was
              * simply never used. */
             $approved = $rows->where('status', PoPaymentRequest::STATUS_APPROVED);
+            /* The approver and raiser of each request as { id, name, role } —
+               the PO list shape. The rows carry only ids. */
+            $people = $this->requestPeople($rows->pluck('requested_by')->merge($rows->pluck('requested_to'))->all());
+            /* What each request was raised against. Every request here
+               shares THIS invoice, and a PO-backed one shares its order
+               too, so the block is built once rather than per row. The
+               inbox shows PO -> SPI for a PO-backed SPI; this makes the
+               invoice's own list say the same. */
+            $raisedAgainst = [
+                'link_type' => $po ? (($spi->shipment_order_id || $po->shipment_order_id) ? 'with_shipment' : 'without_shipment') : 'direct_spi',
+                'po'  => $po ? ['id' => $po->id, 'code' => $po->code, 'date' => $po->po_date] : null,
+                'spi' => ['id' => $spi->id, 'code' => $spi->code, 'invoice_no' => $spi->invoice_no, 'date' => optional($spi->invoice_date)->toDateString()],
+            ];
             $paid     = round((float) $rows->sum('paid_amount'), 2);
             $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
+            $tds      = round((float) $spi->tds_amount, 2);
+            $tdsLock  = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::spiTdsLockedBy((int) $spi->id);
+            $net      = round((float) $spi->grand_total - $tds, 2);
 
             DB::commit();
 
@@ -820,8 +836,22 @@ class SupplierInvoiceController extends Controller
                     'base_amount'  => (float) $spi->taxable_total,   // without GST
                     'gst_amount'   => $gst,
                     'grand_total'  => (float) $spi->grand_total,     // with GST
+                    /* The deduction, so a reopened popup can show what was
+                       saved rather than starting blank. Cut on taxable_total,
+                       not grand_total - TDS is not deducted on GST. */
+                    'tds_percentage' => (float) $spi->tds_percentage,
+                    'tds_amount'     => $tds,
+                    'tds_saved'      => (bool) $spi->tds_updated_at,
+                    /* Settled once money has moved: changing it then would
+                       rewrite what was already paid against. */
+                    'tds_locked'     => $tdsLock !== null,
+                    'tds_locked_by'  => $tdsLock,
+                    'tds_applies'    => !$spi->isInternational(),
+                    'net_payable'    => $net,
                     'paid_amount'  => $paid,
-                    'balance'      => round((float) $spi->grand_total - $paid, 2),
+                    /* Net of the deduction. This was grand_total - paid, which
+                       overstated the balance by the whole TDS. */
+                    'balance'      => round($net - $paid, 2),
                 ],
 
                 'requests_summary' => [
@@ -859,7 +889,9 @@ class SupplierInvoiceController extends Controller
                     'source'         => 'purchase_order',
                     'code'           => $po->code,
                     'grand_total'    => (float) $po->grand_total,
+                    'tds_percentage' => (float) $po->tds_percentage,
                     'tds_amount'     => (float) $po->tds_amount,
+                    'tds_saved'      => (bool) $po->tds_updated_at,
                     'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
                     'paid_amount'    => (float) $po->paid_amount,
                     'balance_amount' => (float) $po->balance_amount,
@@ -867,7 +899,15 @@ class SupplierInvoiceController extends Controller
                     'source'         => 'supplier_invoice',
                     'code'           => $spi->code,
                     'grand_total'    => (float) $spi->grand_total,
+                    /* The deduction and what settled it, so the popup can show
+                       what was saved and grey the field when it is fixed. */
+                    'tds_percentage' => (float) $spi->tds_percentage,
                     'tds_amount'     => (float) $spi->tds_amount,
+                    'tds_saved'      => (bool) $spi->tds_updated_at,
+                    'tds_locked'     => $tdsLock !== null,
+                    /* 'payment' | 'approval' | null — which of the two fixed it. */
+                    'tds_locked_by'  => $tdsLock,
+                    'tds_applies'    => !$spi->isInternational(),
                     'net_payable'    => round((float) $spi->grand_total - (float) $spi->tds_amount, 2),
                     /* Null until the first payment: the ledger has not been
                        opened, which is not the same as a zero balance. */
@@ -883,8 +923,11 @@ class SupplierInvoiceController extends Controller
                     'payment_type'     => $r->payment_type,
                     'percentage'       => $r->percentage !== null ? (float) $r->percentage : null,
                     'requested_amount' => (float) $r->requested_amount,
-                    'requested_to'     => $r->requested_to,
+                    'requested_by'     => ['id' => $r->requested_by, 'name' => $people[$r->requested_by]['name'] ?? null, 'role' => $people[$r->requested_by]['role'] ?? null],
+                    'requested_to'     => ['id' => $r->requested_to, 'name' => $people[$r->requested_to]['name'] ?? null, 'role' => $people[$r->requested_to]['role'] ?? null],
                     'requested_at'     => $r->requested_at,
+                    /* Same block on every row; the UI reads it per request. */
+                    'raised_against'   => $raisedAgainst,
                     'status'           => $r->status,
                     'approved_amount'  => $r->approved_amount !== null ? (float) $r->approved_amount : null,
                     'paid_amount'      => (float) $r->paid_amount,
@@ -1859,5 +1902,30 @@ class SupplierInvoiceController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * id => ['name' => ?, 'role' => ?] for a set of user ids.
+     *
+     * The same lookup PoPaymentRequestController::names() does — department and
+     * designation joined off the user's employee row — kept here so this
+     * endpoint does not reach into that controller for it.
+     */
+    private function requestPeople(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter($ids)));
+        if (!$ids) return [];
+
+        return DB::table('users as u')
+            ->leftJoin('employees as e', fn ($j) => $j->on('e.user_id', '=', 'u.id')->whereNull('e.deleted_at'))
+            ->leftJoin('master_departments as d', 'd.id', '=', 'e.department_id')
+            ->leftJoin('master_designations as g', 'g.id', '=', 'e.designation_id')
+            ->whereIn('u.id', $ids)
+            ->get(['u.id', 'u.name', 'd.name as department', DB::raw('COALESCE(g.name, u.designation) as designation')])
+            ->mapWithKeys(fn ($u) => [$u->id => [
+                'name' => $u->name,
+                'role' => implode(' · ', array_filter([$u->department, $u->designation])) ?: null,
+            ]])
+            ->all();
     }
 }
