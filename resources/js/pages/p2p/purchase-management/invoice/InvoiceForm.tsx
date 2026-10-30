@@ -944,7 +944,7 @@ export default function InvoiceForm({
     || STAGES[i];
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form spi-invform">
+    <div className={`spi-dt-overlay cpf-form spi-invform${saving ? ' is-saving' : ''}`} aria-busy={saving}>
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -1033,8 +1033,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {step1Busy && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={step1Busy}>
+              {(step1Busy || advancing) && <StageSkeleton stage={step1Busy ? 0 : stage} />}
+              <div className="cpf-stepwrap" hidden={step1Busy || advancing}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -1167,12 +1167,6 @@ export default function InvoiceForm({
           </div>
         </div>
       </div>
-      {advancing && (
-        <div className="spi-save-lock" aria-live="polite" aria-busy="true">
-          <span className="spi-save-lock-spinner" />
-          <span className="spi-save-lock-text">{editing ? 'Updating…' : 'Saving…'}</span>
-        </div>
-      )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
       )}

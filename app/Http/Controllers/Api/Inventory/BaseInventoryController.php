@@ -370,8 +370,11 @@ abstract class BaseInventoryController extends Controller
             'qrUrl'     => str_starts_with($payload, 'http') ? $payload : null,
             'printedOn' => now()->format('d M Y H:i'),
         ])
-            // Points, because the blade is laid out in points: 4in x 3in.
-            ->setPaper([0, 0, 288, 216]);
+            // A4 portrait. The sheet was 4in x 3in, which fit a rack upright
+            // and nothing else: the address had to be shortened to the point of
+            // being unreadable across an aisle. A4 is the stock every printer
+            // here already holds.
+            ->setPaper('a4', 'portrait');
 
         return $pdf->download($filename . '.pdf');
     }
