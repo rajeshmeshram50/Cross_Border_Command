@@ -67,10 +67,15 @@ const titleOf = (r: PoListRow) =>
  *
  * Note that until Create PO offers that choice this reads 'no' on every
  * shipment order, because po-draft sends it as a constant.
+ *
+ * HIDDEN for now: because of that constant, every shipment order showed
+ * "Auto-created" whether or not it was, so the pill said something untrue.
+ * Uncomment the two lines below once Create PO really records the choice.
+ * The row keeps its empty grid cell, so the amounts stay in line.
  */
-const procOf = (r: PoListRow): { label: string; tone: string } | null => {
-  if (r.link_procurement === 'yes') return { label: 'Existing', tone: 'live' };
-  if (r.link_procurement === 'no') return { label: 'Auto-created', tone: 'warn' };
+const procOf = (_r: PoListRow): { label: string; tone: string } | null => {
+  // if (r.link_procurement === 'yes') return { label: 'Existing', tone: 'live' };
+  // if (r.link_procurement === 'no') return { label: 'Auto-created', tone: 'warn' };
   /* Null is only ever a standalone order — the server requires the field on a
      shipment order and forbids it on a standalone one. The design shows
      nothing here, so neither do we; the grid keeps the column open so the

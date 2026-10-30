@@ -46,7 +46,7 @@ function ChainCellBase({
   /** The document this link was raised against — the invoice for a GRN, the GRN for a QA. */
   against?: string;
 }) {
-  if (!id) return <span className="ord-dash">—</span>;
+  if (!id) return <span className="ord-dash">N/A</span>;
 
   const s = STAGE[kind];
 

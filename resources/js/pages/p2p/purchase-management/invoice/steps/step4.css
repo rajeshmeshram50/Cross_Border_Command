@@ -548,11 +548,14 @@
   margin: 0; padding: 12px; overflow: hidden;
   background: linear-gradient(180deg, #eef7fb 0%, #f4f9fc 100%);
 }
-.s4-root.is-fullview > .spi-segrow { flex: 0 0 auto; }
-/* The panels take whatever the rail leaves. min-height:0 is what lets them
-   shrink to it — without it each panel's content sets the floor and the last
-   one is pushed off the bottom of the window. */
-.s4-root.is-fullview > .s4-panels { flex: 1 1 auto; min-height: 0; }
+/* The rail and the panels share the .s4b-wrap card, so in full view the card
+   takes the window and the panels take whatever the rail leaves inside it.
+   min-height:0 at both levels is what lets them shrink to it — without it each
+   panel's content sets the floor and the last one is pushed off the bottom of
+   the window. */
+.s4-root.is-fullview > .s4b-wrap { flex: 1 1 auto; min-height: 0; }
+.s4-root.is-fullview > .s4b-wrap > .spi-segrow { flex: 0 0 auto; }
+.s4-root.is-fullview > .s4b-wrap > .s4-panels { flex: 1 1 auto; min-height: 0; }
 [data-bs-theme="dark"] .s4-root.is-fullview { background: linear-gradient(180deg, #0a1620, #0c1c24); }
 .s4-root .s4-panels:fullscreen { padding:10px; background:linear-gradient(180deg,#f3fbfd,#e9f6fa); }
 .s4-root .s4-panels:fullscreen::backdrop { background:#0b2a35; }
@@ -1308,7 +1311,7 @@
    the bands absorbed the whole shortfall — the summary is overflow:hidden, so
    at 800px tall it collapsed from 53px to 2px and simply vanished. */
 .s4-root > :not(.s4-panels) { flex: 0 0 auto; }
-.s4-root > .spi-segrow { margin-bottom: 0; }
+.s4-root .s4b-wrap > .spi-segrow { margin-bottom: 0; }
 /* .spi-seg carries `margin: 14px 16px 0` for its place in the list view's
    card. Inside the step the column gap does that job, so only the control's
    own inset is kept. */
@@ -3581,6 +3584,66 @@
   background: rgba(255,255,255,.20); box-shadow: none;
 }
 .s4-root .s4fs-btn--rail { flex: 0 0 auto; margin-left: auto; }
+
+/* Tabs and the three tools stay on ONE row. The shared .spi-segrow wraps
+   (p2p-common.css), so on a laptop-width window the browser broke the row
+   before it would shrink the tab band — Zebra Open Tasks, Scan Logs and Full
+   View dropped onto a line of their own under the tabs. With the row held to
+   one line the band (min-width: 0, overflow-x: auto, above) shrinks and
+   scrolls instead, and the tools keep their place at the right end.
+   Not below 980px: there the shared rules stack the tabs into a column, and
+   the row has to be free to put the tools under it. */
+@media (min-width: 981px) {
+  .s4-root .spi-segrow { flex-wrap: nowrap; }
+}
+/* Narrower windows, at the prototype's own breakpoints (its Stage 04 tab-row
+   block): at 1700px the tabs drop to 11px with 24px icon chips, the same step
+   the tools already take there; at 1500px the icon chips go altogether, which
+   is what lets five tabs and three tools share a 1366px laptop row. */
+@media (max-width: 1700px) and (min-width: 981px) {
+  .s4-root .spi-segrow { gap: 8px; }
+  .s4-root .spi-segrow .spi-seg { gap: 2px; }
+  .s4-root .spi-segrow .spi-seg-btn { gap: 5px; padding: 7px 8px 7px 5px; font-size: 11px; white-space: nowrap; }
+  .s4-root .spi-seg-ico { width: 24px; height: 24px; border-radius: 7px; }
+  .s4-root .spi-seg-ico svg { width: 12px; height: 12px; }
+  .s4-root .s4b-tools { gap: 6px; }
+}
+@media (max-width: 1500px) and (min-width: 981px) {
+  .s4-root .spi-seg-ico { display: none; }
+  .s4-root .spi-segrow .spi-seg-btn { padding-left: 9px; }
+}
+
+/* ── The workspace card ──────────────────────────────────────────────────
+   The tab row and the two panels sit in ONE white card, as the prototype's
+   .s4b-wrap has them: the rail is the card's head band (soft cyan wash, a
+   hairline under it) and the panels are its body. Before, the rail floated on
+   the page above two separate panels, so the three read as unrelated pieces.
+   It takes the stage's spare height (`1 0 auto` here beats the fixed-band
+   rule `.s4-root > :not(.s4-panels)` above by coming later at the same
+   specificity), and only the panels inside it flex.
+   overflow:hidden for the rounded corners — the Scan Logs and Zebra pop-ups
+   portal to <body>, so nothing of theirs is clipped. */
+.s4-root > .s4b-wrap {
+  display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0;
+  background: #fff; border: 1.5px solid #d7eef4; border-radius: 16px;
+  overflow: hidden; box-shadow: 0 2px 10px rgba(8,145,178,.06);
+}
+.s4-root .s4b-wrap > .spi-segrow {
+  flex: 0 0 auto; padding: 8px;
+  background: linear-gradient(180deg, #f4fcfe, #fff);
+  border-bottom: 1px solid #e3f1f5;
+}
+.s4-root .s4b-wrap > .s4-panels { padding: 8px; }
+[data-bs-theme="dark"] .s4-root > .s4b-wrap {
+  background: var(--s4d-bg); border-color: var(--s4d-line); box-shadow: 0 2px 10px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .s4-root .s4b-wrap > .spi-segrow {
+  background: linear-gradient(180deg, var(--s4d-bg2), var(--s4d-bg));
+  border-bottom-color: var(--s4d-line);
+}
+/* Full view is already a card of its own (the whole window), so the frame
+   would only box the content in a second time. */
+.s4-root.is-fullview > .s4b-wrap { border: 0; border-radius: 12px; box-shadow: none; }
 
 /* One light wash on every panel head, not a per-panel ramp.
    They each ran their own gradient — the right one ending on #a5f3fc, which

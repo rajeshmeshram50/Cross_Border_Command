@@ -17,13 +17,14 @@
     captions the QR with the put-away code. A damaged QR is therefore
     re-keyed from that code, not from the URL.
 
-    PRINT TREATMENT IS NOT PORTED, deliberately. The design is a screen
-    mock — rounded corners, soft greys. This sheet prints, and on a thermal
-    head there is no grey: every tint dithers. A dithered panel behind the QR
-    stops its quiet zone being quiet and the put-away scanner starts failing
-    on scuffed labels. So the chips become solid black, the tinted tiles
-    become ruled boxes, and the frame is square. Same hierarchy, same reading
-    order, no halftones.
+    PRINT TREATMENT, and where it departs from the mock. A thermal head has
+    no grey: every tint is a dither pattern. That rules out a tint BEHIND THE
+    QR — it stops the quiet zone being quiet and the put-away scanner starts
+    failing on scuffed labels — and it rules out mid greys anywhere, which
+    turn to mud. It does not rule out a light band: the section bars carry
+    #ebebeb with a black left accent, as the design draws them, and scatter
+    few enough dots to stay readable. The condition chip stays solid black,
+    the tinted tiles are ruled boxes, and the frame is square.
 
     A4 PORTRAIT, FRAMED: a 3pt rule around the label, 9pt clear of the paper
     edge. The frame is the BODY's border, not a wrapper table — wrapping the
@@ -96,18 +97,33 @@
             font-size: 13pt; line-height: 1.15; font-weight: bold;
             letter-spacing: 1pt;
             padding: 6pt 16pt;
+            /* Rounded, like the frame around it. A square chip beside a 10pt
+               corner was the one hard angle left on the sheet. */
+            border-radius: 8pt;
         }
 
-        /* ── Section bars ── */
+        /* ── Section bars ──
+           A light band with a black left accent. The fill is #ebebeb, not a
+           mid grey: a thermal head has no grey at all, so every tint is a
+           dither pattern, and a light one scatters few enough dots to stay
+           readable where a 50% would turn to mud. The accent carries the
+           weight instead of the fill. */
         .bar td {
-            background: #000; color: #fff;
+            background: #ebebeb; color: #000;
+            border-left: 7pt solid #000;
             font-size: 11pt; font-weight: bold;
             letter-spacing: 1.1pt; line-height: 1.1;
             padding: 4.6pt 15.6pt;
         }
 
         /* ── Field grids ── */
-        .grid td { padding: 5.6pt 15.6pt; }
+        /* 22.6pt on the left, not 15.6: the section bar above carries a 7pt
+           accent border PLUS its 15.6pt padding, so its text starts 7pt
+           further in. Matching that puts every value directly under the
+           heading it belongs to. The 7pt comes OFF the right so the cell's
+           content width is unchanged — adding it outright narrowed every
+           column and pushed the plain label onto a second page. */
+        .grid td { padding: 5.6pt 8.6pt 5.6pt 22.6pt; }
         .grid .k {
             font-size: 8.8pt; line-height: 1.05;
             letter-spacing: 0.7pt; color: #3a3a3a;

@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
 import './invoice-form.css';
@@ -12,7 +13,7 @@ import {
   IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
-import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
+import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
@@ -523,6 +524,38 @@ export default function InvoiceForm({
     set(kind === 'invoice' ? { invoiceFile: file.name } : { ewayBillFile: file.name });
   }, [set]);
 
+  /* Stage 02's missing fields, worked out from what is on screen right now.
+     They stay hidden until Update & Next is refused once (`stage2Check`);
+     from then on each one clears the moment it is filled, since this is
+     recomputed on every edit rather than frozen at the click. */
+  const [stage2Check, setStage2Check] = useState(0);
+  const stage2Issues = useMemo<Stage2Issues>(() => {
+    const rows: Stage2Issues['rows'] = {};
+    if (isDirect) {
+      lines.forEach((l, i) => {
+        const r: Stage2Issues['rows'][number] = {};
+        if (l.productId == null) r.product = 'Select a product';
+        if (!(l.spiQty > 0)) r.qty = 'Enter at least 1';
+        if (r.product || r.qty) rows[i] = r;
+      });
+    } else if (lines.length && !lines.some(l => l.spiQty > 0)) {
+      lines.forEach((_, i) => { rows[i] = { qty: 'Enter a quantity' }; });
+    }
+    return {
+      invoiceNumber: draft.invoiceNumber.trim() ? undefined : 'Enter the purchase invoice number',
+      invoiceDate: !draft.invoiceDate
+        ? 'Pick the purchase invoice date'
+        : !isDirect && draft.poDate && draft.invoiceDate < draft.poDate
+          ? `Cannot be before the PO date (${formatDmy(draft.poDate)})`
+          : undefined,
+      invoiceFile: files.invoice_file || uploaded.invoice ? undefined : 'Attach the purchase invoice',
+      rows,
+    };
+  }, [isDirect, lines, draft.invoiceNumber, draft.invoiceDate, draft.poDate, files.invoice_file, uploaded.invoice]);
+  /* Turns the red on and sends the user to the first gap. Bumped on every
+     refusal, not set once, so a second click goes back to the field again. */
+  const flagStage2 = () => setStage2Check(n => n + 1);
+
   const saveStage2 = async () => {
     if (!spiId) { toast.warning('Save Stage 01 first', 'The invoice has not been created yet.'); return; }
     const missing = [
@@ -531,24 +564,36 @@ export default function InvoiceForm({
       !files.invoice_file && !uploaded.invoice && 'the purchase invoice attachment',
     ].filter(Boolean);
     if (missing.length) {
+      flagStage2();
       toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    /* The picker already greys out the days before the PO; this catches a
+       date saved before that rule, which the picker still shows. */
+    if (!isDirect && draft.poDate && draft.invoiceDate < draft.poDate) {
+      flagStage2();
+      toast.warning('Invoice date is before the PO date',
+        `The purchase invoice date cannot be earlier than the PO date (${formatDmy(draft.poDate)}).`);
       return;
     }
     if (isDirect) {
       const noProduct = lines.findIndex(l => l.productId == null);
       if (noProduct >= 0) {
+        flagStage2();
         toast.warning('Select a product', `Row ${noProduct + 1} has no product — pick one or remove the row.`);
         return;
       }
       const zero = lines.findIndex(l => !(l.spiQty > 0));
       if (zero >= 0) {
         const l = lines[zero];
+        flagStage2();
         toast.warning('Add a quantity', `Enter a quantity of at least 1 for ${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || `row ${zero + 1}`}, or remove the row.`);
         return;
       }
     }
     const payload = itemsPayload(lines, taxMode);
     if (payload.items.length === 0) {
+      flagStage2();
       toast.warning('Nothing to invoice', 'Enter a quantity above zero on at least one product line.');
       return;
     }
@@ -572,6 +617,7 @@ export default function InvoiceForm({
       setFiles({});
       if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
       else toast.success('Invoice details saved', `${saved.length} product line${saved.length === 1 ? '' : 's'} matched against ${draft.poNumber || 'the order'}.`);
+      setStage2Check(0);
       advance();
     } catch (e) {
       toast.error('Could not save Stage 02', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -1011,7 +1057,8 @@ export default function InvoiceForm({
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     matched={matchedToPi}
                     onChangeLine={changeLine} onRemoveLine={removeLine} onAddLine={addLine}
-                    removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect} />
+                    removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect}
+                    issues={stage2Check ? stage2Issues : undefined} check={stage2Check} />
                 )}
                 {stage === 2 && (
                   <Step3BoxPackaging

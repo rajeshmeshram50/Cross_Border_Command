@@ -985,6 +985,22 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
    watermark and reads as content. Matched to the done step's 7%. */
 [data-bs-theme="dark"] .spi-dt-step-ghost { color: rgba(148,163,184,.07); }
 [data-bs-theme="dark"] .spi-dt-step.is-active .spi-dt-step-ghost { color: rgba(255,255,255,.12); }
+/* The arrow cut (clip-path) cuts the card's border too. In light mode that
+   border is a faint grey nobody sees; in dark it is a cyan line, so the top
+   and bottom edges stopped dead short of the point and a stub was left at the
+   tip. And the card's fill was the panel's own #0e1b24, so the arrow itself
+   had no shape to show.
+   So, like the light theme's grey cards: no border, and a fill a step lighter
+   than the panel — the shape is the outline. All four cards, the last
+   (uncut) one too, so they still read as one set. */
+[data-bs-theme="dark"] .spi-dt-step:not(.is-active) {
+  border-color: transparent;
+  background: linear-gradient(135deg, #142833 0%, #11222c 100%);
+}
+[data-bs-theme="dark"] .spi-dt-step.is-done {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0f3340 0%, #10394a 60%, #0e3240 100%);
+}
 [data-bs-theme="dark"] .spi-dt-step-badge-done { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color:#7fe6f8; }
 /* Card headers + field labels + toggles inside the wizard body */
 [data-bs-theme="dark"] .spi-dt-card-title { color:#e8f2f6; }

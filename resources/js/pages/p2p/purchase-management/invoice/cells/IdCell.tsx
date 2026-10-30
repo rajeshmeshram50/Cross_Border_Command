@@ -20,7 +20,7 @@ function IdCellBase({ id, date }: { id?: string; date?: string }) {
   /* An absent reference is a dash, not an empty cell. A blank box reads as
      "something failed to load"; a dash reads as "there is none", which is what
      a direct invoice with no PO actually means. */
-  if (!id) return <span className="ord-dash">—</span>;
+  if (!id) return <span className="ord-dash">N/A</span>;
 
   return (
     <div className="ord-idcell">
