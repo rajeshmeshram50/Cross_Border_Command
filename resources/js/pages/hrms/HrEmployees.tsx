@@ -4066,10 +4066,12 @@ const STEP_SAFE_FIELDS = new Set([
                   color="secondary"
                   aria-disabled={!perm.canAdd || undefined}
                   style={lockedStyle(!perm.canAdd)}
-                  className="btn-label waves-effect waves-light rounded-pill"
+                  /* No .btn-label: its icon panel paints a shade darker
+                     than the fill, so the button reads as two colours. */
+                  className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                   title={perm.lockedTitle('add')}
                 >
-                  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                  <i className="ri-add-line align-middle"></i>
                   Add Employee
                 </Button>
               </div>

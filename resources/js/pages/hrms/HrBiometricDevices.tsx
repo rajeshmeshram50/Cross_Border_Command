@@ -495,8 +495,10 @@ export default function HrBiometricDevices() {
             </Row>
           </ModalBody>
           {/* Right-aligned, like every other modal footer in the app.
-              `justify-content-center` left the actions floating mid-footer (QA #1). */}
-          <ModalFooter className="px-4 pb-3 justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+              `justify-content-center` left the actions floating mid-footer (QA #1).
+              py-3, not pb-3: setting only the bottom left the buttons riding
+              Bootstrap default padding on top, off-centre in the strip. */}
+          <ModalFooter className="px-4 py-3 justify-content-end align-items-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button
               type="button"
               className="master-modal-cancel d-inline-flex align-items-center gap-1"
@@ -650,19 +652,26 @@ export default function HrBiometricDevices() {
             </Row>
           </ModalBody>
           {/* Right-aligned, like every other modal footer in the app.
-              `justify-content-center` left the actions floating mid-footer (QA #1). */}
-          <ModalFooter className="px-4 pb-3 justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+              `justify-content-center` left the actions floating mid-footer (QA #1).
+              py-3, not pb-3: setting only the bottom left the buttons riding
+              Bootstrap default padding on top, off-centre in the strip. */}
+          <ModalFooter className="px-4 py-3 justify-content-end align-items-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button type="button" className="master-modal-cancel" onClick={() => setImportOpen(false)} disabled={importing}>
               <i className="ri-close-line align-middle me-1"></i>
               {importResult ? 'Close' : 'Cancel'}
             </button>
-            <Button color="secondary" type="submit" disabled={importing || !importFile} className="btn-label waves-effect waves-light rounded-pill">
-              {/* Same label-block fix as the Register/Update button above. */}
-              <span className="label-icon">
-                {importing
-                  ? <Spinner size="sm" />
-                  : <i className="ri-upload-2-line align-middle fs-16"></i>}
-              </span>
+            <Button
+              color="secondary"
+              type="submit"
+              disabled={importing || !importFile}
+              /* No .btn-label, for the same reason as the Register button
+                 above: its icon panel paints a shade darker than the fill,
+                 so the button reads as two colours welded together. */
+              className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
+            >
+              {importing
+                ? <Spinner size="sm" />
+                : <i className="ri-upload-2-line align-middle"></i>}
               {importing ? 'Importing...' : 'Import'}
             </Button>
           </ModalFooter>
