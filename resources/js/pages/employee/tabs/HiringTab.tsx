@@ -1,6 +1,7 @@
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../../components/ui/DataTable';
+import Tooltip from '../../../components/ui/Tooltip';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
@@ -115,25 +116,27 @@ export default function HiringTab() {
                  additionally be reopened + edited before submitting to HR. */
               return (
                 <div className="d-inline-flex align-items-center justify-content-center gap-1">
-                  <button
-                    type="button"
-                    className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                    data-tooltip="View"
-                    aria-label="View hiring request"
-                    onClick={() => setHiringViewing(r)}
-                  >
-                    <i className="ri-eye-line" />
-                  </button>
-                  {r.status === 'Draft' && !r._hasRecruitment && (
+                  <Tooltip label="View">
                     <button
                       type="button"
                       className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                      data-tooltip="Edit Draft"
-                      aria-label="Edit Draft"
-                      onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                      aria-label="View hiring request"
+                      onClick={() => setHiringViewing(r)}
                     >
-                      <ActionIcon icon="edit-svg" />
+                      <i className="ri-eye-line" />
                     </button>
+                  </Tooltip>
+                  {r.status === 'Draft' && !r._hasRecruitment && (
+                    <Tooltip label="Edit Draft">
+                      <button
+                        type="button"
+                        className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                        aria-label="Edit Draft"
+                        onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                      >
+                        <ActionIcon icon="edit-svg" />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               );
