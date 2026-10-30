@@ -1408,9 +1408,12 @@
            and wins, so these rendered in Rubik while the rest of HRMS ran DM
            Sans — same size and weight, visibly more ink. Same trap .dt-tab
            documents. The token, so one place still decides the face. */
+        /* 10.5px, matching the copy in recruitment.css. The two sat at the
+           same specificity with different sizes, so which one applied came
+           down to bundler load order. */
         .ep-field-label {
           font-family: var(--font-sans);
-          font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
           text-transform: uppercase; color: var(--vz-secondary-color);
           margin-bottom: 4px;
         }
