@@ -17,6 +17,7 @@ import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
+import { toProduct } from '../order/create-po/use-po-lookups';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase, vaultTargetOf } from '../order/create-po/supplier-checks';
@@ -217,7 +218,10 @@ export default function InvoiceForm({
               const vid = existing.vendor_id;
               const [sup, scrutiny] = await spiApi.vendorDetail(vid)
                 .then(r => [r.detail, r.scrutiny] as const)
-                .catch(() => [null, null] as const);
+                .catch(e => {
+                  toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
+                  return [null, null] as const;
+                });
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);
@@ -237,21 +241,27 @@ export default function InvoiceForm({
               const pi = existing.shipment_order_id
                 ? await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => [])
                 : [];
+              const master = existing.shipment_order_id
+                ? []
+                : await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
+              const byMaster = new Map(master.map(p => [p.id, p]));
               setLines(existing.items.map(it => {
                 const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
-                const name = withoutCodePrefix(m?.product_name ?? '', m?.product_code) || formatProductCode(m?.product_code);
+                const mp = m ? undefined : byMaster.get(it.product_id);
+                const code = m?.product_code ?? mp?.code ?? null;
+                const name = withoutCodePrefix(m?.product_name ?? mp?.name ?? '', code) || formatProductCode(code);
                 return {
                   key: `saved:${it.id}`,
                   spiItemId: it.id,
                   piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
                   productId: it.product_id,
-                  code: formatProductCode(m?.product_code),
-                  hsn: it.hsn_code ?? m?.hsn_code ?? '',
+                  code: formatProductCode(code),
+                  hsn: it.hsn_code ?? m?.hsn_code ?? mp?.hsn ?? '',
                   piName: name, poName: name, spiName: name,
-                  description: it.description ?? m?.description ?? '',
+                  description: it.description ?? m?.description ?? mp?.description ?? '',
                   uom: it.uom ?? undefined,
                   piQty: Number(it.qty_pi ?? m?.pi_quantity) || 0, poQty: 0,
                   spiQty: Number(it.qty_spi) || 0,
@@ -290,6 +300,31 @@ export default function InvoiceForm({
                 ? { ...l, spiQty: Number(it.qty_spi) || 0, spiRate: Number(it.rate) || 0, productId: it.product_id, spiItemId: it.id }
                 : { ...l, spiQty: 0 };
             });
+          }
+          const extras = existing.items.filter(i => i.po_item_id == null);
+          if (extras.length) {
+            const master = await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
+            if (!live) return;
+            const byMaster = new Map(master.map(p => [p.id, p]));
+            rows = [...rows, ...extras.map(it => {
+              const mp = byMaster.get(it.product_id);
+              const name = withoutCodePrefix(mp?.name ?? '', mp?.code) || formatProductCode(mp?.code) || (it.description ?? '');
+              return {
+                key: `saved:${it.id}`,
+                spiItemId: it.id,
+                piItemId: it.pi_item_id ?? null,
+                productId: it.product_id,
+                code: formatProductCode(mp?.code),
+                hsn: it.hsn_code ?? mp?.hsn ?? '',
+                piName: '', poName: '', spiName: name,
+                description: it.description ?? mp?.description ?? '',
+                uom: it.uom ?? undefined,
+                piQty: 0, poQty: 0,
+                spiQty: Number(it.qty_spi) || 0,
+                spiRate: Number(it.rate) || 0, poRate: 0,
+                gst: Number(it.gst_pct) || 0,
+              };
+            })];
           }
           set({
             invoiceNumber: existing.invoice_no ?? '',
