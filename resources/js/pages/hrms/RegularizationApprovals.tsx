@@ -527,6 +527,10 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
             searchDebounce={0}
             searchPlaceholder="Search employee, date, type, reason…"
             serial
+            /* Fill the viewport down to the footer, like every other HRMS list
+               (HrEmployees, Leave, Payroll...). Without it the card hugged its
+               rows and left a large blank below on a short result (QA 193). */
+            fitToViewport
             /* The server owns paging, search and the tab counts. pageIndex is
                0-based here and 1-based in the request. */
             serverPagination={{

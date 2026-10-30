@@ -103,11 +103,14 @@ export default function VaultTab() {
     edu_10: 'Education',   edu_12: 'Education', edu_deg: 'Education', edu_pg: 'Education',
     rel_letter: 'Prev. Employment', exp_cert: 'Prev. Employment', pay_slip: 'Prev. Employment',
   };
-  const CATEGORY_TONE: Record<string, { bg: string; fg: string }> = {
-    Identity:            { bg: '#ede9fe', fg: '#5b21b6' },
-    Address:             { bg: '#dcfce7', fg: '#15803d' },
-    Education:           { bg: '#fef3c7', fg: '#92400e' },
-    'Prev. Employment':  { bg: '#dceefe', fg: '#0c63b0' },
+  /* One accent per category. The badge mixes it against the surface in CSS
+     (.vt-cat), so it adapts to dark mode - the old {bg,fg} were light
+     pastels set inline, which inline styles kept even in dark (QA 202). */
+  const CATEGORY_TONE: Record<string, string> = {
+    Identity:           '#7c3aed',
+    Address:            '#16a34a',
+    Education:          '#d97706',
+    'Prev. Employment': '#2563eb',
   };
 
   const uploadedColumns = useMemo<DataTableColumn<any>[]>(() => [
@@ -128,9 +131,9 @@ export default function VaultTab() {
       meta: { width: 150 },
       cell: info => {
         const cat = String(info.getValue() ?? 'Other');
-        const tone = CATEGORY_TONE[cat] || { bg: 'var(--vz-secondary-bg)', fg: 'var(--vz-secondary-color)' };
+        const accent = CATEGORY_TONE[cat] || '#64748b';
         return (
-          <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
+          <span className="rec-pill vt-cat" style={{ ['--vt-cat' as any]: accent, fontSize: 11 }}>
             {cat}
           </span>
         );
