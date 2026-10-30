@@ -17,7 +17,7 @@ import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoicePro
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
-import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
+import { PoApiError, poApi, poLookupApi, type PiLine, type PoDetail } from '../order/api/po-api';
 import { toProduct } from '../order/create-po/use-po-lookups';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
@@ -59,6 +59,26 @@ const UNMATCHED_STAGES: Record<number, { title: string; desc: string }> = {
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const rowsFromPi = (lines: PiLine[]): ProductLine[] => lines.map(l => {
+  const name = withoutCodePrefix(l.product_name ?? '', l.product_code) || formatProductCode(l.product_code);
+  return {
+    key: `pi:${l.pi_item_id}`,
+    piItemId: l.pi_item_id,
+    productId: l.product_id ?? undefined,
+    code: formatProductCode(l.product_code),
+    hsn: l.hsn_code ?? '',
+    uom: l.uom ?? undefined,
+    piName: name, poName: name, spiName: name,
+    description: l.description ?? '',
+    piQty: Number(l.pi_quantity) || 0,
+    poQty: 0,
+    spiQty: Number(l.pending_qty) || 0,
+    spiRate: Number(l.rate) || 0,
+    poRate: Number(l.rate) || 0,
+    gst: Number(l.gst_pct) || 0,
+  };
+});
 
 export interface InvoiceFormInput {
   spiId?: number;
@@ -271,6 +291,11 @@ export default function InvoiceForm({
                 };
               }));
               setRemovedLines([]);
+            } else if (existing.shipment_order_id) {
+              const pi = await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => []);
+              if (!live) return;
+              setLines(rowsFromPi(pi));
+              setRemovedLines([]);
             }
           }
           return;
@@ -458,27 +483,9 @@ export default function InvoiceForm({
           return;
         }
         const shipmentOrderId = directLinks.current.shipment_order_id;
-        if (shipmentOrderId && !lines.some(l => l.spiItemId != null)) {
+        if (shipmentOrderId && lines.length === 0) {
           const pi = await poApi.piLines(shipmentOrderId);
-          setLines(pi.lines.map(l => {
-            const name = withoutCodePrefix(l.product_name ?? '', l.product_code) || formatProductCode(l.product_code);
-            return {
-              key: `pi:${l.pi_item_id}`,
-              piItemId: l.pi_item_id,
-              productId: l.product_id ?? undefined,
-              code: formatProductCode(l.product_code),
-              hsn: l.hsn_code ?? '',
-              uom: l.uom ?? undefined,
-              piName: name, poName: name, spiName: name,
-              description: l.description ?? '',
-              piQty: Number(l.pi_quantity) || 0,
-              poQty: 0,
-              spiQty: Number(l.pending_qty) || 0,
-              spiRate: Number(l.rate) || 0,
-              poRate: Number(l.rate) || 0,
-              gst: Number(l.gst_pct) || 0,
-            };
-          }));
+          setLines(rowsFromPi(pi.lines));
           setRemovedLines([]);
         }
         advance();
