@@ -219,6 +219,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   }, [tab]);
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
+  /* The hero lists at most two ancillary roles; the rest live behind
+     "+N more". Nine chips wrapped the identity block onto a second row
+     and pushed the tab bar down with it. (#189) */
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const rolesPopRef = useRef<HTMLSpanElement | null>(null);
+  /* Escape collapses it. No outside-click close: the chips open in the line
+     itself, so a click anywhere else is not a dismissal. */
+  useEffect(() => {
+    if (!rolesOpen) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setRolesOpen(false); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [rolesOpen]);
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
   // Free-text search over the Expense / Advance tables. Applied on top of the
   // status filter so the table, the "Showing N" counter and Export all narrow
@@ -3026,9 +3039,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <i className="ri-suitcase-line" /> {empDetail?.primary_role?.name || employee?.primaryRole}
                 </span>
               )}
-              {ancillaryList.map(r => (
+              {ancillaryList.slice(0, 2).map(r => (
                 <span key={r} className="ep-hero-pill ep-hero-pill-teal">{r}</span>
               ))}
+              {/* The rest open in place, on this same line — a popup floating
+                  over the hero hid the fields underneath it. */}
+              {rolesOpen && ancillaryList.slice(2).map(r => (
+                <span key={r} className="ep-hero-pill ep-hero-pill-teal">{r}</span>
+              ))}
+              {ancillaryList.length > 2 && (
+                <span className="ep-hero-more-wrap" ref={rolesPopRef}>
+                  <button
+                    type="button"
+                    className="ep-hero-pill ep-hero-pill-more"
+                    onClick={() => setRolesOpen(v => !v)}
+                    aria-expanded={rolesOpen}
+                    title={ancillaryList.slice(2).join(', ')}
+                  >
+                    {rolesOpen ? 'Show less' : `+${ancillaryList.length - 2} more`}
+                    <i className={rolesOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} />
+                  </button>
+                </span>
+              )}
               <span className="ep-hero-pill ep-hero-pill-active">
                 <span className="ep-hero-status-dot" />
                 {statusTone.label}

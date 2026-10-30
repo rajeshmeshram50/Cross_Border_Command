@@ -1378,11 +1378,10 @@ function DtmDarkStyles() {
       .hdt-bulk-clear:hover:not(:disabled) { background: rgba(255,255,255,.22); }
       .hdt-bulk-clear:disabled { opacity: .5; cursor: not-allowed; }
       .hdt-bulk-btn {
-        display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 10px;
+        display: inline-flex; align-items: center; gap: 7px; padding: 0 16px; border-radius: 10px;
         border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff;
-        font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-        transition: background .15s, transform .15s ease, box-shadow .15s ease;
-      }
+        font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+        transition: background .15s, transform .15s ease, box-shadow .15s ease; height: 40px; min-height: 40px;}
       .hdt-bulk-btn:hover:not(:disabled) { background: rgba(255,255,255,.24); transform: translateY(-1px); }
       /* Activate is the constructive action, so it gets the solid white
          treatment the reference bar reserves for its primary. Deprecate stays

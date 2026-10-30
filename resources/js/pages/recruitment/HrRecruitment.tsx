@@ -2539,19 +2539,19 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false}>
+    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-create" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false}>
       <ModalBody className="p-0">
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
               <span
                 style={{
-                  width: 32, height: 32, borderRadius: 8,
+                  width: 38, height: 38, borderRadius: 9,
                   background: 'rgba(255,255,255,0.18)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 16 }} />
+                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 19 }} />
               </span>
               <div>
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1.2 }}>

@@ -410,7 +410,11 @@ export default function RegularizationModal({
       <ModalBody className="p-0">
         <div className="att-reg-modal-v3">
           <div className="att-reg-keka-head">
-            <div className="att-reg-keka-title">Request Attendance Regularization</div>
+            <span className="att-reg-keka-ico"><i className="ri-time-line" /></span>
+            <div className="att-reg-keka-headtext">
+              <div className="att-reg-keka-title">Request Attendance Regularization</div>
+              <div className="att-reg-keka-sub">Adjust the logged times for this day and send them for approval</div>
+            </div>
             <button type="button" className="att-reg-keka-close" onClick={onClose} aria-label="Close">
               <i className="ri-close-line" />
             </button>

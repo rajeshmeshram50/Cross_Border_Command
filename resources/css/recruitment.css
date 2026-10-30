@@ -475,6 +475,12 @@
     inset 0 -1px 0 rgba(0,0,0,0.10);
 }
 .rec-form-modal-navy .rec-form-section-title { font-size: 12px; }
+
+/* Create / Edit Recruitment: Position Details, Hiring Configuration and
+   Job Details read at 13.5 (QA 153). Scoped to that form rather than
+   changed on .rec-form-section-title, which eight other forms share and
+   nobody has asked to move. */
+.rec-form-modal-create .rec-form-section-title { font-size: 13.5px; }
 .rec-form-modal-navy .rec-form-section-sub { font-size: 12px; margin-top: 2px; }
 .rec-form-modal-navy .rec-form-footer { padding: 14px 26px; }
 .rec-form-content {
@@ -694,15 +700,23 @@
 [data-bs-theme="dark"] .rec-input-icon-leading { color: #a78bfa; }
 [data-bs-theme="dark"] .rec-input,
 [data-bs-theme="dark"] .rec-textarea,
+/* .hrms-modal too, not just .rec-form-modal: Assign Assets and the other
+   dialogs on the HRMS shell were left on the control's own near-black
+   default while the Add Employee form used the card background, so the two
+   read as different field styles in dark mode. (#110) */
 [data-bs-theme="dark"] .rec-form-modal .master-select-wrap .master-select-toggle,
-[data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle {
+[data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle,
+[data-bs-theme="dark"] .hrms-modal .master-select-wrap .master-select-toggle,
+[data-bs-theme="dark"] .hrms-modal .master-datepicker-wrap .master-datepicker-toggle {
   background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color);
 }
 
 [data-bs-theme="dark"] .rec-input:hover,
 [data-bs-theme="dark"] .rec-textarea:hover,
 [data-bs-theme="dark"] .rec-form-modal .master-select-wrap .master-select-toggle:hover,
-[data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle:hover {
+[data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle:hover,
+[data-bs-theme="dark"] .hrms-modal .master-select-wrap .master-select-toggle:hover,
+[data-bs-theme="dark"] .hrms-modal .master-datepicker-wrap .master-datepicker-toggle:hover {
   border-color: #8b6dfc;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.45),
@@ -915,7 +929,9 @@
   border-radius: 12px;
 }
 .rec-btn-primary {
-  padding: 6px 18px; height: 36px; border-radius: 10px;
+  font-family: var(--font-sans);
+  /* 40px, the HRMS button height (QA 140-151). */
+  padding: 6px 18px; height: 40px; min-height: 40px; border-radius: 10px;
   font-size: 12.5px; font-weight: 700; color: #fff;
   border: 0;
   background: linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
@@ -940,7 +956,9 @@
 }
 .rec-btn-primary:active { transform: translateY(0); filter: brightness(0.98); }
 .rec-btn-ghost {
-  padding: 6px 16px; height: 36px; border-radius: 10px;
+  font-family: var(--font-sans);
+  /* 40px, the HRMS button height (QA 140-151). */
+  padding: 6px 16px; height: 40px; min-height: 40px; border-radius: 10px;
   font-size: 12.5px; font-weight: 600;
   color: var(--vz-secondary-color);
   background: linear-gradient(180deg,#ffffff 0%,#f9fafb 100%);
@@ -978,7 +996,9 @@
 }
 
 .rec-btn-soft {
-  padding: 6px 18px; height: 36px; border-radius: 10px;
+  font-family: var(--font-sans);
+  /* 40px, the HRMS button height (QA 140-151). */
+  padding: 6px 18px; height: 40px; min-height: 40px; border-radius: 10px;
   font-size: 12.5px; font-weight: 700; color: #fff;
   border: 0;
   background: linear-gradient(135deg,#3b82f6 0%, #1d4ed8 100%);
@@ -1004,7 +1024,9 @@
 .rec-btn-soft:active { transform: translateY(0); filter: brightness(0.98); }
 
 .rec-btn-teal {
-  padding: 6px 18px; height: 36px; border-radius: 10px;
+  font-family: var(--font-sans);
+  /* 40px, the HRMS button height (QA 140-151). */
+  padding: 6px 18px; height: 40px; min-height: 40px; border-radius: 10px;
   font-size: 12.5px; font-weight: 700; color: #fff;
   border: 0;
   background: linear-gradient(135deg, #10b981 0%, #0d9488 60%, #047857 100%);
@@ -2580,7 +2602,7 @@
 }
 
 .rec-cancel-confirm {
-  height: 38px;
+  height: 40px; min-height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
@@ -2873,6 +2895,7 @@
 }
 
 .cand-pill-btn {
+  font-family: var(--font-sans);
   display: inline-flex; align-items: center; gap: 7px;
 
   /* border-box so the 1px border is INSIDE the 40px. Without it the border is
@@ -3270,7 +3293,7 @@
   border-top-color: var(--vz-border-color);
 }
 .cand-import-submit {
-  height: 38px;
+  height: 40px; min-height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
@@ -3486,7 +3509,7 @@
   border-top-color: var(--vz-border-color);
 }
 .cand-export-submit {
-  height: 38px;
+  height: 40px; min-height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
@@ -3797,7 +3820,7 @@
   color: #f1f5f9 !important;
 }
 .cand-confirm-submit {
-  height: 38px;
+  height: 40px; min-height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
@@ -4083,7 +4106,7 @@
   border-radius: 11px;
   border: 0;
   color: #ffffff;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.005em;
   background: linear-gradient(135deg, #ef4444, #b91c1c);
@@ -5166,7 +5189,12 @@
 [data-bs-theme="dark"] .ep-section-label { color: #c4b5fd; }
 
 .ep-field { display: flex; flex-direction: column; gap: 4px; }
+/* NOTE: EmployeeProfile.css carries a second .ep-field-label at the same
+   specificity, so which of the two wins is decided by bundler load order.
+   Both now name the family, so the face is the same either way (#164).
+   The sizes still differ (10.5 here, 11 there) and want reconciling. */
 .ep-field-label {
+  font-family: var(--font-sans);
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -5759,12 +5787,14 @@
   border-top-color: var(--vz-border-color);
 }
 .ep-btn {
+  font-family: var(--font-sans);
   display: inline-flex; align-items: center; gap: 6px;
-  height: 38px;
+  /* 40 / 12.5, the HRMS button size (QA 144, 149). */
+  height: 40px; min-height: 40px;
   padding: 0 16px;
   border-radius: 10px;
   border: 1px solid transparent;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.005em;
   cursor: pointer;
@@ -6000,12 +6030,12 @@
   display: flex; align-items: center; gap: 12px; margin-top: 14px;
 }
 .etp-foot .etp-actions { margin-left: auto; flex: none; }
-/* One line, 38px to match the buttons it shares the footer with. Centred
+/* One line, 40px to match the buttons it shares the footer with. Centred
    rather than top-aligned: the note is a strip, and on the narrow layout
    where it does wrap, a centred icon still reads against the block. */
 .etp-note {
   display: flex; gap: 9px; align-items: center; flex: 1; min-width: 0;
-  min-height: 38px;
+  min-height: 40px;
   font-size: 12px; line-height: 1.45;
   background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
   padding: 6px 14px; color: #92400e;
@@ -6072,10 +6102,14 @@
 [data-bs-theme="dark"] .etp-note i { color: #fbbf24; }
 [data-bs-theme="dark"] .etp-note strong { color: #fde68a; }
 .etp-cancel {
+  font-family: var(--font-sans);
   flex: none; align-self: center;
   background: var(--vz-card-bg); color: var(--vz-secondary-color);
   border: 1px solid var(--vz-border-color); border-radius: 8px;
-  padding: 8px 18px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  /* 40px, the height of the .ep-btn it sits beside. It was padding-driven
+     and came out ~33px, so the two never lined up (QA 156). */
+  height: 40px; min-height: 40px;
+  padding: 0 18px; font-size: 12.5px; font-weight: 700; cursor: pointer;
   transition: all .15s ease;
 }
 .etp-cancel:hover:not(:disabled) { background: var(--vz-secondary-bg); color: var(--vz-body-color); }
@@ -6247,6 +6281,18 @@
 .ep-approval-card { padding: 9px 11px; }
 
 .ep-footer { padding: 10px 20px; }
+
+/* Exit Management forms on the HRMS type scale (QA 155).
+
+   Scoped to .ep-modal — which all four exit dialogs carry — because the
+   compact block above is written unscoped, and .ep-field-label and
+   .ep-input are shared with the Employee tabs (Job, Payroll, Profile),
+   which nobody has asked to move. */
+.ep-modal .ep-head-title  { font-size: 17px; }
+.ep-modal .ep-head-sub    { font-size: 12px; }
+.ep-modal .ep-field-label { font-size: 10.5px; }
+/* The typed value and the placeholder are one size; ::placeholder inherits. */
+.ep-modal :is(.ep-input, .ep-select, .ep-textarea) { font-size: 13px; }
 
 .ep-submitted { display: flex; flex-direction: column; gap: 10px; }
 .ep-sub-card {
@@ -9117,11 +9163,25 @@
   gap: 6px !important;
   font-size: 12px !important;
   border-radius: 8px !important;
+  /* A teal wash so the field reads as a control rather than a hole: the nav
+     around it is white and the toggle shipped white too, leaving only a
+     hairline between them. Mixed with white so it stays a background and
+     does not compete with the Today button. (#179) */
+  background: color-mix(in srgb, #0d9488 8%, #ffffff) !important;
+  border-color: color-mix(in srgb, #0d9488 26%, #e5e7eb) !important;
+}
+[data-bs-theme="dark"] .att-date-nav-pick .master-datepicker-toggle,
+[data-layout-mode="dark"] .att-date-nav-pick .master-datepicker-toggle {
+  background: rgba(13, 148, 136, 0.16) !important;
+  border-color: rgba(13, 148, 136, 0.34) !important;
 }
 .att-date-nav-pick .master-datepicker-value,
 .att-date-nav-pick .master-datepicker-placeholder { font-size: 12px; }
 
-.att-date-nav-pick .master-datepicker-icon { font-size: 15px; }
+/* Teal, like the Today button and the Regularization pill beside it. The
+   picker ships #0891b2 (cyan), which read as a different control sitting in
+   a teal toolbar. Scoped per context, the way .spi-dt already does. (#179) */
+.att-date-nav-pick .master-datepicker-icon { font-size: 15px; color: #0d9488; }
 .att-date-nav-pick .master-datepicker-clear { font-size: 13px; }
 .att-date-nav-today {
   height: 32px; padding: 0 14px;
@@ -9929,9 +9989,13 @@
 }
 .att-logs-headbar-icon i { font-size: 18px; }
 
-.att-logs-headbar-title { font-size: 15px; font-weight: 700; color: var(--vz-body-color); letter-spacing: -0.01em; }
+/* Family stated, not inherited: the theme puts Rubik on body and Montserrat
+   on h1-h6, so an attendance header that named neither rendered in a third
+   face from the rest of HRMS. Same card class as the Attendance module, so
+   the profile tab and the module move together. (#166) */
+.att-logs-headbar-title { font-family: var(--font-sans); font-size: 14.5px; font-weight: 700; color: var(--vz-body-color); letter-spacing: -0.01em; }
 [data-bs-theme="dark"] .att-logs-headbar-title { color: #ffffff; }
-.att-logs-headbar-sub { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
+.att-logs-headbar-sub { font-family: var(--font-sans); font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
 [data-bs-theme="dark"] .att-logs-headbar-sub { color: rgba(255,255,255,0.62); }
 
 .att-logs-headbar .att-logs-ranges {
@@ -10677,8 +10741,10 @@
 .att-reg-modal-v3 { background: var(--vz-secondary-bg, #ffffff); }
 
 .att-reg-keka-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 22px;
+  /* gap + ms-auto on the close, so the badge, the text block and the close
+     sit in one row instead of being pushed apart by space-between. */
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 22px;
   background:
     radial-gradient(900px 220px at 100% 0%, rgba(255,255,255,0.18) 0%, transparent 60%),
     linear-gradient(135deg, #0f766e 0%, #0d9488 45%, #14b8a6 100%);
@@ -10686,8 +10752,26 @@
   border-bottom: 0;
   box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset;
 }
+/* 38px badge, 17px title, 12px subtitle — the header every other HRMS form
+   opens with. This one had no badge and no subtitle at all. (#190) */
+.att-reg-keka-ico {
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #ffffff; font-size: 19px;
+}
+.att-reg-keka-headtext { min-width: 0; }
+.att-reg-keka-sub {
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 1px;
+}
+.att-reg-keka-head .att-reg-keka-close { margin-left: auto; }
 .att-reg-keka-title {
-  font-size: 16px; font-weight: 800;
+  font-family: var(--font-sans);
+  font-size: 17px; font-weight: 700;
   letter-spacing: -0.005em;
   color: #ffffff;
   text-shadow: 0 1px 0 rgba(15,23,42,0.10);
@@ -10902,23 +10986,25 @@
   background: var(--vz-light, #f9fafb);
 }
 .att-reg-keka-cancel {
-  height: 38px; padding: 0 18px;
+  font-family: var(--font-sans);
+  height: 40px; min-height: 40px; padding: 0 18px;
   border-radius: 8px;
   background: var(--vz-card-bg);
   border: 1px solid var(--vz-border-color);
   color: var(--vz-body-color);
-  font-size: 13px; font-weight: 700;
+  font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: background .15s ease;
 }
 .att-reg-keka-cancel:hover { background: var(--vz-light, #f3f4f6); }
 .att-reg-keka-submit {
-  height: 38px; padding: 0 22px;
+  font-family: var(--font-sans);
+  height: 40px; min-height: 40px; padding: 0 22px;
   border-radius: 8px;
   background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
   border: 1px solid #0d9488;
   color: #ffffff;
-  font-size: 13px; font-weight: 700;
+  font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 10px rgba(13,148,136,0.30);
   transition: box-shadow .15s ease, transform .12s ease;
@@ -11688,13 +11774,12 @@
 
 .hol-grp-add-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 11px; border-radius: 8px;
-  font-size: 11.5px; font-weight: 700; cursor: pointer;
+  padding: 0 11px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
   background: rgba(255, 255, 255, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.30);
   color: #fff;
-  transition: background .15s ease, border-color .15s ease;
-}
+  transition: background .15s ease, border-color .15s ease; height: 40px; min-height: 40px;}
 .hol-grp-add-btn:hover {
   background: rgba(255, 255, 255, 0.30);
   border-color: rgba(255, 255, 255, 0.45);
@@ -12909,6 +12994,19 @@
   .recruit-page .dt-table tbody td, .cand-page .dt-table tbody td, .rec-req-modal .dt-table tbody td,
   .hr-employees-surface .dt-table tbody td, .exit-page .dt-table tbody td, .leave-page .dt-table tbody td,
   .bcast-page .dt-table tbody td, .biodev-page .dt-table tbody td, .cf-page .dt-table tbody td,
+/* Empty state: no scrollbar on a panel with nothing to scroll.
+
+   .dt-empty-row td is height:100%, which sizes the cell to the scroll box.
+   The table here is wider than the card, so a horizontal scrollbar appears
+   and takes ~15px off that box — tipping the 100% cell into vertical
+   overflow and drawing a second scrollbar beside a single centred sentence.
+   The message pads itself; it needs no height. Scoped to the payroll tables
+   rather than .dt-empty-row, which every module shares. (#182)
+
+   The header does not scroll either way: .dt-table thead th is sticky. */
+.pay-tbl-run .dt-empty-row td,
+.pay-tbl-report .dt-empty-row td { height: auto; }
+
   .pay-tbl-run .dt-table tbody td, .pay-tbl-report .dt-table tbody td,
   .pay-tbl-att .dt-table tbody td, .pay-tbl-roster .dt-table tbody td {
     display: flex !important;
@@ -13165,7 +13263,8 @@
   align-items: center;
   justify-content: center;
   padding: 0 18px;
-  font-size: 13px;
+  /* 12.5, the HRMS size. This was the only rule here that said 13 (QA 141). */
+  font-size: 12.5px;
 }
 /* .btn-label hangs its icon off the left edge with position:absolute and
    reserves the space with padding-left:44px. The rule above was taking that

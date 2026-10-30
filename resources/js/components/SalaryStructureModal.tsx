@@ -1061,7 +1061,10 @@ export function SalaryModalStyles() {
            reachable at any content length. */
         max-height: calc(100vh - 3rem);
       }
-      .ssm-shell { display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 3rem); }
+      /* Velzon sets Rubik on body, and this modal declared no font at all, so
+         every label and value in it rendered in Rubik while the rest of HRMS
+         is DM Sans. Stated once here; everything inside inherits (QA 158). */
+      .ssm-shell { font-family: var(--font-sans); display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 3rem); }
 
       /* ── Hero ── */
       .ssm-hero {
@@ -1080,15 +1083,17 @@ export function SalaryModalStyles() {
       }
       .ssm-hero-main { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; min-width: 0; }
       .ssm-avatar {
-        width: 44px; height: 44px; border-radius: 13px; flex-shrink: 0;
+        /* 38px, matching the header badge on the other HRMS forms (QA 153/158). */
+        width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
         background: rgba(255,255,255,0.18);
         border: 1px solid rgba(255,255,255,0.28);
-        font-size: 15px; font-weight: 800; letter-spacing: .02em;
+        font-size: 13px; font-weight: 800; letter-spacing: .02em;
       }
       .ssm-hero-text { min-width: 0; }
       .ssm-title {
-        margin: 0 0 5px; font-size: 16.5px; font-weight: 700; letter-spacing: -0.01em;
+        /* 17px, the HRMS form header (QA 158). */
+        margin: 0 0 5px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
         color: #fff; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
       }
       .ssm-title-sep { opacity: .55; font-weight: 400; }
@@ -1137,7 +1142,8 @@ export function SalaryModalStyles() {
         display: block; font-size: 11px; font-weight: 800;
         letter-spacing: .10em; text-transform: uppercase; color: #5a3fd1;
       }
-      .ssm-section-sub { display: block; font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
+      /* 12px, the HRMS form subtitle (QA 158). */
+      .ssm-section-sub { display: block; font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
 
       /* ── Fields ── */
       .ssm-grid {
@@ -1150,7 +1156,8 @@ export function SalaryModalStyles() {
       .ssm-field { display: flex; flex-direction: column; min-width: 0; }
       .ssm-field--note { margin-top: 2px; }
       .ssm-label {
-        font-size: 11.5px; font-weight: 700; margin-bottom: 5px;
+        /* 10.5px, the HRMS input label (QA 158). */
+        font-size: 10.5px; font-weight: 700; margin-bottom: 5px;
         color: var(--vz-heading-color, var(--vz-body-color));
       }
       .ssm-req { color: #dc2626; }
@@ -1371,7 +1378,9 @@ export function SalaryModalStyles() {
       .ssm-footer-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
       .ssm-btn {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-        padding: 8px 16px; border-radius: 9px;
+        /* 40px, the HRMS button height (QA 150). Padding-driven before, so
+           Cancel and Save Revise came out shorter than every other form. */
+        height: 40px; padding: 0 16px; border-radius: 9px;
         font-size: 12.5px; font-weight: 600; cursor: pointer;
         border: 1px solid transparent;
         transition: filter .15s ease, background .15s ease;

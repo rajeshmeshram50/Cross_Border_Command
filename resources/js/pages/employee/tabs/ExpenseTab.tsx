@@ -322,7 +322,10 @@ export default function ExpenseTab() {
                         Self used) before the status pills below. Selecting one
                         resets the status filter so the counts on row 2 always
                         describe the subset actually on screen. */}
-                    <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="blue">
+                    {/* violet, like the status rail under it and like the same
+                        toggle in the Expense module — blue made one rail read as
+                        a different control from the one it filters. */}
+                    <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
                       <div className="dt-tabs" role="tablist">
                         {[
                           { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company },

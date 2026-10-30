@@ -182,11 +182,7 @@ const viewFile = (f: File) => {
 };
 
 // KPI icons — same set as the PO "Payment Summary" modal.
-const IcoDoc = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>;
-const IcoCheck = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="8 12 11 15 16 9" /></svg>;
 const IcoWallet = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="14" rx="2" /><path d="M16 12h.01M2 10h20" /></svg>;
-const IcoMinus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
-const IcoPlus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
 
 export default function ExpenseSettlementModal({
   claimId, onClose, onDone: onDoneProp, readOnly = false, review = false,
@@ -1158,8 +1154,7 @@ export default function ExpenseSettlementModal({
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
               </span>
               <div>
-                <div className="esm-hero-eyebrow">HRMS · EXPENSE MANAGEMENT</div>
-                <div className="esm-hero-title">{inReview ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline" title={summary.title || ''}> · {summary.title}</span> : ''}</div>
+                <div className="esm-hero-title">{inReview ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline" title={summary.title || ''}>{'\u00a0· '}{summary.title}</span> : ''}</div>
                 <div className="esm-hero-sub">{inReview ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
               </div>
             </div>
@@ -1278,60 +1273,49 @@ export default function ExpenseSettlementModal({
                   balance / progress" restates the header, while the figures that
                   actually matter live in Adjustments and the Recovery strip. */}
               {!managerReview && !isAdvance && (
-              <div className={`esm-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
-                <div className="esm-kpi esm-kpi-teal">
-                  <span className="esm-kpi-ico"><IcoDoc /></span>
-                  <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">CLAIMED AMOUNT</div>
-                    <div className="esm-kpi-val" title={inr(claimed)}>{inr(claimed)}</div>
-                    <div className="esm-kpi-sub">{isAdvance ? 'Original advance' : 'Original claim'}</div>
+              <div className={`esm-kpis rec-page-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
+                <div className="rec-kpi-card" title={inr(claimed)}>
+                  <span className="rec-kpi-strip" style={{ background: '#7c5cfc' }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{isAdvance ? 'ADVANCE AMOUNT' : 'CLAIMED AMOUNT'}</span>
+                    <span className="rec-kpi-num">{inr(claimed)}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: '#7c5cfc' }}><i className="ri-file-text-line" /></span>
                 </div>
-                <div className="esm-kpi esm-kpi-green">
-                  <span className="esm-kpi-ico"><IcoCheck /></span>
-                  <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">{isAdvance ? 'ADVANCE PAID' : 'AMOUNT PAID'}</div>
-                    <div className="esm-kpi-val" title={inr(paidSoFar)}>{inr(paidSoFar)}</div>
-                    <div className="esm-kpi-sub">{summary.payments.length} {isAdvance ? 'payout' : 'payment'}{summary.payments.length === 1 ? '' : 's'} recorded</div>
+                <div className="rec-kpi-card" title={inr(paidSoFar)}>
+                  <span className="rec-kpi-strip" style={{ background: '#10b981' }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{isAdvance ? 'ADVANCE PAID' : 'AMOUNT PAID'}</span>
+                    <span className="rec-kpi-num">{inr(paidSoFar)}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: '#10b981' }}><i className="ri-checkbox-circle-line" /></span>
                 </div>
                 {!inReview && (
-                <div className="esm-kpi esm-kpi-amber">
-                  <span className="esm-kpi-ico"><IcoWallet /></span>
-                  <div className="esm-kpi-txt">
-                    {showSettleSection ? (
-                      <>
-                        <div className="esm-kpi-lab">SETTLE AMOUNT PENDING</div>
-                        <div className="esm-kpi-val" title={inr(settlePending)}>{inr(settlePending)}</div>
-                        <div className="esm-kpi-sub">{alreadySettled ? 'Settled' : 'Pending settle'}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="esm-kpi-lab">BALANCE AMOUNT</div>
-                        <div className="esm-kpi-val" title={inr(remaining)}>{inr(remaining)}</div>
-                        <div className="esm-kpi-sub">{fullyPaid ? 'Fully paid' : 'Outstanding'}</div>
-                      </>
-                    )}
+                <div className="rec-kpi-card" title={inr(showSettleSection ? settlePending : remaining)}>
+                  <span className="rec-kpi-strip" style={{ background: '#f59e0b' }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{showSettleSection ? 'SETTLE AMOUNT PENDING' : 'BALANCE AMOUNT'}</span>
+                    <span className="rec-kpi-num">{inr(showSettleSection ? settlePending : remaining)}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: '#f59e0b' }}><i className="ri-wallet-3-line" /></span>
                 </div>
                 )}
-                <div className="esm-kpi esm-kpi-blue">
-                  <span className="esm-kpi-ico"><IcoPlus /></span>
-                  <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">TOTAL ADDITIONS</div>
-                    <div className="esm-kpi-val" title={inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}>{inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}</div>
-                    <div className="esm-kpi-sub">Added to {noun}</div>
+                <div className="rec-kpi-card" title={inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}>
+                  <span className="rec-kpi-strip" style={{ background: '#6366f1' }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">TOTAL ADDITIONS</span>
+                    <span className="rec-kpi-num">{inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: '#6366f1' }}><i className="ri-add-circle-line" /></span>
                 </div>
-                <div className="esm-kpi esm-kpi-rose">
-                  <span className="esm-kpi-ico"><IcoMinus /></span>
-                  <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">TOTAL DEDUCTED</div>
-                    <div className="esm-kpi-val" title={inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}>{inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}</div>
-                    <div className="esm-kpi-sub">Deducted from {noun}</div>
+                <div className="rec-kpi-card" title={inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}>
+                  <span className="rec-kpi-strip" style={{ background: '#f43f5e' }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">TOTAL DEDUCTED</span>
+                    <span className="rec-kpi-num">{inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}</span>
                   </div>
-                </div>
-              </div>
+                  <span className="rec-kpi-icon" style={{ background: '#f43f5e' }}><i className="ri-indeterminate-circle-line" /></span>
+                </div>              </div>
               )}
 
               {/* Manager-stage row opened from the HR Expense page — the
@@ -2024,7 +2008,7 @@ export default function ExpenseSettlementModal({
 
                       {/* Inline one-time pay-off form — direct only (no payroll). DISABLED. */}
                       {ONETIME_PAYOFF_ENABLED && recoverFormOpen && pending > 0.005 && (
-                        <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: 'var(--vz-secondary-bg,#f6fafb)', border: '1px solid var(--vz-border-color,#e3eef2)' }}>
+                        <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: 'var(--vz-secondary-bg,#f6fafb)', border: '1px solid var(--vz-border-color,#ebe6f8)' }}>
                           <div className="esm-sec-sub" style={{ marginBottom: 10, fontWeight: 700 }}>Record a one-time repayment — paid directly (not from payroll) · remaining {inr(pending)}</div>
                           <div className="esm-fgrid">
                             <div className="esm-fld s4">
@@ -2131,7 +2115,7 @@ export default function ExpenseSettlementModal({
                       </div>
                       )}
                       {alreadySettled && (
-                        <div className="esm-sumrow is-grand" style={{ marginTop: existingSettleItems.length > 0 ? 12 : 0, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#cffafe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#0e7490' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
+                        <div className="esm-sumrow is-grand" style={{ marginTop: existingSettleItems.length > 0 ? 12 : 0, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#ede9fe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#5a3fd1' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
                           <span>{summary?.settle_type === 'reimburse' ? 'To reimburse (used more)' : summary?.settle_type === 'return' ? 'To return (used less)' : 'Fully settled (equal)'} · Total used {inr(summary?.settle_actual_amount ?? 0)}</span>
                           <span>{inr(summary?.settle_balance ?? 0)}</span>
                         </div>
@@ -2278,7 +2262,7 @@ export default function ExpenseSettlementModal({
                                   <tr key={i}>
                                     <td>{i + 1}</td>
                                     <td className="esm-tbl-amt">{inr(p.amount)}</td>
-                                    <td>{pill('Company Pay', '#cffafe', '#0e7490')}</td>
+                                    <td>{pill('Company Pay', '#ede9fe', '#5a3fd1')}</td>
                                     <td>{p.method || '—'}</td>
                                     <td title={p.note || ''}>{p.note || '—'}</td>
                                     <td>{fmtDate(p.paid_at)}</td>
@@ -3151,7 +3135,7 @@ const CSS = `
 /* One size for every proof / attachment file name in this modal (QA #155). */
 :root{--esm-proof-fs:12px;}
 .esm-backdrop{position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;}
-.esm-modal{width:100%;max-width:1360px;min-height:min(720px,94vh);max-height:94vh;display:flex;flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 28px 70px rgba(2,44,52,.4);font-family:inherit;}
+.esm-modal{width:100%;max-width:1360px;min-height:min(720px,94vh);max-height:94vh;display:flex;flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 28px 70px rgba(2,44,52,.4);font-family:var(--font-sans);}
 /* Review mode fits its content instead of forcing the tall min-height, with
    even spacing around the content on all four sides. */
 .esm-modal--fit{min-height:0;}
@@ -3171,38 +3155,38 @@ const CSS = `
 /* Give the header title block room below its subtitle (the hero's own
    bottom padding is zeroed by .esm-modal--fit). */
 .esm-modal--fit-mgr .esm-hero-top{padding-bottom:14px;}
-[data-bs-theme="dark"] .esm-modal{background:#0b1e27;color:#e2e8f0;}
+[data-bs-theme="dark"] .esm-modal{background:#15112a;color:#e2e8f0;}
 /* Nested Add-Payment popup (over the overview) — styled like the PO "Update PO
    Payment" dialog: teal header + outstanding-balance strip + form. */
 .esm-sub-backdrop{position:fixed;inset:0;z-index:9600;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;}
 .esm-sub-modal{width:100%;max-width:1080px;max-height:92vh;display:flex;flex-direction:column;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);}
 .esm-sub-modal--settle{max-width:980px;}
 [data-bs-theme="dark"] .esm-sub-modal{background:#0f172a;color:#e2e8f0;}
-.esm-sub-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;background:linear-gradient(120deg,#0e7490,#06b6d4);color:#fff;}
+.esm-sub-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;background:linear-gradient(120deg,#5a3fd1,#a78bfa);color:#fff;}
 .esm-sub-head-l{display:flex;align-items:center;gap:12px;min-width:0;}
-.esm-sub-head-ico{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
-.esm-sub-title{font-size:15px;font-weight:800;}
-.esm-sub-hsub{font-size:11.5px;color:rgba(255,255,255,.9);display:flex;align-items:center;gap:7px;margin-top:2px;}
+.esm-sub-head-ico{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.esm-sub-title{font-size:17px;font-weight:700;}
+.esm-sub-hsub{font-size:12px;color:rgba(255,255,255,.9);display:flex;align-items:center;gap:7px;margin-top:2px;}
 .esm-sub-chip{font-family:monospace;font-weight:700;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);padding:2px 8px;border-radius:20px;}
 .esm-sub-dot{opacity:.7;}
 .esm-sub-x{width:30px;height:30px;border-radius:8px;border:none;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;font-size:15px;flex-shrink:0;}
 .esm-sub-x:hover{background:rgba(255,255,255,.3);}
 .esm-sub-body{padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px;}
 .esm-sub-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-top:1px solid #eef2f4;background:#f8fafc;}
-[data-bs-theme="dark"] .esm-sub-foot{background:#0b1a22;border-color:#173947;}
+[data-bs-theme="dark"] .esm-sub-foot{background:#15112a;border-color:#2c2550;}
 /* Outstanding-balance strip */
-.esm-bal{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:linear-gradient(120deg,#ecfeff,#f0fdfa);border:1px solid #cffafe;border-radius:12px;padding:14px 16px;}
-[data-bs-theme="dark"] .esm-bal{background:linear-gradient(120deg,#0e2730,#0d2620);border-color:rgba(6,182,212,.28);}
+.esm-bal{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:linear-gradient(120deg,#f5f3ff,#f5f3ff);border:1px solid #ede9fe;border-radius:12px;padding:14px 16px;}
+[data-bs-theme="dark"] .esm-bal{background:linear-gradient(120deg,#191430,#17142c);border-color:rgba(167,139,250,.28);}
 .esm-bal-ico{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .esm-bal-txt{flex:1 1 190px;min-width:170px;}
-.esm-bal-lab{font-size:9.5px;font-weight:700;letter-spacing:.06em;color:#0891b2;white-space:nowrap;}
+.esm-bal-lab{font-size:9.5px;font-weight:700;letter-spacing:.06em;color:#7c5cfc;white-space:nowrap;}
 .esm-bal-val{font-size:21px;font-weight:800;color:#0f172a;white-space:nowrap;line-height:1.2;}
 [data-bs-theme="dark"] .esm-bal-val{color:#e2e8f0;}
 .esm-bal-chips{display:flex;gap:8px;flex-wrap:wrap;flex:1 1 auto;justify-content:flex-end;}
 .esm-bal-chip{font-size:11px;font-weight:700;color:#334155;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:7px 12px;white-space:nowrap;}
 [data-bs-theme="dark"] .esm-bal-chip{background:#1e293b;border-color:rgba(148,163,184,.2);color:#cbd5e1;}
-.esm-bal-chip.is-net{border-color:#7dd3e0;color:#0e7490;background:#f0fdff;}
-[data-bs-theme="dark"] .esm-bal-chip.is-net{background:#0e2730;color:#67e8f9;border-color:rgba(6,182,212,.4);}
+.esm-bal-chip.is-net{border-color:#a78bfa;color:#5a3fd1;background:#faf7ff;}
+[data-bs-theme="dark"] .esm-bal-chip.is-net{background:#191430;color:#c4b5fd;border-color:rgba(167,139,250,.4);}
 /* Add-Payment form — 12-col grid: row1 4·4·4, row2 4·8, row3 12 */
 .esm-fgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px 18px;}
 .esm-fgrid .s4{grid-column:span 4;}
@@ -3227,16 +3211,16 @@ const CSS = `
 /* Plain (borderless) radios — Goods / Service */
 .esm-radio-row{display:flex;align-items:center;gap:22px;min-height:41px;}
 .esm-radio{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#475569;cursor:pointer;}
-.esm-radio input{width:16px;height:16px;accent-color:#0891b2;margin:0;cursor:pointer;flex-shrink:0;}
-.esm-radio.is-on{color:#0e7490;}
+.esm-radio input{width:16px;height:16px;accent-color:#7c5cfc;margin:0;cursor:pointer;flex-shrink:0;}
+.esm-radio.is-on{color:#5a3fd1;}
 [data-bs-theme="dark"] .esm-radio{color:#cbd5e1;}
-[data-bs-theme="dark"] .esm-radio.is-on{color:#67e8f9;}
-[data-bs-theme="dark"] .esm-radio{background:#0b2029;border-color:#173947;color:#cbd5e1;}
-[data-bs-theme="dark"] .esm-radio.is-on{background:#0e2730;border-color:#0891b2;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-radio.is-on{color:#c4b5fd;}
+[data-bs-theme="dark"] .esm-radio{background:#15122b;border-color:#2c2550;color:#cbd5e1;}
+[data-bs-theme="dark"] .esm-radio.is-on{background:#191430;border-color:#7c5cfc;color:#c4b5fd;}
 /* Tighter than it was (22/16 -> 16/12). The header is reference material above
    the payments the dialog exists to show, and on a recovery-scheduled advance
    it was taking more vertical space than them. */
-.esm-hero{display:flex;flex-direction:column;gap:12px;padding:16px 24px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;flex-shrink:0;}
+.esm-hero{display:flex;flex-direction:column;gap:12px;padding:16px 24px;background:linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%);color:#fff;flex-shrink:0;}
 /* With the panel hidden the band's only child is the title block, so the gap
    contributes nothing and the subtitle sat almost on the bottom edge. The
    padding has to carry that space itself. */
@@ -3250,8 +3234,8 @@ const CSS = `
 /* Emphasised bottom divider + spacing only in the review popup. */
 .esm-modal--fit .esm-hpanel{border-bottom:2px solid rgba(255,255,255,.45);margin-bottom:16px;}
 .esm-hp{min-width:0;}
-.esm-hp label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.08em;opacity:.8;text-transform:uppercase;margin-bottom:3px;}
-.esm-hp>div{font-size:14px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.esm-hp label{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;opacity:.9;text-transform:uppercase;margin-bottom:3px;}
+.esm-hp>div{font-size:14px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .esm-hp-proof{grid-column:span 3;}
 .esm-hp-none{font-size:12px;font-weight:600;opacity:.75;}
 .esm-hp-docs{display:flex;flex-wrap:wrap;gap:6px;}
@@ -3265,7 +3249,7 @@ const CSS = `
 .esm-hp-more:hover{background:rgba(255,255,255,.36);}
 @media (max-width:820px){.esm-hpanel{grid-template-columns:repeat(2,1fr);margin-left:0;margin-right:0;}.esm-hp-proof{grid-column:span 2;}.esm-hpanel .esm-sched-row{grid-column:span 2;}}
 @media (max-width:480px){.esm-hpanel{grid-template-columns:1fr;}.esm-hp-proof{grid-column:span 1;}.esm-hpanel .esm-sched-row{grid-column:span 1;}}
-.esm-hero-ico{width:42px;height:42px;border-radius:11px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+.esm-hero-ico{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 /* Toggle + close sit together so the header has one control cluster rather
    than a button floating at each end. */
 .esm-hero-acts{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -3274,32 +3258,31 @@ const CSS = `
 .esm-hero-toggle i{font-size:15px;transition:transform .18s ease;}
 .esm-hero-toggle.is-open i{transform:rotate(180deg);}
 @media (prefers-reduced-motion:reduce){.esm-hero-toggle i{transition:none;}}
-.esm-hero-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;opacity:.85;margin-bottom:2px;}
-.esm-hero-title{font-size:18px;font-weight:800;line-height:1.15;}
+.esm-hero-title{font-size:17px;font-weight:700;line-height:1.2;}
 /* A long expense title used to stretch the whole header (QA). Cap it with an
    ellipsis; the full title stays available on hover (title attr). */
-.esm-hero-sub-inline{font-weight:600;opacity:.9;display:inline-block;max-width:min(60vw,760px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
-.esm-hero-sub{font-size:12px;opacity:.85;margin-top:3px;}
+.esm-hero-sub-inline{font-weight:500;opacity:.92;display:inline-block;max-width:min(60vw,760px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+.esm-hero-sub{font-size:12px;font-weight:400;opacity:.88;margin-top:3px;}
 .esm-x{width:32px;height:32px;border-radius:9px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;}
 .esm-x:hover{background:rgba(255,255,255,.3);}
 /* Stage nav */
-.esm-steps{display:flex;align-items:stretch;gap:10px;padding:16px 28px;background:#ecfeff;}
-[data-bs-theme="dark"] .esm-steps{background:#0d2730;}
-.esm-stepcard{flex:1;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;background:#fff;border:1.5px solid #e2eef2;opacity:.75;}
-[data-bs-theme="dark"] .esm-stepcard{background:#0b2029;border-color:#173947;}
-.esm-stepcard.is-active{opacity:1;border-color:#0891b2;border-top:3px solid #10b981;box-shadow:0 3px 14px rgba(8,145,178,.15);}
+.esm-steps{display:flex;align-items:stretch;gap:10px;padding:16px 28px;background:#f5f3ff;}
+[data-bs-theme="dark"] .esm-steps{background:#17142c;}
+.esm-stepcard{flex:1;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;background:#fff;border:1.5px solid #ebe6f8;opacity:.75;}
+[data-bs-theme="dark"] .esm-stepcard{background:#15122b;border-color:#2c2550;}
+.esm-stepcard.is-active{opacity:1;border-color:#7c5cfc;border-top:3px solid #10b981;box-shadow:0 3px 14px rgba(124,92,252,.15);}
 .esm-stepcard.is-done{opacity:1;}
 .esm-steptxt{min-width:0;}
-.esm-stepnum{width:34px;height:34px;border-radius:50%;background:#0891b2;color:#fff;font-weight:800;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+.esm-stepnum{width:34px;height:34px;border-radius:50%;background:#7c5cfc;color:#fff;font-weight:800;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .esm-stepcard:not(.is-active):not(.is-done) .esm-stepnum{background:#94a3b8;}
-.esm-step-eyebrow{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:800;letter-spacing:.08em;color:#0891b2;}
+.esm-step-eyebrow{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:800;letter-spacing:.08em;color:#7c5cfc;}
 .esm-stepcard:not(.is-active) .esm-step-eyebrow{color:#94a3b8;}
 .esm-active-pill{background:#dcfce7;color:#15803d;border-radius:999px;padding:1px 8px;font-size:9px;font-weight:800;letter-spacing:.04em;}
-.esm-steptitle{font-size:14px;font-weight:800;color:#0c4a6e;line-height:1.2;margin-top:1px;}
-[data-bs-theme="dark"] .esm-steptitle{color:#cffafe;}
+.esm-steptitle{font-size:14px;font-weight:800;color:#4c1d95;line-height:1.2;margin-top:1px;}
+[data-bs-theme="dark"] .esm-steptitle{color:#ede9fe;}
 .esm-stepdesc{font-size:11px;color:#64748b;}
-.esm-step-chev{align-self:center;color:#67c8db;font-size:22px;font-weight:700;flex-shrink:0;}
-.esm-body{padding:22px 28px;overflow-y:auto;flex:1;}
+.esm-step-chev{align-self:center;color:#9d7bf5;font-size:22px;font-weight:700;flex-shrink:0;}
+.esm-body{padding:22px 8px;overflow-y:auto;flex:1;}
 .esm-loading{text-align:center;color:#64748b;padding:30px 0;}
 /* Skeleton (QA #147 / #148) — mirrors the loaded layout so the body doesn't
    reflow when the real content lands. .shimmer itself lives in app.css. */
@@ -3344,7 +3327,7 @@ const CSS = `
 @media (max-width:720px){.esm-grid12 .c3,.esm-grid12 .c4{grid-column:span 6;}.esm-grid12 .c6{grid-column:span 12;}}
 @media (max-width:480px){.esm-grid12 .c3,.esm-grid12 .c4,.esm-grid12 .c6{grid-column:span 12;}}
 .esm-divider{height:1px;background:#eef2f4;margin:4px 0 2px;}
-[data-bs-theme="dark"] .esm-divider{background:#173947;}
+[data-bs-theme="dark"] .esm-divider{background:#2c2550;}
 .esm-col2{grid-column:1 / -1;}
 .esm-fld,.esm-ro{display:flex;flex-direction:column;gap:5px;min-width:0;}
 .esm-fld>label,.esm-ro>label,.esm-card>label,.esm-card-lbl,.esm-card-hd label{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
@@ -3373,34 +3356,34 @@ const CSS = `
    lines with their own scrollbar, and break unspaced strings, so one verbose
    claim can't stretch this grid apart (CBC #57). */
 .esm-ro-v--text{max-height:76px;overflow-y:auto;overflow-wrap:anywhere;font-weight:600;line-height:1.45;}
-.esm-in{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;color:#0f172a;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;}
-.esm-in:focus{border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.14);}
-[data-bs-theme="dark"] .esm-in{background:#0b2029;border-color:#173947;color:#e2e8f0;}
+.esm-in{width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;color:#0f172a;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;}
+.esm-in:focus{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.14);}
+[data-bs-theme="dark"] .esm-in{background:#15122b;border-color:#2c2550;color:#e2e8f0;}
 textarea.esm-in{resize:vertical;}
 .esm-inline{display:flex;gap:8px;align-items:stretch;}
 .esm-inline .esm-in{flex:1;}
-.esm-plus{width:40px;flex-shrink:0;border:1.5px solid #dbe7ec;border-radius:10px;background:#f1f5f9;color:#0891b2;font-size:16px;font-weight:700;cursor:pointer;}
+.esm-plus{width:40px;flex-shrink:0;border:1.5px solid #e5e7eb;border-radius:10px;background:#f1f5f9;color:#7c5cfc;font-size:16px;font-weight:700;cursor:pointer;}
 .esm-plus:hover{background:#e0f2fe;}
-.esm-addbtn{flex-shrink:0;border:none;border-radius:10px;background:#0891b2;color:#fff;font-weight:700;font-size:13px;padding:0 16px;cursor:pointer;}
+.esm-addbtn{flex-shrink:0;border:none;border-radius:10px;background:#7c5cfc;color:#fff;font-weight:700;font-size:13px;padding:0 16px;cursor:pointer;}
 .esm-addbtn:disabled{opacity:.5;cursor:not-allowed;}
 .esm-hint{font-size:11.5px;color:#94a3b8;}
 .esm-muted{color:#94a3b8;}
 /* Read-only value styled like an input box (Net payable) */
-.esm-ro-static{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:14px;font-weight:800;color:#0891b2;background:#f0fdff;}
-[data-bs-theme="dark"] .esm-ro-static{background:#0b2029;border-color:#173947;color:#67e8f9;}
+.esm-ro-static{width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:14px;font-weight:800;color:#7c5cfc;background:#faf7ff;}
+[data-bs-theme="dark"] .esm-ro-static{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 /* Proof-of-payment file picker */
-.esm-file{display:flex;align-items:center;gap:8px;min-height:41px;margin:0;box-sizing:border-box;border:1.5px dashed #b6d9e2;border-radius:10px;padding:0 12px;font-size:12.5px;font-weight:600;color:#0891b2;background:#f8feff;cursor:pointer;}
-.esm-file:hover{background:#ecfeff;border-color:#22d3ee;}
+.esm-file{display:flex;align-items:center;gap:8px;min-height:41px;margin:0;box-sizing:border-box;border:1.5px dashed #cdc2f3;border-radius:10px;padding:0 12px;font-size:12.5px;font-weight:600;color:#7c5cfc;background:#f8feff;cursor:pointer;}
+.esm-file:hover{background:#f5f3ff;border-color:#a78bfa;}
 .esm-file i{font-size:15px;}
 .esm-file input{display:none;}
-[data-bs-theme="dark"] .esm-file{background:#0b2029;border-color:#173947;color:#67e8f9;}
-.esm-file-chip{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px solid #dbe7ec;border-radius:10px;padding:0 6px 0 12px;font-size:12.5px;font-weight:600;color:#0c4a6e;background:#f8fafc;}
-.esm-file-ic{color:#0891b2;flex-shrink:0;}
+[data-bs-theme="dark"] .esm-file{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
+.esm-file-chip{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px solid #e5e7eb;border-radius:10px;padding:0 6px 0 12px;font-size:12.5px;font-weight:600;color:#4c1d95;background:#f8fafc;}
+.esm-file-ic{color:#7c5cfc;flex-shrink:0;}
 .esm-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--esm-proof-fs);}
-.esm-file-act{width:30px;height:30px;flex-shrink:0;margin:0;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:15px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s;}
-.esm-file-act:hover{background:#ecfeff;border-color:#22d3ee;}
+.esm-file-act{width:30px;height:30px;flex-shrink:0;margin:0;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #e6e0fc;border-radius:8px;background:#fff;color:#7c5cfc;font-size:15px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s;}
+.esm-file-act:hover{background:#f5f3ff;border-color:#a78bfa;}
 .esm-file-act input{display:none;}
-[data-bs-theme="dark"] .esm-file-act{background:#0b2029;border-color:#173947;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-file-act{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 .esm-file-act--danger{border-color:#fecdd3;background:#fff1f2;color:#e11d48;}
 .esm-file-act--danger:hover{background:#ffe4e6;border-color:#fda4af;}
 [data-bs-theme="dark"] .esm-file-act--danger{background:#2a0f16;border-color:#5b2130;color:#fca5a5;}
@@ -3408,83 +3391,83 @@ textarea.esm-in{resize:vertical;}
  * margin:0 is required: Reupload is a <label> and the global Velzon reboot puts
  * margin-bottom on every label, which pushed it up out of line with the two
  * <button> siblings in this centered flex row. */
-.esm-file-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;height:30px;line-height:1;margin:0;box-sizing:border-box;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:12px;font-weight:700;padding:0 11px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}
+.esm-file-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;height:30px;line-height:1;margin:0;box-sizing:border-box;border:1.5px solid #e6e0fc;border-radius:8px;background:#fff;color:#7c5cfc;font-size:12px;font-weight:700;padding:0 11px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}
 .esm-file-btn i{font-size:14px;line-height:1;}
-.esm-file-btn:hover{background:#ecfeff;border-color:#22d3ee;}
-.esm-file-btn:disabled{opacity:.6;cursor:default;background:#fff;border-color:#cbeef4;}
+.esm-file-btn:hover{background:#f5f3ff;border-color:#a78bfa;}
+.esm-file-btn:disabled{opacity:.6;cursor:default;background:#fff;border-color:#e6e0fc;}
 .esm-file-btn input{display:none;}
-[data-bs-theme="dark"] .esm-file-btn{background:#0b2029;border-color:#173947;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-file-btn{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 .esm-file-x{width:28px;height:28px;flex-shrink:0;border:1.5px solid #fecdd3;border-radius:8px;background:#fff1f2;color:#e11d48;font-size:11px;cursor:pointer;}
 .esm-file-x:hover{background:#ffe4e6;}
-[data-bs-theme="dark"] .esm-file-chip{background:#0b2029;border-color:#173947;color:#cffafe;}
+[data-bs-theme="dark"] .esm-file-chip{background:#15122b;border-color:#2c2550;color:#ede9fe;}
 [data-bs-theme="dark"] .esm-file-x{background:#2a0f16;border-color:#5b2130;color:#fca5a5;}
 /* Cards — each Step-1 section sits in its own bordered card for a clean layout */
-.esm-card{margin-top:16px;border:1.5px solid #e6eef2;border-left:4px solid #0891b2;border-radius:14px;padding:14px 16px;background:#fbfeff;display:flex;flex-direction:column;gap:10px;}
-.esm-card--top{margin-top:0;border-left:1.5px solid #e6eef2;}
-[data-bs-theme="dark"] .esm-card{background:#0c232c;border-color:#173947;border-left-color:#0891b2;}
-[data-bs-theme="dark"] .esm-card--top{border-left-color:#173947;}
+.esm-card{margin-top:16px;border:1.5px solid #ebe6f8;border-left:4px solid #7c5cfc;border-radius:14px;padding:14px 16px;background:#fdfbff;display:flex;flex-direction:column;gap:10px;}
+.esm-card--top{margin-top:0;border-left:1.5px solid #ebe6f8;}
+[data-bs-theme="dark"] .esm-card{background:#17142c;border-color:#2c2550;border-left-color:#7c5cfc;}
+[data-bs-theme="dark"] .esm-card--top{border-left-color:#2c2550;}
 .esm-card-hd{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eef4f6;padding-bottom:8px;}
-[data-bs-theme="dark"] .esm-card-hd{border-color:#173947;}
+[data-bs-theme="dark"] .esm-card-hd{border-color:#2c2550;}
 /* Section card (Payment History / Payment Details) — left accent + header band */
 /* Section cards — exact styling from the PO "Payment Summary" modal (pop-sec). */
 .esm-sec{position:relative;margin-top:16px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.04);}
-[data-bs-theme="dark"] .esm-sec{background:#0c232c;border-color:#173947;}
-.esm-sec::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;z-index:5;background:linear-gradient(180deg,#22d3ee,#0891b2,#0e7490);}
-.esm-sec-hd{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 16px;background:linear-gradient(110deg,#f0fdff 0%,#e8fbfd 25%,#cffafe 55%,#bff0f7 85%,#a5e9f3 100%);border-bottom:1px solid #9ce1ee;box-shadow:0 2px 0 rgba(255,255,255,.85) inset;}
-[data-bs-theme="dark"] .esm-sec-hd{background:#0d2730;border-color:#173947;box-shadow:none;}
+[data-bs-theme="dark"] .esm-sec{background:#17142c;border-color:#2c2550;}
+.esm-sec::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;z-index:5;background:linear-gradient(180deg,#a78bfa,#7c5cfc,#5a3fd1);}
+.esm-sec-hd{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 16px;background:linear-gradient(110deg,#ede9fe 0%,#f5f3ff 45%,#ffffff 100%);border-bottom:1px solid #ddd6fe;box-shadow:0 2px 0 rgba(255,255,255,.85) inset;}
+[data-bs-theme="dark"] .esm-sec-hd{background:#17142c;border-color:#2c2550;box-shadow:none;}
 .esm-sec-hd::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);}
-.esm-sec-hd::after{content:'';position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(ellipse at 10% 50%,rgba(103,232,249,.45) 0%,transparent 50%),radial-gradient(ellipse at 90% 50%,rgba(34,211,238,.28) 0%,transparent 55%);}
+.esm-sec-hd::after{content:'';position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%),radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.28) 0%,transparent 55%);}
 [data-bs-theme="dark"] .esm-sec-hd::before,[data-bs-theme="dark"] .esm-sec-hd::after{display:none;}
 .esm-sec-l{position:relative;z-index:1;display:flex;align-items:center;gap:11px;}
 .esm-sec-hd>.esm-sec-ico{position:relative;z-index:1;}
-.esm-sec-ico{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;box-shadow:0 0 0 2.5px rgba(6,182,212,.22),0 3px 10px rgba(8,145,178,.4);font-size:15px;}
+.esm-sec-ico{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#a78bfa 0%,#7c5cfc 55%,#5a3fd1 100%);display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;box-shadow:0 0 0 2.5px rgba(167,139,250,.22),0 3px 10px rgba(124,92,252,.4);font-size:15px;}
 .esm-sec-tt{min-width:0;flex:1;position:relative;z-index:1;}
 .esm-sec-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
-.esm-sec-tag{font-size:10.5px;font-weight:700;color:#0891b2;letter-spacing:.02em;}
-.esm-sec-div{color:#7dd3e0;font-weight:400;}
-.esm-sec-title{font-size:13.5px;font-weight:800;color:#0c4a6e;letter-spacing:-.01em;}
-[data-bs-theme="dark"] .esm-sec-title{color:#cffafe;}
-.esm-sec-sub{font-size:10.5px;color:#0e7490;margin-top:2px;}
-[data-bs-theme="dark"] .esm-sec-sub{color:#67c8db;}
-.esm-sec-badge{position:relative;z-index:1;flex-shrink:0;background:#fff;border:1px solid #cffafe;color:#0891b2;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:700;white-space:nowrap;}
-[data-bs-theme="dark"] .esm-sec-badge{background:#0b2029;border-color:#173947;color:#67e8f9;}
+.esm-sec-tag{font-size:10.5px;font-weight:700;color:#7c5cfc;letter-spacing:.02em;}
+.esm-sec-div{color:#a78bfa;font-weight:400;}
+.esm-sec-title{font-size:13.5px;font-weight:700;color:#4c1d95;letter-spacing:-.01em;}
+[data-bs-theme="dark"] .esm-sec-title{color:#ede9fe;}
+.esm-sec-sub{font-size:10.5px;color:#5a3fd1;margin-top:2px;}
+[data-bs-theme="dark"] .esm-sec-sub{color:#9d7bf5;}
+.esm-sec-badge{position:relative;z-index:1;flex-shrink:0;background:#fff;border:1px solid #ede9fe;color:#7c5cfc;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:700;white-space:nowrap;}
+[data-bs-theme="dark"] .esm-sec-badge{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 .esm-sec-badge--lock{background:#f1f5f9;border-color:#e2e8f0;color:#64748b;display:inline-flex;align-items:center;gap:4px;}
-[data-bs-theme="dark"] .esm-sec-badge--lock{background:#0b2029;border-color:#173947;color:#94a3b8;}
-.esm-sec-body{padding:14px 16px;background:linear-gradient(180deg,#f0fdff 0%,#f8fafc 100%);}
-[data-bs-theme="dark"] .esm-sec-body{background:#0c232c;}
+[data-bs-theme="dark"] .esm-sec-badge--lock{background:#15122b;border-color:#2c2550;color:#94a3b8;}
+.esm-sec-body{padding:14px 16px;background:linear-gradient(180deg,#faf7ff 0%,#f8fafc 100%);}
+[data-bs-theme="dark"] .esm-sec-body{background:#17142c;}
 /* Section header right-side actions (+ Add Payment) */
 .esm-sec-hd-actions{position:relative;z-index:1;display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.esm-sec-btn{border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0c4a6e,#0e7490);box-shadow:0 3px 10px rgba(14,116,144,.3);white-space:nowrap;display:inline-flex;gap:6px;align-items:center;}
+.esm-sec-btn{border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#4c1d95,#5a3fd1);box-shadow:0 3px 10px rgba(90,63,209,.3);white-space:nowrap;display:inline-flex;gap:6px;align-items:center;}
 .esm-sec-btn:hover:not(:disabled){filter:brightness(1.09);}
-.esm-sec-btn--sm{padding:6px 12px;font-size:11.5px;box-shadow:0 2px 6px rgba(14,116,144,.28);}
-.esm-settle-addmore{margin-top:10px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed #22d3ee;background:#ecfeff;color:#0891b2;border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;}
-.esm-settle-addmore:hover{background:#cffafe;}
-[data-bs-theme="dark"] .esm-settle-addmore{background:rgba(8,145,178,.14);border-color:rgba(8,145,178,.5);color:#67e8f9;}
-.esm-settle-addmore--reimb{margin-top:12px;border-style:solid;border-color:#06b6d4;background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;}
-.esm-settle-addmore--reimb:hover:not(:disabled){filter:brightness(1.07);background:linear-gradient(135deg,#0891b2,#06b6d4);}
+.esm-sec-btn--sm{padding:6px 12px;font-size:11.5px;box-shadow:0 2px 6px rgba(90,63,209,.28);}
+.esm-settle-addmore{margin-top:10px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed #a78bfa;background:#f5f3ff;color:#7c5cfc;border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;}
+.esm-settle-addmore:hover{background:#ede9fe;}
+[data-bs-theme="dark"] .esm-settle-addmore{background:rgba(124,92,252,.14);border-color:rgba(124,92,252,.5);color:#c4b5fd;}
+.esm-settle-addmore--reimb{margin-top:12px;border-style:solid;border-color:#a78bfa;background:linear-gradient(135deg,#7c5cfc,#a78bfa);color:#fff;}
+.esm-settle-addmore--reimb:hover:not(:disabled){filter:brightness(1.07);background:linear-gradient(135deg,#7c5cfc,#a78bfa);}
 .esm-settle-addmore--reimb:disabled{opacity:.6;cursor:not-allowed;}
 .esm-reimb-done{margin-top:12px;display:flex;align-items:center;gap:8px;background:#d6f4e3;border:1px solid #a7e3c2;color:#108548;border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;}
 .esm-reimb-done i{font-size:16px;}
 [data-bs-theme="dark"] .esm-reimb-done{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}
 .esm-sec-btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
 /* Collapse chevron */
-.esm-recap{font-size:11.5px;font-weight:700;color:#0e7490;background:#ecfeff;border:1px solid #a5e9f3;border-radius:999px;padding:5px 12px;white-space:nowrap;}
+.esm-recap{font-size:11.5px;font-weight:700;color:#5a3fd1;background:#f5f3ff;border:1px solid #cfc4fd;border-radius:999px;padding:5px 12px;white-space:nowrap;}
 .esm-recap-k{color:#64748b;font-weight:600;}
 .esm-recap-dot{margin:0 7px;color:#94a3b8;}
-[data-bs-theme="dark"] .esm-recap{background:#0b2029;border-color:#173947;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-recap{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 @media (max-width:640px){.esm-recap{display:none;}}
-.esm-sec-chev{width:28px;height:28px;border-radius:50%;border:1px solid #cffafe;background:#fff;color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 1px 3px rgba(6,182,212,.18);flex-shrink:0;}
-.esm-sec-chev:hover{background:#ecfeff;}
+.esm-sec-chev{width:28px;height:28px;border-radius:50%;border:1px solid #ede9fe;background:#fff;color:#5a3fd1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 1px 3px rgba(167,139,250,.18);flex-shrink:0;}
+.esm-sec-chev:hover{background:#f5f3ff;}
 .esm-sec-chev i{transition:transform .2s ease;}
 .esm-sec-chev.is-collapsed i{transform:rotate(-90deg);}
-[data-bs-theme="dark"] .esm-sec-chev{background:#0b2029;border-color:#173947;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-sec-chev{background:#15122b;border-color:#2c2550;color:#c4b5fd;}
 /* Deductions 2-col body: left rows, right net-payable summary */
 .esm-ded-split{display:flex;gap:16px;align-items:stretch;}
 .esm-ded-l{flex:7;min-width:0;display:flex;flex-direction:row;align-items:stretch;gap:16px;}
 .esm-ded-r{flex:3;min-width:0;display:flex;flex-direction:column;}
 /* Standing line between the additions & deductions columns */
 .esm-vline{width:1px;flex-shrink:0;background:#e2e8f0;align-self:stretch;}
-[data-bs-theme="dark"] .esm-vline{background:#173947;}
+[data-bs-theme="dark"] .esm-vline{background:#2c2550;}
 .esm-ded-r .esm-sumbox{margin-top:0;height:100%;display:flex;flex-direction:column;}
 .esm-sched-tail{font-weight:600;opacity:.62;white-space:nowrap;margin-left:3px;}
 .esm-recalc{margin-top:10px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:10px 12px;}
@@ -3494,7 +3477,7 @@ textarea.esm-in{resize:vertical;}
 .esm-recalc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px;}
 .esm-recalc-grid > div{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .esm-recalc-grid label{font-size:8.5px;font-weight:700;letter-spacing:.05em;color:#64748b;margin:0;}
-.esm-recalc-grid b{font-size:12px;font-weight:800;color:#0c4a6e;white-space:nowrap;min-width:0;}
+.esm-recalc-grid b{font-size:12px;font-weight:800;color:#4c1d95;white-space:nowrap;min-width:0;}
 /* This strip is four columns inside the summary card — roughly a third of the
    modal — so an inline tail like "₹4,166.67 + ₹4,246.00" is wider than its
    track and, being nowrap, spilled over END DATE instead of wrapping. Here the
@@ -3503,72 +3486,59 @@ textarea.esm-in{resize:vertical;}
 .esm-recalc-grid .esm-sched-tail{display:block;margin-left:0;margin-top:1px;}
 .esm-recalc-grid em{font-size:9.5px;font-style:normal;color:#64748b;white-space:nowrap;}
 .esm-recalc-was{color:#b45309 !important;}
-[data-bs-theme="dark"] .esm-recalc{background:#082f49;border-color:#0c4a6e;}
+[data-bs-theme="dark"] .esm-recalc{background:#082f49;border-color:#4c1d95;}
 [data-bs-theme="dark"] .esm-recalc.is-moved{background:#2a1f05;border-color:#78350f;}
-[data-bs-theme="dark"] .esm-recalc-grid b{color:#cffafe;}
+[data-bs-theme="dark"] .esm-recalc-grid b{color:#ede9fe;}
 @media (max-width:640px){.esm-recalc-grid{grid-template-columns:repeat(2,1fr);}}
 .esm-ded-r .esm-sumrow.is-grand{margin-top:auto;}
 @media (max-width:720px){.esm-ded-split{flex-direction:column;}.esm-ded-l,.esm-ded-r{flex:1 1 auto;width:100%;}}
 .esm-ded-hd{display:flex;align-items:center;justify-content:space-between;}
 .esm-ded-hd-lbl{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
 /* Additions / deductions boxes — side by side on the left */
-.esm-adj{flex:1;min-width:0;border:1px solid #eef2f7;border-radius:10px;padding:10px 12px;background:#fbfeff;display:flex;flex-direction:column;gap:8px;}
+.esm-adj{flex:1;min-width:0;border:1px solid #eef2f7;border-radius:10px;padding:10px 12px;background:#fdfbff;display:flex;flex-direction:column;gap:8px;}
 .esm-adj--add{border-left:3px solid #10b981;}
 .esm-adj--ded{border-left:3px solid #f43f5e;}
 @media (max-width:820px){.esm-ded-l{flex-direction:column;}.esm-vline{display:none;}}
-[data-bs-theme="dark"] .esm-adj{background:#0c232c;border-color:#173947;border-left-color:#10b981;}
+[data-bs-theme="dark"] .esm-adj{background:#17142c;border-color:#2c2550;border-left-color:#10b981;}
 [data-bs-theme="dark"] .esm-adj--ded{border-left-color:#f43f5e;}
 .esm-add-lbl{color:#059669;}
 .esm-add-btn{border-color:#86efac;background:#ecfdf5;color:#059669;}
 .esm-add-btn:hover{background:#d1fae5;}
 /* Submit-deduction action row under the 2-col body */
 .esm-sec-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:8px;padding-top:8px;border-top:1px solid #eef4f6;}
-[data-bs-theme="dark"] .esm-sec-actions{border-color:#173947;}
+[data-bs-theme="dark"] .esm-sec-actions{border-color:#2c2550;}
 .esm-sec-actions-hint{font-size:11.5px;font-weight:700;color:#475569;text-align:left;}
 [data-bs-theme="dark"] .esm-sec-actions-hint{color:#cbd5e1;}
 /* Bold Submit (lock deduction) button */
-.esm-btn-submit{border:none;border-radius:9px;padding:8px 26px;font-size:13.5px;font-weight:800;letter-spacing:.02em;cursor:pointer;color:#fff;background:linear-gradient(120deg,#059669,#0891b2);box-shadow:0 4px 12px rgba(5,150,105,.32);}
+.esm-btn-submit{border:none;border-radius:9px;padding:8px 26px;font-size:13.5px;font-weight:800;letter-spacing:.02em;cursor:pointer;color:#fff;background:linear-gradient(120deg,#059669,#7c5cfc);box-shadow:0 4px 12px rgba(5,150,105,.32);}
 .esm-btn-submit:hover:not(:disabled){filter:brightness(1.06);}
 .esm-btn-submit:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* KPI strip — exact styling/colors from the PO "Payment Summary" modal */
 .esm-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
 .esm-kpis--4{grid-template-columns:repeat(4,1fr);}
-.esm-kpi{min-width:0;background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:6px 13px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
-[data-bs-theme="dark"] .esm-kpi{background:#0c232c;border-color:#173947;}
-.esm-kpi-txt{min-width:0;flex:1;}
-.esm-kpi-ico{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
-.esm-kpi-ico svg{width:18px;height:18px;}
-.esm-kpi-teal{border-left-color:#06b6d4;} .esm-kpi-teal .esm-kpi-ico{background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 7px 16px rgba(8,145,178,.38);}
-.esm-kpi-green{border-left-color:#10b981;} .esm-kpi-green .esm-kpi-ico{background:linear-gradient(135deg,#34d399,#059669);box-shadow:0 7px 16px rgba(5,150,105,.34);}
-.esm-kpi-amber{border-left-color:#f59e0b;} .esm-kpi-amber .esm-kpi-ico{background:linear-gradient(135deg,#fbbf24,#d97706);box-shadow:0 7px 16px rgba(217,119,6,.34);}
-.esm-kpi-blue{border-left-color:#6366f1;} .esm-kpi-blue .esm-kpi-ico{background:linear-gradient(135deg,#818cf8,#4f46e5);box-shadow:0 7px 16px rgba(79,70,229,.34);}
-.esm-kpi-rose{border-left-color:#f43f5e;} .esm-kpi-rose .esm-kpi-ico{background:linear-gradient(135deg,#fb7185,#e11d48);box-shadow:0 7px 16px rgba(225,29,72,.32);}
-.esm-kpi-lab{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#5c7d9e;}
-.esm-kpi-val{font-size:18px;font-weight:800;color:#123a5e;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-[data-bs-theme="dark"] .esm-kpi-val{color:#e2e8f0;}
-.esm-kpi-sub{font-size:10.5px;color:#7b96ad;font-weight:500;}
+/* Tiles come from the page's shared .rec-kpi-card. */
 @media (max-width:720px){.esm-kpis{grid-template-columns:repeat(2,1fr);}}
 @media (max-width:440px){.esm-kpis{grid-template-columns:1fr;}}
 /* Payment progress bar */
 .esm-prog2{margin-bottom:14px;}
-.esm-prog2--band{margin-top:16px;margin-bottom:0;background:#f7feff;border:1px solid #e3eef2;border-radius:14px;padding:14px 18px;}
-[data-bs-theme="dark"] .esm-prog2--band{background:#0c232c;border-color:#173947;}
+.esm-prog2--band{margin-top:16px;margin-bottom:0;background:#f7feff;border:1px solid #ebe6f8;border-radius:14px;padding:14px 18px;}
+[data-bs-theme="dark"] .esm-prog2--band{background:#17142c;border-color:#2c2550;}
 .esm-prog2-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;}
-.esm-prog2-lbl{font-size:11px;font-weight:800;letter-spacing:.05em;color:#0c4a6e;text-transform:uppercase;}
-[data-bs-theme="dark"] .esm-prog2-lbl{color:#cffafe;}
-.esm-prog2-meta{font-size:12px;font-weight:700;color:#0891b2;}
-.esm-prog2-track{height:8px;border-radius:999px;background:#e2eef2;overflow:hidden;}
-[data-bs-theme="dark"] .esm-prog2-track{background:#123642;}
-.esm-prog2-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#10b981,#06b6d4);transition:width .3s;}
-.esm-ded-add{border:1px dashed #22d3ee;background:#ecfeff;color:#0891b2;border-radius:8px;font-size:11.5px;font-weight:700;padding:3px 12px;cursor:pointer;}
-.esm-ded-add:hover{background:#cffafe;}
+.esm-prog2-lbl{font-size:11px;font-weight:800;letter-spacing:.05em;color:#4c1d95;text-transform:uppercase;}
+[data-bs-theme="dark"] .esm-prog2-lbl{color:#ede9fe;}
+.esm-prog2-meta{font-size:12px;font-weight:700;color:#7c5cfc;}
+.esm-prog2-track{height:8px;border-radius:999px;background:#ebe6f8;overflow:hidden;}
+[data-bs-theme="dark"] .esm-prog2-track{background:#1d1838;}
+.esm-prog2-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#10b981,#a78bfa);transition:width .3s;}
+.esm-ded-add{border:1px dashed #a78bfa;background:#f5f3ff;color:#7c5cfc;border-radius:8px;font-size:11.5px;font-weight:700;padding:3px 12px;cursor:pointer;}
+.esm-ded-add:hover{background:#ede9fe;}
 /* Proof docs */
 .esm-docs{display:flex;flex-wrap:wrap;gap:8px;}
-.esm-doc{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:8px 12px;border:1.5px solid #dbe7ec;border-radius:10px;background:#f8fafc;color:#0c4a6e;text-decoration:none;font-size:12.5px;font-weight:600;}
-.esm-doc:hover{border-color:#0891b2;background:#e0f2fe;}
+.esm-doc{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;background:#f8fafc;color:#4c1d95;text-decoration:none;font-size:12.5px;font-weight:600;}
+.esm-doc:hover{border-color:#7c5cfc;background:#e0f2fe;}
 .esm-doc-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .esm-doc-ext{opacity:.55;font-size:12px;}
-[data-bs-theme="dark"] .esm-doc{background:#0b2029;border-color:#173947;color:#cffafe;}
+[data-bs-theme="dark"] .esm-doc{background:#15122b;border-color:#2c2550;color:#ede9fe;}
 /* Deduction rows — show ~3, scroll the rest */
 .esm-ded-list{display:flex;flex-direction:column;gap:8px;max-height:150px;overflow-y:auto;padding-right:4px;margin-right:-4px;}
 .esm-ded-list::-webkit-scrollbar{width:7px;}
@@ -3588,14 +3558,14 @@ textarea.esm-in{resize:vertical;}
 .esm-split-r .esm-sumrow.is-grand{margin-top:auto;}
 @media (max-width:720px){.esm-split{flex-direction:column;}.esm-split-l,.esm-split-r{flex:1 1 auto;width:100%;}}
 /* Summary box */
-.esm-sumbox{margin-top:16px;border:1.5px solid #cffafe;border-radius:12px;overflow:hidden;}
-[data-bs-theme="dark"] .esm-sumbox{border-color:#173947;}
+.esm-sumbox{margin-top:16px;border:1.5px solid #ede9fe;border-radius:12px;overflow:hidden;}
+[data-bs-theme="dark"] .esm-sumbox{border-color:#2c2550;}
 .esm-sumrow{display:flex;justify-content:space-between;gap:10px;padding:9px 14px;font-size:12.5px;font-weight:600;color:#334155;background:#f8feff;}
 .esm-sumrow>span:first-child{flex-shrink:0;}
 .esm-sumrow>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}
-.esm-sumrow+.esm-sumrow{border-top:1px solid #e2eef2;}
-[data-bs-theme="dark"] .esm-sumrow{background:#0d2730;color:#cbd5e1;}
-.esm-sumrow.is-grand{background:linear-gradient(120deg,#0891b2,#06b6d4);color:#fff;font-weight:800;font-size:13.5px;}
+.esm-sumrow+.esm-sumrow{border-top:1px solid #ebe6f8;}
+[data-bs-theme="dark"] .esm-sumrow{background:#17142c;color:#cbd5e1;}
+.esm-sumrow.is-grand{background:linear-gradient(120deg,#7c5cfc,#a78bfa);color:#fff;font-weight:800;font-size:13.5px;}
 .esm-sumrow.is-grand.is-bad{background:linear-gradient(120deg,#e11d48,#f43f5e);}
 .esm-payrow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;}
 /* Adjustment reason — clamp to 3 lines; the untruncated text lives in the
@@ -3606,18 +3576,18 @@ textarea.esm-in{resize:vertical;}
 /* Payment history table */
 /* History table — exact styling from the PO "Payment Summary" table (pop-tbl). */
 /* Cap every table at ~4 rows — the rest scrolls vertically with a sticky header. */
-.esm-tblwrap{overflow-x:auto;overflow-y:auto;max-height:224px;border-radius:12px;border:1px solid #dbeef4;box-shadow:0 2px 8px rgba(15,23,42,.05);}
-[data-bs-theme="dark"] .esm-tblwrap{border-color:#173947;box-shadow:none;}
+.esm-tblwrap{overflow-x:auto;overflow-y:auto;max-height:224px;border-radius:12px;border:1px solid #eae4fb;box-shadow:0 2px 8px rgba(15,23,42,.05);}
+[data-bs-theme="dark"] .esm-tblwrap{border-color:#2c2550;box-shadow:none;}
 .esm-tbl{width:100%;border-collapse:collapse;font-size:12px;background:transparent;}
-.esm-tbl thead tr{background:linear-gradient(90deg,#0e7490 0%,#0891b2 45%,#22d3ee 100%);}
-.esm-tbl thead th{text-align:left;vertical-align:middle;background:#0e8aa6;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;line-height:1.25;padding:11px 12px;white-space:nowrap;position:sticky;top:0;z-index:1;}
-[data-bs-theme="dark"] .esm-tbl thead th{background:#0b6f85;}
-[data-bs-theme="dark"] .esm-tbl thead tr{background:linear-gradient(90deg,#0e5566,#0b6f85 55%,#0e7f97);}
+.esm-tbl thead tr{background:linear-gradient(90deg,#5a3fd1 0%,#7c5cfc 45%,#a78bfa 100%);}
+.esm-tbl thead th{text-align:left;vertical-align:middle;background:#6b4fe0;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;line-height:1.25;padding:11px 12px;white-space:nowrap;position:sticky;top:0;z-index:1;}
+[data-bs-theme="dark"] .esm-tbl thead th{background:#4b3aa8;}
+[data-bs-theme="dark"] .esm-tbl thead tr{background:linear-gradient(90deg,#3b2f6b,#4b3aa8 55%,#5a3fd1);}
 .esm-tbl tbody tr,.esm-tbl tbody td{background:#fff;}
 .esm-tbl tbody td{padding:11px 12px;border-bottom:1px solid #eef2f7;color:#334155;font-weight:500;white-space:nowrap;vertical-align:middle;}
-[data-bs-theme="dark"] .esm-tbl tbody tr,[data-bs-theme="dark"] .esm-tbl tbody td{background:#0c232c;border-color:#132e39;color:#cbd5e1;}
+[data-bs-theme="dark"] .esm-tbl tbody tr,[data-bs-theme="dark"] .esm-tbl tbody td{background:#17142c;border-color:#1d1838;color:#cbd5e1;}
 .esm-tbl tbody tr:hover td{background:#f6fdff;}
-[data-bs-theme="dark"] .esm-tbl tbody tr:hover td{background:#0e2a34;}
+[data-bs-theme="dark"] .esm-tbl tbody tr:hover td{background:#191430;}
 .esm-tbl-amt{font-weight:800;color:#0f172a;}
 /* Zoho Books status pill + sync button */
 .esm-zpill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap;}
@@ -3625,13 +3595,13 @@ textarea.esm-in{resize:vertical;}
 .esm-zpill.is-unsynced{background:#fde8c4;color:#a4661c;}
 [data-bs-theme="dark"] .esm-zpill.is-synced{background:#0c2e1d;color:#4ade80;}
 [data-bs-theme="dark"] .esm-zpill.is-unsynced{background:#3a2a08;color:#fbbf24;}
-.esm-zbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #0891b2;background:#fff;color:#0e7490;border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s;}
-.esm-zbtn:hover:not(:disabled){background:#ecfeff;}
+.esm-zbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #7c5cfc;background:#fff;color:#5a3fd1;border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s;}
+.esm-zbtn:hover:not(:disabled){background:#f5f3ff;}
 .esm-zbtn:disabled{opacity:.55;cursor:not-allowed;}
-[data-bs-theme="dark"] .esm-zbtn{background:#0b2029;border-color:#0891b2;color:#67e8f9;}
+[data-bs-theme="dark"] .esm-zbtn{background:#15122b;border-color:#7c5cfc;color:#c4b5fd;}
 .esm-zbtn--view{border-color:#86efac;color:#108548;text-decoration:none;}
 .esm-zbtn--view:hover{background:#ecfdf5;}
-[data-bs-theme="dark"] .esm-zbtn--view{background:#0b2029;border-color:#10b981;color:#4ade80;}
+[data-bs-theme="dark"] .esm-zbtn--view{background:#15122b;border-color:#10b981;color:#4ade80;}
 [data-bs-theme="dark"] .esm-tbl-amt{color:#e2e8f0;}
 /* QA #155. Two bugs lived in this one rule.
    1. No font-size, so the name took whatever the cell inherited — 12px in the
@@ -3643,22 +3613,22 @@ textarea.esm-in{resize:vertical;}
       inline-block makes it a block container for its inline content, which is
       what makes "…" actually render. Only .esm-tbl--settle was correct before,
       because it overrode display to block. */
-.esm-tbl-link{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;color:#0891b2;text-decoration:none;font-weight:600;font-size:var(--esm-proof-fs);}
+.esm-tbl-link{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;color:#7c5cfc;text-decoration:none;font-weight:600;font-size:var(--esm-proof-fs);}
 .esm-tbl-link i{margin-right:5px;vertical-align:-1px;}
 .esm-tbl-link:hover{text-decoration:underline;}
 .esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;flex-shrink:0;}
-[data-bs-theme="dark"] .esm-foot{background:#0b1a22;border-color:#173947;}
+[data-bs-theme="dark"] .esm-foot{background:#15112a;border-color:#2c2550;}
 .esm-foot-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:#64748b;min-width:0;}
-.esm-foot-hint i{color:#0891b2;font-size:15px;flex-shrink:0;}
+.esm-foot-hint i{color:#7c5cfc;font-size:15px;flex-shrink:0;}
 .esm-foot-r{display:flex;gap:10px;flex-shrink:0;}
-.esm-btn-ghost{border:1.5px solid #d5dfe4;background:#fff;color:#475569;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
+.esm-btn-ghost{border:1.5px solid #ded7ef;background:#fff;color:#475569;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
 .esm-btn-ghost:hover:not(:disabled){background:#f1f5f9;}
-[data-bs-theme="dark"] .esm-btn-ghost{background:#0b2029;border-color:#173947;color:#cbd5e1;}
-.esm-btn-primary{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(120deg,#0891b2,#06b6d4);box-shadow:0 4px 12px rgba(8,145,178,.28);}
+[data-bs-theme="dark"] .esm-btn-ghost{background:#15122b;border-color:#2c2550;color:#cbd5e1;}
+.esm-btn-primary{font-family:var(--font-sans);border:none;border-radius:10px;height:40px;min-height:40px;padding:0 22px;font-size:12.5px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(120deg,#7c5cfc,#a78bfa);box-shadow:0 4px 12px rgba(124,92,252,.28);}
 .esm-btn-primary:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* Review footer — approve / reject */
-.esm-btn-approve{border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
+.esm-btn-approve{border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#7c5cfc,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
 .esm-btn-approve:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-approve:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 .esm-btn-reject{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 4px 12px rgba(225,29,72,.28);}
@@ -3667,17 +3637,17 @@ textarea.esm-in{resize:vertical;}
 .esm-reject-in{flex:1;min-width:0;}
 /* Approve / Reject confirmation dialog */
 .esm-veil{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.78);backdrop-filter:blur(1.5px);border-radius:inherit;cursor:progress;}
-.esm-veil-box{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:800;color:#0c4a6e;background:#fff;border:1px solid #bae6fd;border-radius:999px;padding:8px 16px;box-shadow:0 6px 20px rgba(8,47,73,.16);}
-.esm-veil-box i{font-size:16px;color:#0891b2;}
+.esm-veil-box{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:800;color:#4c1d95;background:#fff;border:1px solid #bae6fd;border-radius:999px;padding:8px 16px;box-shadow:0 6px 20px rgba(8,47,73,.16);}
+.esm-veil-box i{font-size:16px;color:#7c5cfc;}
 [data-bs-theme="dark"] .esm-veil{background:rgba(8,23,35,.78);}
-[data-bs-theme="dark"] .esm-veil-box{background:#0f172a;border-color:#0c4a6e;color:#cffafe;}
+[data-bs-theme="dark"] .esm-veil-box{background:#0f172a;border-color:#4c1d95;color:#ede9fe;}
 /* The veil is absolutely positioned, so both dialogs must establish a
    containing block or it would cover the whole viewport instead. */
 .esm-sub-modal{position:relative;}
 .esm-confirm{position:relative;width:100%;max-width:440px;background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;box-shadow:0 30px 80px rgba(15,23,42,.5);}
 [data-bs-theme="dark"] .esm-confirm{background:#0f172a;color:#e2e8f0;}
 .esm-confirm-ico{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
-.esm-confirm-ico.is-approve{background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
+.esm-confirm-ico.is-approve{background:linear-gradient(135deg,#7c5cfc,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
 .esm-confirm-ico.is-reject{background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 8px 20px rgba(225,29,72,.32);}
 .esm-confirm-title{font-size:17px;font-weight:800;color:#0f172a;}
 [data-bs-theme="dark"] .esm-confirm-title{color:#e2e8f0;}
@@ -3698,8 +3668,8 @@ textarea.esm-in{resize:vertical;}
 .esm-choose-note i{font-size:16px;flex:0 0 auto;margin-top:1px;}
 [data-bs-theme="dark"] .esm-choose-note{background:rgba(154,52,18,.18);border-color:rgba(154,52,18,.5);color:#fdba74;}
 /* Settle Advance — start card + locked-type chip */
-.esm-settle-start{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#f0fbff;border:1px dashed #7dd3e8;border-radius:12px;padding:16px 18px;}
-[data-bs-theme="dark"] .esm-settle-start{background:rgba(14,116,144,.14);border-color:rgba(14,116,144,.5);}
+.esm-settle-start{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#f8f5ff;border:1px dashed #a78bfa;border-radius:12px;padding:16px 18px;}
+[data-bs-theme="dark"] .esm-settle-start{background:rgba(90,63,209,.14);border-color:rgba(90,63,209,.5);}
 .esm-settle-start-h{font-size:14px;font-weight:800;color:#0f172a;}
 [data-bs-theme="dark"] .esm-settle-start-h{color:#e2e8f0;}
 .esm-settle-start-p{font-size:12.5px;color:#475569;line-height:1.5;margin-top:2px;max-width:520px;}
@@ -3708,20 +3678,20 @@ textarea.esm-in{resize:vertical;}
 .esm-settle-lock i{font-size:15px;}
 [data-bs-theme="dark"] .esm-settle-lock{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.5);color:#c7d2fe;}
 /* Settle Advance popup — header strip with 3 stats */
-.esm-settle-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:#f0fbff;border:1px solid #cdeef6;border-radius:12px;padding:12px 14px;}
-[data-bs-theme="dark"] .esm-settle-strip{background:rgba(14,116,144,.12);border-color:rgba(14,116,144,.4);}
+.esm-settle-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:#f8f5ff;border:1px solid #e6e0fc;border-radius:12px;padding:12px 14px;}
+[data-bs-theme="dark"] .esm-settle-strip{background:rgba(90,63,209,.12);border-color:rgba(90,63,209,.4);}
 .esm-settle-stat{display:flex;align-items:center;gap:10px;min-width:0;}
-.esm-settle-stat+.esm-settle-stat{border-left:1px solid #cdeef6;padding-left:12px;}
-[data-bs-theme="dark"] .esm-settle-stat+.esm-settle-stat{border-left-color:rgba(14,116,144,.4);}
+.esm-settle-stat+.esm-settle-stat{border-left:1px solid #e6e0fc;padding-left:12px;}
+[data-bs-theme="dark"] .esm-settle-stat+.esm-settle-stat{border-left-color:rgba(90,63,209,.4);}
 .esm-settle-stat-ic{width:38px;height:38px;flex:0 0 auto;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;color:#fff;background:linear-gradient(135deg,#f59e0b,#f97316);}
 .esm-settle-stat-ic.is-type{background:linear-gradient(135deg,#6366f1,#4f46e5);}
-.esm-settle-stat-ic.is-goal{background:linear-gradient(135deg,#0891b2,#06b6d4);}
+.esm-settle-stat-ic.is-goal{background:linear-gradient(135deg,#7c5cfc,#a78bfa);}
 .esm-settle-stat-lab{font-size:10px;font-weight:800;letter-spacing:.05em;color:#64748b;}
 [data-bs-theme="dark"] .esm-settle-stat-lab{color:#94a3b8;}
 .esm-settle-stat-val{font-size:16px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .esm-settle-stat-val--sm{font-size:12.5px;font-weight:700;white-space:normal;line-height:1.25;}
 [data-bs-theme="dark"] .esm-settle-stat-val{color:#e2e8f0;}
-@media (max-width:640px){.esm-settle-strip{grid-template-columns:1fr;}.esm-settle-stat+.esm-settle-stat{border-left:none;padding-left:0;border-top:1px solid #cdeef6;padding-top:10px;}}
+@media (max-width:640px){.esm-settle-strip{grid-template-columns:1fr;}.esm-settle-stat+.esm-settle-stat{border-left:none;padding-left:0;border-top:1px solid #e6e0fc;padding-top:10px;}}
 /* Settle Advance popup — itemised usage rows */
 .esm-settle-rows{display:flex;flex-direction:column;gap:8px;}
 /* Scroll the row list after ~4 rows so the popup height stays fixed. */
@@ -3736,12 +3706,12 @@ textarea.esm-in{resize:vertical;}
 .esm-payout-btn{white-space:nowrap;padding:10px 18px;}
 .esm-return-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .esm-return-mode{display:flex;align-items:center;gap:10px;text-align:left;border:1.5px solid #e2e8f0;background:#fff;border-radius:10px;padding:12px;cursor:pointer;}
-.esm-return-mode i{font-size:22px;color:#0891b2;flex:0 0 auto;}
-.esm-return-mode.is-on{border-color:#0891b2;background:#f0fbff;box-shadow:0 0 0 2px rgba(8,145,178,.15);}
+.esm-return-mode i{font-size:22px;color:#7c5cfc;flex:0 0 auto;}
+.esm-return-mode.is-on{border-color:#7c5cfc;background:#f8f5ff;box-shadow:0 0 0 2px rgba(124,92,252,.15);}
 .esm-return-mode-t{font-size:13px;font-weight:800;color:#0f172a;}
 .esm-return-mode-s{font-size:11px;color:#64748b;margin-top:1px;}
 [data-bs-theme="dark"] .esm-return-mode{background:#0d1b2a;border-color:#28405a;}
-[data-bs-theme="dark"] .esm-return-mode.is-on{background:rgba(8,145,178,.14);}
+[data-bs-theme="dark"] .esm-return-mode.is-on{background:rgba(124,92,252,.14);}
 [data-bs-theme="dark"] .esm-return-mode-t{color:#e2e8f0;}
 @media (max-width:560px){.esm-return-modes{grid-template-columns:1fr;}}
 .esm-return-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -3760,11 +3730,11 @@ textarea.esm-in{resize:vertical;}
 .esm-wstep-title{font-size:12px;font-weight:800;letter-spacing:-.2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .esm-wstep-sub{font-size:9.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 /* Active — teal */
-.esm-wstep-active{background:linear-gradient(135deg,#e0f7fb 0%,#cbeef6 100%);border:2px solid #22d3ee;box-shadow:0 6px 20px rgba(8,145,178,.18),0 1px 0 rgba(255,255,255,.85) inset;}
-.esm-wstep-active .esm-wstep-badge{background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;box-shadow:0 5px 14px rgba(14,116,144,.48);}
-.esm-wstep-active .esm-wstep-num{background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;}
-.esm-wstep-active .esm-wstep-title{color:#083344;}
-.esm-wstep-active .esm-wstep-sub{color:#0e7490;}
+.esm-wstep-active{background:linear-gradient(135deg,#f0ecff 0%,#e6e0fc 100%);border:2px solid #a78bfa;box-shadow:0 6px 20px rgba(124,92,252,.18),0 1px 0 rgba(255,255,255,.85) inset;}
+.esm-wstep-active .esm-wstep-badge{background:linear-gradient(135deg,#7c5cfc,#5a3fd1);color:#fff;box-shadow:0 5px 14px rgba(90,63,209,.48);}
+.esm-wstep-active .esm-wstep-num{background:linear-gradient(135deg,#5a3fd1,#3f3380);color:#fff;}
+.esm-wstep-active .esm-wstep-title{color:#17142c;}
+.esm-wstep-active .esm-wstep-sub{color:#5a3fd1;}
 /* Done — green */
 .esm-wstep-done{background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);border:2px solid #34d399;box-shadow:0 6px 20px rgba(16,185,129,.18),0 1px 0 rgba(255,255,255,.85) inset;}
 .esm-wstep-done .esm-wstep-badge{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;box-shadow:0 5px 12px rgba(22,163,74,.42);}
@@ -3777,8 +3747,8 @@ textarea.esm-in{resize:vertical;}
 .esm-wstep-pending .esm-wstep-num{background:#e2e8f0;color:#94a3b8;}
 .esm-wstep-pending .esm-wstep-title{color:#94a3b8;}
 .esm-wstep-pending .esm-wstep-sub{color:#cbd5e1;}
-[data-bs-theme="dark"] .esm-wstep-active{background:linear-gradient(135deg,rgba(14,116,144,.42),rgba(8,145,178,.28));border-color:#22d3ee;}
-[data-bs-theme="dark"] .esm-wstep-active .esm-wstep-title{color:#e0f7fb;}
+[data-bs-theme="dark"] .esm-wstep-active{background:linear-gradient(135deg,rgba(90,63,209,.42),rgba(124,92,252,.28));border-color:#a78bfa;}
+[data-bs-theme="dark"] .esm-wstep-active .esm-wstep-title{color:#f0ecff;}
 [data-bs-theme="dark"] .esm-wstep-done{background:linear-gradient(135deg,rgba(6,95,70,.45),rgba(16,185,129,.20));border-color:#34d399;}
 [data-bs-theme="dark"] .esm-wstep-done .esm-wstep-title{color:#d1fae5;}
 [data-bs-theme="dark"] .esm-wstep-pending{background:rgba(40,52,70,.6);border-color:rgba(148,163,184,.25);}
@@ -3787,7 +3757,7 @@ textarea.esm-in{resize:vertical;}
 /* Locked field (row 2 before step 1 done) */
 .esm-fld.is-locked{opacity:.55;}
 .esm-fld.is-locked .esm-in,.esm-fld.is-locked .esm-money{background:#f1f5f9;cursor:not-allowed;}
-[data-bs-theme="dark"] .esm-fld.is-locked .esm-in,[data-bs-theme="dark"] .esm-fld.is-locked .esm-money{background:#0d2730;}
+[data-bs-theme="dark"] .esm-fld.is-locked .esm-in,[data-bs-theme="dark"] .esm-fld.is-locked .esm-money{background:#17142c;}
 .esm-settle-donenote{display:flex;align-items:flex-start;gap:8px;background:#d6f4e3;border:1px solid #a7e3c2;color:#108548;border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;line-height:1.45;}
 .esm-settle-donenote i{font-size:16px;flex:0 0 auto;margin-top:1px;}
 [data-bs-theme="dark"] .esm-settle-donenote{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}
@@ -3811,20 +3781,20 @@ textarea.esm-in{resize:vertical;}
 .esm-srow-x{width:40px;height:41px;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #fecdd3;border-radius:9px;background:#fff1f2;color:#e11d48;font-size:16px;cursor:pointer;}
 .esm-srow-x:hover:not(:disabled){background:#ffe4e6;}
 .esm-srow-x:disabled{opacity:.4;cursor:not-allowed;}
-.esm-settle-sum{border:1px solid #e2eef2;border-radius:10px;overflow:hidden;align-self:start;}
-[data-bs-theme="dark"] .esm-settle-sum{border-color:#1e3a44;}
+.esm-settle-sum{border:1px solid #ebe6f8;border-radius:10px;overflow:hidden;align-self:start;}
+[data-bs-theme="dark"] .esm-settle-sum{border-color:#2c2550;}
 .esm-settle-sum .esm-sumrow.is-grand{color:#fff;}
 /* Totals + outcome action, side by side */
 .esm-settle-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;align-items:stretch;}
 .esm-settle-action{display:flex;flex-direction:column;align-items:flex-start;gap:6px;border:1px dashed #cbd5e1;border-radius:10px;padding:16px;background:#f8fafc;}
 [data-bs-theme="dark"] .esm-settle-action{background:#0d1b2a;border-color:#28405a;}
-.esm-settle-action.is-ready{border-style:solid;border-color:#7dd3e8;background:#f0fbff;}
-[data-bs-theme="dark"] .esm-settle-action.is-ready{background:rgba(14,116,144,.14);border-color:rgba(14,116,144,.5);}
+.esm-settle-action.is-ready{border-style:solid;border-color:#a78bfa;background:#f8f5ff;}
+[data-bs-theme="dark"] .esm-settle-action.is-ready{background:rgba(90,63,209,.14);border-color:rgba(90,63,209,.5);}
 .esm-act-lab{font-size:10.5px;font-weight:800;letter-spacing:.05em;color:#64748b;}
 [data-bs-theme="dark"] .esm-act-lab{color:#94a3b8;}
 .esm-act-amt{font-size:24px;font-weight:800;line-height:1.1;color:#475569;}
 .esm-act-amt.is-return{color:#a4661c;}
-.esm-act-amt.is-reimburse{color:#0e7490;}
+.esm-act-amt.is-reimburse{color:#5a3fd1;}
 .esm-act-amt.is-equal{color:#108548;}
 .esm-act-amt.is-pending{color:#64748b;}
 .esm-act-p{font-size:12px;color:#64748b;line-height:1.45;}
@@ -3834,13 +3804,13 @@ textarea.esm-in{resize:vertical;}
 /* Locked (already-saved) settle rows */
 .esm-srow--locked{opacity:.9;}
 .esm-srow--locked .esm-in{background:#f1f5f9;color:#475569;cursor:default;border-color:#e2e8f0;}
-[data-bs-theme="dark"] .esm-srow--locked .esm-in{background:#0d2730;color:#94a3b8;border-color:#1e3a44;}
+[data-bs-theme="dark"] .esm-srow--locked .esm-in{background:#17142c;color:#94a3b8;border-color:#2c2550;}
 .esm-srow--locked .esm-file-chip{background:#f1f5f9;}
 .esm-srow-lockic{width:40px;height:41px;display:inline-flex;align-items:center;justify-content:center;color:#94a3b8;font-size:15px;}
-.esm-btn-soft{border:1px solid #7dd3e8;background:#ecfeff;color:#0891b2;border-radius:9px;font-size:13px;font-weight:700;padding:9px 16px;cursor:pointer;}
-.esm-btn-soft:hover:not(:disabled){background:#cffafe;}
+.esm-btn-soft{border:1px solid #a78bfa;background:#f5f3ff;color:#7c5cfc;border-radius:9px;font-size:13px;font-weight:700;padding:9px 16px;cursor:pointer;}
+.esm-btn-soft:hover:not(:disabled){background:#ede9fe;}
 .esm-btn-soft:disabled{opacity:.55;cursor:not-allowed;}
-[data-bs-theme="dark"] .esm-btn-soft{background:rgba(8,145,178,.16);border-color:rgba(8,145,178,.5);color:#67e8f9;}
+[data-bs-theme="dark"] .esm-btn-soft{background:rgba(124,92,252,.16);border-color:rgba(124,92,252,.5);color:#c4b5fd;}
 @media (max-width:720px){.esm-srow{grid-template-columns:1fr 1fr;}.esm-srow-hd{display:none;}.esm-srow-file{width:100%;}}
 @media (max-width:640px){.esm-grid,.esm-steps{grid-template-columns:1fr;}.esm-ded-amt{flex-basis:120px;}}
 `;
