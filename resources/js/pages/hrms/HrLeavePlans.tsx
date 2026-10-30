@@ -15,7 +15,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import SearchClear from '../../components/ui/SearchClear';
-import TablePager, { pageSlice, usePager } from '../../components/ui/TablePager';
+import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
+
 
 type CalendarStart = 'fixed_month' | 'joining_date';
 
@@ -1126,8 +1127,75 @@ function ConfigurationTab({
   onShowGuide: () => void;
   canEdit: boolean;
 }) {
-  const typePager = usePager(plan.leaveTypes.length);
 
+  /* The shared table's columns. `locked` and `canEdit` decide the Action cell,
+     so they are dependencies — a plan that unlocks must re-render its rows. */
+  const configColumns = useMemo<DataTableColumn<any>[]>(() => [
+    {
+      header: 'Leave Type',
+      accessorKey: 'name',
+      meta: { width: '34%', wrap: true },
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span className="lp-type-dot" style={{ background: t.color }} />
+            <span className="fw-semibold fs-13">{t.name}</span>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Quota',
+      accessorKey: 'quotaLabel',
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
+            {!t.configured && <i className="ri-error-warning-line" />}
+            {t.quotaLabel}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'End of Year',
+      accessorKey: 'endOfYearLabel',
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
+            {!t.configured && <i className="ri-error-warning-line" />}
+            {t.endOfYearLabel}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Action',
+      id: 'action',
+      enableSorting: false,
+      meta: { width: 200, align: 'right' },
+      cell: info => {
+        const t = info.row.original;
+        if (locked) {
+          return (
+            <span className="d-inline-flex align-items-center gap-2">
+              <span className="text-muted fs-13 d-inline-flex align-items-center gap-1"><i className="ri-lock-2-line" /> Locked</span>
+              {/* Locked plans are view-only, but users must still be able to
+                  review the saved configuration (bug #67). */}
+              <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>
+                <i className="ri-eye-line" /> View
+              </button>
+            </span>
+          );
+        }
+        return canEdit
+          ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
+          : <span className="text-muted fs-13">—</span>;
+      },
+    },
+  ], [locked, canEdit, onSetupType]);
   return (
     <div className="lp-config">
       <div className="lp-config-actions">
@@ -1158,75 +1226,15 @@ function ConfigurationTab({
         </span>
       </div>
 
-      <div className="lp-config-table-wrap">
-        <table className="lp-config-table">
-          <thead>
-            <tr>
-              <th>LEAVE TYPE</th>
-              <th>QUOTA</th>
-              <th>END OF YEAR</th>
-              <th style={{ textAlign: 'right' }}>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {plan.leaveTypes.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="text-center py-5">
-                  <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
-                  <div className="fw-semibold">No leave types added yet</div>
-                  <div className="text-muted fs-13 mt-1">Click <strong>+ Assign Leave Type</strong> to configure leave categories for this plan.</div>
-                </td>
-              </tr>
-            ) : pageSlice(plan.leaveTypes, typePager.page, typePager.pageSize).map(t => (
-              <tr key={t.id}>
-                <td>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="lp-type-dot" style={{ background: t.color }} />
-                    <span className="fw-semibold fs-13">{t.name}</span>
-                  </div>
-                </td>
-                <td>
-                  <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
-                    {!t.configured && <i className="ri-error-warning-line" />}
-                    {t.quotaLabel}
-                  </span>
-                </td>
-                <td>
-                  <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
-                    {!t.configured && <i className="ri-error-warning-line" />}
-                    {t.endOfYearLabel}
-                  </span>
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  {locked
-                    ? (
-                      <span className="d-inline-flex align-items-center gap-2">
-                        <span className="text-muted fs-13 d-inline-flex align-items-center gap-1"><i className="ri-lock-2-line" /> Locked</span>
-                        {/* Locked plans are view-only, but users must still be
-                            able to review the saved configuration (bug #67). */}
-                        <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>
-                          <i className="ri-eye-line" /> View
-                        </button>
-                      </span>
-                    )
-                    : canEdit
-                      ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
-                      : <span className="text-muted fs-13">—</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <TablePager
-        total={plan.leaveTypes.length}
-        page={typePager.page}
-        pageSize={typePager.pageSize}
-        onPage={typePager.setPage}
-        onPageSize={typePager.setPageSize}
-      />
-    </div>
+      <DataTable<any>
+        data={plan.leaveTypes}
+        columns={configColumns}
+        title="Configuration"
+        subtitle="Quota and year-end rule for each leave type on this plan"
+        accent="violet"
+        minWidth={760}
+        emptyMessage="No leave types yet — use “+ Assign Leave Type” to configure categories for this plan."
+      />    </div>
   );
 }
 
@@ -1266,9 +1274,94 @@ function LeaveTypesTab({
      drawn from the page's own contents below, so it travels with the first
      incidental type wherever that lands. */
   const allTypes  = [...regular, ...incidental];
-  const pager     = usePager(allTypes.length);
-  const pageTypes = pageSlice(allTypes, pager.page, pager.pageSize);
 
+  /* The shared table's columns. The old markup injected a STATUTORY /
+     INCIDENTAL divider row between the two groups; TanStack cannot emit a row
+     between data rows, so the grouping is a sortable column now — the
+     information is kept, the separator line is not. */
+  const typeColumns = useMemo<DataTableColumn<CatalogType>[]>(() => [
+    {
+      header: 'Name',
+      accessorKey: 'name',
+      meta: { width: '34%', wrap: true },
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.initials}</span>
+            <span className="fw-semibold fs-13">{t.name}</span>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      cell: info => <span className="fs-13 text-muted">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Group',
+      accessorKey: 'group',
+      meta: { width: 130 },
+      cell: info => (
+        <span className="fs-13 text-muted text-capitalize">{String(info.getValue() ?? '—')}</span>
+      ),
+    },
+    {
+      header: 'Is Paid',
+      accessorKey: 'isPaid',
+      meta: { width: 110, align: 'center' },
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <span className={`rec-pill lp-pay-pill ${t.isPaid === 'Paid' ? 'is-paid' : 'is-unpaid'}`}>{t.isPaid}</span>
+        );
+      },
+    },
+    {
+      header: 'Code',
+      accessorKey: 'code',
+      meta: { width: 100, align: 'center' },
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.code}</span>
+        );
+      },
+    },
+    {
+      header: 'Actions',
+      id: 'actions',
+      enableSorting: false,
+      meta: { width: 150, align: 'right' },
+      cell: info => {
+        const t = info.row.original;
+        return (
+          <div className="d-flex justify-content-end gap-1">
+            <Tooltip label="View details">
+              <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)}>
+                <i className="ri-eye-line" />
+              </button>
+            </Tooltip>
+            {canEdit && (
+              <Tooltip label="Edit leave type">
+                <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
+                  <ActionIcon icon="edit-svg" />
+                </button>
+              </Tooltip>
+            )}
+            {canDelete && (
+              <Tooltip label="Delete leave type">
+                <button type="button" className="lp-row-action lp-row-action--danger" aria-label="Delete" onClick={() => onDelete(t.id)}>
+                  <ActionIcon icon="trash-svg" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
+    },
+  ], [onView, onEdit, onDelete, canEdit, canDelete]);
   return (
     <div className="lp-types-pane">
       <div className="lp-info-banner-blue">
@@ -1284,129 +1377,22 @@ function LeaveTypesTab({
         </button>
       </div>
 
-      <div className="lp-types-head">
-        <h6 className="mb-1 fw-bold">Leave types</h6>
-        <div className="text-muted fs-13">
-          Below are the leave types that you'd like to use in your organisation or you can add a new leave type as you desire.
-        </div>
-      </div>
-
-      <div className="lp-search-box mb-3" style={{ maxWidth: 360 }}>
-        <i className="ri-search-line" />
-        <input
-          type="text"
-          autoComplete="off"
-          placeholder="Search leave types..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <SearchClear show={search} onClear={() => { setSearch(''); }} />
-      </div>
-
-      <div className="lp-config-table-wrap">
-        <table className="lp-config-table lp-types-table">
-          <thead>
-            <tr>
-              <th style={{ width: '36%' }}>NAME</th>
-              <th>TYPE</th>
-              <th style={{ width: 110 }}>IS PAID</th>
-              <th style={{ width: 100 }}>CODE</th>
-              <th style={{ width: 150, textAlign: 'right' }}>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageTypes.map((t, i) => (
-              <Fragment key={t.id}>
-                {/* First incidental ON THIS PAGE carries the divider. */}
-                {t.group === 'incidental' && (i === 0 || pageTypes[i - 1].group !== 'incidental') && (
-                  <tr className="lp-group-row">
-                    <td colSpan={5}>STATUTORY / INCIDENTAL</td>
-                  </tr>
-                )}
-                <CatalogRow t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />
-              </Fragment>
-            ))}
-            {allTypes.length === 0 && (
-              <tr>
-                <td colSpan={5} className="text-center py-5 text-muted">
-                  <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                  No leave types match your search
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <TablePager
-        total={allTypes.length}
-        page={pager.page}
-        pageSize={pager.pageSize}
-        onPage={pager.setPage}
-        onPageSize={pager.setPageSize}
+      <DataTable<CatalogType>
+        data={allTypes}
+        columns={typeColumns}
+        title="Leave types"
+        subtitle="The types your organisation uses"
+        accent="violet"
+        minWidth={980}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search leave types..."
+        emptyMessage="No leave types match your search"
       />
     </div>
   );
 }
 
-function CatalogRow({
-  t, onView, onEdit, onDelete, canEdit, canDelete,
-}: {
-  t: CatalogType;
-  onView: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  canEdit: boolean;
-  canDelete: boolean;
-}) {
-  return (
-    <tr>
-      <td>
-        <div className="d-flex align-items-center gap-2">
-          <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.initials}</span>
-          <span className="fw-semibold fs-13">{t.name}</span>
-        </div>
-      </td>
-      <td className="fs-13 text-muted">{t.type}</td>
-      <td>
-        <span className={`rec-pill lp-pay-pill ${t.isPaid === 'Paid' ? 'is-paid' : 'is-unpaid'}`}>
-          {t.isPaid}
-        </span>
-      </td>
-      <td>
-        <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.code}</span>
-      </td>
-      <td style={{ textAlign: 'right' }}>
-        <div className="d-flex justify-content-end gap-1">
-          <Tooltip label="View details">
-            <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)}>
-              <i className="ri-eye-line" />
-            </button>
-          </Tooltip>
-          {canEdit && (
-          <Tooltip label="Edit leave type">
-            <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
-              <ActionIcon icon="edit-svg" />
-            </button>
-          </Tooltip>
-          )}
-          {canDelete && (
-          <Tooltip label="Delete leave type">
-            <button
-              type="button"
-              className="lp-row-action"
-              aria-label="Delete"
-              onClick={() => onDelete(t.id)}
-              style={{ color: '#dc2626' }}
-            >
-              <i className="ri-delete-bin-line" />
-            </button>
-          </Tooltip>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-}
 
 function LeaveBalancesTab() {
   const [data, setData] = useState<ApiLeaveBalancesResponse | null>(null);
@@ -1550,14 +1536,39 @@ function LeaveBalancesTab() {
     return cols;
   }, [data?.columns]);
 
+  /* Department and Location as FACETS, not two selects parked in the toolbar.
+     'All' is this screen's way of saying "no filter", and the filter modal
+     says that with an empty string — so the two are mapped at the boundary
+     rather than changing what the query expects. */
+  const balanceFacets = useMemo(() => [
+    {
+      key: 'department',
+      label: 'Department',
+      icon: 'ri-building-2-line',
+      options: (data?.filters.departments ?? []).map(v => ({ value: v, label: v })),
+    },
+    {
+      key: 'location',
+      label: 'Location',
+      icon: 'ri-map-pin-line',
+      options: (data?.filters.locations ?? []).map(v => ({ value: v, label: v })),
+    },
+  ], [data?.filters.departments, data?.filters.locations]);
+
   const balancesToolbarActions = (
     <>
-      <div style={{ minWidth: 150 }}>
-        <MasterSelect value={department} onChange={setDepartment} options={DEPT_OPTS} placeholder="Department" />
-      </div>
-      <div style={{ minWidth: 140 }}>
-        <MasterSelect value={location} onChange={setLocation} options={LOC_OPTS} placeholder="Location" />
-      </div>
+      <MasterFilterButton
+        title="Filter Leave Balances"
+        facets={balanceFacets}
+        value={{
+          department: department === 'All' ? '' : department,
+          location:   location   === 'All' ? '' : location,
+        }}
+        onApply={next => {
+          setDepartment((next.department as string) || 'All');
+          setLocation((next.location as string) || 'All');
+        }}
+      />
       <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
         <i className="ri-refresh-line" />
       </button>
@@ -1566,11 +1577,6 @@ function LeaveBalancesTab() {
 
   return (
     <div className="lp-balances-pane">
-      <div className="lp-types-head">
-        <h6 className="mb-1 fw-bold">Leave Balances</h6>
-        <div className="text-muted fs-13">View and configure leave balances of all employees</div>
-      </div>
-
       {/* Shared list table — search box, sortable headers, rows-per-page pager
           and card chrome all come from the component, so this list looks and
           behaves like every other list in the app. Search stays SERVER-side:
@@ -1580,13 +1586,17 @@ function LeaveBalancesTab() {
       <DataTable<ApiLeaveBalanceRow>
         data={filteredRows}
         columns={balanceColumns}
+        /* Names the list in the toolbar's left half. Without it the search and
+           the two filters sat alone on the right and the band read as
+           unfinished — the same reason <DataTable> grew these props. */
+        title="Leave Balances"
+        subtitle="Every employee, with their per-type quota and consumption"
         serial={{ header: 'Sr. No.' }}
         accent="violet"
-        /* Stretches the card to the viewport so a short list doesn't
-           collapse into a strip above an empty page — paired with
-           autoFitRows, which then fills that height with rows. */
-        fitToViewport
-        autoFitRows
+        /* No viewport stretch. It used to stretch the card to the viewport
+           so a short list did not collapse into a strip above an empty page,
+           but that left a band of empty table between the last row and the
+           pager. The card hugs its rows instead. (#125) */
         /* 3 identity columns + a variable number of leave-type columns; below
            this the wrapper scrolls sideways rather than crushing the bars. */
         /* Base drops with the fixed columns the CSS hides below (see
@@ -2031,9 +2041,6 @@ function AddLeavePlanModal({
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
-            {/* Cancel sits OUTSIDE the fieldset (so it can stay reachable when
-                nothing is in flight) and is disabled explicitly during a save. */}
-            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
@@ -2287,7 +2294,6 @@ function AddLeaveTypeModal({
           <div className="d-flex gap-2">
             {/* Cancel sits OUTSIDE the fieldset (so it stays reachable when
                 nothing is in flight) and is disabled explicitly during a save. */}
-            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
@@ -2522,9 +2528,6 @@ function AssignLeaveTypesModal({
             {visibleSelectedCount === 0 ? 'Pick at least one leave type to enable Save' : `${visibleSelectedCount} selected · ready to save`}
           </span>
           <div className="d-flex gap-2">
-            {/* Cancel resets the selection and closes — doing that mid-save
-                abandons a request already assigning the types. (#125) */}
-            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
@@ -2648,8 +2651,8 @@ function LeaveTypeSetupModal({
                 <i className="ri-file-list-3-line" style={{ color: leaveType.color }} />
               </span>
               <div className="min-w-0">
-                <div className="fw-bold" style={{ fontSize: 14 }}>{leaveType.name}</div>
-                <div className="text-muted d-flex align-items-center gap-1" style={{ fontSize: 11 }}>
+                <div className="fw-bold" style={{ fontSize: 17, lineHeight: 1.2 }}>{leaveType.name}</div>
+                <div className="text-muted d-flex align-items-center gap-1" style={{ fontSize: 12, marginTop: 1 }}>
                   {readOnly && <i className="ri-lock-2-line" />}
                   Leave Type Configuration{readOnly ? ' · Read-only' : ''}
                 </div>
@@ -2720,7 +2723,6 @@ function LeaveTypeSetupModal({
                 <button type="button" className="rec-btn-primary" onClick={onClose}>Close</button>
               ) : (
                 <>
-                  <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
                   <button type="button" className="rec-btn-primary" onClick={goNext} disabled={saving}>
                     {saving ? (
                       <><i className="ri-loader-4-line" style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
