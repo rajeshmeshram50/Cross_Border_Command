@@ -2530,12 +2530,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </span>
                 )}
               </div>
-              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close">
+              {/* CS-953 #52/#53: frozen while the cancel request runs — closing
+                  the dialog or keeping a task that is being cancelled would
+                  leave the box's state out of step with the server. */}
+              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close"
+                disabled={cancelBusy}>
                 &times;
               </button>
             </div>
 
-            <div className="s4qm__bd">
+            <div className="s4qm__bd" inert={cancelBusy}>
               <div className="s4ct-warn">
                 <span className="s4ct-warn__i"><IcoZvZebra /></span>
                 <div>
@@ -2572,7 +2576,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__ft s4ct-ft">
-              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}>
+              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}
+                disabled={cancelBusy}>
                 Keep Task
               </button>
               <button

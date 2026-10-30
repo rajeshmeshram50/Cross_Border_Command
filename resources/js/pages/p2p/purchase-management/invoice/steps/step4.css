@@ -6533,3 +6533,15 @@
   .s4-root:not(.is-fullview) > .s4b-wrap { flex: 1 1 auto; min-height: 0; }
   .s4-root:not(.is-fullview) .s4-panels { flex: 1 1 0; min-height: 340px; }
 }
+
+/* Cancel Zebra Scan Task, while the cancel request runs (CS-953 #52/#53):
+   Keep Task, the close button and the other cancel option are disabled and
+   dimmed; the option that was clicked stays at full strength with its
+   spinner, so it is clear which one is in progress. The body is inert. */
+.s4-root .s4ct-modal .s4qm__ft .s4-btn-back:disabled,
+.s4-root .s4ct-modal .s4qm__x:disabled,
+.s4-root .s4ct-modal .s4ct-ft > button:disabled:not([aria-busy="true"]) {
+  opacity: .45; cursor: not-allowed; pointer-events: none;
+}
+.s4-root .s4ct-modal .s4ct-ft > button[aria-busy="true"] { opacity: 1; cursor: progress; }
+.s4-root .s4ct-modal .s4qm__bd[inert] { opacity: .7; transition: opacity .15s; }
