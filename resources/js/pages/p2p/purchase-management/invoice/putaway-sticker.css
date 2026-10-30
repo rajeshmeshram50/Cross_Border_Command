@@ -115,8 +115,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
   margin-left: 8px;
   flex-shrink: 0;
   border-radius: 8px;
@@ -127,7 +128,7 @@
 }
 
 .gsm-close:hover { background: rgba(255, 255, 255, .28); }
-.gsm-close svg { width: 13px; height: 13px; }
+.gsm-close svg { width: 15px; height: 15px; }
 
 /* ── The label ────────────────────────────────────────────────────────── */
 
@@ -377,7 +378,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 13px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 16px;
   border-radius: 10px;
   cursor: pointer;
   font-family: inherit;

@@ -68,6 +68,70 @@ function Section({ icon, prefix, title, sub, meta, right, children }: {
   );
 }
 
+/* While the summary loads: the four sections in their real grids, with
+   shimmer bars where the figures will land, so the popup shows it is working
+   and nothing jumps when the data arrives. Same .spi-sk-bar as the wizard's
+   stage skeletons (it stills itself under prefers-reduced-motion). */
+const Bar = ({ w, h = 12 }: { w: string | number; h?: number }) => (
+  <span className="spi-sk-bar" style={{ width: w, height: h }} />
+);
+
+function SkelSection({ children }: { children: ReactNode }) {
+  return (
+    <div className="spi-dt-sec pts-sec pts-skel" aria-hidden>
+      <div className="spi-dt-sec-head">
+        <span className="pts-skel__ico" />
+        <div className="spi-dt-sec-mid pts-skel__mid">
+          <Bar w={260} h={13} />
+          <Bar w={340} h={9} />
+        </div>
+      </div>
+      <div className="spi-dt-sec-body">{children}</div>
+    </div>
+  );
+}
+
+function SummarySkeleton() {
+  return (
+    <>
+      <span className="visually-hidden" role="status">Loading the putaway summary…</span>
+      <SkelSection>
+        <div className="pts-tiles">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--tile" key={i}>
+              <Bar w={34} h={18} /><Bar w="62%" h={8} />
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-parties">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--row" key={i}>
+              <span className="pts-skel__ico" />
+              <div className="pts-skel__mid"><Bar w={70} h={8} /><Bar w="70%" h={13} /></div>
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-refs">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--ref" key={i}>
+              <Bar w="58%" h={9} /><Bar w={120} h={22} /><Bar w={80} h={8} />
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-skel__rows">
+          {Array.from({ length: 3 }, (_, i) => <Bar key={i} w="100%" h={34} />)}
+        </div>
+      </SkelSection>
+    </>
+  );
+}
+
 function Tile({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
     <div className={`pts-tile pts-tile--${tone}`}>
@@ -319,9 +383,13 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
         </div>
 
         <div className="pts-body">
-          {state !== 'ready' ? (
-            <div className="pts-sec" style={{ padding: 32, textAlign: 'center' }}>
-              {state === 'loading' ? 'Loading the putaway summary…' : error}
+          {state === 'loading' ? (
+            <SummarySkeleton />
+          ) : state === 'failed' ? (
+            <div className="pts-fail" role="alert">
+              <span className="pts-fail__ico" aria-hidden><IcoX /></span>
+              <b>Could not load the putaway summary</b>
+              <span>{error}</span>
             </div>
           ) : (<>
           <Section

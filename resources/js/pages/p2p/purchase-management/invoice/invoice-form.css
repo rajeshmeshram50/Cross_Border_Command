@@ -2517,6 +2517,18 @@
 
   overscroll-behavior: contain;
 }
+/* app.css sets `* { scrollbar-width: thin; scrollbar-color: … }` on every
+   element, and once either is set Chrome draws its standard scrollbar —
+   arrows and all — and ignores every ::-webkit-scrollbar rule below: the
+   track margins that keep the thumb clear of the header and totals, the
+   hidden buttons, the 8px width. So the thumb ran up beside the header with
+   an arrow over the painted lane. Reset here (two classes, to outweigh the
+   dark-mode `*` rule too); Firefox, which has no ::-webkit-scrollbar, keeps
+   the thin scrollbar through the @supports block in create-po.css. */
+.cpd-scroll.cpd-scroll--rows { scrollbar-width: auto; scrollbar-color: auto; }
+@supports not selector(::-webkit-scrollbar) {
+  .cpd-scroll.cpd-scroll--rows { scrollbar-width: thin; scrollbar-color: #bfe3ec transparent; }
+}
 .cpd-scroll--rows.is-overflowing { scrollbar-gutter: stable; }
 .cpd-scroll--rows.is-overflowing::-webkit-scrollbar-track:vertical {
   margin-top: var(--spi-th, 0px);
@@ -3416,3 +3428,17 @@
   .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section + .vti-dw-mini-section { border-top: 1px solid rgba(6,182,212,.12); }
   [data-bs-theme="dark"] .vti-dw-modal .vti-dw-row2-inner > .vti-dw-mini-section + .vti-dw-mini-section { border-top-color: rgba(34,211,238,.12); }
 }
+
+/* Advanced Details bar, as the prototype has it: 40px tall, 0 18px padding,
+   and the label the same size and weight as the Box Core Details title above
+   it (12.5px / 800, #0C4A6E). The button had no font of its own, so it fell
+   to the browser's thin default; and it was ~48px from the section-header
+   padding (11px top and bottom) it shares with .vti-dw-section-hd. Both the
+   popup and the inline box panel in the Stage 3 table. */
+.vti-dw-advanced > .vti-dw-adv-toggle.vti-dw-adv-toggle {
+  height: 40px; min-height: 40px; box-sizing: border-box;
+  padding: 0 18px;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: -.15px; color: #0c4a6e;
+  text-align: left;
+}
+[data-bs-theme="dark"] .vti-dw-advanced > .vti-dw-adv-toggle.vti-dw-adv-toggle { color: #7dd3fc; }

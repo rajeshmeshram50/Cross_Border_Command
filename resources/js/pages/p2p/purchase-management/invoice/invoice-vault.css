@@ -381,8 +381,12 @@
   .iev-btn { flex: 1 1 auto; justify-content: center; }
 }
 
+/* Lined up with the document rows under it: those sit 12px in from the
+   card (.iev-doc margin) and their text a further 13px; the heading had no
+   side margin at all and sat on the card's left border. */
 .iev-sec__t {
-  margin: 10px 0 4px;
+  margin: 4px 12px 8px;
+  padding-left: 14px;
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .4px;
