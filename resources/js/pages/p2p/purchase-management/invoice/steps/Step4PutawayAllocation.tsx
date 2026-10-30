@@ -998,12 +998,23 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     };
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
+    return () => window.removeEventListener('resize', place);
   }, [anchor, entries.length]);
+
+  /* Scrolling anything outside the pop-over closes it, like a menu. It used
+     to chase its button on every scroll frame, so scrolling the page or a
+     pane dragged the log along over the content. Scrolling the log's own
+     list is left alone. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return;
+      onCloseRef.current();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, []);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };

@@ -22,8 +22,18 @@
 
 /* No backdrop blur: blurring the whole page behind a card this size is
    re-computed on every scroll frame and made the popup stutter on machines
-   without a strong GPU. A slightly darker scrim reads the same. */
-.pts-backdrop {
+   without a strong GPU. A slightly darker scrim reads the same.
+   Written as .spi-mdl-backdrop.pts-backdrop, not .pts-backdrop alone: the
+   shared rule that adds blur(4px) is bundled into both p2p-common and
+   p2p-detail, and the p2p-detail chunk is often injected AFTER this sheet
+   (it loads lazily with the SPI form). At equal weight the later sheet won,
+   so the blur came back on some loads and not others — the intermittent
+   lag. One class heavier, this wins whatever the load order.
+   text-rendering back to auto: the shared backdrop asks for
+   optimizeLegibility (kerning and ligatures on every glyph), which is a
+   measurable layout cost on a popup this text-heavy as it first renders. */
+.spi-mdl-backdrop.pts-backdrop {
+  text-rendering: auto;
   padding: 24px;
   background: rgba(5, 18, 32, .7);
   backdrop-filter: none;
@@ -1456,3 +1466,47 @@
   .pts-sec-right { margin-left: 0; flex-wrap: wrap; }
   .pts-sec .spi-dt-sec-mid { flex: 1 1 160px; }
 }
+
+/* ── Loading and failed states (CS-132) ──────────────────────────────────
+   Loading: the four sections drawn in their real grids with shimmer bars
+   (.spi-sk-bar) in place of the figures. Failed: a distinct red notice, so
+   "still working" and "could not load" never look alike. */
+.pts-skel .spi-dt-sec-head { cursor: default; }
+.pts-skel__mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.pts-skel__ico {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(90deg, #e4eff4 25%, #f3fafc 37%, #e4eff4 63%);
+  background-size: 400% 100%;
+  animation: spi-sk-shim 1.5s ease-in-out infinite;
+}
+.pts-skel__card {
+  display: flex; border-radius: 14px;
+  border: 1.5px solid #e3f1f5; background: #fbfeff;
+}
+.pts-skel__card--tile { flex-direction: column; align-items: center; justify-content: center; gap: 9px; height: 68px; }
+.pts-skel__card--row  { align-items: center; gap: 12px; height: 66px; padding: 0 16px; }
+.pts-skel__card--ref  { flex-direction: column; justify-content: center; gap: 12px; height: 134px; padding: 0 16px; }
+.pts-skel__rows { display: flex; flex-direction: column; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .pts-skel__ico { animation: none; } }
+[data-bs-theme="dark"] .pts-skel__card { background: rgba(34, 211, 238, .04); border-color: rgba(34, 211, 238, .14); }
+[data-bs-theme="dark"] .pts-skel__ico {
+  background: linear-gradient(90deg, rgba(34,211,238,.08) 25%, rgba(34,211,238,.16) 37%, rgba(34,211,238,.08) 63%);
+  background-size: 400% 100%;
+}
+
+.pts-fail {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 40px 20px; text-align: center;
+  border-radius: 16px; border: 1.5px dashed #fecaca; background: #fff7f7;
+}
+.pts-fail__ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin-bottom: 4px; border-radius: 50%;
+  color: #dc2626; background: #fee2e2;
+}
+.pts-fail b { font-size: 14px; font-weight: 800; color: #991b1b; }
+.pts-fail > span:last-child { font-size: 12px; font-weight: 500; color: #7f1d1d; max-width: 460px; line-height: 1.55; }
+[data-bs-theme="dark"] .pts-fail { background: rgba(239, 68, 68, .08); border-color: rgba(239, 68, 68, .35); }
+[data-bs-theme="dark"] .pts-fail__ico { background: rgba(239, 68, 68, .18); color: #fca5a5; }
+[data-bs-theme="dark"] .pts-fail b { color: #fecaca; }
+[data-bs-theme="dark"] .pts-fail > span:last-child { color: #fca5a5; }
