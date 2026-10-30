@@ -638,6 +638,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         /* Raised from the invoice, but it still belongs to the PO — same
            ceiling, same approver rules, same deduction. The SPI screen
            therefore never needs to know the purchase order id. */
+        /* TDS on a DIRECT invoice. A PO-backed one is refused and sent to
+           its order — every payment request is gated on tds_updated_at,
+           and before this there was no way to set it without a PO. */
+        Route::put   ('/{id}/tds',                              [PoPaymentRequestController::class, 'saveTdsForSpi'])->whereNumber('id');
         Route::post  ('/{id}/payment-requests',                  [PoPaymentRequestController::class, 'storeFromSpi'])->whereNumber('id');
         // The "Make SPI Payment" button. Still recorded against the PO.
         Route::post  ('/{id}/payment-requests/{req}/payments',   [PoPaymentRequestController::class, 'storePaymentFromSpi'])
