@@ -338,7 +338,7 @@ class ShelfController extends BaseInventoryController
     {
         $user = $this->tenantUser($request);
         $s = $this->scopeTenant(Shelf::query(), $user, $this->branchScope($request, $user))
-            ->with('rack.zone:id,zone_name,temp_min_c,temp_max_c')
+            ->with(['rack:id,code,zone_id,warehouse_id', 'rack.zone:id,zone_name,code,temp_min_c,temp_max_c', 'rack.warehouse:id,wh_name,code'])
             ->findOrFail($id);
 
         $zone = $s->rack?->zone;
@@ -360,6 +360,12 @@ class ShelfController extends BaseInventoryController
                 'Clear Ht' => $s->height_cm ? ((float) $s->height_cm) . ' cm' : null,
                 'Temp'     => $temp,
             ], fn ($v) => $v !== null && $v !== ''),
+            'path'     => [
+                ['label' => 'WAREHOUSE', 'code' => $s->rack?->warehouse?->wh_code],
+                ['label' => 'ZONE',      'code' => $zone?->zone_code],
+                ['label' => 'RACK',      'code' => $s->rack?->rack_code],
+                ['label' => 'SHELF',     'code' => $s->shelf_code],
+            ],
             'flags'    => array_values(array_filter([
                 $this->flag((bool) $s->cold_chain, 'COLD CHAIN', 'cold'),
                 $this->flag((bool) $s->hazardous, 'HAZARDOUS', 'haz'),

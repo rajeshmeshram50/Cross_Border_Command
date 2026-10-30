@@ -373,6 +373,9 @@ class WarehouseController extends BaseInventoryController
                 'Zones' => $w->zones_count,
                 'Racks' => $w->racks_count,
             ], fn ($v) => $v !== null && $v !== ''),
+            'path'     => [
+                ['label' => 'WAREHOUSE', 'code' => $w->wh_code],
+            ],
             'flags'    => array_values(array_filter([
                 $this->flag(!$w->isActive(), 'INACTIVE', 'off'),
             ])),
