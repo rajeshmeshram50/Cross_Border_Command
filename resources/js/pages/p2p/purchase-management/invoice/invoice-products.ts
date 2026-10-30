@@ -245,6 +245,7 @@ export function linesFromPo(items: PoItem[], open: Record<number, SpiPoOpen>): P
 export type SpiItemsPayload = {
   items: Array<{
     po_item_id: number | null;
+    pi_item_id: number | null;
     product_id: number;
     qty_spi: number;
     rate: number;
@@ -272,6 +273,7 @@ export function itemsPayload(lines: ProductLine[], mode: TaxMode): SpiItemsPaylo
       const c = lineTotals(l, mode);
       return {
         po_item_id: l.poItemId ?? null,
+        pi_item_id: l.piItemId ?? null,
         product_id: l.productId!,
         qty_spi: l.spiQty,
         rate: l.spiRate,

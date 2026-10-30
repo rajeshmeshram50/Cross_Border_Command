@@ -14,7 +14,14 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
+/* Stage 4 is the heaviest thing in this form by a wide margin - 127 KB of
+   source of its own, five put-away panels behind it, and step4.css, which was
+   71% of invoice-form.css. Three of the four stages never touch it, and a
+   Direct SPI that is only being drafted never leaves stage 1, so loading it
+   with the form made every invoice pay for a stage most never reach.
+   Vite resolves the chunk's stylesheet before the module promise settles, so
+   the stage does not paint unstyled while its CSS is still arriving. */
+const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
@@ -370,13 +377,24 @@ export default function InvoiceForm({
     setReached(r => Math.max(r, next));
   };
 
+  const directDocType = (): 'domestic' | 'international' => {
+    const c = draft.country.trim().toLowerCase();
+    if (c) return c === 'india' ? 'domestic' : 'international';
+    return draft.docType === 'International' ? 'international' : 'domestic';
+  };
+  useEffect(() => {
+    if (!isDirect || !draft.country.trim()) return;
+    const want = draft.country.trim().toLowerCase() === 'india' ? 'Domestic' : 'International';
+    if (draft.docType !== want) set({ docType: want });
+  }, [isDirect, draft.country, draft.docType, set]);
+
   const requestSpiApproval = async (body: { requested_to?: number; note?: string }) => {
     if (!spiId) return;
     if (draft.vendorId && draft.vendorId !== savedVendor.current) {
       await spiApi.updateStage1(spiId, {
         purchase_order_id: null,
         vendor_id: draft.vendorId,
-        document_type: draft.docType === 'International' ? 'international' : 'domestic',
+        document_type: directDocType(),
         warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
         ...directLinks.current,
       });
@@ -398,7 +416,7 @@ export default function InvoiceForm({
         const { blockers } = await spiApi.updateStage1(spiId, {
           purchase_order_id: null,
           vendor_id: draft.vendorId,
-          document_type: draft.docType === 'International' ? 'international' : 'domestic',
+          document_type: directDocType(),
           warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
           ...directLinks.current,
         });
@@ -485,6 +503,19 @@ export default function InvoiceForm({
     if (missing.length) {
       toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
       return;
+    }
+    if (isDirect) {
+      const noProduct = lines.findIndex(l => l.productId == null);
+      if (noProduct >= 0) {
+        toast.warning('Select a product', `Row ${noProduct + 1} has no product — pick one or remove the row.`);
+        return;
+      }
+      const zero = lines.findIndex(l => !(l.spiQty > 0));
+      if (zero >= 0) {
+        const l = lines[zero];
+        toast.warning('Add a quantity', `Enter a quantity of at least 1 for ${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || `row ${zero + 1}`}, or remove the row.`);
+        return;
+      }
     }
     const payload = itemsPayload(lines, taxMode);
     if (payload.items.length === 0) {
@@ -736,6 +767,23 @@ export default function InvoiceForm({
     }
   };
 
+  const approvalPending = isDirect && !!spiId && gstApproval?.status === 'pending';
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  useEffect(() => {
+    if (!approvalPending || !spiId) return;
+    const read = () => { if (!document.hidden && !savingRef.current) latestSpiApproval(spiId); };
+    const timer = window.setInterval(read, 20_000);
+    const onVisible = () => { if (!document.hidden) read(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [approvalPending, spiId, latestSpiApproval]);
+
   const directDocsStage = isDirect && stage === 0 && !viewOnly;
   const standardDocs = draft.legal?.sections?.[0] ?? null;
   const vaultTarget = useMemo(
@@ -970,7 +1018,11 @@ export default function InvoiceForm({
                     spiCode={spiCode}
                   />
                 )}
+                {/* The stage's own skeleton while its chunk arrives — the same
+                    one the form shows while a stage's data loads, so reaching
+                    put-away looks like every other wait in this form. */}
                 {stage === 3 && (
+                  <Suspense fallback={<StageSkeleton stage={3} />}>
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId} direct={isDirect}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
@@ -990,6 +1042,7 @@ export default function InvoiceForm({
                       own: input.storage.type === 'own',
                     }}
                     readOnly={viewOnly} />
+                  </Suspense>
                 )}
               </div>
             </>

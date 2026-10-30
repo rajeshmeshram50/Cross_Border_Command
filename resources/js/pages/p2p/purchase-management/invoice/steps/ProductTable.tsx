@@ -47,8 +47,8 @@ export default function ProductTable({
   const canRemove = !!onRemove && !readOnly;
   /* Product columns before the SPI one: the PI's, and the PO's on a 3-way.
      The group header spans this many plus the SPI column itself, and the
-     footer skips exactly this many before the first figure — writing the
-     count once is what keeps the three in step when a column is dropped. */
+     footer skips this many plus Description before the first figure — writing
+     the count once is what keeps the three in step when a column is dropped. */
   const matchCols = (matched ? 1 : 0) + (twoWay ? 0 : 1);
 
   /* The line comes off the invoice and, with it, out of the boxes and the
@@ -359,7 +359,14 @@ export default function ProductTable({
             <tfoot>
               <tr>
                 <td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td>
-                <td colSpan={matchCols} />
+                {/* matchCols + 1: the extra one is Description.
+                    "Totals" above covers Sr. No and the first product column,
+                    this covers the remaining product columns AND Description,
+                    and the first figure then lands on Qty (PI). Skipping only
+                    matchCols left the row one cell short of the head, so every
+                    total sat one column to the left of its own heading - the
+                    quantity total printed under Description. */}
+                <td colSpan={matchCols + 1} />
                 {matched && <td className="cpd-c">{totals.piQty}</td>}
                 {!twoWay && <td className="cpd-c">{totals.poQty}</td>}
                 <td className="cpd-c">{totals.spiQty}</td>
