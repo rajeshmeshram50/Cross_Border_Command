@@ -65,7 +65,7 @@ export default function InvoicePaymentModal({
   row: InvoiceRow;
   request: InvoicePaymentRequest;
   spiId: number;
-  poId: number;
+  poId: number | null;
   figures: SpiPayFigures;
   onChanged: () => Promise<void> | void;
   onOpenTds?: () => void;
@@ -89,8 +89,13 @@ export default function InvoicePaymentModal({
 
   const loadReleases = useCallback(async () => {
     try {
-      const res = await poPaymentApi.payments(poId, request.rid);
-      setReleases(res.payments.map(toRelease));
+      if (poId) {
+        const res = await poPaymentApi.payments(poId, request.rid);
+        setReleases(res.payments.map(toRelease));
+      } else {
+        const res = await poPaymentApi.detail(request.rid);
+        setReleases(res.payments.filter(p => p.payment_request_id === request.rid).map(toRelease));
+      }
     } catch (e) {
       toast.error('Could not load the payment history', e instanceof PoApiError ? e.firstError : 'Please try again.');
     } finally {
@@ -119,7 +124,7 @@ export default function InvoicePaymentModal({
   };
   const update = async (i: number, p: ReleasePayment) => {
     const target = releases[i];
-    if (!target?.id) return false;
+    if (!target?.id || !poId) return false;
     try {
       await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
       toast.success('Payment updated', `${request.id} now shows ${money(p.amount)} for this entry.`);
@@ -129,7 +134,7 @@ export default function InvoicePaymentModal({
   };
   const remove = async (i: number) => {
     const target = releases[i];
-    if (!target?.id || busyIdx !== null) return;
+    if (!target?.id || busyIdx !== null || !poId) return;
     setBusyIdx(i);
     try {
       await poPaymentApi.deletePayment(poId, request.rid, target.id);
@@ -231,8 +236,8 @@ export default function InvoicePaymentModal({
                 <button
                   type="button"
                   className={`mpr-tdsbtn${tdsSaved ? ' mpr-tdsbtn--edit' : ''}`}
-                  title={tdsSaved ? 'Revise the TDS withheld on the purchase order'
-                    : 'Withhold tax at source on the purchase order'}
+                  title={tdsSaved ? `Revise the TDS withheld on the ${poId ? 'purchase order' : 'invoice'}`
+                    : `Withhold tax at source on the ${poId ? 'purchase order' : 'invoice'}`}
                   onClick={onOpenTds}
                 >
                   <span className="mpr-tdsbtn__ico">
@@ -349,13 +354,15 @@ export default function InvoicePaymentModal({
                         title={p.file ? `Send ${p.file} to the supplier by email`
                           : 'No proof attached to send — attach one first'}>{ICON_MAIL}</button>
                       <button type="button" className="cpay-act cpay-act--edit"
-                        disabled={!canEdit || p.zohoSynced}
-                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be edited here'
+                        disabled={!canEdit || p.zohoSynced || !poId}
+                        title={!poId ? 'Editing a payment on a Direct SPI is not available yet'
+                          : p.zohoSynced ? 'Posted to Zoho Books — it cannot be edited here'
                           : canEdit ? 'Edit this payment' : 'This request is not open for payment'}
                         onClick={() => setForm(i)}>{ICON_EDIT}</button>
                       <button type="button" className="cpay-act cpay-act--del"
-                        disabled={!canEdit || busyIdx !== null || p.zohoSynced}
-                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be deleted here'
+                        disabled={!canEdit || busyIdx !== null || p.zohoSynced || !poId}
+                        title={!poId ? 'Deleting a payment on a Direct SPI is not available yet'
+                          : p.zohoSynced ? 'Posted to Zoho Books — it cannot be deleted here'
                           : canEdit ? 'Delete this payment' : 'This request is not open for payment'}
                         onClick={() => void remove(i)}>{ICON_TRASH}</button>
                     </span>

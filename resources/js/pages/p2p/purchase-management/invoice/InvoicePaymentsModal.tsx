@@ -7,7 +7,7 @@ import {
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { PoApiError, poPaymentApi, type PoPayRequest, type PoPaymentsPayload } from '../order/api/po-api';
-import { spiPaymentApi, type SpiPaymentSummary, type SpiRaiseBody } from './spi-api';
+import { spiPaymentApi, type SpiPayRequestRow, type SpiPaymentSummary, type SpiRaiseBody } from './spi-api';
 import type { InvoiceRow } from './types';
 
 const DeductTdsModal = lazy(() => import('../order/manage-payment/DeductTdsModal'));
@@ -68,6 +68,23 @@ const toRequest = (r: RequestWithSpi): InvoicePaymentRequest => ({
   paid: r.paid_amount,
 });
 
+const fromSpiRow = (r: SpiPayRequestRow): InvoicePaymentRequest => {
+  const to = r.requested_to && typeof r.requested_to === 'object' ? r.requested_to : null;
+  return {
+    rid: r.id,
+    id: r.code ?? `#${r.id}`,
+    date: r.requested_at ?? '',
+    type: r.payment_type ?? '—',
+    pct: r.percentage ?? 0,
+    amount: r.requested_amount ?? 0,
+    approver: to?.name ?? r.requested_to_name ?? '—',
+    role: to?.role ?? 'Approver',
+    status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'declined' : 'pending',
+    approved: r.approved_amount ?? 0,
+    paid: r.paid_amount ?? 0,
+  };
+};
+
 const STATUS = {
   approved: { cls: 'mpr-st--done', label: 'Approved' },
   pending: { cls: 'mpr-st--wait', label: 'Awaiting Approval' },
@@ -126,12 +143,16 @@ export default function InvoicePaymentsModal({ row, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, tdsBusy]);
 
+  const direct = state === 'ready' && !summary?.po;
   const list = useMemo(
-    () => (poData?.requests ?? [])
-      .filter(r => (r as RequestWithSpi).supplier_invoice_id === spiId)
-      .map(r => toRequest(r as RequestWithSpi)),
-    [poData, spiId],
+    () => (summary && !summary.po
+      ? (summary.requests ?? []).map(fromSpiRow)
+      : (poData?.requests ?? [])
+        .filter(r => (r as RequestWithSpi).supplier_invoice_id === spiId)
+        .map(r => toRequest(r as RequestWithSpi))),
+    [summary, poData, spiId],
   );
+  const ledger = summary?.ledger ?? null;
 
   const spi = summary?.spi;
   const po = poData?.po ?? null;
@@ -142,36 +163,53 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
   const requested = list.reduce((n, q) => n + q.amount, 0);
   const approvedAmt = list.filter(q => q.status === 'approved').reduce((n, q) => n + q.approved, 0);
-  const paid = spi?.paid_amount ?? list.reduce((n, q) => n + q.paid, 0);
+  const paid = direct && ledger ? ledger.paid_amount : spi?.paid_amount ?? list.reduce((n, q) => n + q.paid, 0);
+  const netPayable = direct && ledger ? ledger.net_payable : total;
   const pendingAmt = list.filter(q => q.status === 'pending').reduce((n, q) => n + q.amount, 0);
   const approvedCount = list.filter(q => q.status === 'approved').length;
   const pendingCount = list.filter(q => q.status === 'pending').length;
   const readyToPay = list.filter(q => q.status === 'approved').reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0);
-  const balance = spi?.balance ?? Math.max(0, total - paid);
-  const pctPaid = total > 0 ? Math.round((paid / total) * 100) : 0;
+  const balance = direct && ledger ? ledger.balance_amount : spi?.balance ?? Math.max(0, total - paid);
+  const pctPaid = netPayable > 0 ? Math.round((paid / netPayable) * 100) : 0;
   const spiCommitted = pendingAmt + approvedAmt;
-  const available = Math.max(0, Math.min(
-    poData?.requests_summary.open_to_request ?? 0,
-    Math.round((total - spiCommitted) * 100) / 100,
-  ));
+  const available = direct
+    ? Math.max(0, Math.round((netPayable - spiCommitted) * 100) / 100)
+    : Math.max(0, Math.min(
+      poData?.requests_summary.open_to_request ?? 0,
+      Math.round((total - spiCommitted) * 100) / 100,
+    ));
 
-  const figures: SpiPayFigures = { base, gst, extra, total, paid, balance, pctPaid, tds: po?.tds_amount ?? 0 };
+  const tdsAmount = direct ? ledger?.tds_amount ?? 0 : po?.tds_amount ?? 0;
+  const figures: SpiPayFigures = { base, gst, extra, total, paid, balance, pctPaid, tds: tdsAmount };
+
+  const tdsCtl = po
+    ? (po.tds_applies ? {
+      code: po.code, docLabel: 'PO', saved: po.tds_saved, locked: po.tds_locked,
+      lockedBy: po.tds_locked_by, room: Math.max(0, po.balance), base: po.base_amount,
+      gst: po.gst_amount, extra: po.extra_charges, total: po.grand_total, amount: po.tds_amount,
+    } : null)
+    : direct && spi && (ledger?.tds_applies ?? row.documentType !== 'international') ? {
+      code: spi.code, docLabel: 'SPI',
+      saved: ledger?.tds_saved ?? (ledger?.tds_amount ?? 0) > 0,
+      locked: ledger?.tds_locked ?? (paid > 0 || approvedCount > 0),
+      lockedBy: ledger?.tds_locked_by ?? (paid > 0 ? 'payment' : approvedCount > 0 ? 'approval' : null),
+      room: Math.max(0, balance), base, gst, extra, total, amount: ledger?.tds_amount ?? 0,
+    } : null;
   const totals: SpiRequestTotals = {
     requested, approvedTotal: approvedAmt, pendingAmt, pendingCount,
     approvedUnpaid: readyToPay, requestCount: list.length, available,
   };
 
-  const standalone = state === 'ready' && !summary?.po;
-  const needsTds = !!po && po.tds_applies && !po.tds_saved;
+  const needsTds = po ? po.tds_applies && !po.tds_saved : !!tdsCtl && !tdsCtl.saved;
   const whyNoRequest = state !== 'ready' ? 'Loading…'
-    : standalone ? 'This is a standalone invoice — it has no purchase order to pay against.'
+      : direct && needsTds ? 'Deduct the TDS on this invoice first (even as 0) — then a payment request can be raised.'
       : balance <= 0 ? 'This SPI is paid in full — nothing is left to request.'
         : available <= 0 ? 'Nothing left to request — the balance is already covered by open requests.'
           : undefined;
 
   const openRaise = () => {
     if (needsTds) {
-      toast.warning('Deduct TDS first', `Save the TDS on ${po?.code} (even as 0) before raising a payment request.`);
+      toast.warning('Deduct TDS first', `Save the TDS on ${tdsCtl?.code ?? po?.code} (even as 0) before raising a payment request.`);
       setTdsOpen(true);
       return;
     }
@@ -179,12 +217,13 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   };
 
   const saveTds = async (amount: number) => {
-    if (!po || tdsBusy) return;
+    if (!tdsCtl || tdsBusy) return;
     setTdsBusy(true);
     try {
-      setPoData(await poPaymentApi.saveTds(po.id, { tds_amount: amount }));
+      if (po) setPoData(await poPaymentApi.saveTds(po.id, { tds_amount: amount }));
+      else if (spiId) await spiPaymentApi.saveTds(spiId, { tds_amount: amount });
       setTdsOpen(false);
-      toast.success('TDS saved', `${money(amount)} withheld on ${po.code}.`);
+      toast.success('TDS saved', `${money(amount)} withheld on ${tdsCtl.code}.`);
       void load();
     } catch (e) {
       toast.error('Could not save the TDS', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -243,16 +282,16 @@ export default function InvoicePaymentsModal({ row, onClose }: {
               <Box
                 label="Summary" title="SPI Payment Details Summary"
                 sub="How this SPI's value is made up and where it stands today · read-only"
-                headerExtra={po?.tds_applies ? (
+                headerExtra={tdsCtl ? (
                   <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                     <button
                       type="button"
-                      className={`mpr-tdsbtn${po.tds_saved ? ' mpr-tdsbtn--edit' : ''}`}
-                      title={po.tds_locked
-                        ? `TDS on ${po.code} is fixed — ${po.tds_locked_by === 'approval'
+                      className={`mpr-tdsbtn${tdsCtl.saved ? ' mpr-tdsbtn--edit' : ''}`}
+                      title={tdsCtl.locked
+                        ? `TDS on ${tdsCtl.code} is fixed — ${tdsCtl.lockedBy === 'approval'
                           ? 'a payment request has already been approved against this net'
                           : 'a payment is already recorded'}`
-                        : po.tds_saved ? `Revise the TDS withheld on ${po.code}` : `Withhold tax at source on ${po.code}`}
+                        : tdsCtl.saved ? `Revise the TDS withheld on ${tdsCtl.code}` : `Withhold tax at source on ${tdsCtl.code}`}
                       onClick={() => setTdsOpen(true)}
                     >
                       <span className="mpr-tdsbtn__ico">
@@ -260,7 +299,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                           <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
                         </svg>
                       </span>
-                      <span>{po.tds_locked ? 'View TDS' : po.tds_saved ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+                      <span>{tdsCtl.locked ? 'View TDS' : tdsCtl.saved ? 'Revise TDS' : 'Deduct TDS Here'}</span>
                     </button>
                   </div>
                 ) : undefined}
@@ -273,7 +312,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
                     value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                    value={money(total)} sub={po ? `${money(po.tds_amount)} TDS on ${po.code}` : 'Standalone invoice'} />
+                    value={money(total)} sub={po ? `${money(po.tds_amount)} TDS on ${po.code}`
+                      : tdsAmount > 0 ? `${money(tdsAmount)} TDS · net ${money(netPayable)}` : 'No TDS withheld'} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                     value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
@@ -318,9 +358,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <div className="mpr-empty">
                     <div className="mpr-empty__t">No payment requests yet</div>
                     <div className="mpr-empty__s">
-                      {standalone
-                        ? 'This is a standalone invoice with no purchase order, so payment requests cannot be raised on it.'
-                        : 'Requests raised against this invoice will appear here with their approval decision and every payment released against them.'}
+                      Requests raised against this invoice will appear here with their approval decision and every payment released against them.
                     </div>
                   </div>
                 ) : (
@@ -442,17 +480,17 @@ export default function InvoicePaymentsModal({ row, onClose }: {
         </div>
       </div>
 
-      {payFor && spiId && po && (
+      {payFor && spiId && (po || direct) && (
         <Suspense fallback={null}>
           <InvoicePaymentModal
             row={row}
             request={payFor}
             spiId={spiId}
-            poId={po.id}
+            poId={po?.id ?? null}
             figures={figures}
             onChanged={load}
-            onOpenTds={po.tds_applies ? () => setTdsOpen(true) : undefined}
-            tdsSaved={po.tds_saved}
+            onOpenTds={tdsCtl ? () => setTdsOpen(true) : undefined}
+            tdsSaved={tdsCtl?.saved ?? false}
             onClose={() => setPayForId(null)}
           />
         </Suspense>
@@ -468,19 +506,19 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           />
         </Suspense>
       )}
-      {tdsOpen && po && (
+      {tdsOpen && tdsCtl && (
         <Suspense fallback={null}>
           <DeductTdsModal
-            po={po.code}
-            docLabel="PO"
-            base={po.base_amount}
-            gst={po.gst_amount}
-            extra={po.extra_charges}
-            total={po.grand_total}
-            room={Math.max(0, po.balance)}
-            saved={po.tds_amount}
-            firstSave={!po.tds_saved}
-            readOnly={po.tds_locked}
+            po={tdsCtl.code}
+            docLabel={tdsCtl.docLabel}
+            base={tdsCtl.base}
+            gst={tdsCtl.gst}
+            extra={tdsCtl.extra}
+            total={tdsCtl.total}
+            room={tdsCtl.room}
+            saved={tdsCtl.amount}
+            firstSave={!tdsCtl.saved}
+            readOnly={tdsCtl.locked}
             busy={tdsBusy}
             onSave={amount => { void saveTds(amount); }}
             onClose={() => setTdsOpen(false)}
