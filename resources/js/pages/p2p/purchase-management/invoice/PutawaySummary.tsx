@@ -275,6 +275,8 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
   const boxes = data?.boxes ?? [];
   const totals = data?.analytics;
   const refs = data?.references;
+  const noPo = !row.poNo && !refs?.po.code;
+  const noShip = noPo && !(h?.shipmentId || row.shipmentId);
   const whName = h?.warehouse?.name || row.warehouseName || '—';
   const ownWarehouse = h?.warehouse ? h.warehouse.isOwn : row.warehouseKind === 'own';
   const partyFor = (role: PutawayParty['role']): PutawayParty =>
@@ -298,10 +300,12 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
           <div className="spi-dt-pills pts-pills">
             <HeadPill icon={<IcoDoc />} label="SPI ID" value={spiId} mono
               extra={<span className="pts-dot pts-dot--ok" title="Mapped" />} />
-            <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
-              extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
-            <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
-              extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
+            {!noShip && (<>
+              <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
+                extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
+              <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
+                extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
+            </>)}
             <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={h?.procurementId || row.procurementId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--warn" title="Procurement" />} />
             <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={whName}
@@ -342,12 +346,12 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
           <Section
             icon={<IcoUsers />}
             prefix={spiId}
-            title="Customer, Consignee & Supplier"
-            meta="3 parties"
+            title={noShip ? 'Supplier' : 'Customer, Consignee & Supplier'}
+            meta={noShip ? '1 party' : '3 parties'}
             sub="Trading parties associated with this invoice."
           >
-            <div className="pts-parties">
-              {PARTY_ROLES.map(({ role, tone }) => (
+            <div className={`pts-parties${noShip ? ' pts-parties--one' : ''}`}>
+              {PARTY_ROLES.filter(({ role }) => !noShip || role === 'Supplier').map(({ role, tone }) => (
                 <PartyCard key={role} party={partyFor(role)} tone={tone}
                   icon={role === 'Customer' ? <IcoUser /> : role === 'Consignee' ? <IcoBuilding /> : <IcoTruck />} />
               ))}
@@ -358,17 +362,23 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
             icon={<IcoDoc />}
             prefix={spiId}
             title="Supplier Purchase Invoice"
-            sub="PI, PO & SPI references with financial values."
+            sub={noShip ? 'SPI reference with its financial value.' : noPo ? 'PI & SPI references with financial values.' : 'PI, PO & SPI references with financial values.'}
           >
-            <div className="pts-refs">
-              <RefCard tone="pi" label="Proforma Invoice (PI)" value={dash(refs?.pi.code)}
-                date={refs?.pi.date ? shortDate(refs.pi.date) : undefined} />
-              <RefCard tone="po" label="Purchase Order (PO)" value={dash(refs?.po.code)}
-                date={refs?.po.date ? shortDate(refs.po.date) : undefined} />
+            <div className={`pts-refs${noShip ? ' pts-refs--noship' : noPo ? ' pts-refs--nopo' : ''}`}>
+              {!noShip && (
+                <RefCard tone="pi" label="Proforma Invoice (PI)" value={dash(refs?.pi.code)}
+                  date={refs?.pi.date ? shortDate(refs.pi.date) : undefined} />
+              )}
+              {!noPo && (
+                <RefCard tone="po" label="Purchase Order (PO)" value={dash(refs?.po.code)}
+                  date={refs?.po.date ? shortDate(refs.po.date) : undefined} />
+              )}
               <RefCard tone="spi" label="Supplier Purchase Invoice (SPI)" value={dash(refs?.spi.code || spiId)}
                 date={refs?.spi.date ? shortDate(refs.spi.date) : undefined} />
-              <AmountCard tone="pov" label="PO Amount" value={refs?.poAmount != null ? money(refs.poAmount) : '—'}
-                sub={refs?.poAmount != null ? 'Purchase Order' : 'Direct SPI — no PO'} />
+              {!noPo && (
+                <AmountCard tone="pov" label="PO Amount" value={refs?.poAmount != null ? money(refs.poAmount) : '—'}
+                  sub={refs?.poAmount != null ? 'Purchase Order' : 'Direct SPI — no PO'} />
+              )}
               <AmountCard tone="spiv" label="SPI Amount" value={money(refs?.spiAmount ?? 0)} sub="Supplier Invoice" />
             </div>
           </Section>
