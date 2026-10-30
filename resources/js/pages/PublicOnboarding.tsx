@@ -748,7 +748,11 @@ export default function PublicOnboarding() {
           border-color: #60a5fa;
           box-shadow: 0 0 0 3px rgba(96,165,250,0.22);
         }
-        .emp-label { font-size: 12px; font-weight: 600; color: var(--vz-heading-color, #374151); letter-spacing: 0; text-transform: none; margin-bottom: 5px; display: block; }
+        /* 10.5px, the field-label size the rest of the product uses (QA 161).
+           This page injects its styles as an inline <style>, so it lands AFTER
+           the linked sheets and wins at equal specificity - which is why
+           editing recruitment.css alone never moved this label. */
+        .emp-label { font-size: 10.5px; font-weight: 700; color: var(--vz-heading-color, #374151); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; display: block; }
         [data-bs-theme="dark"] .emp-label { color: #e5e7eb; }
         .emp-label .req { color: #f06548; margin-left: 2px; }
 
