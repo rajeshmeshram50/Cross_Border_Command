@@ -607,6 +607,8 @@ export default function Step3BoxPackaging({
   const [editQtyBy, setEditQtyBy] = useState<Record<string, number>>({});
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
+  const showMatch = !direct || !!draft.shipmentId;
+  const tableCols = BOX_TABLE_COLUMNS - (showMatch ? 0 : 2);
   const isPlaced = (b: { id: number }) => placedBoxIds.includes(b.id);
   const lockedMsg = 'A putaway method is selected for this box in Stage 04 — it is locked and can no longer be edited.';
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
@@ -849,8 +851,7 @@ export default function Step3BoxPackaging({
                     <span className="vti-th-help">Remaining Qty</span>
                   </Tooltip>
                 </th>
-                <th>Missing Qty</th>
-                <th>Extra Qty</th>
+                {showMatch && <><th>Missing Qty</th><th>Extra Qty</th></>}
                 <th>Sub-Box Count</th>
                 <th>Actions</th>
               </tr>
@@ -938,12 +939,16 @@ export default function Step3BoxPackaging({
                         <span className={`vti-qty-badge${packed > 0 ? ' is-left' : ''}`}>{left}</span>
                       </Tooltip>
                     </td>
-                    <td>
-                      <span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span>
-                    </td>
-                    <td>
-                      <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>
-                    </td>
+                    {showMatch && (
+                      <>
+                        <td>
+                          <span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span>
+                        </td>
+                        <td>
+                          <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>
+                        </td>
+                      </>
+                    )}
                     <td>
                       {single || mixed ? (
                         <div className="vti-scn-lock">
@@ -986,7 +991,7 @@ export default function Step3BoxPackaging({
 
                   {single && (
                     <tr className="vti-drawer-row is-open">
-                      <td colSpan={BOX_TABLE_COLUMNS} className="vti-drawer-td">
+                      <td colSpan={tableCols} className="vti-drawer-td">
                         {(() => {
                           const done = justSaved[line.code];
                           const left = done ? Math.max(0, line.spiQty - done.qty) : 0;
@@ -1016,7 +1021,7 @@ export default function Step3BoxPackaging({
 
                   {split && (
                     <tr className="vti-multibox-container-row">
-                      <td colSpan={BOX_TABLE_COLUMNS} style={{ padding: 0, border: 'none', background: 'transparent' }}>
+                      <td colSpan={tableCols} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                         <MultiBoxPanel line={line} boxes={pack.boxes}
                           onClose={() => closePack(line.code)}
                           closeDisabled={boxesOf(line.code).length > 0}
@@ -1035,7 +1040,7 @@ export default function Step3BoxPackaging({
               })}
               {pendingLines.length === 0 && (
                 <tr className="invf-allpacked-row">
-                  <td colSpan={BOX_TABLE_COLUMNS}>
+                  <td colSpan={tableCols}>
                     <div className="invf-allpacked">
                       All {lines.length} product{lines.length === 1 ? '' : 's'} packed in {totalBoxes} box{totalBoxes === 1 ? '' : 'es'} — see Packed Boxes below.
                     </div>
