@@ -77,11 +77,13 @@ export function toRequestRow(r: PayRequestListRow): PaymentRequestRow {
     : status === 'declined' ? 'declined'
       : (r.due ?? 0) > 0 ? `${inr(r.due ?? 0, r.currency_code)} due` : 'released in full';
   return {
-    id: r.id, poId: r.purchase_order_id, vendorId: r.vendor_id,
+    id: r.id, poId: r.purchase_order_id ?? 0, vendorId: r.vendor_id,
     requestId: r.code, requestDate: r.requested_at ?? '', status,
-    raisedAgainst: 'po',
-    po: { id: r.po_code, date: r.po_date ?? '' }, spi: null,
-    flag: r.physical_inspection === 'yes' && r.inspection_status !== 'completed' ? 'physical-inspection' : null,
+    raisedAgainst: !r.purchase_order_id ? 'spi' : r.spi ? 'po-spi' : 'po',
+    po: r.po_code ? { id: r.po_code, date: r.po_date ?? '' } : null,
+    spi: r.spi ? { id: r.spi.code, date: r.spi.date ?? '' } : null,
+    flag: !r.purchase_order_id ? 'direct-spi'
+      : r.physical_inspection === 'yes' && r.inspection_status !== 'completed' ? 'physical-inspection' : null,
     shipment: r.shipment_code ? { id: r.shipment_code, date: r.shipment_date ?? '' } : null,
     opportunity: r.opportunity_code ? { id: r.opportunity_code, date: r.opportunity_date ?? '' } : null,
     procurement: r.procurement_code ? { id: r.procurement_code, date: '' } : null,
