@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import StickerPdfPreview from './StickerPdfPreview';
 import { IcoCheck, IcoDownload, IcoTag, IcoX } from '../../../icons';
 import type { BoxContent } from './SelectedProducts';
 import { putId, spiApi } from '../spi-api';
@@ -128,6 +129,7 @@ export default function BoxStickerModal({
         </div>
 
         <div className="spi-mdl-body">
+          <StickerPdfPreview spiId={apiSpiId} boxId={apiBoxId} fallback={<>
           <div className="invf-stk__card">
             <div className="invf-stk__strip">
               <div>
@@ -183,6 +185,7 @@ export default function BoxStickerModal({
               ))}
             </ul>
           )}
+          </>} />
         </div>
 
         <div className="spi-mdl-foot">
