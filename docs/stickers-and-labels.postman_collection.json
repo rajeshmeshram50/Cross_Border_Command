@@ -1,0 +1,478 @@
+{
+    "info": {
+        "name": "Stickers & Labels - box sticker + location labels",
+        "_postman_id": "7f3a1c62-5b0e-4d18-9a44-2c6b8e0d1f33",
+        "description": "Everything that prints a code: the box sticker on an SPI, and the four\nlocation labels.\n\nALL of these are tenant-scoped and need {{token}}. Set it as a collection\nvariable or in an environment before sending - without it the request is\nrefused by auth:sanctum, which surfaces as a 500 (\"Route [login] not\ndefined\") rather than a 401, because this app has no login route to\nredirect to.\n\nBOX STICKER\n  /p2p/spi/{id}/boxes/{box}/sticker/download   the printable A4 PDF.\n  Not read-only: it stamps sticker_printed_at the first time it is\n  pulled and writes a sticker_printed activity.\n\nLOCATION LABELS - warehouse, zone, rack, shelf\n  /preview  JSON for the on-screen modal (includes qr + download_url)\n  /label    the printable A4 PDF\n  /qr       the bare PNG, for a screen that places it itself\n\nThe label leads with what it is, carries its handling flags (COLD CHAIN,\nHAZARDOUS, INACTIVE, or NORMAL) in the header, and prints the FULL\nADDRESS IN IDS across its foot - a shelf shows WAREHOUSE / ZONE / RACK /\nSHELF, because \"SH-003\" alone names a shelf in every warehouse the\nclient has.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000",
+            "type": "string"
+        },
+        {
+            "key": "spiId",
+            "value": "3",
+            "type": "string"
+        },
+        {
+            "key": "boxId",
+            "value": "30",
+            "type": "string"
+        },
+        {
+            "key": "token",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "warehouseId",
+            "value": "1",
+            "type": "string"
+        },
+        {
+            "key": "zoneId",
+            "value": "1",
+            "type": "string"
+        },
+        {
+            "key": "rackId",
+            "value": "1",
+            "type": "string"
+        },
+        {
+            "key": "shelfId",
+            "value": "1",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "01 - The real label (needs auth)",
+            "item": [
+                {
+                    "name": "Download a real box sticker",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/pdf"
+                            }
+                        ],
+                        "description": "The production endpoint, for comparison against the preview.\n\nStamps sticker_printed_at the first time it is pulled and logs a sticker_printed activity - it is not a read-only call.\n\nTenant-scoped: set {{token}} to a user of the client that owns {{spiId}}.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/p2p/spi/{{spiId}}/boxes/{{boxId}}/sticker/download",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "boxes",
+                                "{{boxId}}",
+                                "sticker",
+                                "download"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "02 - Location labels (needs auth)",
+            "item": [
+                {
+                    "name": "Warehouse label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/pdf"
+                            }
+                        ],
+                        "description": "The whole address is one level: WAREHOUSE.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/warehouses/{{warehouseId}}/label",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "warehouses",
+                                "{{warehouseId}}",
+                                "label"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Zone label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/pdf"
+                            }
+                        ],
+                        "description": "Prints WAREHOUSE / ZONE.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/zones/{{zoneId}}/label",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "zones",
+                                "{{zoneId}}",
+                                "label"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Rack label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/pdf"
+                            }
+                        ],
+                        "description": "Prints WAREHOUSE / ZONE / RACK.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/racks/{{rackId}}/label",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "racks",
+                                "{{rackId}}",
+                                "label"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Shelf label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/pdf"
+                            }
+                        ],
+                        "description": "The full chain: WAREHOUSE / ZONE / RACK / SHELF. This is the one\nscanned at put-away - the last link, and the one that records\nwhere the box actually went.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/shelves/{{shelfId}}/label",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "shelves",
+                                "{{shelfId}}",
+                                "label"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "03 - Location QR only (needs auth)",
+            "item": [
+                {
+                    "name": "Warehouse QR (PNG)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "image/png"
+                            }
+                        ],
+                        "description": "The bare code, no card around it. ?scale=10 sets pixels per module (1-20).",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/warehouses/{{warehouseId}}/qr",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "warehouses",
+                                "{{warehouseId}}",
+                                "qr"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Zone QR (PNG)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "image/png"
+                            }
+                        ],
+                        "description": "As above.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/zones/{{zoneId}}/qr",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "zones",
+                                "{{zoneId}}",
+                                "qr"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Rack QR (PNG)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "image/png"
+                            }
+                        ],
+                        "description": "As above.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/racks/{{rackId}}/qr",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "racks",
+                                "{{rackId}}",
+                                "qr"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Shelf QR (PNG)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "image/png"
+                            }
+                        ],
+                        "description": "Same payload the printed label carries, byte for byte - one source,\nso a QR saved from a screen and one glued to the rack can never\nresolve to different things.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/shelves/{{shelfId}}/qr",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "shelves",
+                                "{{shelfId}}",
+                                "qr"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "04 - Location preview JSON (needs auth)",
+            "item": [
+                {
+                    "name": "Warehouse preview",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Everything the printed label carries, as JSON, plus the QR as a\ndata URI and a download_url pointing at /label. This is what the\non-screen modal reads — one source, so the modal and the sheet\ncannot disagree.\n\n`path` is the full address in ids, in order, each with its own\nlabel — the same array the sheet prints across its foot.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/warehouses/{{warehouseId}}/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "warehouses",
+                                "{{warehouseId}}",
+                                "preview"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Zone preview",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Everything the printed label carries, as JSON, plus the QR as a\ndata URI and a download_url pointing at /label. This is what the\non-screen modal reads — one source, so the modal and the sheet\ncannot disagree.\n\n`path` is the full address in ids, in order, each with its own\nlabel — the same array the sheet prints across its foot.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/zones/{{zoneId}}/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "zones",
+                                "{{zoneId}}",
+                                "preview"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Rack preview",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Everything the printed label carries, as JSON, plus the QR as a\ndata URI and a download_url pointing at /label. This is what the\non-screen modal reads — one source, so the modal and the sheet\ncannot disagree.\n\n`path` is the full address in ids, in order, each with its own\nlabel — the same array the sheet prints across its foot.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/racks/{{rackId}}/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "racks",
+                                "{{rackId}}",
+                                "preview"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Shelf preview",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Everything the printed label carries, as JSON, plus the QR as a\ndata URI and a download_url pointing at /label. This is what the\non-screen modal reads — one source, so the modal and the sheet\ncannot disagree.\n\n`path` is the full address in ids, in order, each with its own\nlabel — the same array the sheet prints across its foot.\n\nThe shelf is the deepest: path returns four entries,\nWAREHOUSE / ZONE / RACK / SHELF.",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/inventory/shelves/{{shelfId}}/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "inventory",
+                                "shelves",
+                                "{{shelfId}}",
+                                "preview"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ]
+}
