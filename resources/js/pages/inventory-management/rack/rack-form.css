@@ -21,17 +21,22 @@
   gap: 7px;
 }
 .rkm-lbltag {
-  /* The gap above does the spacing now. */
-  margin: 0;
-  padding: 3px 9px;
+  /* The gap above does the spacing now. Sized to the label's own line: at
+     ~19px (3px padding, 9px type) it made the Area label taller than Length /
+     Width / Height beside it and pushed the Area box below the three inputs;
+     overhanging it instead (a -4px margin) left the chip sitting on the box.
+     At ~14px it fits the line, the boxes stay level and the chip keeps the
+     label's gap above the box. */
+  margin: -2px 0;
+  padding: 1px 8px;
   border-radius: 999px;
   border: 1px solid #bfe9f1;
   background: #e0f7fb;
   color: #0e7490;
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
   letter-spacing: .04em;
-  line-height: 1.25;
+  line-height: 1.2;
   text-transform: none;
   white-space: nowrap;
 }

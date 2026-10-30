@@ -156,7 +156,7 @@
   overflow-x: auto;
   scrollbar-width: thin;
   border: 1px solid rgba(255, 255, 255, .26);
-  border-radius: 16px;
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .08));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 5px 18px rgba(2, 44, 54, .14);
 }
@@ -1517,8 +1517,36 @@
 [data-bs-theme="dark"] .pts-fail b { color: #fecaca; }
 [data-bs-theme="dark"] .pts-fail > span:last-child { color: #fca5a5; }
 
-/* The strip's two ends, rounded as the design draws them: 16px on the bar,
+/* The strip's two ends, rounded as the design draws them: 12px on the bar,
    and the end pills follow the same curve so a hover fill on the first or
    last one cannot square off a corner inside the rounded bar. */
-.pts-pills .spi-dt-pill:first-child { border-radius: 16px 0 0 16px; }
-.pts-pills .spi-dt-pill:last-child  { border-radius: 0 16px 16px 0; }
+.pts-pills .spi-dt-pill:first-child { border-radius: 12px 0 0 12px; }
+.pts-pills .spi-dt-pill:last-child  { border-radius: 0 12px 12px 0; }
+
+/* ── The pill strip never scrolls sideways ────────────────────────────────
+   The ten pills need ~1545px on one line; any narrower and the strip grew a
+   horizontal scrollbar under the hero. Measured against the hero, not the
+   window (the popup stops at 1640px):
+   - under 1580px: compact — the icon squares go and the cells tighten, which
+     keeps all ten on one line down to ~1080px;
+   - under 1120px: two rows of five, equal columns, the outer corners still
+     rounded and a hairline between the rows. A value too long for its cell
+     ends in an ellipsis; the pill's tooltip carries the whole of it. */
+.pts-hero { container: ptshero / inline-size; }
+@container ptshero (max-width: 1580px) {
+  .pts-pills .spi-dt-pill-ico { display: none; }
+  .pts-pills .spi-dt-pill { padding: 8px 10px; gap: 6px; }
+}
+@container ptshero (max-width: 1120px) {
+  .pts-pills { flex-wrap: wrap; overflow: visible; }
+  .pts-pills .spi-dt-pill,
+  .pts-pills .spi-dt-pill:nth-child(5) { flex: 1 1 20%; min-width: 0; border-radius: 0; }
+  .pts-pills .spi-dt-pill:nth-child(5n+1) { border-left: none; }
+  .pts-pills .spi-dt-pill:nth-child(n+6) { border-top: 1px solid rgba(255, 255, 255, .18); }
+  .pts-pills .spi-dt-pill:first-child { border-radius: 12px 0 0 0; }
+  .pts-pills .spi-dt-pill:nth-child(5) { border-radius: 0 12px 0 0; }
+  .pts-pills .spi-dt-pill:nth-child(6) { border-radius: 0 0 0 12px; }
+  .pts-pills .spi-dt-pill:last-child { border-radius: 0 0 12px 0; }
+  .pts-pills .spi-dt-pill-txt { min-width: 0; }
+  .pts-pills .spi-dt-pill-val { overflow: hidden; text-overflow: ellipsis; }
+}

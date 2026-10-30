@@ -7,6 +7,7 @@ import {
 import { InvoiceHeroChips } from './payment-chips';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { useToast } from '../../../../contexts/ToastContext';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import type { InvoiceRow } from './types';
 import type { InvoicePaymentRequest, SpiPayFigures } from './InvoicePaymentsModal';
 import type { ReleasePayment } from '../order/manage-payment/MakePoPaymentModal';
@@ -138,6 +139,20 @@ export default function InvoicePaymentModal({
     } catch (e) { failToast('Could not delete the payment', e); } finally { setBusyIdx(null); }
   };
   const [form, setForm] = useState<true | number | null>(null);
+
+  /* CS-934: paged in the browser — the releases of one request are already in
+     hand. Each row carries its index in `releases` because edit and delete
+     address a payment by that position, and on page two the loop index is
+     no longer it. Same pager and sizes as the PO's Make Payment popup. */
+  const [payPage, setPayPage] = useState(1);
+  const [payPageSize, setPayPageSize] = useState(5);
+  const payPages = Math.max(1, Math.ceil(releases.length / payPageSize));
+  // A deleted payment can leave the last page empty — step back onto it.
+  useEffect(() => { if (payPage > payPages) setPayPage(payPages); }, [payPage, payPages]);
+  const pagedReleases = releases
+    .map((p, i) => ({ p, i }))
+    .slice((payPage - 1) * payPageSize, payPage * payPageSize);
+
   const { base, gst, extra, total, paid, balance, pctPaid, tds } = figures;
 
   const approvedRequest = request.status === 'approved';
@@ -304,7 +319,7 @@ export default function InvoicePaymentModal({
                   <div className="cpay-empty__t">No payments recorded yet</div>
                   <div className="cpay-empty__s">Use Add New Payment to record a release against this request.</div>
                 </div>
-              ) : releases.map((p, i) => (
+              ) : pagedReleases.map(({ p, i }) => (
                 <div className="cpay-cols cpay-row" key={p.id ?? `${p.utr}-${i}`}>
                   <span className="mpr-sr" data-l="Sr. No">{i + 1}</span>
                   <span data-l="Paid Against Request ID">
@@ -362,6 +377,18 @@ export default function InvoicePaymentModal({
                   </span>
                 </div>
               ))}
+              {!loading && (
+                <WorklistPager
+                  className="wl-teal"
+                  total={releases.length}
+                  page={payPage}
+                  pageSize={payPageSize}
+                  onPage={setPayPage}
+                  onPageSize={(n) => { setPayPageSize(n); setPayPage(1); }}
+                  pageSizeOptions={[5, 10, 25]}
+                  hideNavWhenSinglePage
+                />
+              )}
             </div>
           </div>
         </div>

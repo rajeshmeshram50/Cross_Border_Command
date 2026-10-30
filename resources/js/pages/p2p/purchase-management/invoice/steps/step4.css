@@ -6528,24 +6528,30 @@
 .s4-root .s4-c2-pane.is-visible { flex: 1 0 auto; }
 .s4-root .s4-c2-pane.is-visible > .s4h { flex-shrink: 0; }
 
+/* ── One scroller, not three ─────────────────────────────────────────────
+ * Every attempt to size the panes to the window still left three nested
+ * scrollers — the SPI body, the box list and the right pane — and a wheel or
+ * touchpad gesture kept handing off between them: a pane moved, then the
+ * page, then the pane again, each in its own direction. That is the "one div
+ * goes up, another comes down" dance. Sizing them to fit instead crushed the
+ * panes to a strip under the Summary and Brief rows.
+ *
+ * So on desktop (outside Full View) the panes do not scroll at all. They grow
+ * to their content and the SPI body is the only thing that moves: the whole
+ * stage scrolls as one sheet. `overflow: clip` keeps the rounded corners but,
+ * unlike hidden, makes no scroll container — so the sticky group headers and
+ * the pinned box stick to the top of the visible body, and the pane's action
+ * bar to its foot, while the pane is on screen. Full View keeps its own
+ * fixed-height panes that scroll inside; at 1280px and below the panes stack
+ * under rules of their own. */
 @media (min-width: 1281px) {
-  .cpf-form .cpf-stepwrap > .s4-root:not(.is-fullview) { flex: 1 1 auto; min-height: 0; }
-  .s4-root:not(.is-fullview) > .s4b-wrap { flex: 1 1 auto; min-height: 0; }
-  .s4-root:not(.is-fullview) .s4-panels { flex: 1 1 0; min-height: 340px; }
-
-  /* Shrinking the workspace to what is left under the Summary and Brief rows
-     left the panes a strip (under 300px once the Brief is open) with the
-     rest of the box unreachable. The workspace card is now exactly as tall
-     as the visible body (100cqh), so the page scrolls only far enough to
-     move the rows above it out of view and the panes then fill the screen;
-     each pane still scrolls its own content. */
-  .spi-invform .spi-dt-body:has(> .cpf-stepwrap > .s4-root:not(.is-fullview)) { container-type: size; }
-  .cpf-form .cpf-stepwrap > .s4-root:not(.is-fullview) { flex: 0 0 auto; }
-  .s4-root:not(.is-fullview) > .s4b-wrap { flex: 0 0 auto; height: max(520px, 100cqh); }
-  /* A wheel that reached the end of the right pane handed off to the page and
-     slid the whole workspace. The tab row and panel heads stay on screen to
-     scroll the page from, so the pane keeps its gestures to itself. */
-  .s4-root:not(.is-fullview) .s4-panel--right .s4-panel__body { overscroll-behavior-y: contain; }
+  .cpf-form .cpf-stepwrap > .s4-root:not(.is-fullview) { flex: 0 0 auto; min-height: 0; }
+  .s4-root:not(.is-fullview) > .s4b-wrap { flex: 0 0 auto; min-height: 0; height: auto; }
+  .s4-root:not(.is-fullview) .s4-panels { flex: 0 0 auto; min-height: 560px; }
+  .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) { overflow: clip; }
+  .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) > .s4-panel__body {
+    flex: 1 0 auto; overflow: clip; overscroll-behavior-y: auto;
+  }
 }
 
 /* Scroll lag, round two: the glass cards that remained on Stage 4 — the
@@ -6570,23 +6576,6 @@
 .s4-root .s4ct-modal .s4ct-ft > button[aria-busy="true"] { opacity: 1; cursor: progress; }
 .s4-root .s4ct-modal .s4qm__bd[inert] { opacity: .7; transition: opacity .15s; }
 
-/* ── Scrolling: no hover, no looping animation ────────────────────────────
- * Set by Step4PutawayAllocation for the length of a scroll (cleared 150ms
- * after it stops). Hover effects on everything that slides under the pointer
- * — tabs, box cards, buttons — and the pulsing status dots and box-shadow
- * pings were each repainting during the scroll. Nothing is visible to turn
- * off: the pointer is moving content, not choosing it, and the loops pick up
- * again the moment the scroll ends. Clicks are unaffected once it stops.
- * Only the CONTENT of the two scrolling panes ignores the pointer, never the
- * panes themselves: a scroller that went pointer-events:none mid-gesture
- * would hand the next wheel tick to the page behind it, and the pane would
- * stop scrolling half-way. Its children ignoring the pointer leaves the wheel
- * landing on the pane. */
-.s4-root.is-scrolling .s4-panel__body > * { pointer-events: none !important; }
-.s4-root.is-scrolling *,
-.s4-root.is-scrolling *::before,
-.s4-root.is-scrolling *::after { animation-play-state: paused !important; transition: none !important; }
-
 /* ── No elastic overscroll ────────────────────────────────────────────────
  * On a touchpad Chrome stretches a scroller past its end and springs it back
  * — and Stage 4 is heavy enough that the stretch rendered as a slow-motion
@@ -6599,6 +6588,21 @@
  * shell already does the same for the page (app.css, overscroll none). */
 .spi-invform .spi-dt-body:has(> .cpf-stepwrap > .s4-root) { overscroll-behavior-y: none; }
 .s4-root .s4-panel--left .s4-panel__body { overscroll-behavior-y: none; }
-@media (min-width: 1281px) {
-  .s4-root:not(.is-fullview) .s4-panel--right .s4-panel__body { overscroll-behavior-y: none; }
-}
+.s4-root.is-fullview .s4-panel--right .s4-panel__body { overscroll-behavior-y: none; }
+
+/* ── Nothing on the workspace moves on hover ─────────────────────────────
+ * The tabs, box cards, step cards and buttons each lifted 1-2px on hover.
+ * Scrolling slides them under a pointer that is standing still, so the card
+ * arriving under it rose while the one leaving it dropped back - things
+ * jumping up and down on their own while the page scrolled. An is-scrolling
+ * class used to pause hovers for the length of a scroll, but toggling it
+ * re-styled the whole stage each time and froze the scroll (removed). The
+ * lift goes instead; colour, border and shadow still answer the hover, so
+ * the feedback is kept and nothing moves. Pop-up dialogs keep their lifts:
+ * they do not scroll under the pointer. */
+.s4-root :is(
+  .s4-tab, .s4-lc-step, .s4-box-card, .s4pk-card, .s4pkc, .s4bref .bref-item,
+  .s4s-stk__qr, .s4vp-btn, .s4scn-t, .s4-btn-next, .s4sl-take, .s4rv-stk,
+  .s4rv-next, .s4rv-flagmore, .s4ra-use, .s4cl-sh, .s4cn, .s4c3-pill--more,
+  .s4ct-manual
+):hover { transform: none !important; }

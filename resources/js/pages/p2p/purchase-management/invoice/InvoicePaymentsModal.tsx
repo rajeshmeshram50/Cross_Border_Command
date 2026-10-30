@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import {
   Box, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
 } from '../order/manage-payment/payment-shared';
@@ -132,6 +133,54 @@ export default function InvoicePaymentsModal({ row, onClose }: {
       .map(r => toRequest(r as RequestWithSpi)),
     [poData, spiId],
   );
+
+  /* Paged like the PO's Payment Requests popup: five to a page by default,
+     the size the user picks after that. Kept in range when a refresh shortens
+     the list under the current page. */
+  const [reqPage, setReqPage] = useState(1);
+  const [reqPageSize, setReqPageSize] = useState(5);
+  const reqPages = Math.max(1, Math.ceil(list.length / reqPageSize));
+  useEffect(() => { if (reqPage > reqPages) setReqPage(reqPages); }, [reqPage, reqPages]);
+  const pagedList = useMemo(
+    () => list.slice((reqPage - 1) * reqPageSize, reqPage * reqPageSize),
+    [list, reqPage, reqPageSize],
+  );
+
+  /* CS-929: the approver decides on another screen, and this popup read its
+     requests once, when it opened — so an approved request went on saying
+     "Awaiting Approval" until the popup was reopened. While anything is with
+     an approver the figures are re-read every 20s, and at once whenever this
+     tab or window is looked at again — the same rule the PO popup follows. */
+  const awaiting = list.some(q => q.status === 'pending');
+  useEffect(() => {
+    if (!awaiting) return;
+    const tick = () => { if (!document.hidden) void load(); };
+    const id = window.setInterval(tick, 20000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [awaiting, load]);
+
+  // Say what changed when it changes, rather than leaving a badge to turn green unnoticed.
+  const lastStatus = useRef<Record<number, string>>({});
+  useEffect(() => {
+    const seen = lastStatus.current;
+    for (const q of list) {
+      if (seen[q.rid] === 'pending' && q.status !== 'pending') {
+        if (q.status === 'approved') {
+          toast.success(`${q.id} approved`, q.approved ? `${money(q.approved)} is ready to pay.` : 'It can now be paid.');
+        } else {
+          toast.warning(`${q.id} declined`, 'Nothing can be paid against it.');
+        }
+      }
+      seen[q.rid] = q.status;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
 
   const spi = summary?.spi;
   const po = poData?.po ?? null;
@@ -330,13 +379,14 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                         'Requested To', 'Request Approval Status', 'Approved Amount', 'Paid Amount', 'Action']
                         .map(h => <span className="mpr-c" key={h}>{h}</span>)}
                     </div>
-                    {list.map((q, i) => {
+                    {pagedList.map((q, i) => {
                       const st = STATUS[q.status];
                       const due = q.approved - q.paid;
                       const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
                       return (
                         <div className="mpr-row" key={q.rid}>
-                          <span className="mpr-c mpr-sr" data-l="Sr No">{i + 1}</span>
+                          {/* keeps counting across pages: 6, 7, 8 on page two */}
+                          <span className="mpr-c mpr-sr" data-l="Sr No">{(reqPage - 1) * reqPageSize + i + 1}</span>
                           <span className="mpr-c" data-l="Payment Request ID">
                             <span className="mpr-idcell">
                               <span className="mpr-idpill">{q.id}</span>
@@ -409,6 +459,16 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                         </div>
                       );
                     })}
+                    <WorklistPager
+                      className="wl-teal"
+                      total={list.length}
+                      page={reqPage}
+                      pageSize={reqPageSize}
+                      onPage={setReqPage}
+                      onPageSize={(n) => { setReqPageSize(n); setReqPage(1); }}
+                      pageSizeOptions={[5, 10, 25]}
+                      hideNavWhenSinglePage
+                    />
                   </div>
                 )}
               </div>
