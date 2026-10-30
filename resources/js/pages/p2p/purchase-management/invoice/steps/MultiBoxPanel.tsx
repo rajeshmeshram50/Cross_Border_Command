@@ -39,11 +39,6 @@ export default function MultiBoxPanel({
   const [active, setActive] = useState(1);
   const allocated = boxes.reduce((n, b) => n + b.qty, 0);
 
-  /* Progress through the SET, for the saved confirmation on each box.
-     A split carton is not finished when one box saves — the design says so
-     explicitly ("4 more boxes to save in this set · 86 units still to pack")
-     and offers Continue Packing rather than Done, so the next box is one
-     press away instead of a hunt along the tab strip. */
   const unsaved = boxes.filter(b => !savedCodes[b.no] && b.qty > 0);
   const unitsPacked = boxes.reduce((n, b) => n + (savedCodes[b.no] ? b.qty : 0), 0);
   const unitsLeft = Math.max(0, line.spiQty - unitsPacked);
@@ -62,12 +57,6 @@ export default function MultiBoxPanel({
           <div className="vmb-nav-icon"><IcoBox size={14} stroke={2.2} /></div>
           <div>
             <div className="vmb-nav-title">1 Product → Multiple Boxes</div>
-            {/* "150 of 150 units allocated", not "150 units total".
-                The set's job is to divide a line across boxes, so the number
-                that matters is how much of it has been placed — the total
-                alone says nothing about progress, and read the same whether
-                every box was filled or none were. The shortfall keeps its own
-                chip beside it. */}
             <div className="vmb-nav-sub">
               {line.spiName} · {boxes.length} box{boxes.length === 1 ? '' : 'es'} · {allocated} of {line.spiQty} units allocated
               {allocated !== line.spiQty && (
@@ -117,16 +106,11 @@ export default function MultiBoxPanel({
               variant="panel"
               onSave={readOnly ? undefined : data => onSaveBox(b.no, b.qty, data)}
               saving={savingNo === b.no}
-              /* This box may grow by whatever the set has not allocated yet —
-                 so a 20-unit box with 6 spare reads "/ 26", and one in a
-                 fully-allocated set cannot be raised at all. */
               quantityMax={b.qty + Math.max(0, line.spiQty - allocated)}
               saved={!!savedCodes[b.no]}
               updatable={!!savedCodes[b.no] && !readOnly}
               savedBanner={savedCodes[b.no] ? {
                 note: setNote(),
-                /* Done only when nothing is left in the set; otherwise the
-                   action moves to the next box still to be packed. */
                 actionLabel: unsaved.length === 0 ? 'Done' : 'Continue Packing',
                 onAction: () => (unsaved.length === 0 ? onClose() : setActive(unsaved[0].no)),
               } : undefined}

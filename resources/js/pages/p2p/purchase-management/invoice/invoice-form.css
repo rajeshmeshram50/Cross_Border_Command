@@ -1,47 +1,5 @@
-/* ── Supplier Purchase Invoice form — the only rules that differ ────────────
-   The form wears the shared spi-dt-* wizard chrome plus the Create PO form's
-   additions (it carries `.cpf-form`, so all 60 of those scoped rules apply).
-   This file holds what is deliberately different, and nothing else.
-
-   Everything is scoped under `.invf-gst` rather than the form root, so the
-   Create PO page — which shares both stylesheets — is untouched.
-   ──────────────────────────────────────────────────────────────────────── */
-
-/* Breathing room under the GST verdict.
-
-   `.cpf-form .spi-dt-card > .cpf-gst` sets `margin: 14px 14px 0` — a shorthand,
-   so the bottom margin is zeroed and the only separation from the first field
-   row is the grid's own 11px top padding. The green block then reads as glued
-   to the labels beneath it.
-
-   The selector has to match that rule's specificity (0,3,0) to beat it; a
-   plain `.cpf-form .invf-gst` is (0,2,0) and loses however late it loads.
-
-   The prototype measures the same 11px, so this is deliberately looser than
-   the design: the banner is a filled colour block and needs more air than the
-   design's lighter one. */
 .cpf-form .spi-dt-card > .invf-gst { margin-bottom: 6px; }
 
-/* ── The 3-way match table ──────────────────────────────────────────────────
-   The table itself is the shared `.cpd-tbl--pd`, the same one the Create PO
-   form uses. Only what a three-way match needs and a purchase order does not
-   is added here. The prototype's own note on these rules is worth repeating:
-   anything added that duplicates a `.cpd-tbl--pd` rule pulls the two designs
-   out of step, so don't.
-   ──────────────────────────────────────────────────────────────────────── */
-
-/* The GST banner's own action, in step 01.
- *
- * The purchase order puts this button in its wizard footer, because there the
- * check is a gate on submitting the PO and the last step is where that is
- * decided. A supplier invoice settles its supplier in step 01, so the button
- * belongs beside the finding: telling someone at step 04 that the supplier
- * they chose three screens ago cannot be used is three screens too late.
- *
- * `.cpf-gst__txt` already flexes to fill, so the button only has to refuse to
- * shrink. The banner's own `align-items: flex-start` is relaxed to centre for
- * the same reason — a 34px button hanging from the top of a three-line
- * message reads as though it belongs to the first line of it. */
 .invf-gst { align-items: center; }
 .invf-gst__act {
   flex-shrink: 0;
@@ -49,19 +7,13 @@
   font-family: inherit; font-size: 11.5px; font-weight: 700; color: #fff; cursor: pointer;
   transition: transform .15s, box-shadow .15s;
 }
-/* The tone the banner is already wearing: red refuses, amber asks. */
+
 .invf-gst__act--stop { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 12px rgba(220, 38, 38, .34); }
 .invf-gst__act--warn { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217, 119, 6, .32); }
 .invf-gst__act--ok { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(5, 150, 105, .3); }
 .invf-gst__act:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .22); }
 .invf-gst__act:active { transform: translateY(0); }
 
-/* "N products removed from this invoice", under the totals.
- *
- * Amber, not red: nothing is wrong — somebody decided the supplier did not
- * invoice that line — but the figures above are no longer the whole PI, and
- * that is worth saying until it is either saved or undone. Red would read as
- * an error to fix; grey would not be read at all. */
 .invf-removed {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 10px 9px 14px;
@@ -82,15 +34,6 @@
 [data-bs-theme="dark"] .invf-removed { background: rgba(217, 119, 6, .12); border-color: rgba(245, 158, 11, .32); }
 [data-bs-theme="dark"] .invf-removed__txt { color: #fcd34d; }
 
-/* "+ Add Product", under the product table.
- *
- * `.spi-dt-sec-body` is a flex COLUMN, so a button dropped into it stretches
- * the full width — which is how this arrived as a teal bar the width of the
- * table, louder than the Save & Next below it. It is a secondary action beside
- * a table of figures, not a banner: `align-self` gives it back its own width,
- * `flex-end` puts it under the Action column whose deletions it undoes, and
- * the size comes down from the 36px of "Add Supplier", which sits beside a
- * card title and can afford to be the loudest thing there. */
 .invf-addprod {
   align-self: flex-end;
   margin: 2px 0 0;
@@ -102,89 +45,26 @@
 }
 .invf-addprod:hover { box-shadow: 0 5px 14px rgba(8, 145, 178, .38); }
 
-/* The 3-Way Product Mapping band opens on the pinned Product (PI) column, so
-   it is pinned to the same offset — otherwise the band's label and its left
-   divider would slide across a column that is standing still. */
-/* ─── Why every rule in this header block carries BOTH `.cpd-tbl--pd` and
-   `.spi-prodtbl` ───────────────────────────────────────────────────────────
-   They are overriding create-po.css, which styles the same `.cpd-tbl--pd`
-   table and leaves these cells translucent. One class each used to be enough,
-   because invoice-form.css was imported after create-po.css and won the ties.
-
-   It no longer loads after it. InvoiceForm is lazy now, and Vite lists a
-   chunk's OWN stylesheet before the ones it imports, so the page loads
-   InvoiceForm-*.css and then create-po-*.css — the opposite order. Every tie
-   on specificity flipped to create-po, which brought back the exact bug the
-   comments below say was fixed: translucent white dividers over a sticky
-   header, with the rows visibly travelling through them.
-
-   So the SPI table's header stops depending on load order. The table carries
-   both classes, so the extra one costs nothing and wins outright. */
 .cpd-tbl--pd.spi-prodtbl thead .cpd-grp-stick {
   position: sticky;
   left: 42px;
-  /* Above the header cells that scroll past it, not below them. Every other
-     `th` in this variant carries z-index 7 and the pinned ones 8, so at 5 the
-     band was the one pinned thing in the table that scrolled content could
-     paint over: keep scrolling right and the next group's header slides across
-     the label. 9 clears both. It cannot collide with the pinned Sr No (z 8):
-     that column is pinned at left 0 for 42px and this band starts where it
-     ends. This has to be stated here rather than inherited, because
-     `.cpd-tbl--pd thead .cpd-stick` ties 8 to the cells that pin a COLUMN, and
-     a band spanning two of them is not one of those. */
+
   z-index: 9;
   background: #0e7490;
   text-align: left;
 }
-/* The band's scrolling remainder.
-   It was transparent, so the thead's 110deg gradient could run unbroken
-   across the row. The gradient is gone: a sticky header has to paint its
-   colour on the CELLS, because a row-group background does not cover the
-   rows scrolling under it, so every group cell that is not pinned now takes
-   the flat #0b7c9b further down this file. This one says so itself rather
-   than leaning on that rule, since a cell left transparent in a sticky
-   header is the bug, not the default.
-   The 1px inset divider still goes, so no hairline splits what reads as one
-   bar with the band beside it. */
+
 .cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail {
   background: #0b7c9b;
   box-shadow: none !important;
 }
 
-/* Description is a row-two cell now rather than a two-row span, so it lands
-   on the product headings' own line without any vertical-align trick — a
-   span can only be aligned against the PAIR of rows, so centred it floated
-   above them and bottomed it fell below.
-
-   Sr. No and Action keep their span, and they are centred EXPLICITLY. The
-   base rule gives every header cell `padding: 7px` with no vertical-align,
-   which leaves them on the browser's default of `middle` — but the two rows
-   they span are not the same height, and the band row's own
-   `padding: 7px 10px 6px` is 1px shorter at the bottom, so "middle" of the
-   pair lands a little below the optical centre. Stating it here with the
-   padding evened out puts them where they look centred. */
 .spi-prodtbl thead th[rowspan="2"] {
   vertical-align: middle;
   padding-top: 7px;
   padding-bottom: 7px;
 }
 
-/* The header's dividers, kept but softened — and opaque.
-   They were 22% white between the rows and 16% down the column edges, drawn
-   over cells left transparent so the thead's gradient could run across them.
-   A translucent line over a transparent cell shows what is behind it, and
-   behind a sticky header is the table body, so scrolling rows travelled
-   visibly through them.
-   #2b859d and #217f99 are roughly 12% and 8% white already resolved against
-   the band's #0e7490: lighter than before, so they read as a hint of
-   structure rather than a drawn grid, and solid, so nothing can come through.
-   The first cell of each row and the band's tail skip the vertical line —
-   one would fall at the table's own left edge, the other in the middle of
-   what reads as a single bar.
-   The seal under the bottom row is separate and stays whatever happens to
-   the rest: that edge is where the rows slide beneath the header. The pinned
-   cells restate it because their own box-shadow would otherwise replace it
-   at the two columns that never scroll away. */
 .cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
 .cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th,
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
@@ -194,61 +74,27 @@
   box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
 }
 
-/* Four step cards across, not two.
-
-   `.spi-dt-steps` lays the strip out in two columns because the old SPI wizard
-   has two stages, and `.cpf-steps4` overrides it to four. Both are a single
-   class, so the winner is whichever stylesheet lands later — and in the build
-   it is the SPI one, whatever order this file's imports are written in, since
-   p2p-detail.css is pulled in by a dozen other modules too.
-   That is why the four cards were dropping onto a second row.
-
-   Carrying both classes makes this (0,2,0) and settles it by specificity
-   rather than by load order. Gap and padding come along because they lose the
-   same argument: the strip was sitting on SPI's roomier 12px rather than the
-   9px / 16px the design uses for a four-card row. */
 .spi-dt-steps.cpf-steps4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 9px 16px;
 }
-/* Every breakpoint the purchase order form has, restated at this specificity.
 
-   Not a different design — the same one. `.spi-dt-steps` holds the base rule
-   at (0,1,0), so the rule above has to be (0,2,0) to beat it, and a (0,2,0)
-   base rule then also beats every (0,1,0) rule inside a media query. Leave
-   these out and the strip would stay four-across at every width, including
-   the phone, where the form switches to compact tiles. So each of the PO's
-   breakpoints is repeated here with both classes and the same values; change
-   one side and the other has to follow. */
 @media (max-width: 900px) and (min-width: 761px) {
   .spi-dt-steps.cpf-steps4 { grid-template-columns: repeat(2, 1fr); }
 }
-/* Phone: four compact tiles in one row, as create-po.css sets for .cpf-form. */
+
 @media (max-width: 760px) {
   .spi-dt-steps.cpf-steps4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; }
 }
 
-/* A purchase order has two quantity columns; the 3-way match has five, plus
-   five money columns. create-po.css holds every non-money header on one line
-   at a 64px minimum, which here adds up to a header far wider than the panel
-   and leaves the quantity labels sitting in a long thin strip.
-
-   So the quantity headers wrap onto two lines instead, the way the design
-   shows them. Written at (0,4,3) to beat the 64px rule rather than relying on
-   this file loading second — the money columns keep their own width, which is
-   why `.cpd-th-amt` stays excluded here exactly as it is there. */
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th:not(.cpd-th-left):not(.cpd-th-amt) {
   min-width: 46px;
   white-space: normal;
 }
 
-/* The PO figure being matched against: present, but quieter than the invoice's
-   own numbers beside it. */
 .spi-prodtbl td.spi-pocost { color: #4a6b7c; font-weight: 700; }
 
-/* Missing / Extra quantities — neutral until there is something to flag, so a
-   column of zeroes does not read as a column of warnings. */
 .cpd-qtypill {
   display: inline-block;
   min-width: 30px;
@@ -259,20 +105,18 @@
   color: #5b7585;
   background: #f1f6f8;
   border: 1px solid #e3edf1;
-  /* Figures line up column-wise however many digits they carry. */
+
   font-variant-numeric: tabular-nums;
 }
 .cpd-qtypill--miss { color: #b45309; background: #fffbeb; border-color: #fde68a; }
 .cpd-qtypill--extra { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
 
-/* The one figure the whole table is working towards. */
 .cpd-tbl--pd tfoot td.cpd-foot-final {
   background: linear-gradient(110deg, #0e7490, #0891b2);
   color: #fff;
   font-weight: 800;
 }
 
-/* A label and its value never break across lines. */
 .cpd-kv { white-space: nowrap; }
 
 .spi-prodtbl .spi-delrow {
@@ -291,14 +135,6 @@
 .spi-prodtbl .spi-delrow:hover { background: #fee2e2; border-color: #fca5a5; }
 .spi-prodtbl .spi-delrow svg { width: 12px; height: 12px; }
 
-/* ── Step 03: Temporary Box Packaging ───────────────────────────────────────
-   Packaging scenarios and the SPI Box Generation System. Nothing in the
-   repo had these -- the stage is ported 1:1 from the prototype, which in
-   turn took it from the GRN module's own box generation screen. The two
-   namespaces are its own: `pkg-*` for the scenario cards and `vti-*` for
-   the product table.
-   ──────────────────────────────────────────────────────────────────────── */
-
 .pkg-box { background: #fff; border: 1px solid #A5F3FC; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(6,182,212,.08), 0 1px 4px rgba(0,0,0,.04), inset 0 2px 0 rgba(255,255,255,.9); }
 .pkg-box__header { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; background: linear-gradient(110deg, #f0fdff 0%, #e0f9fd 30%, #cafffd 60%, #b3f4fb 80%, #9deef9 100%); border-bottom: 1px solid #A5F3FC; transition: background .16s; }
 .pkg-box__header:hover { background: linear-gradient(110deg, #e4fbff 0%, #d4f6fb 30%, #bff8fc 60%, #aaeffa 100%); }
@@ -312,24 +148,14 @@
 .pkg-toggle { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; background: rgba(255,255,255,.8); border: 1.5px solid rgba(8,145,178,.2); display: flex; align-items: center; justify-content: center; color: #0891b2; transition: all .2s; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
 .pkg-toggle svg { transition: transform .25s cubic-bezier(.22,1,.36,1); }
 .pkg-box.is-collapsed .pkg-toggle svg { transform: rotate(-90deg); }
-/* COLUMNS of one panel, not three cards.
-   The design draws the scenarios flush, divided by a hairline and capped by a
-   teal rule along the top — one surface listing three options, which is what
-   they are: definitions you read, not cards you pick between. An earlier pass
-   gave each its own border, radius and ground with a 12px gap; three bordered
-   boxes inside a bordered box is a frame around a frame, and the gaps broke
-   the top rule into three. */
+
 .pkg-box__body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0; background: #fff; border-top: 2px solid #22d3ee; overflow: hidden; max-height: 340px; transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s, padding .3s; opacity: 1; }
 .pkg-box.is-collapsed .pkg-box__body { max-height: 0; opacity: 0; }
 .pkg-card { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 15px; border: none; border-radius: 0; background: transparent; box-shadow: none; transition: background .18s; }
-/* The hairline sits BETWEEN columns, so the first one does not carry an edge
-   against the panel's own border. */
+
 .pkg-card + .pkg-card { border-left: 1px solid #e4eef4; }
 .pkg-card:hover { background: rgba(6,182,212,.04); box-shadow: none; }
-/* No .is-used state: the strip is read-only reference, and the count pill
-   beside the scenario number is the whole of the mark. Tinting the column and
-   capping it in teal made a panel you only read look like a chooser with
-   something selected. */
+
 .pkg-card__top { display: flex; align-items: center; gap: 8px; }
 .pkg-card__scenario { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 9px; font-weight: 800; color: #0891b2; letter-spacing: .12em; text-transform: uppercase; }
 .pkg-card__scenario-line { width: 18px; height: 2.5px; border-radius: 2px; background: linear-gradient(90deg, #22d3ee, #0891b2); flex-shrink: 0; }
@@ -368,24 +194,17 @@
 .vti-actions { justify-content:center; }
 .vti-table tbody tr:last-child td { border-bottom:none; }
 .vti-table tbody tr { transition: background .12s; }
-/* The all-packed note joins the rows that do not light up: there is nothing
-   under the pointer to act on, and in dark mode the light-theme hover turned
-   the whole strip white. */
-/* The drawer and multi-box rows are containers for the box editor, not rows
-   you point at, so they are excluded along with the other non-rows. */
+
 .vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):not(.vti-drawer-row):not(.vti-multibox-container-row):hover { background:#F5FEFF; }
 .vti-cb { width:14px; height:14px; border-radius:4px; border:1.5px solid #BAE6FD; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#F0FDFF; transition:all .15s; flex-shrink:0; }
 .vti-cb:hover { border-color:#0891b2; background:#E0F9FD; }
 .vti-prod-cell { display:flex; align-items:center; gap:9px; }
 .vti-prod-name { font-size:11.5px; font-weight:700; color:#0F172A; letter-spacing:-.2px; line-height:1.2; }
 .vti-prod-sku  { font-size:9.5px; font-weight:500; color:#94A3B8; margin-top:1px; }
-/* The identifiers under the product name: code, HSN, GST on one line, as the
-   design has them. The row's own margin-top is dropped here — the line sets
-   the spacing once, rather than each part of it setting its own. */
+
 .vti-prod-meta { display:flex; align-items:center; gap:7px; margin-top:4px; }
 .vti-prod-meta .vti-prod-sku { margin-top:0; white-space:nowrap; }
-/* The label stays quiet and the value it labels carries the weight, so the
-   line scans as three facts rather than six words. */
+
 .vti-prod-meta .vti-prod-sku b { color:#64748B; font-weight:700; }
 .vti-prod-dot { width:3px; height:3px; border-radius:50%; background:#CBD5E1; flex-shrink:0; }
 .vti-code { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-size:10px; font-weight:600; color:#0891b2; background:#F0FDFF; border:1px solid #BAE6FD; border-radius:6px; padding:3px 7px; white-space:nowrap; letter-spacing:.02em; }
@@ -402,9 +221,7 @@
 .vti-btn-apply:hover { background:linear-gradient(160deg,#38bdf8 0%,#0ea5e9 50%,#0891b2 100%); transform:translateY(-1px); box-shadow: 0 5px 16px rgba(8,145,178,.42), inset 0 1px 0 rgba(255,255,255,.22); }
 .vti-btn-single { padding:6px 14px; height:auto; border-radius:12px; border:1.5px solid #BAE6FD; background:#fff; color:#0891b2; font-size:11.5px; font-weight:700; transition:all .16s; white-space:nowrap; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow: 0 1px 6px rgba(6,182,212,.10), inset 0 1px 0 rgba(255,255,255,.95); letter-spacing:.01em; }
 .vti-btn-single:hover { border-color:#67E8F9; background:#F0FDFF; box-shadow:0 2px 10px rgba(6,182,212,.18), inset 0 1px 0 rgba(255,255,255,.95); color:#0369a1; }
-/* The same button squared off for an icon on its own. Only the box that holds
-   the icon changes — the border, fill, colour and hover all still come from
-   .vti-btn-single, so it stays the same button as the text ones beside it. */
+
 .vti-btn-single--ico { width:30px; height:30px; padding:0; border-radius:9px; }
 .vti-dash { color:#CBD5E1; font-size:13px; }
 .vti-prod-row { transition: background .18s, box-shadow .18s; }
@@ -415,11 +232,6 @@
 .vti-cb.is-checked::after { content: ''; position: absolute; left: 3px; top: 5px; width: 6px; height: 3.5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg); }
 .vti-cb { position: relative; }
 .vti-prod-row.is-selected { background: linear-gradient(98deg, #e6fafd 0%, #f0fdff 100%) !important; box-shadow: inset 3px 0 0 #06b6d4; }
-/* ── The per-box drawer ─────────────────────────────────────────────────────
-   Opens under the product row once a box exists on it: the teal identity
-   strip, the box's dimensions, its remark / condition / flags, and the
-   optional serial, lot and batch fields.
-   ──────────────────────────────────────────────────────────────────────── */
 
 .vti-prod-hint { font-size:9px; color:#94A3B8; margin-top:2px; line-height:1.4; }
 .vti-drawer-row { background: transparent !important; }
@@ -438,14 +250,6 @@
 .vti-sel-pack-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 18px; border-radius: 9px; font-size: 12px; font-weight: 800; border: none; cursor: pointer; transition: all .18s; background: #fff; color: #0891b2; letter-spacing: .01em; box-shadow: 0 3px 12px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.9); }
 .vti-sel-pack-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,.2); background: #f0fdff; }
 
-/* Dark mode for the selection bar.
-   The bar carries its own teal gradient, so it needed no dark rules for
-   LAYOUT — but the primary button is a solid #fff, and pure white at full
-   brightness is the harshest thing on a dark page. It stays the obvious
-   primary action, filled rather than outlined; it just takes the palette's
-   cyan instead of white, with dark text for contrast.
-   The bar itself drops a few steps too, so the strip sits on the page rather
-   than glowing off it. */
 [data-bs-theme="dark"] .vti-selection-bar {
   background: linear-gradient(98deg, #06485a 0%, #0b6d85 55%, #0e8ba8 100%);
   border-bottom-color: rgba(34,211,238,.26);
@@ -485,10 +289,7 @@
 .vti-dw-sticker-btn svg { opacity: .9; flex-shrink: 0; }
 .vti-dw-sticker-btn:hover { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.75); box-shadow: 0 4px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35); transform: translateY(-1px); }
 .vti-dw-sticker-btn:active { transform: translateY(0); }
-/* ── Box Quantity stepper, in the box header strip ──
-   One translucent pill on the teal strip holding round −/+ either side of the
-   value, then the ceiling. The buttons are white discs so they read as the
-   pressable parts against a field that is merely light. */
+
 .vti-dw-qty {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 4px 12px 4px 4px;
@@ -508,8 +309,7 @@
 }
 .vti-dw-qty-btn:hover:not(:disabled) { transform: scale(1.06); }
 .vti-dw-qty-btn:active:not(:disabled) { transform: scale(.94); }
-/* Dimmed into the pill rather than greyed: at the ceiling the control is
-   simply not available, which should read as quiet, not as broken. */
+
 .vti-dw-qty-btn:disabled { background: rgba(255,255,255,.28); color: rgba(255,255,255,.55); cursor: not-allowed; box-shadow: none; }
 .vti-dw-qty-val {
   width: 3.2ch; min-width: 3.2ch; padding: 0;
@@ -519,30 +319,8 @@
 }
 .vti-dw-qty-max { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.72); white-space: nowrap; }
 
-/* ── Editing a saved box: the drawer as a dialog over the page ──
-   z-index sits above the step chrome but below Tooltip (260000), so a
-   tooltip raised from inside the form still shows over it. */
-/* A dialog opened from INSIDE the drawer. The shared .spi-mdl-backdrop is
-   z-index 3000 (p2p-common.css), well under the drawer's 11000 below, so any
-   such dialog rendered behind the box form — it looked like the button did
-   nothing, or like you had been thrown back to the box. The Cold Chain
-   temperature dialog is the reported case.
-
-   Scoped, not a global raise of .spi-mdl-backdrop: the 3000-11000 band is
-   occupied (physical-inspection 3010, p2p-common 3200, p2p-detail 9999,
-   create-po 10500), and lifting the shared backdrop over all of those would
-   drop other screens' overlays underneath it.
-
-   12000 clears the drawer and still sits under app.css's 20000 and Tooltip's
-   260000. The product-flag dialog solves the same problem with its own
-   .pfm-backdrop at the same number — worth folding into one token if a third
-   case turns up. */
 .spi-mdl-backdrop.vti-over-drawer { z-index: 12000; }
 
-/* The modal is portalled to <body>, so it leaves the page's DM Sans behind and
-   lands in the theme's Rubik — which carries noticeably more ink at the same
-   weight and made every label in here read a step bolder than the design.
-   The font stack has to be restated on the portal root. */
 .vti-dw-modal-backdrop, .vti-dw-modal {
   font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -557,19 +335,9 @@
 }
 @keyframes vti-dw-fade { from { opacity: 0; } to { opacity: 1; } }
 .vti-dw-modal {
-  /* 1640, the design's own ceiling (#spkEditRoot .spke-m2). We had 1680. */
-  width: min(1640px, 100%);
-  /* The form scrolls inside the card, so the page behind never does and the
-     teal header stays visible while you work down the fields.
 
-     That second promise was not being kept: `overflow: auto` on the card
-     scrolls the WHOLE card, header and all, so on a short window the strip —
-     Save, Sticker, the unit toggle, the close — scrolled away with the
-     fields. The card is a column now: the strip and the saved banner are
-     pinned, and the body is the one band that scrolls. `min-height: 0` is
-     what lets it: a flex item will not shrink below its content without it,
-     so the body stayed full height and pushed the card past the viewport
-     instead of scrolling inside it. */
+  width: min(1640px, 100%);
+
   max-height: calc(100vh - 48px);
   display: flex; flex-direction: column;
   overflow: hidden;
@@ -579,44 +347,27 @@
   animation: vti-dw-rise .16s ease-out;
 }
 @keyframes vti-dw-rise { from { opacity: 0; transform: translateY(8px) scale(.994); } to { opacity: 1; transform: none; } }
-/* The card owns the corner radius, so the header strip must not square it off. */
+
 .vti-dw-modal > .vti-dw-strip,
 .vti-dw-modal .vti-dw-strip:first-child { border-radius: 16px 16px 0 0; }
-/* Every band holds its height; only the body gives. Stated on the children so
-   a short window ends in a scrollbar rather than a crushed strip. */
+
 .vti-dw-modal > * { flex: 0 0 auto; }
 .vti-dw-modal > .vti-dw-body {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
 }
-/* The body is itself a flex column, so bounding its height made ITS children
-   shrink rather than overflow — flex items shrink by default. The sections
-   got squashed instead of scrolling: the advance table showed one row of
-   three (its own overflow:auto wrapper clipped the rest) and the flags were
-   cut off at the card's edge, with no scrollbar anywhere, because nothing
-   ever exceeded the body. Each section holds its full height now, so the
-   shortfall lands where it belongs — on the body's scrollbar. */
+
 .vti-dw-modal > .vti-dw-body > * { flex: 0 0 auto; }
 .vti-dw-modal .vti-dw-body { padding-bottom: 16px; }
-/* The dialog's dismiss — last in the header row, after the sticker. */
+
 .vti-dw-modal-x {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  /* 40px, the height every other button in the strip is pinned to. No margin
-     of its own — it sits inside the toolbar now, which supplies the gap and
-     the 14px to the strip's edge. */
+
   width: 40px; height: 40px; align-self: center;
   border: 1.5px solid rgba(255,255,255,.30); border-radius: 10px;
   background: rgba(255,255,255,.14); color: #fff; cursor: pointer;
   transition: background .14s, border-color .14s, transform .12s;
 }
-/* Pinned to the strip's top-right at EVERY width, not inside a breakpoint.
-   The × is the toolbar's last child, so whenever the strip breaks into two
-   rows it travelled down with the toolbar and ended up hanging off the band's
-   edge, past the rounded corner. This was keyed to max-width: 1500px before,
-   which is the wrong trigger: the strip wraps when its own content outgrows
-   the DIALOG, so it can break at viewport widths well above 1500 and the pin
-   never applied — which is exactly the trap the .vti-dw-flags note records.
-   A close is a corner control; it belongs in the corner regardless.
-   The labels take a right gutter so a long product name cannot run under it. */
+
 .vti-dw-strip { position: relative; }
 .vti-dw-strip .vti-dw-modal-x { position: absolute; top: 10px; right: 12px; z-index: 5; }
 .vti-dw-strip .vti-dw-strip-left { padding-right: 52px; }
@@ -624,8 +375,7 @@
 .vti-dw-modal-x:active { transform: scale(.95); }
 .vti-dw-modal-x:disabled { opacity: .5; cursor: not-allowed; }
 [data-bs-theme="dark"] .vti-dw-modal { background: linear-gradient(180deg, #12182b, #0f1422); }
-/* On a narrow screen the 24px gutter is a quarter of the width it is meant to
-   frame, so the dialog takes nearly the whole viewport instead. */
+
 @media (max-width: 820px) {
   .vti-dw-modal-backdrop { padding: 10px; }
   .vti-dw-modal { max-height: calc(100vh - 20px); border-radius: 12px; }
@@ -634,11 +384,6 @@
   .vti-dw-modal-x { margin-right: 10px; }
 }
 
-/* ── Saved confirmation, under the box header ──
-   Green rather than the drawer's teal: this is an outcome, not more chrome,
-   and it has to read as "this one is done" against a panel that is teal
-   everywhere else. It sits OUTSIDE .vti-dw-body so it lines up with the
-   header strip above it rather than indenting with the field cards. */
 .vti-dw-saved {
   display: flex; align-items: center; gap: 12px;
   margin: 12px 14px 0; padding: 11px 14px;
@@ -674,16 +419,8 @@
 [data-bs-theme="dark"] .vti-dw-saved-title { color: #bbf7d0; }
 [data-bs-theme="dark"] .vti-dw-saved-note  { color: #86efac; }
 
-/* The Zebra Open Tasks dialog's rhythm, which is the one to follow: its body
-   is gap 8 on padding 8px 0, with its blocks taking a 16px side gutter
-   (.s4zv-body / .s4zv-kpis). This ran gap 10 on 14px 14px 0 — close enough to
-   look like a near-miss rather than a different spacing, which is worse than
-   either. Now the same 8 between cards and the same 16 down the sides. */
 .vti-dw-body { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; background: transparent; position: relative; }
-/* Blocks the fields while a save is in flight — see .avm-cp-saving-veil in
-   the vendor modal, which solves the same problem the same way. Covers the
-   BODY only: the strip above keeps its Save button and its × reachable, so a
-   save that hangs does not trap the operator in the dialog. */
+
 .vti-dw-saving {
   position: absolute; inset: 0; z-index: 20;
   display: flex; align-items: flex-start; justify-content: center;
@@ -708,67 +445,30 @@
 [data-bs-theme="dark"] .vti-dw-saving { background: rgba(8,20,28,.6); }
 [data-bs-theme="dark"] .vti-dw-saving__box { background: #0f2630; border-color: rgba(34,211,238,.35); color: #7dd3e8; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
-/* z-index keeps the accent above anything a child paints over it. Every other
-   section holds plain blocks, whose backgrounds never reach the card edge, but
-   a table's header gradient and hover fill start at x=0 and were washing the
-   stripe out row by row as the pointer moved down it. */
+
 .vti-dw-section::before, .vti-dw-advanced::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; z-index: 2; background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #0e7490 100%); border-radius: 14px 0 0 14px; }
 .vti-dw-section-hd, .vti-dw-adv-toggle { display: flex; align-items: center; padding: 11px 16px; background: linear-gradient(102deg, #e6fafd 0%, #edfbfe 25%, #f4fbfd 55%, #f9fdfe 78%, #ffffff 100%); border-bottom: 1px solid rgba(6,182,212,.18); }
 .vti-dw-section-hd { justify-content: space-between; }
-/* 12px, measured off the design — it had drifted half a pixel up. */
-/* 12.5px, the design's base. It read 12 — which IS a value the design uses,
-   but only inside .s4rv-core, where it overrides the section title down for
-   the review panel. We have no .s4rv-core rule, so that narrower value had
-   been taken as the general one and every section title in this drawer ran
-   half a pixel small. */
+
 .vti-dw-section-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.15px; }
 .vti-dw-section-title svg { color: #0891b2; flex-shrink: 0; }
 .vti-dw-toolbar { display: flex; align-items: center; gap: 7px; }
 .vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
 .vti-dw-strip .vti-dw-strip-left { flex: 0 1 auto; }
 
-/* ── The box header strip, narrow ──────────────────────────────────────────
-   The strip never reflowed. Its items are `flex: 0 0 auto` so they refuse to
-   shrink, and the left group and the toolbar both sit at z-index 2 with the
-   toolbar pushed over by `margin-left: auto` — so the moment the content was
-   wider than the strip the two groups painted straight over each other, which
-   is why BOX ID, SCENARIO and DIMENSIONS ended up stacked on one another.
-
-   Wrapping gives the overflow somewhere to go. On a wide screen everything
-   still fits on one line, so nothing moves. */
 .vti-dw-strip { flex-wrap: wrap; row-gap: 0; }
-/* width:auto matters as much as the flex here. The base rule declares
-   `.vti-dw-strip-left { width: 100% }`, which was harmless while the strip
-   could not wrap — but once it can, a 100%-wide item claims the whole line by
-   itself and forces the toolbar onto a second row even when it would have fit
-   alongside. Sized to its content, the two share one line until they genuinely
-   cannot. */
+
 .vti-dw-strip .vti-dw-strip-left { flex: 1 1 auto; width: auto; flex-wrap: wrap; row-gap: 2px; }
 .vti-dw-strip .vti-dw-toolbar { flex-wrap: wrap; row-gap: 8px; }
 
-/* Keep the toolbar clear of the pinned ×.
-   The × owns the corner: right:12px plus its own 40px is the right-hand 52px
-   of the strip. The toolbar stopped 14px from that edge and the sticker added
-   only its own 16px, so the button ended at 30px and the × sat 22px on top of
-   it — against a disabled sticker, on the strip's rounded corner, it read as
-   a cut-off button.
-   46px + the toolbar's 14px margin ends the row at 60px, eight clear of the ×.
-   Scoped to the single-row case on purpose: below 1500 the toolbar drops to
-   its own row, the corner above it is empty and that block sets its own
-   padding, so a base rule here would just fight it. */
 @media (min-width: 1501px) {
   .vti-dw-modal .vti-dw-strip .vti-dw-toolbar { padding-right: 46px; }
-  /* The sticker is INSIDE the toolbar now. `margin: 0 16px 0 auto` is left
-     from when it followed the toolbar as a sibling — the auto does nothing in
-     a content-sized row and the 16px only muddles the gutter above. */
+
   .vti-dw-modal .vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
 }
 
 @media (max-width: 1500px) {
-  /* Below this the two groups cannot share a line, so the toolbar takes its
-     own full-width row rather than being squeezed against the labels.
-     `margin-left: auto` has to go with it — on its own row it would push the
-     buttons to the right while the labels above start at the left. */
+
   .vti-dw-strip .vti-dw-strip-left { width: 100%; }
   .vti-dw-strip .vti-dw-toolbar {
     width: 100%;
@@ -777,16 +477,13 @@
     padding: 0 14px 12px;
     justify-content: flex-start;
   }
-  /* A separator belongs between two items on the SAME line; once the row has
-     broken it is a stray vertical rule, so the items carry their own spacing
-     instead. */
+
   .vti-dw-strip .vti-dw-strip-item { padding: 9px 14px; }
 
 }
 
 @media (max-width: 820px) {
-  /* Phone-ish: the identity labels wrap to as many lines as they need, and
-     the product name stops reserving 400px it cannot have. */
+
   .vti-dw-strip .vti-dw-strip-sep { display: none; }
   .vti-dw-strip .vti-dw-strip-item { padding: 8px 12px; }
   .vti-dw-strip .vti-dw-strip-item.strip-product { max-width: 100%; }
@@ -820,72 +517,34 @@
 .vti-dw-save-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 8px; font-size: 11px; font-weight: 800; border: none; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 50%, #0e7490 100%); color: #fff; cursor: pointer; letter-spacing: .02em; box-shadow: 0 3px 12px rgba(6,182,212,.4), inset 0 1px 0 rgba(255,255,255,.22); transition: all .16s; white-space: nowrap; }
 .vti-dw-save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(6,182,212,.5); background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%); }
 .vti-dw-save-btn.is-saved { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 3px 12px rgba(5,150,105,.38); }
-/* 12px/14px, the design's own value — ours ran 14 top and 16 bottom, which
-   is 6 of the 7.4px this strip stood proud of the design's 79.97. */
+
 .vti-dw-fields { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 12px 14px; background: transparent; }
 .vti-dw-field-sep { display: none; }
 .vti-dw-field { display: flex; flex-direction: column; gap: 6px; background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%); border: 1.5px solid rgba(6,182,212,.2); border-radius: 10px; padding: 10px 12px; transition: all .16s; cursor: text;
-  /* 3 border + 20 padding + 6 gap + 11 label + 16 input = 56, which with the
-     strip's 24 of padding gives 80 against the design's 79.97. */ box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95); }
+   box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95); }
 .vti-dw-field:hover { border-color: rgba(6,182,212,.5); background: #fff; box-shadow: 0 4px 14px rgba(6,182,212,.14), inset 0 1px 0 #fff; transform: translateY(-1px); }
 .vti-dw-field:focus-within { border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.15), 0 4px 14px rgba(6,182,212,.12); transform: translateY(-1px); }
 .vti-dw-field--auto { background: linear-gradient(145deg, #cffafe 0%, #a5f3fc 60%, #67e8f9 100%); border-color: #06b6d4; box-shadow: 0 2px 8px rgba(6,182,212,.2), inset 0 1px 0 rgba(255,255,255,.7); }
 .vti-dw-field--auto:hover { background: linear-gradient(145deg, #a5f3fc 0%, #67e8f9 100%); border-color: #0891b2; transform: translateY(-1px); }
-/* 11px stated, not `line-height: 1`. At 1 the label was 8px tall on its own
-   but the unit chip beside it measures 11.5 — 6.5px of type on 1.5px of
-   padding and a 1px border — and a flex row is as tall as its tallest child,
-   so the chip was setting this height unseen. Stating 11 caps it there. */
+
 .vti-dw-field-lbl { font-size: 8px; font-weight: 800; color: #0891b2; opacity: .75; text-transform: uppercase; letter-spacing: .14em; display: flex; align-items: center; gap: 4px; white-space: nowrap; line-height: 11px; }
 .vti-dw-unit-tag { font-size: 6.5px; font-weight: 800; color: #0891b2; background: rgba(6,182,212,.14); border-radius: 3px; padding: 1.5px 4px; text-transform: uppercase; border: 1px solid rgba(6,182,212,.25); }
 .vti-dw-auto-tag { font-size: 6.5px; font-weight: 800; color: #fff; letter-spacing: .04em; background: linear-gradient(135deg, #06b6d4, #0891b2); border-radius: 3px; padding: 2px 5px; text-transform: uppercase; box-shadow: 0 1px 4px rgba(6,182,212,.35); }
-/* 16px, not 1.3 — a ratio on 13px gives 16.9, and a figure that is not a
-   whole pixel is a box that cannot be reasoned about. */
+
 .vti-dw-inp { border: none; padding: 0; background: transparent; width: 100%; outline: none; font-size: 13px; font-weight: 700; color: #0c4a6e; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; line-height: 16px; }
 .vti-dw-inp::placeholder { color: rgba(6,182,212,.4); font-weight: 400; font-size: 12px; font-family:'DM Sans',system-ui,sans-serif; }
 .vti-dw-inp--auto { color: #0e7490; font-weight: 800; cursor: default; }
 .vti-dw-row2-inner { display: flex; align-items: stretch; gap: 0; border-top: 1px solid rgba(6,182,212,.15); padding: 0; background: linear-gradient(108deg, #f8fdff 0%, #fbfeff 50%, #ffffff 100%); }
 .vti-dw-mini-section { padding: 14px 18px; border-right: 1px solid rgba(6,182,212,.12); flex-shrink: 0; }
-/* min-width: 0 is the important half. A flex item defaults to min-width:auto,
-   which refuses to shrink below its own content — so a wide flags row forced
-   this whole strip wider than the drawer and pushed Product Remark and Box
-   Condition off the left edge instead of being contained. */
+
 .vti-dw-mini-section:last-child { border-right: none; flex: 1; min-width: 0; }
 .vti-dw-mini-title { font-size: 8px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: .18em; margin-bottom: 12px; opacity: .7; }
-/* One line. The contents are bounded — three built-in flags, exactly ONE
-   custom chip (the drawer caps visibleCustomFlags at one), the "+N" counter
-   and the Stackable toggle — so the row has no reason to wrap. It did anyway:
-   at wrap, a few pixels over and the toggle alone dropped to a second line,
-   which read as Stackable belonging to something else.
 
-   The custom chip is the one item allowed to shrink, because its name already
-   truncates (.vti-flag-name). Everything else holds its size. */
-/* `min-width: 0` on the custom chip let it shrink without limit: in the
-   three-column row this strip sits in, the built-ins plus the counter plus
-   the toggle take the whole width, and the chip was squeezed down to its tag
-   icon and a sliver of a letter — present, unreadable, and indistinguishable
-   from a rendering fault. It now has a floor, and the row may wrap when even
-   that will not fit. Wrapping is the lesser fault: a flag on the next line
-   can still be read. */
 .vti-dw-flags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; row-gap: 8px; min-width: 0; }
 .vti-dw-flags > * { flex-shrink: 0; }
-/* Flex wraps BEFORE it shrinks, so a floor alone pushed Stackable onto a
-   second line: the chip refused to go under 104 and the line broke instead.
-   Capping its natural width is what keeps the line whole — the row was ~21px
-   over, and a 104px cap plus the tighter gap gives back ~29. The name
-   truncates inside it and carries its full text on hover. */
+
 .vti-dw-flags > .invf-flag-custom { flex: 0 1 auto; min-width: 88px; max-width: 104px; }
-/* The 900px breakpoint that used to turn wrapping back on is gone with it:
-   it keyed off the VIEWPORT, while what runs out of room is this strip — the
-   third column of a three-column row, a fraction of the drawer's width. A
-   1640px dialog never tripped it, which is why the chip was being crushed on
-   a wide screen. */
-/* The hidden flags open in a portalled panel rather than unfolding into the
-   row — expanding in place pushed this strip wider again, which is what the
-   counter is here to stop. Modelled on the CLM masters' "+N" popover. */
-/* Proportions taken from the Issuing Authorities popover in CLM, which is
-   the one in this app that reads well: 320 wide, 8px of padding, and rows
-   rather than chips. 256 was too narrow for a flag name, so every row wrapped
-   and the column became a wall of text. */
+
 .vti-flag-pop {
   width: 320px;
   overflow-y: auto;
@@ -908,28 +567,20 @@
   color: #0891b2;
   padding: 4px 8px 7px;
 }
-/* One flag per row. Transparent by default so a long list reads as a list,
-   with the colour carried by the tag and the label; the alternating tint is
-   what separates the rows, not fifty borders. */
+
 .vti-flag-pop__row {
   display: flex; align-items: center; gap: 8px;
   width: 100%; padding: 7px 10px;
   border: 1.5px solid transparent; border-radius: 8px;
   background: transparent;
-  /* 500, not 700. These are flag NAMES, read one after another down a list -
-     at bold the whole panel read as a stack of headings and the eye had
-     nowhere to rest. The selected row still stands out: it keeps the teal fill
-     and border, and takes 600 below. */
+
   font-family: inherit; font-size: 11.5px; font-weight: 500;
   text-align: left; cursor: pointer;
   transition: background .14s, border-color .14s;
 }
 .vti-flag-pop__row:hover { background: rgba(6,182,212,.12); }
 .vti-flag-pop__row svg { flex-shrink: 0; }
-/* One colour for selection, the app's teal — not the flag's own. A per-flag
-   tint turned the panel a different colour on every line; the chips in the row
-   already say which flag is which, and a list you tick through should read as
-   one list. */
+
 .vti-flag-pop__row { color: #334155; }
 .vti-flag-pop__row.is-active {
   background: rgba(6,182,212,.12);
@@ -947,9 +598,7 @@
 }
 [data-bs-theme="dark"] .vti-flag-pop__row.is-active .vti-flag-pop__box { background: #22d3ee; border-color: #22d3ee; }
 .vti-flag-pop__name { flex: 1 1 auto; min-width: 0; white-space: normal; word-break: break-word; line-height: 1.3; }
-/* The tick box. Square and 16px, so it reads as a checkbox rather than as
-   another coloured chip; it takes the flag's own colour when on, which keeps
-   the list legible without filling the whole row. */
+
 .vti-flag-pop__box {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
@@ -961,7 +610,6 @@
 .vti-flag-pop__row:hover .vti-flag-pop__box { border-color: rgba(100,116,139,.7); }
 [data-bs-theme="dark"] .vti-flag-pop__box { background: transparent; border-color: rgba(148,163,184,.5); }
 
-/* How many hidden flags are switched on. */
 .vti-flag-more__on {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px;
@@ -980,21 +628,16 @@
 [data-layout-mode="dark"] .vti-flag-pop__title { color: #67e8f9; }
 [data-bs-theme="dark"] .vti-flag-pop__row:hover,
 [data-layout-mode="dark"] .vti-flag-pop__row:hover { background: rgba(34,211,238,.16); }
-/* A custom flag's name is free text and can be any length. Capped with an
-   ellipsis and the full name on hover, so one long name cannot widen the
-   strip past the drawer on its own. */
+
 .vti-flag-name {
   max-width: 150px;
-  /* A flex item will not go below its content width without this, so the
-     ellipsis never engaged inside a chip whose own width is capped — the name
-     simply pushed the chip wider than its max-width allowed. */
+
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The counter chip. Deliberately quieter than a flag: it is a control for the
-   row, not another thing to switch on, so it carries no colour of its own. */
+
 .vti-flag-more {
   flex-shrink: 0;
   display: inline-flex; align-items: center;
@@ -1012,15 +655,11 @@
   background: rgba(148,163,184,.20);
   color: #334155;
 }
-/* Both attributes. This sheet writes [data-bs-theme] throughout, but the SPI
-   wizard is one of the screens that carries [data-layout-mode] instead, and a
-   chip styled for only one of them stayed on its light colours. */
+
 [data-bs-theme="dark"] .vti-flag-more,
 [data-layout-mode="dark"] .vti-flag-more {
   border-color: rgba(148,163,184,.45);
-  /* Opaque, not a 12% wash. The strip behind this is a gradient, so a
-     translucent chip picked up whatever was under it and read as a pale
-     blob rather than as part of the row. */
+
   background: #1e293b;
   color: #cbd5e1;
   box-shadow: none;
@@ -1042,8 +681,6 @@
 .vti-flag-btn.flag-regulated { border: 1.5px solid rgba(99,102,241,.3); background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); color: #3730a3; }
 .vti-flag-btn.flag-regulated svg { color: #6366f1; }
 .vti-flag-btn.flag-regulated:hover { border-color: #6366f1; background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); box-shadow: 0 4px 14px rgba(99,102,241,.28); transform: translateY(-2px); }
-/* The drawer's remaining rules: flag tints, the stackable switch, and
-   the Advanced Details collapse. */
 
 .vti-flag-btn.flag-regulated.is-active { border-color: #4f46e5; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(99,102,241,.45), inset 0 1px 0 rgba(255,255,255,.2); }
 .vti-flag-btn.flag-regulated.is-active svg { color: #fff; }
@@ -1113,7 +750,7 @@
 .vti-stack-toggle.is-stack { border-color: #7dd3fc; color: #0369a1; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); }
 .vti-stack-toggle.is-stack .vti-stack-sw { background: linear-gradient(135deg, #38bdf8, #0284c7); }
 .vti-stack-toggle.is-stack .vti-stack-knob { transform: translateX(13px); }
-/* Same rule as the remarks row above: wrap rather than crush. */
+
 .vti-dw-conditions { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
 .vti-cond-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: 0 0 auto; padding: 10px 28px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1.5px solid #e2e8f0; background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%); color: #94a3b8; cursor: pointer; transition: all .18s ease; white-space: nowrap; line-height: 1.25; box-shadow: 0 1px 4px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.95); position: relative; overflow: hidden; }
 .vti-cond-btn::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 100%); border-radius: 10px 10px 0 0; pointer-events: none; }
@@ -1138,14 +775,7 @@
 .vti-cond-severe:hover { border-color: #ef4444; color: #991b1b; background: linear-gradient(145deg, #fff1f2, #fee2e2); box-shadow: 0 5px 16px rgba(239,68,68,.18); transform: translateY(-2px); }
 .vti-cond-severe.is-active { border-color: #dc2626; background: linear-gradient(145deg, #ef4444 0%, #dc2626 100%); color: #fff; font-weight: 800; box-shadow: 0 6px 20px rgba(239,68,68,.4), inset 0 1px 0 rgba(255,255,255,.25); }
 .vti-cond-severe.is-active .vti-cond-btn-sub { opacity: .85; color: #fecaca; }
-/* Chips size to their own text and wrap to a second line when the column is
-   too narrow for all four.
-   They used to be `flex: 1 1 0` with no nowrap, so the row forced four equal
-   widths and the longest title — "Damaged / Rejected" — broke onto two lines.
-   The chip's height does not grow with it, so the "Not accepted" sub-line was
-   pushed past the bottom edge and clipped by the overflow:hidden that carries
-   the gloss. min-width:max-content is what actually stops the squeeze:
-   flex-basis alone still allows a flex item to shrink below its content. */
+
 .vti-dw-remarks { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
 .vti-rmk-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: 1 1 auto; min-width: max-content; white-space: nowrap; padding: 10px 18px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1.5px solid #e2e8f0; background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%); color: #94a3b8; cursor: pointer; transition: all .18s ease; text-align: center; line-height: 1.2; box-shadow: 0 1px 4px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.95); position: relative; overflow: hidden; }
 .vti-rmk-btn::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 100%); border-radius: 10px 10px 0 0; pointer-events: none; }
@@ -1171,45 +801,18 @@
 .vti-rmk-extra.is-active { border-color:#2563eb; background:linear-gradient(145deg,#3b82f6 0%,#2563eb 100%); color:#fff; box-shadow:0 6px 20px rgba(59,130,246,.4), inset 0 1px 0 rgba(255,255,255,.25); }
 .vti-rmk-extra.is-active .vti-rmk-btn-sub { opacity:.85; color:#bfdbfe; }
 .vti-dw-row2-inner > .vti-dw-mini-section { padding: 14px 16px; }
-/* The three groups stay side by side, as the design has them, and may shrink.
-   What must not shrink is a CHIP — that is what clipped its own label — so the
-   chips keep min-width:max-content and their rows wrap instead. A narrow
-   column therefore puts its chips on two lines rather than crushing them, and
-   nothing is pushed onto a row of its own.
-   (min-width:max-content on the SECTIONS, tried first, kept the chips intact
-   but made the groups too wide to share a line, so Product Flags dropped
-   below Remark and Condition.) */
-/* Remark and Condition are fixed sets — four chips and three — and each set
-   belongs on one line, so those columns ask for exactly the width their chips
-   need and do not shrink. Flags is the open-ended one: there may be two or
-   fifty, so it takes whatever is left and wraps inside itself.
 
-   It was the other way round (Flags `flex: 0 0 auto`, the other two shrinking
-   to zero), which let nine flags claim the whole row and squeezed Remark and
-   Condition down to one chip per line. */
 .vti-dw-row2-inner > .vti-dw-mini-section:nth-child(1) { flex: 0 0 auto; min-width: max-content; }
 .vti-dw-row2-inner > .vti-dw-mini-section:nth-child(2) { flex: 0 0 auto; min-width: max-content; }
-/* Only a genuinely narrow screen stacks them ALL. */
+
 @media (max-width: 1100px) {
   .vti-dw-row2-inner { flex-wrap: wrap; }
   .vti-dw-row2-inner > .vti-dw-mini-section { width: 100%; border-right: none; }
 }
-/* Wrapping allowed at every width, and a floor on Flags.
-   Remark and Condition are max-content and do not shrink, so Flags took
-   literally what was left — and with `min-width: 0` that could be less than
-   one chip. The chips then ran past the column and .vti-dw-section's
-   overflow: hidden cut them in half: "Hazardou", "Cold Chai", "Stackabl".
-   The floor is one chip wide, so when the three cannot share a line Flags
-   drops to its own full-width row and stays readable, which is the same
-   trade the strip above makes — a flag on the next line can still be read, a
-   clipped one cannot. The 1100px rule above still stacks all three on a
-   genuinely narrow screen; this handles the case where the drawer is wide but
-   Remark and Condition have eaten the row. */
+
 .vti-dw-row2-inner { flex-wrap: wrap; }
 .vti-dw-row2-inner > .vti-dw-mini-section:last-child  { flex: 1 1 260px; min-width: 260px; }
-/* Was `flex: 1 1 0; min-width: 0; white-space: normal`, which let a
-   condition chip shrink and wrap its label the same way the remark chips
-   did. Sized to its text now, like every other chip in this row. */
+
 .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn { flex: 0 1 auto; min-width: max-content; padding: 10px 18px; white-space: nowrap; }
 .vti-dw-adv-toggle .adv-chev { transition: transform .2s cubic-bezier(.22,1,.36,1); flex-shrink: 0; color: #06b6d4; opacity: .7; }
 .vti-dw-adv-toggle:hover { background: linear-gradient(102deg, #e6fafd 0%, #f4fbfd 50%, rgba(255,255,255,.7) 100%) !important; color: #0891b2; }
@@ -1222,18 +825,7 @@
 .vti-adv-line1 .vti-dw-field { padding: 10px 12px; }
 .vti-adv-line2 { display: flex; }
 .vti-adv-line2 .vti-dw-field { flex: 1; padding: 10px 12px; }
-/* This is the "stripped flat in here" the date cells in BoxDrawer refer to.
-   MasterDatePicker ships as a 38px bordered box with its own surface and
-   shadow, and .vti-dw-field is already that box — nested, the two date cells
-   stand half again as tall as the four text cells, and a grid row takes its
-   tallest cell, so the whole band grows and the dates read as a different
-   kind of control. Flattened to the input they stand in for: no border, no
-   surface, no padding, the same type as .vti-dw-inp, calendar at the right.
-   .vs3t does the same to the same control for the box editor's table.
 
-   These rules ARE the fix the component keeps the picker for — without them
-   the box-in-a-box is back. Do not delete them while MasterDatePicker is
-   used here. */
 .vti-adv-line1 .master-datepicker-wrap { width: 100%; }
 .vti-adv-line1 .master-datepicker-toggle,
 .vti-adv-line1 .master-datepicker-toggle:hover:not([aria-disabled="true"]),
@@ -1247,15 +839,13 @@
   font-size: 13px; font-weight: 700; color: #0c4a6e;
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
 }
-/* Matched to .vti-dw-inp::placeholder, so an empty date reads as the same
-   kind of blank as an empty Serial No. */
+
 .vti-adv-line1 .master-datepicker-placeholder {
   font-size: 12px; font-weight: 400; color: rgba(6,182,212,.4);
   font-family: 'DM Sans', system-ui, sans-serif;
 }
 .vti-adv-line1 .master-datepicker-icon { margin-left: auto; color: #0891b2; font-size: 14px; }
-/* The shared stylesheet forces a dark surface and border on the toggle at the
-   same specificity as the rule above; this one outranks it. */
+
 [data-bs-theme="dark"] .vti-adv-line1 .master-datepicker-toggle {
   background: transparent; border: none; box-shadow: none;
 }
@@ -1266,7 +856,6 @@
 .vti-s3-content .vti-dw-adv-body.is-open { max-height: 480px; }
 .vti-dw-row2 { display: none; }
 .vti-btn-single.is-open { background:linear-gradient(135deg,#e0f9fd,#cffafe); border-color:#0891b2; color:#0891b2; box-shadow:0 2px 8px rgba(6,182,212,.22); }
-/* The scenario chip and lock states on a committed product row. */
 
 .vti-scn-lock { display:none; align-items:center; justify-content:center; gap:5px; margin:0 auto; width:fit-content; padding:5px 10px; border-radius:10px; border:1.5px dashed #CBD5E1; background:#F8FAFC; color:#94A3B8; font-size:10px; font-weight:800; letter-spacing:.02em; white-space:nowrap; cursor:not-allowed; user-select:none; transition:all .16s; }
 .vti-scn-lock.is-on { display:flex; }
@@ -1284,12 +873,6 @@
 .vti-cb.is-indeterminate::after { content:''; position:absolute; left:2.5px; top:5.2px; width:7px; height:0; border-bottom:2px solid #fff; border-left:none; transform:none; }
 .vti-cb.is-cb-disabled { opacity:.4; cursor:not-allowed; }
 .vti-cb.is-cb-disabled:hover { border-color:#BAE6FD; background:#F0FDFF; }
-/* ── Scenario 02: one product split across many boxes ───────────────────────
-   A scrollable strip of box tabs over one panel per box. The strip is the
-   piece that has to survive a large count: .vmb-tabs is a flex row with
-   overflow-x auto, so fifty tabs scroll rather than wrapping and pushing
-   the close button off the row.
-   ──────────────────────────────────────────────────────────────────────── */
 
 .vmb-wrap { border: 1.5px solid rgba(6,182,212,.22); border-radius: 0 0 16px 16px; margin: 0 3px 14px; overflow: hidden; box-shadow: 0 8px 32px rgba(6,182,212,.12), 0 2px 8px rgba(0,0,0,.06); }
 .vmb-nav { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: linear-gradient(98deg, #0a5f75 0%, #0891b2 55%, #0fb8de 100%); border-bottom: 1px solid rgba(255,255,255,.1); flex-wrap: nowrap; }
@@ -1305,9 +888,7 @@
 .vmb-tab.is-saved { border-color: rgba(34,197,94,.6); }
 .vmb-tab-num { font-size: 10.5px; font-weight: 700; }
 .vmb-tab-qty { font-size: 9px; font-weight: 700; opacity: .7; background: rgba(255,255,255,.15); border-radius: 4px; padding: 1px 5px; }
-/* The active tab is a white pill, so a 15%-white chip on it is invisible —
-   the count was reading as bare text while every other tab had it boxed.
-   Tinted to the panel's own teal instead, which is what the design shows. */
+
 .vmb-tab.is-active .vmb-tab-qty { background: rgba(8,145,178,.12); color: #0e7490; opacity: 1; }
 .vmb-tab.is-active .vmb-tab-qty { background: rgba(6,182,212,.12); color: #0891b2; opacity: 1; }
 .vmb-tab-chk { font-size: 9px; font-weight: 800; }
@@ -1319,9 +900,7 @@
 .vmb-panel { display: none; }
 .vmb-panel.is-active { display: block; }
 .vmb-panel .vti-dw-body { padding-bottom: 16px; }
-/* Apply, once a split is committed. The prototype sets this inline from JS;
-   as a class it survives a re-render, which an inline style written onto the
-   DOM node does not. */
+
 .vti-btn-apply.is-done {
   background: linear-gradient(135deg, #22c55e, #16a34a);
   color: #fff;
@@ -1332,33 +911,14 @@
   background: linear-gradient(135deg, #16a34a, #15803d);
 }
 
-/* ── Unlimited boxes ────────────────────────────────────────────────────────
-   The prototype refuses any count over 20, so it never meets this: a flex
-   item's automatic minimum size is its CONTENT size, so `flex: 1` with
-   `overflow-x: auto` does NOT shrink — at 96 tabs the strip measured 8075px
-   wide, pushed Close off the row and widened the whole table.
-
-   `min-width: 0` lets the item shrink below its content and lets the overflow
-   actually scroll. The nav and the wrap need it for the same reason: each is
-   a flex/table child that would otherwise be sized by what is inside it.
-   ──────────────────────────────────────────────────────────────────────── */
 .vmb-tabs { min-width: 0; }
 .vmb-nav { min-width: 0; }
 .vmb-nav-left { min-width: 0; flex-shrink: 0; }
 .vmb-close { flex-shrink: 0; }
 
-/* The panel sits in a <td>, and a table sizes itself to its cells. Without a
-   stated width the 96-tab strip would stretch the column it lives in. */
 .vti-multibox-container-row > td { max-width: 0; }
 .vmb-wrap { min-width: 0; }
 
-/* The Description column, carried over from step 02's 3-way match. The
-   prototype's box table has no such column, so this is its own rule rather
-   than a borrowed one.
-
-   The text is cut to 30 characters in the markup, not here: a CSS clamp cuts
-   at whatever happens to fit, so the column would say a different amount at
-   every viewport width. This only has to keep the one line on one line. */
 .vti-table td.vti-desc { text-align: left; }
 .vti-desc__wrap {
   display: block;
@@ -1369,50 +929,16 @@
   color: #64748B;
 }
 
-/* Scenario 03: the selection bar above the table, and the count badge the
-   scenario card shows while products are picked. */
-
 .vti-selection-bar { display: none; align-items: center; justify-content: space-between; padding: 10px 18px; background: linear-gradient(98deg, #0a5f75 0%, #0891b2 55%, #0fb8de 100%); border-bottom: 1px solid rgba(6,182,212,.3); gap: 12px; animation: selBarIn .2s ease both; }
 .vti-selection-bar.is-visible { display: flex; }
-/* Renders only when there is something to count, so an unused scenario is
-   simply three lines of text, as the design has it. */
+
 .pkg-card__use { display:inline-flex; align-items:center; margin-left:2px; padding:2px 7px; border-radius:20px; background:#ECFEFF; border:1px solid #A5E9F5; color:#0E7490; font-size:8.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
-/* ── Packed Products ────────────────────────────────────────────────────────
-   The table a product moves into once its boxes are saved. It wears the same
-   vti-* chrome as the table above so a row reads identically after it moves;
-   only the three columns that are new to it are defined here.
-   ──────────────────────────────────────────────────────────────────────── */
 
-/* The table keeps the page's teal chrome. An all-green header was the first
-   attempt and it read as bolted on: every other surface in this wizard is
-   teal, so a second hue across a whole strip competes with the page rather
-   than placing this table inside it.
-
-   Completion is carried by the pieces that MEAN it — the tick in the icon,
-   the green "Packed" pill, and a thin accent along the card's top edge — so
-   the two tables are distinguishable at a glance without a second palette. */
 .invf-packed { margin-top: 10px; position: relative; }
-/* No green here.
-   This card used to mark itself as the "done" one with a green rule across
-   its top and a green icon tile. The design gives it the same teal head as
-   every other card on the step — Packaging Scenarios, Box Generation — and it
-   is a list of what has been packed, not a status banner. Two accent colours
-   on one step made the greener card look like a different kind of thing.
-   The icon tile therefore inherits .vti-header-ico's teal unchanged. */
 
-/* Which scenario produced the boxes: the number as a chip, the shape beside it. */
 .invf-scn-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; color: #0c4a6e; white-space: nowrap; }
 .invf-scn-tag__no { font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; background: #F0FDFF; border: 1px solid rgba(8,145,178,.25); color: #0891b2; }
 
-/* The box list inside the More popup.
-
-   Each carton is a card the size of a Box Core Details field, not a pill:
-   the id and its unit count are two separate facts, and a pill crams them
-   onto one line small enough that a hundred of them read as noise.
-
-   A grid with a 148px floor rather than a flex wrap, so every card is the
-   same width and the rows line up as a table would -- with 124 boxes, ragged
-   rows are the difference between scanning and hunting. */
 .invf-boxlist {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
@@ -1437,7 +963,7 @@
   box-shadow: 0 4px 14px rgba(6,182,212,.14), inset 0 1px 0 #fff;
   transform: translateY(-1px);
 }
-/* The id reads as the field's label; the count reads as its value. */
+
 .invf-boxchip__id {
   font-size: 8px;
   font-weight: 800;
@@ -1454,9 +980,7 @@
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
-/* An empty carton is drained of colour rather than tinted a warning one:
-   twenty-eight of them is a normal outcome of asking for more boxes than
-   units, not twenty-eight problems. */
+
 .invf-boxchip:has(.invf-boxchip__qty.is-empty) {
   border-color: #E8EFF3;
   background: linear-gradient(145deg, #fbfcfd 0%, #f5f7f9 100%);
@@ -1465,21 +989,8 @@
 .invf-boxchip__qty.is-empty { color: #94A3B8; font-weight: 600; font-style: italic; }
 .invf-boxchip__shared { align-self: flex-start; font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 20px; background: #FFF7ED; border: 1px solid #FED7AA; color: #c2410c; }
 
-/* ── Narrower screens ───────────────────────────────────────────────────────
-   The form is built for a wide desktop, but it is not usable only there. Each
-   rule below fixes something that genuinely breaks as the window narrows,
-   rather than restyling the page for small screens.
-   ──────────────────────────────────────────────────────────────────────── */
-
-/* The scenario card's count badge sits in the flow; its tag is positioned
-   absolutely at the top-right. With no room reserved for the tag the badge
-   runs straight under it, which is why "1 PRODUCT" and "STANDARD" collide.
-   The gutter is the tag's own width plus its offset. */
 .pkg-card__scenario { padding-right: 112px; }
 
-/* Three scenario cards need roughly 300px each. Below that they stop being
-   readable, so they stack -- and the body's fixed max-height has to grow with
-   them or the stack is clipped to the height of one row. */
 @media (max-width: 1080px) {
   .pkg-box__body { grid-template-columns: 1fr; max-height: 620px; }
   .pkg-card { border-right: none; border-left: none; }
@@ -1487,14 +998,6 @@
   .pkg-card:last-child { border-bottom: none; }
 }
 
-/* The head strip wraps its reference pills onto a second line and pushes SPI
-   Payment and Close off the row. The pills scroll sideways instead: they are
-   reference, and the two actions must stay reachable.
-
-   Stops at 761px. Below that the purchase order's own rule stacks the header —
-   title on one row, buttons under it — and this `nowrap` was overriding it all
-   the way down to a phone, where the row cannot hold both and `overflow:hidden`
-   on the head simply cut the Close button off the screen. */
 @media (min-width: 761px) and (max-width: 1500px) {
   .cpf-form .spi-dt-head { flex-wrap: nowrap; }
   .cpf-form .spi-dt-pills {
@@ -1508,32 +1011,8 @@
   .cpf-form .spi-dt-head-r { flex-shrink: 0; }
 }
 
-/* The SECTION head has the same quarrel, and loses it at every width (QA #398).
- *
- * `.spi-dt-sec-mid` (the "Products · Product Details (3-Way Match)" block) and
- * `.spi-dt-pills` beside it are both `flex: 1` with `min-width: 0`, so neither
- * has a floor and the one with the wider content takes the room. Five chips
- * carrying a supplier name, a PO number and a PI number always beat two short
- * lines of text, so the title was squeezed until "Product Details (3-Way
- * Match)" broke across two lines and its subtitle across two more — a 48px
- * strip rendering as four stacked fragments.
- *
- * The 3-way match is where it shows first: it has five pills to the 2-way's
- * four, and the longer title of the two.
- *
- * Same resolution the strip above already uses: the pills are REFERENCE, so
- * they are the ones that give way and scroll. The heading keeps its line and
- * ellipsises if it ever has to, which is still readable — a wrapped heading
- * inside a fixed-height strip is not.
- *
- * Specificity beats the media query above (0,3,0 against its 0,2,0), so the
- * section's pills scroll at every width while the top strip keeps its own
- * 761–1500px rule. */
 .cpf-form .spi-dt-sec-mid { flex: 0 1 auto; }
-/* The title sits in a flex row beside "Products" and its divider, and a flex
-   child will not ellipsise while its min-width is `auto` — it reports its
-   whole text as its minimum and overflows instead. The two before it keep
-   their size; the heading is the part with room to give. */
+
 .cpf-form .spi-dt-sec-row { min-width: 0; }
 .cpf-form .spi-dt-sec-lbl,
 .cpf-form .spi-dt-sec-sep { flex-shrink: 0; }
@@ -1548,49 +1027,29 @@
 }
 .cpf-form .spi-dt-sec-head .spi-dt-pills::-webkit-scrollbar { display: none; }
 
-/* ── Table legibility ───────────────────────────────────────────────────────
-   Both box tables size their columns to content. A product name is the one
-   value long enough to wrap, and a wrapped name sets the height of the whole
-   row -- so it stays on one line and ends in an ellipsis instead.
-   ──────────────────────────────────────────────────────────────────────── */
 .vti-prod-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
-/* The product column carries two or three lines of text in one cell, so it
-   needs a floor the other columns do not. */
+
 .vti-table th:nth-child(2),
 .vti-table td:nth-child(2) { min-width: 190px; }
-/* Packed Products leads with Sr No and Box ID, so the two columns the base
-   table reserves for a checkbox and a product name are the wrong ones here:
-   left as they were, the 190px floor meant for a product name sat under "01"
-   and opened a gap the width of a product before the box id. */
-/* Keyed to classes, not to nth-child: a carton's second row has no Sr No and
-   no Box ID cell -- they are spanned from the row above -- so the positions
-   shift and nth-child(3) would start matching the description. */
+
 .invf-packed .invf-packed-table th:first-child,
 .invf-packed .invf-packed-table td.invf-c-sr { min-width: 0; width: 52px; }
 .invf-packed .invf-packed-table th:nth-child(2),
 .invf-packed .invf-packed-table td.invf-c-box { min-width: 0; width: 1%; white-space: nowrap; }
-/* The product column is the one that needs the floor. */
+
 .invf-packed .invf-packed-table th:nth-child(3),
 .invf-packed .invf-packed-table td.invf-c-prod { min-width: 190px; text-align: left; }
 
-/* Box Generation leads with Sr No, so it has the same quarrel with the base
-   table's positional rules: the left-align and the 190px floor are written for
-   whatever sits in column two, and here that is a one-digit number. Left
-   alone, Sr No took a product's width and the product itself fell back to the
-   table's centred default and floated in the middle of a stretched column.
-   Keyed to classes for the reason the packed table is: these positions move. */
 .vti-boxgen th:nth-child(2),
 .vti-boxgen td.vti-sr-td { min-width: 0; width: 56px; text-align: center; }
 .vti-boxgen th.vti-prod-h,
 .vti-boxgen td.vti-prod-td { min-width: 190px; text-align: left; }
-/* Sr No as the design draws it: a quiet rounded tile, not a bare figure. It
-   numbers the row rather than telling you anything, so it reads as a marker
-   and the product beside it keeps the weight. */
+
 .vti-sr {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 22px; height: 22px; padding: 0 6px;
@@ -1601,36 +1060,21 @@
   background: rgba(34, 211, 238, .07); border-color: rgba(34, 211, 238, .18); color: #9db3c1;
 }
 
-/* ── Packed Boxes & Products Details — one row per carton ──
-   The row carries what the carton MEASURED, so most cells are a figure with
-   its unit set quieter than the number. Vertical alignment is top, not the
-   spanned-cell middle above: a mixed carton stacks its products and the
-   single-value cells beside them should start at the first one. */
-/* Centred, except the products. Every other cell holds one short value — a
-   code, a figure, a pill — and a column of those reads as a column only when
-   they share an axis. Box Product(s) is prose of varying length, so it keeps
-   its left edge to stay scannable. */
 .invf-packed .invf-packed-table th,
 .invf-packed .invf-packed-table td { text-align: center; vertical-align: middle; }
 .invf-packed .invf-packed-table th.invf-c-prod,
 .invf-packed .invf-packed-table td.invf-c-prod { text-align: left; }
-/* A mixed carton's single-value cells stay CENTRED against its stack, the way
-   the design has them. Pinning them to the first product read as the figures
-   belonging to that product rather than to the box, and left the rest of the
-   row empty under them — a three-product carton showed its weight and its
-   pills in the top third and nothing below. 33 is the whole box. */
+
 .invf-packed .invf-packed-table tr.has-stack td { vertical-align: middle; }
 .invf-pb-row:hover { background: rgba(6,182,212,.04); }
 .invf-pb-row.is-open { background: rgba(6,182,212,.07); box-shadow: inset 3px 0 0 #0891b2; }
-/* In dark mode a 7% teal wash lifts the row's background without touching its
-   text, which lowers contrast and reads as the row being faded rather than
-   selected. A deeper fill and a brighter edge mark it instead. */
+
 [data-bs-theme="dark"] .invf-pb-row.is-open {
   background: rgba(34,211,238,.10);
   box-shadow: inset 3px 0 0 #22d3ee;
 }
 [data-bs-theme="dark"] .invf-pb-row:hover { background: rgba(34,211,238,.06); }
-/* Date, or "Box 1 of 5" — which set this carton came from. */
+
 .invf-pb-sub { margin-top: 3px; font-size: 9.5px; font-weight: 600; color: #94a3b8; letter-spacing: .02em; }
 .invf-scn-no {
   display: inline-block; padding: 2px 8px; border-radius: 20px;
@@ -1638,17 +1082,17 @@
   font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #0891b2;
 }
 .invf-pb-scn { margin-top: 4px; font-size: 11px; font-weight: 700; color: #0c4a6e; white-space: nowrap; }
-/* Each product in the carton: name, then its identifiers a size down. */
+
 .invf-pb-prod + .invf-pb-prod { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dbeef4; }
 [data-bs-theme="dark"] .invf-pb-prod + .invf-pb-prod { border-top-color: rgba(34,211,238,.22); }
-/* Name and the product's share of a mixed carton on one line. */
+
 .invf-pb-nameline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .invf-pb-share { font-size: 11px; font-weight: 800; color: #0891b2; white-space: nowrap; }
 [data-bs-theme="dark"] .invf-pb-share { color: #67e8f9; }
 .invf-pb-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
 .invf-pb-hsn, .invf-pb-gst { font-size: 10px; font-weight: 600; color: #64748b; }
 .invf-pb-dot { color: #cbd5e1; font-size: 10px; }
-/* The box's own quantity — filled, because it is the figure the row is about. */
+
 .invf-pb-qty {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 38px; padding: 5px 9px; border-radius: 9px;
@@ -1659,8 +1103,7 @@
 .invf-pb-num { font-size: 11.5px; font-weight: 700; color: #0f172a; white-space: nowrap; }
 .invf-pb-num em { font-style: normal; font-weight: 600; color: #94a3b8; font-size: 10px; }
 .invf-pb-none { color: #cbd5e1; font-weight: 700; }
-/* Remark / condition read as the same kind of statement, so one pill serves
-   both and only the tone changes. */
+
 .invf-pb-pill {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 20px;
@@ -1670,8 +1113,7 @@
 .invf-pb-pill.is-ok   { background: #f0fdf4; border: 1px solid rgba(34,197,94,.30);  color: #15803d; }
 .invf-pb-pill.is-warn { background: #fffbeb; border: 1px solid rgba(245,158,11,.32); color: #b45309; }
 .invf-pb-pill.is-bad  { background: #fef2f2; border: 1px solid rgba(239,68,68,.30);  color: #b91c1c; }
-/* One chip plus a counter, so the column is the same width whatever a box
-   carries. Centred because the cell is. */
+
 .invf-pb-flags { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
 .invf-pb-flag {
   display: inline-block; max-width: 120px;
@@ -1691,11 +1133,9 @@
   transition: transform .12s, box-shadow .12s;
 }
 .invf-pb-flag-more:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(8,145,178,.42); }
-/* The list behind the counter. Same shape as the Issuing Authorities popover
-   it is modelled on: a titled card with padded, alternating rows. */
+
 .invf-fpop {
-  /* Narrower, and sized to its chips rather than to a fixed 260: the widest
-     flag name is what this has to hold, not a column. */
+
   width: max-content; min-width: 180px; max-width: 260px;
   overscroll-behavior: contain;
   padding: 9px 10px 10px; border-radius: 12px;
@@ -1706,11 +1146,7 @@
   font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
   color: #8aa5b2; padding: 0 2px 7px;
 }
-/* The list scrolls, not the card, so the "Product Flags (n)" heading stays
-   put instead of sliding away under its own rows. Five rows and the four
-   gaps between them, written in the row's own units rather than a flat
-   pixel height, so the cap cannot drift when the chip padding changes —
-   the sixth is cut at the fold, which is what says there is more. */
+
 .invf-fpop__list {
   --fpop-row: 26px;
   --fpop-gap: 4px;
@@ -1721,20 +1157,14 @@
 }
 .invf-fpop__list::-webkit-scrollbar { width: 6px; }
 .invf-fpop__list::-webkit-scrollbar-thumb { background: #b9dde8; border-radius: 99px; }
-/* Plain rows. The zebra band under every other one was doing the work a
-   table needs across many columns, and this list has one: it turned six
-   chips into a striped block that read as heavier than the strip it was
-   explaining. The chips already carry their own colour — that is the
-   distinction, and a second one behind them only competes with it.
-   The rows are tighter too, since nothing has to sit inside a band any more. */
+
 .invf-fpop__row { padding: 3px 4px; border-radius: 8px; }
 .invf-fpop__row .invf-pb-flag { max-width: 100%; }
 [data-bs-theme="dark"] .invf-fpop { background: #0f1b2a; border-color: rgba(34,211,238,.28); box-shadow: 0 16px 40px rgba(0,0,0,.6); }
 [data-bs-theme="dark"] .invf-fpop__title { color: #67e8f9; }
 .invf-packed .invf-packed-table td.invf-c-acts { white-space: nowrap; }
 .invf-packed .vti-packed-acts { display: inline-flex; align-items: center; gap: 8px; }
-/* The pencil is solid, not the outline button it inherits elsewhere: beside a
-   filled Sticker button an outline one reads as disabled. */
+
 .invf-packed .vti-btn-single--edit {
   background: linear-gradient(135deg, #0e7d9a, #0891b2);
   border-color: transparent;
@@ -1753,11 +1183,7 @@
 }
 .invf-pb-sticker:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.42); }
 .invf-pb-sticker:active { transform: translateY(0); }
-/* ── Packed Boxes & Products Details — matched to the design ──────────────
- * The table was wearing the generic .vti-table chrome: a grey header band on
- * a card whose own head is cyan, and type a size and a letter-spacing off
- * everywhere. The design gives this table its own shell, so it gets one here.
- * ─────────────────────────────────────────────────────────────────────────*/
+
 .invf-packed .invf-packed-table { font-size: 11px; }
 .invf-packed .invf-packed-table thead tr {
   background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
@@ -1772,8 +1198,7 @@
 .invf-packed .invf-packed-table td:first-child { padding-left: 14px; }
 .invf-packed .invf-packed-table th:last-child,
 .invf-packed .invf-packed-table td:last-child { padding-right: 14px; }
-/* The card's own bottom edge closes the table; a line under the last row
-   drew a second one a pixel above it. */
+
 .invf-packed .invf-packed-table tbody tr:last-child td { border-bottom: none; }
 .invf-packed .invf-pb-row:hover { background: #f6fdfe; }
 [data-bs-theme="dark"] .invf-packed .invf-packed-table thead tr {
@@ -1784,13 +1209,8 @@
 [data-bs-theme="dark"] .invf-packed .invf-packed-table td { border-bottom-color: rgba(148,163,184,.13); }
 [data-bs-theme="dark"] .invf-packed .invf-pb-row:hover { background: rgba(34,211,238,.06); }
 
-/* Sr No is a plain figure in the design, not a code — the monospace made it
-   read as an id, which is the column beside it. */
 .invf-packed .invf-sr { font-family: inherit; font-size: 12px; font-weight: 800; color: #7c93a3; }
 
-/* The two chips in this table are NOT the same chip: the box id is the row's
-   own identifier and the product code is a reference inside it, so the design
-   gives the id a flat fill and a deeper radius, and the code a soft gradient. */
 .invf-packed .invf-c-box .vti-code {
   font-size: 10px; font-weight: 800; color: #0e7490;
   background: #f0fdff; border: 1.5px solid #c4eef5; border-radius: 7px; padding: 3px 7px;
@@ -1804,8 +1224,7 @@
 [data-bs-theme="dark"] .invf-packed .invf-pb-meta .vti-code {
   color: #7dd3e8; background: rgba(34,211,238,.10); border-color: rgba(34,211,238,.26);
 }
-/* The id is still the way back into the box, so its hover has to outrank the
-   fill above rather than sit under it. */
+
 .invf-packed .invf-c-box .vti-code.invf-boxid-btn:hover {
   color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2);
   border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3);
@@ -1814,9 +1233,6 @@
 .invf-packed .invf-pb-sub { margin-top: 4px; font-size: 10px; font-weight: 700; color: #475569; }
 [data-bs-theme="dark"] .invf-packed .invf-pb-sub { color: #8fa6b4; }
 
-/* Scenario: the badge a touch larger and in the design's own cyan, the line
-   under it in slate rather than the badge's colour — they are a label and a
-   sentence, not one phrase. */
 .invf-packed .invf-scn-no {
   font-size: 9px; letter-spacing: .06em; padding: 3px 8px;
   color: #0e7490; background: #e0fbff; border: 1px solid #bdf0f7;
@@ -1824,7 +1240,6 @@
 .invf-packed .invf-pb-scn { color: #1e293b; }
 [data-bs-theme="dark"] .invf-packed .invf-pb-scn { color: #cbd5e1; }
 
-/* Product cell. */
 .invf-packed .vti-prod-name { font-size: 12px; font-weight: 800; color: #0c4a6e; letter-spacing: 0; }
 [data-bs-theme="dark"] .invf-packed .vti-prod-name { color: #a5e9f5; }
 .invf-packed .invf-pb-nameline { gap: 4px; }
@@ -1843,8 +1258,6 @@
 }
 [data-bs-theme="dark"] .invf-packed .invf-pb-dot { background: rgba(148,163,184,.45); }
 
-/* Box Qty is a fixed square in the design, so 75 and 101 line up down the
-   column; it was a pill that grew with its number. */
 .invf-packed .invf-pb-qty {
   width: 34px; height: 34px; min-width: 0; padding: 0; border-radius: 10px;
   font-size: 13px; font-weight: 800;
@@ -1852,26 +1265,21 @@
   box-shadow: 0 4px 10px -2px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
-/* Measurements: the figure heavier and darker, the unit a notch quieter. */
 .invf-packed .invf-pb-num { font-size: 11px; font-weight: 800; color: #1e293b; }
 .invf-packed .invf-pb-num em { font-size: 10px; font-weight: 700; color: #64748b; }
 .invf-packed .invf-pb-none { color: #9fb2c0; font-weight: 700; }
 
-/* Remark and condition pills. */
 .invf-packed .invf-pb-pill {
   padding: 3px 10px; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; border-radius: 999px;
 }
 .invf-packed .invf-pb-pill.is-ok   { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
 .invf-packed .invf-pb-pill.is-warn { background: #fffbeb; border-color: #fde68a; color: #b45309; }
 .invf-packed .invf-pb-pill.is-bad  { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
-/* The design's borders are solid tints, which glow against a dark table —
-   dark keeps the translucent edge the pills already had. */
+
 [data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-ok   { border-color: rgba(34,197,94,.30); }
 [data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-warn { border-color: rgba(245,158,11,.32); }
 [data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-bad  { border-color: rgba(239,68,68,.30); }
 
-/* Actions. Both buttons are 32 high in the design and share one gradient, so
-   the pencil and the Sticker button read as one control group. */
 .invf-packed .vti-packed-acts { gap: 6px; justify-content: center; }
 .invf-packed .vti-btn-single--edit {
   width: 32px; height: 32px; border-radius: 9px;
@@ -1884,19 +1292,15 @@
   background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
   box-shadow: 0 4px 12px -3px rgba(8,145,178,.6), inset 0 1px 0 rgba(255,255,255,.3);
 }
-/* The id inside the button is the same id as the chip on the row, so it is
-   set the same way. */
+
 .invf-pb-stkid { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-weight: 800; letter-spacing: .02em; }
 
-/* The scenario badge had no dark rule, so it kept #f0fdff — a solid white
-   pill in a dark table, and the brightest thing in the row. */
 [data-bs-theme="dark"] .invf-scn-no {
   background: rgba(34,211,238,.12);
   border-color: rgba(34,211,238,.35);
   color: #67e8f9;
 }
-/* These two were violet (#c4b5fd / #6d6391) — the palette of a different
-   module, copied in with the rule. This screen is teal throughout. */
+
 [data-bs-theme="dark"] .invf-pb-scn { color: #a5e9f5; }
 [data-bs-theme="dark"] .invf-pb-sub { color: #7f97a5; }
 [data-bs-theme="dark"] .invf-pb-num { color: #e2e8f0; }
@@ -1907,13 +1311,9 @@
 [data-bs-theme="dark"] .invf-pb-pill.is-ok   { background: rgba(34,197,94,.14);  color: #86efac; }
 [data-bs-theme="dark"] .invf-pb-pill.is-warn { background: rgba(245,158,11,.14); color: #fcd34d; }
 [data-bs-theme="dark"] .invf-pb-pill.is-bad  { background: rgba(239,68,68,.14);  color: #fca5a5; }
-/* A carton's own cells sit in the middle of the block they span, the way the
-   PO list centres its PO figures against a three-invoice group — they belong
-   to the whole carton, not to its first product. */
+
 .invf-packed-table td[rowspan] { vertical-align: middle; }
 
-/* "Item 1/2" — the same chip the PO list puts on a mapped SPI, so a stacked
-   group reads the same way in both places. */
 .invf-seq {
   display: inline-block;
   margin-bottom: 4px;
@@ -1934,61 +1334,29 @@
   border-color: rgba(148, 163, 184, .2);
 }
 
-/* The base table aligns by position: `td:first-child` and `td:nth-child(2)`
-   are left, everything else centred. A carton's continuation rows have no Sr
-   No and no Box ID cell — they are spanned from above — so those two rules
-   land on Product and CODE instead, and the second product's code sat left
-   while the first one's was centred.
-
-   Alignment is stated per class here, so it does not depend on how many cells
-   a given row happens to carry. */
 .invf-packed-table tbody.invf-grp td { text-align: center; padding-left: 10px; }
-/* Only the two that carry prose read from the left. The carton's own
-   columns — Sr No, Box ID, Scenario, Products in Box, Action — are centred,
-   which is also what keeps them under their centred headers. */
+
 .invf-packed-table tbody.invf-grp td.invf-c-prod,
 .invf-packed-table tbody.invf-grp td.vti-desc { text-align: left; }
 .invf-packed .invf-packed-table th:first-child,
 .invf-packed .invf-packed-table th:nth-child(2) { text-align: center; }
 
-/* The dashed rails that used to bracket the per-product block are gone with
-   the block: the table stopped repeating a carton's columns down several rows
-   long ago, so a rail saying "these columns repeat" marked nothing. The design
-   carries exactly one dashed line in this table, between stacked products. */
-/* Two shades inside the bracket, the way the PO list gives its SPI, GRN and
-   QA columns one each: what the product IS on a cool tint, and how much of it
-   is in the box on a warm one. The split is where the eye jumps anyway —
-   identity on the left, counting on the right.
-
-   Barely there on purpose. These sit behind every row, so anything stronger
-   stops being a background and starts being a highlight competing with the
-   open-carton state. Tagged on each cell rather than taken with `~`, which
-   would run past the block into the carton's own cells. */
 .invf-packed-table tbody.invf-grp td.invf-c-id { background: #fafdff; }
 .invf-packed-table tbody.invf-grp td.invf-c-qty { background: #fafefb; }
 
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-id { background: rgba(34, 211, 238, .045); }
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-qty { background: rgba(16, 185, 129, .045); }
 
-/* Inside a carton the rows are divided faintly; the carton itself closes with
-   the table's own rule. Same two weights the PO list uses on its groups. */
 .invf-packed-table tbody.invf-grp td { border-bottom: 1px dashed rgba(8, 145, 178, .22); }
 .invf-packed-table tbody.invf-grp tr.is-last td { border-bottom: 1px solid #f1f5f9; }
 .invf-packed-table tbody.invf-grp:last-child tr.is-last td { border-bottom: none; }
 
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td { border-bottom-color: rgba(34, 211, 238, .18); }
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp tr.is-last td { border-bottom-color: rgba(148, 163, 184, .13); }
-/* Give the description room to earn its 30 characters in both tables. */
+
 .vti-table td.vti-desc { min-width: 210px; }
 
-/* The Description header must sit over its own text. Every other column in
-   this table is centred, and the description is the one left-aligned cell —
-   a centred header above left-aligned prose reads as a column out of step. */
 .vti-table th.vti-desc-h { text-align: left; }
-
-/* ── Product Flags dialog ───────────────────────────────────────────────────
-   Wears the shared .spi-mdl shell; only what a flag editor needs is here.
-   ──────────────────────────────────────────────────────────────────────── */
 
 .invf-flags { width: 520px; max-width: calc(100vw - 32px); }
 .invf-flags__card { border: 1.5px solid #DEF1F7; border-radius: 14px; padding: 14px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); }
@@ -2009,15 +1377,13 @@
 .invf-flags__swatches { display: flex; gap: 10px; }
 .invf-flags__swatch { width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer; padding: 0; position: relative; transition: transform .15s, box-shadow .15s; }
 .invf-flags__swatch:hover { transform: scale(1.08); }
-/* The ring is the swatch's own colour, so the selected state reads at a
-   glance without a second hue competing with it. */
+
 .invf-flags__swatch.is-on { box-shadow: 0 0 0 3px #fff, 0 0 0 5.5px currentColor; }
 .invf-flags__swatch.is-on::after { content: ''; position: absolute; left: 12px; top: 10px; width: 7px; height: 12px; border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff; transform: rotate(45deg); }
 
 .invf-flags__add { width: 100%; margin-top: 14px; height: 42px; border: none; border-radius: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); box-shadow: 0 5px 18px rgba(6,182,212,.4); transition: all .18s; }
 .invf-flags__add:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(6,182,212,.5); }
-/* Dimmed rather than hidden: the button has to stay where it is, so its
-   position does not shift the moment a name is typed. */
+
 .invf-flags__add:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
 
 .invf-flags__list { border: 1.5px solid #DEF1F7; border-radius: 14px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); padding: 10px 12px; max-height: 190px; overflow-y: auto; }
@@ -2027,43 +1393,18 @@
 .invf-flags__del { margin-left: auto; width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 1.5px solid #FECACA; background: #FEF2F2; color: #DC2626; transition: background .15s, border-color .15s; }
 .invf-flags__del:hover { background: #FEE2E2; border-color: #FCA5A5; }
 
-/* A custom flag on a box. The colour is inline because it is data. */
 .invf-flag-custom { border: 1.5px solid; }
 
-/* ── Uniform button height in the box drawer ────────────────────────────────
-   The prototype does this globally: a script tags every visible button whose
-   natural height falls between 22 and 52px and forces it to exactly 40px with
-   no vertical padding, skipping text links and on/off switches. That is why
-   every button in the design lines up.
-
-   Ported as CSS rather than a DOM pass — the same result without a
-   MutationObserver re-tagging nodes on every render — and scoped to the three
-   groups it actually governs, so the small icon buttons, the box tabs and the
-   Stackable switch keep the sizes they are meant to have. Measured against the
-   prototype: 40px for all three, where ours were 50 / 51 / 33.
-   ──────────────────────────────────────────────────────────────────────── */
-/* Three levels deep on purpose. The sheet already carries
-   ".vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn" at (0,3,0) with its
-   own vertical padding; a (0,2,0) rule loses to it, leaving 10px top and
-   bottom inside a 40px box, which clips the button's second line. */
 .vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
 .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn,
 .vti-dw-row2-inner .vti-dw-flags .vti-flag-btn,
-/* The counter stands in the same row and has to be the same height as the
-   chips either side of it, or it sits short against them. */
+
 .vti-dw-row2-inner .vti-dw-flags .vti-flag-more {
   height: 40px;
   min-height: 40px;
   padding-top: 0;
   padding-bottom: 0;
 }
-
-/* ── The drawer's identity strip, in full ───────────────────────────────────
-   An entire block the first CSS extraction missed: its selectors span several
-   lines, and the line-by-line scan only matched rules whose selector sat on
-   one line. Without it the toolbar buttons fell back to their base rules and
-   measured 28 / 17 / 19 / 32px against the design's uniform 40.
-   ──────────────────────────────────────────────────────────────────────── */
 
 .vti-dw-strip { display: flex; align-items: stretch; width: 100%; min-height: 0; background: linear-gradient(98deg, #0a5f75 0%, #0c6e87 30%, #0e7d9a 55%, #0891b2 75%, #0aa8cc 88%, #0fb8de 95%, #14c0e4 100%); border-bottom: none; box-shadow: 0 4px 20px rgba(8,145,178,.45), 0 2px 6px rgba(8,145,178,.3), inset 0 1px 0 rgba(255,255,255,.15); position: relative; overflow: hidden; box-sizing: border-box; }
 .vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
@@ -2087,33 +1428,12 @@
 .vti-dw-strip .vti-dw-unit-opt:hover:not(.is-active) { background: rgba(255,255,255,.16); color: #fff; }
 .vti-dw-strip .vti-dw-unit-opt.is-active { background: #fff; color: #0e7490; box-shadow: 0 1px 5px rgba(2,40,54,.25); }
 
-/* ── Scroll cost: the strip's blurs do nothing but cost ─────────────────────
- * Five controls on this strip carry a backdrop-filter — Upload, Camera,
- * Sticker, the CM/M toggle and the quantity pill. The strip is pinned at the
- * top of the dialog while the form scrolls underneath it, which is the one
- * case this stylesheet already calls the most expensive thing a scrolling
- * surface can carry: every frame the compositor re-reads the pixels behind
- * each of them and re-blurs them, and those pixels are moving, so none of it
- * can be cached. Five of them, every frame.
- *
- * And here it buys nothing. What sits behind these controls is the strip's
- * own teal gradient, which is opaque — blurring a smooth gradient returns
- * the same gradient. The white tints, borders and shadows stay exactly as
- * they are; only the sampling goes.
- *
- * Declared after every copy of the rules above — they appear twice in this
- * file — so it holds whichever copy wins. */
 .vti-dw-strip .vti-dw-icon-btn,
 .vti-dw-strip .vti-dw-sticker-btn,
 .vti-dw-strip .vti-dw-unit-toggle,
 .vti-dw-strip .vti-dw-strip-qty {
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
-
-/* ── Editable per-box quantity ──────────────────────────────────────────────
-   The strip's QUANTITY becomes a field on a split, so units can be moved
-   between cartons as they are filled.
-   ──────────────────────────────────────────────────────────────────────── */
 
 .invf-qty-edit { gap: 4px; padding-right: 10px; }
 
@@ -2127,19 +1447,15 @@
   font-weight: inherit;
   color: inherit;
   text-align: right;
-  /* Figures keep their place as the count changes. */
+
   font-variant-numeric: tabular-nums;
-  /* The browser's own spinner is replaced by the arrows beside it; left in,
-     it would sit on top of them. */
+
   -moz-appearance: textfield;
 }
 .invf-qty-inp::-webkit-outer-spin-button,
 .invf-qty-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .invf-qty-inp:focus { box-shadow: inset 0 -1.5px 0 rgba(255,255,255,.75); }
 
-/* Stacked arrows at the field's right edge, the shape of the Sub-Box Count
-   spinner. Drawn rather than left native: the browser's own is invisible
-   against this teal strip and shows only on hover. */
 .invf-qty-spin {
   display: inline-flex;
   flex-direction: column;
@@ -2162,13 +1478,10 @@
   transition: background .12s, color .12s;
 }
 .invf-qty-spin__btn:hover:not(:disabled) { background: rgba(255,255,255,.22); color: #fff; }
-/* Dimmed, not removed: an arrow that vanishes at zero moves the one above it
-   down under the cursor. */
+
 .invf-qty-spin__btn:disabled { opacity: .3; cursor: not-allowed; }
 .invf-qty-unit { flex-shrink: 0; }
 
-/* What is still unplaced, or placed twice over, said where the box count is.
-   Amber reads as "not finished"; red as "wrong", which over-allocating is. */
 .invf-alloc {
   display: inline-block;
   margin-left: 8px;
@@ -2183,18 +1496,11 @@
 }
 .invf-alloc.is-over { color: #fef2f2; background: rgba(239,68,68,.3); border-color: rgba(252,165,165,.6); }
 
-/* ── Temperature Range dialog ───────────────────────────────────────────────
-   Opened by the Cold Chain flag. Wears the shared .spi-mdl shell; only what a
-   temperature picker needs is here.
-   ──────────────────────────────────────────────────────────────────────── */
-
 .invf-temp { width: 520px; max-width: calc(100vw - 32px); }
 .invf-temp__lbl { display: block; margin: 0 0 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b94a8; }
 .invf-temp__row + .invf-temp__lbl,
 .invf-temp__presets + .invf-temp__lbl { margin-top: 16px; }
 
-/* Two by two rather than a single row: four bands on one line leaves each too
-   narrow to show both its name and its limits. */
 .invf-temp__presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .invf-temp__preset {
   display: flex;
@@ -2213,8 +1519,7 @@
 .invf-temp__preset-name { font-size: 12px; font-weight: 800; }
 .invf-temp__preset-val { font-size: 10.5px; font-weight: 600; opacity: .72; font-variant-numeric: tabular-nums; }
 .invf-temp__preset:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(6,182,212,.18); }
-/* Cold to coldest, so the four bands are distinguishable at a glance rather
-   than by reading each one. */
+
 .invf-temp__preset--chilled { border-color: #A5F3FC; color: #0e7490; }
 .invf-temp__preset--cool    { border-color: #BAE6FD; color: #0369a1; }
 .invf-temp__preset--frozen  { border-color: #C7D2FE; color: #4338ca; }
@@ -2235,8 +1540,7 @@
 }
 .invf-temp__field:focus-within { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
 .invf-temp__ico { color: #06b6d4; display: flex; flex-shrink: 0; }
-/* `min-width: 0` so the number can shrink inside the flex row rather than
-   forcing the field wider than its half of the line. */
+
 .invf-temp__inp {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent;
   font-family: inherit; font-size: 12.5px; font-weight: 700; color: #0F172A;
@@ -2247,17 +1551,10 @@
 .invf-temp__err { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 10.5px; font-weight: 700; color: #dc2626; }
 .invf-temp__hint { margin-top: 10px; font-size: 10.5px; font-weight: 500; color: #64748B; }
 
-/* Dimmed rather than hidden, so the button does not move the moment a range
-   becomes valid. */
 .spi-mdl-confirm.is-off { opacity: .4; cursor: not-allowed; }
 
-/* ── Selected Products · the mixed carton's contents list ──────────────────
-   Eleven columns, because the identifiers are per product rather than per
-   box: a carton holding four SKUs holds four batches and four expiry dates.
-   It reuses the vti-* table wholesale; only the pieces that table has no
-   equivalent for are written here. */
 .invf-selprod { margin-top: 10px; }
-/* The row number: quiet, so it reads as an index and not as data. */
+
 .invf-selprod__no {
   display: inline-flex;
   align-items: center;
@@ -2268,14 +1565,7 @@
   color: #94a3b8;
   font-variant-numeric: tabular-nums;
 }
-/* Narrow enough that eleven columns still fit, wide enough for "SN-00123". */
-/* The identity fields. Taller and edged more firmly than the shared
-   `.cpd-in`: there are eleven of them on a row, all empty, and at a 1.5px
-   #e6eef3 edge a row of them reads as a smear rather than as eleven things
-   you can type in. */
-/* One width for all eleven. Each kind used to set its own floor — 104 for a
-   code, 122 for a date, 190 for the note — and since the floor is what sizes
-   the column, the row came out as three different box widths. */
+
 .invf-selprod__in {
   width: 100%;
   min-width: 130px;
@@ -2288,22 +1578,9 @@
   background: #fcfeff;
 }
 .invf-selprod__in:hover { border-color: #bfe3ee; background: #fff; }
-/* A placeholder that is only slightly lighter than a value reads as a value.
-   This one is clearly an example — it says "e.g." and looks like it. */
-.invf-selprod__in::placeholder { color: #9fb3bf; font-weight: 500; }
-/* Remarks is prose, so it reads from the left, where a sentence starts. The
-   codes beside it stay centred — that column is scanned down, not read. It
-   takes no extra width: a note is typed and scrolls, where a box wider than
-   its neighbours is seen on every row that is empty.
 
-   min-width: 0 so this is the column that gives way. Seven identity inputs at
-   a 130px floor made the table wider than the drawer, which put Remarks half
-   into the horizontal overflow and the Remove column past it entirely — the
-   wrap does scroll, but an overlay scrollbar is easy to miss, so the field
-   simply read as cut off. The note is the one column here whose content
-   scrolls inside itself, so it is the right one to absorb the shortfall; the
-   codes and dates beside it keep their floor and stay readable. The column is
-   still at least as wide as its own REMARKS heading. */
+.invf-selprod__in::placeholder { color: #9fb3bf; font-weight: 500; }
+
 .invf-selprod__in--note { text-align: left; min-width: 0; }
 .invf-selprod .vti-table td { vertical-align: middle; }
 
@@ -2316,8 +1593,7 @@
   cursor: pointer;
   transition: all .14s;
 }
-/* Destructive, so it carries its colour as a wash rather than a fill — it
-   empties the carton. Sizes are the design's own. */
+
 .invf-selprod__clear {
   gap: 6px;
   padding: 6px 14px;
@@ -2331,18 +1607,14 @@
   white-space: nowrap;
 }
 .invf-selprod__clear:hover { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .4); }
-/* ── Product remarks, under the advance-details table ──────────────────────
-   A card in the drawer's own idiom, so it reads as another section of the box
-   rather than a stray field under a table. Two columns: which product, and
-   the note against it. */
+
 .vs3-rmk { padding: 12px 16px 14px; border-top: 1px solid rgba(6,182,212,.14); }
 .vs3-rmk__hd {
   display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
   font-size: 11.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.1px;
 }
 .vs3-rmk__list { display: flex; flex-direction: column; gap: 8px; }
-/* The name is given a fixed share so every field starts on the same line —
-   ragged left edges on a stack of inputs read as a broken grid. */
+
 .vs3-rmk__row { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 12px; align-items: center; }
 .vs3-rmk__nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .vs3-rmk__nm b {
@@ -2354,10 +1626,6 @@
 [data-bs-theme="dark"] .vs3-rmk__hd { color: #7dd3fc; }
 [data-bs-theme="dark"] .vs3-rmk__nm b { color: #e2e8f0; }
 
-/* ── The box's remark, under the advance-details table ─────────────────────
-   Drawn as the review panel draws it, value for value: a banded heading with
-   a gradient mark, and a field that reads as empty until it holds something.
-   A note is a sentence; as a column it had the width of a product code. */
 .vs3-rmk { border-top: 1px solid #eaf5f8; }
 .vs3-rmk__hd {
   display: flex; align-items: center; gap: 8px; padding: 9px 12px;
@@ -2370,12 +1638,9 @@
   color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
   box-shadow: 0 4px 10px -4px rgba(8,145,178,.6);
 }
-/* The field is measured against this box, not against the table above it:
-   that table scrolls sideways, so a width taken from the section ran as wide
-   as the widest row and pushed the note off the card's right edge. */
+
 .vs3-rmk__body { padding: 12px 14px; }
-/* Dashed while empty — "nothing recorded", not a box that failed to draw. It
-   takes the teal left bar the moment it is quoting something somebody wrote. */
+
 .vs3-rmk__in {
   display: block; width: 100%; padding: 12px 14px;
   border-radius: 11px; outline: none; font-family: inherit;
@@ -2406,9 +1671,6 @@
   background: rgba(34,211,238,.07); border: 1.5px solid rgba(34,211,238,.22); border-left: 3px solid #22d3ee;
 }
 
-/* 8px to the button, as the design spaces them. It sits in the drawer's own
-   section header now, which spaces its two children apart but does not lay
-   this group out, so the row says so itself. */
 .invf-selprod__stats { display: flex; align-items: center; gap: 8px; }
 .invf-selprod__total {
   font-size: 10px;
@@ -2431,16 +1693,8 @@
 }
 .invf-selprod__rm:hover { background: #fee2e2; border-color: #fca5a5; }
 
-/* ── Temporary Putaway Sticker ────────────────────────────────────────────
-   The dialog wears the shared spi-mdl-* chrome; everything below is the
-   printed label inside it, which has no equivalent anywhere else. */
-/* Both classes: `.spi-mdl` sets `width: min(560px, 100%)` at the same single
-   class, and p2p-common.css wins that tie — a label is a narrower thing than a
-   form dialog, so it says so at (0,2,0) rather than hoping for load order. */
-/* Wider than the shared shell's default: the label is a fixed-shape thing
-   being previewed, and at 460px the facts beside the QR wrapped. */
 .spi-mdl.invf-stk { width: min(560px, calc(100vw - 32px)); }
-/* Says the label is provisional, in the header where it cannot be missed. */
+
 .invf-stk__temp {
   display: inline-flex;
   align-items: center;
@@ -2456,8 +1710,6 @@
   vertical-align: middle;
 }
 
-/* The label itself — bordered, so it reads as a thing that gets printed
-   rather than as more of the dialog. */
 .invf-stk__card {
   border: 1.5px solid #BAE6FD;
   border-radius: 12px;
@@ -2482,8 +1734,7 @@
   color: rgba(224, 250, 255, .8);
 }
 .invf-stk__strip-val { font-size: 13px; font-weight: 700; line-height: 1.3; }
-/* The box number is what a person reads off the carton, so it is the largest
-   thing on the label and monospaced — digits line up across a stack. */
+
 .invf-stk__strip-box {
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 17px;
@@ -2521,7 +1772,7 @@
   border-top: 1px solid #e8f4f8;
   padding-top: 11px;
 }
-/* White behind the code whatever the card does: a scanner needs the quiet zone. */
+
 .invf-stk__qrbox {
   padding: 7px;
   border: 1.5px solid #e0f2fe;
@@ -2574,8 +1825,6 @@
 .invf-stk__foot-qty { display: inline-flex; align-items: center; gap: 6px; }
 .invf-stk__dot { width: 6px; height: 6px; border-radius: 50%; background: #06b6d4; }
 
-/* A mixed carton names no single SKU on the label, so its contents are listed
-   under it — the QR carries the same codes for a scanner. */
 .invf-stk__contents { list-style: none; margin: 10px 0 0; padding: 0; }
 .invf-stk__contents li {
   display: flex;
@@ -2591,19 +1840,8 @@
 .invf-stk__contents li > b { margin-left: auto; font-weight: 800; color: #0c4a6e; }
 .invf-stk__contents .invf-stk__mono { font-size: 10px; font-weight: 700; color: #0891b2; }
 
-/* The cancel slot is the PDF action here, so it carries an icon. The shared
-   rule does not expect one and stacks it above the label. */
 .invf-stk .spi-mdl-cancel { display: inline-flex; align-items: center; gap: 6px; }
 
-/* ── Dark mode ────────────────────────────────────────────────────────────
-   Step 03 was written light-only: on a dark page its card stayed pure white
-   while everything around it went dark. These are the module's own dark
-   values, taken from p2p-detail.css rather than invented — card #0e1b24 on
-   rgba(34,211,238,.16), inner surfaces #0b1922, inputs #0c1c24, body text
-   #cbd5e1 and the teal accents at .045 / .11 — so the step sits in the same
-   palette as every other card in the form. */
-
-/* Cards and their headers. */
 [data-bs-theme="dark"] .vti-box,
 [data-bs-theme="dark"] .pkg-box {
   background: #0e1b24;
@@ -2621,25 +1859,17 @@
   color: #7dd3fc;
 }
 
-/* Tables: header, body text, row dividers and the zebra / hover accents. */
 [data-bs-theme="dark"] .vti-table th {
   color: #7c93a8;
   background: rgba(12, 38, 48, .5);
   border-bottom-color: rgba(34, 211, 238, .16);
 }
 [data-bs-theme="dark"] .vti-table td { color: #cbd5e1; }
-/* The row line lives on the <td>, not the <tr>. Overriding the row left the
-   light theme's near-white #F1F5F9 in place, which on a dark table is not a
-   divider but a lit bar across every row. */
+
 [data-bs-theme="dark"] .vti-table td { border-bottom-color: rgba(148, 163, 184, .13); }
 [data-bs-theme="dark"] .vti-table thead tr { border-bottom-color: rgba(34, 211, 238, .2); }
 [data-bs-theme="dark"] .vti-prod-row { border-bottom-color: rgba(148, 163, 184, .12); }
 
-/* The select checkbox had no dark rules at all, so it kept #F0FDFF on a
-   #BAE6FD border — a solid white square in the header of a dark table, and the
-   brightest thing on the row.
-   Only the UNCHECKED state needs changing: checked and indeterminate are
-   already a teal gradient with a white tick, which reads on either theme. */
 [data-bs-theme="dark"] .vti-cb {
   background: rgba(34, 211, 238, .08);
   border-color: rgba(34, 211, 238, .38);
@@ -2649,9 +1879,6 @@
   border-color: #22d3ee;
 }
 
-/* Remove was a white chip with a red glyph -- the white is what carried, so a
-   row of them read as the brightest column in the table. The red carries it
-   instead. */
 [data-bs-theme="dark"] .invf-selprod__rm {
   color: #fca5a5;
   background: rgba(239, 68, 68, .14);
@@ -2668,13 +1895,10 @@
 [data-bs-theme="dark"] .vti-prod-sku,
 [data-bs-theme="dark"] .vti-desc__wrap,
 [data-bs-theme="dark"] .invf-selprod__no { color: #7c93a8; }
-/* Same two steps the light line keeps: the value a shade brighter than its
-   label, and a separator dim enough to read as punctuation. */
+
 [data-bs-theme="dark"] .vti-prod-meta .vti-prod-sku b { color: #cbd5e1; }
 [data-bs-theme="dark"] .vti-prod-dot { background: rgba(148, 163, 184, .45); }
 
-/* Chips and badges — the same hues, carried on translucent fills so they read
-   as accents rather than as light patches. */
 [data-bs-theme="dark"] .vti-code {
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .3);
@@ -2698,7 +1922,6 @@
   color: #a5e9f5;
 }
 
-/* Inputs and outlined buttons. */
 [data-bs-theme="dark"] .vti-subbox-inp,
 [data-bs-theme="dark"] .invf-selprod__in,
 [data-bs-theme="dark"] .vti-btn-single {
@@ -2715,22 +1938,18 @@
 [data-bs-theme="dark"] .vti-subbox-inp::placeholder,
 [data-bs-theme="dark"] .invf-selprod__in::placeholder,
 [data-bs-theme="dark"] .vti-dw-inp::placeholder { color: #5b7585; }
-/* The light hover lifts these to #fff, which on a dark card is a white box. */
+
 [data-bs-theme="dark"] .invf-selprod__in:hover {
   background: #102630;
   border-color: rgba(34, 211, 238, .42);
 }
 
-/* The drawer body under a box, and the sticker's own card. */
 [data-bs-theme="dark"] .vti-dw-body,
 [data-bs-theme="dark"] .vti-dw-section { background: #0b1922; border-color: rgba(34, 211, 238, .16); }
 [data-bs-theme="dark"] .vti-dw-section-title { color: #7dd3fc; }
 [data-bs-theme="dark"] .vti-dw-field-lbl { color: #67e8f9; }
 [data-bs-theme="dark"] .vti-dw-adv-toggle { color: #7dd3fc; }
-/* The card is a label sitting ON the dialog, so it needs a surface of its own.
-   It was #0e1b24 -- the dialog's exact background -- which left a hairline
-   floating with nothing inside it, and that is the "border looks wrong": there
-   was no card, only an outline. */
+
 [data-bs-theme="dark"] .invf-stk__card {
   background: #13242e;
   border-color: rgba(34, 211, 238, .3);
@@ -2746,15 +1965,11 @@
   border-top-color: rgba(34, 211, 238, .16);
   color: #a5e9f5;
 }
-/* The QR keeps a white quiet zone whatever the theme — a scanner needs the
-   light modules light, and inverting it is how a code stops reading. */
+
 [data-bs-theme="dark"] .invf-stk__qrbox { background: #fff; border-color: rgba(34, 211, 238, .25); }
-/* The rule above the QR block. #e8f4f8 is a hairline on a white card and a
-   lit wire across a dark one. */
+
 [data-bs-theme="dark"] .invf-stk__grid { border-top-color: rgba(148, 163, 184, .14); }
-/* The three label chips were pastels -- lilac, mint, pale cyan -- so on a dark
-   card they outshone the box code they qualify. Each keeps its hue as a
-   translucent wash. */
+
 [data-bs-theme="dark"] .invf-stk__chip--code {
   color: #7dd3fc;
   background: rgba(34, 211, 238, .12);
@@ -2776,9 +1991,6 @@
 }
 [data-bs-theme="dark"] .invf-stk__contents li > b { color: #e2e8f0; }
 
-/* Packaging Scenarios — the sweep found this card still carrying light-mode
-   text and chips: its own header and the three scenario cards have their own
-   classes, which the .vti-* rules above do not reach. */
 [data-bs-theme="dark"] .pkg-box__header-title { color: #7dd3fc; }
 [data-bs-theme="dark"] .pkg-box__header-sub,
 [data-bs-theme="dark"] .pkg-card__desc { color: #7c93a8; }
@@ -2794,13 +2006,8 @@
   color: #7dd3fc;
 }
 
-/* The table header sat at the same dim grey as the body text, which on a dark
-   card left the column names harder to read than the rows under them. */
 [data-bs-theme="dark"] .vti-table th { color: #a5e9f5; }
 
-/* The drawer's own surfaces. The light slab is `.vti-drawer-content`, the
-   wrapper around the whole panel — not the sections inside it, which is what
-   the first pass styled and why the body stayed light. */
 [data-bs-theme="dark"] .vti-drawer-content {
   background: linear-gradient(175deg, #0c2028 0%, #0b1c24 25%, #0a1a21 100%);
   border-color: rgba(34, 211, 238, .2);
@@ -2816,8 +2023,7 @@
   background: linear-gradient(102deg, #0c2630, #103642 60%, #0e1b24 100%);
   border-bottom-color: rgba(34, 211, 238, .18);
 }
-/* The field is a tile holding a transparent input, so the tile carries the
-   fill and the input only carries text. */
+
 [data-bs-theme="dark"] .vti-dw-field {
   background: linear-gradient(145deg, #0c1c24 0%, #0b1922 100%);
   border-color: rgba(34, 211, 238, .2);
@@ -2830,24 +2036,18 @@
 }
 [data-bs-theme="dark"] .vti-dw-inp { color: #e2e8f0; }
 [data-bs-theme="dark"] .vti-dw-inp::placeholder { color: rgba(103, 232, 249, .45); }
-/* Volumetric weight stays the one lit field — it is the derived number the
-   whole section works towards. */
+
 [data-bs-theme="dark"] .vti-dw-field--auto {
   background: linear-gradient(145deg, #0e3a44 0%, #115e6e 100%);
   border-color: #22d3ee;
 }
 [data-bs-theme="dark"] .vti-dw-field--auto:hover { background: linear-gradient(145deg, #115e6e 0%, #0891b2 100%); }
 
-/* The remark / condition / flags band under Box Core Details, and its
-   unselected buttons — white tiles with the colour carried only by the active
-   one, so unselected they need the surface swapped rather than the hue. */
 [data-bs-theme="dark"] .vti-dw-row2-inner {
   background: linear-gradient(108deg, #0b1922 0%, #0c1e27 50%, #0e1b24 100%);
   border-top-color: rgba(34, 211, 238, .18);
 }
-/* `:not(.is-active)` matters: the chosen remark and condition carry their own
-   colour at the same specificity, so without it this rule beat them and the
-   selection became invisible. */
+
 [data-bs-theme="dark"] .vti-rmk-btn:not(.is-active),
 [data-bs-theme="dark"] .vti-cond-btn:not(.is-active) {
   background: linear-gradient(145deg, #0c1c24 0%, #0b1922 100%);
@@ -2855,33 +2055,16 @@
   color: #7c93a8;
   box-shadow: none;
 }
-/* The white sheen over each tile is removed in dark mode, not just dimmed.
-   It is an absolutely-positioned ::after covering the tile's top 45%, and
-   because a pseudo-element paints AFTER its host's text it lies over the
-   title rather than under it. White on white, in light mode, that is
-   invisible. On a dark tile even 5% is a pale band across the upper half of
-   every chip, crossing the title — which is the haze that reads as the text
-   being out of focus. A gloss is not worth fogging the label for. */
+
 [data-bs-theme="dark"] .vti-rmk-btn::after,
 [data-bs-theme="dark"] .vti-cond-btn::after,
 [data-bs-theme="dark"] .vti-flag-btn::before { display: none; }
-/* The selected tile's coloured bloom comes down with it: a 20px green halo at
-   40% is a lot of light to throw around a dark panel, and softened edges on
-   the one chip you are meant to read clearly. */
+
 [data-bs-theme="dark"] .vti-rmk-btn.is-active,
 [data-bs-theme="dark"] .vti-cond-btn.is-active {
   box-shadow: 0 2px 10px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.18);
 }
 
-/* …and the SUB-LINE under each title, which the rule above does not reach.
-   Each variant sets its own sub colour — #b91c1c for Damaged, #92400e for
-   Minor Damage, #2563eb for Extra Quantity — chosen to sit on a near-white
-   tile. On the dark #0c1c24 chip those are all but black: the titles stayed
-   legible while "Not accepted", "Wrong item" and "Over-supplied" disappeared.
-
-   Same hue, four steps lighter, so the colour still says which chip is which.
-   `:not(.is-active)` throughout: a SELECTED chip is a saturated fill and its
-   own light sub colour is correct there. */
 [data-bs-theme="dark"] .vti-rmk-correct:not(.is-active)  .vti-rmk-btn-sub,
 [data-bs-theme="dark"] .vti-cond-perfect:not(.is-active) .vti-cond-btn-sub { color: #4ade80; opacity: .78; }
 [data-bs-theme="dark"] .vti-rmk-damaged:not(.is-active) .vti-rmk-btn-sub,
@@ -2890,19 +2073,10 @@
 [data-bs-theme="dark"] .vti-cond-major:not(.is-active)   .vti-cond-btn-sub { color: #fb923c; opacity: .78; }
 [data-bs-theme="dark"] .vti-rmk-extra:not(.is-active)   .vti-rmk-btn-sub { color: #60a5fa; opacity: .78; }
 [data-bs-theme="dark"] .vti-cond-minor:not(.is-active)  .vti-cond-btn-sub { color: #fbbf24; opacity: .78; }
-/* The titles take the same lift, so a chip reads as one thing rather than a
-   grey headline over a coloured note. */
+
 [data-bs-theme="dark"] .vti-rmk-btn:not(.is-active),
 [data-bs-theme="dark"] .vti-cond-btn:not(.is-active) { color: #aebecd; }
 
-/* ── The drawer in dark mode ────────────────────────────────────────────────
-   An unselected flag is a near-white pastel in light mode, which on a dark
-   page turns into the brightest thing on screen -- four cream and pink lozenges
-   shouting louder than the one that is actually on.
-
-   Each pill keeps its own hue and wears it as a translucent wash instead, with
-   the hue's pale tint as the label. The SELECTED states are left alone: they
-   are saturated already, and they have to stay the loud one. */
 [data-bs-theme="dark"] .vti-flag-btn:not(.is-active) {
   background: linear-gradient(135deg, rgba(var(--flag), .17) 0%, rgba(var(--flag), .09) 100%);
   border-color: rgba(var(--flag), .32);
@@ -2929,8 +2103,6 @@
 [data-bs-theme="dark"] .vti-flag-btn.flag-custom-pink { --flag: 236, 72, 153; --flag-ink: 251, 207, 232; }
 [data-bs-theme="dark"] .vti-flag-btn.flag-custom-slate { --flag: 100, 116, 139; --flag-ink: 203, 213, 225; }
 
-/* Stackable sits in the same row as the flags and was a plain white pill, so
-   it read as the brightest of the lot while being the least important. */
 [data-bs-theme="dark"] .vti-stack-toggle {
   background: rgba(148, 163, 184, .1);
   border-color: rgba(148, 163, 184, .26);
@@ -2953,15 +2125,6 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
 }
 
-/* The strip's white chips -- the chosen unit and Save -- are solid #fff on a
-   teal band that no longer has a bright page around it. Dimmed to an off-white
-   so they still read as the selected one without being the only light source
-   on the screen. */
-/* The drawer's teal band runs to #14c0e4 and carries a cyan glow, which on a
-   white page is a header and on a dark one is a lamp. Pulled back to the range
-   the active step card already uses in dark mode -- the same teal, read as a
-   surface rather than a light source -- and the glow becomes a plain shadow,
-   since there is nothing left for cyan to glow against. */
 [data-bs-theme="dark"] .vti-dw-strip,
 [data-bs-theme="dark"] .vmb-nav {
   background: linear-gradient(98deg, #0a3b49 0%, #0c5265 32%, #0e6b84 60%, #0b7f9c 82%, #0891b2 100%);
@@ -2972,35 +2135,24 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, .06) 0%, transparent 100%);
 }
 
-/* The active box tab is a near-white pill — right for the design's light
-   theme, where the bar is a bright teal, but on the darkened bar above it is
-   a piece of light mode sitting in the middle of a dark screen.
-   It takes the same cyan fill the selection bar's primary button uses, so the
-   two "this is the chosen one" surfaces in Stage 3 agree. */
 [data-bs-theme="dark"] .vmb-tab.is-active {
   background: linear-gradient(135deg, #22d3ee, #06b6d4);
   border-color: rgba(34, 211, 238, .85);
   color: #04303d;
   box-shadow: 0 2px 10px rgba(34, 211, 238, .28);
 }
-/* The count chip inside it keys off the new fill rather than the white one. */
+
 [data-bs-theme="dark"] .vmb-tab.is-active .vmb-tab-qty {
   background: rgba(4, 48, 61, .20);
   color: #04303d;
 }
 
-/* The chosen unit reads as pressed INTO the band rather than as a white tile
-   on top of it -- darker than its surroundings, lit text. An off-white chip
-   was still the brightest thing in the row. */
 [data-bs-theme="dark"] .vti-dw-strip .vti-dw-unit-opt.is-active {
   background: rgba(2, 26, 34, .72);
   color: #9fe8f7;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .5);
 }
 
-/* Update Box stays the primary, in saturated cyan instead of white: on a teal
-   band in light mode white is the strongest contrast available, and on a dark
-   one it is simply the loudest. */
 [data-bs-theme="dark"] .vti-dw-strip .vti-dw-save-btn {
   background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 100%);
   color: #04323f;
@@ -3013,28 +2165,14 @@
   box-shadow: none;
 }
 
-/* Upload, Camera, Box Sticker and Close are left as they are: inside the strip
-   they are already translucent-white ghosts on a teal band, which reads the
-   same either way. Only the two SOLID white chips needed dimming. */
 [data-bs-theme="dark"] .vti-dw-dim-label { color: inherit; }
 
-/* The Packaging Scenarios header band itself. Its title and subtitle were
-   given dark colours earlier but the band under them was not, so it stayed a
-   pale teal gradient — CSS.getMatchedStylesForNode showed only the light rule
-   matching it, which is how it was missed by reading alone. */
 [data-bs-theme="dark"] .pkg-box__header {
   background: linear-gradient(110deg, #0c2630 0%, #103642 55%, #0c2c38 100%);
   border-bottom-color: rgba(34, 211, 238, .18);
 }
 [data-bs-theme="dark"] .pkg-box__body { background: #0b1922; }
 
-/* States written with `!important`.
-
-   An open or ticked row paints a near-white gradient marked `!important`, and
-   the expanded row's name turns navy. In dark mode that is the row you are
-   working in turning into a white slab with pale text on it — the one row that
-   must stay readable. `!important` can only be answered in kind, so these are
-   the four rules that carry it. */
 [data-bs-theme="dark"] .vti-prod-row.is-expanded {
   background: linear-gradient(90deg, rgba(34, 211, 238, .14), rgba(34, 211, 238, .05)) !important;
   box-shadow: inset 3px 0 0 #22d3ee;
@@ -3049,18 +2187,7 @@
   border-color: #22d3ee;
   color: #a5e9f5;
 }
-/* Hover on a row that is already open must not undo the open state.
 
-   Carries the light rule's `.vti-table tbody tr` as well, and has to: the
-   light hover is (0,5,2) and this was (0,5,0), so every hovered row in dark
-   mode was painted #F5FEFF by the light theme. A specificity difference of two
-   element selectors is invisible when reading either rule on its own. */
-/* Mirrors the light rule's selector rather than naming one row type.
-   It used to read `tr.vti-prod-row`, which left every OTHER row in the table —
-   the drawer row, the multi-box container — falling through to the light
-   theme's #F5FEFF, so hovering them turned a band of the dark page white.
-   Same exclusions as above, plus the two selected states, and one class more
-   than the light rule so it still wins. */
 [data-bs-theme="dark"] .vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):not(.vti-drawer-row):not(.vti-multibox-container-row):not(.is-expanded):not(.is-selected):hover {
   background: rgba(34, 211, 238, .11);
 }
@@ -3071,10 +2198,6 @@
   border-bottom-color: rgba(34, 211, 238, .2);
 }
 
-/* The chip on an opened row saying which scenario it was packed under. It is a
-   pale mint pill with navy text, so on a dark row it was the one washed-out
-   thing left — and the row it sits on is the row being worked in. An earlier
-   `color: inherit` here did nothing, because the pill's problem is its fill. */
 [data-bs-theme="dark"] .vti-scn-chip {
   background: linear-gradient(135deg, rgba(34, 211, 238, .18), rgba(34, 211, 238, .08));
   border-color: rgba(34, 211, 238, .34);
@@ -3084,38 +2207,26 @@
   background: linear-gradient(135deg, rgba(34, 211, 238, .26), rgba(34, 211, 238, .12));
   border-color: #22d3ee;
 }
-/* Its sibling in the locked state, same treatment. */
+
 [data-bs-theme="dark"] .vti-scn-lock {
   background: rgba(148, 163, 184, .08);
   border-color: rgba(148, 163, 184, .28);
   color: #7c93a8;
 }
 
-/* ── Modal contents · dark mode ───────────────────────────────────────────
-   The spi-mdl shell is themed in p2p-common.css, but everything these three
-   dialogs put INSIDE it was written light-only — 65 rules across invf-temp,
-   invf-flags and invf-boxchip, which is why the Temperature preset cards sat
-   there as four white tiles on a dark sheet. The chosen preset keeps its
-   colour: that gradient is how the four bands are told apart. */
-
-/* Temperature Range. */
 [data-bs-theme="dark"] .invf-temp__lbl { color: #7c93a8; }
-/* `:not(.is-on)` because `.invf-temp__preset--frozen.is-on` carries the band's
-   gradient at the same specificity as this rule, which would otherwise win on
-   load order and leave the chosen preset looking unchosen. */
+
 [data-bs-theme="dark"] .invf-temp__preset:not(.is-on) {
   background: #0c1c24;
   border-color: rgba(34, 211, 238, .2);
 }
 [data-bs-theme="dark"] .invf-temp__preset:hover { box-shadow: 0 4px 14px rgba(34, 211, 238, .18); }
-/* Cold to coldest, brightened for a dark sheet — the light-mode inks are too
-   deep to read on it. */
+
 [data-bs-theme="dark"] .invf-temp__preset--chilled:not(.is-on) { border-color: rgba(34, 211, 238, .4); color: #67e8f9; }
 [data-bs-theme="dark"] .invf-temp__preset--cool:not(.is-on)    { border-color: rgba(56, 189, 248, .4); color: #7dd3fc; }
 [data-bs-theme="dark"] .invf-temp__preset--frozen:not(.is-on)  { border-color: rgba(129, 140, 248, .45); color: #a5b4fc; }
 [data-bs-theme="dark"] .invf-temp__preset--deep:not(.is-on)    { border-color: rgba(167, 139, 250, .45); color: #c4b5fd; }
-/* The chosen one keeps its fill and its white ink, so the selection still
-   reads at a glance. */
+
 [data-bs-theme="dark"] .invf-temp__preset.is-on { color: #fff; border-color: transparent; }
 [data-bs-theme="dark"] .invf-temp__field {
   background: #0c1c24;
@@ -3129,7 +2240,6 @@
 [data-bs-theme="dark"] .invf-temp__hint { color: #7c93a8; }
 [data-bs-theme="dark"] .invf-temp__err { color: #fca5a5; }
 
-/* Product Flags. */
 [data-bs-theme="dark"] .invf-flags__card,
 [data-bs-theme="dark"] .invf-flags__list {
   background: linear-gradient(180deg, #0c1c24, #0b1922);
@@ -3156,7 +2266,6 @@
 }
 [data-bs-theme="dark"] .invf-flags__del:hover { background: rgba(239, 68, 68, .24); }
 
-/* Generated Boxes list. */
 [data-bs-theme="dark"] .invf-boxchip {
   background: #0c1c24;
   border-color: rgba(34, 211, 238, .2);
@@ -3170,27 +2279,16 @@
   color: #fbbf24;
 }
 
-/* ── The washed-out look ──────────────────────────────────────────────────
-   Two things, neither of which a computed background on the element itself
-   would have shown.
-
-   First, the table's header band is painted on `thead tr`, not on `th`. The
-   dark rules above coloured the cells and left the strip under them a pale
-   #F8FAFC→#F1F5F9 grey — the silver band across every table. */
 [data-bs-theme="dark"] .vti-table thead tr {
   background: linear-gradient(180deg, #0c2630, #0b1f28);
   border-bottom-color: rgba(34, 211, 238, .18);
 }
 
-/* Second, the "white blur": card headers carry a ::after that lays a 60–65%
-   white gradient over their top half. On a light header that is a gloss; on a
-   dark one it is a fog sitting over the title. Dimmed to a hint rather than
-   removed, so the headers keep their curvature. */
 [data-bs-theme="dark"] .vti-header::after,
 [data-bs-theme="dark"] .pkg-box__header::after {
   background: linear-gradient(180deg, rgba(255, 255, 255, .05), transparent);
 }
-/* The same gloss on the scenario cards and the sub-box input. */
+
 [data-bs-theme="dark"] .vti-subbox-inp {
   background: linear-gradient(135deg, #0c1c24, #0b1922);
   border-color: rgba(34, 211, 238, .22);
@@ -3199,49 +2297,24 @@
 }
 [data-bs-theme="dark"] .vti-subbox-inp::placeholder { color: #5b7585; }
 
-/* Native chrome — the white strip under a scrolling table.
-
-   Nothing here declared `color-scheme`, so the browser kept drawing its own
-   widgets for a LIGHT page: the horizontal scrollbar on a wide table rendered
-   as a pale track across the full width, which is the white band that appears
-   between a drawer and the row under it. The date pickers in Selected Products
-   and the number spinners have the same problem, dark glyphs on a dark field.
-
-   Declaring it hands the browser the theme, and it draws all of them dark —
-   the same fix CtcRichEditor and the CLM toolbars already use. It is set on
-   the form, not the document, so only this screen is affected. */
 [data-bs-theme="dark"] .cpf-form,
 [data-bs-theme="dark"] .spi-dt-overlay,
 [data-bs-theme="dark"] .vti-table-wrap,
 [data-bs-theme="dark"] .cpd-scroll { color-scheme: dark; }
 
-/* The GST split needs no styles of its own: the tax columns swap by mode the
-   way the purchase order's table does, and `cpd-th-amt--tax` already tints
-   them. Nothing here. */
-
-/* Step 03's box-generation header is a flex row whose three count pills do not
-   shrink, so on a phone the title column was squeezed to 10px wide and set one
-   word per line. The pills drop to their own row instead. */
 @media (max-width: 760px) {
   .vti-header { flex-wrap: wrap; row-gap: 8px; }
   .vti-header-text { flex: 1 1 160px; }
   .vti-header-stats { flex-wrap: wrap; }
 }
 
-/* The box ids on a packed row. Two chips and a count at most, so the cell
-   cannot grow a second line and push the row's height around.
-
-   The chips borrow .vti-code: a box id and a product code are the same kind
-   of fact, and giving them the same chip is one less thing to learn. */
 .invf-boxids {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex-wrap: nowrap;
 }
-/* One line where the rows used to be. A note, not a panel: the step is
-   finished, and a card with an icon would take more room saying so than the
-   rows it replaced. */
+
 .invf-allpacked-row > td { border-bottom: none !important; }
 
 .invf-allpacked {
@@ -3254,9 +2327,6 @@
 
 [data-bs-theme="dark"] .invf-allpacked { color: #6ee7b7; }
 
-/* Photos of the carton, under the buttons that took them. A strip rather than
-   a grid: they are shot in ones and twos and checked left to right, and a grid
-   would reserve a row's height for the first photo. */
 .vti-dw-shots {
   display: flex;
   align-items: center;
@@ -3315,8 +2385,6 @@
 
 .vti-dw-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* On the thumbnail, not beside it: with six photos a column of remove buttons
-   is wider than the photos themselves. */
 .vti-dw-shot__x {
   position: absolute;
   top: 3px;
@@ -3345,102 +2413,43 @@
 [data-bs-theme="dark"] .vti-dw-shots-lbl { color: #67e8f9; }
 [data-bs-theme="dark"] .vti-dw-shot { background: #13242e; border-color: rgba(34, 211, 238, .26); }
 
-/* ── Stage 02's product table: five rows, then scroll ──────────────────
-   A thirteen-line invoice pushed the Update & Next button a page and a half
-   down, so the table was read by scrolling the whole screen and the footer
-   totals were never on screen with the rows they totalled.
-
-   The header sticks to the top and the totals to the bottom, so whichever
-   five lines you are looking at, you can still see what the columns are and
-   what they add up to. */
 .cpd-scroll--rows {
   max-height: 500px;
   overflow-y: auto;
-  /* One gesture moves one surface — see the note on .vti-wrap--rows. */
+
   overscroll-behavior: contain;
-  /* The vertical bar was drawn OVER the table's right edge, so it crossed the
-     sticky header band and left a notch in it where the teal stopped short.
-     A stable gutter reserves the 8px outside the content box instead, so the
-     bar runs in a lane of its own and the header reaches the full width of
-     what it is heading. The bar still spans the container's height - it
-     belongs to this box, and the header is inside it - but it no longer sits
-     on top of the header. */
+
   scrollbar-gutter: stable;
 }
-/* No `scrollbar-width` here either, for the reason `.cpd-scroll` sets out:
-   setting it makes Chrome ignore the 8px below and draw its own, heavier bar.
-   Firefox gets the standard properties on its own, in the @supports block
-   beside that rule — this element carries `.cpd-scroll` too, so it is covered. */
+
 .cpd-scroll--rows::-webkit-scrollbar { width: 8px; height: 8px; }
 .cpd-scroll--rows::-webkit-scrollbar-track { background: transparent; }
 .cpd-scroll--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
 .cpd-scroll--rows::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
 
-/* Both header rows travel together, which is why this sits on `thead` rather
-   than on each `th` — per-cell sticky would need the group row's exact height
-   as the second row's offset, and that height is whatever the text makes it. */
 .cpd-scroll--rows .cpd-tbl thead { position: sticky; top: 0; z-index: 4; }
 .cpd-scroll--rows .cpd-tbl tfoot { position: sticky; bottom: 0; z-index: 4; }
 
-/* The header's teal is painted on `thead`, and its cells are transparent. In a
-   `border-collapse: collapse` table only CELL backgrounds paint over scrolled
-   content — a row's background on `thead` does not — so the rows were showing
-   straight through the header. The two left columns looked fine precisely
-   because they already carry their own background.
-
-   So the cells take the colour. Flat rather than the 110deg gradient: a
-   gradient restarts inside every cell, which banded the header into columns.
-   The two that already set their own are left alone.
-
-   The footer needs nothing: its cells already set their own background, which
-   is why the totals row stuck cleanly from the start. */
 .cpd-scroll--rows .cpd-tbl thead th:not(.cpd-stick):not(.cpd-edh) { background: #0b7c9b; }
 
-/* The editable columns were the exception that was still leaking. They mark
-   themselves with `rgba(255,255,255,.16)` — a lightening of whatever is
-   behind them, which on this table is nothing at all, so the rows scrolled
-   straight through the three lightest columns while the rest of the header
-   held. Same colour, mixed down to an opaque one: .16 white over #0b7c9b is
-   exactly #3291ab, so the header looks the same and stops being see-through.
-   The underline that marks them as editable stays. */
 .cpd-scroll--rows .cpd-tbl thead th.cpd-edh { background: #3291ab; }
 
-/* `scrollbar-color` is left to the @supports block in create-po.css for the
-   same reason: setting it here would switch Chrome off the 8px bar again. */
 [data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
 
-/* A header that carries an explanation. Dotted underline rather than an info
-   icon: the icon would need its own space in a cell that is already the
-   narrowest thing in the row. */
 .vti-th-help {
   border-bottom: 1px dotted currentColor;
   cursor: help;
   padding-bottom: 1px;
 }
 
-/* Remaining Qty, beside the invoiced quantity. Amber only where it differs from
-   what was invoiced — that is the whole signal: a part-packed product, with
-   this much of it still loose. Where the two match there is nothing to say,
-   and a second coloured badge would imply a shortfall. */
 .vti-qty-badge.is-left { color: #b45309; background: #fef3c7; }
 
 [data-bs-theme="dark"] .vti-qty-badge.is-left { color: #fcd34d; background: rgba(245, 158, 11, .18); }
 
-/* ── Stage 03's product table: five rows, then scroll ──────────────────
-   Same cap as Stage 02's. The header sticks so the columns stay named while
-   you scroll — this table's rows carry controls, not just figures, and Mode
-   next to Sub-box Count is not guessable once the header has gone.
-
-   Applied by the step only while no box drawer is open; a drawer is a row of
-   this table and taller than the cap. */
 .vti-wrap--rows {
   max-height: 500px;
   overflow-y: auto;
-  /* One gesture moves one surface. Without containment a wheel over this
-     table ran it to its end and then carried straight on into the form body
-     behind it, so a single scroll jumped two surfaces and the page appeared
-     to stutter past what you were reading. This is the same cure the Stage 04
-     panes carry; Stage 02's table has it too. */
+
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #bfe3ec transparent;
@@ -3453,12 +2462,9 @@
 
 [data-bs-theme="dark"] .vti-wrap--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
 [data-bs-theme="dark"] .vti-wrap--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
-/* The dark header is rgba(12,38,48,.5) — fine sitting on the card, but a
-   sticky header has rows passing under it, and they would show through. */
+
 [data-bs-theme="dark"] .vti-wrap--rows .vti-table thead th { background: #0b1d26; }
 
-/* The row number. Quiet and tabular, because it is there to be referred to
-   ("row 2"), not to be read down the column. */
 .invf-sr {
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 10.5px;
@@ -3469,9 +2475,6 @@
 
 [data-bs-theme="dark"] .invf-sr { color: #94a3b8; }
 
-/* The id is the control. Styled as the chip it already was rather than as a
-   button, so the column still reads as data -- the hover is what says it can
-   be pressed. */
 .invf-boxid-btn {
   cursor: pointer;
   font-family: inherit;
@@ -3494,8 +2497,6 @@
   color: #042f3b;
 }
 
-/* The overflow count is the same chip with its border dropped, so it reads as
-   "and more of these" rather than as another id. */
 .invf-boxid--more {
   background: transparent;
   border-color: transparent;
@@ -3505,15 +2506,13 @@
   padding-left: 2px;
   padding-right: 2px;
 }
-/* The packed row's two actions: view the boxes, or delete them. */
+
 .vti-packed-acts {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-/* Edit is the quiet one of the three: most visits to this row are to look,
-   and an edit that shouts invites changing work that is already right. */
 .vti-btn-single--edit {
   color: #0e7490;
   background: #eafaff;
@@ -3532,9 +2531,6 @@
   border-color: rgba(6, 182, 212, .28);
 }
 
-/* Edit on a box card in the box list. Sits under the unit count, so the card
-   stays a label-and-value and the action is a third line rather than a thing
-   competing with the id. */
 .invf-boxchip__edit {
   display: inline-flex;
   align-items: center;
@@ -3566,8 +2562,6 @@
   color: #67e8f9;
 }
 
-/* Close, beside Save inside the drawer's strip. The same ghost pill the
-   multi-box panel already closes with, so the two drawers shut alike. */
 .vti-dw-strip .vti-dw-close-btn {
   flex-shrink: 0;
   padding: 0 14px;
@@ -3592,9 +2586,6 @@
 
 .vti-dw-strip .vti-dw-close-btn:disabled { opacity: .5; cursor: default; }
 
-/* The carton that is open in the drawer above, marked so the two are visibly
-   the same box. On the tbody, which is the whole carton now — highlighting one
-   row of a four-product block would point at a product. */
 .invf-packed-table tbody.invf-grp.is-open td { background: #f0fdff; }
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp.is-open td { background: rgba(8, 145, 178, .1); }
 .vti-btn-single--edit.is-on {
@@ -3603,7 +2594,6 @@
   border-color: transparent;
 }
 
-/* What a mixed carton holds, under its unit count in the box list. */
 .invf-boxchip__mix {
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 9px;
@@ -3632,10 +2622,9 @@
 [data-bs-theme="dark"] .pkg-card__tag { background: rgba(34,211,238,.14); color: #7dd3e8; border-color: rgba(34,211,238,.3); }
 @keyframes s4cpWait { 0%,100% { opacity:1; } 50% { opacity:.25; } }
 @keyframes s4cpSpin { to { transform:rotate(360deg); } }
-/* Marching one dash-period per cycle, so the loop is seamless. */
+
 @keyframes s4cpFlow { from { background-position:0 0; } to { background-position:12px 0; } }
 
-/* A ring leaving the dot, in the direction of travel. */
 @keyframes s4cpPulse {
   0%   { box-shadow:0 5px 16px rgba(79,70,229,.3), 0 0 0 6px rgba(99,102,241,.22); }
   70%  { box-shadow:0 5px 16px rgba(79,70,229,.3), 0 0 0 16px rgba(99,102,241,0); }
@@ -3643,9 +2632,6 @@
 }
 @keyframes s4cpNudge { 0%,100% { transform:translateX(-1.5px); } 50% { transform:translateX(1.5px); } }
 
-/* ── Stage 04 — Temporary Putaway Sticker ─────────────────────────────────
-   Ported from the P2P prototype's sticker preview. Not scoped under .s4-root:
-   the dialog is portalled to <body>, so it is outside that subtree. */
 .vsm-bd {
   position: fixed; inset: 0; z-index: 12000;
   display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -3653,13 +2639,7 @@
   animation: vsm-fade .14s ease-out;
 }
 @keyframes vsm-fade { from { opacity: 0; } to { opacity: 1; } }
-/* The design draws this at 400px. Widened to 480 on request: the real data
-   is longer than the mock's — a 16-digit SPI number and product names that
-   run to "+2 more" — and at 400 the strip and the detail rows were tight.
-   Everything else here is the design's: the 24px radius and the teal-cast
-   shadow, where ours was a neutral 16px box under a flat dark one.
-   max-height/overflow stay, since the design has no guard for a short
-   window and this needs one. */
+
 .vsm-box {
   width: min(480px, 95vw); max-height: calc(100vh - 40px); overflow: auto;
   border-radius: 24px; background: #fff; outline: none;
@@ -3671,8 +2651,7 @@
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 15px 16px; border-radius: 24px 24px 0 0;
-  /* Four stops at 108deg, not three at 110: the design holds #0891b2 to 45%
-     and lands on #14c4e2, so the band stays teal instead of running pale. */
+
   background: linear-gradient(108deg, #0a5f75 0%, #0891b2 45%, #06b6d4 75%, #14c4e2 100%);
 }
 .vsm-hl { display: flex; align-items: center; gap: 11px; min-width: 0; position: relative; z-index: 1; }
@@ -3684,9 +2663,7 @@
 .vsm-ht { font-size: 14.5px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1; }
 .vsm-hs { margin-top: 4px; display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.72); flex-wrap: wrap; }
 .vsm-hsd { width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.45); flex-shrink: 0; }
-/* A translucent chip on the band, not a solid white pill: the design keeps
-   it part of the header rather than stamping a second, brighter object on
-   top of it. */
+
 .vsm-hb {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 7px; border-radius: 20px;
@@ -3699,12 +2676,11 @@
   width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
   border: 1.5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.14);
   display: flex; align-items: center; justify-content: center;
-  /* 13px, and no line-height: the glyph is centred by the flex box, so
-     pinning it to 1 only made the cross sit a shade high. */
+
   color: rgba(255,255,255,.9); font-size: 13px; transition: background .14s;
 }
 .vsm-cl:hover { background: rgba(255,255,255,.26); }
-/* The label sits on a grey bed, the way a printed sticker sits on a sheet. */
+
 .vsm-body { padding: 12px 12px 10px; background: linear-gradient(145deg, #eef2f7, #e4eaf2); }
 .vsm-card {
   background: #fff; border-radius: 12px; overflow: hidden;
@@ -3794,39 +2770,11 @@
 [data-bs-theme="dark"] .vsm-bpdf { background: transparent; border-color: rgba(34,211,238,.35); color: #67e8f9; }
 [data-bs-theme="dark"] .vsm-bpdf:hover { background: rgba(34,211,238,.12); }
 
-/* The working spinner on whichever cancel button was pressed. Both buttons go
-   disabled while the request runs, which on its own says nothing — the label
-   did not change, so a slow call looked like a dead click. currentColor, so
-   the same mark works on the white "Cancel Task Only" and the green one. */
 @keyframes s4ctSpin { to { transform: rotate(360deg); } }
 @keyframes s4zbPulse { 70% { box-shadow: 0 0 0 7px rgba(245,158,11,0); } 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); } }
-/* The working button keeps its full colour and its own glyph slot is replaced
-   by the mark — a faded button that is also spinning reads as broken rather
-   than as busy. currentColor, so one rule serves the teal and the red.
-   Unscoped like the rest of .s4zv: this dialog portals to <body>, where the
-   page's .s4-root spinner cannot reach it. */
+
 @keyframes s4zvSpin { to { transform: rotate(360deg); } }
 
-/* ── SPI Product Advance Details · the row inputs ────────────────────────────
-   The design's rule for these fields, value for value:
-
-     height 40 / radius 10 / 1.5px #b9dfea / #fff / #0c2c3a
-     11.5px / 700 / padding 0 10px
-     box-shadow 0 1px 2px rgba(15,23,42,.04), inset 0 1px 0 rgba(255,255,255,.9)
-
-   Ours inherited .cpd-in, which is 10.5px on a 7px radius with a #e6eef3
-   border, 5px 8px of padding and no height — a visibly smaller, flatter field
-   than the design, and one that sized itself off its own padding so the eight
-   inputs on a row did not all land on the same height.
-
-   SCOPED to .spi-prodtbl rather than changing .cpd-in: that class lives in
-   create-po.css and the Purchase Order module's own tables use it, so editing
-   it there would restyle a screen nobody asked about.
-   ────────────────────────────────────────────────────────────────────────── */
-/* The empty table. colSpan is deliberately larger than any column count this
-   table can reach — the number changes with the tax mode, the match and the
-   Action column, and a cell that spans too few leaves a stripe of unpainted
-   header-coloured background beside it. Spanning past the end is harmless. */
 .spi-prodtbl .cpd-emptyrow > td { padding: 0; background: #fff; }
 .spi-prodtbl .cpd-empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -3849,44 +2797,15 @@
 [data-bs-theme="dark"] .spi-prodtbl .cpd-empty b { color: #e2e8f0; }
 [data-bs-theme="dark"] .spi-prodtbl .cpd-empty span:last-child { color: #7f9aa6; }
 
-/* The "WITHOUT GST" / "WITH GST" qualifier is an inline-block with a top
-   margin, so it only drops below its heading when the heading happens to fill
-   the cell. "PRODUCT COST" does; "TOTAL PRODUCT COST" wraps to a short second
-   line, which leaves room beside it and the chip lands on top of the word
-   COST. Block makes the line break unconditional, and auto margins keep it
-   centred under either heading.
-
-   The final column also gains room: 88px is enough for one word plus a chip,
-   not for a heading that wraps and a chip under it.
-
-   Scoped to .spi-prodtbl, since .cpd-th-sub is create-po.css's and the
-   Purchase Order tables lay these headings out at their own widths. */
 .spi-prodtbl .cpd-th-sub {
   display: block;
   width: fit-content;
   margin: 4px auto 0;
 }
 .spi-prodtbl th.cpd-th-final { min-width: 124px; }
-/* Wide enough for "CGST (%)" whole — the percent headings were the only ones
-   with no floor, so the column took whatever content width it was given and
-   clipped the leading letter off "IGST (%)". */
+
 .spi-prodtbl th.cpd-th-pct { min-width: 76px; }
 
-/* ── One button height ───────────────────────────────────────────────────────
-   Every button on this form stands 40px, which is what the inputs beside them
-   already measure (.spi-prodtbl .cpd-in, .spi-dt-inp). They were five
-   different heights: the footer pair sized themselves off 10px of padding,
-   Add Supplier was 36, the supplier edit 38, the vault button 8px of padding,
-   and the two in-table icons 26.
-
-   Scoped to .spi-invform, a class this form and nothing else carries. The
-   classes themselves - .cpf-*, .cpd-*, .spi-dt-btn-* - live in create-po.css
-   and p2p-detail.css, which the Purchase Order, Debit Note and Payment
-   Request screens also load, so setting a height on them there would resize
-   buttons on screens nobody asked about.
-
-   `min-height` goes with `height` on the padded ones: a button with padding
-   and a line taller than the box will push past a bare height. */
 .spi-invform .spi-dt-btn-ghost,
 .spi-invform .spi-dt-btn-next,
 .spi-invform .spi-dt-btn-map,
@@ -3901,9 +2820,6 @@
   width: 40px; height: 40px; min-height: 40px;
 }
 
-/* The design's Action column: a red-outlined bin, square, on the row's own
-   centre line. Scoped to .spi-prodtbl so the Purchase Order module's tables,
-   which share .cpd-*, are untouched. */
 .spi-prodtbl .cpd-th-act { width: 74px; }
 .spi-prodtbl .cpd-td-act { text-align: center; }
 .spi-prodtbl .cpd-del {
@@ -3922,17 +2838,8 @@
   background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.32); color: #fca5a5;
 }
 
-/* The rate and quantity cells were sized by whatever the column had left
-   once the four tax columns took their share, so 3200 came out as "3…". A
-   stated floor on the two editable numbers keeps four digits and a decimal
-   readable; the table already scrolls horizontally, which is where the
-   surplus belongs. */
 .spi-prodtbl .cpd-in--num { min-width: 86px; }
 
-/* `.cpd-tbl--pd` again for the load-order reason set out at the top of this
-   file: create-po.css holds `.cpd-tbl--pd .cpd-in`, the same two classes, so
-   with that stylesheet now loading last it took back the height, the padding
-   and the fill — the 40px below was being thrown away. */
 .cpd-tbl--pd.spi-prodtbl .cpd-in {
   height: 40px; min-height: 40px;
   padding: 0 10px;
@@ -3944,9 +2851,7 @@
   font-weight: 700;
   box-shadow: 0 1px 2px rgba(15,23,42,.04), inset 0 1px 0 rgba(255,255,255,.9);
 }
-/* The focus ring keeps the field's own shadow, which the bare :focus rule in
-   create-po.css replaces outright — without this the input went flat the
-   moment it was being typed into. */
+
 .cpd-tbl--pd.spi-prodtbl .cpd-in:focus {
   border-color: #22d3ee;
   box-shadow: 0 0 0 3px rgba(34,211,238,.14), inset 0 1px 0 rgba(255,255,255,.9);
@@ -3956,29 +2861,11 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 
-/* ── Product Advance Details (box editor) ──────────────────────────────────
-   The table a packed box is edited through. Values are the design's: the
-   quantity stepper is the strip's .vqe in its light-on-white variant, so the
-   geometry below is the base rule and the in-table override folded together
-   rather than inherited from a dark pill that never renders here. */
-
-/* min-width: 0 on the wrap AND on the card around it. Without it a flex item
-   is allowed to grow to its content, so the eleven-column table pushed the
-   section wider than the drawer instead of overflowing INSIDE this box —
-   .vti-dw-section then clipped the surplus with its own overflow: hidden and
-   no scrollbar appeared anywhere. The table has to overflow here, because
-   this is the only box that scrolls.
-
-   The bar is also drawn rather than left to the platform: Windows overlay
-   scrollbars fade out when idle, so on a table that is cut off at the right
-   there was nothing on screen saying it could be scrolled at all. */
 .vs3-wrap {
   overflow-x: auto; min-width: 0;
   scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.45) transparent;
 }
-/* Solid, not translucent, and tall enough to find. A 9px bar at 45% opacity
-   over a near-white track is invisible at a glance, which is indistinguishable
-   from a table that has simply lost its last columns. */
+
 .vs3-wrap::-webkit-scrollbar { height: 11px; }
 .vs3-wrap::-webkit-scrollbar-track { background: #e6f4f8; border-radius: 999px; }
 .vs3-wrap::-webkit-scrollbar-thumb { background: #0891b2; border-radius: 999px; border: 2px solid #e6f4f8; }
@@ -3986,38 +2873,14 @@
 [data-bs-theme="dark"] .vs3-wrap::-webkit-scrollbar-track { background: rgba(34,211,238,.1); }
 [data-bs-theme="dark"] .vs3-wrap::-webkit-scrollbar-thumb { background: #22d3ee; border-color: rgba(34,211,238,.1); }
 .vti-dw-section, .vti-dw-advanced { min-width: 0; }
-/* min-width as well as width:100%. The per-cell floors below only bite once
-   the table is already being squeezed; until then `auto` layout hands the
-   spare width to whichever columns ask loudest, so Serial and Lot sat at
-   230px while Cat, the dates, Remarks and Action were pushed past the card's
-   edge — and because the floors had not engaged, the table was not yet wider
-   than its wrapper, so no scrollbar appeared to say where they had gone.
-   A floor on the table itself makes the overflow explicit. */
+
 .vs3t { width: 100%; min-width: 1400px; border-collapse: collapse; font-size: 11px; }
-/* Eleven columns do not fit a narrowed window, and `width: 100%` alone just
-   crushes them — the identity fields were collapsing to sixty-odd pixels and
-   clipping the values already typed into them. Giving the cells a floor makes
-   the table outgrow its wrapper instead, which is what hands the scrolling to
-   .vs3-wrap. The scroll stays inside this one card: the strip, the dimensions
-   and the flags above and below it never move. */
+
 .vs3t td.vs3-prod, .vs3t > thead > tr > th:nth-child(2) { min-width: 200px; }
 .vs3t > thead > tr > th:nth-child(3) { min-width: 84px; }
 .vs3t > thead > tr > th:nth-child(4) { min-width: 146px; }
 .vs3t .vs3-in { min-width: 116px; }
-/* A note takes a sentence, where the codes beside it take six characters — so
-   it ASKS for the most width and is the least harmed by losing it, because a
-   note scrolls inside its own box while a code does not.
 
-   It was the widest floor in the table at 168px, and the floors add up: 200
-   product + 84 SPI qty + 146 box qty + 4x116 text + 2x128 date + 168 note is
-   already past 1300px before Sr No, Action and cell padding. That fits the
-   drawer at 100%, but browser zoom shrinks the viewport in CSS pixels, so at
-   125% the last columns — Remarks among them — went into the horizontal
-   overflow. .vs3-wrap does scroll, but an overlay scrollbar is easy to miss,
-   so the column reads as simply missing.
-
-   The floor comes off the note so the shortfall lands here first. Its own
-   120px cap keeps it usable; the codes and dates keep theirs. */
 .vs3t .vs3-in--note { min-width: 0; }
 .vs3t td:has(> .vs3-in--note) { min-width: 120px; }
 .vs3t .master-datepicker-toggle { min-width: 128px; }
@@ -4039,9 +2902,7 @@
 .vs3t td.vs3-prod .cpd-prod { gap: 4px; }
 .vs3t td.vs3-prod .cpd-prod__nm { font-size: 12px; font-weight: 800; color: #0c4a6e; white-space: nowrap; }
 .vs3t td.vs3-prod .cpd-prod__meta { flex-wrap: nowrap; white-space: nowrap; }
-/* The shared .cpd-* rules were tuned for the PO grid and run a weight and a
-   shade darker than the design wants here. Corrected in place rather than at
-   the source, which the PO pages still depend on. */
+
 .vs3t td.vs3-prod .cpd-code { font-weight: 700; padding: 2px 6px; letter-spacing: normal; }
 .vs3t td.vs3-prod .cpd-prod__meta b { color: #42627a; }
 
@@ -4058,9 +2919,6 @@
   box-shadow: 0 0 4px rgba(6,182,212,.5);
 }
 
-/* The design's pill, at the design's size. It is deliberately shorter than
-   the 40px boxes beside it: the fields take typing, this one is a dial you
-   nudge, and the smaller pill is what separates the two at a glance. */
 .vs3t .vqe {
   display: inline-flex; align-items: center; gap: 2px; height: 30px;
   padding: 0 10px 0 3px; border-radius: 999px; box-sizing: border-box;
@@ -4074,8 +2932,7 @@
   transition: transform .12s, background .12s;
 }
 .vs3t .vqe .vqe-btn:hover:not(:disabled) { background: #ecfeff; transform: scale(1.06); }
-/* A stepper at its bound has to look it. Left as a live-looking button, it
-   reads as a broken control rather than a full box. */
+
 .vs3t .vqe .vqe-btn:disabled {
   cursor: not-allowed; background: #eef5f8; border-color: #dbe8ee; color: #a8bcc7; box-shadow: none;
 }
@@ -4086,11 +2943,9 @@
 }
 .vs3t .vqe .vqe-inp::-webkit-outer-spin-button,
 .vs3t .vqe .vqe-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-/* Typing into it is how you jump to a figure the steppers would take twenty
-   presses to reach, so the field has to look like it takes typing. */
+
 .vs3t .vqe .vqe-inp:focus { background: #e0f7fc; border-radius: 6px; }
-/* A floor under "/ 150", so the pill does not change width as the figure
-   beside it goes from three digits to one. */
+
 .vs3t .vqe .vqe-max {
   margin-left: 4px; min-width: 34px; text-align: left;
   font-size: 10.5px; font-weight: 700; color: #64748b;
@@ -4113,13 +2968,6 @@
 .vs3t .vs3-in:not(:placeholder-shown) { border-color: #22d3ee; background: #f0fdff; }
 .vs3t .master-datepicker-toggle .master-datepicker-value { font-size: 11.5px; font-weight: 700; color: #0c2c3a; }
 
-/* Tinted and outlined, not a solid red gradient. One of these sits on every
-   row, and as a filled red block with a glow under it the column of them was
-   the loudest thing on a card whose actual job is the fields to its left -
-   a destructive action shouting on a row nobody is trying to destroy.
-   This is the same treatment the dark rule below already used, and the same
-   soft-red action button the rest of the app uses.
-   border-box so the 40px box survives gaining a border. */
 .vs3t .vs3-rm {
   box-sizing: border-box;
   width: 40px; height: 40px; border-radius: 11px; cursor: pointer;
@@ -4130,15 +2978,7 @@
 }
 .vs3t .vs3-rm:hover { background: #fee2e2; border-color: #f87171; color: #dc2626; transform: translateY(-1px); }
 .vs3t .vs3-rm svg { width: 15px; height: 15px; }
-/* Dark: the light button is a solid red gradient with a white inset highlight
-   and a red glow under it. That is right on a white row and wrong on a dark
-   one — it became the brightest thing on the card, one per row, pulling the
-   eye away from the fields the operator is actually filling in, and the white
-   inset read as a seam across the top of each button.
-   Tinted and outlined instead, like every other dark control in this table.
-   border-box because the light rule has no border and the size must stay 40.
-   Both attributes: this sheet writes [data-bs-theme], but the SPI wizard is
-   one of the screens that carries [data-layout-mode] (see .vti-flag-pop). */
+
 [data-bs-theme="dark"] .vs3t .vs3-rm,
 [data-layout-mode="dark"] .vs3t .vs3-rm {
   box-sizing: border-box;
@@ -4177,12 +3017,6 @@
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
 [data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }
 
-/* ── Packed Boxes · the scenario rail ────────────────────────────────────────
-   Values from the design's own block for this rail (#spiPackedBoxes .spk-sub2
-   / .p2p-sub2tab), not estimated off a screenshot. I guessed 15px/800 from a
-   zoomed crop; the design is 12.5px/700 in #94a3b8 on a 22px tile, with a
-   44px tab height and a 3px underline.
-   ────────────────────────────────────────────────────────────────────────── */
 .invf-pb-rail {
   display: flex; align-items: stretch; gap: 24px; flex-wrap: wrap;
   padding: 4px 20px 0; background: #fff;
@@ -4203,8 +3037,7 @@
   transition: all .2s ease;
 }
 .invf-pb-rtab__i svg { width: 12px; height: 12px; }
-/* Drawn on every tab, coloured only on the active one, so switching cannot
-   shift the row by a pixel. */
+
 .invf-pb-rtab::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
   border-radius: 3px 3px 0 0; background: transparent;
@@ -4238,9 +3071,6 @@
 [data-bs-theme="dark"] .invf-pb-rtab__n { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.24); color: #94a9b6; }
 [data-bs-theme="dark"] .invf-pb-rtab.is-on .invf-pb-rtab__n { color: #0b1922; background: linear-gradient(135deg,#a8f1fa,#67e8f9); border-color: #67e8f9; }
 
-/* A scenario with no boxes. The row carries real height so the card keeps its
-   shape — a table that shrinks to its header reads as broken, not as empty,
-   and this one is legitimately empty whenever a scenario went unused. */
 .invf-pb-none-row > td { border-bottom: none !important; background: none !important; padding: 0 !important; }
 .invf-pb-none-row:hover > td { background: none !important; }
 .invf-pb-none {
@@ -4266,74 +3096,21 @@
 .spi-btn-spin { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: vtiDwSpin .7s linear infinite; }
 .vsm-bpdf:disabled, .vsm-bprint:disabled { opacity: .75; cursor: progress; }
 
-/* The pager sits inside the card, so it loses the margin that separates a
-   standalone one from the table above it and picks up the card's own radius.
-   At narrow widths the two halves stack rather than squeezing the row count
-   against the arrows. */
 .invf-packed .invf-pb-pager { margin-top: 0; border-radius: 0 0 16px 16px; }
 @media (max-width: 760px) {
   .invf-packed .invf-pb-pager { flex-direction: column; align-items: stretch; gap: 10px; }
   .invf-packed .invf-pb-pager .tc-wl-right { justify-content: space-between; }
 }
 
-/* ── The box drawer's strip, inside the MODAL ────────────────────────────────
-   The two-row layout is chosen by a viewport media query (max-width: 1500px),
-   which is the wrong measurement here: the modal is min(1640px, 100%), so its
-   strip never gets more than 1640 however wide the screen is. This strip's
-   content — five identity items, the quantity stepper, the unit toggle and
-   four buttons — needs more than that, so on a 1900px screen the single-row
-   branch applied, the toolbar wrapped anyway, and `margin-left: auto` left it
-   right-aligned under an empty gap with the sticker against the corner.
-
-   Keyed to the modal instead of the screen, so the toolbar takes its own row
-   whenever it is in a dialog. The accordion and panel variants are not capped
-   and keep the viewport rules. Declared after the media blocks so it wins at
-   equal specificity.
-   ────────────────────────────────────────────────────────────────────────── */
-/* Make it FIT, rather than choosing which half of a broken row to live with.
-   Forcing two rows put the toolbar under BOX ID with the rest of the strip
-   empty beside it; leaving it alone put the toolbar on the right of its own
-   row under an equally empty gap. Neither is a header.
-
-   The content was over 1640 by roughly 75px. 16px of item padding instead of
-   22 gives back 60 across the five identity items, and the product name — the
-   only value here that is free text — caps at 220 instead of 400. That lands
-   the row inside the modal with room to spare, so it does not wrap at all.
-
-   flex-wrap stays as the safety net for a genuinely long name; in that case
-   the toolbar keeps its own right-hand alignment, which is the layout the
-   base rules already describe. */
 .vti-dw-modal .vti-dw-strip .vti-dw-strip-item { padding: 9px 16px; }
 .vti-dw-modal .vti-dw-strip .vti-dw-strip-item.strip-product { max-width: 220px; }
 
-/* ── Empty list, inside the table ─────────────────────────────────────────────
-   The row the invoice list shows when a tab has nothing in it. It lives in the
-   tbody so the column headings and the pager stay where they are — an empty
-   list should read as a list with nothing in it, not as a screen that failed.
-
-   colSpan is the real column count rather than an over-wide guess, because
-   this table ships a <colgroup>: a cell spanning past the last column would
-   be measured against widths that do not exist.
-   ────────────────────────────────────────────────────────────────────────── */
-/* The table stretches to the scroll area it sits in, so the one row inside it
-   has the whole height to centre in. Without this the message sat just under
-   the headings with the rest of the card left white beneath it — the content
-   was centred in a block the height of its own text, which is not what
-   "centred" means when the box around it is five times taller.
-   .ord-table-scroll is `flex: 1 1 auto; min-height: 0` in a column flex card,
-   so its height is resolved by layout and 100% has something to measure
-   against. Only while empty: a populated table must size to its rows. */
 .ord-table.ord-table--empty { height: 100%; }
 .ord-table .ord-emptyrow > td {
   padding: 0;
   background: #fff;
   border-bottom: 0;
-  /* The cell is what centres, via vertical-align — not a stretched flex box
-     inside it. Giving the box `height: 100%` instead made it 575px tall in a
-     561px area, because a table at height 100% plus a thead on top is taller
-     than the box it sits in: the message ended up 48px high and the area
-     gained a scrollbar. Letting the cell take the slack and align its content
-     to the middle measured 264px above and 264px below. */
+
   vertical-align: middle;
 }
 .ord-table .ord-emptybox {
@@ -4362,15 +3139,6 @@
 [data-bs-theme="dark"] .ord-table .ord-emptybox b { color: #e2e8f0; }
 [data-bs-theme="dark"] .ord-table .ord-emptybox span { color: #7f9aa6; }
 
-
-/* ── Advanced Details toggle, to the design ──────────────────────────────────
-   It shares a rule with `.vti-dw-section-hd`, which is a full-width section
-   header and so carries a bottom border and no gap after its icon. As a
-   BUTTON this element is only as wide as its text, so that border came out as
-   a stub underlining the words — the design has the row open with no rule at
-   all — and the chevron sat hard against "Advanced Details" because the
-   shared rule has no gap.
-   ────────────────────────────────────────────────────────────────────────── */
 .vti-dw-advanced > .vti-dw-adv-toggle,
 .vti-dw-advanced > .vti-dw-adv-toggle.is-open {
   width: 100%;
@@ -4378,16 +3146,6 @@
   border-bottom: 0;
 }
 
-/* ── The app's calendar inside a drawer cell ─────────────────────────────────
-   The reason this picker was swapped out for a native date input: it carries
-   its own 38px bordered, filled box, and .vti-dw-field is already that box —
-   so the cell held a second one inside it, taller than its four neighbours
-   and visibly a different control.
-   Stripping the trigger flat in here fixes that without giving up the
-   calendar: no border, no fill, no height of its own, and the type matched to
-   the inputs beside it. The popover itself is untouched — it is portalled and
-   should look like every other calendar in the app.
-   ────────────────────────────────────────────────────────────────────────── */
 .vti-dw-field .master-datepicker-wrap { width: 100%; min-width: 0; }
 .vti-dw-field .master-datepicker-toggle {
   min-height: 0; height: auto; padding: 0; gap: 6px;
@@ -4398,3 +3156,23 @@
   font-size: 12.5px; font-weight: 700; letter-spacing: -.1px;
 }
 .vti-dw-field .master-datepicker-placeholder { font-weight: 500; }
+
+.spi-invform .spi-save-lock {
+  position: fixed; inset: 0; z-index: 1220;
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.spi-invform .spi-save-lock-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3.5px solid rgba(8, 145, 178, 0.22);
+  border-top-color: #0891b2;
+  animation: spiSaveSpin .7s linear infinite;
+}
+.spi-invform .spi-save-lock-text { font-size: 13px; font-weight: 700; color: #0e7490; letter-spacing: .2px; }
+@keyframes spiSaveSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .spi-invform .spi-save-lock { background: rgba(10, 22, 32, 0.66); }
+[data-bs-theme="dark"] .spi-invform .spi-save-lock-spinner { border-color: rgba(34, 211, 238, 0.22); border-top-color: #22d3ee; }
+[data-bs-theme="dark"] .spi-invform .spi-save-lock-text { color: #67e8f9; }

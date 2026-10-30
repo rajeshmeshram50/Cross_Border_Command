@@ -428,8 +428,10 @@ export const poLookupApi = {
   shipments: () =>
     call('PO shipments', () => api.get('/p2p/orders/shipments'), dataOf<ShipmentOption[]>),
 
-  suppliers: () =>
-    call('PO suppliers', () => api.get('/p2p/orders/suppliers'), dataOf<SupplierOption[]>),
+  suppliers: (documentType?: 'domestic' | 'international') =>
+    call('PO suppliers', () => api.get('/p2p/orders/suppliers', {
+      params: documentType ? { document_type: documentType } : undefined,
+    }), dataOf<SupplierOption[]>),
 
   supplier: (vendorId: number, refreshCurrencies = false) =>
     call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {

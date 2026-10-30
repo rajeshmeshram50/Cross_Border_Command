@@ -245,7 +245,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
           <div className="whm-saving" role="status" aria-live="polite">
             <span className="whm-saving__box">
               <span className="whm-saving__spin" aria-hidden />
-              Saving the shelf…
+              {editing ? 'Updating…' : 'Saving…'}
             </span>
           </div>
         )}

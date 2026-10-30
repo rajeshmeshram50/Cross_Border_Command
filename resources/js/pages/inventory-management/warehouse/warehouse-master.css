@@ -1077,26 +1077,30 @@
 .whm-saving {
   position: fixed; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(240,253,255,.55);
+  background: rgba(255,255,255,.62);
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   cursor: progress;
 }
+/* The Customer form's save lock (.acm-save-lock) in teal: a big ring with the
+   word under it, no card around them. */
 .whm-saving__box {
-  display: inline-flex; align-items: center; gap: 10px;
-  padding: 12px 20px; border-radius: 12px;
-  background: #fff; border: 1.5px solid #cdeaf3;
-  box-shadow: 0 18px 40px -16px rgba(8,145,178,.45);
-  font-size: 12.5px; font-weight: 700; color: #0c4a6e;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  font-size: 13px; font-weight: 700; letter-spacing: .2px; color: #0e7490;
 }
-.whm-saving__spin, .whm-btnspin {
-  width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%;
-  border: 2.2px solid #0891b2; border-top-color: transparent;
-  animation: whmSaveSpin .6s linear infinite;
+.whm-saving__spin {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
+  border: 3.5px solid rgba(8,145,178,.22); border-top-color: #0891b2;
+  animation: whmSaveSpin .7s linear infinite;
 }
 /* On the button the mark sits on a filled teal face, so it is drawn in the
    button's own ink rather than the accent. */
-.whm-btnspin { width: 13px; height: 13px; border-width: 2px; border-color: currentColor; border-top-color: transparent; }
+.whm-btnspin {
+  width: 13px; height: 13px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: whmSaveSpin .6s linear infinite;
+}
 @keyframes whmSaveSpin { to { transform: rotate(360deg); } }
-[data-bs-theme="dark"] .whm-saving { background: rgba(5,20,30,.72); }
-[data-bs-theme="dark"] .whm-saving__box { background: #0f2231; border-color: rgba(34,211,238,.3); color: #cfeef8; }
+[data-bs-theme="dark"] .whm-saving { background: rgba(10,22,32,.66); }
+[data-bs-theme="dark"] .whm-saving__box { color: #67e8f9; }
+[data-bs-theme="dark"] .whm-saving__spin { border-color: rgba(34,211,238,.22); border-top-color: #22d3ee; }
 @media (prefers-reduced-motion: reduce) { .whm-saving__spin, .whm-btnspin { animation: none; } }

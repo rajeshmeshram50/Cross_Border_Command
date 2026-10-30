@@ -386,7 +386,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
           <div className="whm-saving" role="status" aria-live="polite">
             <span className="whm-saving__box">
               <span className="whm-saving__spin" aria-hidden />
-              Saving the warehouse…
+              {editing ? 'Updating…' : 'Saving…'}
             </span>
           </div>
         )}

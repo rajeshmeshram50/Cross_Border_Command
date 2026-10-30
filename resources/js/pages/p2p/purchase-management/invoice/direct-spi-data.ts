@@ -95,7 +95,7 @@ export function useSupplierRows(enabled = true) {
     let live = true;
     setLoading(true);
     setError(null);
-    poLookupApi.suppliers()
+    poLookupApi.suppliers('domestic')
       .then(list => { if (live) setRows((list ?? []).map(supplierRow)); })
       .catch(e => { if (live) setError(e instanceof PoApiError ? e.firstError : 'Could not load suppliers.'); })
       .finally(() => { if (live) setLoading(false); });

@@ -29,6 +29,9 @@ class PoLookupController extends Controller
         // whose primary address country is India is DOMESTIC, any other country is
         // INTERNATIONAL. This drives the Stage-1 gate (the PO's Document Type must
         // match the supplier's).
+        $docFilter = $request->validate([
+            'document_type' => ['nullable', 'in:domestic,international'],
+        ])['document_type'] ?? null;
         $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
@@ -61,6 +64,7 @@ class PoLookupController extends Controller
                     'risk' => $v->riskLevel?->name,
                 ];
             });
+        if ($docFilter) $rows = $rows->where('document_type', $docFilter)->values();
         return response()->json(['status' => true, 'data' => $rows]);
     }
 

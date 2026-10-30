@@ -30,45 +30,29 @@ export default function Step2InvoiceProducts({
   set: SetDraft;
   lines: ProductLine[];
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
-  /** Drop a line the supplier did not invoice. The design's Action column. */
   onRemoveLine?: (index: number) => void;
-  /** There is a proforma invoice behind this table to match against. */
   matched?: boolean;
-  /** Add one the PI never carried. Omitted when read-only. */
   onAddLine?: () => void;
-  /** How many lines have been taken off, and the way to put them all back. */
   removedCount?: number;
   onRestoreLines?: () => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
   readOnly?: boolean;
-  /* A Direct SPI matches the shipment's proforma invoice against the
-     supplier's own — there is no purchase order in between. */
   direct?: boolean;
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
 
-  /* The reference pills on the Products head.
-   *
-   * The last two are the chain this invoice is matched against, and a Direct
-   * SPI raised without a shipment has no such chain: no shipment to name, and
-   * no proforma invoice behind one. Both pills would stand there reading "—",
-   * which says "this has a shipment id, it just isn't filled in" — the
-   * opposite of the truth on a tab whose whole definition is not having one.
-   *
-   * A With-PO invoice keeps both: its chain is the order and the PI behind it. */
+  const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
   const headPills = [
     <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />,
     <HeadPill key="name" icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />,
     <HeadPill key="state" icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />,
   ];
   if (!direct) {
-    /* The purchase order is what a 3-way match is made against; the shipment
-       took that slot on a Direct SPI. */
     headPills.push(
       <HeadPill key="po" icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />,
-      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+      ...(poHasPi ? [<HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />] : []),
     );
   } else if (draft.shipmentId) {
     headPills.push(
@@ -123,15 +107,14 @@ export default function Step2InvoiceProducts({
             <div className="spi-dt-sec-row">
               <span className="spi-dt-sec-lbl">Products</span>
               <span className="spi-dt-sec-sep" />
-              <span className="spi-dt-sec-title">Product Details ({direct ? '2' : '3'}-Way Match)</span>
+              <span className="spi-dt-sec-title">Product Details ({direct || !poHasPi ? '2' : '3'}-Way Match)</span>
             </div>
             <div className="spi-dt-sec-sub">
-              {direct ? 'PI vs SPI product mapping & 2-way match' : 'PI vs PO vs SPI product mapping & 3-way match'}
+              {direct ? 'PI vs SPI product mapping & 2-way match'
+                : poHasPi ? 'PI vs PO vs SPI product mapping & 3-way match'
+                : 'PO vs SPI product mapping & 2-way match'}
             </div>
           </div>
-          {/* Built as a list so the ⋮ separators fall between whatever is
-              actually here. Written out inline, dropping a pill left its
-              divider behind and the strip ended on a dangling mark. */}
           <div className="spi-dt-pills">
             {headPills.map((pill, i) => (
               <Fragment key={pill.key}>
@@ -145,22 +128,8 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} matched={matched}
+            twoWay={direct} matched={matched} hasPi={direct || poHasPi}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
-          {/* Directly under the totals, because it is a statement about the
-              figures above it: they are short of a product the PI carried.
-              It stays for as long as anything is missing, rather than passing
-              like the toast does — the person who saves this invoice may not
-              be the person who removed the line.
-
-              `matched` is the condition it hangs on, and the sentence above is
-              why: the bar reports a difference from the PI. With no shipment
-              there is no PI, every line was typed in here by hand, and a
-              deleted line is simply a line someone decided against — not
-              something the invoice is now short of. "Restore all" there would
-              offer to put back a document's products on an invoice that never
-              had a document behind it. The toast still covers the undo for a
-              mistaken click; it is the standing claim that does not hold. */}
           {matched && removedCount > 0 && onRestoreLines && !readOnly && (
             <div className="invf-removed">
               <span className="invf-removed__txt">
@@ -171,19 +140,6 @@ export default function Step2InvoiceProducts({
               </button>
             </div>
           )}
-          {/* Under the table, at the end of the row of controls it belongs to
-              — it undoes the Action column, so it sits on that side.
-
-              Not offered on a Direct SPI that has a shipment behind it. The
-              lines are then the PI's lines and this step is a 2-way match
-              against that PI, so a product typed in here is one the document
-              does not contain: nothing to match it, and it still joins the
-              totals being reconciled. Without a shipment there is no document
-              at all and adding is the only way a line gets onto the invoice,
-              so the button stays there.
-
-              Removing a PI line is still allowed — the Restore banner above
-              puts it back, which is a line the PI does have. */}
           {onAddLine && !readOnly && !(direct && draft.shipmentId) && (
             <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
               <IcoPlus /> Add Product

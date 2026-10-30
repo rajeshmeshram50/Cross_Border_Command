@@ -1,5 +1,3 @@
-// The two GST popups behind the banner's action: "stop" (scrutiny expired,
-// PO blocked) and "warn" (return overdue, a senior may allow it).
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
@@ -19,26 +17,18 @@ export type GstNotice = {
   filing: string;
   scrutinyAge: number | null;
   filingAge: number | null;
-  /** The oldest date a scrutiny / filing may carry and still be accepted. */
   cutoff: string;
   months: number;
 };
 
 type Approval = NonNullable<PoDetail['gst_approval']>;
 
-
-/** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
 export default function GstNoticeModal({
   notice, onClose, poId, approval, onSent, onOpenScrutiny, doc = 'PO', onRequest,
 }: {
   notice: GstNotice; onClose: () => void; poId?: number | null; approval?: Approval | null; onSent?: () => void;
   onRequest?: (body: { requested_to?: number; note?: string }) => Promise<unknown>;
-  /** Opens the supplier master on its GST Scrutiny tab; without it the button just closes. */
   onOpenScrutiny?: () => void;
-  /** What this dialog is blocking. The checks are the same on all three; only
-   *  the noun changes, and saying "this PO" to someone looking at an invoice
-   *  reads as the wrong screen having opened. Defaults to the PO it was
-   *  written for. */
   doc?: CheckDoc;
 }) {
   const THIS = DOC_THIS[doc];
@@ -56,12 +46,9 @@ export default function GstNoticeModal({
   const pending = approval?.status === 'pending';
   const approved = approval?.status === 'approved';
   const canSend = !stop && !pending && !approved;
-  /* A rejected PO goes back to the same senior — no picking a different one.
-     The server enforces it too; here it just replaces the dropdown. */
   const sendBackTo = approval?.status === 'rejected' ? approval.requested_to_name : null;
 
   useEffect(() => {
-    // Read on each open: the list follows the active branch (this branch's people + client admins).
     if (!canSend || sendBackTo) return;
     poApprovalApi.approvers()
       .then((rows) => setApprovers(rows))
@@ -70,9 +57,6 @@ export default function GstNoticeModal({
   }, [canSend, sendBackTo, toast]);
 
   const send = async () => {
-    /* The request is raised ON a purchase order. On the PO itself that means
-       "save it first"; anywhere else it means there is no order behind this
-       document to raise one against, which is a different thing to say. */
     if (!poId && !onRequest) {
       toast.warning(
         doc === 'PO' ? 'Save the PO first' : 'No purchase order to approve against',
@@ -104,16 +88,12 @@ export default function GstNoticeModal({
     }
   };
 
-  /* Escape is ignored while the request is in flight. The overlay already
-     blocks the mouse; without this the keyboard walked straight past it and
-     closed the dialog on a send that was still going. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !sending) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, sending]);
 
-  // Name first, then department and designation as tags; the company admin has no employee record.
   const options = approvers.map((a) => {
     const badges = [
       ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
@@ -130,10 +110,6 @@ export default function GstNoticeModal({
 
   return createPortal(
     <div className="cgst-backdrop">
-      {/* The shell exists so the busy overlay can cover the whole card: the card
-          itself scrolls (overflow: auto), and an overlay inside a scroll box is
-          measured against the CONTENT, so a tall dialog would scroll its own
-          loader out of view. */}
       <div className="cgst-shell">
       <div className="cgst-card" role="dialog" aria-modal="true" aria-labelledby="cgst-title">
         <div className={`cgst-hd cgst-hd--${notice.tone}`}>
@@ -186,7 +162,6 @@ export default function GstNoticeModal({
           ) : canSend && (
             <>
               {sendBackTo ? (
-                /* Re-send: the same senior, stated, not chosen again. */
                 <div className="cgst-field">
                   <label>Goes back to</label>
                   <div className="cgst-same">
@@ -233,18 +208,12 @@ export default function GstNoticeModal({
           )}
           {canSend && (
             <button type="button" className="cgst-btn cgst-btn--warn" onClick={send} disabled={sending}>
-              {/* No 'Sending…' label: the overlay in front of it is the progress
-                  now, and two things reporting the same state disagree the
-                  moment one of them is wrong (QA #14). */}
               {approval?.status === 'rejected' ? 'Send Again for Approval' : 'Send for Senior Approval'}
             </button>
           )}
         </div>
       </div>
 
-      {/* The whole popup goes busy, not one button. A request that takes a
-          second looked like a dead click, and the fields stayed editable
-          underneath while it was already on its way (QA #14). */}
       {sending && (
         <div className="cgst-busy" role="status" aria-live="polite">
           <span className="cgst-busy__ring" aria-hidden="true" />
@@ -258,7 +227,6 @@ export default function GstNoticeModal({
   );
 }
 
-/** Where the last request stands: waiting, approved, or rejected with the senior's reason. */
 function ApprovalState({ approval }: { approval: Approval }) {
   const who = approval.requested_to_name ?? 'the senior';
   const when = (d: string | null) => (d ? formatDmy(d.slice(0, 10)) : '');

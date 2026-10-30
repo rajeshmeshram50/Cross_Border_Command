@@ -14,13 +14,6 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-/* Stage 4 is the heaviest thing in this form by a wide margin - 127 KB of
-   source of its own, five put-away panels behind it, and step4.css, which was
-   71% of invoice-form.css. Three of the four stages never touch it, and a
-   Direct SPI that is only being drafted never leaves stage 1, so loading it
-   with the form made every invoice pay for a stage most never reach.
-   Vite resolves the chunk's stylesheet before the module promise settles, so
-   the stage does not paint unstyled while its CSS is still arriving. */
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
@@ -222,10 +215,9 @@ export default function InvoiceForm({
             setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
             if (!input.direct && existing.vendor_id) {
               const vid = existing.vendor_id;
-              const [sup, scrutiny] = await Promise.all([
-                poLookupApi.supplier(vid).catch(() => null),
-                spiApi.vendorScrutiny(vid).catch(() => null),
-              ]);
+              const [sup, scrutiny] = await spiApi.vendorDetail(vid)
+                .then(r => [r.detail, r.scrutiny] as const)
+                .catch(() => [null, null] as const);
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);
@@ -328,14 +320,6 @@ export default function InvoiceForm({
   }, [input.poId, input.spiId, set, toast]);
 
   const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
-  useEffect(() => {
-    if (!warehouseId) { setWarehouseRow(null); return; }
-    let live = true;
-    spiApi.warehouseDetail(warehouseId)
-      .then(w => { if (live) setWarehouseRow(w); })
-      .catch(() => { if (live) setWarehouseRow(null); });
-    return () => { live = false; };
-  }, [warehouseId]);
 
   const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
 
@@ -367,6 +351,17 @@ export default function InvoiceForm({
 
   const [stage, setStage] = useState(0);
   const [reached, setReached] = useState(0);
+
+  const warehouseRowId = warehouseRow?.id ?? null;
+  useEffect(() => {
+    if (!warehouseId) { setWarehouseRow(null); return; }
+    if (stage !== 3 || warehouseRowId === warehouseId) return;
+    let live = true;
+    spiApi.warehouseDetail(warehouseId)
+      .then(w => { if (live) setWarehouseRow(w); })
+      .catch(() => { if (live) setWarehouseRow(null); });
+    return () => { live = false; };
+  }, [warehouseId, stage, warehouseRowId]);
 
   useScrollLock(true, '.spi-dt-overlay');
 
@@ -804,6 +799,7 @@ export default function InvoiceForm({
 
   const stage1Gate = useMemo(() => {
     if (!isDirect || stage !== 0 || viewOnly || !draft.supplier) return null;
+    if (directDocType() === 'international') return null;
     const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
     if (gst.tone === 'stop') {
       return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
@@ -814,7 +810,7 @@ export default function InvoiceForm({
         : `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
     }
     return null;
-  }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
+  }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, draft.country, draft.docType, gstApproval]);
 
   const noProducts = stage === 1 && lines.length === 0;
   const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || !!stage1Gate || noProducts || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
@@ -848,28 +844,16 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
-  /* Save & Next in flight — the step shows the form shimmer until the next
-     one opens. This is the Create PO wizard's `advancing`, done its way:
-
-       · ONE shimmer, not a skeleton of the step being opened. The PO draws
-         the same two-section PoFormSkeleton every time, whichever step is
-         coming, so it is always the right height for the body it fills. A
-         per-stage skeleton is a different height from the step it replaces,
-         which is how the page came to end halfway down.
-       · no delay before it appears, and no moving the step rail. The PO does
-         neither, and both were my inventions.
-
-     It is derived rather than held in state: a save on any step but the last
-     IS an advance. Only `mapInvoice` saves from the last step, and that one
-     closes the form rather than opening another step, so it must not shimmer.
-
-     The step stays mounted underneath (hidden, not removed), so a save that
-     fails brings it back exactly as it was left — the PO's rule too. */
   const advancing = saving && stage < STAGES.length - 1;
 
   const isLast = stage === STAGES.length - 1;
+  const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
   const stageLabel = (i: number) =>
-    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i])) || STAGES[i];
+    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i]))
+    || (!isDirect && i === 1 && !poLoading && !poHasPi
+      ? { title: 'Invoice & Product Details (2-Way Match)', desc: 'Enter invoice details & match products against the PO' }
+      : undefined)
+    || STAGES[i];
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form spi-invform">
@@ -927,10 +911,6 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
-              /* Off while saving: Tooltip wraps an aria-disabled trigger in an
-                 inline-flex span, which pulls the card out of the grid (it
-                 shrinks to its text) and makes it :last-child (it loses its
-                 arrow) for the length of the save. */
               <Tooltip
                 key={s.title}
                 label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
@@ -965,8 +945,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {(advancing || step1Busy) && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={advancing || step1Busy}>
+              {step1Busy && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -1018,9 +998,6 @@ export default function InvoiceForm({
                     spiCode={spiCode}
                   />
                 )}
-                {/* The stage's own skeleton while its chunk arrives — the same
-                    one the form shows while a stage's data loads, so reaching
-                    put-away looks like every other wait in this form. */}
                 {stage === 3 && (
                   <Suspense fallback={<StageSkeleton stage={3} />}>
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
@@ -1101,6 +1078,12 @@ export default function InvoiceForm({
           </div>
         </div>
       </div>
+      {advancing && (
+        <div className="spi-save-lock" aria-live="polite" aria-busy="true">
+          <span className="spi-save-lock-spinner" />
+          <span className="spi-save-lock-text">{editing ? 'Updating…' : 'Saving…'}</span>
+        </div>
+      )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
       )}
