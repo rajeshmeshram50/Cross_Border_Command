@@ -58,6 +58,7 @@ export default function Step2InvoiceProducts({
    * opposite of the truth on a tab whose whole definition is not having one.
    *
    * A With-PO invoice keeps both: its chain is the order and the PI behind it. */
+  const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
   const headPills = [
     <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />,
     <HeadPill key="name" icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />,
@@ -68,7 +69,7 @@ export default function Step2InvoiceProducts({
        took that slot on a Direct SPI. */
     headPills.push(
       <HeadPill key="po" icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />,
-      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+      ...(poHasPi ? [<HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />] : []),
     );
   } else if (draft.shipmentId) {
     headPills.push(
@@ -123,10 +124,12 @@ export default function Step2InvoiceProducts({
             <div className="spi-dt-sec-row">
               <span className="spi-dt-sec-lbl">Products</span>
               <span className="spi-dt-sec-sep" />
-              <span className="spi-dt-sec-title">Product Details ({direct ? '2' : '3'}-Way Match)</span>
+              <span className="spi-dt-sec-title">Product Details ({direct || !poHasPi ? '2' : '3'}-Way Match)</span>
             </div>
             <div className="spi-dt-sec-sub">
-              {direct ? 'PI vs SPI product mapping & 2-way match' : 'PI vs PO vs SPI product mapping & 3-way match'}
+              {direct ? 'PI vs SPI product mapping & 2-way match'
+                : poHasPi ? 'PI vs PO vs SPI product mapping & 3-way match'
+                : 'PO vs SPI product mapping & 2-way match'}
             </div>
           </div>
           {/* Built as a list so the ⋮ separators fall between whatever is
@@ -145,7 +148,7 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} matched={matched}
+            twoWay={direct} matched={matched} hasPi={direct || poHasPi}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
           {/* Directly under the totals, because it is a statement about the
               figures above it: they are short of a product the PI carried.

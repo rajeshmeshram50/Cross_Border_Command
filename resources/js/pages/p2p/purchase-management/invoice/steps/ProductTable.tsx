@@ -15,7 +15,7 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote,
+  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true,
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
@@ -36,6 +36,7 @@ export default function ProductTable({
      empty reads as a match that found nothing rather than a match that was
      never possible. */
   matched?: boolean;
+  hasPi?: boolean;
   /** What the untinted cells came from, named in the legend. */
   sourceNote?: string;
 }) {
@@ -49,7 +50,8 @@ export default function ProductTable({
      The group header spans this many plus the SPI column itself, and the
      footer skips this many plus Description before the first figure — writing
      the count once is what keeps the three in step when a column is dropped. */
-  const matchCols = (matched ? 1 : 0) + (twoWay ? 0 : 1);
+  const showPi = matched && hasPi;
+  const matchCols = (showPi ? 1 : 0) + (twoWay ? 0 : 1);
 
   /* The line comes off the invoice and, with it, out of the boxes and the
      put-away that are built from these lines downstream — so it asks first,
@@ -264,7 +266,7 @@ export default function ProductTable({
               <th colSpan={1} className="cpd-stick cpd-grp-stick">
                 {/* No mapping to name when there is nothing on the other
                     side: one product column is a list, not a match. */}
-                {!matched ? 'Product' : twoWay ? '2-Way Product Mapping' : '3-Way Product Mapping'}
+                {!matched ? 'Product' : twoWay || !showPi ? '2-Way Product Mapping' : '3-Way Product Mapping'}
               </th>
               {matchCols > 0 && <th colSpan={matchCols} className="cpd-grp-tail" />}
               {/* Description belongs to no group, but it is NOT a rowSpan of 2.
@@ -276,7 +278,7 @@ export default function ProductTable({
                   same line as PRODUCT (PI) and PRODUCT (SPI), which is what it
                   sits beside. */}
               <th className="cpd-grp-tail" />
-              <th colSpan={matched ? (twoWay ? 4 : 5) : 1}>{matched ? 'Quantities' : 'Quantity'}</th>
+              <th colSpan={matched ? (showPi ? 1 : 0) + (twoWay ? 0 : 1) + 3 : 1}>{matched ? 'Quantities' : 'Quantity'}</th>
               {/* Without a purchase order there is nothing to show under it:
                   the group goes rather than standing empty over the rows. */}
               {!twoWay && <th colSpan={1}>Purchase Order (PO)</th>}
@@ -288,11 +290,11 @@ export default function ProductTable({
               {canRemove && <th rowSpan={2} className="cpd-c cpd-th-act">Action</th>}
             </tr>
             <tr>
-              {matched && <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
-              {!twoWay && <th className="cpd-th-left">Product (PO)</th>}
-              <th className={`cpd-th-left cpd-edh${matched ? '' : ' cpd-stick cpd-stick--2'}`}>Product (SPI)</th>
+              {showPi && <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
+              {!twoWay && <th className={`cpd-th-left${showPi ? '' : ' cpd-stick cpd-stick--2'}`}>Product (PO)</th>}
+              <th className={`cpd-th-left cpd-edh${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}`}>Product (SPI)</th>
               <th className="cpd-th-left">Description</th>
-              {matched && <th>Qty (PI)</th>}
+              {showPi && <th>Qty (PI)</th>}
               {!twoWay && <th>Qty (PO)</th>}
               <th className="cpd-c cpd-edh">Qty (SPI)</th>
               {matched && <><th>Missing Qty</th><th>Extra Qty</th></>}
@@ -344,7 +346,7 @@ export default function ProductTable({
             )}
             {lines.map((line, i) => (
               <Row
-                key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched}
+                key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched} showPi={showPi}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 duplicateOf={twoWay ? duplicateOf : undefined}
                 onEditProduct={editProduct} onAddProduct={addProduct}
@@ -367,7 +369,7 @@ export default function ProductTable({
                     total sat one column to the left of its own heading - the
                     quantity total printed under Description. */}
                 <td colSpan={matchCols + 1} />
-                {matched && <td className="cpd-c">{totals.piQty}</td>}
+                {showPi && <td className="cpd-c">{totals.piQty}</td>}
                 {!twoWay && <td className="cpd-c">{totals.poQty}</td>}
                 <td className="cpd-c">{totals.spiQty}</td>
                 {matched && <><td className="cpd-c">{totals.missing}</td>
@@ -395,8 +397,9 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  matched, onRemove, showAction, duplicateOf,
+  matched, onRemove, showAction, duplicateOf, showPi = matched,
 }: {
+  showPi?: boolean;
   duplicateOf?: (productId: number, index: number) => boolean;
   line: ProductLine;
   index: number;
@@ -429,18 +432,18 @@ const Row = memo(function Row({
   return (
     <tr>
       <td className="cpd-c cpd-stick cpd-stick--1">{index + 1}</td>
-      {matched && (
+      {showPi && (
         <td className="cpd-prodcell cpd-td-left cpd-stick cpd-stick--2">
           <ProdCell name={line.piName} code={line.piCode ?? line.code} hsn={line.hsn} gst={line.gst} />
         </td>
       )}
       {!twoWay && (
-        <td className="cpd-prodcell cpd-td-left">
+        <td className={`cpd-prodcell cpd-td-left${showPi ? '' : ' cpd-stick cpd-stick--2'}`}>
           <ProdCell name={line.poName} code={line.code} hsn={line.hsn} gst={line.gst} />
         </td>
       )}
 
-      <td className={`cpd-prodcell cpd-ed${matched ? '' : ' cpd-stick cpd-stick--2'}`}>
+      <td className={`cpd-prodcell cpd-ed${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}`}>
         <div className="cpd-prod cpd-prod--po">
           <div className="cpd-pick">
             <MasterSelect
@@ -514,7 +517,7 @@ const Row = memo(function Row({
         />
       </td>
 
-      {matched && <td className="cpd-c">{line.piQty}</td>}
+      {showPi && <td className="cpd-c">{line.piQty}</td>}
       {/* What is still open, not what the order asked for once — a line an
           earlier invoice already covered must not read as outstanding here.
           An over-supply from an earlier invoice shows as 0 open and is named

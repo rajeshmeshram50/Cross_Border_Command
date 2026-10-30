@@ -340,7 +340,9 @@ export default function Step1SupplierDetails({
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
-  const gst = gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate, 'invoice');
+  const gst = isInternational && hasSupplier
+    ? { tone: 'idle' as const, title: 'GST checks not applicable', note: 'International supplier — GST scrutiny and return filing do not apply to this invoice.', action: undefined }
+    : gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate, 'invoice');
   const scrutinyAge = monthsAgo(scrutinyDate);
   const filingAge = monthsAgo(filingDate);
 

@@ -124,7 +124,7 @@ export default function StageSummary({ draft, upto, direct = false, boxes = [] }
                   {/* The stage rail already names the match this invoice is
                       making; the recap of that stage must not name a
                       different one. */}
-                  Invoice &amp; Product Details ({direct ? '2' : '3'}-Way Match)
+                  Invoice &amp; Product Details ({direct || !draft.piNumber ? '2' : '3'}-Way Match)
                 </span>
               </div>
               <span className="spi-dt-sumstep-done"><IcoCheck size={11} /> Completed</span>

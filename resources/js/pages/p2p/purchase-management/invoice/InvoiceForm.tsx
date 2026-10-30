@@ -804,6 +804,7 @@ export default function InvoiceForm({
 
   const stage1Gate = useMemo(() => {
     if (!isDirect || stage !== 0 || viewOnly || !draft.supplier) return null;
+    if (directDocType() === 'international') return null;
     const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
     if (gst.tone === 'stop') {
       return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
@@ -814,7 +815,7 @@ export default function InvoiceForm({
         : `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
     }
     return null;
-  }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
+  }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, draft.country, draft.docType, gstApproval]);
 
   const noProducts = stage === 1 && lines.length === 0;
   const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || !!stage1Gate || noProducts || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
@@ -859,8 +860,13 @@ export default function InvoiceForm({
   const advancing = saving && stage < STAGES.length - 1;
 
   const isLast = stage === STAGES.length - 1;
+  const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
   const stageLabel = (i: number) =>
-    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i])) || STAGES[i];
+    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i]))
+    || (!isDirect && i === 1 && !poLoading && !poHasPi
+      ? { title: 'Invoice & Product Details (2-Way Match)', desc: 'Enter invoice details & match products against the PO' }
+      : undefined)
+    || STAGES[i];
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form spi-invform">
