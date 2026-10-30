@@ -842,6 +842,15 @@ export const spiPaymentApi = {
     call('Save SPI TDS', () => api.put(`/p2p/spi/${spiId}/tds`, body),
       (b) => (b as { data: Record<string, unknown> }).data),
 
+  updatePayment: (spiId: number, requestId: number, paymentId: number, body: PoPaymentBody) =>
+    call('Update SPI payment', () => api.post(`/p2p/spi/${spiId}/payment-requests/${requestId}/payments/${paymentId}`,
+      spiPaymentForm(body), { headers: { 'Content-Type': 'multipart/form-data' } }),
+      (b) => (b as { data?: unknown } | null)?.data),
+
+  deletePayment: (spiId: number, requestId: number, paymentId: number) =>
+    call('Delete SPI payment', () => api.delete(`/p2p/spi/${spiId}/payment-requests/${requestId}/payments/${paymentId}`),
+      (b) => (b as { data?: unknown } | null)?.data),
+
   addPayment: (spiId: number, requestId: number, body: PoPaymentBody) =>
     call('Record SPI payment', () => api.post(`/p2p/spi/${spiId}/payment-requests/${requestId}/payments`,
       spiPaymentForm(body), { headers: { 'Content-Type': 'multipart/form-data' } }),

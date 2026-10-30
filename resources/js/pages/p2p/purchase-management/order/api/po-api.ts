@@ -586,7 +586,11 @@ export type PayRequestDetail = {
       id: number; code: string; grand_total: number; net_payable: number; paid: number; balance: number;
       tds_amount: number; open_to_request: number;
     };
-    requests_summary: { total: number; pending: number; approved: number; rejected: number };
+    requests_summary: {
+      total: number; pending: number; approved: number; rejected: number;
+      requested_amount?: number; approved_amount?: number; open_to_request?: number;
+    };
+    requests?: PoPayRequest[];
   } | null;
   payments: (PoPaymentRow & { payment_request_id: number })[];
 };

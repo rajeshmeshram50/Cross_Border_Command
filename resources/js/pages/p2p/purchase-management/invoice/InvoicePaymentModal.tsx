@@ -124,9 +124,10 @@ export default function InvoicePaymentModal({
   };
   const update = async (i: number, p: ReleasePayment) => {
     const target = releases[i];
-    if (!target?.id || !poId) return false;
+    if (!target?.id) return false;
     try {
-      await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
+      if (poId) await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
+      else await spiPaymentApi.updatePayment(spiId, request.rid, target.id, payBody(p));
       toast.success('Payment updated', `${request.id} now shows ${money(p.amount)} for this entry.`);
       await afterChange();
       return true;
@@ -134,10 +135,11 @@ export default function InvoicePaymentModal({
   };
   const remove = async (i: number) => {
     const target = releases[i];
-    if (!target?.id || busyIdx !== null || !poId) return;
+    if (!target?.id || busyIdx !== null) return;
     setBusyIdx(i);
     try {
-      await poPaymentApi.deletePayment(poId, request.rid, target.id);
+      if (poId) await poPaymentApi.deletePayment(poId, request.rid, target.id);
+      else await spiPaymentApi.deletePayment(spiId, request.rid, target.id);
       toast.success('Payment removed', `${money(target.amount)} is back in the balance.`);
       await afterChange();
     } catch (e) { failToast('Could not delete the payment', e); } finally { setBusyIdx(null); }
@@ -354,15 +356,13 @@ export default function InvoicePaymentModal({
                         title={p.file ? `Send ${p.file} to the supplier by email`
                           : 'No proof attached to send — attach one first'}>{ICON_MAIL}</button>
                       <button type="button" className="cpay-act cpay-act--edit"
-                        disabled={!canEdit || p.zohoSynced || !poId}
-                        title={!poId ? 'Editing a payment on a Direct SPI is not available yet'
-                          : p.zohoSynced ? 'Posted to Zoho Books — it cannot be edited here'
+                        disabled={!canEdit || p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be edited here'
                           : canEdit ? 'Edit this payment' : 'This request is not open for payment'}
                         onClick={() => setForm(i)}>{ICON_EDIT}</button>
                       <button type="button" className="cpay-act cpay-act--del"
-                        disabled={!canEdit || busyIdx !== null || p.zohoSynced || !poId}
-                        title={!poId ? 'Deleting a payment on a Direct SPI is not available yet'
-                          : p.zohoSynced ? 'Posted to Zoho Books — it cannot be deleted here'
+                        disabled={!canEdit || busyIdx !== null || p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be deleted here'
                           : canEdit ? 'Delete this payment' : 'This request is not open for payment'}
                         onClick={() => void remove(i)}>{ICON_TRASH}</button>
                     </span>
