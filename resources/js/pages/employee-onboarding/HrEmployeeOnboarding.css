@@ -146,7 +146,7 @@
         [data-bs-theme="dark"] .onb-edit-btn { color: #c4b5fd; background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.38); box-shadow: none; }
         [data-bs-theme="dark"] .onb-edit-btn:hover { background: linear-gradient(135deg,#8b5cf6,#7c3aed); color: #fff; border-color: transparent; box-shadow: 0 5px 13px rgba(124,58,237,.5); }
 
-        .onb-init-btn { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); box-shadow: 0 3px 8px rgba(91,63,209,0.24); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .onb-init-btn { height: 40px; min-height: 40px; padding: 0 16px; border-radius: 9px; font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); box-shadow: 0 3px 8px rgba(91,63,209,0.24); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
         .onb-init-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(91,63,209,0.32); }
         /* Neither button declared a disabled state, so a form mid-save still
            lifted under the pointer as though it were live. */
@@ -155,7 +155,7 @@
           position: relative; overflow: hidden;
           height: 34px; width: auto; flex-shrink: 0;
           gap: 8px; padding: 0 17px;
-          font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: .012em;
+          font-family: var(--font-sans); font-size: 12px; font-weight: 700; letter-spacing: .012em;
           color: #fff; border: none; border-radius: 9px;
           background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%);
           box-shadow: 0 4px 12px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
@@ -1281,9 +1281,9 @@
         .onb-init-footer { background: #fff; border-top: 1px solid #ece9f6; padding: 12px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-init-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-init-footer-meta { font-size: 11px; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; }
-        .onb-init-btn-ghost { padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; background: transparent; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+        .onb-init-btn-ghost { height: 40px; min-height: 40px; padding: 0 16px; border-radius: 8px; font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; background: transparent; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
         .onb-init-btn-ghost:hover { color: #1f2937; border-color: #9ca3af; }
-        .onb-init-btn-outline { padding: 0 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease, color .15s ease; height: 40px; min-height: 40px;}
+        .onb-init-btn-outline { padding: 0 16px; border-radius: 8px; font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease, color .15s ease; height: 40px; min-height: 40px;}
         .onb-init-btn-outline:hover:not(:disabled) { border-color: #7c3aed; color: #4c1d95; background: #f5f0ff; transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,0.18); }
         .onb-init-btn-outline:disabled { background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed; opacity: 0.7; transform: none; box-shadow: none; }
         [data-bs-theme="dark"] .onb-init-btn-outline:disabled { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.40); border-color: var(--vz-border-color); }

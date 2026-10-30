@@ -239,7 +239,11 @@
    just as badly as a narrow one.
    ─────────────────────────────────────────────────────────────────────────── */
 @media (max-height: 900px) {
-  .hrexp-page .frm-cstrip { padding-top: 12px !important; padding-bottom: 12px !important; }
+  /* No vertical padding here. .frm-cstrip.hr-cstrip is a 58px band with
+     padding: 0 — re-adding 12px top and bottom pushed it to 66 on any
+     window under 900px tall, which is most of them, so the one page that
+     was supposed to match every other HRMS header was the one that did
+     not. The height is the min-height; the strip has no slack to give. */
   /* The KPI row and the Analytics panel each carry their own bottom margin. */
   .hrexp-page .hrexp-kpi-row { margin-bottom: 10px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 10px !important; }
@@ -258,7 +262,7 @@
 
 /* Tighter still — a 110% zoom on a 1080p screen lands here (~785px). */
 @media (max-height: 800px) {
-  .hrexp-page .frm-cstrip { padding-top: 8px !important; padding-bottom: 8px !important; }
+  /* Same reason as the 900px query: the band stays 58. */
   .hrexp-page .hrexp-kpi-row { margin-bottom: 8px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 8px !important; }
   .hrexp-page .dt-toolbar-actions .hrexp-cta { padding: 0 12px; }
@@ -304,3 +308,18 @@
    shared by every table in the app. */
 .bpw-root .dt-title-main { font-size: 14.5px; }
 .bpw-root .dt-title-sub  { font-size: 10px; }
+
+/* KPI figure, bigger. The tiles carry the page's headline numbers — total
+   claims, total amount, approved — and at 24px they read as secondary to
+   the hero strip above them. The COUNT BADGES in that strip are untouched:
+   those label a toggle, not a figure. */
+.hrexp-page .hrexp-kpi-row .rec-kpi-num {
+  font-size: 30px;
+  line-height: 1.05;
+}
+@media (max-width: 1399px) {
+  .hrexp-page .hrexp-kpi-row .rec-kpi-num { font-size: 27px; }
+}
+@media (max-width: 991px) {
+  .hrexp-page .hrexp-kpi-row .rec-kpi-num { font-size: 24px; }
+}

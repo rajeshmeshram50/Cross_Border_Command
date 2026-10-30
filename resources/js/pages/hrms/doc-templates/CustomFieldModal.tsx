@@ -135,6 +135,9 @@ export default function CustomFieldModal(props: {
           animation: cfm-fade .18s ease both;
         }
         .cfm-popup {
+          /* The family, once, for everything inside: the inline styles below set
+             a font SIZE and no family, so they inherited Rubik from <body>. */
+          font-family: var(--font-sans);
           width: 100%; max-width: 640px; background: #fff; border-radius: 22px;
           overflow: hidden;
           box-shadow: 0 24px 60px rgba(139,92,246,.18), 0 8px 24px rgba(15,23,42,.20);
@@ -359,11 +362,11 @@ export default function CustomFieldModal(props: {
           {/* Footer */}
           <div className="cfm-footer" style={{ padding: '16px 24px', borderTop: '1px solid #eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
             <button type="button" onClick={onClose} disabled={saving} className="cfm-cancel"
-              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#475569', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#475569', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
               Cancel
             </button>
             <button type="button" onClick={submit} disabled={saving} className="cfm-save-btn"
-              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: 'linear-gradient(135deg,#a78bfa 0%,#8b5cf6 55%,#6d28d9 100%)', border: 0, borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 14px rgba(139,92,246,.35), 0 1px 0 rgba(255,255,255,.18) inset', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: 'linear-gradient(135deg,#a78bfa 0%,#8b5cf6 55%,#6d28d9 100%)', border: 0, borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 14px rgba(139,92,246,.35), 0 1px 0 rgba(255,255,255,.18) inset', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {saving && <span className="cfm-spinner" />}
               {saving ? 'Saving…' : 'Save Field'}
             </button>
