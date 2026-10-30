@@ -646,6 +646,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // The "Make SPI Payment" button. Still recorded against the PO.
         Route::post  ('/{id}/payment-requests/{req}/payments',   [PoPaymentRequestController::class, 'storePaymentFromSpi'])
             ->whereNumber('id')->whereNumber('req');
+        // Edit (multipart, for a corrected proof) and delete a Direct-SPI payment.
+        Route::post  ('/{id}/payment-requests/{req}/payments/{payment}', [PoPaymentRequestController::class, 'updatePaymentFromSpi'])
+            ->whereNumber('id')->whereNumber('req')->whereNumber('payment');
+        Route::delete('/{id}/payment-requests/{req}/payments/{payment}', [PoPaymentRequestController::class, 'destroyPaymentFromSpi'])
+            ->whereNumber('id')->whereNumber('req')->whereNumber('payment');
 
         // Zoho Books — only a standalone invoice creates its own bill.
         Route::post  ('/{id}/zoho-sync',    [SupplierInvoiceController::class, 'zohoSync'])->whereNumber('id');
