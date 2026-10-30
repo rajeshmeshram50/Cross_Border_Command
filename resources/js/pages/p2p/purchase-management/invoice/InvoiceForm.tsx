@@ -320,14 +320,6 @@ export default function InvoiceForm({
   }, [input.poId, input.spiId, set, toast]);
 
   const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
-  useEffect(() => {
-    if (!warehouseId) { setWarehouseRow(null); return; }
-    let live = true;
-    spiApi.warehouseDetail(warehouseId)
-      .then(w => { if (live) setWarehouseRow(w); })
-      .catch(() => { if (live) setWarehouseRow(null); });
-    return () => { live = false; };
-  }, [warehouseId]);
 
   const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
 
@@ -359,6 +351,17 @@ export default function InvoiceForm({
 
   const [stage, setStage] = useState(0);
   const [reached, setReached] = useState(0);
+
+  const warehouseRowId = warehouseRow?.id ?? null;
+  useEffect(() => {
+    if (!warehouseId) { setWarehouseRow(null); return; }
+    if (stage !== 3 || warehouseRowId === warehouseId) return;
+    let live = true;
+    spiApi.warehouseDetail(warehouseId)
+      .then(w => { if (live) setWarehouseRow(w); })
+      .catch(() => { if (live) setWarehouseRow(null); });
+    return () => { live = false; };
+  }, [warehouseId, stage, warehouseRowId]);
 
   useScrollLock(true, '.spi-dt-overlay');
 
