@@ -154,6 +154,9 @@ class PurchaseOrder extends Model
     public function vendor(): BelongsTo        { return $this->belongsTo(Vendor::class)->withTrashed(); }
     public function shipmentOrder(): BelongsTo { return $this->belongsTo(ShipmentOrder::class); }
     public function proformaInvoice(): BelongsTo { return $this->belongsTo(ProformaInvoice::class); }
+    /* lead_id was fillable but had no relation, so $po->lead read as null and
+       anything hanging off the opportunity resolved to nothing. */
+    public function lead(): BelongsTo { return $this->belongsTo(\App\Models\Lead::class); }
     public function client(): BelongsTo        { return $this->belongsTo(Client::class); }
     public function branch(): BelongsTo        { return $this->belongsTo(Branch::class); }
     public function creator(): BelongsTo       { return $this->belongsTo(User::class, 'created_by'); }

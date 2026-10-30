@@ -347,7 +347,7 @@ class RackController extends BaseInventoryController
     {
         $user = $this->tenantUser($request);
         $r = $this->scopeTenant(Rack::query(), $user, $this->branchScope($request, $user))
-            ->with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
+            ->with(['warehouse:id,wh_name,code', 'zone:id,zone_name,code,temp_min_c,temp_max_c'])
             ->withCount('shelves')
             ->findOrFail($id);
 
@@ -372,6 +372,11 @@ class RackController extends BaseInventoryController
                 'Area'    => $r->area_sqft ? number_format((float) $r->area_sqft, 2) . ' Sq. Ft' : null,
                 'Temp'    => $temp,
             ], fn ($v) => $v !== null && $v !== ''),
+            'path'     => [
+                ['label' => 'WAREHOUSE', 'code' => $r->warehouse?->wh_code],
+                ['label' => 'ZONE',      'code' => $r->zone?->zone_code],
+                ['label' => 'RACK',      'code' => $r->rack_code],
+            ],
             'flags'    => array_values(array_filter([
                 $this->flag((bool) $r->cold_chain, 'COLD CHAIN', 'cold'),
                 $this->flag((bool) $r->hazardous, 'HAZARDOUS', 'haz'),

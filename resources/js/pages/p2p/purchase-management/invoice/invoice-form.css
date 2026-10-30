@@ -3091,6 +3091,19 @@
   border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.18);
 }
 .vs3t .vs3-in:not(:placeholder-shown) { border-color: #22d3ee; background: #f0fdff; }
+/* The focus ring is the teal border and glow above, so the browser's own
+   outline goes. It was never switched off, and on keyboard focus (Tab from
+   one row into the next) Chrome drew its thick black ring over the field.
+   Restated for a field that already has text: the filled rule above comes
+   later at the same weight and took its border back to the paler #22d3ee
+   while the field was being typed in. */
+.vs3t .vs3-in:focus,
+.vs3t .vs3-in:focus-visible,
+.vs3t .master-datepicker-toggle:focus-visible { outline: none; }
+.vs3t .vs3-in:not(:placeholder-shown):focus {
+  border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.18);
+}
+.vs3t .master-datepicker-toggle:focus-visible { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.18); }
 .vs3t .master-datepicker-toggle .master-datepicker-value { font-size: 11.5px; font-weight: 700; color: #0c2c3a; }
 
 .vs3t .vs3-rm {
@@ -3140,6 +3153,13 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
+/* Dark had no focus state of its own, and the dark base rule above outranks
+   the light :focus one, so a focused field in dark showed no ring at all.
+   Same teal ring, on the dark field. */
+[data-bs-theme="dark"] .vs3t .vs3-in:focus,
+[data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown):focus {
+  background: #0e2530; border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+}
 [data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }
 
 .invf-pb-rail {
@@ -3294,25 +3314,6 @@
   .spi-invform.cpf-form .spi-dt-foot { margin: 0 -8px; }
 }
 
-.spi-invform .spi-save-lock {
-  position: fixed; inset: 0; z-index: 1220;
-  display: flex; flex-direction: column; gap: 12px;
-  align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.62);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
-  cursor: progress;
-}
-.spi-invform .spi-save-lock-spinner {
-  width: 40px; height: 40px; border-radius: 50%;
-  border: 3.5px solid rgba(8, 145, 178, 0.22);
-  border-top-color: #0891b2;
-  animation: spiSaveSpin .7s linear infinite;
-}
-.spi-invform .spi-save-lock-text { font-size: 13px; font-weight: 700; color: #0e7490; letter-spacing: .2px; }
-@keyframes spiSaveSpin { to { transform: rotate(360deg); } }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock { background: rgba(10, 22, 32, 0.66); }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock-spinner { border-color: rgba(34, 211, 238, 0.22); border-top-color: #22d3ee; }
-[data-bs-theme="dark"] .spi-invform .spi-save-lock-text { color: #67e8f9; }
 .stk-pv { display: block; width: 100%; height: min(64vh, 620px); border: 1px solid #dcecf2; border-radius: 12px; background: #fff; }
 .stk-pv--load { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #0e7490; background: #f4fbfd; }
 [data-bs-theme="dark"] .stk-pv { border-color: rgba(148, 163, 184, .22); }

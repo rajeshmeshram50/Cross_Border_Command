@@ -374,7 +374,7 @@ class ZoneController extends BaseInventoryController
     {
         $user = $this->tenantUser($request);
         $z = $this->scopeTenant(Zone::query(), $user, $this->branchScope($request, $user))
-            ->with('warehouse:id,wh_name')
+            ->with('warehouse:id,wh_name,code')
             ->withCount('racks')
             ->findOrFail($id);
 
@@ -396,6 +396,10 @@ class ZoneController extends BaseInventoryController
                 'Capacity' => $z->capacity_litres ? number_format((float) $z->capacity_litres) . ' L' : null,
                 'Temp'     => $temp,
             ], fn ($v) => $v !== null && $v !== ''),
+            'path'     => [
+                ['label' => 'WAREHOUSE', 'code' => $z->warehouse?->wh_code],
+                ['label' => 'ZONE',      'code' => $z->zone_code],
+            ],
             'flags'    => array_values(array_filter([
                 $this->flag((bool) $z->cold_chain, 'COLD CHAIN', 'cold'),
                 $this->flag((bool) $z->hazardous, 'HAZARDOUS', 'haz'),
