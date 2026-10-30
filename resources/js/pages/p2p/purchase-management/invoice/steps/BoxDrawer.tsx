@@ -295,7 +295,10 @@ export default function BoxDrawer({
   return (
     <Shell onClose={variant === 'modal' ? onClose : undefined}>
 
-        <div className="vti-dw-strip">
+        {/* inert while saving, like the body below: the quantity stepper,
+            the unit toggle, Upload and Camera all live in this strip, outside
+            the body's veil, so the quantity could still be changed mid-save. */}
+        <div className="vti-dw-strip" inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
             <StripItem label="Box ID" className="strip-boxid">
@@ -417,14 +420,17 @@ export default function BoxDrawer({
           </div>
         )}
 
-        <div className="vti-dw-body">
+        <div className="vti-dw-body" inert={saving}>
           {/* While a save is in flight the fields must stop accepting input:
               a quantity or an identifier typed after collect() has run is not
               in the request, so it would be silently dropped and the form
               would show a value the server never received. The veil also says
               the save IS running — the Save button's "Saving…" is in the strip
               overhead, easy to miss when you are looking at the row you just
-              edited. */}
+              edited.
+              The veil alone did not do it: it covers only the body's own box,
+              and keyboard focus went straight under it. `inert` on the body
+              (and on the strip above) is what actually freezes the fields. */}
           {saving && (
             <div className="vti-dw-saving" role="status" aria-live="polite">
               <span className="vti-dw-saving__box">

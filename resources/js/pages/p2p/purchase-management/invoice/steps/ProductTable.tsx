@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -208,6 +208,35 @@ export default function ProductTable({
     }
   };
 
+  /* Whether the rows overflow the box's 500px cap. The scrollbar lane
+     (scrollbar-gutter) is reserved only then: reserved always, a table with a
+     row or two had an empty 8px white strip down its right edge, beside the
+     Action column, with no scrollbar ever coming to fill it.
+     It also hands the CSS the sticky header's and totals row's heights, and
+     the horizontal bar's: the vertical track is inset by the first two so the
+     scrollbar runs beside the rows only, not up past the header or down past
+     the totals. They are whatever the text makes them, so they are measured. */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [rowsOverflow, setRowsOverflow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => {
+      setRowsOverflow(el.scrollHeight > el.clientHeight + 1);
+      const cs = getComputedStyle(el);
+      const borders = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      el.style.setProperty('--spi-th', `${el.querySelector('thead')?.offsetHeight ?? 0}px`);
+      el.style.setProperty('--spi-tf', `${el.querySelector('tfoot')?.offsetHeight ?? 0}px`);
+      el.style.setProperty('--spi-hb', `${Math.max(0, el.offsetHeight - el.clientHeight - borders)}px`);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    const table = el.querySelector('table');
+    if (table) ro.observe(table);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       <div className="cpd-legend">
@@ -224,7 +253,7 @@ export default function ProductTable({
       {/* `--rows` caps the height at about five lines and scrolls the rest.
           Only the invoice's copy of this table takes it; the PO wizard's own
           ProductTable shares the stylesheet but not this modifier. */}
-      <div className="cpd-scroll cpd-scroll--rows">
+      <div ref={scrollRef} className={`cpd-scroll cpd-scroll--rows${rowsOverflow ? ' is-overflowing' : ''}`}>
         <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
 
         {(adding || editing != null) && (

@@ -60,7 +60,7 @@ const PO_TYPE_LABEL: Record<InvoicePoType, string> = {
 };
 
 function PoTypePillBase({ type }: { type?: InvoicePoType }) {
-  if (!type) return <span className="ord-dash">—</span>;
+  if (!type) return <span className="ord-dash">N/A</span>;
   return (
     <span className={`ord-typepill ord-typepill--${PO_TYPE_CLASS[type]}`}>
       <span className="ord-typepill__ico">{type === 'material' ? <Box /> : <Wrench />}</span>
@@ -87,7 +87,7 @@ const RISK: Record<InvoiceRiskLevel, { label: string; variant: BadgeVariant; ico
 };
 
 function RiskPillBase({ level }: { level?: InvoiceRiskLevel }) {
-  if (!level) return <span className="ord-dash">—</span>;
+  if (!level) return <span className="ord-dash">N/A</span>;
   const r = RISK[level];
   return (
     <Badge appearance="outline" variant={r.variant} icon={r.icon}

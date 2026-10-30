@@ -2829,6 +2829,26 @@
 }
 .spi-list .tc-wl-rows-btn { height: 100%; }
 
+/* The SPI payment popups — Payment Requests History, Raise Request and Record
+   Payment — at the same 40px. They are built on the Purchase Order's .mpr-card,
+   whose own scale is 36 (footer) and 34 (TDS button), and the PO screens keep
+   that. The popups portal to <body>, outside .spi-list, so they are picked out
+   by their title ids instead: all three are "inv-…", which no PO popup uses. */
+.mpr-card[aria-labelledby^="inv-"] .spi-mdl-cancel,
+.mpr-card[aria-labelledby^="inv-"] .spi-mdl-confirm,
+.mpr-card[aria-labelledby^="inv-"] .cpay-add,
+.mpr-card[aria-labelledby^="inv-"] .mpr-tdsbtn,
+.mpr-card[aria-labelledby^="inv-"] .mpr-paybtn {
+  height: 40px; min-height: 40px;
+  padding-top: 0; padding-bottom: 0;
+  box-sizing: border-box;
+}
+.mpr-card[aria-labelledby^="inv-"] .mpr-hero__close,
+.mpr-card[aria-labelledby^="inv-"] .mpr-viewbtn {
+  width: 40px; height: 40px;
+  box-sizing: border-box;
+}
+
 /* Narrow screens: the base rule drops the tab to 11px on 7px 11px, which a
    stated 40px height would fight. The tab shrinks with it; the rail follows,
    since its height is what holds the two in step. */

@@ -144,11 +144,11 @@
    the flat #0b7c9b further down this file. This one says so itself rather
    than leaning on that rule, since a cell left transparent in a sticky
    header is the bug, not the default.
-   The 1px inset divider still goes, so no hairline splits what reads as one
-   bar with the band beside it. */
+   The 1px vertical divider still goes, so no hairline splits what reads as
+   one bar with the band beside it; its shadow (the line under the band) is
+   set with the other header dividers further down. */
 .cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail {
   background: #0b7c9b;
-  box-shadow: none !important;
 }
 
 /* Description is a row-two cell now rather than a two-row span, so it lands
@@ -184,12 +184,18 @@
    The seal under the bottom row is separate and stays whatever happens to
    the rest: that edge is where the rows slide beneath the header. The pinned
    cells restate it because their own box-shadow would otherwise replace it
-   at the two columns that never scroll away. */
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th,
+   at the two columns that never scroll away.
+
+   The line under the band is an inset shadow, not a border. In a
+   `border-collapse: collapse` table Chrome paints the borders with the table,
+   not with the sticky cells, so on scroll the 1px border stayed behind and
+   left a gap between the two header rows — a white line with the rows
+   travelling through it. A shadow is painted by the cell and moves with it. */
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 0; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { box-shadow: inset 1px 0 0 #217f99, inset 0 -1px 0 #2b859d, 0 1px 0 0 #0e7490; }
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
-.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th:first-child,
-.cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th.cpd-grp-tail { box-shadow: inset 0 -1px 0 #2b859d, 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th:first-child { box-shadow: 0 1px 0 0 #0e7490; }
 .cpd-tbl--pd.spi-prodtbl thead tr:last-child th.cpd-stick {
   box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
 }
@@ -706,6 +712,14 @@
   animation: vtiDwSpin .6s linear infinite;
 }
 [data-bs-theme="dark"] .vti-dw-saving { background: rgba(8,20,28,.6); }
+/* The strip is inert while saving (BoxDrawer); its controls dim so they do
+   not look usable. The Save button keeps full strength — it is what says
+   "Saving…". */
+.vti-dw-strip[inert] { cursor: progress; }
+.vti-dw-strip[inert] .vti-dw-qty,
+.vti-dw-strip[inert] .vti-dw-unit-toggle,
+.vti-dw-strip[inert] .vti-dw-icon-btn,
+.vti-dw-strip[inert] .vti-dw-sticker-btn { opacity: .55; }
 [data-bs-theme="dark"] .vti-dw-saving__box { background: #0f2630; border-color: rgba(34,211,238,.35); color: #7dd3e8; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
 /* z-index keeps the accent above anything a child paints over it. Every other
@@ -2594,6 +2608,41 @@
 /* The cancel slot is the PDF action here, so it carries an icon. The shared
    rule does not expect one and stacks it above the label. */
 .invf-stk .spi-mdl-cancel { display: inline-flex; align-items: center; gap: 6px; }
+/* Only the body scrolls. The base .spi-mdl scrolls as one box, so a mixed box
+   with a long contents list ran its scrollbar the full height of the dialog —
+   over the cyan header and through its rounded corner. Same cure as the SPI
+   type chooser (.spi-mdl--wide in direct-spi.css): the shell is a column that
+   does not scroll, header and footer hold, and the track starts under the
+   header. (0,2,0) so it beats the base `overflow-y: auto` in any load order. */
+.spi-mdl.invf-stk { display: flex; flex-direction: column; overflow: hidden; }
+.invf-stk > .spi-mdl-head,
+.invf-stk > .spi-mdl-foot { flex: 0 0 auto; }
+.invf-stk > .spi-mdl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b9dde8 transparent;
+}
+.invf-stk > .spi-mdl-body::-webkit-scrollbar { width: 8px; }
+.invf-stk > .spi-mdl-body::-webkit-scrollbar-track { background: transparent; }
+.invf-stk > .spi-mdl-body::-webkit-scrollbar-thumb { background: #b9dde8; border-radius: 999px; }
+[data-bs-theme="dark"] .invf-stk > .spi-mdl-body { scrollbar-color: rgba(34, 211, 238, .28) transparent; }
+[data-bs-theme="dark"] .invf-stk > .spi-mdl-body::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+/* PDF and Print Label side by side, one height. Both pad 10px, but PDF has a
+   1.5px border and Print Label none, and their icons are 13px and 14px — so
+   the pair came out at different heights. 40px is the SPI button height. */
+.invf-stk .spi-mdl-foot-btns .spi-mdl-cancel,
+.invf-stk .spi-mdl-foot-btns .spi-mdl-confirm {
+  box-sizing: border-box;
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
 
 /* ── Dark mode ────────────────────────────────────────────────────────────
    Step 03 was written light-only: on a dark page its card stayed pure white
@@ -2619,6 +2668,31 @@
   background: rgba(12, 38, 48, .7);
   border-color: rgba(34, 211, 238, .25);
   color: #7dd3fc;
+}
+/* The Packaging Scenarios chevron had no dark rule, so it stayed a white
+   tile. Same dark chevron as .cpf-chev (create-po.css); the white inset
+   sheen goes too, since on a dark tile it draws a bright line. */
+/* Not-yet-reached step cards in dark mode. p2p-detail.css fills them #142833,
+   a shade off the strip behind them, and the arrow cut takes the border with
+   it — so the cards, arrow and all, melted into the strip and only the text
+   said a step was there. A clearly lighter slab, so the shape is the outline,
+   and text bright enough to read. Upcoming cards only: the active and done
+   cards keep their own fills. Scoped to this form; the PO and Debit Note
+   wizards share the base rule. */
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) {
+  background: linear-gradient(135deg, #1e3a49 0%, #193140 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-lbl { color: #8fb3c4; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-big { color: #5b8196; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-title { color: #d3e1ea; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-desc { color: #93abba; }
+[data-bs-theme="dark"] .spi-invform .spi-dt-step:not(.is-active):not(.is-done) .spi-dt-step-ghost { color: rgba(148, 197, 220, .08); }
+[data-bs-theme="dark"] .pkg-toggle {
+  background: #13242e;
+  border-color: rgba(34, 211, 238, .25);
+  color: #67e8f9;
+  box-shadow: none;
 }
 
 /* Tables: header, body text, row dividers and the zebra / hover accents. */
@@ -3364,8 +3438,40 @@
      bar runs in a lane of its own and the header reaches the full width of
      what it is heading. The bar still spans the container's height - it
      belongs to this box, and the header is inside it - but it no longer sits
-     on top of the header. */
-  scrollbar-gutter: stable;
+     on top of the header.
+     Only while the rows actually overflow (ProductTable sets .is-overflowing).
+     Reserved always, a short table had an empty 8px white strip beside its
+     Action column that no scrollbar ever filled. */
+}
+.cpd-scroll--rows.is-overflowing { scrollbar-gutter: stable; }
+/* The vertical bar runs beside the ROWS only. The track belongs to the whole
+   box, so it ran up past the sticky header and down past the sticky totals —
+   the bar travelled over both. Its margins inset it by their heights, which
+   ProductTable measures into --spi-th / --spi-tf. Chrome reads these
+   ::-webkit-scrollbar rules because nothing here sets scrollbar-width (see
+   below); Firefox keeps its plain full-height bar.
+   The end arrows go: they sit outside the track's margins, so they would still
+   have stood beside the header and the totals. */
+.cpd-scroll--rows.is-overflowing::-webkit-scrollbar-track:vertical {
+  margin-top: var(--spi-th, 0px);
+  margin-bottom: var(--spi-tf, 0px);
+}
+.cpd-scroll--rows::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+/* The lane beside the header and the totals, painted as their continuation so
+   the header band and the totals row reach the box's edge instead of stopping
+   8px short at an empty notch. The box's own background shows through the
+   transparent track, so two strips of it are coloured, measured from the
+   border box: 1px in for the border, and the bottom one lifted by the
+   horizontal bar's height (--spi-hb). Painted behind the bar, never over it. */
+.cpd-scroll--rows.is-overflowing {
+  background-image: linear-gradient(#0b7c9b, #0b7c9b), linear-gradient(#e8f8fc, #e8f8fc);
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  background-size: 8px var(--spi-th, 0px), 8px var(--spi-tf, 0px);
+  background-position: right 1px top 1px, right 1px bottom calc(1px + var(--spi-hb, 0px));
+}
+[data-bs-theme="dark"] .cpd-scroll--rows.is-overflowing {
+  background-image: linear-gradient(#0b7c9b, #0b7c9b), linear-gradient(#0d2e3b, #0d2e3b);
 }
 /* No `scrollbar-width` here either, for the reason `.cpd-scroll` sets out:
    setting it makes Chrome ignore the 8px below and draw its own, heavier bar.
@@ -3408,6 +3514,14 @@
 /* `scrollbar-color` is left to the @supports block in create-po.css for the
    same reason: setting it here would switch Chrome off the 8px bar again. */
 [data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+/* The totals row is sticky to the bottom of this box, and in dark its cells
+   were rgba(8,145,178,.16) (create-po.css) — a tint of whatever is behind
+   them, which here is the rows scrolling underneath. Their figures showed
+   through the totals and the two sets of numbers overprinted. Same colour
+   mixed down to an opaque one: .16 #0891b2 over the #0e1b24 row is #0d2e3b.
+   The grand total keeps its own solid gradient. Light mode was never
+   affected: its footer cells are already a solid gradient. */
+[data-bs-theme="dark"] .cpd-scroll--rows .cpd-tbl tfoot td:not(.cpd-foot-final) { background: #0d2e3b; }
 
 /* A header that carries an explanation. Dotted underline rather than an info
    icon: the icon would need its own space in a cell that is already the
@@ -3450,6 +3564,23 @@
 .vti-wrap--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
 .vti-wrap--rows::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
 .vti-wrap--rows .vti-table thead { position: sticky; top: 0; z-index: 4; }
+
+/* The box generation card takes the height left above the footer, so one
+   product (or none) no longer leaves a band of empty page under the card —
+   the same fill the PO's documents step does with .cpf-fill.
+   Grow only, never shrink (`1 0 auto`): the card is overflow:hidden, so a
+   shrinkable one would clip its own rows instead of letting the form scroll.
+   Only this card: the packed-products card wears the same .vti-box chrome
+   and should keep its own height. */
+.cpf-form .cpf-stepwrap > .vti-box--fill { display: flex; flex-direction: column; flex: 1 0 auto; }
+.vti-box--fill > .vti-header,
+.vti-box--fill > .vti-selection-bar { flex-shrink: 0; }
+.vti-box--fill > .vti-table-wrap { flex: 1 0 auto; }
+/* Phones scroll the whole form, so there is no spare height to fill. */
+@media (max-width: 760px) {
+  .cpf-form .cpf-stepwrap > .vti-box--fill,
+  .vti-box--fill > .vti-table-wrap { flex: 0 0 auto; }
+}
 
 [data-bs-theme="dark"] .vti-wrap--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
 [data-bs-theme="dark"] .vti-wrap--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
@@ -3899,6 +4030,12 @@
 .spi-invform .spi-prodtbl .cpd-addbtn,
 .spi-invform .spi-prodtbl .cpd-del {
   width: 40px; height: 40px; min-height: 40px;
+}
+/* The header Close, beside the pills. create-po.css pins it at 42 under
+   `.cpf-form`, and that sheet can load after this one, so both form classes
+   are named here to win on specificity rather than on load order. */
+.cpf-form.spi-invform .spi-dt-btn-close {
+  height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0;
 }
 
 /* The design's Action column: a red-outlined bin, square, on the row's own
@@ -4398,6 +4535,29 @@
   font-size: 12.5px; font-weight: 700; letter-spacing: -.1px;
 }
 .vti-dw-field .master-datepicker-placeholder { font-weight: 500; }
+
+/* Attachment names are cut at 25 characters in the JSX (full name in the
+   tooltip), so they stay on one line; the ellipsis is the backstop if the
+   field is narrower than those 25. */
+.spi-invform .spi-dt-file-txt { white-space: nowrap; text-overflow: ellipsis; }
+
+/* The footer is part of the form's column, not fixed over it.
+   Fixed, it sat on top of a body that ran to the bottom of the window, so the
+   body's scrollbar ran on underneath the footer to the very bottom edge, and
+   the body needed 84px of bottom padding just to keep its last card out from
+   under it. In the column the body ends where the footer starts: the
+   scrollbar stops at the footer, and the padding is only breathing room.
+   The negative margin undoes the form's side padding (12px, 8px on a phone)
+   so the bar still runs edge to edge as it did when fixed. */
+.spi-invform.cpf-form .spi-dt-foot {
+  position: relative; left: auto; right: auto; bottom: auto;
+  flex: 0 0 auto;
+  margin: 0 -12px;
+}
+.spi-invform.cpf-form .spi-dt-body { padding-bottom: 12px; }
+@media (max-width: 760px) {
+  .spi-invform.cpf-form .spi-dt-foot { margin: 0 -8px; }
+}
 
 /* Save & Next lock — the Customer form's (.acm-save-lock) in this form's teal.
    Fixed, not absolute: the overlay scrolls and the footer is fixed, so only a

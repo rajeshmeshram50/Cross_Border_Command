@@ -1516,6 +1516,12 @@ class SupplierInvoiceController extends Controller
      */
     private function validateInvoiceDetails(Request $request, $user, SupplierInvoice $spi): array
     {
+        /* The supplier cannot bill before the order was placed. A Direct SPI
+           has no purchase order, so there is nothing to hold it to. */
+        $poDate = $spi->purchase_order_id
+            ? optional($spi->purchaseOrder)->po_date?->toDateString()
+            : null;
+
         return $request->validate([
             'invoice_no' => [
                 'required',
@@ -1525,12 +1531,18 @@ class SupplierInvoiceController extends Controller
                     ->where(fn($q) => $q->where('client_id', $user->client_id)->where('vendor_id', $spi->vendor_id))
                     ->ignore($spi->id),
             ],
-            'invoice_date'  => ['required', 'date', 'before_or_equal:today'],
+            'invoice_date'  => array_values(array_filter([
+                'required', 'date', 'before_or_equal:today',
+                $poDate ? "after_or_equal:$poDate" : null,
+            ])),
             'eway_no'       => ['nullable', 'string', 'max:40'],
             'currency_code' => ['nullable', 'string', 'size:3', 'required_if:document_type,international'],
             'exchange_rate' => ['nullable', 'numeric', 'gt:0'],
         ], [
             'invoice_no.unique' => 'This supplier has already billed that invoice number.',
+            'invoice_date.after_or_equal' => $poDate
+                ? 'The purchase invoice date cannot be earlier than the PO date (' . date('d-M-Y', strtotime($poDate)) . ').'
+                : 'The purchase invoice date cannot be earlier than the PO date.',
         ]);
     }
 

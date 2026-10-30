@@ -134,7 +134,14 @@ function InvoiceTableRowBase({
       <td><SupplierCell name={row.supplierName} category={row.supplierCategory} /></td>
       <td><RiskPill level={row.riskLevel} /></td>
 
-      {on('edd') && <td><span className="ord-edd">{formatDmy(row.expectedDeliveryDate)}</span></td>}
+      {/* formatDmy's own empty value is a dash app-wide; this list says N/A. */}
+      {on('edd') && (
+        <td>
+          {row.expectedDeliveryDate
+            ? <span className="ord-edd">{formatDmy(row.expectedDeliveryDate)}</span>
+            : <span className="ord-dash">N/A</span>}
+        </td>
+      )}
 
       {on('totalPo') && <td><MoneyCell value={row.totalPoAmount} /></td>}
       {on('netPayable') && <td><MoneyCell value={row.netPayable} tone="net" /></td>}

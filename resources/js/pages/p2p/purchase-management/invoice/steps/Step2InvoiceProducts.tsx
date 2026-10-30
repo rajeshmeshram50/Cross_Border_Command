@@ -1,5 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
@@ -10,6 +11,8 @@ import type { ProductLine, TaxMode } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
+
+const FILE_NAME_MAX = 25;
 
 const ICON_PICK_UPLOAD = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -104,7 +107,10 @@ export default function Step2InvoiceProducts({
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
             <Field label="PURCHASE INVOICE DATE" req>
-              <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly} />
+              {/* The supplier cannot bill before the order was placed. A Direct
+                  SPI has no purchase order, so nothing to hold it to. */}
+              <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
+                minDate={!direct && draft.poDate ? draft.poDate : undefined} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req>
               <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly} />
@@ -237,7 +243,12 @@ function FilePick({ label, value, onPick, disabled = false }: { label: string; v
 
   return (
     <div ref={rowRef} className="spi-dt-file">
-      <span className="spi-dt-file-txt"><IcoPaperclip /> {value || 'Choose file…'}</span>
+      {/* Long names are cut at 25 characters; the full one is in the tooltip. */}
+      <Tooltip label={value && value.length > FILE_NAME_MAX ? value : undefined}>
+        <span className="spi-dt-file-txt">
+          <IcoPaperclip /> {value ? (value.length > FILE_NAME_MAX ? `${value.slice(0, FILE_NAME_MAX)}…` : value) : 'Choose file…'}
+        </span>
+      </Tooltip>
       <button
         type="button"
         ref={btnRef}

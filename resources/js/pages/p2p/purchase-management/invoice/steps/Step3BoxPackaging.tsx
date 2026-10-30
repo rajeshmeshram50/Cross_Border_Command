@@ -808,7 +808,10 @@ export default function Step3BoxPackaging({
         </div>
       </div>
 
-      <div className="vti-box">
+      {/* Frozen while any box is saving: another row's Apply, + Single Box or
+          checkbox would otherwise start a second change mid-save. The drawer
+          inside shows the save; this only stops the clicks around it. */}
+      <div className="vti-box vti-box--fill" inert={savingKey !== null} aria-busy={savingKey !== null}>
         <div className="vti-header">
           <div className="vti-header-ico"><IcoShip size={18} stroke={2.2} /></div>
           <div className="vti-header-text">

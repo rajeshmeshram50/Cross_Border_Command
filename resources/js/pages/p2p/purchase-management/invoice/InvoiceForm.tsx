@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
 import './invoice-form.css';
@@ -502,6 +503,13 @@ export default function InvoiceForm({
     ].filter(Boolean);
     if (missing.length) {
       toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    /* The picker already greys out the days before the PO; this catches a
+       date saved before that rule, which the picker still shows. */
+    if (!isDirect && draft.poDate && draft.invoiceDate < draft.poDate) {
+      toast.warning('Invoice date is before the PO date',
+        `The purchase invoice date cannot be earlier than the PO date (${formatDmy(draft.poDate)}).`);
       return;
     }
     if (isDirect) {
