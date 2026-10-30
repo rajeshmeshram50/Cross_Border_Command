@@ -273,7 +273,7 @@ export default function ProductTable({
               <Row
                 key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched} showPi={showPi}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
-                duplicateOf={twoWay ? duplicateOf : undefined}
+                duplicateOf={duplicateOf}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
                 onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
