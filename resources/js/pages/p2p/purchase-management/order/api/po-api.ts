@@ -586,7 +586,15 @@ export type PayRequestDetail = {
       id: number; code: string; grand_total: number; net_payable: number; paid: number; balance: number;
       tds_amount: number; open_to_request: number;
     };
-    requests_summary: { total: number; pending: number; approved: number; rejected: number };
+    /* The richer summary the backend now sends, across ALL the SPI's requests. */
+    requests_summary: {
+      total: number; pending: number; approved: number; rejected: number;
+      total_requests?: number; approved_count?: number; pending_count?: number; rejected_count?: number;
+      requested_amount?: number; awaiting_amount?: number; approved_amount?: number;
+      approved_unpaid?: number; paid?: number; open_to_request?: number;
+    };
+    /* The other requests on this invoice, same shape as the PO list. */
+    requests?: PoPayRequest[];
   } | null;
   payments: (PoPaymentRow & { payment_request_id: number })[];
 };

@@ -137,7 +137,9 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     .sort((a, b) => b.poDate.localeCompare(a.poDate));
 
   const doc = docOf(row);
-  const poRequests = d.po?.requests ?? [];
+  /* A Direct SPI has no d.po; its sibling requests arrive under d.spi. Reading
+     only d.po left the Linked requests panel empty for a Direct SPI. */
+  const poRequests = d.po?.requests ?? d.spi?.requests ?? [];
   const current = poRequests.find((q) => q.id === row.id);
   const others = poRequests.filter((q) => q.id !== row.id);
   const linked = [...(current ? [current] : []), ...others].map((q) => linkedRow(q, row));
@@ -175,9 +177,10 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     } : {
       total: sp?.grand_total ?? row.totalAmount, net: sp?.net_payable ?? row.totalAmount,
       paid: sp?.paid ?? 0, balance: sp?.balance ?? 0,
-      approvedTotal: row.approvedAmount ?? 0,
-      available: sp?.open_to_request ?? 0,
-      prevRequested: 0,
+      /* Across ALL the SPI's requests, from the summary - not this one request. */
+      approvedTotal: d.spi?.requests_summary?.approved_amount ?? row.approvedAmount ?? 0,
+      available: d.spi?.requests_summary?.open_to_request ?? sp?.open_to_request ?? 0,
+      prevRequested: Math.max(0, (d.spi?.requests_summary?.requested_amount ?? row.requestedAmount) - row.requestedAmount),
     },
     linked,
     payments: d.payments.map((p) => {
