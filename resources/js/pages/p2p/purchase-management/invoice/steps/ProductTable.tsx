@@ -15,9 +15,11 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote,
+  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, rowIssues,
 }: {
   lines: ProductLine[];
+  /** Cells a refused Update & Next flagged, by line index. */
+  rowIssues?: Record<number, { product?: string; qty?: string }>;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
   /** Drop a line the supplier did not invoice. Without it the Action column
    *  has nothing to do, so it is not drawn at all. */
@@ -380,6 +382,7 @@ export default function ProductTable({
                 onOpenDetail={setDetailId}
                 onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
                 showAction={canRemove}
+                issue={rowIssues?.[i]}
               />
             ))}
           </tbody>
@@ -424,9 +427,11 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  matched, onRemove, showAction, duplicateOf,
+  matched, onRemove, showAction, duplicateOf, issue,
 }: {
   duplicateOf?: (productId: number, index: number) => boolean;
+  /** This line's flagged cells — the same red cell and note the PO table uses. */
+  issue?: { product?: string; qty?: string };
   line: ProductLine;
   index: number;
   /** Matches the header: no purchase order columns. */
@@ -469,7 +474,7 @@ const Row = memo(function Row({
         </td>
       )}
 
-      <td className={`cpd-prodcell cpd-ed${matched ? '' : ' cpd-stick cpd-stick--2'}`}>
+      <td className={`cpd-prodcell cpd-ed${matched ? '' : ' cpd-stick cpd-stick--2'}${issue?.product ? ' cpd-cell-err' : ''}`}>
         <div className="cpd-prod cpd-prod--po">
           <div className="cpd-pick">
             <MasterSelect
@@ -533,6 +538,7 @@ const Row = memo(function Row({
               </button>
             </Tooltip>
           </div>
+          {issue?.product && <div className="cpd-cell-msg">{issue.product}</div>}
         </div>
       </td>
 
@@ -560,12 +566,14 @@ const Row = memo(function Row({
           {openQtyOf(line)}
         </td>
       )}
-      <td className="cpd-c cpd-ed">
+      <td className={`cpd-c cpd-ed${issue?.qty ? ' cpd-cell-err' : ''}`}>
         <input
           className="cpd-in cpd-in--num" type="number" min={0} readOnly={readOnly}
+          aria-invalid={!!issue?.qty || undefined}
           value={line.spiQty}
           onChange={e => patch({ spiQty: Number(e.target.value) || 0 })}
         />
+        {issue?.qty && <div className="cpd-cell-msg">{issue.qty}</div>}
       </td>
 
       {/* Missing and extra are differences FROM the PI. With no PI they are

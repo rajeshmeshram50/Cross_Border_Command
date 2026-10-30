@@ -4031,6 +4031,19 @@
 .spi-invform .spi-prodtbl .cpd-del {
   width: 40px; height: 40px; min-height: 40px;
 }
+/* Stage 02's refused-save red, for the two controls whose own border this
+   form restates: the date picker (MasterDatePicker's .invalid is (0,2,0)
+   and its orange-red is not the red the inputs beside it use) and the
+   product picker in the table (create-po.css pins it grey at (0,3,0)). Same
+   red, same ring as .spi-dt-inp.is-invalid, so the row of fields agrees. */
+.spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle,
+.spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle:hover:not([aria-disabled="true"]) {
+  border-color: #ef4444; background: #fef2f2; box-shadow: 0 0 0 3px rgba(239,68,68,.1);
+}
+.spi-invform .cpd-cell-err .cpd-pick .master-select-toggle { border-color: #ef4444; }
+[data-bs-theme="dark"] .spi-invform .master-datepicker-wrap.invalid .master-datepicker-toggle { background: rgba(239,68,68,.1); }
+[data-bs-theme="dark"] .spi-invform .cpd-cell-err .cpd-pick .master-select-toggle { border-color: #ef4444; }
+
 /* The header Close, beside the pills. create-po.css pins it at 42 under
    `.cpf-form`, and that sheet can load after this one, so both form classes
    are named here to win on specificity rather than on load order. */

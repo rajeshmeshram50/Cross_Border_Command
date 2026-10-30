@@ -2814,6 +2814,19 @@
 }
 .spi-list .spi-head-btn { padding-left: 20px; padding-right: 20px; }
 
+/* Hover flicker on the row actions. On hover an .ord-btn lifts 1px
+   (order.css), which pulls its bottom edge out from under a pointer resting
+   on that edge — hover drops, the button settles back under the pointer,
+   hover returns, and it loops: the button blinks. A transparent strip 2px
+   below the button keeps the pointer inside it through the lift, so the
+   hover area no longer moves away from the mouse. The lift itself stays. */
+.spi-list .ord-btn { position: relative; }
+.spi-list .ord-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 -2px;
+}
+
 /* The pager's own controls. The two nav circles are buttons; the rows-per-page
    pill holds one, and the pill is what has the height, so the button fills it
    rather than stretching past it. The count pills beside them are not buttons,

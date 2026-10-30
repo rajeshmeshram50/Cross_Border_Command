@@ -14,6 +14,36 @@ const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/Ca
 
 const FILE_NAME_MAX = 25;
 
+/** What Stage 02 still lacks, field by field. Rows are keyed by line index. */
+export interface Stage2Issues {
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  invoiceFile?: string;
+  rows: Record<number, { product?: string; qty?: string }>;
+}
+
+/* Everything that turns red on this step, in the order it appears on the
+   page — querySelector returns the first in document order, which is the
+   one to take the user to. */
+const INVALID_SEL = [
+  '.spi-invform .spi-dt-inp.is-invalid',
+  '.spi-invform .master-datepicker-wrap.invalid',
+  '.spi-invform .spi-dt-file.is-invalid',
+  '.spi-invform .cpd-cell-err',
+].join(', ');
+
+/** Scrolls the first flagged field to the middle of the view and puts the
+ *  cursor in it — an input directly, a picker or file row by its own control. */
+function focusFirstInvalid() {
+  const el = document.querySelector<HTMLElement>(INVALID_SEL);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  const target = el.matches('input')
+    ? el
+    : el.querySelector<HTMLElement>('input:not([type="hidden"]):not([hidden]), button:not(:disabled), [tabindex="0"]');
+  target?.focus({ preventScroll: true });
+}
+
 const ICON_PICK_UPLOAD = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
@@ -27,8 +57,13 @@ const ICON_PICK_CAMERA = (
 
 export default function Step2InvoiceProducts({
   draft, set, lines, onChangeLine, onRemoveLine, onAddLine, removedCount = 0, onRestoreLines,
-  taxMode, onPickFile, readOnly = false, direct = false, matched = true,
+  taxMode, onPickFile, readOnly = false, direct = false, matched = true, issues, check = 0,
 }: {
+  /** Shown only after an Update & Next has been refused; undefined before. */
+  issues?: Stage2Issues;
+  /** Goes up on every refused Update & Next — each one takes the user to the
+   *  first missing field again, even when the list itself has not changed. */
+  check?: number;
   draft: InvoiceDraft;
   set: SetDraft;
   lines: ProductLine[];
@@ -51,6 +86,23 @@ export default function Step2InvoiceProducts({
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
+
+  /* A refused Update & Next. The missing field may sit in a folded section,
+     so that one opens first; the scroll waits for it to unfold, since a
+     collapsed body has nothing to scroll to. */
+  const openRef = useRef({ invOpen, prodOpen });
+  openRef.current = { invOpen, prodOpen };
+  useEffect(() => {
+    if (!check || !issues) return;
+    const inHead = !!(issues.invoiceNumber || issues.invoiceDate || issues.invoiceFile);
+    const inRows = Object.keys(issues.rows).length > 0;
+    let wait = 30;
+    if (inHead && !openRef.current.invOpen) { setInvOpen(true); wait = 320; }
+    else if (!inHead && inRows && !openRef.current.prodOpen) { setProdOpen(true); wait = 320; }
+    const t = window.setTimeout(focusFirstInvalid, wait);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [check]);
 
   /* The reference pills on the Products head.
    *
@@ -102,18 +154,22 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
-            <Field label="PURCHASE INVOICE NUMBER" req>
-              <input className="spi-dt-inp" placeholder="Supplier's own invoice number" readOnly={readOnly}
+            <Field label="PURCHASE INVOICE NUMBER" req error={issues?.invoiceNumber}>
+              <input className={`spi-dt-inp${issues?.invoiceNumber ? ' is-invalid' : ''}`}
+                placeholder="Supplier's own invoice number" readOnly={readOnly}
+                aria-invalid={!!issues?.invoiceNumber || undefined}
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
-            <Field label="PURCHASE INVOICE DATE" req>
+            <Field label="PURCHASE INVOICE DATE" req error={issues?.invoiceDate}>
               {/* The supplier cannot bill before the order was placed. A Direct
                   SPI has no purchase order, so nothing to hold it to. */}
               <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
+                invalid={!!issues?.invoiceDate}
                 minDate={!direct && draft.poDate ? draft.poDate : undefined} />
             </Field>
-            <Field label="PURCHASE INVOICE ATTACHMENT" req>
-              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly} />
+            <Field label="PURCHASE INVOICE ATTACHMENT" req error={issues?.invoiceFile}>
+              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly}
+                invalid={!!issues?.invoiceFile} />
             </Field>
             <Field label="E-WAY BILL ATTACHMENT">
               <FilePick label="E-Way Bill" value={draft.ewayBillFile} onPick={f => onPickFile('eway', f)} disabled={readOnly} />
@@ -151,7 +207,7 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} matched={matched}
+            twoWay={direct} matched={matched} rowIssues={issues?.rows}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
           {/* Directly under the totals, because it is a statement about the
               figures above it: they are short of a product the PI carried.
@@ -201,7 +257,7 @@ export default function Step2InvoiceProducts({
   );
 }
 
-function FilePick({ label, value, onPick, disabled = false }: { label: string; value: string; onPick: (file: File) => void; disabled?: boolean }) {
+function FilePick({ label, value, onPick, disabled = false, invalid = false }: { label: string; value: string; onPick: (file: File) => void; disabled?: boolean; invalid?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -242,7 +298,7 @@ function FilePick({ label, value, onPick, disabled = false }: { label: string; v
   }, [pickAt]);
 
   return (
-    <div ref={rowRef} className="spi-dt-file">
+    <div ref={rowRef} className={`spi-dt-file${invalid ? ' is-invalid' : ''}`}>
       {/* Long names are cut at 25 characters; the full one is in the tooltip. */}
       <Tooltip label={value && value.length > FILE_NAME_MAX ? value : undefined}>
         <span className="spi-dt-file-txt">
