@@ -215,7 +215,10 @@ export default function Step2InvoiceProducts({
               </button>
             </div>
           )}
-          {onAddLine && !readOnly && !(direct && draft.shipmentId) && (
+          {/* Only a Direct SPI without a shipment can add lines. A With-PO
+              invoice bills what the PO ordered, and a shipment-linked one
+              bills its PI, so both take their products from the source. */}
+          {onAddLine && !readOnly && direct && !draft.shipmentId && (
             <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
               <IcoPlus /> Add Product
             </button>

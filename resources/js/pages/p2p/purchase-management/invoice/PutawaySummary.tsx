@@ -68,6 +68,70 @@ function Section({ icon, prefix, title, sub, meta, right, children }: {
   );
 }
 
+/* While the summary loads: the four sections in their real grids, with
+   shimmer bars where the figures will land, so the popup shows it is working
+   and nothing jumps when the data arrives. Same .spi-sk-bar as the wizard's
+   stage skeletons (it stills itself under prefers-reduced-motion). */
+const Bar = ({ w, h = 12 }: { w: string | number; h?: number }) => (
+  <span className="spi-sk-bar" style={{ width: w, height: h }} />
+);
+
+function SkelSection({ children }: { children: ReactNode }) {
+  return (
+    <div className="spi-dt-sec pts-sec pts-skel" aria-hidden>
+      <div className="spi-dt-sec-head">
+        <span className="pts-skel__ico" />
+        <div className="spi-dt-sec-mid pts-skel__mid">
+          <Bar w={260} h={13} />
+          <Bar w={340} h={9} />
+        </div>
+      </div>
+      <div className="spi-dt-sec-body">{children}</div>
+    </div>
+  );
+}
+
+function SummarySkeleton() {
+  return (
+    <>
+      <span className="visually-hidden" role="status">Loading the putaway summary…</span>
+      <SkelSection>
+        <div className="pts-tiles">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--tile" key={i}>
+              <Bar w={34} h={18} /><Bar w="62%" h={8} />
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-parties">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--row" key={i}>
+              <span className="pts-skel__ico" />
+              <div className="pts-skel__mid"><Bar w={70} h={8} /><Bar w="70%" h={13} /></div>
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-refs">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div className="pts-skel__card pts-skel__card--ref" key={i}>
+              <Bar w="58%" h={9} /><Bar w={120} h={22} /><Bar w={80} h={8} />
+            </div>
+          ))}
+        </div>
+      </SkelSection>
+      <SkelSection>
+        <div className="pts-skel__rows">
+          {Array.from({ length: 3 }, (_, i) => <Bar key={i} w="100%" h={34} />)}
+        </div>
+      </SkelSection>
+    </>
+  );
+}
+
 function Tile({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
     <div className={`pts-tile pts-tile--${tone}`}>
@@ -275,6 +339,8 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
   const boxes = data?.boxes ?? [];
   const totals = data?.analytics;
   const refs = data?.references;
+  const noPo = !row.poNo && !refs?.po.code;
+  const noShip = noPo && !(h?.shipmentId || row.shipmentId);
   const whName = h?.warehouse?.name || row.warehouseName || '—';
   const ownWarehouse = h?.warehouse ? h.warehouse.isOwn : row.warehouseKind === 'own';
   const partyFor = (role: PutawayParty['role']): PutawayParty =>
@@ -298,10 +364,12 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
           <div className="spi-dt-pills pts-pills">
             <HeadPill icon={<IcoDoc />} label="SPI ID" value={spiId} mono
               extra={<span className="pts-dot pts-dot--ok" title="Mapped" />} />
-            <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
-              extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
-            <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
-              extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
+            {!noShip && (<>
+              <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
+                extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
+              <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
+                extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
+            </>)}
             <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={h?.procurementId || row.procurementId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--warn" title="Procurement" />} />
             <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={whName}
@@ -315,9 +383,13 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
         </div>
 
         <div className="pts-body">
-          {state !== 'ready' ? (
-            <div className="pts-sec" style={{ padding: 32, textAlign: 'center' }}>
-              {state === 'loading' ? 'Loading the putaway summary…' : error}
+          {state === 'loading' ? (
+            <SummarySkeleton />
+          ) : state === 'failed' ? (
+            <div className="pts-fail" role="alert">
+              <span className="pts-fail__ico" aria-hidden><IcoX /></span>
+              <b>Could not load the putaway summary</b>
+              <span>{error}</span>
             </div>
           ) : (<>
           <Section
@@ -342,12 +414,12 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
           <Section
             icon={<IcoUsers />}
             prefix={spiId}
-            title="Customer, Consignee & Supplier"
-            meta="3 parties"
+            title={noShip ? 'Supplier' : 'Customer, Consignee & Supplier'}
+            meta={noShip ? '1 party' : '3 parties'}
             sub="Trading parties associated with this invoice."
           >
-            <div className="pts-parties">
-              {PARTY_ROLES.map(({ role, tone }) => (
+            <div className={`pts-parties${noShip ? ' pts-parties--one' : ''}`}>
+              {PARTY_ROLES.filter(({ role }) => !noShip || role === 'Supplier').map(({ role, tone }) => (
                 <PartyCard key={role} party={partyFor(role)} tone={tone}
                   icon={role === 'Customer' ? <IcoUser /> : role === 'Consignee' ? <IcoBuilding /> : <IcoTruck />} />
               ))}
@@ -358,17 +430,23 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
             icon={<IcoDoc />}
             prefix={spiId}
             title="Supplier Purchase Invoice"
-            sub="PI, PO & SPI references with financial values."
+            sub={noShip ? 'SPI reference with its financial value.' : noPo ? 'PI & SPI references with financial values.' : 'PI, PO & SPI references with financial values.'}
           >
-            <div className="pts-refs">
-              <RefCard tone="pi" label="Proforma Invoice (PI)" value={dash(refs?.pi.code)}
-                date={refs?.pi.date ? shortDate(refs.pi.date) : undefined} />
-              <RefCard tone="po" label="Purchase Order (PO)" value={dash(refs?.po.code)}
-                date={refs?.po.date ? shortDate(refs.po.date) : undefined} />
+            <div className={`pts-refs${noShip ? ' pts-refs--noship' : noPo ? ' pts-refs--nopo' : ''}`}>
+              {!noShip && (
+                <RefCard tone="pi" label="Proforma Invoice (PI)" value={dash(refs?.pi.code)}
+                  date={refs?.pi.date ? shortDate(refs.pi.date) : undefined} />
+              )}
+              {!noPo && (
+                <RefCard tone="po" label="Purchase Order (PO)" value={dash(refs?.po.code)}
+                  date={refs?.po.date ? shortDate(refs.po.date) : undefined} />
+              )}
               <RefCard tone="spi" label="Supplier Purchase Invoice (SPI)" value={dash(refs?.spi.code || spiId)}
                 date={refs?.spi.date ? shortDate(refs.spi.date) : undefined} />
-              <AmountCard tone="pov" label="PO Amount" value={refs?.poAmount != null ? money(refs.poAmount) : '—'}
-                sub={refs?.poAmount != null ? 'Purchase Order' : 'Direct SPI — no PO'} />
+              {!noPo && (
+                <AmountCard tone="pov" label="PO Amount" value={refs?.poAmount != null ? money(refs.poAmount) : '—'}
+                  sub={refs?.poAmount != null ? 'Purchase Order' : 'Direct SPI — no PO'} />
+              )}
               <AmountCard tone="spiv" label="SPI Amount" value={money(refs?.spiAmount ?? 0)} sub="Supplier Invoice" />
             </div>
           </Section>

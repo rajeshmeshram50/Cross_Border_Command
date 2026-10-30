@@ -13,7 +13,11 @@ import { useServerList } from '../../../hooks/useServerList';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { ProductFlagApiError, productFlagApi, type ProductFlag, type ProductFlagTab } from './product-flag-data';
 
-const AddProductFlagModal = lazy(() => import('./AddProductFlagModal'));
+/* Fetched as soon as the page mounts (below), not on the first Edit click -
+   Suspense showed nothing while the chunk downloaded, so Edit looked dead
+   for 2-3 s on live (CS-950). */
+const loadAddModal = () => import('./AddProductFlagModal');
+const AddProductFlagModal = lazy(loadAddModal);
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
@@ -100,6 +104,13 @@ export default function ProductFlagMaster() {
     (e) => toast.error('Could not load product flags', e instanceof ProductFlagApiError ? e.message : 'Please refresh the page.'),
   );
   const reload = list.reload;
+  /* After a toggle or an edit the rows on screen are already right, so the
+     follow-up load is silent: 'replace' put the skeleton over the whole table
+     for the round-trip and every Action button vanished with it (CS-950). */
+  const refreshRef = useRef(list.refresh);
+  refreshRef.current = list.refresh;
+
+  useEffect(() => { void loadAddModal(); }, []);
 
   const rowCount = list.rows.length;
   useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
@@ -108,26 +119,35 @@ export default function ProductFlagMaster() {
      the round-trip took 2–3 s before anything showed. A refused save flips
      the row back and the error toast follows; the reload then syncs the tab
      counts. */
+  /* Only the row being saved is locked. One page-wide busy id meant that while
+     a PUT was in flight every OTHER row's switch ignored its click too, so the
+     column looked frozen until the first save came back (CS-950). */
   const patchRows = list.patch;
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const inFlight = useRef(new Set<number>());
+  const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(new Set());
+  const markBusy = (id: number, on: boolean) => {
+    if (on) inFlight.current.add(id); else inFlight.current.delete(id);
+    setBusyIds(new Set(inFlight.current));
+  };
   const toggle = useCallback(async (f: ProductFlag) => {
-    if (busyId) return;
+    if (inFlight.current.has(f.apiId)) return;
     const activate = f.status !== 'active';
     const put = (row: ProductFlag) => patchRows(rs => rs.map(r => (r.apiId === f.apiId ? row : r)));
-    setBusyId(f.apiId);
+    markBusy(f.apiId, true);
     put({ ...f, status: activate ? 'active' : 'inactive' });
     if (activate) toast.success(`${f.id} marked Active`);
     else toast.warning(`${f.id} marked Inactive`, 'It stays in the list, dimmed, and is no longer offered when packing boxes.');
     try {
       await productFlagApi.setStatus(f.apiId, activate);
-      reload();
     } catch (e) {
       put(f);
       toast.error('Could not change the status', e instanceof ProductFlagApiError ? e.message : 'Please try again.');
     } finally {
-      setBusyId(null);
+      markBusy(f.apiId, false);
+      // Tab counts (and the row leaving a filtered tab) catch up quietly.
+      if (!inFlight.current.size) refreshRef.current();
     }
-  }, [busyId, patchRows, reload, toast]);
+  }, [patchRows, toast]);
 
   const [formFor, setFormFor] = useState<ProductFlag | 'new' | null>(null);
 
@@ -263,7 +283,7 @@ export default function ProductFlagMaster() {
               </thead>
               {rows.map((f, i) => (
                 <tbody key={f.apiId}>
-                  <Row f={f} no={start + i + 1} off={f.status !== 'active'} busy={busyId === f.apiId}
+                  <Row f={f} no={start + i + 1} off={f.status !== 'active'} busy={busyIds.has(f.apiId)}
                     onToggle={t => void toggle(t)} onEdit={setFormFor} />
                 </tbody>
               ))}
@@ -288,7 +308,12 @@ export default function ProductFlagMaster() {
           <AddProductFlagModal
             flag={formFor === 'new' ? undefined : formFor}
             onClose={() => setFormFor(null)}
-            onSaved={() => reload()}
+            onSaved={saved => {
+              if (formFor === 'new') { reload(); return; }
+              // The edit is on screen the moment it saves; counts follow quietly.
+              patchRows(rs => rs.map(r => (r.apiId === saved.apiId ? saved : r)));
+              refreshRef.current();
+            }}
           />
         </Suspense>
       )}

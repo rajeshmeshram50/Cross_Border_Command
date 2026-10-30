@@ -203,6 +203,10 @@ export default function Step1SupplierDetails({
   };
 
   const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const supplierLocked = direct && !hasPo && (approval?.status === 'pending' || approval?.status === 'approved');
+  const supplierLockedMsg = approval?.status === 'approved'
+    ? 'A senior approved this supplier for this invoice — the supplier can no longer be changed.'
+    : 'Sent for senior approval — the supplier cannot be changed while the request is open.';
   const domesticList = useRef<Promise<SupplierOption[]> | null>(null);
   const domesticSuppliers = () => {
     domesticList.current ??= poLookupApi.suppliers('domestic').catch(e => { domesticList.current = null; throw e; });
@@ -475,9 +479,10 @@ export default function Step1SupplierDetails({
                 <span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details
               </div>
               {!hasPo && (
-                <Tooltip label="Onboard a supplier that is not in this list"><button type="button" className="cpf-addbtn"
+                <Tooltip label={supplierLocked ? supplierLockedMsg : 'Onboard a supplier that is not in this list'}><button type="button" className="cpf-addbtn"
+                  disabled={supplierLocked}
                   onPointerEnter={warmSupplierFlow}
-                  onClick={e => { e.stopPropagation(); setAdding(true); }}>
+                  onClick={e => { e.stopPropagation(); if (!supplierLocked) setAdding(true); }}>
                   <IcoPlus /> Add Supplier
                 </button></Tooltip>
               )}
@@ -490,6 +495,10 @@ export default function Step1SupplierDetails({
                   <div className="cpf-supsel">
                     {hasPo || readOnly ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
+                    ) : supplierLocked ? (
+                      <Tooltip label={supplierLockedMsg}>
+                        <div className="cpf-suplock"><EditSelect readOnly value={supplier} options={[]} onChange={() => {}} /></div>
+                      </Tooltip>
                     ) : (
                       <MasterSelect
                         value={draft.vendorId != null ? String(draft.vendorId) : ''}

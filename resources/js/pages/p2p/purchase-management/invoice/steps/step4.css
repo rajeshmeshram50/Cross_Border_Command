@@ -101,7 +101,10 @@
    column headers and nothing else, with the action bar over them.
 
    So when the window is shorter than the stage needs, the shortfall belongs
-   on the PAGE's scrollbar, not on the panes. Do not remove the floor. */
+   on the PAGE's scrollbar, not on the panes. Do not remove the floor.
+   UPDATE (CS-953): the crush is now fixed at its source (.s4-c2-pane no
+   longer shrinks), and above 1280px the panels fit the window with a 340px
+   floor instead — see "Stage 4 fits the window" at the end of this file. */
 .s4-root .s4-panels { display: flex; gap: 10px; align-items: stretch; flex: 1 0 700px; min-height: 0; }
 .s4-root .s4-panel { display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; transition: flex .3s cubic-bezier(.16,1,.3,1), box-shadow .2s; position: relative; }
 .s4-root .s4-panel--left { background: linear-gradient(180deg, #f0fdff 0%, #fafdfe 18%, #fff 40%); }
@@ -6502,3 +6505,43 @@
 [data-bs-theme="dark"] .s4-root .s4nofit-needs b { color: #86efac; }
 [data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); }
 [data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero b { color: #fca5a5; }
+/* ── Stage 4 fits the window: the panes scroll, the page does not ─────────
+ * CS-953 and the scroll lag were one cause. The panels had a 700px floor
+ * (`flex: 1 0 700px`, above), taller than the space a laptop leaves under
+ * the stage cards, so the SPI body scrolled ~340px and each pane scrolled
+ * inside it. Three nested scrollers: a wheel gesture kept handing off from
+ * a pane to the page and back, which read as lag, and the page scroll is
+ * what slid the panes up under the fixed stage header.
+ *
+ * The floor existed because a shorter pane CRUSHED the box details instead
+ * of scrolling them. That was .s4-c2-pane.is-visible `flex: 1; min-height: 0`
+ * inside the pane's scroll body: allowed to shrink, it shrank to the pane and
+ * squeezed .s4h, so nothing overflowed and nothing scrolled. Fixed at the
+ * source: the pane content may grow to fill but never shrink, so a short pane
+ * scrolls its content, and the action bar stays pinned at its foot (sticky).
+ *
+ * With that, the stage takes exactly the height left in the body: the root,
+ * the workspace card and the panels all shrink to fit, with a 340px floor so
+ * a very short window still scrolls the page rather than leave the panes a
+ * sliver. Desktop only — at 1280px and below the panes stack and the page
+ * scrolls, as before. Full view keeps its own rules. */
+.s4-root .s4-c2-pane.is-visible { flex: 1 0 auto; }
+.s4-root .s4-c2-pane.is-visible > .s4h { flex-shrink: 0; }
+
+@media (min-width: 1281px) {
+  .cpf-form .cpf-stepwrap > .s4-root:not(.is-fullview) { flex: 1 1 auto; min-height: 0; }
+  .s4-root:not(.is-fullview) > .s4b-wrap { flex: 1 1 auto; min-height: 0; }
+  .s4-root:not(.is-fullview) .s4-panels { flex: 1 1 0; min-height: 340px; }
+}
+
+/* Cancel Zebra Scan Task, while the cancel request runs (CS-953 #52/#53):
+   Keep Task, the close button and the other cancel option are disabled and
+   dimmed; the option that was clicked stays at full strength with its
+   spinner, so it is clear which one is in progress. The body is inert. */
+.s4-root .s4ct-modal .s4qm__ft .s4-btn-back:disabled,
+.s4-root .s4ct-modal .s4qm__x:disabled,
+.s4-root .s4ct-modal .s4ct-ft > button:disabled:not([aria-busy="true"]) {
+  opacity: .45; cursor: not-allowed; pointer-events: none;
+}
+.s4-root .s4ct-modal .s4ct-ft > button[aria-busy="true"] { opacity: 1; cursor: progress; }
+.s4-root .s4ct-modal .s4qm__bd[inert] { opacity: .7; transition: opacity .15s; }

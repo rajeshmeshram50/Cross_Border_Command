@@ -282,6 +282,31 @@ export default function BoxDrawer({
   const toggleFlag = (id: string) =>
     setFlags(f => (f.includes(id) ? f.filter(x => x !== id) : [...f, id]));
 
+  // Modal strip: one row when the details and the actions both fit beside
+  // the close button, two rows otherwise. Measured from the items themselves
+  // (fixed-width, so the answer does not depend on the class it sets).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripStacked, setStripStacked] = useState(false);
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (variant !== 'modal' || !strip) return;
+    const sum = (sel: string) => {
+      const kids = Array.from(strip.querySelector(sel)?.children ?? []) as HTMLElement[];
+      return kids.reduce((w, k) => w + k.offsetWidth, 0) + (sel === '.vti-dw-toolbar' ? 9 * Math.max(0, kids.length - 1) : 0);
+    };
+    const measure = () => {
+      // accent 4 + gap 14 + close-button lane 62
+      const need = 4 + sum('.vti-dw-strip-left') + 14 + sum('.vti-dw-toolbar') + 62;
+      setStripStacked(need > strip.clientWidth);
+    };
+    measure();
+    // Item widths change once the web fonts arrive, the strip's does not.
+    document.fonts?.ready.then(measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [variant, quantity, saved, saving]);
+
   const Shell = variant === 'accordion' ? AccordionShell
     : variant === 'modal' ? ModalShell
       : PanelShell;
@@ -292,7 +317,9 @@ export default function BoxDrawer({
         {/* inert while saving, like the body below: the quantity stepper,
             the unit toggle, Upload and Camera all live in this strip, outside
             the body's veil, so the quantity could still be changed mid-save. */}
-        <div className="vti-dw-strip" inert={saving} aria-busy={saving}>
+        <div ref={stripRef}
+          className={`vti-dw-strip${variant === 'modal' ? (stripStacked ? ' is-stacked' : ' is-oneline') : ''}`}
+          inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
             <StripItem label="Box ID" className="strip-boxid">
@@ -562,8 +589,10 @@ export default function BoxDrawer({
                     );
                   })}
                   {hiddenCustomFlags.length > 0 && (
+                    <Tooltip label={`${hiddenCustomFlags.length} more flag${hiddenCustomFlags.length === 1 ? '' : 's'}`}>
                     <button type="button" className="vti-flag-more"
                       aria-haspopup="dialog" aria-expanded={!!flagPop}
+                      aria-label={`${hiddenCustomFlags.length} more flags`}
                       onClick={e => {
                         if (flagPop) { setFlagPop(null); return; }
                         const b = e.currentTarget.getBoundingClientRect();
@@ -572,11 +601,12 @@ export default function BoxDrawer({
                         const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
                         setFlagPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
                       }}>
-                      +{hiddenCustomFlags.length} more
+                      +{hiddenCustomFlags.length}
                       {hiddenOnCount > 0 && (
                         <span className="vti-flag-more__on">{hiddenOnCount}</span>
                       )}
                     </button>
+                    </Tooltip>
                   )}
                   <div
                     className={`vti-stack-toggle${stackable ? ' is-stack' : ''}`}

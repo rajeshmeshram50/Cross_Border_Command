@@ -162,6 +162,28 @@ export default function Step3BoxPackaging({
   const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
 
   const drawerOpen = pendingLines.some(l => !!packing[l.code]) || !!mixedBox?.length;
+
+  /* Past five products the table scrolls under its sticky header instead of
+     growing. The cap is the header plus the first five rows as rendered, so
+     it holds exactly five whatever a row's height (a long name, a lock). */
+  const ROWS_SHOWN = 5;
+  const rowsWrapRef = useRef<HTMLDivElement>(null);
+  const [rowsCap, setRowsCap] = useState<number | null>(null);
+  useEffect(() => {
+    const wrap = rowsWrapRef.current;
+    if (!wrap || drawerOpen || pendingLines.length <= ROWS_SHOWN) { setRowsCap(null); return; }
+    const measure = () => {
+      const head = wrap.querySelector('thead') as HTMLElement | null;
+      const rows = Array.from(wrap.querySelectorAll('tbody > tr.vti-prod-row')).slice(0, ROWS_SHOWN) as HTMLElement[];
+      // +2 for the borders, and the horizontal scrollbar when there is one
+      const hBar = wrap.offsetHeight - wrap.clientHeight;
+      setRowsCap((head?.offsetHeight ?? 0) + rows.reduce((h, r) => h + r.offsetHeight, 0) + hBar + 2);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [drawerOpen, pendingLines.length]);
   const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
 
@@ -830,7 +852,9 @@ export default function Step3BoxPackaging({
           </div>
         )}
 
-        <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
+        <div ref={rowsWrapRef}
+          className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}
+          style={rowsCap ? { maxHeight: rowsCap } : undefined}>
           <table className="vti-table vti-boxgen">
             <thead>
               <tr>
@@ -876,6 +900,13 @@ export default function Step3BoxPackaging({
                     ? 'Scenario 03 · Multiple Products → 1 Box'
                     : 'Scenario 01 · 1 Product → 1 Box';
                 const scenarioNo = split ? 'Scenario 02' : mixed ? 'Scenario 03' : 'Scenario 01';
+                /* A ticked row is headed for the master carton (Scenario 03),
+                   so its Sub-Box Count and + Single Box lock the way a packed
+                   mixed row's do, as the design has it — splitting or single-
+                   boxing it now would fight the Pack into 1 Box it is part of.
+                   Unticking frees them again. (A ticked row is never packed:
+                   only unpacked rows have a checkbox.) */
+                const mixedLock = mixed || isTicked;
                 return (
                   <Fragmentish key={line.code}>
                   <tr className={`vti-prod-row${pack ? ' is-open' : ''}${isTicked ? ' is-selected' : ''}`}>
@@ -953,10 +984,10 @@ export default function Step3BoxPackaging({
                       </>
                     )}
                     <td>
-                      {single || mixed ? (
-                        <div className="vti-scn-lock">
+                      {single || mixedLock ? (
+                        <div className="vti-scn-lock is-on">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <div className="vti-subbox-cell">
@@ -978,10 +1009,10 @@ export default function Step3BoxPackaging({
                       )}
                     </td>
                     <td>
-                      {split || mixed ? (
-                        <div className="vti-scn-lock">
+                      {split || mixedLock ? (
+                        <div className="vti-scn-lock is-on">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <button type="button" className={`vti-btn-single${single ? ' is-on' : ''}`}

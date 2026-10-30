@@ -998,12 +998,23 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     };
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
+    return () => window.removeEventListener('resize', place);
   }, [anchor, entries.length]);
+
+  /* Scrolling anything outside the pop-over closes it, like a menu. It used
+     to chase its button on every scroll frame, so scrolling the page or a
+     pane dragged the log along over the content. Scrolling the log's own
+     list is left alone. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return;
+      onCloseRef.current();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, []);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
@@ -2519,12 +2530,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </span>
                 )}
               </div>
-              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close">
+              {/* CS-953 #52/#53: frozen while the cancel request runs — closing
+                  the dialog or keeping a task that is being cancelled would
+                  leave the box's state out of step with the server. */}
+              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close"
+                disabled={cancelBusy}>
                 &times;
               </button>
             </div>
 
-            <div className="s4qm__bd">
+            <div className="s4qm__bd" inert={cancelBusy}>
               <div className="s4ct-warn">
                 <span className="s4ct-warn__i"><IcoZvZebra /></span>
                 <div>
@@ -2561,7 +2576,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__ft s4ct-ft">
-              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}>
+              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}
+                disabled={cancelBusy}>
                 Keep Task
               </button>
               <button
