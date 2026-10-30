@@ -4272,7 +4272,9 @@ const STEP_SAFE_FIELDS = new Set([
                   <button
                     type="button"
                     onClick={copyGeneratedUrl}
-                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                    /* justify-content-center: at minWidth 120 the shorter "Copied"
+                       label sat left of the button (QA 198). */
+                    className="btn d-inline-flex align-items-center justify-content-center gap-1 fw-semibold rounded-pill px-3"
                     style={{
                       fontSize: 13, color: '#fff', border: 'none',
                       background: copiedAt ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
