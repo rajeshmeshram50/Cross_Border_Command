@@ -4,8 +4,8 @@
    file holds the card, its hero and the analytics tiles. */
 
 .pts-card {
-  width: min(1640px, 99vw);
-  max-height: 94vh;
+  width: min(1640px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
