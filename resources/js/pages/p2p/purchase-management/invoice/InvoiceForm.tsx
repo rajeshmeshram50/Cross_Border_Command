@@ -848,23 +848,14 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
-  /* Save & Next in flight — the step shows the form shimmer until the next
-     one opens. This is the Create PO wizard's `advancing`, done its way:
-
-       · ONE shimmer, not a skeleton of the step being opened. The PO draws
-         the same two-section PoFormSkeleton every time, whichever step is
-         coming, so it is always the right height for the body it fills. A
-         per-stage skeleton is a different height from the step it replaces,
-         which is how the page came to end halfway down.
-       · no delay before it appears, and no moving the step rail. The PO does
-         neither, and both were my inventions.
+  /* Save & Next in flight — the Customer form's save lock (spinner + text
+     over a blurred page) covers the form until the next step opens. The step
+     stays visible and mounted under it, so a save that fails leaves it exactly
+     as it was.
 
      It is derived rather than held in state: a save on any step but the last
      IS an advance. Only `mapInvoice` saves from the last step, and that one
-     closes the form rather than opening another step, so it must not shimmer.
-
-     The step stays mounted underneath (hidden, not removed), so a save that
-     fails brings it back exactly as it was left — the PO's rule too. */
+     closes the form rather than opening another step, so it must not lock. */
   const advancing = saving && stage < STAGES.length - 1;
 
   const isLast = stage === STAGES.length - 1;
@@ -965,8 +956,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {(advancing || step1Busy) && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={advancing || step1Busy}>
+              {step1Busy && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -1101,6 +1092,12 @@ export default function InvoiceForm({
           </div>
         </div>
       </div>
+      {advancing && (
+        <div className="spi-save-lock" aria-live="polite" aria-busy="true">
+          <span className="spi-save-lock-spinner" />
+          <span className="spi-save-lock-text">{editing ? 'Updating…' : 'Saving…'}</span>
+        </div>
+      )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
       )}
