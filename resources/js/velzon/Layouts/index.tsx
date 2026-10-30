@@ -118,9 +118,14 @@ const Layout = (props : any) => {
     };
 
     // class add remove in header 
+    // Added once, removed on unmount. It had no dependency list and no
+    // cleanup, so every render of the layout stacked one more capture-phase
+    // scroll listener — and each of them ran on every scroll of every inner
+    // scroller, piling up for as long as the app stayed open.
     useEffect(() => {
         window.addEventListener("scroll", scrollNavigation, true);
-    });
+        return () => window.removeEventListener("scroll", scrollNavigation, true);
+    }, []);
 
     function scrollNavigation() {
         var scrollup = document.documentElement.scrollTop;
