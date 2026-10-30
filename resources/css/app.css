@@ -255,7 +255,7 @@ button.ms-cstrip-add {
    declare 40 and each was overruled by its !important. Matching the
    !important here rather than editing the blanket rule leaves the client,
    plan, payment, branch and master strips on their 42. */
-.frm-cstrip.hr-cstrip :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
+.frm-cstrip.hr-cstrip :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.ui-search-clear):not(.dt-tabrail *) {
   height: 40px !important;
   /* 12.5px, matching .rec-btn-*, .cand-pill-btn and the DataTable toolbar.
      The blanket rule's 13px !important beat every one of them. */

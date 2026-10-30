@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import DataTable, { type DataTableColumn } from './ui/DataTable';
 import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import SearchableSelect from './ui/SearchableSelect';
-import WorklistPager from './ui/WorklistPager';
 import ExpenseSettlementModal from './ExpenseSettlementModal';
 
 /* Consolidated ("batch") payment: settle several small APPROVED, unpaid expense
@@ -27,7 +27,6 @@ type PayableClaim = {
 type Emp = { id: number; first_name?: string; last_name?: string; display_name?: string; emp_code?: string };
 
 /* History rows per page. The claims table does not page — it scrolls. */
-const PAGE = 5;
 // The proof link opens in a new tab (plain browser navigation), so it can't
 // send the Authorization header. Append the Sanctum token as ?token= — the
 // batch-payment-proof route authenticates from the query token. Without this
@@ -55,7 +54,6 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncingId, setSyncingId] = useState<number | null>(null);
-  const [histPage, setHistPage] = useState(1);
   // Per-claim review (pending → approve) / view (approved) drill-in.
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
@@ -64,7 +62,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
 
   useEffect(() => {
     if (!open) return;
-    setView('history'); resetForm(); setHistPage(1);
+    setView('history'); resetForm();
     loadHistory();
     /* Active staff only — a batch payment cannot be raised against someone who
        has left. (#164) The list was fetched unfiltered, so exited, resigned and
@@ -177,7 +175,100 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     );
   };
 
-  const histSlice = history.slice((histPage - 1) * PAGE, histPage * PAGE);
+  /* The shared table's columns. Sr No comes from <DataTable serial> and the
+     pager rides inside the card, so histPage / histSlice / WorklistPager are
+     no longer needed. (QA 114 / 129) */
+  const historyColumns = useMemo<DataTableColumn<any>[]>(() => [
+    {
+      header: 'Date',
+      id: 'date',
+      accessorFn: (b: any) => b.paid_at,
+      meta: { width: 120 },
+      cell: info => fmtDate(info.row.original.paid_at),
+    },
+    {
+      header: 'Employee',
+      accessorKey: 'employee_name',
+      meta: { width: 180, wrap: true },
+      cell: info => {
+        const b = info.row.original;
+        return (
+          <>
+            <div style={{ fontWeight: 600 }}>{b.employee_name}</div>
+            <div style={{ fontSize: 11, color: 'var(--bpw-muted)' }}>{b.employee_code}</div>
+          </>
+        );
+      },
+    },
+    {
+      header: 'Expense IDs',
+      id: 'exp_nos',
+      enableSorting: false,
+      /* 240 + wrap: at 190 the row showed two ids and then clipped the "+N"
+         pill that says how many more there are — the one part of the cell
+         that cannot be inferred from what is visible. */
+      meta: { width: 240, wrap: true },
+      cell: info => <ExpenseIds nos={info.row.original.exp_nos} />,
+    },
+    { header: 'Method', accessorKey: 'payment_type', meta: { width: 130 } },
+    {
+      header: 'UTR / Reference',
+      accessorKey: 'reference_number',
+      meta: { width: 160 },
+      cell: info => <span style={{ fontFamily: 'monospace' }}>{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Amount',
+      id: 'total_amount',
+      accessorFn: (b: any) => Number(b.total_amount ?? 0),
+      meta: { width: 130, align: 'right' },
+      cell: info => <span style={{ fontWeight: 600 }}>{inr(info.row.original.total_amount)}</span>,
+    },
+    {
+      header: 'Note',
+      accessorKey: 'note',
+      meta: { width: 170, wrap: true },
+      cell: info => {
+        const n = info.row.original.note;
+        return <span style={{ color: 'var(--bpw-muted)' }} title={n ?? ''}>{n || '—'}</span>;
+      },
+    },
+    {
+      header: 'Zoho',
+      id: 'zoho',
+      enableSorting: false,
+      meta: { width: 120, align: 'center' },
+      /* Synced rows report their STATE, not an action — a "View" link read as
+         something still to do. The badge keeps the link when Zoho gave us a
+         url; without one it is plain text. Unsynced rows keep the button. */
+      cell: info => {
+        const b = info.row.original;
+        if (b.zoho_status === 'synced') {
+          return b.zoho_url
+            ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={syncedBadge} title="Open in Zoho"><i className="ri-checkbox-circle-fill" />Synced</a>
+            : <span style={syncedBadge}><i className="ri-checkbox-circle-fill" />Synced</span>;
+        }
+        return (
+          <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }}
+            disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>
+            {syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}
+          </button>
+        );
+      },
+    },
+    {
+      header: 'Proof',
+      id: 'proof',
+      enableSorting: false,
+      meta: { width: 90, align: 'center' },
+      cell: info => {
+        const b = info.row.original;
+        return b.proof_url
+          ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a>
+          : '—';
+      },
+    },
+  ], [syncingId, syncZoho]);
 
   return createPortal(
     <>
@@ -213,46 +304,19 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
 
           {/* HISTORY is the base popup's only content. */}
           <div className="bpw-body" style={body}>
-            <div style={rowBetween}>
-              <div style={{ fontWeight: 700, color: 'var(--bpw-text)', fontSize: 15 }}>Previous batch payments</div>
-            </div>
-            {/* No maxHeight here: the page size caps the rows, so the shared
-                wrap's 300px only made a full page of five scroll. */}
-            <div style={{ ...tableWrap, maxHeight: 'none' }}>
-              <table style={table}>
-                <thead><tr>{['SR NO', 'DATE', 'EMPLOYEE', 'EXPENSE IDS', 'METHOD', 'UTR / REFERENCE', 'AMOUNT', 'NOTE', 'ZOHO', 'PROOF'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
-                    : history.length === 0 ? <tr><td colSpan={10} style={emptyTd}>No batch payments yet.</td></tr>
-                      : histSlice.map((b, i) => (
-                        <tr key={b.id}>
-                          <td style={td}>{(histPage - 1) * PAGE + i + 1}</td>
-                          <td style={td}>{fmtDate(b.paid_at)}</td>
-                          <td style={td}><div style={{ fontWeight: 600 }}>{b.employee_name}</div><div style={{ fontSize: 11, color: 'var(--bpw-muted)' }}>{b.employee_code}</div></td>
-                          <td style={td}><ExpenseIds nos={b.exp_nos} /></td>
-                          <td style={td}>{b.payment_type}</td>
-                          <td style={{ ...td, fontFamily: 'monospace' }}>{b.reference_number}</td>
-                          <td style={{ ...td, fontWeight: 600 }}>{inr(b.total_amount)}</td>
-                          <td style={{ ...td, maxWidth: 150, color: 'var(--bpw-muted)' }} title={b.note ?? ''}>{b.note || '—'}</td>
-                          {/* Synced rows report their STATE, not an action — a "View"
-                             link read as something still to do. The badge keeps the
-                             link when Zoho gave us a url, so nothing is lost; without
-                             one it is plain text. Unsynced rows keep the button. */}
-                          <td style={td}>{b.zoho_status === 'synced'
-                            ? (b.zoho_url
-                                ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={syncedBadge} title="Open in Zoho"><i className="ri-checkbox-circle-fill" />Synced</a>
-                                : <span style={syncedBadge}><i className="ri-checkbox-circle-fill" />Synced</span>)
-                            : <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }} disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>{syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}</button>}</td>
-                          <td style={td}>{b.proof_url ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
-                        </tr>
-                      ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Always rendered. Gating it on more-than-one-page left the
-                table with no controls at all on the common case. */}
-            <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />
-          </div>
+            <DataTable<any>
+              data={history}
+              columns={historyColumns}
+              /* In the toolbar, not above the card: the left half was empty and
+                 the search floated alone on the right. */
+              title="Previous batch payments"
+              subtitle="One UTR, one proof, one Zoho expense per batch"
+              serial={{ header: 'Sr No' }}
+              accent="violet"
+              loading={loading}
+              minWidth={1180}
+              emptyMessage="No batch payments yet."
+            />          </div>
           <div className="bpw-foot" style={footer}>
             <div style={{ fontSize: 12.5, color: 'var(--bpw-muted)' }}>Pay several small approved claims of one employee at once.</div>
             <button style={ghostBtn} onClick={onClose}>Close</button>
@@ -566,7 +630,11 @@ const selChip: React.CSSProperties = { background: '#6d28d9', color: '#fff', bor
 // card, which produced a spurious vertical scrollbar when everything already
 // fit — QA #126). flex-shrink 1 + overflowY:auto still lets genuinely tall
 // content scroll within the 92vh cap.
-const body: React.CSSProperties = { padding: 22, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 };
+/* 8px at the sides: the table card inside carries its own border and
+   toolbar padding, so a 22px gutter only narrowed the columns. Top and
+   bottom keep the 22 — that gap is against the header band and the footer,
+   not against a card edge. */
+const body: React.CSSProperties = { padding: '22px 8px', overflowY: 'auto', flex: '0 1 auto', minHeight: 0 };
 const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 26px', borderTop: '1px solid var(--bpw-border-soft)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
 /* The CTA as it sits ON the header gradient: a filled pill would fight the
    band it is painted on, so it takes the same translucent-white treatment
@@ -617,8 +685,8 @@ const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repe
    so the primary action belongs to this dialog rather than looking borrowed
    from the page behind it (#61). Geometry still matches .hrexp-cta — the
    pill that opens this modal — so only the hue differs. */
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'linear-gradient(135deg,#a78bfa 0%,#7c5cfc 55%,#6d28d9 100%)', color: '#fff', border: 'none', borderRadius: 999, boxShadow: '0 8px 18px rgba(109,40,217,0.32)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
-const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'var(--bpw-surface)', color: 'var(--bpw-text)', border: '1px solid var(--bpw-input-border)', borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, padding: '0 18px', background: 'linear-gradient(135deg,#a78bfa 0%,#7c5cfc 55%,#6d28d9 100%)', color: '#fff', border: 'none', borderRadius: 999, boxShadow: '0 8px 18px rgba(109,40,217,0.32)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
+const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, padding: '0 18px', background: 'var(--bpw-surface)', color: 'var(--bpw-text)', border: '1px solid var(--bpw-input-border)', borderRadius: 999, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
 const ghostSm: React.CSSProperties = { background: 'var(--bpw-surface)', color: 'var(--bpw-accent-fg)', border: '1px solid var(--bpw-accent-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
 const warnSm: React.CSSProperties = { background: 'var(--bpw-warn-bg)', color: 'var(--bpw-warn-fg)', border: '1px solid var(--bpw-warn-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const disabledSm: React.CSSProperties = { background: 'var(--bpw-surface-2)', color: 'var(--bpw-muted-2)', border: '1px solid var(--bpw-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'not-allowed', whiteSpace: 'nowrap' };

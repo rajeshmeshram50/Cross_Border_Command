@@ -815,14 +815,14 @@ export default function TemplateFormPage() {
         <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div className="d-flex align-items-center gap-3 min-w-0">
-              <span style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className="ri-file-text-line" style={{ fontSize: 22, color: '#fff' }} />
+              <span style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-file-text-line" style={{ fontSize: 19, color: '#fff' }} />
               </span>
               <div>
-                <h4 className="fw-bold mb-0" style={{ color: '#fff' }}>{editing ? 'Edit Template' : 'Add New Template'}</h4>
+                <h4 className="fw-bold mb-0" style={{ fontFamily: 'var(--font-sans)', fontSize: 17, lineHeight: 1.2, color: '#fff' }}>{editing ? 'Edit Template' : 'Add New Template'}</h4>
                 {/* Fixed: what the module is for. The step and its own
                     subtitle are the stepper's whole job, just below. */}
-                <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
                   Manage standardized documents and workflows across the employee lifecycle
                 </div>
               </div>
@@ -975,28 +975,31 @@ export default function TemplateFormPage() {
         )}
 
         {/* Footer */}
-        <div className="tpl-form-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
-          <button type="button" onClick={() => handleSubmit(true)} disabled={saving}
-            className="tpl-btn-ghost"
-            style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            {saving ? <><Spin /> Saving…</> : <><i className="ri-draft-line me-1" /> Save as Draft</>}
-          </button>
-          <div className="d-flex gap-2">
+        <div className="tpl-form-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
+          {/* Save as Draft sits WITH the other actions, not opposite them: it
+              is one of the ways out of this form, and a lone button on the far
+              left read as a different kind of control. (#188) */}
+          <div className="d-flex gap-2 align-items-center">
+            <button type="button" onClick={() => handleSubmit(true)} disabled={saving}
+              className="tpl-btn-ghost"
+              style={{ height: 40, padding: '0 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              {saving ? <><Spin /> Saving…</> : <><i className="ri-draft-line me-1" /> Save as Draft</>}
+            </button>
             <button type="button" onClick={() => navigate('/hr/doc-templates')} disabled={saving}
               className="tpl-btn-ghost"
               /* Palette lives in .tpl-btn-ghost — see the dark-mode note there. */
-              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ height: 40, padding: '0 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="button" onClick={handleBack} disabled={step === 1 || saving}
               className="tpl-btn-ghost"
-              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: step === 1 ? 'default' : 'pointer' }}>
+              style={{ height: 40, padding: '0 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: step === 1 ? 'default' : 'pointer' }}>
               ← Back
             </button>
             {step < STEPS.length ? (
               <button type="button" onClick={handleNext} disabled={saving}
                 className="tpl-btn-next"
-                style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                style={{ height: 40, padding: '0 18px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
                 Next →
               </button>
             ) : (
@@ -1135,7 +1138,7 @@ function SectionHead({ icon, n, title, sub, required }: { icon: string; n: numbe
             Category", "3. Basic Information") was near-black ink on a dark
             card — present but unreadable. `.tpl-card-head-title` is the hook
             the dark block already uses for exactly this. */}
-        <div className="tpl-card-head-title" style={{ fontSize: 13.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
+        <div className="tpl-card-head-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 13.5, fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
           {n}. {title} {required && <span style={req}>*</span>}
         </div>
         <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{sub}</div>
@@ -1185,7 +1188,7 @@ function Toggle({ on, setOn, title, sub, icon }: { on: boolean; setOn: (v: boole
         <i className={icon} />
       </span>
       <div style={{ minWidth: 0 }}>
-        <div className="tpl-toggle-title" style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>{title}</div>
+        <div className="tpl-toggle-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 700, color: '#374151' }}>{title}</div>
         <div className="tpl-toggle-sub" style={{ fontSize: 11.5, color: '#6b7280', lineHeight: 1.4 }}>{sub}</div>
       </div>
     </label>
@@ -1262,7 +1265,7 @@ function Step2(props: {
               <i className="ri-file-text-line" />
             </span>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>Summary</div>
+              <div className="tpl-card-head-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 14.5, fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>Summary</div>
               <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{STEPS[0].label} · {STEPS[0].sub}</div>
             </div>
           </header>
@@ -1361,7 +1364,7 @@ function Step2(props: {
             <i className="ri-calendar-event-line" />
           </span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
+            <div className="tpl-card-head-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 14.5, fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
               HR Lifecycle Event <span style={req}>*</span>
             </div>
             <div style={{ fontSize: 11.5, color: '#9ca3af' }}>The event that puts this template in front of an employee</div>
@@ -1398,7 +1401,7 @@ function Step2(props: {
           <div className="d-flex align-items-center" style={{ gap: 12 }}>
             <span style={cardHeadTile}><i className="ri-shield-check-line" /></span>
             <div style={{ minWidth: 0 }}>
-              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.25 }}>Signing Workflow</div>
+              <div className="tpl-card-head-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 14.5, fontWeight: 700, lineHeight: 1.25 }}>Signing Workflow</div>
               <div style={{ fontSize: 11.5, color: '#9ca3af' }}>Who signs this document, and in what order</div>
             </div>
           </div>
@@ -1563,7 +1566,7 @@ function Step3(props: {
           <div className="d-flex align-items-center" style={{ gap: 12 }}>
             <span style={cardHeadTile}><i className="ri-layout-4-line" /></span>
             <div style={{ minWidth: 0 }}>
-              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>Template Design</div>
+              <div className="tpl-card-head-title" style={{ fontFamily: 'var(--font-sans)', fontSize: 14.5, fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>Template Design</div>
               <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{STEPS[2].sub}</div>
             </div>
           </div>

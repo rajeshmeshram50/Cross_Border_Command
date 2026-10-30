@@ -499,34 +499,30 @@ export default function HrBiometricDevices() {
           <ModalFooter className="px-4 pb-3 justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button
               type="button"
-              className="master-modal-cancel"
+              className="master-modal-cancel d-inline-flex align-items-center gap-1"
               onClick={() => setModalOpen(false)}
               disabled={saving}
             >
-              <i className="ri-close-line align-middle me-1"></i>
+              <i className="ri-close-line align-middle"></i>
               Cancel
             </button>
             <Button
               color="secondary"
               type="submit"
               disabled={saving}
-              className="btn-label waves-effect waves-light rounded-pill"
+              /* No .btn-label: it draws the icon in a fixed 35.5px panel
+                 welded to the button's left edge, which read as a second
+                 button bolted on and sat a shade darker than the fill.
+                 An inline icon with a gap is what every other HRMS footer
+                 uses, and it drops the old trap this comment used to
+                 describe — a <Spinner> stretched into a rotating ellipse by
+                 that panel's geometry (QA #2). A round spinner in normal
+                 flow needs no special casing. */
+              className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
             >
-              {/* The spinner goes INSIDE the label block, not in place of it.
-                  `.btn-label .label-icon` is `position:absolute; width:35.5px;
-                  top/bottom:-1px` — a fixed label panel on the button's left
-                  edge. Putting that on a <Spinner>, which is a circle with
-                  border-radius:50%, stretched it to the button's full height
-                  and 35.5px wide: a rotating ELLIPSE, which is the "icon gets
-                  rotated" in QA #2. The wrapper keeps the panel's geometry and
-                  centres whatever is in it (the class already sets flex +
-                  center), so the spinner stays round and the button doesn't
-                  change width between states. */}
-              <span className="label-icon">
-                {saving
-                  ? <Spinner size="sm" />
-                  : <i className="ri-save-line align-middle fs-16"></i>}
-              </span>
+              {saving
+                ? <Spinner size="sm" />
+                : <i className="ri-save-line align-middle"></i>}
               {saving
                 ? (editId ? 'Updating...' : 'Saving...')
                 : (editId ? 'Update Device' : 'Register Device')}

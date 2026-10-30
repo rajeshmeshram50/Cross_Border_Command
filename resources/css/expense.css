@@ -34,8 +34,11 @@
   flex-wrap: nowrap;
 }
 .hrexp-cta {
+  font-family: var(--font-sans);
   padding: 10px 18px;
-  font-size: 13px; font-weight: 700;
+  /* 12.5, the HRMS button size (QA 142). The height is already 40 further
+     down; only the font was left at 13. */
+  font-size: 12.5px; font-weight: 700;
   color: #fff !important;
   background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
   border: none !important;
@@ -67,9 +70,11 @@
 }
 .hrexp-hero-select .master-select-chev { color: #7c5cfc !important; }
 .hrexp-ghost-btn {
+  font-family: var(--font-sans);
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 16px;
-  font-size: 13px; font-weight: 600;
+  /* 40 / 12.5, beside .hrexp-cta (QA 142). */
+  height: 40px; padding: 0 16px;
+  font-size: 12.5px; font-weight: 600;
   background: #ffffff;
   color: #5a3fd1;
   border: 1px solid rgba(124,92,252,0.30);
@@ -292,3 +297,10 @@
 @media (max-height: 800px) {
   .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 12px; }
 }
+
+/* The batch-payment table sits inside a modal that already states its own
+   purpose in the header band, so its toolbar title is a notch quieter than
+   the 17px a standalone table uses. Scoped to this modal — .dt-title-main is
+   shared by every table in the app. */
+.bpw-root .dt-title-main { font-size: 14.5px; }
+.bpw-root .dt-title-sub  { font-size: 10px; }

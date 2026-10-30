@@ -2712,8 +2712,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
          Save & Next skippable. */
       const untouched = stage1SavedSigRef.current === sig
         || (stage1LoadedSigRef.current !== null && stage1LoadedSigRef.current === JSON.stringify(s1));
+      /* Only the SILENT auto-saves may skip the request. An explicit press —
+         Save Draft, Save & Next — must always send and always confirm:
+         when this skip applied to them the button did nothing at all, no
+         request and no toast, which is indistinguishable from broken. (#41) */
       if (
-        untouched
+        silent
+        && untouched
         && Number(wantStep ?? 0) <= haveStep
         && Number(wantMacro ?? 0) <= haveMacro
       ) {
@@ -4718,16 +4723,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           }
           .occ-btn-cancel,
           .occ-btn-confirm {
-            padding: 9px 18px; border-radius: 8px;
-            font-size: 13px; font-weight: 600; cursor: pointer;
+            padding: 0 18px; border-radius: 8px;
+            font-size: 12.5px; font-weight: 600; cursor: pointer;
             transition: all 140ms ease;
-            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-          }
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; min-height: 40px;}
           .occ-btn-cancel {
             background: var(--vz-card-bg);
             border: 1px solid var(--vz-border-color);
-            color: var(--vz-body-color);
-          }
+            color: var(--vz-body-color); height: 40px; min-height: 40px;}
           .occ-btn-cancel:hover:not(:disabled) {
             background: var(--vz-secondary-bg);
             border-color: var(--vz-border-color);

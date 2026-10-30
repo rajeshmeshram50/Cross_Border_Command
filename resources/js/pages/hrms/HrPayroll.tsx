@@ -394,11 +394,15 @@ export default function HrPayroll() {
     /* eslint-disable-next-line */
   }, [cycleKey]);
   const [q, setQ] = useState('');
-  const [facets, setFacets] = useState<Record<string, string>>({
-    department: '',
-    status: '',
+  /* Lists, not single values: both filters take more than one option. (QA 49) */
+  const [facets, setFacets] = useState<Record<string, string[]>>({
+    department: [],
+    status: [],
   });
-  const activeFacets = Object.values(facets).filter(Boolean).length;
+  const activeFacets = Object.values(facets).filter(v => v.length).length;
+  /* The export endpoints take a comma list; undefined when nothing is picked
+     so the param is left off entirely. */
+  const facetParam = (v: string[]) => (v.length ? v.join(',') : undefined);
   const [departments, setDepartments]   = useState<string[]>([]);
 
   useEffect(() => {
@@ -427,6 +431,7 @@ export default function HrPayroll() {
     {
       key: 'department',
       label: 'Department',
+      multi: true,
       icon: 'ri-building-2-line',
       options: deptOptions
         .filter(o => o.value !== 'All')
@@ -435,6 +440,7 @@ export default function HrPayroll() {
     {
       key: 'status',
       label: 'Status',
+      multi: true,
       icon: 'ri-checkbox-circle-line',
       options: STATUS_OPTIONS
         .filter(o => o.value !== 'All')
@@ -1216,8 +1222,8 @@ export default function HrPayroll() {
       const res = await api.get('/payroll/payslips/bulk', {
         params: {
   month, year,
-  department: facets.department || undefined,
-  status: facets.status || undefined,
+  department: facetParam(facets.department),
+  status: facetParam(facets.status),
 },
         responseType: 'blob',
       });
@@ -1247,8 +1253,8 @@ export default function HrPayroll() {
     try {
       const res = await api.post('/payroll/payslips/email', {
         month, year,
-department: facets.department || undefined,
-status: facets.status || undefined,
+department: facetParam(facets.department),
+status: facetParam(facets.status),
       });
       toast.success('Payslips emailed', res.data?.message || `Payslips sent for ${cycle.label}.`);
     } catch (err: any) {
@@ -1266,8 +1272,8 @@ status: facets.status || undefined,
       const res = await api.get('/payroll/export', {
        params: {
   month, year,
-  department: facets.department || undefined,
-  status: facets.status || undefined,
+  department: facetParam(facets.department),
+  status: facetParam(facets.status),
 },
         responseType: 'blob',
       });
@@ -1460,8 +1466,8 @@ status: facets.status || undefined,
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return rows
-     .filter(r => !facets.department || r.department === facets.department)
-.filter(r => !facets.status     || r.status === facets.status)
+     .filter(r => !facets.department.length || facets.department.includes(r.department))
+     .filter(r => !facets.status.length     || facets.status.includes(r.status))
       .filter(r => {
         if (!needle) return true;
         return (
@@ -2644,12 +2650,16 @@ status: facets.status || undefined,
               toolbarFilters={
                 <MasterFilterButton
                   title="Filter Payroll"
-                  icon="ri-money-rupee-circle-line"
+                  /* No icon override: ri-money-rupee-circle-line is not in this
+                     project's Remix build (no rupee glyph is), so the class
+                     resolved to nothing and the header badge rendered empty.
+                     The default is the filter glyph, which is what the other
+                     filter panels show. (#187) */
                   facets={payrollFacets}
                   value={facets}
                   onApply={next => setFacets({
-                    department: String(next.department ?? ''),
-                    status:     String(next.status ?? ''),
+                    department: (next.department as string[]) ?? [],
+                    status:     (next.status as string[]) ?? [],
                   })}
                 />
               }
@@ -2701,8 +2711,8 @@ status: facets.status || undefined,
     facets={payrollFacets}
     value={facets}
     onApply={next => setFacets({
-      department: String(next.department ?? ''),
-      status:     String(next.status ?? ''),
+      department: (next.department as string[]) ?? [],
+      status:     (next.status as string[]) ?? [],
     })}
   />
 }
@@ -2746,8 +2756,8 @@ status: facets.status || undefined,
     facets={payrollFacets}
     value={facets}
     onApply={next => setFacets({
-      department: String(next.department ?? ''),
-      status:     String(next.status ?? ''),
+      department: (next.department as string[]) ?? [],
+      status:     (next.status as string[]) ?? [],
     })}
   />
 }

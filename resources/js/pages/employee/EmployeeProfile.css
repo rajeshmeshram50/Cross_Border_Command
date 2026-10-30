@@ -80,6 +80,17 @@
           --bs-gutter-x: 8px; --bs-gutter-y: 8px;
         }
 
+        /* The Evidence Vault names no family anywhere in its own vt-* rules,
+           so its hero, tabs and table all fell back to the theme Rubik while
+           the rest of the profile is DM Sans. Stated once on the tab roots;
+           everything inside inherits. (#174) */
+        .ep-tab-fill, .vt-tab-fill { font-family: var(--font-sans); }
+        /* Inheritance alone is not enough for the headings: the theme sets
+           Montserrat on h1-h6, and an element selector beats an inherited
+           value however far up it was stated. Named here so the vault headers
+           follow the root instead of the theme. (#174) */
+        .ep-tab-fill :is(h1, h2, h3, h4, h5, h6),
+        .vt-tab-fill :is(h1, h2, h3, h4, h5, h6) { font-family: var(--font-sans); }
         .ep-tab-fill { min-height: 100%; display: flex; flex-direction: column; }
         .ep-tab-fill > :last-child { flex-grow: 1; }
         .ep-tab-fill .ep-tab-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -2204,6 +2215,21 @@
 
 
 /* --- A) Font-size utilities (px) --- */
+/* Hero · the "+N more" roles panel (#189).
+
+   The trigger is a hero pill so it sits in the same row as the roles it
+   stands for; the panel below it is a normal light surface, because the
+   teal hero pills are drawn for a dark band and are unreadable on white. */
+.ep-hero-more-wrap { position: relative; display: inline-flex; }
+.ep-hero-pill-more {
+  display: inline-flex; align-items: center; gap: 2px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+.ep-hero-pill-more:hover { background: rgba(255, 255, 255, 0.24); }
+/* The popup panel is gone — the extra roles expand inline. */
 .ep-fs-75  { font-size: 7.5px; }
 .ep-fs-85  { font-size: 8.5px; }
 .ep-fs-9   { font-size: 9px; }
@@ -2902,8 +2928,12 @@
   line-height: 1;
 }
 .pft-ring-pct-unit { font-size: 7.5px; font-weight: 700; }
-/* 13.5px with the other section headers; the violet is its own. (#162) */
-.pft-prof-heading { color: #7c3aed; font-size: 13.5px; }
+/* 13.5px with the other section headers; the violet is its own. (#162)
+
+   font-family stated, not inherited: Velzon sets Rubik on body, and this was
+   the one heading on the page that did not say otherwise — every other
+   section uses .ep-sec-head, which does. */
+.pft-prof-heading { font-family: var(--font-sans); color: #7c3aed; font-size: 13.5px; }
 .pft-progress-wrap { position: relative; width: 100%; padding-top: 0; }
 .pft-progress-badge-anchor {
   position: absolute;

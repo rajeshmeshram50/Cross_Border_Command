@@ -1744,8 +1744,11 @@ class PayrollController extends Controller
 
         $matched = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
-            ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
-            ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            /* A comma list, because the filter panel allows more than one
+               department or status (QA 49). explode() on a single value gives
+               a one-element array, so an older caller still works. */
+            ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
+            ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
@@ -1852,8 +1855,11 @@ class PayrollController extends Controller
         }
 
         $slips = Payslip::where('payroll_run_id', $run->id)
-            ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
-            ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            /* A comma list, because the filter panel allows more than one
+               department or status (QA 49). explode() on a single value gives
+               a one-element array, so an older caller still works. */
+            ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
+            ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
@@ -1979,8 +1985,11 @@ class PayrollController extends Controller
 
         $q = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
-            ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
-            ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            /* A comma list, because the filter panel allows more than one
+               department or status (QA 49). explode() on a single value gives
+               a one-element array, so an older caller still works. */
+            ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
+            ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->when($branchFilter, fn ($q, $b) => $q->where('branch_id', $b))
             // Employment type reads the payslip's own snapshot, so an old export
             // stays reproducible after the employee's type changes.

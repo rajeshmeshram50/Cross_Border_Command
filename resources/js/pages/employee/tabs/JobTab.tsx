@@ -119,7 +119,7 @@ export default function JobTab() {
               <span className="ep-section-icon ep-icon-blue">
                 <i className="ri-building-2-line" />
               </span>
-              <h6 className="mb-0 fw-bold ep-fs-12">Organisational Structure</h6>
+              <h6 className="mb-0 fw-bold ep-sec-head">Organisational Structure</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -148,7 +148,7 @@ export default function JobTab() {
                   <span className="ep-section-icon ep-icon-emerald">
                     <i className="ri-edit-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold ep-fs-12">Role &amp; Positioning</h6>
+                  <h6 className="mb-0 fw-bold ep-sec-head">Role &amp; Positioning</h6>
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-4">
@@ -170,7 +170,7 @@ export default function JobTab() {
                   <span className="ep-section-icon ep-icon-amber">
                     <i className="ri-file-list-3-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold ep-fs-12">Employment Terms</h6>
+                  <h6 className="mb-0 fw-bold ep-sec-head">Employment Terms</h6>
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-3">
@@ -203,7 +203,7 @@ export default function JobTab() {
                   <span className="ep-section-icon ep-icon-blue">
                     <i className="ri-time-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold ep-fs-12">Attendance &amp; Time</h6>
+                  <h6 className="mb-0 fw-bold ep-sec-head">Attendance &amp; Time</h6>
                 </div>
                 <div className="px-3 py-3">
                   {/* Mirrors the Edit Employee form's "Leave & Attendance"
@@ -234,7 +234,7 @@ export default function JobTab() {
               <span className="ep-section-icon ep-icon-amber">
                 <i className="ri-computer-line" />
               </span>
-              <h6 className="mb-0 fw-bold ep-fs-12">Asset Details</h6>
+              <h6 className="mb-0 fw-bold ep-sec-head">Asset Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-3">
