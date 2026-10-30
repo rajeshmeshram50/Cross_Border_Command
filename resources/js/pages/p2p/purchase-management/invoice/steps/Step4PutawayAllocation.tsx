@@ -2194,7 +2194,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       {qrBox && (
         <PutawayBoxSticker
           boxId={qrBox.code}
-          spiNumber={draft.invoiceNumber || '—'}
+          spiNumber={spiCode || '—'}
           scenario={STICKER_SCENARIO[qrBox.scenarioKey] ?? 'S1 — Single'}
           product={qrBox.name}
           code={qrBox.productCodes[0] ?? '—'}
