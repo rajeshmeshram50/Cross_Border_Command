@@ -195,11 +195,14 @@ class PoPaymentRequestController extends Controller
             // Row lock: a payment saved at the same moment cannot slip in under the old TDS.
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
 
-            /* Once money has moved the deduction is settled — changing it would
-               rewrite what was already paid against. */
-            if ((float) $locked->paid_amount > 0) {
+            /* Settled by a payment OR by an approval — the same two gates the
+               PO uses. An approval counts because it was given against the net
+               payable as it stood. */
+            if ($lock = self::spiTdsLockedBy((int) $locked->id)) {
                 abort(response()->json(['status' => false,
-                    'message' => "A payment has already been recorded on {$locked->code} — the TDS cannot be changed now.",
+                    'message' => $lock === 'payment'
+                        ? "TDS cannot be changed — a payment has already been recorded against {$locked->code}."
+                        : "TDS cannot be changed — a payment request on {$locked->code} has already been approved. It was approved against the current net payable.",
                 ], 422));
             }
 
@@ -1072,9 +1075,9 @@ class PoPaymentRequestController extends Controller
                 'tds_percentage' => (float) $invoice->tds_percentage,
                 'tds_amount'     => $tds,
                 'tds_saved'      => (bool) $invoice->tds_updated_at,
-                /* Settled once money has moved — changing it would rewrite what
-                   was already paid against. */
-                'tds_locked'     => $paid > 0,
+                /* By a payment or by an approval — see spiTdsLockedBy(). */
+                'tds_locked'     => self::spiTdsLockedBy((int) $invoice->id) !== null,
+                'tds_locked_by'  => self::spiTdsLockedBy((int) $invoice->id),
                 'tds_applies'    => !$invoice->isInternational(),
                 'net_payable'    => $net,
                 'paid'           => $paid,
@@ -1210,6 +1213,29 @@ class PoPaymentRequestController extends Controller
      *
      * @return 'payment'|'approval'|null
      */
+    /**
+     * What has settled the TDS on a DIRECT invoice: a payment, an approval,
+     * or nothing yet.
+     *
+     * The mirror of tdsLockedBy(). An APPROVAL locks it as firmly as a
+     * payment does: the approver agreed an amount against the net payable as
+     * it stood, and moving the deduction afterwards changes what they agreed
+     * to without asking them.
+     */
+    public static function spiTdsLockedBy(int $spiId): ?string
+    {
+        $paid = PoPayment::withoutGlobalScope('tenant')
+            ->whereNull('purchase_order_id')->where('supplier_invoice_id', $spiId)->exists();
+        if ($paid) return 'payment';
+
+        $approved = PoPaymentRequest::withoutGlobalScope('tenant')
+            ->whereNull('purchase_order_id')->where('supplier_invoice_id', $spiId)
+            ->where('status', PoPaymentRequest::STATUS_APPROVED)
+            ->exists();
+
+        return $approved ? 'approval' : null;
+    }
+
     private function tdsLockedBy(int $poId): ?string
     {
         if ($this->paymentRows($poId)->exists()) return 'payment';

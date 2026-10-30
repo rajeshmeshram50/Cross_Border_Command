@@ -442,15 +442,13 @@ class SpiSummaryService
     private function header(SupplierInvoice $spi, $boxes, array $places): array
     {
         $po = $spi->purchaseOrder;
-        $pi = $po?->proforma_invoice_id
-            ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
-            : null;
         /* The invoice's own shipment first. A Direct SPI captures it at
            Step 01 of its setup; before that column existed this could only
            come from the order, so a Direct SPI reported no shipment even
            when one had been chosen. */
         $shipId = $spi->shipment_order_id ?? $po?->shipment_order_id;
         $ship = $shipId ? DB::table('shipment_orders')->find($shipId) : null;
+        $pi = $this->piFor($spi, $po, $ship);
 
         return [
             'spi_id'         => $spi->code,
@@ -500,14 +498,36 @@ class SpiSummaryService
         ];
     }
 
-    /** Customer and consignee come from the PI behind the order; the supplier is the invoice's own. */
+    /**
+     * The proforma invoice this SPI hangs off.
+     *
+     * The ORDER first, which stays authoritative while it exists; then the
+     * SHIPMENT, which carries the same id and is all a Direct SPI has. Read
+     * off the order alone, a Direct SPI had no PI - and so no opportunity,
+     * customer or consignee - however complete its Step 01 was.
+     */
+    private function piFor(SupplierInvoice $spi, $po, $ship = null)
+    {
+        if ($po?->proforma_invoice_id) {
+            return DB::table('proforma_invoices')->find($po->proforma_invoice_id);
+        }
+
+        if ($ship === null) {
+            $shipId = $spi->shipment_order_id ?? $po?->shipment_order_id;
+            $ship = $shipId ? DB::table('shipment_orders')->find($shipId) : null;
+        }
+
+        return $ship?->proforma_invoice_id
+            ? DB::table('proforma_invoices')->find($ship->proforma_invoice_id)
+            : null;
+    }
+
+    /** Customer and consignee come from the PI behind the order or its shipment; the supplier is the invoice's own. */
     private function parties(SupplierInvoice $spi): array
     {
         $out = [];
         $po  = $spi->purchaseOrder;
-        $pi  = $po?->proforma_invoice_id
-            ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
-            : null;
+        $pi  = $this->piFor($spi, $po);
 
         if ($pi?->customer_id) {
             $c = DB::table('customers')->find($pi->customer_id);

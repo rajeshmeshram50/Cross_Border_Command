@@ -810,6 +810,9 @@ class SupplierInvoiceController extends Controller
             $approved = $rows->where('status', PoPaymentRequest::STATUS_APPROVED);
             $paid     = round((float) $rows->sum('paid_amount'), 2);
             $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
+            $tds      = round((float) $spi->tds_amount, 2);
+            $tdsLock  = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::spiTdsLockedBy((int) $spi->id);
+            $net      = round((float) $spi->grand_total - $tds, 2);
 
             DB::commit();
 
@@ -820,8 +823,22 @@ class SupplierInvoiceController extends Controller
                     'base_amount'  => (float) $spi->taxable_total,   // without GST
                     'gst_amount'   => $gst,
                     'grand_total'  => (float) $spi->grand_total,     // with GST
+                    /* The deduction, so a reopened popup can show what was
+                       saved rather than starting blank. Cut on taxable_total,
+                       not grand_total - TDS is not deducted on GST. */
+                    'tds_percentage' => (float) $spi->tds_percentage,
+                    'tds_amount'     => $tds,
+                    'tds_saved'      => (bool) $spi->tds_updated_at,
+                    /* Settled once money has moved: changing it then would
+                       rewrite what was already paid against. */
+                    'tds_locked'     => $tdsLock !== null,
+                    'tds_locked_by'  => $tdsLock,
+                    'tds_applies'    => !$spi->isInternational(),
+                    'net_payable'    => $net,
                     'paid_amount'  => $paid,
-                    'balance'      => round((float) $spi->grand_total - $paid, 2),
+                    /* Net of the deduction. This was grand_total - paid, which
+                       overstated the balance by the whole TDS. */
+                    'balance'      => round($net - $paid, 2),
                 ],
 
                 'requests_summary' => [
@@ -859,7 +876,9 @@ class SupplierInvoiceController extends Controller
                     'source'         => 'purchase_order',
                     'code'           => $po->code,
                     'grand_total'    => (float) $po->grand_total,
+                    'tds_percentage' => (float) $po->tds_percentage,
                     'tds_amount'     => (float) $po->tds_amount,
+                    'tds_saved'      => (bool) $po->tds_updated_at,
                     'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
                     'paid_amount'    => (float) $po->paid_amount,
                     'balance_amount' => (float) $po->balance_amount,
@@ -867,7 +886,15 @@ class SupplierInvoiceController extends Controller
                     'source'         => 'supplier_invoice',
                     'code'           => $spi->code,
                     'grand_total'    => (float) $spi->grand_total,
+                    /* The deduction and what settled it, so the popup can show
+                       what was saved and grey the field when it is fixed. */
+                    'tds_percentage' => (float) $spi->tds_percentage,
                     'tds_amount'     => (float) $spi->tds_amount,
+                    'tds_saved'      => (bool) $spi->tds_updated_at,
+                    'tds_locked'     => $tdsLock !== null,
+                    /* 'payment' | 'approval' | null — which of the two fixed it. */
+                    'tds_locked_by'  => $tdsLock,
+                    'tds_applies'    => !$spi->isInternational(),
                     'net_payable'    => round((float) $spi->grand_total - (float) $spi->tds_amount, 2),
                     /* Null until the first payment: the ledger has not been
                        opened, which is not the same as a zero balance. */
