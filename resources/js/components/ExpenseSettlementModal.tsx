@@ -2518,8 +2518,8 @@ export default function ExpenseSettlementModal({
             <div className="esm-sub-foot">
               <div className="esm-foot-hint"><i className="ri-information-line" /> Up to {inr(remaining)} can be paid.</div>
               <div className="esm-foot-r">
-                <button className="esm-btn-primary" onClick={submit} disabled={saving}>{saving ? 'Recording…' : 'Record Payment'}</button>
                 <button className="esm-btn-ghost" onClick={() => setShowForm(false)} disabled={saving}>Cancel</button>
+                <button className="esm-btn-primary" onClick={submit} disabled={saving}>{saving ? 'Recording…' : 'Record Payment'}</button>
               </div>
             </div>
           </div>
@@ -3172,8 +3172,10 @@ const CSS = `
 .esm-sub-x{width:30px;height:30px;border-radius:8px;border:none;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;font-size:15px;flex-shrink:0;}
 .esm-sub-x:hover{background:rgba(255,255,255,.3);}
 .esm-sub-body{padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px;}
-.esm-sub-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-top:1px solid #eef2f4;background:#f8fafc;}
-[data-bs-theme="dark"] .esm-sub-foot{background:#15112a;border-color:#2c2550;}
+/* No background: the footer takes the body it is attached to, so the two
+   cannot drift apart. */
+.esm-sub-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-top:1px solid #eef2f4;}
+[data-bs-theme="dark"] .esm-sub-foot{border-color:#2c2550;}
 /* Outstanding-balance strip */
 .esm-bal{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:linear-gradient(120deg,#f5f3ff,#f5f3ff);border:1px solid #ede9fe;border-radius:12px;padding:14px 16px;}
 [data-bs-theme="dark"] .esm-bal{background:linear-gradient(120deg,#191430,#17142c);border-color:rgba(167,139,250,.28);}
@@ -3359,6 +3361,23 @@ const CSS = `
 .esm-in{width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;color:#0f172a;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;}
 .esm-in:focus{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.14);}
 [data-bs-theme="dark"] .esm-in{background:#15122b;border-color:#2c2550;color:#e2e8f0;}
+/* The kit's select and date picker take the same fill as .esm-in beside
+   them. Without this the Payment Method dropdown read a shade off from the
+   UTR field it shares a row with. */
+.esm-modal .master-select-toggle,.esm-sub-modal .master-select-toggle,
+.esm-modal .master-datepicker-toggle,.esm-sub-modal .master-datepicker-toggle{
+  min-height:40px;border-radius:10px;font-size:13px;font-family:inherit;
+}
+[data-bs-theme="dark"] .esm-modal .master-select-toggle,
+[data-bs-theme="dark"] .esm-sub-modal .master-select-toggle,
+[data-bs-theme="dark"] .esm-modal .master-datepicker-toggle,
+[data-bs-theme="dark"] .esm-sub-modal .master-datepicker-toggle{
+  background:#15122b !important;border-color:#2c2550 !important;color:#e2e8f0 !important;
+}
+[data-bs-theme="dark"] .esm-modal .master-select-wrap.show .master-select-toggle,
+[data-bs-theme="dark"] .esm-sub-modal .master-select-wrap.show .master-select-toggle{
+  border-color:#7c5cfc !important;box-shadow:0 0 0 3px rgba(124,92,252,.18) !important;
+}
 textarea.esm-in{resize:vertical;}
 .esm-inline{display:flex;gap:8px;align-items:stretch;}
 .esm-inline .esm-in{flex:1;}
@@ -3616,14 +3635,31 @@ textarea.esm-in{resize:vertical;}
 .esm-tbl-link{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;color:#7c5cfc;text-decoration:none;font-weight:600;font-size:var(--esm-proof-fs);}
 .esm-tbl-link i{margin-right:5px;vertical-align:-1px;}
 .esm-tbl-link:hover{text-decoration:underline;}
-.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;flex-shrink:0;}
-[data-bs-theme="dark"] .esm-foot{background:#15112a;border-color:#2c2550;}
+.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;flex-shrink:0;}
+[data-bs-theme="dark"] .esm-foot{border-color:#2c2550;}
 .esm-foot-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:#64748b;min-width:0;}
 .esm-foot-hint i{color:#7c5cfc;font-size:15px;flex-shrink:0;}
 .esm-foot-r{display:flex;gap:10px;flex-shrink:0;}
-.esm-btn-ghost{border:1.5px solid #ded7ef;background:#fff;color:#475569;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
+/* 40px tall, like every other button in the module, so it lines up with
+   the primary beside it instead of sitting a few pixels short. */
+.esm-btn-ghost{border:1.5px solid #ded7ef;background:#fff;color:#475569;border-radius:10px;height:40px;min-height:40px;padding:0 18px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--font-sans);}
 .esm-btn-ghost:hover:not(:disabled){background:#f1f5f9;}
 [data-bs-theme="dark"] .esm-btn-ghost{background:#15122b;border-color:#2c2550;color:#cbd5e1;}
+/* The light hover out-specifies the dark BASE, so without this the button
+   turned near-white under the cursor on a dark footer. */
+[data-bs-theme="dark"] .esm-btn-ghost:hover:not(:disabled){background:#201a3d;border-color:#3c3370;color:#e2e8f0;}
+/* The same trap on every other control in this sheet: a dark base, a hover
+   written only for light, and the hover selector wins. Violet wash for the
+   neutral ones, rose for the destructive ones. */
+[data-bs-theme="dark"] .esm-file:hover,
+[data-bs-theme="dark"] .esm-file-act:hover,
+[data-bs-theme="dark"] .esm-file-btn:hover,
+[data-bs-theme="dark"] .esm-sec-chev:hover,
+[data-bs-theme="dark"] .esm-zbtn:hover:not(:disabled){background:rgba(124,92,252,.18);border-color:#7c5cfc;}
+[data-bs-theme="dark"] .esm-file-act--danger:hover,
+[data-bs-theme="dark"] .esm-file-x:hover,
+[data-bs-theme="dark"] .esm-ded-x:hover,
+[data-bs-theme="dark"] .esm-srow-x:hover:not(:disabled){background:rgba(244,63,94,.20);border-color:#f43f5e;color:#fda4af;}
 .esm-btn-primary{font-family:var(--font-sans);border:none;border-radius:10px;height:40px;min-height:40px;padding:0 22px;font-size:12.5px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(120deg,#7c5cfc,#a78bfa);box-shadow:0 4px 12px rgba(124,92,252,.28);}
 .esm-btn-primary:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
