@@ -9,7 +9,6 @@ import {
 import GstNoticeModal, { type GstNotice } from '../../order/create-po/GstNoticeModal';
 import { poLookupApi, type PoDetail, type SupplierOption } from '../../order/api/po-api';
 
-/** The latest senior-approval request on the purchase order, as the PO sends it. */
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { legalFromVault } from '../../order/create-po/supplier-checks';
 import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
@@ -19,9 +18,6 @@ import { useToast } from '../../../../../contexts/ToastContext';
 const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 
-/* The supplier master opened on one tab. AddSupplierFlow cannot do this — it
-   starts at the origin question and has no way in to a step — and the GST
-   notice's button promises the scrutiny itself, not the supplier's front page. */
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 
 const AddSupplierFlow = lazy(() => import('../../order/create-po/AddSupplierFlow'));
@@ -36,9 +32,7 @@ import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
 const PO_TYPES = ['Material / Goods', 'Services'];
 const DOC_TYPES = ['Domestics', 'International'];
-/* The server's own list (PurchaseOrder::INCO_TERMS), as the PO form spells it. */
 const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
-/* The ceiling App\Support\FxRate enforces. */
 const FX_RATE_MAX = 10000;
 const TRANSPORT_MODES = ['Road', 'Rail', 'Air', 'Sea'];
 const PAYMENT_TYPES = ['Advance', 'Credit', 'Partial Advance'];
@@ -56,28 +50,12 @@ export default function Step1SupplierDetails({
   spiId?: number | null;
   onRequestApproval?: (body: { requested_to?: number; note?: string }) => Promise<unknown>;
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
-  /* The purchase order this invoice bills, and the GST approval standing on
-     it. The senior-approval request is raised against that order, exactly as
-     the PO form raises it — a Direct SPI has none, so there is nothing to
-     raise one on and the dialog says so in the PO's own words. */
   poId?: number | null;
   approval?: GstApproval | null;
   onApprovalSent?: () => void;
-  /* Raised while a supplier record is being fetched — picked by hand, swapped
-     for another, or refreshed after an edit. The form draws its full-step
-     skeleton over this step meanwhile. */
   onBusy?: (busy: boolean) => void;
-  /* A Direct SPI stands on its own: there is no purchase order to describe,
-     so the whole Purchase Order section goes rather than standing there with
-     nothing in its fields. */
   direct?: boolean;
-  /* Who the Direct SPI setup named. A label and a code, not a record — see
-     the seeding effect below for why that distinction decides everything. */
   directSupplier?: { code?: string; name?: string };
-  /* Fired once, when the setup's supplier has been resolved (or found not to
-     resolve). The form holds the stage skeleton until it hears this, so it
-     must fire on every path out of that effect — including the ones with no
-     work to do — or the skeleton never lifts. */
   onResolved?: () => void;
 }) {
   const [poOpen, setPoOpen] = useState(true);
@@ -101,13 +79,8 @@ export default function Step1SupplierDetails({
   const hasPo = !!poNumber;
   const locked = hasPo || readOnly;
 
-  /* The same seven fields the purchase order shows for an international
-     document. With a PO they are the PO's, read-only; a standalone invoice
-     fills them in. */
   const isInternational = docType === 'International';
 
-  /* Fetched only when they are editable — with a PO the values come from it,
-     and a domestic invoice never shows the fields at all. */
   const [currencies, setCurrencies] = useState<string[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
   useEffect(() => {
@@ -124,8 +97,6 @@ export default function Step1SupplierDetails({
         setCurrencies(names(c, 'code'));
         setCountries(names(k, 'name'));
       } catch {
-        /* The fields stay usable: an empty list leaves the select with
-           nothing to offer rather than breaking the step. */
       }
     })();
     return () => { live = false; };
@@ -190,16 +161,13 @@ export default function Step1SupplierDetails({
 
   const [refreshing, setRefreshing] = useState(false);
 
-  /* Everything this form knows about a supplier, read in one go: the master
-     record, its newest GST scrutiny and its Evidence Vault. Picking one on a
-     Direct SPI and re-reading one after an edit want exactly the same work,
-     so they share it — the vendor id is the only thing the caller supplies,
-     and it goes into the draft because the save is keyed on it. */
   const loadSupplier = async (id: number) => {
-    const [fresh, scrutinyRows] = await Promise.all([
-      poLookupApi.supplier(id),
-      spiApi.vendorScrutiny(id).catch(() => null),
-    ]);
+    const [fresh, scrutinyRows] = direct
+      ? await spiApi.vendorDetail(id).then(r => [r.detail, r.scrutiny] as const)
+      : await Promise.all([
+        poLookupApi.supplier(id),
+        spiApi.vendorScrutiny(id).catch(() => null),
+      ]);
     const gst = newestScrutiny(scrutinyRows);
     set({
       vendorId: id,
@@ -234,18 +202,17 @@ export default function Step1SupplierDetails({
     }
   };
 
-  /* A Direct SPI names its supplier here and nowhere else — there is no
-     purchase order to inherit one from — so the field is a live list off the
-     master rather than the single read-only value a With-PO invoice shows. */
   const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const domesticList = useRef<Promise<SupplierOption[]> | null>(null);
+  const domesticSuppliers = () => {
+    domesticList.current ??= poLookupApi.suppliers('domestic').catch(e => { domesticList.current = null; throw e; });
+    return domesticList.current;
+  };
   const [picking, setPicking] = useState(false);
-  /* Loaded whenever the picker is live, not only while it is empty. It used
-     to stop at the first supplier, which is what left the control a dead box
-     with nothing behind it to reopen. */
   useEffect(() => {
     if (!direct || hasPo || readOnly) return;
     let live = true;
-    poLookupApi.suppliers()
+    domesticSuppliers()
       .then(rows => { if (live) setSupplierOpts(rows); })
       .catch(() => { if (live) setSupplierOpts([]); });
     return () => { live = false; };
@@ -266,30 +233,16 @@ export default function Step1SupplierDetails({
     }
   };
 
-  /* The setup already asked who the supplier is, so this step should not ask
-     again — it should arrive filled in and read-only.
-     What it must NOT do is paste the chosen name into the draft: the save is
-     keyed on a vendor id, and a name alone would lock the field on a record
-     the server may never have heard of. So the chosen code is RESOLVED
-     against the master first and, on a hit, goes through the very same
-     loadSupplier the picker uses — the draft then holds a real id and
-     hasSupplier flips the field to its read-only form on its own.
-     A miss leaves the live picker exactly as it is today, which is the right
-     fallback: the setup named someone this master does not carry, and the
-     only honest thing to do is ask. */
   const seeded = useRef(false);
   useEffect(() => {
     if (!direct || seeded.current) return;
     const want = (directSupplier?.code ?? '').trim().toLowerCase();
     const wantName = (directSupplier?.name ?? '').trim().toLowerCase();
-    /* Nothing to resolve — but the form above is holding a skeleton until it
-       hears back, so every exit from this effect has to report, including the
-       ones that do no work at all. */
     if (hasSupplier || (!want && !wantName)) { seeded.current = true; onResolved?.(); return; }
     seeded.current = true;
     let live = true;
     setPicking(true);
-    poLookupApi.suppliers()
+    domesticSuppliers()
       .then(rows => {
         if (!live) return undefined;
         const hit = (want && rows.find(r => (r.code ?? '').trim().toLowerCase() === want))
@@ -303,53 +256,23 @@ export default function Step1SupplierDetails({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direct, hasSupplier, directSupplier?.code, directSupplier?.name]);
 
-  /* A record is on its way in and none of these fields can be answered yet —
-     the setup's supplier being resolved, one picked by hand, or an existing
-     one being swapped for another. All three go through loadSupplier, so all
-     three raise `picking`.
-     The `&& !hasSupplier` that used to be here is why CHANGING a supplier
-     showed nothing: the old one is still in the draft while the new record
-     loads, so the step kept standing there with the previous supplier's legal
-     name, address, contact and GST under the new name in the picker. Those
-     are the wrong company's details presented as this one's, which is worse
-     than a shimmer — and the slower the server, the longer it reads as fact. */
   const resolving = picking;
 
-  /* The whole step shimmers, not the cards one at a time.
-     Step 01 is the supplier master's to state from top to bottom — name,
-     legal name, address, contact, GST, legal status, risk — so while a record
-     is on its way in there is nothing on this screen that is still true.
-     Shimmering four cards and leaving the rest standing reads as a page half
-     stuck; the form already draws a full-step skeleton for the first load,
-     and this is the same wait, so it gets the same answer. */
   useEffect(() => { onBusy?.(resolving); }, [resolving, onBusy]);
 
-  /* Everything in step 01 is the supplier master's to state, so the moment a
-     supplier is resolved the whole step reads. `locked` already covers the
-     purchase-order and view-only cases; this adds the one that was missing. */
   const gstLocked = locked || hasSupplier;
 
-  /* A supplier is "ready" only once its record has actually landed. The two
-     summary cards below read entirely from that record - the legal percentage
-     and the six risk checks - so during a change `hasSupplier` alone would
-     keep showing the OLD supplier's verdict in the head while the body beside
-     it shimmers. A stale "All clear" on a new supplier is the one thing this
-     step must never say. */
   const supplierReady = hasSupplier && !resolving;
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
-  const gst = gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate, 'invoice');
+  const gst = isInternational && hasSupplier
+    ? { tone: 'idle' as const, title: 'GST checks not applicable', note: 'International supplier — GST scrutiny and return filing do not apply to this invoice.', action: undefined }
+    : gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate, 'invoice');
   const scrutinyAge = monthsAgo(scrutinyDate);
   const filingAge = monthsAgo(filingDate);
 
-  /* The banner's action. The PO carries the same check, but there it is a
-     gate on submission and lives in the footer of its last step; on an SPI
-     the supplier is settled in step 01, so this is where a stale scrutiny has
-     to be raised — telling someone at step 04 that the supplier they chose
-     three screens ago cannot be used is three screens too late.
-     The modal, the wording and the dates are the shared ones. */
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
   const [scrutinyOpen, setScrutinyOpen] = useState(false);
   const openGstNotice = () => {
@@ -394,29 +317,16 @@ export default function Step1SupplierDetails({
         <GstNoticeModal
           notice={gstNotice}
           onClose={() => setGstNotice(null)}
-          /* The purchase order's own flow, passed straight through: the
-             request is raised on the PO this invoice bills, which is the
-             same order the PO form would have raised it on, and the approval
-             already standing on that order is the one shown here. So a
-             scrutiny or filing cleared from either screen reads the same on
-             both. */
           poId={poId}
           approval={approval}
           onSent={onApprovalSent}
           onRequest={direct && spiId ? (onRequestApproval ?? (body => spiApi.gstApprovalRequest(spiId, body))) : undefined}
-          /* Same checks, named for what the reader is actually looking at —
-             the dialog otherwise says "this PO cannot proceed" on an invoice
-             screen, which reads as the wrong dialog having opened. */
           doc="invoice"
           onOpenScrutiny={!locked && editVendorId !== null ? () => setScrutinyOpen(true) : undefined}
         />
       )}
       {scrutinyOpen && editVendorId !== null && (
         <Suspense fallback={null}>
-          {/* Straight to the supplier's GST Scrutiny tab, which is what the
-              button in the modal promises. Closing re-reads the supplier, so
-              a scrutiny refreshed in there clears the banner behind it
-              without reopening the invoice. */}
           <AddVendorModal
             vendorId={editVendorId}
             initialStep={2}
@@ -503,9 +413,6 @@ export default function Step1SupplierDetails({
                     onChange={v => set({ currency: v })} />
                 </Field>
                 <Field label="Exchange Rate" req>
-                  {/* Digits and one point only, and capped the way the PO caps
-                      it: a rate is a multiplier, so a typo does not add one
-                      digit to the invoice, it adds as many as the typo. */}
                   <input className="spi-dt-inp" readOnly={locked} inputMode="decimal"
                     placeholder={locked ? '—' : 'e.g. 83.25'} value={exchangeRate}
                     onChange={e => {
@@ -581,30 +488,14 @@ export default function Step1SupplierDetails({
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
                   <div className="cpf-supsel">
-                    {/* The picker stays live after a supplier is chosen. It
-                        used to become a dead read-only box, so the only way
-                        to correct a wrong supplier was to leave the form and
-                        start the invoice again. It is also the one control on
-                        this step that SHOULD be editable: every other field
-                        here is the master's answer to this question, which is
-                        why picking again refills them all through the same
-                        loadSupplier path.
-                        Still read-only where it genuinely is not a choice —
-                        a With-PO invoice inherits its supplier from the order,
-                        and a view-only SPI changes nothing. */}
                     {hasPo || readOnly ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
                     ) : (
                       <MasterSelect
                         value={draft.vendorId != null ? String(draft.vendorId) : ''}
-                        /* The code is the chip, the name the label — the same
-                           row the warehouse and zone pickers draw. */
                         options={supplierOpts.map(o => ({
                           value: String(o.id), label: o.name, code: o.code, fullLabel: `${o.code} · ${o.name}`,
                         }))}
-                        /* The chosen supplier is shown from the draft, so the
-                           field reads correctly before the list has landed
-                           and on a vendor the list does not happen to carry. */
                         currentValueLabel={supplier || undefined}
                         placeholder={picking ? 'Loading supplier…' : '— Select Supplier —'}
                         searchPlaceholder="Search supplier code or name"
@@ -612,9 +503,6 @@ export default function Step1SupplierDetails({
                         onChange={v => { if (v) void pickSupplier(Number(v)); }}
                       />
                     )}
-                    {/* The supplier is fetched before the form can open, and on
-                        a slow server that is a second or two of nothing. The
-                        button turns, so the press is visibly received. */}
                     {hasSupplier && (
                       <Tooltip label={busy === 'edit'
                         ? 'Opening the supplier…'
@@ -797,17 +685,6 @@ export default function Step1SupplierDetails({
                       </span>
                     )}
                   </span>
-                  {/* Only when there is something to act on — `action` is set
-                      on the stop and warn states and absent on the other two,
-                      so a cleared supplier shows the banner without a button
-                      asking to review nothing. */}
-                  {/* Direct SPI only. A With-PO invoice bills an order that
-                      has already been through this very check on its own
-                      submit — re-asking here would stop an invoice for a
-                      supplier the purchase order was already cleared, or
-                      approved, against. The finding above still reads, so
-                      nothing is hidden; it simply stops being a gate on a
-                      document that is not the one being gated. */}
                   {direct && gst.action && (() => {
                     const st = gst.tone === 'warn' ? approval?.status : undefined;
                     return (
@@ -822,17 +699,6 @@ export default function Step1SupplierDetails({
                     );
                   })()}
                 </div>
-                {/* gstLocked, not `locked`/`hasPo`. These five were the only
-                    fields in step 01 still gated on there being a purchase
-                    order, so on a Direct SPI — which has none by definition —
-                    they stayed typeable while the supplier's name, address
-                    and risk beside them were all read-only. They are not this
-                    invoice's data to edit either way: they arrive from the
-                    supplier's newest scrutiny record via draftFromScrutiny,
-                    and typing over them here would have changed the invoice
-                    and left the master saying something else. The Supplier
-                    Risk Alert directly below reads from exactly these values,
-                    so an edit here also silently rewrote its verdict. */}
                 <div className="spi-dt-grid4">
                   <Field label="SCRUTINY DATE">
                     {gstLocked
@@ -890,15 +756,6 @@ export default function Step1SupplierDetails({
                       </div>
                       <span className="cpf-risk__sum-score">{nOk}/{risks.length}</span>
                     </div>
-                    {/* No Mandatory Guidelines band here. Physical inspection
-                        before GRN acceptance and payment against milestones
-                        are rules the PURCHASE ORDER enforces - they are about
-                        how goods are accepted and how money is released, both
-                        of which are settled on the order, not on the invoice
-                        that follows it. On an SPI the band stated them as
-                        "Enforced on this PO" over a document that enforces
-                        neither. The PO's own copy in Step1LinkSupplier is
-                        untouched. */}
                     <div className="cpf-risk__list">
                       {risks.map(r => (
                         <div key={r.title} className={`cpf-risk__row cpf-risk__row--${r.sev}`}>

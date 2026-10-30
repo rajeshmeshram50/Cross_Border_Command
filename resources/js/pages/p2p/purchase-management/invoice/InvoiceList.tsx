@@ -20,11 +20,6 @@ import InvoicePaymentsModal from './InvoicePaymentsModal';
 const PutawaySummary = lazy(() => import('./PutawaySummary'));
 const InvoiceEvidenceVault = lazy(() => import('./InvoiceEvidenceVault'));
 import StorageSelectionModal, { type StorageChoice } from './StorageSelectionModal';
-/* The form is the heaviest thing in this module by a wide margin — it carries
-   all four steps and invoice-form.css, which is 790 KB of source on its own —
-   and the list does not show it until someone opens an invoice. Imported
-   statically it was in the list's chunk, so every visit to the worklist paid
-   for a form most visits never open. */
 const InvoiceForm = lazy(() => import('./InvoiceForm'));
 import type { InvoiceFormInput } from './InvoiceForm';
 import type { InvoiceAction } from './cells/RowActions';
@@ -227,9 +222,6 @@ export default function InvoiceList() {
   const page = list.page;
   const start = (page - 1) * pageSize;
 
-  /* `spi-list` is this page alone: it carries the CLM toolbar measurements,
-     which the other seven pages on the shared .spi-* classes have not moved
-     to yet. */
   return (
     <div className="spi-root ord-page spi-list">
 
@@ -332,10 +324,6 @@ export default function InvoiceList() {
 
         </div>
 
-        {/* The table is always rendered, empty or not: its head says what the
-            columns of this tab are, and the pager below says how many rows
-            there are. Swapping the whole thing for a sentence took both away
-            and left the list looking broken rather than empty. */}
         <InvoiceTable
           rows={list.rows} onAction={handleRowAction}
           startSr={start} scrollRef={scrollRef}
@@ -388,10 +376,6 @@ export default function InvoiceList() {
       )}
 
       {formFor && (
-        /* null, like the two lazy panels above: the form opens OVER the list,
-           so while its chunk arrives the worklist simply stays on screen. A
-           spinner here would need the form's own stylesheet, which is the
-           thing being deferred. */
         <Suspense fallback={null}>
           <InvoiceForm input={formFor} invoiceNo={formFor.invoiceNo ?? NEXT_INVOICE_NO} onClose={closeForm} />
         </Suspense>

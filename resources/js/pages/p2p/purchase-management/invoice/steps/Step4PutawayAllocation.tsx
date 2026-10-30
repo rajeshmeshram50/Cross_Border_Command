@@ -2208,6 +2208,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           onPdf={() => { void stickerPdf(qrBox.id, qrBox.code); }}
           onPrint={() => { void stickerPrint(qrBox.id); }}
           busy={stickerBusyKind}
+          spiId={spiId}
+          boxDbId={qrBox.id}
         />
       )}
 

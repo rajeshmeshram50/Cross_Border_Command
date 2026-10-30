@@ -14,6 +14,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { putId } from '../spi-api';
+import StickerPdfPreview from './StickerPdfPreview';
 
 const IcoTag = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -44,8 +45,10 @@ const IcoTickSm = () => (
 
 export default function PutawayBoxSticker({
   boxId, spiNumber, scenario, product, code, mode, condition,
-  sku, qty, date, qr, onClose, onPdf, onPrint, busy = null,
+  sku, qty, date, qr, onClose, onPdf, onPrint, busy = null, spiId = null, boxDbId = null,
 }: {
+  spiId?: number | null;
+  boxDbId?: number | null;
   boxId: string;
   spiNumber: string;
   /** "S1 — Single", and so on — the short form the label carries. */
@@ -97,6 +100,7 @@ export default function PutawayBoxSticker({
 
         {/* The label itself, drawn as it will print. */}
         <div className="vsm-body">
+          <StickerPdfPreview spiId={spiId} boxId={boxDbId} fallback={
           <div className="vsm-card">
             <div className="vsm-strip">
               <div className="vsm-sl"><span className="vsm-ll">SPI Number</span><span className="vsm-sv">{spiNumber}</span></div>
@@ -125,6 +129,7 @@ export default function PutawayBoxSticker({
               <span className="vsm-dt">{date}</span>
             </div>
           </div>
+          } />
         </div>
 
         <div className="vsm-mft">

@@ -4,15 +4,6 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import './direct-spi-steps.css';
 import './direct-spi-supplier.css';
 
-/**
- * The supplier picker for step 03 — a wider row than the other two lists.
- *
- * A supplier is chosen on more than its name: the same company can appear as
- * a manufacturer and a trader, and risk decides whether it may be used at all.
- * So the row carries its code, segment, location and risk in a grid under the
- * name, which is what the design shows and what a plain select cannot.
- */
-
 export type SupplierKind = 'manufacturer' | 'trader' | 'service';
 
 export interface SupplierRow {
@@ -21,39 +12,19 @@ export interface SupplierRow {
   code: string;
   name: string;
   kind: SupplierKind;
-  /** One segment or several. A comma-separated string counts as several. */
   segment: string | string[];
   location: string;
   risk: string;
 }
 
-/* A supplier can trade in more than one segment, and the cell only had room
-   for the word it was given — a second segment would have widened the column
-   or been silently lost. Both shapes are accepted because the field is a
-   plain string wherever it comes from a master today, and a supplier carrying
-   two of them there will arrive comma-separated rather than as an array. */
 export const segmentsOf = (r: SupplierRow): string[] =>
   (Array.isArray(r.segment) ? r.segment : r.segment.split(','))
     .map(s => s.trim())
     .filter(Boolean);
 
-/* The panel the "+N" opens: wide enough for a segment name, short enough that
-   it never becomes the thing you are reading instead of the list of suppliers.
-   Both are needed before it is drawn, to decide which side of the pill it goes
-   on and how far from the right edge it may start. */
 const SEG_POP_W = 236;
 const SEG_POP_H = 180;
 
-/* The first segment, then "+N" for the rest — the same shape the app's other
-   multi-value cells use, so the column stays one line wide however many
-   segments a supplier carries.
-
-   The "+N" opens the full list on a click. It used to be a `title` and nothing
-   else: a native tooltip is slow to appear, cannot be reached from the
-   keyboard, and on a count the whole point of which is "there is more here"
-   that made the extra segments effectively unreadable. Same behaviour as
-   SegmentTags in bulk-sourcing — its styling is scoped to another screen's
-   table, so only the pattern is shared, not the markup. */
 function SegmentCell({ row }: { row: SupplierRow }) {
   const all = segmentsOf(row);
   const [at, setAt] = useState<{ x: number; y: number; flip: boolean } | null>(null);
@@ -62,9 +33,6 @@ function SegmentCell({ row }: { row: SupplierRow }) {
     if (!at) return;
     const close = () => setAt(null);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    /* Capture, so a scroll of the picker's own list closes it too: the pill
-       travels with its row while the panel is pinned to the viewport, and a
-       panel left behind would be pointing at the wrong supplier. */
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     document.addEventListener('mousedown', close);
@@ -88,11 +56,6 @@ function SegmentCell({ row }: { row: SupplierRow }) {
           className="sdx-sup__segmore"
           aria-expanded={!!at}
           title={at ? 'Hide the segments' : `Show all ${all.length} segments`}
-          /* The row under this pill picks the supplier. Asking what the other
-             two segments are is not choosing the company that trades in
-             them, so neither press reaches it — and mousedown has to be
-             stopped as well as click, or the document listener above closes
-             the panel in the same gesture that opened it. */
           onMouseDown={e => e.stopPropagation()}
           onClick={e => {
             e.stopPropagation();
@@ -101,8 +64,6 @@ function SegmentCell({ row }: { row: SupplierRow }) {
             const b = e.currentTarget.getBoundingClientRect();
             setAt({
               x: Math.max(8, Math.min(b.left, window.innerWidth - SEG_POP_W - 8)),
-              /* Below the pill unless that would run off the bottom — near
-                 the foot of a long supplier list, it always would. */
               flip: b.bottom + 6 + SEG_POP_H > window.innerHeight,
               y: b.bottom + 6 + SEG_POP_H > window.innerHeight ? b.top - 6 : b.bottom + 6,
             });
@@ -130,17 +91,10 @@ const KIND_LABEL: Record<SupplierKind, string> = {
   manufacturer: 'Manufacturer', trader: 'Trader', service: 'Service Provider',
 };
 
-/* A supplier name is cut at a character count, not left to the cell's width.
-   CSS ellipsis alone cut at whatever width was left after the kind chip, so
-   the same list showed one name clipped at ~70 characters and the next at
-   ~30, and the hover had no way of saying which. A fixed cut keeps every row
-   reading the same, and the full name lives in the tooltip. */
 const NAME_MAX = 35;
 const clipName = (s: string) =>
   s.length > NAME_MAX ? `${s.slice(0, NAME_MAX).trimEnd()}…` : s;
 
-/* Initials from the first two words — "Reliance Industries Ltd" gives RI, not
-   RIL: the legal suffix is on every name and tells them apart from nothing. */
 const initialsOf = (name: string) =>
   name.split(/\s+/).filter(w => !/^(ltd|limited|pvt|private|inc|llp|co)\.?$/i.test(w))
     .slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
@@ -179,10 +133,6 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick, loading =
   const picked = rows.find(r => r.code === value) ?? pickedRow;
   const hit = q.trim().toLowerCase();
   const shown = hit
-    /* segmentsOf, not r.segment: the hidden ones behind "+N" have to be
-       searchable, or a supplier is unfindable by a segment it actually
-       trades in — and the array shape would otherwise stringify with
-       commas and no spaces, which breaks a two-word match across the join. */
     ? rows.filter(r => `${r.code} ${r.name} ${segmentsOf(r).join(' ')} ${r.location} ${r.risk} ${KIND_LABEL[r.kind]}`.toLowerCase().includes(hit))
     : rows;
 
@@ -212,12 +162,6 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick, loading =
 
   useEffect(() => {
     if (!open) return;
-    /* A segment panel is opened FROM this popover but portalled to the body,
-       so it is not inside `popRef` and both handlers below would treat using
-       it as leaving — clicking a segment would shut the picker, and Escape
-       would shut the picker rather than the panel. Neither is what the press
-       meant, so the panel is checked for by its class: it belongs to a row of
-       this list, whatever it is parented to. */
     const inSegPop = (n: Node | null) =>
       !!(n instanceof Element ? n : n?.parentElement)?.closest('.sdx-segpop');
     const out = (e: MouseEvent) => {
@@ -227,8 +171,6 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick, loading =
     };
     const esc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      /* Let the open panel take this one. It closes on Escape itself, and
-         propagation is deliberately not stopped so that listener still runs. */
       if (document.querySelector('.sdx-segpop')) return;
       e.stopPropagation();
       setOpen(false);
@@ -304,20 +246,12 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick, loading =
                   <span className={`sdx-sup__av sdx-sup__av--${r.kind}`}>{initialsOf(r.name)}</span>
                   <span className="sdx-sup__main">
                     <span className="sdx-sup__hd">
-                      {/* Only when it was actually cut: a tooltip that repeats
-                          a name you can already read is noise. The list sits in
-                          a portal at z-index 10000050, below the tooltip's own
-                          260000, so the default layer is enough here. */}
                       <Tooltip label={r.name} disabled={r.name.length <= NAME_MAX}>
                         <span className="sdx-sup__nm">{clipName(r.name)}</span>
                       </Tooltip>
                       <span className={`sdx-sup__kind sdx-sup__kind--${r.kind}`}>{KIND_LABEL[r.kind]}</span>
                       <span className="sdx-sup__tick">{IcoTick}</span>
                     </span>
-                    {/* Code, segment, location and risk together — the four
-                        facts that decide whether this is the right supplier,
-                        rather than one line that makes you open the master to
-                        find out. */}
                     <span className="sdx-sup__grid">
                       <span className="sdx-sup__c"><span className="sdx-sup__cl">Supplier Code</span><span className="sdx-sup__cv is-mono">{r.code}</span></span>
                       <span className="sdx-sup__c"><span className="sdx-sup__cl">Segment</span><SegmentCell row={r} /></span>

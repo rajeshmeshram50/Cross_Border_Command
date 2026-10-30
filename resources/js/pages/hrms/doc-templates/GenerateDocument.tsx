@@ -600,7 +600,7 @@ export default function GenerateDocument() {
               })}
             </div>
           </CardBody>
-          <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: 8 }} className="gd-footer">
+          <div style={{ padding: '16px 24px', borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }} className="gd-footer">
             <button type="button" onClick={() => navigate('/hr/doc-templates')} className="gd-cancel"
               style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Done
@@ -2083,19 +2083,32 @@ function ScopedStyles() {
         transition: border-color 140ms ease, box-shadow 140ms ease;
       }
 
-      /* .dt-search's measurements — the search on every other HRMS list.
-         This one had no rule of its own at all and fell through to
-         Bootstrap's .form-control. (QA #133) */
+      /* .dt-search, measurements AND colour — the search on every other HRMS
+         list. It had no rule of its own at all and fell through to
+         Bootstrap's .form-control (QA #133); the white fill that replaced
+         that still read as a different control beside the lavender one.
+
+         The violet is written out instead of read from --dt-a-50 / -200 /
+         -400, because those tokens are defined on .dt-root and this field
+         sits outside any table. Values are the same ones .dt-root sets. */
       .gd-page .gd-search {
         height: 42px;
         border-radius: 11px;
-        background: rgba(255, 255, 255, .80);
-        border: 1.5px solid rgba(124, 58, 237, .28);
-        box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
+        background: linear-gradient(180deg, color-mix(in srgb, #faf5ff 60%, #fff), #faf5ff);
+        border: 1.5px solid color-mix(in srgb, #ddd6fe 55%, #fff);
         font-size: 13px;
+        color: var(--vz-body-color);
         transition: border-color .16s ease, box-shadow .16s ease;
       }
-      .gd-page .gd-search:hover { border-color: rgba(124, 58, 237, .45); }
+      .gd-page .gd-search::placeholder { color: color-mix(in srgb, #a78bfa 60%, #94a3b8); }
+      .gd-page .gd-search:hover { border-color: #a78bfa; }
+      .gd-page .gd-search:focus {
+        border-color: #a78bfa;
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, .14);
+      }
+      /* The magnifier is violet too — it was the one grey thing left in an
+         otherwise lavender field. */
+      .gd-page .gd-head-search > i.ri-search-line { color: #a78bfa !important; }
       /* In the step head it shares the row with the count badge, so it is
          capped rather than greedy — the same reasoning as .dt-search. */
       .gd-page .gd-head-search { width: 320px; max-width: 100%; }
@@ -2259,9 +2272,7 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-title { color: #f1f5f9; }
       [data-bs-theme="dark"] .gd-page .gd-subtle,
       [data-layout-mode="dark"] .gd-page .gd-subtle { color: rgba(255,255,255,0.6) !important; }
-      [data-bs-theme="dark"] .gd-page .gd-search,
       [data-bs-theme="dark"] .gd-page .gd-input,
-      [data-layout-mode="dark"] .gd-page .gd-search,
       [data-layout-mode="dark"] .gd-page .gd-input {
         /* The card background, as every other HRMS field reads in dark —
            #0f172a was a navy this page chose for itself. */
@@ -2269,15 +2280,30 @@ function ScopedStyles() {
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
       }
+      /* The HRMS list search in dark, value for value: an 8% violet wash at
+         22% border. Written out rather than read from --dt-a-rgb, which is
+         only defined inside .dt-root and this field is not in one. */
       [data-bs-theme="dark"] .gd-page .gd-search,
       [data-layout-mode="dark"] .gd-page .gd-search {
-        border-color: rgba(167, 139, 250, .30) !important;
+        background: rgba(124, 58, 237, .08) !important;
+        border-color: rgba(124, 58, 237, .22) !important;
+        color: var(--vz-body-color) !important;
         box-shadow: none;
       }
-      [data-bs-theme="dark"] .gd-page .gd-search::placeholder,
+      [data-bs-theme="dark"] .gd-page .gd-search:focus,
+      [data-layout-mode="dark"] .gd-page .gd-search:focus {
+        border-color: #a78bfa !important;
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, .18) !important;
+      }
+      /* --dt-a-300, the colour the list search's magnifier takes. */
+      [data-bs-theme="dark"] .gd-page .gd-head-search > i.ri-search-line,
+      [data-layout-mode="dark"] .gd-page .gd-head-search > i.ri-search-line { color: #c4b5fd !important; }
       [data-bs-theme="dark"] .gd-page .gd-input::placeholder,
-      [data-layout-mode="dark"] .gd-page .gd-search::placeholder,
       [data-layout-mode="dark"] .gd-page .gd-input::placeholder { color: rgba(255,255,255,0.35) !important; }
+      /* The list search tints its placeholder with the accent rather than
+         greying it, in both themes. */
+      [data-bs-theme="dark"] .gd-page .gd-search::placeholder,
+      [data-layout-mode="dark"] .gd-page .gd-search::placeholder { color: color-mix(in srgb, #a78bfa 60%, #94a3b8) !important; }
       [data-bs-theme="dark"] .gd-page .gd-table-wrap,
       [data-layout-mode="dark"] .gd-page .gd-table-wrap { border-color: rgba(255,255,255,0.08) !important; }
       [data-bs-theme="dark"] .gd-page .gd-table-head,

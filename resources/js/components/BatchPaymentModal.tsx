@@ -605,6 +605,11 @@ const card: React.CSSProperties = {
      when the content would otherwise have fit (QA #126). 100% fills the
      backdrop's content box exactly: 100vh − 40px. */
   width: '100%', maxWidth: 1340, maxHeight: '100%', display: 'flex', flexDirection: 'column',
+  /* The family, once, for everything inside. This modal is portaled to
+     <body>, and the style objects below set a font SIZE but no family, so
+     all of them were inheriting Rubik from the body rather than the
+     project font. */
+  fontFamily: 'var(--font-sans)',
   background: 'var(--bpw-surface)', color: 'var(--bpw-text)', borderRadius: 20, overflow: 'hidden', boxShadow: '0 30px 80px rgba(2,44,52,.4)',
   // The SearchableSelect dropdown reads these Velzon theme variables for its
   // surfaces. This modal is portaled to <body> (outside the theme scope), so we
@@ -639,7 +644,7 @@ const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-be
 /* The CTA as it sits ON the header gradient: a filled pill would fight the
    band it is painted on, so it takes the same translucent-white treatment
    as the close button beside it. */
-const headerCta: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 34, padding: '0 14px', background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.30)', color: '#fff', borderRadius: 999, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
+const headerCta: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 40, minHeight: 40, padding: '0 18px', background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.30)', color: '#fff', borderRadius: 999, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
 const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.18)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 17, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const rowBetween: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 };
 const tableWrap: React.CSSProperties = {

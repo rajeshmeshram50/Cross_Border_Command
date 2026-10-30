@@ -594,6 +594,191 @@ class SpiBoxController extends Controller
         return $saved;
     }
 
+    /**
+     * Handling symbols for the row beside the QR.
+     *
+     * Line art, not glyphs: DejaVu's snowflake and warning characters render
+     * at whatever weight the font gives them, which on a thermal head is
+     * either invisible or a blob. These are strokes at a fixed width, and
+     * they survive a scuffed label.
+     *
+     * Only what applies is returned, so the blade prints one tile, four, or
+     * no row at all.
+     */
+    private function pictograms(array $flags): array
+    {
+        $out = [];
+
+        if ($flags['cold']) {
+            $out[] = [
+                'svg'   => $this->svg($this->icoSnowflake()),
+                'title' => 'COLD CHAIN',
+                'sub'   => $flags['temp'] ? 'KEEP ' . $flags['temp'] : 'TEMPERATURE CONTROLLED',
+            ];
+        }
+
+        if ($flags['hazardous'] === 'Yes') {
+            $out[] = [
+                'svg'   => $this->svg($this->icoHazard()),
+                'title' => 'HAZARDOUS',
+                'sub'   => $flags['hazClass'] ? 'CLASS ' . $flags['hazClass'] : 'CLASS N/A',
+            ];
+        }
+
+        if (!empty($flags['fragile'])) {
+            $out[] = [
+                'svg'   => $this->svg($this->icoFragile()),
+                'title' => 'FRAGILE',
+                'sub'   => 'HANDLE WITH CARE',
+            ];
+        }
+
+        if (($flags['stacking'] ?? '') === 'Do Not Stack') {
+            $out[] = [
+                'svg'   => $this->svg($this->icoNoStack()),
+                'title' => 'DO NOT STACK',
+                'sub'   => 'SINGLE TIER ONLY',
+            ];
+        }
+
+        return $out;
+    }
+
+    /** dompdf takes SVG as an <img> data URI; inline <svg> is less reliable. */
+    private function svg(string $body): string
+    {
+        $doc = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+             . '<rect x="3" y="3" width="94" height="94" rx="12" fill="#fff" stroke="#000" stroke-width="5"/>'
+             . $body . '</svg>';
+
+        return 'data:image/svg+xml;base64,' . base64_encode($doc);
+    }
+
+    /**
+     * Six arms at 60°, each with a forked tip and one pair of branches
+     * partway down — the shape a handler reads as "snowflake" rather than
+     * "asterisk". Computed, not hand-placed: at six-fold symmetry a point
+     * typed one unit out is visible as a wobble.
+     */
+    private function icoSnowflake(): string
+    {
+        $cx = 50; $cy = 50;
+        $arm = 32;          // centre to tip
+        $branchAt = [0.52, 0.80];
+        $branchLen = 10;
+        $branchAngle = 52;  // degrees off the arm, pointing outward
+
+        $pt = function (float $deg, float $r) use ($cx, $cy) {
+            $rad = deg2rad($deg);
+            return [$cx + $r * cos($rad), $cy - $r * sin($rad)];
+        };
+        $line = fn (array $a, array $b) => sprintf(
+            '<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f"/>', $a[0], $a[1], $b[0], $b[1]
+        );
+
+        $out = '';
+        for ($i = 0; $i < 6; $i++) {
+            $a = 90 + $i * 60;
+            $tip = $pt($a, $arm);
+
+            $out .= $line([$cx, $cy], $tip);
+
+            foreach ($branchAt as $f) {
+                $from = $pt($a, $arm * $f);
+                foreach ([$branchAngle, -$branchAngle] as $off) {
+                    // The branch grows OUT from the arm, so it is measured
+                    // from the branch point, not from the centre.
+                    $rad = deg2rad($a + $off);
+                    $out .= $line($from, [
+                        $from[0] + $branchLen * cos($rad),
+                        $from[1] - $branchLen * sin($rad),
+                    ]);
+                }
+            }
+        }
+
+        return '<g stroke="#000" stroke-width="4.2" stroke-linecap="round" fill="none">'
+             . $out . '</g>';
+    }
+    private function icoHazard(): string
+    {
+        return '<polygon points="50,16 84,50 50,84 16,50" fill="none" stroke="#000" stroke-width="5"/>'
+             . '<line x1="50" y1="34" x2="50" y2="57" stroke="#000" stroke-width="7" stroke-linecap="round"/>'
+             . '<circle cx="50" cy="68" r="4" fill="#000"/>';
+    }
+
+    private function icoFragile(): string
+    {
+        return '<g stroke="#000" stroke-width="5" fill="none" stroke-linejoin="round">'
+             . '<path d="M38 20 L62 20 L58 44 L52 50 L52 72 L62 72 L62 80 L38 80 L38 72 L48 72 L48 50 L42 44 Z"/>'
+             . '</g>';
+    }
+
+    private function icoNoStack(): string
+    {
+        return '<g stroke="#000" stroke-width="5" fill="none">'
+             . '<rect x="24" y="54" width="52" height="26"/>'
+             . '<rect x="24" y="20" width="52" height="26"/>'
+             . '<line x1="20" y1="76" x2="80" y2="24" stroke-width="6"/>'
+             . '</g>';
+    }
+
+    /**
+     * Every business reference the carton is traced by, each with its date.
+     *
+     * Own column first, then the order: a Direct SPI carries its own shipment
+     * and procurement case and has no PO to read them from, and printing a
+     * dash for a carton that IS against a case loses the only reference the
+     * warehouse traces it by.
+     */
+    private function refs(SupplierInvoice $spi, $po): array
+    {
+        $spi->loadMissing([
+            'shipmentOrder.lead:id,opp_code',
+            'shipmentOrder.proformaInvoice:id,code,created_at,customer_id,consignee_id',
+        ]);
+        $po?->loadMissing([
+            'shipmentOrder.lead:id,opp_code',
+            'shipmentOrder.proformaInvoice:id,code,created_at,customer_id,consignee_id',
+        ]);
+
+        $shp  = $spi->shipmentOrder ?: $po?->shipmentOrder;
+        $pi   = $shp?->proformaInvoice;
+        $lead = $shp?->lead;
+
+        return [
+            'shp'  => ['code' => $shp?->shipment_code,  'date' => $this->day($shp?->created_at)],
+            'opp'  => ['code' => $lead?->opp_code,      'date' => $this->day($lead?->created_at)],
+            'proc' => [
+                'code' => $spi->procurement_request_code ?? $po?->procurement_request_code,
+                'date' => $this->day($po?->created_at ?? $spi->created_at),
+            ],
+            /* Inward Receipt Memo. Nothing in the system issues one yet, so it
+               prints blank rather than borrowing another document's number. */
+            'irm'  => ['code' => null,                  'date' => null],
+            'inv'  => ['code' => $spi->invoice_no,      'date' => $this->day($spi->invoice_date)],
+            'pi'   => ['code' => $pi?->code,            'date' => $this->day($pi?->created_at)],
+            'po'   => ['code' => $po?->code,            'date' => $this->day($po?->po_date)],
+            'spi'  => ['code' => $spi->code,            'date' => $this->day($spi->invoice_date)],
+        ];
+    }
+
+    /** Who the carton is for and who it came from. */
+    private function parties(SupplierInvoice $spi, $po): array
+    {
+        $pi = ($spi->shipmentOrder ?: $po?->shipmentOrder)?->proformaInvoice;
+
+        return [
+            'customer'  => $pi?->customer_id
+                ? DB::table('customers')->where('id', $pi->customer_id)->value('customer_code')
+                : null,
+            'consignee' => $pi?->consignee_id
+                ? DB::table('consignees')->where('id', $pi->consignee_id)->value('consignee_code')
+                : null,
+            'supplier'  => $spi->vendor?->vendor_code,
+        ];
+    }
+
     private function stickerData(SupplierInvoice $spi, SpiBox $box): array
     {
         $items = $box->items;
@@ -617,18 +802,8 @@ class SpiBoxController extends Controller
             'printNo'   => $this->printCount($box) + 1,
             'printedOn' => now()->format('d/m/Y H:i'),
 
-            'refs' => [
-                /* The invoice's own first — a Direct SPI has a procurement
-                   case but no order, and printing a dash for it on a carton
-                   that IS against a case is the label losing the one
-                   reference the warehouse traces it by. */
-                'procurement' => [
-                    'code' => $spi->procurement_request_code ?? $po?->procurement_request_code,
-                    'date' => $this->day($po?->created_at ?? $spi->created_at),
-                ],
-                'po'          => ['code' => $po?->code,                     'date' => $this->day($po?->po_date)],
-                'spi'         => ['code' => $spi->code,                     'date' => $this->day($spi->invoice_date)],
-            ],
+            'refs'    => $this->refs($spi, $po),
+            'parties' => $this->parties($spi, $po),
 
             /* The prototype's face leads with the product and counts the
                rest — distinct PRODUCTS, not lines: one product split over
@@ -655,7 +830,12 @@ class SpiBoxController extends Controller
                 'severe'  => 'Severe Damage',
                 default   => ucfirst((string) $box->condition),
             },
-            'flags' => $this->boxFlags($box),
+            'flags' => $flags = $this->boxFlags($box),
+            'coldChain'   => $flags['cold'] ? 'Yes' . ($flags['temp'] ? ' (' . $flags['temp'] . ')' : '') : 'No',
+            'hazardLabel' => $flags['hazardous'] . ' (Class: ' . ($flags['hazClass'] ?: 'N/A') . ')',
+            /* Only the symbols that APPLY — a carton with neither prints none,
+               one with both prints both. */
+            'pictos'      => $this->pictograms($flags),
 
             'place' => $this->placement($put),
 
@@ -696,6 +876,11 @@ class SpiBoxController extends Controller
         $behaviours = $ids->isEmpty() ? collect() : DB::table('inventory_product_flags')
             ->whereIn('id', $ids)->pluck('behaviour');
 
+        $rows = $ids->isEmpty() ? collect() : DB::table('inventory_product_flags')
+            ->whereIn('id', $ids)->get(['behaviour', 'code', 'flag_name']);
+        /* The hazard CLASS is the flag's own code — nothing else stores one. */
+        $hazCode = $rows->firstWhere('behaviour', 'hazardous')?->code;
+
         $cold = $behaviours->contains('cold_chain') || $box->temp_min_c !== null || $box->temp_max_c !== null;
         $temp = $box->temp_min_c !== null && $box->temp_max_c !== null
             ? sprintf('%s to %s °C', $this->num($box->temp_min_c), $this->num($box->temp_max_c))
@@ -709,6 +894,9 @@ class SpiBoxController extends Controller
 
             'storage'   => $cold ? ('COLD CHAIN' . ($temp ? ' / ' . $temp : '')) : 'AMBIENT / NORMAL STORAGE',
             'hazardous' => $behaviours->contains('hazardous') ? 'Yes' : 'No',
+            'hazClass'  => $hazCode,
+            'temp'      => $temp,
+            'cold'      => $cold,
             'stacking'  => $stackable ? 'Stackable' : 'Do Not Stack',
             'fragile'   => $behaviours->contains('fragile'),
         ];
