@@ -3327,6 +3327,7 @@
 .stk-pv--load { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #0e7490; background: #f4fbfd; }
 [data-bs-theme="dark"] .stk-pv { border-color: rgba(148, 163, 184, .22); }
 [data-bs-theme="dark"] .stk-pv--load { background: rgba(15, 23, 42, .6); color: #67e8f9; }
+.cpf-supsel .cpf-suplock { flex: 1; min-width: 0; cursor: not-allowed; }
 
 /* Box modal, compact like the design. The popup ran far taller than the
    prototype: Box Photos sat in a roomy panel of its own, Box Remark took a
