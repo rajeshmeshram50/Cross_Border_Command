@@ -148,6 +148,12 @@ Route::get('/announcements/{id}/attachment',     [AnnouncementController::class,
    is why it can sit out here without auth. */
 Route::get('/dev/mail-preview/{template}', [\App\Http\Controllers\Api\DevToolsController::class, 'mailPreview']);
 
+/* Box-sticker face preview — renders the blade from synthetic data (query
+   params drive cold/haz/fragile/stack/condition/scenario/refs) so the design
+   can be tuned without a real SPI/box. Local-only: the controller 404s
+   elsewhere, so it sits here without auth. */
+Route::get('/p2p/spi/sticker-preview', [SpiBoxController::class, 'stickerPreview']);
+
 // Protected
 Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
@@ -630,6 +636,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Step 03 · Option 01 — hand it to the floor; the box stays unplaced.
         Route::post  ('/{id}/putaway/{row}/scan-task',      [SpiPutawayTaskController::class, 'store'])->whereNumber('id')->whereNumber('row');
         Route::get   ('/{id}/putaway/tasks',                [SpiPutawayTaskController::class, 'index'])->whereNumber('id');
+        // A box's frozen scan log (handheld + manual), read-only.
+        Route::get   ('/{id}/putaway/boxes/{box}/activity', [SpiPutawayTaskController::class, 'boxActivity'])->whereNumber('id')->whereNumber('box');
 
         /* Payment Requests History for ONE invoice. The requests themselves are
            still raised and decided on the PO — this is the read that scopes

@@ -400,6 +400,18 @@ export type PutawayTask = {
 export const taskScansDone = (t: PutawayTask): number =>
   Math.min(2, Math.max(Number(t.completed_scans) || 0, t.box_scan_at ? 1 : 0));
 
+/** One row of a box's FROZEN scan log (handheld + manual), from the server. */
+export type PutawayLogRow = {
+  id: number;
+  at: string | null;
+  event: string;
+  ok: boolean;
+  reason_label: string | null;
+  location: string | null;
+  actor: string | null;
+  device: string | null;
+};
+
 export type PutawayRow = {
   id: number;
   box_id: number;
@@ -563,6 +575,12 @@ export const spiApi = {
   putawayTask: (taskId: number) =>
     call('Zebra task', () => api.get(`/putaway/tasks/${taskId}`),
       (b) => (b as { data?: PutawayTask } | null)?.data as PutawayTask),
+
+  /** A box's frozen scan log — server truth, same every view. */
+  putawayBoxActivity: (spiId: number, boxId: number) =>
+    call('Scan log', () => api.get(`/p2p/spi/${spiId}/putaway/boxes/${boxId}/activity`),
+      (b) => ((b as { data?: { box_code: string | null; timeline: PutawayLogRow[] } } | null)?.data)
+        ?? { box_code: null, timeline: [] as PutawayLogRow[] }),
 
   putawayCancelTask: (taskId: number, reason?: string) =>
     call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),

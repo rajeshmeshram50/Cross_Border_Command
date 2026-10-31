@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
    reason. */
 import './step4.css';
 import {
-  putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
+  putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayLogRow, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
@@ -967,6 +967,38 @@ const LOG_ICO: Record<LogKind, ReactNode> = {
   err: <IcoWarn />, done: <IcoTick />, cancel: <IcoCancelSm />,
 };
 
+/** A persisted log timestamp → "DD MMM, HH:mm:ss" (real time, not this session's). */
+const logTime = (at: string | null): string => {
+  if (!at) return '';
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', { hour12: false });
+  return `${date}, ${time}`;
+};
+
+/** Map the server's frozen box log to the popover's entries. The UI-only
+ *  breadcrumbs (pick / zone / method) are not persisted, so the log shows the
+ *  real events: assign, scan, confirm, release. */
+const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] =>
+  rows.flatMap((r): LogEntry[] => {
+    const time = logTime(r.at);
+    const withDev = (s: string) => [s, r.device].filter(Boolean).join(' · ');
+    switch (r.event) {
+      case 'assigned':         return [{ k: 'loc', t: 'Location assigned', d: r.location ?? '', time }];
+      case 'reassigned':       return [{ k: 'loc', t: 'Location reassigned', d: r.location ?? '', time }];
+      case 'task_created':     return [{ k: 'task', t: 'Zebra scan task created', d: '', time }];
+      case 'task_cancelled':   return [{ k: 'cancel', t: 'Zebra scan task cancelled', d: '', time }];
+      case 'scan_passed':      return [{ k: 'scan', t: 'Scan verified', d: withDev(r.location ?? ''), time }];
+      case 'scan_failed':      return [{ k: 'err', t: 'Scan rejected', d: r.reason_label ?? '', time }];
+      case 'confirmed_manual': return [{ k: 'done', t: 'Putaway confirmed (manual)', d: r.location ?? '', time }];
+      case 'confirmed_device': return [{ k: 'done', t: 'Putaway confirmed', d: withDev(r.location ?? ''), time }];
+      case 'released':         return [{ k: 'cancel', t: 'Box released', d: '', time }];
+      // lock_acquired / lock_released are internal — not shown.
+      default:                 return [];
+    }
+  });
+
 function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose }: {
   anchor: HTMLElement | null;
   boxCode: string | null;
@@ -1295,6 +1327,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [scanSteps, setScanSteps] = useState(0);
   const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
   const [logsOpen, setLogsOpen] = useState(false);
+  /* The box's FROZEN scan log, fetched from the server — same every view. It
+     replaces the session-built log, which was stamped with THIS session's
+     clock and so looked different each time the SPI was opened (CS-1144). */
+  const [serverLog, setServerLog] = useState<LogEntry[]>([]);
   const logBtnRef = useRef<HTMLButtonElement>(null);
   const addLog = (code: string | null | undefined, k: LogKind, t: string, d = '') => {
     if (!code) return;
@@ -1331,6 +1367,17 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (!box || !onLoadBox) return;
     void onLoadBox(box.id);
   }, [box?.id]);
+
+  /* Load the box's frozen scan log when its popover opens (and re-load after a
+     scan/confirm in THIS session so the new persisted row shows up). */
+  useEffect(() => {
+    if (!logsOpen || !box || !spiId) { setServerLog([]); return; }
+    let live = true;
+    spiApi.putawayBoxActivity(spiId, box.id)
+      .then(res => { if (live) setServerLog(fromServerLog(res.timeline)); })
+      .catch(() => { if (live) setServerLog([]); });
+    return () => { live = false; };
+  }, [logsOpen, box?.id, spiId, placedAt, scanSteps]);
 
   const qrBox = qrFor ? all.find(b => b.code === qrFor) ?? null : null;
   const qrRaw = useMemo(() => (qrFor ? boxes.find(b => b.box_code === qrFor) : undefined), [boxes, qrFor]);
@@ -1803,7 +1850,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <ScanLogs
                 anchor={logBtnRef.current}
                 boxCode={box?.code ?? null}
-                entries={box ? logs[box.code] ?? [] : []}
+                entries={serverLog}
                 method={methodPick === 'zebra' || scanTask ? 'Using Zebra Device'
                   : methodPick === 'manual' ? 'Manual Confirmation'
                   : 'Method not chosen'}
