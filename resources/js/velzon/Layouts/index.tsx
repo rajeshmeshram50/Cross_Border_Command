@@ -179,7 +179,12 @@ const Layout = (props : any) => {
                         edges. This selector carries an extra class, so it wins
                         over app.css whatever that file says — the top gap is set
                         HERE, and app.css only looks like it owns it. */}
-                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:8px!important;}.idims-active > .footer{position:static!important;left:0!important;right:0!important;flex-shrink:0;}'}</style>
+                    {/* Footer is FIXED, not a flex slot: a static/flex-shrink:0
+                        footer always holds its 40px, which shows as an empty
+                        strip once it auto-hides. Fixed takes it out of the flow
+                        so .main-content fills to the bottom and the footer just
+                        overlays (pointer-events:none) when it slides back in. */}
+                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:8px!important;}.idims-active > .footer{position:fixed!important;left:0!important;right:0!important;bottom:0!important;}'}</style>
                     <IdimsHeader />
                     <div className="main-content" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
                         {props.children}

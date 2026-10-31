@@ -160,11 +160,11 @@ const DEFAULT_SIZE_OPTIONS = [10, 25, 50];
 const bottomReserve = (): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  /* The auto-hiding footer is `position: fixed` — it is out of the flow and
-     owns no height on the page, so reserving its 40px would leave exactly the
-     empty white band it exists to remove. It comes back OVER the table instead,
-     and passes clicks through (see .app-footer-auto in app.css). */
-  if (f?.classList.contains('app-footer-auto')) return 15;
+  /* Reserve the footer's height + 8px so the card ends ABOVE the footer rather
+     than behind it. The footer is `position: fixed`, so its offsetHeight stays
+     constant whether it is shown or hidden — the table never jumps — and when
+     it is hidden the reserved strip just shows the page background, not an empty
+     white band. */
   const fh = f?.offsetHeight ?? 0;
   return fh > 0 ? fh + 8 : 15;
 };

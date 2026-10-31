@@ -81,10 +81,9 @@ const ANN_FILTER_FACETS = [
   ] },
   { key: 'status',   label: 'Status',   icon: 'ri-checkbox-circle-line', options: [
     { value: 'Draft',     label: 'Draft'     },
-    { value: 'Scheduled', label: 'Scheduled' },
     { value: 'Active',    label: 'Active'    },
     { value: 'Expired',   label: 'Expired'   },
-    { value: 'Archived',  label: 'Archived'  },
+    // Scheduled / Archived dropped — not used here (QA 209).
   ] },
 ];
 
@@ -109,10 +108,9 @@ const ANN_FILTER_GROUPS = [
     key: 'status', label: 'Status', cols: 3 as const,
     options: [
       { value: 'Draft',     label: 'Draft',     icon: 'ri-draft-line',           tone: '#f59e0b' },
-      { value: 'Scheduled', label: 'Scheduled', icon: 'ri-calendar-schedule-line', tone: '#3b82f6' },
       { value: 'Active',    label: 'Active',    icon: 'ri-checkbox-circle-line', tone: '#10b981' },
       { value: 'Expired',   label: 'Expired',   icon: 'ri-time-line',            tone: '#6b7280' },
-      { value: 'Archived',  label: 'Archived',  icon: 'ri-archive-line',         tone: '#6b7280' },
+      // Scheduled / Archived dropped — not used here (QA 209).
     ],
   },
 ];

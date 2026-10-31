@@ -1210,7 +1210,7 @@ export default function PublicOnboarding() {
           min-height: 40px;
           padding-top: 8px;
           padding-bottom: 8px;
-          font-size: 13.5px;
+          font-size: 13px;
           border-radius: 10px;
         }
         /* Bring the field icon up a notch so it centers in the taller input */

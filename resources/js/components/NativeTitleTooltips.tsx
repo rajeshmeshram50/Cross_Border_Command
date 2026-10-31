@@ -40,6 +40,7 @@ export default function NativeTitleTooltips() {
   const pillRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const showTimer = useRef<number | null>(null);
+  const hideTimer = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     if (!tip) { setCoords(null); return; }
@@ -58,7 +59,18 @@ export default function NativeTitleTooltips() {
     const clearTimer = () => {
       if (showTimer.current) { window.clearTimeout(showTimer.current); showTimer.current = null; }
     };
-    const hide = () => { clearTimer(); triggerRef.current = null; setTip(null); };
+    const clearHideTimer = () => {
+      if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
+    };
+    const hideNow = () => { clearTimer(); clearHideTimer(); triggerRef.current = null; setTip(null); };
+    /* A short delay before hiding, cancelled if the pointer lands back on the
+       trigger. A hover transform or an overlay that briefly steals the pointer
+       fired mouseout → mouseover in a tight loop, and the pill flickered; the
+       pending hide absorbs that bounce. */
+    const scheduleHide = () => {
+      clearHideTimer();
+      hideTimer.current = window.setTimeout(hideNow, 90) as unknown as number;
+    };
 
     /* The nearest ancestor that carries a title we should show. Walking up
        matters because the pointer usually lands on an icon or a span inside
@@ -78,7 +90,9 @@ export default function NativeTitleTooltips() {
 
     const onOver = (e: MouseEvent) => {
       const el = carrier(e.target as Element | null);
-      if (!el) { if (triggerRef.current) hide(); return; }
+      if (!el) { if (triggerRef.current) scheduleHide(); return; }
+      // Pointer is on a real trigger — cancel any pending hide so it stays put.
+      clearHideTimer();
       if (el === triggerRef.current) return;
 
       const live = el.getAttribute('title');
@@ -107,23 +121,24 @@ export default function NativeTitleTooltips() {
     const onOut = (e: MouseEvent) => {
       const to = e.relatedTarget as Node | null;
       if (to && triggerRef.current?.contains(to)) return;
-      hide();
+      scheduleHide();
     };
 
     /* A click usually opens or navigates something, and a scroll moves the
        page out from under a fixed pill — both leave it pointing at nothing. */
     document.addEventListener('mouseover', onOver, true);
     document.addEventListener('mouseout', onOut, true);
-    document.addEventListener('click', hide, true);
-    window.addEventListener('scroll', hide, true);
-    window.addEventListener('resize', hide);
+    document.addEventListener('click', hideNow, true);
+    window.addEventListener('scroll', hideNow, true);
+    window.addEventListener('resize', hideNow);
     return () => {
       clearTimer();
+      clearHideTimer();
       document.removeEventListener('mouseover', onOver, true);
       document.removeEventListener('mouseout', onOut, true);
-      document.removeEventListener('click', hide, true);
-      window.removeEventListener('scroll', hide, true);
-      window.removeEventListener('resize', hide);
+      document.removeEventListener('click', hideNow, true);
+      window.removeEventListener('scroll', hideNow, true);
+      window.removeEventListener('resize', hideNow);
     };
   }, []);
 

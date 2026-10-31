@@ -2978,9 +2978,14 @@
 .cand-sample-modal {
   border-radius: 16px !important;
   overflow: hidden;
+  /* DM Sans across the whole Sample Import popup. */
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   box-shadow:
     0 30px 60px rgba(15,23,42,0.30),
     0 12px 24px rgba(15,23,42,0.18);
+}
+.cand-sample-modal :where(h1, h2, h3, h4, h5, h6, p, span, div, td, th, button, a, label, li) {
+  font-family: inherit;
 }
 .cand-sample-head {
   position: relative;
@@ -3111,7 +3116,8 @@
   border-top-color: var(--vz-border-color);
 }
 .cand-sample-download {
-  height: 38px;
+  /* 40px, matching the Close button (.rec-btn-ghost) — QA 206. */
+  height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
