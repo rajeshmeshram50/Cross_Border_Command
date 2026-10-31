@@ -1000,11 +1000,18 @@ export default function Step3BoxPackaging({
                             onChange={e => setSubBox(s => ({ ...s, [line.code]: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySplit(line); } }}
                           />
-                          <button type="button"
-                            className={`vti-btn-apply${split ? ' is-done' : ''}`}
-                            onClick={() => (split ? void reset(line.code) : applySplit(line))}>
-                            {split ? `✓ ${pack.boxes.length} Boxes` : 'Apply'}
-                          </button>
+                          {/* Once applied this is a status, not a reset: the split is
+                              undone only through ✕ on the scenario chip, which confirms. */}
+                          <Tooltip label="Split applied — use ✕ on the scenario chip to change it" disabled={!split}>
+                            <button type="button"
+                              className={`vti-btn-apply${split ? ' is-done' : ''}`}
+                              aria-disabled={split || undefined}
+                              onClick={() => (split
+                                ? toast.info(`${pack.boxes.length} boxes applied`, `To change the split for ${line.spiName}, use ✕ on its scenario chip.`)
+                                : applySplit(line))}>
+                              {split ? `✓ ${pack.boxes.length} Boxes` : 'Apply'}
+                            </button>
+                          </Tooltip>
                         </div>
                       )}
                     </td>
