@@ -1110,9 +1110,9 @@ const LEV_CSS = `
 .lev-doc-dash { color: #CBD5E1; font-weight: 700; }
 
 /* Row actions */
-.lev-row-actions { display: flex; gap: 6px; align-items: center; }
-.lev-act { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: all .12s; }
-.lev-act svg { width: 13px; height: 13px; }
+.lev-row-actions { display: flex; gap: 8px; align-items: center; }
+.lev-act { box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: all .12s; }
+.lev-act svg { width: 15px; height: 15px; }
 .lev-act-view { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 .lev-act-view:hover { background: #ddd6fe; }
 .lev-act-download { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
