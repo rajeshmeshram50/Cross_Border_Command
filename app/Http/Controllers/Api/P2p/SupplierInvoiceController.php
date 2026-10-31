@@ -1390,6 +1390,9 @@ class SupplierInvoiceController extends Controller
             /* The proforma invoice, not the lead: linkRefs() prints the code from
                pi.opp_code, and a search has to look where the row read it. */
             ->leftJoin('proforma_invoices as pfi', 'pfi.id', '=', 'po.proforma_invoice_id')
+            // The Risk Alert and Warehouse columns print these, so they search too.
+            ->leftJoin('master_risk_levels as rl', 'rl.id', '=', 'v.risk_level_id')
+            ->leftJoin('inventory_warehouses as wh', 'wh.id', '=', 'p2p_supplier_invoices.warehouse_id')
             ->select('p2p_supplier_invoices.*')
             ->where(function ($w) use ($like, $term) {
                 $w->where('p2p_supplier_invoices.code', 'ilike', $like)                 // SPI/2026-27/001
@@ -1405,7 +1408,19 @@ class SupplierInvoiceController extends Controller
                     // Legal name first, the order listRow prints them in.
                     ->orWhere('v.legal_name', 'ilike', $like)
                     ->orWhere('v.company_name', 'ilike', $like)
-                    ->orWhere('v.vendor_code', 'ilike', $like);
+                    ->orWhere('v.vendor_code', 'ilike', $like)
+                    ->orWhere('rl.name', 'ilike', $like)                                // High / Low
+                    ->orWhere('wh.wh_name', 'ilike', $like)
+                    ->orWhere('wh.code', 'ilike', $like);
+
+                /* The warehouse badge reads "Own" or "Third Party"; the column
+                   holds 'own' / 'tpl'. "own" must match whole, or every term
+                   containing it would pull in all own-warehouse invoices. */
+                $t = strtolower(trim($term));
+                if ($t === 'own') $w->orWhere('wh.wh_type', 'own');
+                if (in_array($t, ['3pl', 'tpl'], true) || (strlen($t) >= 4 && str_contains('third party', $t))) {
+                    $w->orWhere('wh.wh_type', 'tpl');
+                }
 
                 /* The prototype lets you search the WORDS "direct spi without
                    po" to pull up every standalone invoice — there is no column
