@@ -460,9 +460,15 @@ class LocationFinderService
             $needs[] = ['key' => $key, 'label' => $label, 'locations' => $n];
         }
 
+        /* A place "matches" only when its handling EQUALS the box's (CS-958):
+           same as the engine, so the count never claims a cold+hazardous zone
+           can take a hazardous-only box. */
         $matching = 0;
         foreach ($places as $p) {
-            foreach (array_keys($wants) as $key) if (!$meets($p, $key)) continue 2;
+            if ((bool) $p['cold_chain'] !== (bool) $need['cold_chain']) continue;
+            if ((bool) $p['hazardous']  !== (bool) $need['hazardous'])  continue;
+            if (($need['temp_min_c'] !== null || $need['temp_max_c'] !== null)
+                && $this->engine->refuseTemperature($need, $p['zone']) !== null) continue;
             $matching++;
         }
 
@@ -488,9 +494,14 @@ class LocationFinderService
             $names = implode(' and ', array_column($needs, 'label'));
 
             return [
-                'headline'      => "No single location here is set up for {$names} together.",
-                'detail'        => "Each one is met somewhere, but {$box} needs them in the same place. A carton carrying "
-                                 . 'two handling classes can only go where both are allowed — repack it, or mark a location for both.',
+                'headline'      => count($needs) > 1
+                    ? "No single location here matches this box's handling ({$names})."
+                    : "No location here matches this box's handling exactly.",
+                /* Exact match (CS-958): the box goes only where its handling
+                   class EQUALS the location's — not a cold+hazardous zone for a
+                   hazardous-only box, and not split across places. */
+                'detail'        => "{$box} can only go where the handling matches exactly — a location that also carries "
+                                 . 'cold chain or hazardous it does not need is not eligible. Mark a location for exactly this, or repack.',
                 'unsatisfiable' => ['combination'],
                 'needs'         => $needs,
                 'matching'      => 0,

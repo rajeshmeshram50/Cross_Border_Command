@@ -72,6 +72,8 @@ class PutawaySuggestionEngine
         'in_use'           => 'In use',
         'no_cold_chain'    => 'Not cold chain',
         'no_hazardous'     => 'Not for hazardous',
+        'cold_only'        => 'Cold-chain only — box is not cold',
+        'hazardous_only'   => 'Hazardous only — box is not hazardous',
         'no_temp_control'  => 'No temperature control',
         'temp_out_of_range' => 'Outside temperature range',
         'too_tall'         => 'Box too tall',
@@ -143,6 +145,15 @@ class PutawaySuggestionEngine
 
         // 4 · Hazardous goods belong only where hazardous goods are allowed.
         if ($need['hazardous'] && !((int) $shelf->hazardous || (int) $zone->hazardous)) return 'no_hazardous';
+
+        /* 4b · The reverse, and the point of CS-958: a cold or hazardous
+                location is a RESTRICTED resource, so a box that does NOT carry
+                that handling class must not take a slot built for one that
+                does. A hazardous-only box belongs in a hazardous location, not
+                in a cold+hazardous one. Matching is exact, not "the location
+                can also do it". */
+        if (!$need['cold_chain'] && ((int) $shelf->cold_chain || (int) $zone->cold_chain)) return 'cold_only';
+        if (!$need['hazardous'] && ((int) $shelf->hazardous || (int) $zone->hazardous)) return 'hazardous_only';
 
         // 5 · Temperature, the check nothing in the system made until now.
         if ($t = $this->refuseTemperature($need, $zone)) return $t;
@@ -216,9 +227,13 @@ class PutawaySuggestionEngine
             'detail' => $need['is_stackable'] ? 'Yes · can be stacked' : 'No · must stay on top',
         ];
 
-        // Cold chain, hazardous and the temperature band, as one answer.
-        $cold = !$need['cold_chain'] || (int) $shelf->cold_chain || (int) $zone->cold_chain;
-        $haz  = !$need['hazardous']  || (int) $shelf->hazardous  || (int) $zone->hazardous;
+        // Cold chain and hazardous, matched EXACTLY (CS-958): the box's class
+        // must equal the location's — a dry box fails a cold slot, and a
+        // non-hazardous box fails a hazardous one, just as the reverse.
+        $locCold = (int) $shelf->cold_chain || (int) $zone->cold_chain;
+        $locHaz  = (int) $shelf->hazardous  || (int) $zone->hazardous;
+        $cold = $need['cold_chain'] === (bool) $locCold;
+        $haz  = $need['hazardous']  === (bool) $locHaz;
         $temp = $this->refuseTemperature($need, $zone) === null;
         $out[] = [
             'key'    => 'condition',
@@ -226,8 +241,8 @@ class PutawaySuggestionEngine
             'label'  => 'Storage condition',
             'detail' => sprintf(
                 'Cold chain: %s · Hazardous: %s%s',
-                $need['cold_chain'] ? ($cold ? 'required, available' : 'required, NOT available') : 'No',
-                $need['hazardous']  ? ($haz  ? 'required, allowed'   : 'required, NOT allowed')   : 'No',
+                $need['cold_chain'] ? ($locCold ? 'required, available' : 'required, NOT available') : ($locCold ? 'not needed, cold location' : 'No'),
+                $need['hazardous']  ? ($locHaz  ? 'required, allowed'   : 'required, NOT allowed')   : ($locHaz ? 'not needed, hazardous location' : 'No'),
                 $need['temp_min_c'] === null && $need['temp_max_c'] === null
                     ? ''
                     : sprintf(' · Temp %s…%s °C %s', $need['temp_min_c'] ?? '–', $need['temp_max_c'] ?? '–', $temp ? 'covered' : 'NOT covered'),
@@ -270,6 +285,9 @@ class PutawaySuggestionEngine
         if ($lock && (int) $lock['held_by'] !== (int) $userId) return 'in_use';
         if ($need['cold_chain'] && !(int) $zone->cold_chain) return 'no_cold_chain';
         if ($need['hazardous'] && !(int) $zone->hazardous) return 'no_hazardous';
+        // Exact match, not superset — see refuseShelf step 4b (CS-958).
+        if (!$need['cold_chain'] && (int) $zone->cold_chain) return 'cold_only';
+        if (!$need['hazardous'] && (int) $zone->hazardous) return 'hazardous_only';
         if ($t = $this->refuseTemperature($need, $zone)) return $t;
 
         $boxM3 = $need['volume_cm3'] / 1_000_000;
