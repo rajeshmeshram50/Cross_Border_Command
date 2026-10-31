@@ -1090,10 +1090,10 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-spin { border-color: rgba(167,139,250,.35); border-top-color: #c4b5fd; }
 
 .s4-icon-btn {
-  width: 30px; height: 30px;
+  width: 40px; height: 40px; box-sizing: border-box;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; cursor: pointer;
-  border-radius: 7px;
+  border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
   transition: all .12s;
 }
