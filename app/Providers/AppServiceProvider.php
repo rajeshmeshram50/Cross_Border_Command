@@ -41,6 +41,16 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        /* dompdf's font cache must exist and be writable (it writes a .ufm per
+           @font-face font on first render). Created here, at request time, so
+           the web server owns it — a dir shipped in git is owned by the deploy
+           user and the web server cannot write into it (storage/fonts did
+           exactly that in production). */
+        $fontDir = config('dompdf.options.font_dir');
+        if ($fontDir && ! is_dir($fontDir)) {
+            @mkdir($fontDir, 0775, true);
+        }
+
         /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.
          *
          * Registered rather than hardcoded so the SMTP mailer stays intact and
