@@ -205,6 +205,8 @@ export default function Step2InvoiceProducts({
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
             twoWay={direct} matched={matched} hasPi={direct || poHasPi} rowIssues={issues?.rows}
+            supplierSegments={draft.supplierDetail?.segments ?? null}
+            supplierProducts={draft.supplierDetail?.mapped_product_ids ?? null}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
           {matched && removedCount > 0 && onRestoreLines && !readOnly && (
             <div className="invf-removed">

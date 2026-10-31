@@ -1413,7 +1413,7 @@ class SpiPutawayScanController extends Controller
                 /* Volumetric weight, the same divisor the packing screen uses.
                    Shown because a light, bulky carton is charged on this. */
                 'vol_weight_kg'   => $box->length_cm && $box->width_cm && $box->height_cm
-                    ? round(((float) $box->length_cm * (float) $box->width_cm * (float) $box->height_cm) / 5000, 2)
+                    ? round(((float) $box->length_cm * (float) $box->width_cm * (float) $box->height_cm) / SpiBox::VOLUMETRIC_DIVISOR, 2)
                     : null,
                 'temp_min_c'      => $box->temp_min_c !== null ? (float) $box->temp_min_c : null,
                 'temp_max_c'      => $box->temp_max_c !== null ? (float) $box->temp_max_c : null,

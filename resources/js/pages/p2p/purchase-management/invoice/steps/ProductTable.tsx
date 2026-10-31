@@ -10,12 +10,14 @@ import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, 
 import { spiApi } from '../spi-api';
 import { poLookupApi } from '../../order/api/po-api';
 import { toProduct, type ProductOpt } from '../../order/create-po/use-po-lookups';
+import { segmentMismatch } from '../../order/create-po/validation';
 
 const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
   lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true, rowIssues,
+  supplierSegments = null, supplierProducts = null,
 }: {
   lines: ProductLine[];
   /** Cells a refused Update & Next flagged, by line index. */
@@ -29,6 +31,10 @@ export default function ProductTable({
   matched?: boolean;
   hasPi?: boolean;
   sourceNote?: string;
+  /** The Stage 01 supplier's segments; products outside them are listed but locked. Null = not loaded. */
+  supplierSegments?: string[] | null;
+  /** Products mapped straight to the supplier, pickable even outside its segments. */
+  supplierProducts?: number[] | null;
 }) {
   const totals = tableTotals(lines, taxMode, twoWay);
   const canRemove = !!onRemove && !readOnly;
@@ -67,7 +73,10 @@ export default function ProductTable({
   }, [wantMaster]);
 
   const catalogue = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
+    const seen = new Map<string, {
+      value: string; label: string; name: string; productId?: number; master?: ProductOpt;
+      disabled?: boolean; disabledReason?: string; badge?: { text: string; tone: 'green' | 'red'; lock?: boolean; listOnly?: boolean };
+    }>();
     for (const l of lines) {
       const lineName = l.poName || l.spiName;
       if (l.productId == null || (!l.code && !lineName)) continue;
@@ -93,8 +102,14 @@ export default function ProductTable({
         master: p,
       });
     }
+    for (const c of seen.values()) {
+      if (!c.master) continue;
+      const why = segmentMismatch(c.master, supplierSegments, supplierProducts);
+      c.badge = { text: c.master.segment.trim() || 'No segment', tone: why ? 'red' : 'green', lock: !!why, listOnly: true };
+      if (why) { c.disabled = true; c.disabledReason = why; }
+    }
     return [...seen.values()];
-  }, [lines, master]);
+  }, [lines, master, supplierSegments, supplierProducts]);
 
   useEffect(() => {
     if (!master.length) return;
@@ -332,7 +347,10 @@ const Row = memo(function Row({
   onEditProduct: (productId: number) => void;
   onAddProduct: () => void;
   taxMode: TaxMode;
-  catalogue: Array<{ value: string; label: string; name: string; productId?: number; master?: ProductOpt }>;
+  catalogue: Array<{
+    value: string; label: string; name: string; productId?: number; master?: ProductOpt;
+    disabled?: boolean; disabledReason?: string; badge?: { text: string; tone: 'green' | 'red'; lock?: boolean; listOnly?: boolean };
+  }>;
   readOnly: boolean;
   onRemove?: (index: number) => void;
   showAction: boolean;
@@ -367,8 +385,11 @@ const Row = memo(function Row({
               value={line.productId != null ? String(line.productId) : ''}
               options={catalogue}
               disabled={readOnly}
+              onDisabledClick={opt => rowToast.warning('Segment mismatch',
+                opt.disabledReason ?? 'This product is not in a segment this supplier deals in.')}
               onChange={v => {
                 const pick = catalogue.find(c => c.value === v);
+                if (pick?.disabled) return;
                 if (!pick) return;
                 if (pick.productId != null && duplicateOf?.(pick.productId, index)) {
                   rowToast.warning('Product already added', `${pick.label} is already on this invoice — change its quantity instead.`);

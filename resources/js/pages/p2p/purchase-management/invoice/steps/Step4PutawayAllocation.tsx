@@ -602,7 +602,7 @@ const coreOf = (b: SpiBox | undefined) => {
   return {
     length: n(b?.length_cm), width: n(b?.width_cm), height: n(b?.height_cm),
     weight: n(b?.weight_kg), net: n(b?.net_weight_kg), gross: n(b?.gross_weight_kg),
-    vol: cc > 0 ? (cc / 5000).toFixed(2) : null,
+    vol: cc > 0 ? (cc / 6000).toFixed(2) : null,
     unit: 'cm',
   };
 };

@@ -32,8 +32,8 @@ class SpiBox extends Model
     public const SCENARIOS  = ['s1', 's2', 's3'];
     public const CONDITIONS = ['perfect', 'minor', 'major', 'severe'];
 
-    /** Divisor for volumetric weight in centimetres, the air-freight standard. */
-    public const VOLUMETRIC_DIVISOR = 5000;
+    /** Divisor for volumetric weight in centimetres: (L x B x H) / 6000. */
+    public const VOLUMETRIC_DIVISOR = 6000;
 
     protected $fillable = [
         // One list for the carton: the packing screen has only ever

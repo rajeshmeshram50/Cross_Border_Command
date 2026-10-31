@@ -107,7 +107,7 @@ export interface BoxInitial {
   photos?: SavedPhoto[];
 }
 
-const VOLUMETRIC_DIVISOR = 5000;
+const VOLUMETRIC_DIVISOR = 6000;
 
 const dimStr = (v: number | null | undefined) => (v == null ? '' : String(v));
 
