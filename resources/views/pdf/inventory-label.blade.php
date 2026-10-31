@@ -6,8 +6,9 @@
         header   WHAT THIS IS (left)          handling flags (right)
         qr       the code, centred and as large as the sheet allows
         code     the location's own code, under the QR
-        path     the full address in ids — for a shelf that is
-                 WAREHOUSE / ZONE / RACK / SHELF, each one labelled
+        path     the full address in ids, each level labelled — a shelf
+                 shows WAREHOUSE / ZONE / RACK (its own SHELF cell is the
+                 big caption above, so the chain drops it)
 
     IT WAS 4in x 3in. That stock fit a rack upright and nothing else: the
     address had to shrink to the point of being unreadable across an aisle,
@@ -195,6 +196,12 @@
     /* Older callers pass no path. Rather than print an empty strip, the
        label simply leaves it off — which is what it showed before. */
     $pathCells = collect($path ?? [])->filter(fn ($p) => filled($p['code'] ?? null))->values();
+    /* The shelf label's big caption already IS the shelf code, so the SHELF
+       cell in the chain below only repeats it. Drop it — the shelf keeps
+       WAREHOUSE / ZONE / RACK for context. */
+    if (($kind ?? null) === 'SHELF') {
+        $pathCells = $pathCells->reject(fn ($p) => ($p['code'] ?? null) === ($code ?? null))->values();
+    }
 @endphp
 @if ($pathCells->isNotEmpty())
     <table class="pathrow">

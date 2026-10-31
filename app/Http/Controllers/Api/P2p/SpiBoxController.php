@@ -403,6 +403,94 @@ class SpiBoxController extends Controller
         }
     }
 
+    /* ─── LOCAL DEV PREVIEW — do NOT commit/push ──────────────────────────────
+       Renders the box sticker from synthetic data so the face can be tuned
+       without a real SPI/box or auth. Query params drive the variants:
+         ?cold=1&temp=2 to 8 °C   ?haz=3 (class; presence=hazardous)   ?fragile=1   ?nostack=1
+         ?condition=minor|major|severe|perfect   ?scenario=s1|s2|s3
+         ?refs=absent   (blanks every reference, party and location)
+       GET /api/p2p/spi/sticker-preview */
+    public function stickerPreview(Request $request)
+    {
+        // Local only — like /dev/mail-preview, so it can sit without auth.
+        abort_unless(app()->environment('local'), 404);
+
+        $absent = $request->query('refs') === 'absent';
+        $cold   = $request->boolean('cold');
+        // haz carries the class directly (e.g. haz=3); its presence means
+        // hazardous. hazClass is still honoured as an alias.
+        $hazCls = $request->filled('haz') ? (string) $request->query('haz')
+                : ($request->filled('hazClass') ? (string) $request->query('hazClass') : null);
+        $haz    = $hazCls !== null;
+        $temp   = $cold ? ($request->query('temp') ?: '2 to 8 °C') : null;
+
+        $flags = [
+            'cold'      => $cold,
+            'temp'      => $temp,
+            'hazardous' => $haz ? 'Yes' : 'No',
+            'hazClass'  => $hazCls,
+            'fragile'   => $request->boolean('fragile'),
+            'stacking'  => ($request->boolean('nostack') || $request->query('stack') === 'no')
+                ? 'Do Not Stack' : 'Stackable',
+        ];
+
+        $ref = fn ($code, $date) => $absent ? ['code' => null, 'date' => null] : ['code' => $code, 'date' => $date];
+
+        $condition = $request->query('condition', 'minor');
+        $scenario  = $request->query('scenario', 's2');
+
+        $data = [
+            'box' => (object) ['box_code' => 'B-001'],
+
+            'refs' => [
+                'shp'  => $ref('SHP-001',  '29/07/2026'),
+                'opp'  => $ref('OPP-0003', '28/07/2026'),
+                'proc' => $ref('PC-002',   '25/10/2026'),
+                'pi'   => $ref('PI/2026-27/4', '28/07/2026'),
+                'po'   => $ref(null, null),
+                'spi'  => $ref('SPI/2026-27/007', '29/10/2026'),
+            ],
+            'parties' => $absent
+                ? ['customer' => null, 'consignee' => null, 'supplier' => null]
+                : ['customer' => 'C-013', 'consignee' => 'CN-007', 'supplier' => 'S-003'],
+
+            'putawayCode'   => 'PUT-B-001',
+            'scenarioLabel' => match ($scenario) {
+                's1'    => '1 Product → 1 Box',
+                's3'    => 'Multiple Products → 1 Box',
+                default => '1 Product → Multiple Boxes',
+            },
+            'boxQty'      => '11 MT',
+            'dims'        => '12 x 12 x 12',
+            'netWeight'   => '12 kg',
+            'grossWeight' => '15 kg',
+            'conditionLabel' => match ($condition) {
+                'perfect' => 'Perfect Condition',
+                'major'   => 'Major Damage',
+                'severe'  => 'Severe Damage',
+                default   => 'Minor Damage',
+            },
+
+            'flags'       => $flags,
+            'coldChain'   => $flags['cold'] ? 'Yes' . ($temp ? " ($temp)" : '') : 'No',
+            'hazardLabel' => $flags['hazardous'] . ' (Class: ' . ($hazCls ?: 'N/A') . ')',
+            'pictos'      => $this->pictograms($flags),
+
+            'place' => $absent
+                ? ['warehouse' => null, 'whName' => null, 'whType' => null, 'zone' => null,
+                   'rack' => null, 'shelf' => null, 'path' => null, 'allocatedOn' => null]
+                : ['warehouse' => 'W-001', 'whName' => 'Main WH', 'whType' => 'OWN',
+                   'zone' => 'ZN-011', 'rack' => 'RN-011', 'shelf' => 'RN-011-SH-011',
+                   'path' => 'ZN-011 / RN-011 / RN-011-SH-011', 'allocatedOn' => '03/10/2026'],
+
+            'qr' => $this->qr('https://preview.local/box/B-001'),
+        ];
+
+        return Pdf::loadView('pdf.spi-box-sticker', $data)
+            ->setPaper('a4', 'portrait')
+            ->stream('sticker-preview.pdf');
+    }
+
     public function destroyAttachment(Request $request, int $id, int $boxId, int $attachmentId)
     {
         $this->tenantUser($request);
@@ -1001,6 +1089,10 @@ class SpiBoxController extends Controller
             return (new QRCode(new QROptions([
                 'eccLevel'        => EccLevel::H,
                 'scale'           => 6,
+                // Small quiet zone: the QR then fills its box (bigger modules,
+                // visible edge ≈ image edge, so it bottom-aligns with the code).
+                // The white sticker + the cell's own padding give the rest.
+                'quietzoneSize'   => 1,
                 'outputInterface' => QRGdImagePNG::class,
                 'outputBase64'    => true,
             ])))->render($value);

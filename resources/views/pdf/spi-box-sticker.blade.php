@@ -7,7 +7,7 @@ exactly:
 head TEMPORARY PUTAWAY BOX | condition chip
 bar BUSINESS REFERENCE — 3 rows of three
 bar BOX CONDITION & PRODUCT FLAGS — 3 rows of three
-bar BOX LOCATION DETAILS — a row of three, then four
+bar BOX LOCATION DETAILS — a row of three, then three (no shelf on a box)
 qr the QR, large and centred
 caption PUT-<box code>
 
@@ -65,21 +65,42 @@ caption PUT-<box code>
     <head>
         <meta charset="utf-8">
         <style>
+            /* Roboto Condensed (bundled TTFs, latin subset). DejaVu stays in the
+           stack as the glyph fallback — Roboto's subset has no arrow (→), so
+           the packing scenario borrows it from DejaVu. */
+            @font-face {
+                font-family: 'Roboto Condensed';
+                font-weight: 400;
+                src: url("{{ public_path('fonts/RobotoCondensed-Regular.ttf') }}") format('truetype');
+            }
+
+            @font-face {
+                font-family: 'Roboto Condensed';
+                font-weight: 700;
+                src: url("{{ public_path('fonts/RobotoCondensed-Bold.ttf') }}") format('truetype');
+            }
+
+            @font-face {
+                font-family: 'Roboto Condensed';
+                font-weight: 800;
+                src: url("{{ public_path('fonts/RobotoCondensed-ExtraBold.ttf') }}") format('truetype');
+            }
+
             /* The page margin is the gap OUTSIDE the frame; the frame itself is
            the body's border. A wrapper table would have added a nesting level
            to every block below it, which is what blew the page budget before. */
             @page {
-                margin: 6pt;
+                margin: 8px;
             }
 
             body {
                 margin: 0;
                 padding: 0;
-                font-family: DejaVu Sans, sans-serif;
+                font-family: 'Roboto Condensed', 'DejaVu Sans', sans-serif;
                 color: #000;
-                font-size: 12pt;
-                border: 3pt solid #000;
-                border-radius: 10pt;
+                font-size: 16px;
+                border: 4px solid #000;
+                border-radius: 13.3333px;
             }
 
             table {
@@ -95,14 +116,14 @@ caption PUT-<box code>
            The chip is a cell, not a floated span: dompdf gives a float no
            height and the row collapses behind it. */
             .head td {
-                padding: 13pt 15.6pt 9pt;
+                padding: 17.3333px 20.8px 12px;
             }
 
             .head .title {
-                font-size: 18pt;
+                font-size: 24px;
                 line-height: 1.1;
                 font-weight: bold;
-                letter-spacing: 0.5pt;
+                letter-spacing: 0.2px;
             }
 
             .head .chipcell {
@@ -114,14 +135,14 @@ caption PUT-<box code>
                 display: inline-block;
                 background: #000;
                 color: #fff;
-                font-size: 13pt;
-                line-height: 1.15;
+                font-size: 17.3333px;
+                line-height: 1.1;
                 font-weight: bold;
-                letter-spacing: 1pt;
-                padding: 6pt 16pt;
+                letter-spacing: 0.3px;
+                padding: 14px 32px;
                 /* Rounded, like the frame around it. A square chip beside a 10pt
                corner was the one hard angle left on the sheet. */
-                border-radius: 8pt;
+                border-radius: 10.6667px;
             }
 
             /* ── Section bars ──
@@ -138,12 +159,12 @@ caption PUT-<box code>
             .bar td {
                 background: #ebebeb;
                 color: #000;
-                border-left: 6pt solid #000;
-                font-size: 11pt;
+                border-left: 8px solid #000;
+                font-size: 18px;
                 font-weight: bold;
-                /* letter-spacing: 1.1pt; */
-                line-height: 1.1;
-                padding: 4.6pt 15.6pt;
+                letter-spacing: 0.2px;
+                line-height: 1.15;
+                padding: 3px 20.8px;
             }
 
             /* ── Field grids ── */
@@ -154,56 +175,82 @@ caption PUT-<box code>
            content width is unchanged — adding it outright narrowed every
            column and pushed the plain label onto a second page. */
             .grid td {
-                padding: 5.6pt 8.6pt 5.6pt 22.6pt;
+                padding: 2px 11.4667px 2px 30.1333px;
             }
 
             .grid .k {
-                font-size: 8.8pt;
-                line-height: 1.05;
-                letter-spacing: 0.7pt;
-                color: #3a3a3a;
+                font-size: 16px;
+                line-height: 1.15;
+                letter-spacing: 0;
+                color: #000000;
             }
 
             .grid .v {
-                font-size: 15pt;
-                line-height: 1.12;
+                font-size: 20px;
+                line-height: 1.15;
                 font-weight: bold;
-                padding-top: 1.6pt;
+                letter-spacing: 0;
+                /* padding-top: 2.1333px; */
             }
 
             .grid .v--sm {
-                font-size: 12.6pt;
+                font-size: 18px;
             }
 
             .grid .dt {
-                font-size: 9pt;
-                line-height: 1.05;
-                color: #3a3a3a;
-                padding-top: 1.6pt;
+                font-size: 16px;
+                line-height: 1.2;
+                letter-spacing: 0;
+                color: #000000;
+                /* padding-top: 1px; */
             }
 
-            /* A hairline between grid rows inside the same section, so three rows
-           of three read as rows rather than as nine loose fields. */
-            .grid--rule td {
-                border-top: 0.8pt solid #9a9a9a;
-            }
+            /* No hairline between grid rows — the section bars alone separate the
+           groups; the in-between rules read as clutter. (.grid--rule kept on the
+           rows as a grouping marker, now with no border.) */
 
             /* ── QR + handling symbols ──
-           The symbols share the QR's row rather than sitting under it: the
-           row is the one place on the sheet with spare height, and a handler
-           reads them at the same glance as the code. */
+           The QR fills the left; the symbols wrap into a 2-wide grid on the
+           right, with the box code in the bottom-right corner. */
             .qrblock td {
-                padding: 11pt 15.6pt 0;
-                vertical-align: middle;
+                padding: 1.3333px 20.8px 2px;
             }
 
             .qrblock .qrcell {
-                text-align: center;
+                /* Left-hung. The QR PNG carries its own quiet zone, so a small
+                   left pad already clears the frame; a larger one over-insets it. */
+                text-align: left;
+                padding-left: 10px;
+                vertical-align: top;
+            }
+
+            /* The right column stacks the symbols (top) over the box code
+               (bottom), so the code sits in the bottom-right corner. */
+            .qrblock .rightcol {
+                vertical-align: bottom;
+                text-align: right;
+                padding-left: 5.3333px;
+            }
+
+            .qrblock .codebig {
+                font-size: 30px;
+                line-height: 1.1;
+                font-weight: bold;
+                letter-spacing: 0.2px;
+                text-align: right;
+                /* One line always — never split "PUT-B-001" across two rows. */
+                white-space: nowrap;
+                padding: 10.6667px 2.6667px 0 0;
+            }
+
+            /* Nested in the right column — must not inherit the global 100%. */
+            .qrblock .pictos {
+                width: auto;
             }
 
             .qrblock .picto {
                 text-align: center;
-                padding: 0 4pt;
+                padding: 0 5.3333px;
             }
 
             /* Two lines are RESERVED on both captions whether or not they are
@@ -211,30 +258,21 @@ caption PUT-<box code>
            a middle-aligned short tile puts its icon above the others —
            four symbols on four different baselines. */
             .picto-t {
-                font-size: 9pt;
+                font-size: 12px;
                 line-height: 1.1;
                 font-weight: bold;
-                letter-spacing: 0.4pt;
-                padding-top: 5pt;
-                height: 20pt;
+                letter-spacing: 0.5333px;
+                padding-top: 6.6667px;
+                height: 26.6667px;
             }
 
             .picto-s {
-                font-size: 7.6pt;
+                font-size: 12px;
                 line-height: 1.1;
-                letter-spacing: 0.3pt;
+                letter-spacing: 0.4px;
                 color: #3a3a3a;
-                padding-top: 1.4pt;
-                height: 17pt;
-            }
-
-            .caption td {
-                text-align: center;
-                padding: 7pt 15.6pt 10pt;
-                font-size: 26pt;
-                line-height: 1.1;
-                font-weight: bold;
-                letter-spacing: 2pt;
+                /* padding-top: 1.8667px; */
+                height: 22.6667px;
             }
         </style>
     </head>
@@ -383,63 +421,68 @@ caption PUT-<box code>
             </tr>
         </table>
 
+        {{-- A box is put away only to rack level — no shelf on the box sticker. --}}
         <table class="grid grid--rule">
             <tr>
-                <td width="25%">
+                <td width="33%">
                     <div class="k">WH TYPE</div>
                     <div class="v v--sm">{{ $or($place['whType']) }}</div>
                 </td>
-                <td width="25%">
+                <td width="34%">
                     <div class="k">ZONE</div>
                     <div class="v v--sm">{{ $or($place['zone']) }}</div>
                 </td>
-                <td width="25%">
+                <td width="33%">
                     <div class="k">RACK</div>
                     <div class="v v--sm">{{ $or($place['rack']) }}</div>
-                </td>
-                <td width="25%">
-                    <div class="k">SHELF</div>
-                    <div class="v v--sm">{{ $or($place['shelf']) }}</div>
                 </td>
             </tr>
         </table>
 
-        {{-- ── QR + caption ── --}}
+        {{-- ── QR + handling symbols + box code ──
+             The QR fills the left; the symbols wrap into a 2-wide grid on the
+             right, with the box code in the bottom-right corner. The QR grows
+             as symbols drop away. --}}
+        @php
+            $rightCol = match (count($pictos)) {
+                0 => '200px',   // just the code
+                1, 2 => '253.3333px',   // one/two symbols in a row, code under
+                default => '150px',   // 3-4 symbols wrap to a 2-wide grid (icon + title only)
+            };
+            $qrSize = match (count($pictos)) {
+                0 => 390,
+                1, 2 => 384,
+                default => 365,
+            };
+            /* 3+ symbols wrap two-per-row so they do not eat the QR's width;
+               1-2 stay on one line. */
+            $pictoRows = array_chunk($pictos, count($pictos) > 2 ? 2 : max(1, count($pictos)));
+        @endphp
         <table class="qrblock">
             <tr>
-                @php
-                    // The QR yields width as symbols are added, so a caption has room
-                    // to sit on one line instead of breaking mid-word.
-                    $qrWidth = match (count($pictos)) { 0 => null, 1, 2 => '64%', default => '48%'};
-                    /* The largest code that still leaves ONE page, searched rather
-                       than guessed. Two different ceilings bind it:
-                         · 0-2 symbols: page HEIGHT. 338 fits, 340 spills.
-                         · 3-4 symbols: the COLUMN. 48% of the frame's 577.28pt inner
-                           width, less the cell's own 31.2pt of padding, is 245.
-                       A QR wider than its cell is scaled DOWN by dompdf, stops being a
-                       whole number of modules, and a printed code that is not on the
-                       module grid scans badly. Re-run the preview across every symbol
-                       count after touching anything above. */
-                    $qrSize = match (count($pictos)) { 0 => 270, 1, 2 => 270, default => 245};
-                @endphp
-                <td class="qrcell" @if ($qrWidth) width="{{ $qrWidth }}" @endif>
+                <td class="qrcell">
                     @if ($qr)
                         <img src="{{ $qr }}" alt="{{ $box->box_code }}" width="{{ $qrSize }}" height="{{ $qrSize }}">
                     @endif
                 </td>
-                @foreach ($pictos as $p)
-                    <td class="picto">
-                        <img src="{{ $p['svg'] }}" alt="{{ $p['title'] }}" width="72" height="72">
-                        <div class="picto-t">{{ $p['title'] }}</div>
-                        <div class="picto-s">{{ $p['sub'] }}</div>
-                    </td>
-                @endforeach
-            </tr>
-        </table>
-
-        <table class="caption">
-            <tr>
-                <td>{{ $putawayCode }}</td>
+                <td class="rightcol" width="{{ $rightCol }}">
+                    @if (count($pictos))
+                        <table class="pictos" align="right">
+                            @foreach ($pictoRows as $row)
+                                <tr>
+                                    @foreach ($row as $p)
+                                        {{-- Icon + title only; the detail is in the flag rows above. --}}
+                                        <td class="picto">
+                                            <img src="{{ $p['svg'] }}" alt="{{ $p['title'] }}" width="68" height="68">
+                                            <div class="picto-t">{{ $p['title'] }}</div>
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </table>
+                    @endif
+                    <div class="codebig">{{ $putawayCode }}</div>
+                </td>
             </tr>
         </table>
 
