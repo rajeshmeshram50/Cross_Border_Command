@@ -814,17 +814,17 @@ const SCOPED_CSS = `
 }
 .anl-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; position: relative; z-index: 1; }
 .anl-head-icon {
-  width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
   border: 1px solid rgba(255,255,255,.28);
   display: flex; align-items: center; justify-content: center;
   color: #fff;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
-.anl-head-title { font-size: 16px; font-weight: 800; letter-spacing: -0.4px; }
-.anl-head-sub   { font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
+.anl-head-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.anl-head-sub   { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 2px; }
 .anl-close {
-  width: 30px; height: 30px; border-radius: 9px;
+  box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
   border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.12);
   color: #fff; cursor: pointer;
@@ -1032,8 +1032,8 @@ const SCOPED_CSS = `
 .anl-foot-actions { display: flex; align-items: center; gap: 8px; }
 .anl-btn-ghost, .anl-btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 38px; padding: 0 18px;
-  font-family: inherit; font-size: 13px; font-weight: 600;
+  box-sizing: border-box; height: 40px; padding: 0 18px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   border-radius: 10px;
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .12s, box-shadow .15s;
