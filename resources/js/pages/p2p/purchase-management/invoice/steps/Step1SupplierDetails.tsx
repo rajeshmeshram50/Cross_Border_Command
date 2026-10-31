@@ -11,7 +11,7 @@ import { poLookupApi, type PoDetail, type SupplierOption } from '../../order/api
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { legalFromVault } from '../../order/create-po/supplier-checks';
-import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
+import { draftFromScrutiny, draftFromSupplier, inspectionLabel, newestScrutiny } from '../invoice-draft';
 import { spiApi } from '../spi-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 
@@ -68,7 +68,7 @@ export default function Step1SupplierDetails({
 
   const {
     poType, docType, transport, poDate, deliveryDate, deliveryLocation, paymentType,
-    physInspection, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
+    physInspection, inspectionDone, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
     address, country, state, stateCode, city, contactName, designation, contactNumber, email,
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
     currency, exchangeRate, incoTerm, portLoading, portDischarge, finalDestination, countryOrigin,
@@ -405,7 +405,7 @@ export default function Step1SupplierDetails({
             </Field>
             <Field label="Physical Inspection Status">
               <div className="spi-dt-inp-auto">
-                <input className="spi-dt-inp" value={physInspection ? 'Required' : 'Not Applicable'} readOnly />
+                <input className="spi-dt-inp" value={inspectionLabel({ physInspection, inspectionDone })} readOnly />
                 <span className="spi-dt-auto">{physInspection ? 'MANDATORY' : 'NOT REQUIRED'}</span>
               </div>
             </Field>

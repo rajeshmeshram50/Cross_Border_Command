@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import { IcoCheck, IcoChevron, IcoHistory } from '../../../icons';
 import type { InvoiceDraft } from '../invoice-draft';
+import { inspectionLabel } from '../invoice-draft';
 import type { SpiBox } from '../spi-api';
 import { SCN_LABEL } from './Step3BoxPackaging';
 
@@ -58,7 +59,7 @@ export default function StageSummary({ draft, upto, direct = false, boxes = [] }
                 <RO label="Expected Delivery Date" value={dash(formatDmy(draft.deliveryDate))} />
                 <RO label="Delivery Location" value={dash(draft.deliveryLocation)} />
                 <RO label="Payment Type" value={dash(draft.paymentType)} />
-                <RO label="Physical Inspection Status" value={draft.physInspection ? 'Required' : 'Not Applicable'} />
+                <RO label="Physical Inspection Status" value={inspectionLabel(draft)} />
               </Group>
             )}
 
