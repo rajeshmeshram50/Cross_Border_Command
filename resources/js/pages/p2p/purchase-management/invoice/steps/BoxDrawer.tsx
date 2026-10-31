@@ -175,7 +175,9 @@ export default function BoxDrawer({
   );
   const [condition, setCondition] = useState<string>(initial?.condition ?? 'perfect');
   const [flags, setFlags] = useState<string[]>(initial?.flagIds ?? []);
-  const [stackable, setStackable] = useState(initial?.stackable ?? true);
+  const [stackable, setStackable] = useState(
+    (initial?.stackable ?? true) && !(initial?.flagIds ?? []).includes('fragile'),
+  );
   const [flagsOpen, setFlagsOpen] = useState(false);
   const CUSTOM_FLAGS_SHOWN = 1;
   const visibleCustomFlags = customFlags.slice(0, CUSTOM_FLAGS_SHOWN);
@@ -286,8 +288,15 @@ export default function BoxDrawer({
     };
   };
 
-  const toggleFlag = (id: string) =>
+  /* A fragile box cannot carry weight, so Fragile and Stackable exclude each other. */
+  const toggleFlag = (id: string) => {
+    if (id === 'fragile' && !flags.includes(id)) setStackable(false);
     setFlags(f => (f.includes(id) ? f.filter(x => x !== id) : [...f, id]));
+  };
+  const toggleStackable = () => {
+    if (!stackable) setFlags(f => f.filter(x => x !== 'fragile'));
+    setStackable(s => !s);
+  };
 
   // Modal strip: one row when the details and the actions both fit beside
   // the close button, two rows otherwise. Measured from the items themselves
@@ -618,8 +627,8 @@ export default function BoxDrawer({
                   <div
                     className={`vti-stack-toggle${stackable ? ' is-stack' : ''}`}
                     role="switch" tabIndex={0} aria-checked={stackable}
-                    onClick={() => setStackable(s => !s)}
-                    onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setStackable(s => !s); } }}
+                    onClick={toggleStackable}
+                    onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleStackable(); } }}
                   >
                     <span className="vti-stack-sw"><span className="vti-stack-knob" /></span>
                     <span className="vti-stack-txt">Stackable</span>
