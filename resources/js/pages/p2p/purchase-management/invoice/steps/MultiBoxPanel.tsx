@@ -9,8 +9,24 @@ export interface SplitBox {
   qty: number;
 }
 
+/** More boxes than this per product only when the units themselves outnumber it. */
+export const MAX_PART_BOXES = 100;
+
+/** Most boxes a quantity can be split into: one per unit, or — for a unit
+    shipped in parts, like a machine in several cartons — down to 0.001 a box. */
+export const maxSplitBoxes = (total: number) =>
+  Math.max(1, Math.floor(total), Math.min(MAX_PART_BOXES, Math.round(total * 1000)));
+
 export function splitQuantity(total: number, boxes: number): SplitBox[] {
   const whole = Math.floor(total);
+  /* Fewer units than boxes: each box holds a part of a unit, shared out in
+     thousandths so the parts add back to the total exactly. */
+  if (boxes > whole) {
+    const milli = Math.round(total * 1000);
+    const part = Math.floor(milli / boxes);
+    const extra = milli % boxes;
+    return Array.from({ length: boxes }, (_, i) => ({ no: i + 1, qty: (part + (i < extra ? 1 : 0)) / 1000 }));
+  }
   const fraction = Math.round((total - whole) * 1000) / 1000;
   const base = Math.floor(whole / boxes);
   const remainder = whole % boxes;

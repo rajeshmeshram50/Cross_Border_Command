@@ -240,6 +240,10 @@ export default function BoxDrawer({
   const mixedCarton = !!contents;
 
   const qtyMax = Math.max(quantity, quantityMax ?? line.spiQty);
+  const [qtyText, setQtyText] = useState(String(quantity));
+  useEffect(() => {
+    setQtyText(t => (Number(t) === quantity ? t : String(quantity)));
+  }, [quantity]);
 
   const volumetric = (() => {
     const toCm = (v: string) => (Number(v) || 0) * (unit === 'm' ? 100 : 1);
@@ -356,21 +360,26 @@ export default function BoxDrawer({
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit fewer"
                     disabled={quantity <= 0}
-                    onClick={() => onQuantityChange(Math.max(0, quantity - 1))}
+                    onClick={() => onQuantityChange(Math.max(0, Math.round((quantity - 1) * 1000) / 1000))}
                   >&minus;</button>
+                  {/* Decimals allowed: a unit shipped in parts puts 0.5 of it in a box. */}
                   <input
-                    type="text" inputMode="numeric" className="vti-dw-qty-val"
-                    value={quantity}
+                    type="text" inputMode="decimal" className="vti-dw-qty-val"
+                    value={qtyText}
                     aria-label="Units in this box"
                     onChange={e => {
-                      const n = Number(e.target.value.replace(/[^\d]/g, '')) || 0;
+                      const raw = e.target.value.replace(/[^\d.]/g, '');
+                      if (!/^\d*(\.\d{0,3})?$/.test(raw)) return;
+                      setQtyText(raw);
+                      const n = Number(raw) || 0;
                       onQuantityChange(Math.min(Math.max(0, n), qtyMax));
                     }}
+                    onBlur={() => setQtyText(String(quantity))}
                   />
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit more"
                     disabled={quantity >= qtyMax}
-                    onClick={() => onQuantityChange(Math.min(qtyMax, quantity + 1))}
+                    onClick={() => onQuantityChange(Math.min(qtyMax, Math.round((quantity + 1) * 1000) / 1000))}
                   >+</button>
                   <span className="vti-dw-qty-max">/ {qtyMax}</span>
                 </span>

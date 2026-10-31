@@ -6,7 +6,7 @@ import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedBox } from './PackedProducts';
 import { StickerApiContext } from './BoxStickerModal';
 import type { CustomFlag } from './ProductFlagsModal';
-import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
+import MultiBoxPanel, { maxSplitBoxes, splitQuantity, type SplitBox } from './MultiBoxPanel';
 import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -523,7 +523,7 @@ export default function Step3BoxPackaging({
   const applySplit = (line: ProductLine) => {
     if (readOnly || packing[line.code]) return;
     const raw = (subBox[line.code] ?? '').trim();
-    const maxBoxes = Math.max(1, Math.floor(line.spiQty));
+    const maxBoxes = maxSplitBoxes(line.spiQty);
     const fail = (msg: string) => {
       setInvalid(line.code);
       window.setTimeout(() => setInvalid(null), 2000);
@@ -532,7 +532,7 @@ export default function Step3BoxPackaging({
     if (!/^\d+$/.test(raw)) { fail('Enter a whole number of boxes, like 3.'); return; }
     const count = parseInt(raw, 10);
     if (count < 1) { fail('A split needs at least 1 box.'); return; }
-    if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} units — it cannot fill more than ${maxBoxes} boxes.`); return; }
+    if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} unit${line.spiQty === 1 ? '' : 's'} — split it into at most ${maxBoxes} boxes.`); return; }
     setInvalid(null);
     setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count), of: line.spiQty } }));
   };
@@ -543,8 +543,8 @@ export default function Step3BoxPackaging({
     const line = lines.find(l => l.code === code);
     const total = pack.of;
     const others = pack.boxes.reduce((n, b) => (b.no === boxNo ? n : n + b.qty), 0);
-    const max = Math.max(0, total - others);
-    const wanted = Math.max(0, qty);
+    const max = Math.max(0, Math.round((total - others) * 1000) / 1000);
+    const wanted = Math.max(0, Math.round(qty * 1000) / 1000);
     if (wanted > max) {
       toast.warning(
         `Box ${boxNo} can hold at most ${max} unit${max === 1 ? '' : 's'}`,
