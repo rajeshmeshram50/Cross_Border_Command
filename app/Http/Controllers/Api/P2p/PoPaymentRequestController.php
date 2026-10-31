@@ -1170,7 +1170,7 @@ class PoPaymentRequestController extends Controller
                carries can_decide, so a sibling can be acted on without opening
                it. */
             'requests' => $requests
-                ->map(fn ($r) => $this->shapeRequest($r, $names))
+                ->map(fn ($r) => $this->shapeRequest($r, $names, [$invoice->id => $invoice->code]))
                 ->values()->all(),
         ];
     }
@@ -1192,11 +1192,12 @@ class PoPaymentRequestController extends Controller
             return $this->savePaymentForSpi($request, $invoice, $req);
         }
 
-        // The request must belong to this invoice, or the button on one SPI
-        // could pay a request raised from another.
-        $belongs = PoPaymentRequest::where('id', $req)->where('supplier_invoice_id', $invoice->id)->exists();
+        /* Any request on the invoice's PO - raised from the PO, this SPI or a
+           sibling SPI - can be paid from here. The payment still lands on the
+           PO and storePayment() checks it against the PO's balance. */
+        $belongs = PoPaymentRequest::where('id', $req)->where('purchase_order_id', $invoice->purchase_order_id)->exists();
         if (!$belongs) {
-            return $this->fail("That payment request was not raised against {$invoice->code}.", 404);
+            return $this->fail("That payment request is not on the purchase order of {$invoice->code}.", 404);
         }
 
         return $this->storePayment($request, (int) $invoice->purchase_order_id, $req);
@@ -1358,6 +1359,11 @@ class PoPaymentRequestController extends Controller
 
         $requests = PoPaymentRequest::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)->orderBy('id')->get();
         $names = $this->names($requests->pluck('requested_to')->merge($requests->pluck('requested_by'))->all());
+        /* Each request says where it was raised from - the PO itself or one of
+           its invoices - since every screen of this PO and its SPIs lists them all. */
+        $spiCodes = SupplierInvoice::withoutGlobalScope('tenant')
+            ->whereIn('id', $requests->pluck('supplier_invoice_id')->filter()->unique()->all())
+            ->pluck('code', 'id')->all();
         $pending  = $requests->where('status', PoPaymentRequest::STATUS_PENDING);
         $approved = $requests->where('status', PoPaymentRequest::STATUS_APPROVED);
         $approvedUnpaid = round($approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2);
@@ -1392,11 +1398,11 @@ class PoPaymentRequestController extends Controller
                 'paid'             => $paid,
                 'open_to_request'  => max(0, $this->openToRequest($po)),
             ],
-            'requests' => $requests->map(fn ($r) => $this->shapeRequest($r, $names))->values()->all(),
+            'requests' => $requests->map(fn ($r) => $this->shapeRequest($r, $names, $spiCodes))->values()->all(),
         ];
     }
 
-    private function shapeRequest(PoPaymentRequest $r, array $names): array
+    private function shapeRequest(PoPaymentRequest $r, array $names, array $spiCodes = []): array
     {
         $approved = $r->approved_amount !== null ? (float) $r->approved_amount : null;
         $me = auth()->id();
@@ -1409,6 +1415,7 @@ class PoPaymentRequestController extends Controller
             // Which invoice this release was raised against, for the SPI-scoped
             // history popup. NULL on a PO-level advance.
             'supplier_invoice_id' => $r->supplier_invoice_id,
+            'supplier_invoice_code' => $r->supplier_invoice_id ? ($spiCodes[$r->supplier_invoice_id] ?? null) : null,
             'percentage' => $r->percentage !== null ? (float) $r->percentage : null,
             'requested_amount' => (float) $r->requested_amount, 'reason' => $r->reason,
             'requested_by' => ['id' => $r->requested_by, 'name' => $names[$r->requested_by]['name'] ?? null, 'role' => $names[$r->requested_by]['role'] ?? null],

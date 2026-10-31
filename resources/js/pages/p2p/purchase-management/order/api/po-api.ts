@@ -546,6 +546,9 @@ export type PoPayRequest = {
   status: PayRequestStatus; approved_amount: number | null; decision_note: string | null; decided_at: string | null;
   paid_amount: number; due: number | null;
   can_decide?: boolean;
+  /** The invoice it was raised from; null when raised on the PO itself. */
+  supplier_invoice_id?: number | null;
+  supplier_invoice_code?: string | null;
 };
 
 export type PoPaymentsPayload = { po: PoPaymentPosition; requests_summary: PoRequestsSummary; requests: PoPayRequest[] };

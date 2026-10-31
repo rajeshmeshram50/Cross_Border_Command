@@ -30,6 +30,10 @@ export interface InvoicePaymentRequest {
   status: 'approved' | 'pending' | 'declined';
   approved: number;
   paid: number;
+  /** Raised from this SPI (always, on a Direct SPI). */
+  own: boolean;
+  /** Where it was raised from when not this SPI: a sibling SPI's code, or null for the PO. */
+  from: string | null;
 }
 
 export interface SpiPayFigures {
@@ -53,9 +57,7 @@ export interface SpiRequestTotals {
   available: number;
 }
 
-type RequestWithSpi = PoPayRequest & { supplier_invoice_id?: number | null };
-
-const toRequest = (r: RequestWithSpi): InvoicePaymentRequest => ({
+const toRequest = (r: PoPayRequest, spiId: number | null): InvoicePaymentRequest => ({
   rid: r.id,
   id: r.code,
   date: r.requested_at ?? '',
@@ -67,6 +69,8 @@ const toRequest = (r: RequestWithSpi): InvoicePaymentRequest => ({
   status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'declined' : 'pending',
   approved: r.approved_amount ?? 0,
   paid: r.paid_amount,
+  own: r.supplier_invoice_id === spiId,
+  from: r.supplier_invoice_code ?? null,
 });
 
 const fromSpiRow = (r: SpiPayRequestRow): InvoicePaymentRequest => {
@@ -83,6 +87,8 @@ const fromSpiRow = (r: SpiPayRequestRow): InvoicePaymentRequest => {
     status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'declined' : 'pending',
     approved: r.approved_amount ?? 0,
     paid: r.paid_amount ?? 0,
+    own: true,
+    from: null,
   };
 };
 
@@ -145,14 +151,15 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   }, [onClose, tdsBusy]);
 
   const direct = state === 'ready' && !summary?.po;
+  /* With a PO: every request on it - raised on the PO, from this SPI or from
+     a sibling SPI - so each screen of the PO and its SPIs shows the same list. */
   const list = useMemo(
     () => (summary && !summary.po
       ? (summary.requests ?? []).map(fromSpiRow)
-      : (poData?.requests ?? [])
-        .filter(r => (r as RequestWithSpi).supplier_invoice_id === spiId)
-        .map(r => toRequest(r as RequestWithSpi))),
+      : (poData?.requests ?? []).map(r => toRequest(r, spiId))),
     [summary, poData, spiId],
   );
+  const ownList = useMemo(() => list.filter(q => q.own), [list]);
   const ledger = summary?.ledger ?? null;
 
   /* Paged like the PO's Payment Requests popup: five to a page by default,
@@ -212,7 +219,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
   const requested = list.reduce((n, q) => n + q.amount, 0);
   const approvedAmt = list.filter(q => q.status === 'approved').reduce((n, q) => n + q.approved, 0);
-  const paid = direct && ledger ? ledger.paid_amount : spi?.paid_amount ?? list.reduce((n, q) => n + q.paid, 0);
+  const paid = direct && ledger ? ledger.paid_amount : spi?.paid_amount ?? ownList.reduce((n, q) => n + q.paid, 0);
+  // Released across every listed request: the PO and all its SPIs.
+  const listPaid = direct ? paid : list.reduce((n, q) => n + q.paid, 0);
   const netPayable = direct && ledger ? ledger.net_payable : total;
   const pendingAmt = list.filter(q => q.status === 'pending').reduce((n, q) => n + q.amount, 0);
   const approvedCount = list.filter(q => q.status === 'approved').length;
@@ -220,7 +229,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   const readyToPay = list.filter(q => q.status === 'approved').reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0);
   const balance = direct && ledger ? ledger.balance_amount : spi?.balance ?? Math.max(0, total - paid);
   const pctPaid = netPayable > 0 ? Math.round((paid / netPayable) * 100) : 0;
-  const spiCommitted = pendingAmt + approvedAmt;
+  // This SPI's own requests only: the rest of the PO is already in open_to_request.
+  const spiCommitted = ownList.reduce((n, q) => n + (q.status === 'pending' ? q.amount : q.status === 'approved' ? q.approved : 0), 0);
   const available = direct
     ? Math.max(0, Math.round((netPayable - spiCommitted) * 100) / 100)
     : Math.max(0, Math.min(
@@ -312,7 +322,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                 {list.length} request{list.length === 1 ? '' : 's'}
               </span>
             </div>
-            <div className="mpr-hero__sub">All requests raised on this SPI</div>
+            <div className="mpr-hero__sub">{po ? `All requests on ${po.code} and its SPIs` : 'All requests raised on this SPI'}</div>
           </div>
 
           <InvoiceHeroChips row={row} />
@@ -372,7 +382,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
               <Box
                 label="Summary" title="All Request Details Summary"
-                sub="Running totals as on today, across every request raised on this SPI"
+                sub={po ? `Running totals as on today, across every request on ${po.code} and its SPIs`
+                  : 'Running totals as on today, across every request raised on this SPI'}
               >
                 <div className="mpr-stats">
                   <Stat icon={STAT_ICONS.doc} label="Total Requests" value={String(list.length)}
@@ -386,7 +397,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount"
                     value={money(approvedAmt)} sub={`${money(readyToPay)} awaiting release`} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
-                    value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
+                    value={money(listPaid)} sub={po ? `Released across ${po.code} and its SPIs` : `${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Open To Request"
                     value={money(available)} sub={available > 0 ? 'Can still be requested' : 'Nothing left to request'} />
                 </div>
@@ -429,6 +440,11 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                             <span className="mpr-idcell">
                               <span className="mpr-idpill">{q.id}</span>
                               <span className="mpr-iddate">{q.date ? shortDate(q.date) : '—'}</span>
+                              {po && (
+                                <span className="mpr-from" title={q.own ? 'Raised from this SPI' : q.from ? `Raised from ${q.from}` : `Raised on ${po.code}`}>
+                                  {q.own ? 'This SPI' : q.from ?? 'PO'}
+                                </span>
+                              )}
                             </span>
                           </span>
                           <span className="mpr-c" data-l="Payment Type"><span className="mpr-type">{q.type}</span></span>
