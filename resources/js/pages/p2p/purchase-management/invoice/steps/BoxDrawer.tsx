@@ -21,6 +21,7 @@ import SelectedProducts, {
 import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
 import { putId } from '../spi-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
 function SavedShot({ photo, onRemove, busy = false }: { photo: SavedPhoto; onRemove?: () => void; busy?: boolean }) {
@@ -207,14 +208,20 @@ export default function BoxDrawer({
     setRemoving(r => r.filter(x => x !== p.id));
   };
 
+  const toast = useToast();
   const [camOpen, setCamOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addPhotos = useCallback((files: File[]) => {
-    const pics = files.filter(f => f.type.startsWith('image/'));
+    const pics = files.filter(f => /^image\/(jpeg|png)$/.test(f.type) && /\.(jpe?g|png)$/i.test(f.name));
+    const rejected = files.filter(f => !pics.includes(f));
+    if (rejected.length) {
+      toast.warning('Only JPG or PNG images allowed',
+        `${rejected.map(f => f.name).join(', ')} ${rejected.length === 1 ? 'is' : 'are'} not supported. Upload box photos as JPG or PNG.`);
+    }
     if (!pics.length) return;
     setPhotos(p => [...p, ...pics.map(file => ({ file, url: URL.createObjectURL(file) }))]);
-  }, []);
+  }, [toast]);
 
   const dropPhoto = (url: string) => {
     URL.revokeObjectURL(url);
@@ -761,7 +768,7 @@ export default function BoxDrawer({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
         multiple
         hidden
         onChange={e => {

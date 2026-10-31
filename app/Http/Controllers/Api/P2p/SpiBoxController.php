@@ -573,7 +573,11 @@ class SpiBoxController extends Controller
 
         $request->validate([
             'photos'   => ['array', 'max:12'],
-            'photos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+            'photos.*' => ['file', 'image', 'mimes:jpg,jpeg,png', 'max:8192'],
+        ], [
+            'photos.*.image' => 'Only JPG or PNG images can be uploaded as box photos.',
+            'photos.*.mimes' => 'Only JPG or PNG images can be uploaded as box photos.',
+            'photos.*.max'   => 'Each box photo must be 8 MB or smaller.',
         ]);
 
         // See SupplierInvoiceController::storeAttachments — an empty disk

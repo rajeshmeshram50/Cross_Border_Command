@@ -1583,6 +1583,7 @@ class SupplierInvoiceController extends Controller
             'exchange_rate' => ['nullable', 'numeric', 'gt:0'],
         ], [
             'invoice_no.unique' => 'This supplier has already billed that invoice number.',
+            'invoice_date.before_or_equal' => 'The purchase invoice date cannot be a future date.',
             'invoice_date.after_or_equal' => $poDate
                 ? 'The purchase invoice date cannot be earlier than the PO date (' . date('d-M-Y', strtotime($poDate)) . ').'
                 : 'The purchase invoice date cannot be earlier than the PO date.',

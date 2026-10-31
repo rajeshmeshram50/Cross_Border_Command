@@ -10,6 +10,7 @@ import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
+import { today } from '../invoice-draft';
 
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
@@ -162,7 +163,7 @@ export default function Step2InvoiceProducts({
                   SPI has no purchase order, so nothing to hold it to. */}
               <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
                 invalid={!!issues?.invoiceDate}
-                minDate={!direct && draft.poDate ? draft.poDate : undefined} />
+                minDate={!direct && draft.poDate ? draft.poDate : undefined} maxDate={today()} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req error={issues?.invoiceFile}>
               <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly}

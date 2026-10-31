@@ -16,7 +16,7 @@ import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
-import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
+import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, today, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PiLine, type PoDetail } from '../order/api/po-api';
 import { toProduct } from '../order/create-po/use-po-lookups';
 
@@ -552,6 +552,8 @@ export default function InvoiceForm({
       invoiceNumber: draft.invoiceNumber.trim() ? undefined : 'Enter the purchase invoice number',
       invoiceDate: !draft.invoiceDate
         ? 'Pick the purchase invoice date'
+        : draft.invoiceDate > today()
+          ? 'Cannot be a future date'
         : !isDirect && draft.poDate && draft.invoiceDate < draft.poDate
           ? `Cannot be before the PO date (${formatDmy(draft.poDate)})`
           : undefined,
@@ -573,6 +575,11 @@ export default function InvoiceForm({
     if (missing.length) {
       flagStage2();
       toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    if (draft.invoiceDate > today()) {
+      flagStage2();
+      toast.warning('Invoice date is in the future', 'The purchase invoice date cannot be a future date.');
       return;
     }
     /* The picker already greys out the days before the PO; this catches a
