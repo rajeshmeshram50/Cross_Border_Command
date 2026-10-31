@@ -617,6 +617,9 @@ class SupplierInvoiceController extends Controller
             // rollUp: false — the grid owns the arithmetic, so recomputing here
             // would overwrite the figures the user actually saw with our own.
             $spi = $this->svc->saveItems($spi, $rows, false);
+            /* A boxed line that grew has quantity to pack again, so Stage 03
+               is no longer done. */
+            $this->svc->syncPackingStage($spi);
 
             /* No packing summary here: nothing is packed at Stage 02, so it would
                be a row of zeros. What this stage owns is the MATCH — what the PO

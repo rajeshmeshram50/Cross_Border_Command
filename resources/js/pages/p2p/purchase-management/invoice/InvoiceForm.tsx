@@ -384,12 +384,37 @@ export default function InvoiceForm({
 
   const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
 
+  /* What Stage 03 has already boxed, per saved line. A boxed line can grow on
+     Stage 02 - the extra shows as pending on Stage 03 - but it cannot drop
+     below what is in its boxes, change product or be removed. */
+  const packedByItem = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const b of boxes) {
+      for (const i of b.items) {
+        m.set(i.supplier_invoice_item_id, (m.get(i.supplier_invoice_item_id) ?? 0) + (Number(i.quantity) || 0));
+      }
+    }
+    for (const [k, v] of m) m.set(k, Math.round(v * 1000) / 1000);
+    return m;
+  }, [boxes]);
+  const packedOf = useCallback(
+    (l: ProductLine) => (l.spiItemId != null ? packedByItem.get(l.spiItemId) ?? 0 : 0),
+    [packedByItem],
+  );
+  const lineName = (l: ProductLine) => `${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || 'this product'}`;
+
   const removeLine = useCallback((index: number) => {
     const line = lines[index];
     if (!line) return;
+    if (packedOf(line) > 0) {
+      toast.warning('Already packed in boxes',
+        `${lineName(line)} has ${packedOf(line)} packed on Stage 03 — remove it from its boxes there before taking it off the invoice.`);
+      return;
+    }
     setLines(ls => ls.filter((_, i) => i !== index));
     if (matchedToPi) setRemovedLines(r => [...r, { at: index, line }]);
-  }, [lines, matchedToPi]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, matchedToPi, packedOf, toast]);
 
   const restoreLines = useCallback(() => {
     setLines(ls => {
@@ -403,8 +428,15 @@ export default function InvoiceForm({
   }, [removedLines]);
 
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
+    const line = lines[index];
+    if (line && 'productId' in patch && patch.productId !== line.productId && packedOf(line) > 0) {
+      toast.warning('Already packed in boxes',
+        `${lineName(line)} is packed on Stage 03 — its product cannot be changed. The quantity can still be increased.`);
+      return;
+    }
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, packedOf, toast]);
 
   const addLine = useCallback(() => {
     setLines(ls => [...ls, blankLine()]);
@@ -548,6 +580,12 @@ export default function InvoiceForm({
     } else if (lines.length && !lines.some(l => l.spiQty > 0)) {
       lines.forEach((_, i) => { rows[i] = { qty: 'Enter a quantity' }; });
     }
+    lines.forEach((l, i) => {
+      const boxed = packedOf(l);
+      if (boxed > 0 && l.spiQty < boxed - 0.0005) {
+        rows[i] = { ...rows[i], qty: `${boxed} already packed in boxes — cannot be less than ${boxed}` };
+      }
+    });
     return {
       invoiceNumber: draft.invoiceNumber.trim() ? undefined : 'Enter the purchase invoice number',
       invoiceDate: !draft.invoiceDate
@@ -560,7 +598,7 @@ export default function InvoiceForm({
       invoiceFile: files.invoice_file || uploaded.invoice ? undefined : 'Attach the purchase invoice',
       rows,
     };
-  }, [isDirect, lines, draft.invoiceNumber, draft.invoiceDate, draft.poDate, files.invoice_file, uploaded.invoice]);
+  }, [isDirect, lines, packedOf, draft.invoiceNumber, draft.invoiceDate, draft.poDate, files.invoice_file, uploaded.invoice]);
   /* Turns the red on and sends the user to the first gap. Bumped on every
      refusal, not set once, so a second click goes back to the field again. */
   const flagStage2 = () => setStage2Check(n => n + 1);
@@ -604,6 +642,13 @@ export default function InvoiceForm({
         toast.warning('Add a quantity', `Enter a quantity of at least 1 for ${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || `row ${zero + 1}`}, or remove the row.`);
         return;
       }
+    }
+    const shrunk = lines.find(l => packedOf(l) > 0 && l.spiQty < packedOf(l) - 0.0005);
+    if (shrunk) {
+      flagStage2();
+      toast.warning('Quantity is below what is packed',
+        `${lineName(shrunk)} has ${packedOf(shrunk)} packed in boxes on Stage 03 — the quantity can be increased but not reduced below ${packedOf(shrunk)}.`);
+      return;
     }
     const payload = itemsPayload(lines, taxMode);
     if (payload.items.length === 0) {
@@ -668,7 +713,7 @@ export default function InvoiceForm({
   }, [spiId]);
 
   useEffect(() => {
-    if (stage < 2 || !spiId) return;
+    if (stage < 1 || !spiId) return;
     let live = true;
     setBoxesLoading(true);
     Promise.all([
