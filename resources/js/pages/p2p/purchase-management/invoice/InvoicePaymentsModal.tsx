@@ -254,9 +254,18 @@ export default function InvoicePaymentsModal({ row, onClose }: {
       lockedBy: ledger?.tds_locked_by ?? (paid > 0 ? 'payment' : approvedCount > 0 ? 'approval' : null),
       room: Math.max(0, balance), base, gst, extra, total, amount: ledger?.tds_amount ?? 0,
     } : null;
+  /* The raise popup is about THIS SPI, so its request figures are this SPI's
+     own - the list above also carries the PO's and the sibling SPIs'. */
+  const ownApproved = ownList.filter(q => q.status === 'approved');
+  const ownPending = ownList.filter(q => q.status === 'pending');
   const totals: SpiRequestTotals = {
-    requested, approvedTotal: approvedAmt, pendingAmt, pendingCount,
-    approvedUnpaid: readyToPay, requestCount: list.length, available,
+    requested: ownList.reduce((n, q) => n + q.amount, 0),
+    approvedTotal: ownApproved.reduce((n, q) => n + q.approved, 0),
+    pendingAmt: ownPending.reduce((n, q) => n + q.amount, 0),
+    pendingCount: ownPending.length,
+    approvedUnpaid: ownApproved.reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0),
+    requestCount: ownList.length,
+    available,
   };
 
   const needsTds = po ? po.tds_applies && !po.tds_saved : !!tdsCtl && !tdsCtl.saved;
