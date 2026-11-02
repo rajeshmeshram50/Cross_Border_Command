@@ -674,7 +674,8 @@
 .whfix-dd-chev { margin-left: auto; color: var(--vz-secondary-color,#94a3b8); transition: transform .15s; flex-shrink: 0; }
 .whfix-dd.is-open .whfix-dd-chev { transform: rotate(180deg); }
 
-.whfix-dd-panel { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; max-height: 232px; overflow-y: auto;
+/* Portalled out of the modal (it clips overflow), so fixed + above the dialog. */
+.whfix-dd-panel { position: fixed; z-index: 10000070; max-height: 232px; overflow-y: auto;
   background: var(--vz-card-bg,#fff); border: 1px solid var(--vz-border-color,#e2e8f0); border-radius: 10px;
   box-shadow: 0 16px 36px rgba(6,45,61,.22); padding: 4px; }
 .whfix-dd-opt { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px;
@@ -684,6 +685,9 @@
 .whfix-dd-opt.is-blocked { opacity: .6; cursor: not-allowed; }
 .whfix-dd-opt-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .whfix-dd-opt-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whfix-dd-opt-code { flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: #0e7490;
+  background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 6px; padding: 1px 6px; }
+[data-bs-theme="dark"] .whfix-dd-opt-code { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #7dd3e8; }
 .whfix-dd-opt-ok { margin-left: auto; color: #0891b2; font-size: 15px; }
 .whfix-dd-opt-reason { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
   color: #dc2626; font-size: 10.5px; font-weight: 700; white-space: nowrap; }

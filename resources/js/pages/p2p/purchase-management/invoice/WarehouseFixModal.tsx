@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { StorageWarehouse } from './types';
 import type { WarehouseEligibility } from './spi-api';
@@ -29,21 +29,44 @@ export default function WarehouseFixModal({
 }) {
   const [pick, setPick] = useState<StorageWarehouse | null>(null);
   const [open, setOpen] = useState(false);
-  const ddRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  const trigRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const need = missing.map(m => m.replace(/^a /, '')).join(' and ');
   const compatibleCount = warehouses.filter(w => !reasonFor(eligibility, w.apiId)).length;
 
-  // Close the dropdown on an outside click or Escape.
+  // Close on an outside click (trigger AND the portalled panel are "inside") or Escape.
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (!ddRef.current?.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (trigRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
     document.addEventListener('mousedown', away, true);
     document.addEventListener('keydown', esc, true);
     return () => {
       document.removeEventListener('mousedown', away, true);
       document.removeEventListener('keydown', esc, true);
+    };
+  }, [open]);
+
+  // The panel is portalled out of the modal (which clips its overflow), so it
+  // is pinned under the trigger and kept there while things move.
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const place = () => {
+      const r = trigRef.current?.getBoundingClientRect();
+      if (r) setPos({ left: r.left, top: r.bottom + 6, width: r.width });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
     };
   }, [open]);
 
@@ -68,9 +91,9 @@ export default function WarehouseFixModal({
           </p>
 
           <label className="whfix-label">Change warehouse</label>
-          <div className={`whfix-dd${open ? ' is-open' : ''}`} ref={ddRef}>
+          <div className={`whfix-dd${open ? ' is-open' : ''}`}>
             <button
-              type="button" className="whfix-dd-trig" disabled={busy}
+              ref={trigRef} type="button" className="whfix-dd-trig" disabled={busy}
               aria-haspopup="listbox" aria-expanded={open}
               onClick={() => setOpen(o => !o)}
             >
@@ -79,30 +102,6 @@ export default function WarehouseFixModal({
                 : <span className="whfix-dd-ph">Select a compatible warehouse…</span>}
               <i className="ri-arrow-down-s-line whfix-dd-chev" />
             </button>
-
-            {open && (
-              <div className="whfix-dd-panel" role="listbox">
-                {warehouses.map(w => {
-                  const reason = reasonFor(eligibility, w.apiId);
-                  const selected = pick?.id === w.id;
-                  return (
-                    <button
-                      key={w.id} type="button" role="option" aria-selected={selected} aria-disabled={!!reason}
-                      className={`whfix-dd-opt${reason ? ' is-blocked' : ''}${selected ? ' is-sel' : ''}`}
-                      onClick={() => { if (reason) return; setPick(w); setOpen(false); }}
-                    >
-                      <span className="whfix-dd-opt-main">
-                        <span className="whfix-dd-opt-name">{w.name}</span>
-                        {w.code && <span className="whfix-dd-opt-code">{w.code}</span>}
-                      </span>
-                      {reason
-                        ? <span className="whfix-dd-opt-reason"><i className="ri-close-circle-line" /> {reason}</span>
-                        : <i className="ri-check-line whfix-dd-opt-ok" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           {compatibleCount === 0 && (
@@ -123,6 +122,34 @@ export default function WarehouseFixModal({
           </button>
         </div>
       </div>
+
+      {open && pos && createPortal(
+        <div
+          ref={panelRef} className="whfix-dd-panel" role="listbox"
+          style={{ left: pos.left, top: pos.top, width: pos.width }}
+        >
+          {warehouses.map(w => {
+            const reason = reasonFor(eligibility, w.apiId);
+            const selected = pick?.id === w.id;
+            return (
+              <button
+                key={w.id} type="button" role="option" aria-selected={selected} aria-disabled={!!reason}
+                className={`whfix-dd-opt${reason ? ' is-blocked' : ''}${selected ? ' is-sel' : ''}`}
+                onClick={() => { if (reason) return; setPick(w); setOpen(false); }}
+              >
+                <span className="whfix-dd-opt-main">
+                  <span className="whfix-dd-opt-name">{w.name}</span>
+                  {w.code && <span className="whfix-dd-opt-code">{w.code}</span>}
+                </span>
+                {reason
+                  ? <span className="whfix-dd-opt-reason"><i className="ri-close-circle-line" /> {reason}</span>
+                  : <i className="ri-check-line whfix-dd-opt-ok" />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </div>,
     document.body,
   );
