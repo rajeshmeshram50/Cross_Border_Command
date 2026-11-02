@@ -3344,7 +3344,8 @@
   transition: background .15s ease;
 }
 .pyt-icon-13 { font-size: 13px; }
-.pyt-section-title { font-size: 12px; }
+/* 13.5px to match .ep-sec-head (e.g. Profile "Personal Information"). */
+.pyt-section-title { font-family: var(--font-sans); font-size: 13.5px; }
 .pyt-pill-amber {
   font-size: 10px;
   padding: 3px 9px;
