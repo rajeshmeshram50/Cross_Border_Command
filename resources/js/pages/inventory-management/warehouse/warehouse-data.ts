@@ -194,6 +194,11 @@ export const warehouseApi = {
 
   show: (apiId: number) => call(() => api.get(`/inventory/warehouses/${apiId}`), one),
 
+  /* Streamed by the API: the stored card can sit on Azure, where the browser
+     can neither blob-fetch it nor honour <a download>. */
+  card: (apiId: number) =>
+    call(() => api.get(`/inventory/warehouses/${apiId}/card`, { responseType: 'blob' }), (b) => b as Blob),
+
   preview: (apiId: number) => call(() => api.get(`/inventory/warehouses/${apiId}/preview`), (b): WarehouseLabel => {
     const d = (b as { data?: Record<string, unknown> } | null)?.data ?? {};
     const rows = (d.rows && typeof d.rows === 'object' ? d.rows : {}) as Record<string, unknown>;

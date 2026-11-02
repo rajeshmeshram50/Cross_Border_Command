@@ -682,6 +682,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/warehouses',               [WarehouseController::class, 'store']);
         Route::get   ('/warehouses/{id}',          [WarehouseController::class, 'show'])->whereNumber('id');
         Route::get   ('/warehouses/{id}/qr',       [WarehouseController::class, 'qrImage'])->whereNumber('id');
+        Route::get   ('/warehouses/{id}/card',     [WarehouseController::class, 'card'])->whereNumber('id');
         Route::get   ('/warehouses/{id}/preview',    [WarehouseController::class, 'preview'])->whereNumber('id');
         Route::get   ('/warehouses/{id}/label',    [WarehouseController::class, 'label'])->whereNumber('id');
         Route::post  ('/warehouses/{id}',          [WarehouseController::class, 'update'])->whereNumber('id');

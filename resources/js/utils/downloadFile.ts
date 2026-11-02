@@ -132,7 +132,7 @@ export async function assertApiBlob(
 }
 
 /** Trigger a browser save for an in-memory Blob via a same-origin blob: URL. */
-function saveBlob(blob: Blob, name: string): void {
+export function saveBlob(blob: Blob, name: string): void {
   const objUrl = URL.createObjectURL(blob);
   saveUrl(objUrl, name);
   setTimeout(() => URL.revokeObjectURL(objUrl), 1500);

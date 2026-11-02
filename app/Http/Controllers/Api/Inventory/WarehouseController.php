@@ -402,6 +402,22 @@ class WarehouseController extends BaseInventoryController
         return $this->qrPng($this->stickerPayload($data), (int) $request->input('scale', 10), $data['code'] ?? null);
     }
 
+    /**
+     * GET /inventory/warehouses/{id}/card — the business card as an attachment.
+     *
+     * Streamed through here, not linked: on the server the card sits on Azure
+     * Blob, a different origin with no CORS, so the browser can neither honour
+     * <a download> nor blob-fetch it, and Download merely opened it (CS-939 #16).
+     */
+    public function card(Request $request, int $id)
+    {
+        $warehouse = $this->ownedQuery(Warehouse::query(), $this->tenantUser($request))->findOrFail($id);
+        $path = $warehouse->card_path;
+        if (!$path || !Storage::disk('public')->exists($path)) abort(404, 'No business card on file.');
+
+        return Storage::disk('public')->download($path, $warehouse->card_name ?: basename($path));
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     /**
