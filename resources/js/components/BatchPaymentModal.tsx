@@ -631,7 +631,7 @@ const card: React.CSSProperties = {
    15px/700 and 32px .rec-form-header uses everywhere else, which is what
    read as a different typeface (#61). No font-family was ever set here. */
 const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 22px 12px', background: 'linear-gradient(120deg,#6d28d9,#7c5cfc 55%,#a78bfa)', color: '#fff', flexShrink: 0 };
-const heroIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 };
+const heroIco: React.CSSProperties = { width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,.12))', border: '1.5px solid rgba(255,255,255,.32)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 };
 const rail: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 28, padding: '12px 26px', borderBottom: '1px solid var(--bpw-border)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
 const selChip: React.CSSProperties = { background: '#6d28d9', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
 // flex-grow 0 so the body sizes to its content (never stretches to fill the
