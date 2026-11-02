@@ -8599,6 +8599,16 @@
   border-radius: 0;
 }
 
+/* Tiny group label for the permission matrix's Manage Permission sections. */
+.pm-qa-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  white-space: nowrap;
+}
+
 .att-cal-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));

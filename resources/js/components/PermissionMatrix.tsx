@@ -635,45 +635,57 @@ export default function PermissionMatrix({
               label's own 16px on top of it pushed "QUICK ACTIONS" a clear 36px
               in — visibly further right than everything above it. */}
           <span className="text-dark fs-11 fw-semibold text-uppercase py-2">
-            <i className="ri-flashlight-line me-1"></i> Quick Actions :
+            <i className="ri-shield-keyhole-line me-1"></i> Manage Permission :
           </span>
 
-          {/* Utility buttons — all uniform light */}
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
-            <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
-          </Button>
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
-            <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
-          </Button>
-          <Button
-            color="light" size="sm" className="rounded-pill px-3 border"
-            onClick={() => {
-              const next: Record<number, boolean> = {};
-              modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
-              setExpanded(next);
-            }}
-          >
-            <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
-          </Button>
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
-            <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
-          </Button>
+          {/* Three labelled sections: bulk selection, tree view, columns. */}
+          <div className="d-inline-flex align-items-center gap-2">
+            <span className="pm-qa-label">Selection</span>
+            <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
+              <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
+            </Button>
+            <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
+              <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
+            </Button>
+          </div>
+
+          <span className="vr mx-1 opacity-50"></span>
+
+          <div className="d-inline-flex align-items-center gap-2">
+            <span className="pm-qa-label">View</span>
+            <Button
+              color="light" size="sm" className="rounded-pill px-3 border"
+              onClick={() => {
+                const next: Record<number, boolean> = {};
+                modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
+                setExpanded(next);
+              }}
+            >
+              <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
+            </Button>
+            <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
+              <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
+            </Button>
+          </div>
 
           <span className="vr mx-1 opacity-50"></span>
 
           {/* Per-permission column toggles — all light, icon carries the colour */}
-          {PERMS.map(p => (
-            <Button
-              key={p.key}
-              color="light"
-              size="sm"
-              className="rounded-pill px-3 border"
-              onClick={() => toggleColumn(p.key)}
-            >
-              <i className={`${p.icon} me-1 align-bottom text-${p.color}`}></i>
-              <span className="text-muted">{p.label}</span>
-            </Button>
-          ))}
+          <div className="d-inline-flex align-items-center gap-2 flex-wrap">
+            <span className="pm-qa-label">Permissions</span>
+            {PERMS.map(p => (
+              <Button
+                key={p.key}
+                color="light"
+                size="sm"
+                className="rounded-pill px-3 border"
+                onClick={() => toggleColumn(p.key)}
+              >
+                <i className={`${p.icon} me-1 align-bottom text-${p.color}`}></i>
+                <span className="text-muted">{p.label}</span>
+              </Button>
+            ))}
+          </div>
 
           {/* Counter */}
           <span className="ms-auto text-muted fs-12 fw-medium">

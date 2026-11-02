@@ -31,10 +31,10 @@ const useIsDark = () => {
 };
 
 const STATUS_FILTERS: { key: RegularizationStatus | 'All'; label: string }[] = [
+  { key: 'All',      label: 'All' },
   { key: 'Pending',  label: 'Pending' },
   { key: 'Approved', label: 'Approved' },
   { key: 'Rejected', label: 'Rejected' },
-  { key: 'All',      label: 'All' },
 ];
 
 /* Light pastels read as bright chips on the dark page, so each status also
