@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } 
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
-import { downloadFile } from '../../../utils/downloadFile';
+import { downloadFile, saveBlob } from '../../../utils/downloadFile';
 import { useToast } from '../../../contexts/ToastContext';
 import { useBranchSwitcher } from '../../../contexts/BranchSwitcherContext';
 import '../../p2p/p2p-detail.css';
@@ -197,6 +197,15 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     if (!cardFile) return;
     return () => URL.revokeObjectURL(cardHref);
   }, [cardFile, cardHref]);
+  const downloadCard = async () => {
+    const name = d.card || 'attachment';
+    if (cardFile || !warehouse?.apiId) return downloadFile(cardHref, name);
+    try {
+      saveBlob(await warehouseApi.card(warehouse.apiId), name);
+    } catch {
+      void downloadFile(cardHref, name);
+    }
+  };
   const [saving, setSaving] = useState(false);
   const { selectedBranchId } = useBranchSwitcher();
 
@@ -573,9 +582,11 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                       title="View attachment" aria-label="View attachment"><IcoEye /></a>
                     {/* Not a plain <a download>: the browser ignores that on a
                         cross-origin URL or an inline-served file and just opens
-                        it (CS-939 #16). downloadFile blob-fetches, then saves. */}
+                        it (CS-939 #16). A saved card comes through the API,
+                        since on the server it sits on Azure with no CORS; a
+                        file just picked is a blob: URL and saves as it is. */}
                     <a className="whm-file__act" href={cardHref} download={d.card || 'attachment'}
-                      onClick={ev => { ev.preventDefault(); void downloadFile(cardHref, d.card || 'attachment'); }}
+                      onClick={ev => { ev.preventDefault(); void downloadCard(); }}
                       title="Download attachment" aria-label="Download attachment"><IcoDown /></a>
                   </>
                 )}
