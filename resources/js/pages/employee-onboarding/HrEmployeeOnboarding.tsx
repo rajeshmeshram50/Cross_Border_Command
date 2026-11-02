@@ -1666,6 +1666,9 @@ function InitiateOnboardingModal({
   const [stage5Total, setStage5Total]   = useState(0);
   const [stage5Signed, setStage5Signed] = useState(0);
   const [stage5Sent, setStage5Sent]     = useState(0);
+  /* A rejected required document blocks the stage — it can't be marked done or
+     waived until the rejection is resolved (re-sent and signed). */
+  const [stage5Rejected, setStage5Rejected] = useState(0);
   /* The finalised document set is now the requirement (#24): Stage 5 is done
      only when the set is finalised AND every ticked document is signed. */
   const [stage5Finalized, setStage5Finalized] = useState(false);
@@ -1680,7 +1683,7 @@ function InitiateOnboardingModal({
      at the dependency list. (QA #4/#5) */
   const docSetLoadedForRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!isOpen || !emp?.dbId) { docSetLoadedForRef.current = null; setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); return; }
+    if (!isOpen || !emp?.dbId) { docSetLoadedForRef.current = null; setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Rejected(0); setStage5Finalized(false); setStage5Loaded(false); return; }
     if (!coreReady) return;
     if (docSetLoadedForRef.current === emp.dbId) return;
     docSetLoadedForRef.current = emp.dbId;
@@ -1700,16 +1703,18 @@ function InitiateOnboardingModal({
         setStage5Total(sel.length);
         setStage5Sent(sel.filter(t => t.active || t.signed).length);
         setStage5Signed(sel.filter(t => t.signed).length);
+        setStage5Rejected(sel.filter(t => t.run_status === 'Rejected').length);
         setStage5Finalized(!!data?.finalized);
         setStage5Loaded(true);
-      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); } }
+      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Rejected(0); setStage5Finalized(false); setStage5Loaded(false); } }
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId, coreReady]);
 
-  const handleStage5Progress = useCallback((p: { signed: number; sent: number; total: number; finalized?: boolean }) => {
+  const handleStage5Progress = useCallback((p: { signed: number; sent: number; total: number; finalized?: boolean; rejected?: number }) => {
     setStage5Signed(p.signed);
     setStage5Sent(p.sent);
+    setStage5Rejected(p.rejected ?? 0);
     setStage5Finalized(!!p.finalized);
     setStage5Total(p.total);
     setStage5Loaded(true);
@@ -3299,7 +3304,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
      applicable template must be out as well as signed. */
   // Done only when the set is FINALISED and every ticked document is signed.
   const stage5AllSigned = stage5Loaded && stage5Finalized && stage5Signed >= stage5Total;
-  const stage5IsDone = macroCompleted >= 5 && stage5AllSigned;
+  /* Opted out: HR advanced past Policies (macro >= 5) without finalising a set
+     and with nothing sent — the "No documents to send" choice on the Stage 5
+     toggle. Policies is then complete, so onboarding can be completed. */
+  const stage5Waived = stage5Loaded && macroCompleted >= 5 && !stage5Finalized && stage5Sent === 0 && stage5Rejected === 0;
+  const stage5IsDone = macroCompleted >= 5 && (stage5AllSigned || stage5Waived) && stage5Rejected === 0;
   /* Advancing Policies & Agreements is optional — HR may proceed without
      sending anything and collect signatures later (QA #43, relaxes #145).
      Only a document already SENT and still unsigned holds the step, so an
@@ -4497,7 +4506,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!stage4IsDone) pending.push('Payroll & Finance');
     if (!stage5IsDone) {
       pending.push(
-        !stage5Loaded                 ? 'Policies & Agreements (still loading)'
+        stage5Rejected > 0            ? `Policies & Agreements (${stage5Rejected} rejected — re-send and sign)`
+        : !stage5Loaded               ? 'Policies & Agreements (still loading)'
         : !stage5Finalized            ? 'Policies & Agreements (finalize the document set)'
         : stage5Signed < stage5Total  ? `Policies & Agreements (${stage5Total - stage5Signed} of ${stage5Total} awaiting signature)`
                                       : 'Policies & Agreements',
@@ -6406,7 +6416,7 @@ function Stage4Payroll({
 
 function Stage5Policies({ emp, onProgress }: {
   emp: OnboardRow;
-  onProgress?: (p: { signed: number; sent: number; total: number; finalized?: boolean }) => void;
+  onProgress?: (p: { signed: number; sent: number; total: number; finalized?: boolean; rejected?: number }) => void;
 }) {
   type Tpl = {
     id: number;
@@ -6680,12 +6690,33 @@ function Stage5Policies({ emp, onProgress }: {
     () => requiredIds.filter(id => { const s = runByTemplateId.get(id)?.status; return s === 'Completed' || s === 'Pending' || s === 'In Progress'; }).length,
     [requiredIds, runByTemplateId],
   );
+  const rejectedCount = useMemo(
+    () => requiredIds.filter(id => runByTemplateId.get(id)?.status === 'Rejected').length,
+    [requiredIds, runByTemplateId],
+  );
   const totalCount = requiredIds.length;
 
   useEffect(() => {
     if (loading || !docSetLoaded) return;
-    onProgress?.({ signed: signedCount, sent: sentCount, total: totalCount, finalized: docFinalized });
-  }, [loading, docSetLoaded, signedCount, sentCount, totalCount, docFinalized, onProgress]);
+    onProgress?.({ signed: signedCount, sent: sentCount, total: totalCount, finalized: docFinalized, rejected: rejectedCount });
+  }, [loading, docSetLoaded, signedCount, sentCount, totalCount, docFinalized, rejectedCount, onProgress]);
+
+  /* Send-documents gate (mirrors the Exit "release documents" switch): HR first
+     says whether this hire needs any policy documents sent at all. Off = nothing
+     to send, so the stage is optional. Defaults from existing activity so a
+     reopened wizard reflects what was already decided. */
+  const [sendDocs, setSendDocs] = useState(false);
+  const sendDocsInit = useRef(false);
+  /* Can't switch off once the set is committed: finalized (re-open it first),
+     or anything already sent / signed (that can't be un-sent). */
+  const docsLockOn = docFinalized || sentCount > 0 || signedCount > 0;
+  useEffect(() => {
+    if (!docSetLoaded || sendDocsInit.current) return;
+    setSendDocs(docFinalized || docsLockOn);
+    sendDocsInit.current = true;
+  }, [docSetLoaded, docFinalized, docsLockOn]);
+  // Once anything is sent/signed the gate stays on — you cannot un-send.
+  useEffect(() => { if (docsLockOn && !sendDocs) setSendDocs(true); }, [docsLockOn, sendDocs]);
 
   const confirmSend = async () => {
     const tpl = sendForTpl;
@@ -6712,6 +6743,63 @@ function Stage5Policies({ emp, onProgress }: {
 
   return (
     <>
+      {!docSetLoaded ? (
+        /* Hold the toggle until the set has loaded — otherwise it flashes "No"
+           (the default) before the real state arrives. */
+        <div className="ep-release" style={{ opacity: 0.6 }}>
+          <span className="ep-release-ico"><i className="ri-loader-4-line" style={{ display: 'inline-block', animation: 'onb-busy-spin 0.7s linear infinite' }} /></span>
+          <div className="ep-release-text">
+            <div className="ep-release-title">Policies &amp; Agreements</div>
+            <div className="ep-release-sub">Loading the document set…</div>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* Send-documents gate — the same switch the Exit flow uses to release
+          documents. Off = this hire needs no policy documents, so the whole
+          select/finalize/send section is hidden and the stage is skippable. */}
+      <div className={`ep-release${sendDocs ? ' is-on' : ''}`}>
+        <span className="ep-release-ico"><i className={sendDocs ? 'ri-mail-send-line' : 'ri-mail-forbid-line'} /></span>
+        <div className="ep-release-text">
+          <div className="ep-release-title">Do you want to send documents for signature?</div>
+          <div className="ep-release-sub">
+            {(sentCount > 0 || signedCount > 0)
+              ? 'Documents have already been sent — this can no longer be switched off.'
+              : docFinalized
+                ? 'The document set is finalized — re-open the set below to switch this off.'
+                : sendDocs
+                  ? 'Enabled — select the documents below, finalize the set, and send them for signature.'
+                  : 'Not required — no policy documents will be sent. You can continue to the next stage.'}
+          </div>
+        </div>
+        <label className="ep-switch" title="Send onboarding documents for signature">
+          <input type="checkbox" checked={sendDocs}
+                 onChange={e => {
+                   // Locked on once committed — explain instead of silently refusing.
+                   if (docsLockOn && !e.target.checked) {
+                     if (sentCount > 0 || signedCount > 0) {
+                       toast.error('Can’t switch off', 'A document has already been sent for signature, so this can no longer be turned off.');
+                     } else {
+                       toast.error('Document set is finalized', 'Re-open the set below first, then you can switch this off.');
+                     }
+                     return;
+                   }
+                   setSendDocs(e.target.checked);
+                 }} />
+          <span className="ep-switch-track"><span className="ep-switch-thumb" /></span>
+          <span className="ep-switch-label">{sendDocs ? 'Yes' : 'No'}</span>
+        </label>
+      </div>
+
+      {!sendDocs ? (
+        <div style={{ padding: 22, textAlign: 'center', borderRadius: 10, marginTop: 12, background: 'var(--vz-light, #f9fafb)', border: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+          <i className="ri-mail-forbid-line" style={{ fontSize: 28, display: 'block', marginBottom: 8, color: '#9ca3af' }} />
+          <div style={{ fontSize: 13, color: 'var(--vz-secondary-color, #6b7280)' }}>
+            No documents will be sent for this employee. Switch on above to select and send policy documents, or continue to the next stage.
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="onb-pol-legend">
         <span style={{ fontWeight: 700, color: '#374151' }}>Signing Status:</span>
         <span className="onb-pol-legend-item"><span className="dot" style={{ background: '#10b981' }} /> Signed</span>
@@ -7193,6 +7281,10 @@ function Stage5Policies({ emp, onProgress }: {
       </div>
 
       <SignedDocumentsSection runs={runs} />
+      </>
+      )}
+      </>
+      )}
 
       <DocGenerateModal
         isOpen={!!genTpl}
