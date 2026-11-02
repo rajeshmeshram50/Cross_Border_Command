@@ -64,11 +64,18 @@ class HolidayController extends Controller
                     ->orWhere('description', 'ilike', "%{$search}%");
             });
         }
+        // Type and year are multi-select — a comma list means "any of these".
         if ($type = $request->query('type')) {
-            $q->where('type', $type);
+            $types = array_values(array_filter(array_map('trim', explode(',', (string) $type))));
+            if ($types) $q->whereIn('type', $types);
         }
         if ($year = $request->query('year')) {
-            $q->whereYear('date', (int) $year);
+            $years = array_values(array_filter(array_map('intval', explode(',', (string) $year))));
+            if ($years) {
+                $q->where(function ($w) use ($years) {
+                    foreach ($years as $y) $w->orWhereYear('date', $y);
+                });
+            }
         }
 
         // Date-wise, with id as a stable tie-breaker so same-date holidays keep

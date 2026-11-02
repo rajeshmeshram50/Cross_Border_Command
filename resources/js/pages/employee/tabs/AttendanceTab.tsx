@@ -72,6 +72,33 @@ const ATT_LABEL_TONE: Record<string, { slug: string; icon: string }> = {
 const toneClass = (label: string) => `ep-tone-${ATT_LABEL_TONE[label]?.slug || 'default'}`;
 const toneIcon  = (label: string) => ATT_LABEL_TONE[label]?.icon || 'ri-time-line';
 
+// Day-status pill colours — mirrors STATUS_TONE in HrAttendance so the
+// Today's Record card reads like the HR "Updated Record" card.
+const DAY_TONE: Record<string, { fg: string; bg: string; dot: string }> = {
+  'Present':     { fg: '#15803d', bg: '#dcfce7', dot: '#22c55e' },
+  'Late':        { fg: '#92400e', bg: '#fef3c7', dot: '#f59e0b' },
+  'Half Day':    { fg: '#92400e', bg: '#fef3c7', dot: '#f59e0b' },
+  'Missing In':  { fg: '#b91c1c', bg: '#fee2e2', dot: '#ef4444' },
+  'Missing Out': { fg: '#b91c1c', bg: '#fee2e2', dot: '#ef4444' },
+  'Absent':      { fg: '#b91c1c', bg: '#fee2e2', dot: '#ef4444' },
+  'Weekly Off':  { fg: '#3b82f6', bg: '#dbeafe', dot: '#60a5fa' },
+  'Holiday':     { fg: '#3b82f6', bg: '#dbeafe', dot: '#60a5fa' },
+  'Leave':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc' },
+};
+const dayTone = (status: string) => DAY_TONE[status] || { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8' };
+
+// ISO timestamp -> "09:02" with a small " AM/PM" suffix (att-tile-am), the
+// same big-number/small-suffix treatment the HR card's renderTime gives.
+const attRenderClock = (iso: string | null) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const h = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? ' PM' : ' AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return <>{`${String(h12).padStart(2, '0')}:${mm}`}<span className="att-tile-am">{ampm}</span></>;
+};
+
 const attFmtClock = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
 const attFmtHM    = (secs: number) => {
   const h = Math.floor(Math.max(0, secs) / 3600);
@@ -280,92 +307,59 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
               .att-logs-headbar as Logs & Requests and My Regularization
               Requests further down this tab. These two used the profile's
               tinted section head, so one tab showed two header styles. */}
-          <div className="att-logs-card h-100 d-flex flex-column">
-            <div className="att-logs-headbar px-3 py-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span className="att-logs-headbar-icon"><i className="ri-calendar-check-line" /></span>
-                <div>
-                  <div className="att-logs-headbar-title">Today's Record</div>
-                  <div className="att-logs-headbar-sub">Punches and totals for the current day</div>
-                </div>
+          {/* Mirrors the HR Attendance "Updated Record" card — teal top rail,
+              inline status pill, headline IN/OUT tiles, centred stat trio. */}
+          <div className="att-today-card h-100">
+            <div className="att-today-titlebar">
+              <div className="d-flex align-items-center gap-2 min-w-0">
+                <span className="att-today-titlebar-icon"><i className="ri-time-line" /></span>
+                <div className="att-today-titlebar-text">Today's Record</div>
+                {today && (() => {
+                  const t = dayTone(today.status);
+                  return (
+                    <span className="att-today-status-pill att-tone-pill" data-status={today.status} style={{ color: t.fg, background: t.bg }}>
+                      <span className="att-today-status-dot" style={{ background: t.dot }} />
+                      {today.status}
+                    </span>
+                  );
+                })()}
               </div>
-              <small className="text-muted ep-fs-11">
+              <span className="att-today-date">
                 {new Date().toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
-              </small>
+              </span>
             </div>
-            <div className="px-3 py-3 flex-grow-1">
-              {today ? (
-                <>
-                 
-                  <style>{`
-                    [data-bs-theme="dark"] .ep-att-today-badge,
-                    [data-layout-mode="dark"] .ep-att-today-badge {
-                      background: rgba(16,185,129,0.18) !important;
-                      color: #6ee7b7 !important;
-                    }
-                  `}</style>
-                  <span
-                    className="ep-att-today-badge att-today-badge d-inline-flex align-items-center gap-1 fw-semibold mb-3"
-                  >
-                    <span className="att-today-badge-dot" />
-                    {today.status}
-                  </span>
-                  {/* QA #193 — the five figures were `ep-field-label` /
-                      `ep-field-value` pairs in a bare 6/6/4/4/4 grid: 11px
-                      labels, body-size values, no separation between them, and
-                      the two clock times sitting at exactly the same weight as
-                      the punch count. Nothing on the card told you what to read
-                      first.
-                      Now two ranks of tiles. IN and OUT are the headline pair
-                      and get the large monospace treatment; the three
-                      supporting figures sit smaller beneath, with Worked
-                      accented because it is the number this card exists to
-                      answer. */}
-                  <div className="att-today-tiles att-today-tiles--2 mb-2">
-                    <div className="att-today-tile att-today-tile--in">
-                      <div className="att-today-tile__label">
-                        <i className="ri-login-circle-line" /> First In
-                      </div>
-                      <div className="att-today-tile__value font-monospace">
-                        {attFmtClock(today.check_in_at)}
-                      </div>
-                    </div>
-                    <div className="att-today-tile att-today-tile--out">
-                      <div className="att-today-tile__label">
-                        <i className="ri-logout-circle-r-line" /> Last Out
-                      </div>
-                      <div className="att-today-tile__value font-monospace">
-                        {attFmtClock(today.check_out_at)}
-                      </div>
-                    </div>
+            {today ? (
+              <>
+                <div className="att-today-times-2">
+                  <div className="att-tile">
+                    <div className="att-tile-label"><i className="ri-login-circle-line" />FIRST IN</div>
+                    <div className="att-tile-value">{attRenderClock(today.check_in_at)}</div>
                   </div>
-                  <div className="att-today-tiles att-today-tiles--3">
-                    <div className="att-today-tile att-today-tile--sm">
-                      <div className="att-today-tile__label">Punches</div>
-                      <div className="att-today-tile__value att-today-tile__value--sm">
-                        {today.punches_count}
-                      </div>
-                    </div>
-                    <div className="att-today-tile att-today-tile--sm att-today-tile--worked">
-                      <div className="att-today-tile__label">Worked</div>
-                      <div className="att-today-tile__value att-today-tile__value--sm">
-                        {attFmtHM(today.total_worked_seconds)}
-                      </div>
-                    </div>
-                    <div className="att-today-tile att-today-tile--sm">
-                      <div className="att-today-tile__label">Expected</div>
-                      <div className="att-today-tile__value att-today-tile__value--sm att-today-tile__value--muted">
-                        9h 00m
-                      </div>
-                    </div>
+                  <div className="att-tile">
+                    <div className="att-tile-label"><i className="ri-logout-circle-r-line" />LAST OUT</div>
+                    <div className="att-tile-value">{attRenderClock(today.check_out_at)}</div>
                   </div>
-                </>
-              ) : (
-                <div className="text-center text-muted py-3 ep-fs-13">
-                  No attendance record for today yet.
                 </div>
-              )}
-            </div>
+                <div className="att-today-stats">
+                  <div className="att-stat">
+                    <div className="att-stat-num" style={{ color: '#7c5cfc' }}>{today.punches_count}</div>
+                    <div className="att-stat-label">PUNCHES</div>
+                  </div>
+                  <div className="att-stat">
+                    <div className="att-stat-num" style={{ color: '#0d9488' }}>{attFmtHM(today.total_worked_seconds)}</div>
+                    <div className="att-stat-label">WORKED</div>
+                  </div>
+                  <div className="att-stat">
+                    <div className="att-stat-num" style={{ color: '#6b7280' }}>{attFmtHM((data.expected_minutes ?? 540) * 60)}</div>
+                    <div className="att-stat-label">EXPECTED</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-center text-muted py-3 ep-fs-13">
+                No attendance record for today yet.
+              </div>
+            )}
           </div>
         </Col>
 
@@ -383,40 +377,30 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                 {todayPunches.length} {todayPunches.length === 1 ? 'punch today' : 'punches today'}
               </small>
             </div>
-            <div className="px-3 py-3 flex-grow-1 att-overflow-x">
+            {/* Horizontal track-and-line timeline, matching HR Attendance's
+                "Updated Record" Intraday card (QA 211). */}
+            <div className="att-h-timeline px-3 flex-grow-1 att-overflow-x">
               {todayPunches.length === 0 ? (
-                <div className="text-center text-muted py-3 ep-fs-13">
-                  No punches yet today.
+                <div className="att-timeline-empty">
+                  <i className="ri-calendar-2-line" />
+                  <span>No punches recorded for today.</span>
                 </div>
               ) : (
-                <div className="d-flex gap-3 align-items-stretch att-min-fit">
-                  {todayPunches.map((p, idx) => (
-                      <div
-                        key={p.id}
-                        className={`position-relative d-flex flex-column align-items-center att-punch-col ${toneClass(p.label)}`}
-                      >
-                        {idx < todayPunches.length - 1 && (
-                          <div
-                            aria-hidden
-                            className="att-punch-connector"
-                          />
-                        )}
-                        <div className="d-inline-flex align-items-center justify-content-center att-punch-dot ep-tone-ring">
-                          <i className={toneIcon(p.label)} />
+                <div className="att-h-timeline-track">
+                  <div className="att-h-timeline-line" />
+                  {todayPunches.map((p) => {
+                    const isIn = p.direction === 'in';
+                    return (
+                      <div key={p.id} className="att-h-event">
+                        <div className={`att-h-circle ${isIn ? 'is-in' : 'is-out'}`}>
+                          <i className={isIn ? 'ri-login-circle-line' : 'ri-logout-circle-r-line'} />
                         </div>
-                        <div className="text-center mt-2 att-punch-time">
-                          {attFmtClock(p.punched_at)}
-                        </div>
-                        <div className="text-center att-punch-label ep-tone-text">
-                          {p.label}
-                        </div>
-                        <div
-                          className="text-uppercase mt-1 att-punch-method"
-                        >
-                          {p.method}
-                        </div>
+                        <div className="att-h-time">{attFmtClock(p.punched_at)}</div>
+                        <div className="att-h-label">{p.label}</div>
+                        <span className={`att-h-source att-h-source--${String(p.method).toLowerCase()}`}>{p.method}</span>
                       </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

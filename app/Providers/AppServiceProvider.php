@@ -55,13 +55,14 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\RateLimiter::for('credvault-reveal', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($byUser('cv-reveal')($r)));
 
         /* dompdf's font cache must exist and be writable (it writes a .ufm per
-           @font-face font on first render). Created here, at request time, so
-           the web server owns it — a dir shipped in git is owned by the deploy
-           user and the web server cannot write into it (storage/fonts did
-           exactly that in production). */
+           @font-face font on first render). It lives in the system temp dir —
+           storage/ subdirs are owned by the deploy user and php-fpm cannot
+           write into them, which is what 500'd the sticker download. 0777 so
+           web, queue and CLI can all share the one cache. */
         $fontDir = config('dompdf.options.font_dir');
         if ($fontDir && ! is_dir($fontDir)) {
-            @mkdir($fontDir, 0775, true);
+            @mkdir($fontDir, 0777, true);
+            @chmod($fontDir, 0777);
         }
 
         /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.

@@ -1916,12 +1916,16 @@ function TplFormDarkStyles() {
          between the sections inside. */
       .tpl-form-page > .card { margin-bottom: 8px !important; }
 
-      /* The shared back pill is built for a light header strip; this one sits on
-         a purple gradient, so it keeps the white fill (it reads as the way out)
-         but drops to the height of the step pill beside it. */
-      .tpl-form-page .tpl-head-back { height: 34px; padding: 0 14px; border-radius: 10px; font-size: 12px; border-color: rgba(255,255,255,.55); }
-      .tpl-form-page .tpl-head-back i { font-size: 14px; }
-      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+      /* On the purple hero, keep the full shared .frm-cstrip-back size (the step
+         pill that forced the old shrink is gone); just border it to read on purple. */
+      .tpl-form-page .tpl-head-back { box-sizing: border-box; height: 40px; border-color: rgba(255,255,255,.55); font-size: 12.5px; }
+      /* The header gradient is purple in BOTH themes, so the back pill stays the
+         same white-on-purple here — the card-bg override painted a grey box on
+         the purple strip in dark mode. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-head-back { background: #fff; color: #6d28d9; border-color: rgba(255,255,255,.55); }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back:hover,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-head-back:hover { background: #f5f3ff; border-color: #c4b5fd; }
 
       /* Light bands that would glare on dark: the Summary head and the rule
          between signer rows. */

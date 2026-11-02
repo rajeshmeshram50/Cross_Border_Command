@@ -52,7 +52,12 @@ export default function MultiBoxPanel({
   onFlagCreated?: () => void;
   onBoxQty?: (boxNo: number, qty: number) => void;
 }) {
-  const [active, setActive] = useState(1);
+  /* Boxes still to pack come first, then the saved ones. A pending tab shows
+     the code it will get (the next free one), never a "Box n" that reads like
+     an already-saved B-00n. */
+  const ordered = [...boxes.filter(b => !savedCodes[b.no]), ...boxes.filter(b => savedCodes[b.no])];
+  const tabLabel = (b: SplitBox) => savedCodes[b.no] ? `✓ ${savedCodes[b.no]}` : previewCodes[b.no] ?? `New box ${ordered.indexOf(b) + 1}`;
+  const [active, setActive] = useState(() => ordered[0]?.no ?? 1);
   const allocated = boxes.reduce((n, b) => n + b.qty, 0);
 
   const unsaved = boxes.filter(b => !savedCodes[b.no] && b.qty > 0);
@@ -87,14 +92,14 @@ export default function MultiBoxPanel({
         </div>
 
         <div className="vmb-tabs">
-          {boxes.map(b => (
+          {ordered.map(b => (
             <button
               key={b.no}
               type="button"
-              className={`vmb-tab${b.no === active ? ' is-active' : ''}`}
+              className={`vmb-tab${b.no === active ? ' is-active' : ''}${savedCodes[b.no] ? ' is-saved' : ''}`}
               onClick={() => setActive(b.no)}
             >
-              <span className="vmb-tab-num">{savedCodes[b.no] ? `✓ ${savedCodes[b.no]}` : `Box ${b.no}`}</span>
+              <span className="vmb-tab-num">{tabLabel(b)}</span>
               <span className="vmb-tab-qty">{b.qty}u</span>
             </button>
           ))}
@@ -113,11 +118,11 @@ export default function MultiBoxPanel({
         {boxes.map(b => (
           <div key={b.no} hidden={b.no !== active}>
             <BoxDrawer
-              boxId={savedCodes[b.no] ?? previewCodes[b.no] ?? `New box ${b.no}`}
+              boxId={savedCodes[b.no] ?? previewCodes[b.no] ?? `New box ${ordered.indexOf(b) + 1}`}
               line={line}
               quantity={b.qty}
               scenario="1 Product → Multiple Boxes"
-              modeLabel={`Box ${b.no} of ${boxes.length}`}
+              modeLabel={`Box ${ordered.indexOf(b) + 1} of ${boxes.length}`}
               modeKey="Box"
               variant="panel"
               onSave={readOnly ? undefined : data => onSaveBox(b.no, b.qty, data)}

@@ -8,13 +8,15 @@ return [
     'convert_entities' => true,
 
     'options' => [
-        /* Under framework/cache (always web-writable, unlike a custom storage/
-           fonts dir that a deploy's chmod can miss). dompdf regenerates this
-           cache per server anyway — the cache filename is md5(absolute font
-           path), so it differs between machines and must be writable, not
-           shipped. The directory is ensured in AppServiceProvider::boot. */
-        'font_dir' => storage_path('framework/cache/dompdf-fonts'),
-        'font_cache' => storage_path('framework/cache/dompdf-fonts'),
+        /* In the SYSTEM temp dir, not storage/. dompdf writes a .ufm per
+           @font-face font on first render, and the cache filename is
+           md5(absolute font path) — so it is per-server and must be writable,
+           never shipped. storage/framework/cache is created by the deploy user
+           and php-fpm often cannot write into it (the 500 on sticker download);
+           sys_get_temp_dir() is writable by whatever user runs PHP, the same
+           dir temp_dir already relies on. Ensured in AppServiceProvider::boot. */
+        'font_dir' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cbc-dompdf-fonts',
+        'font_cache' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cbc-dompdf-fonts',
         'temp_dir' => sys_get_temp_dir(),
         'chroot' => realpath(base_path()),
         'allowed_protocols' => [
