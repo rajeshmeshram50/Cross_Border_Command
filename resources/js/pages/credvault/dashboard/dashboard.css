@@ -1,0 +1,5 @@
+/* Vault Dashboard — loading shimmer and error box (the rest is .cvd-* in credvault.css). */
+.cvx .cvd-shim{border-radius:16px;border:1px solid #e3eef3;background:linear-gradient(90deg,#f1f6f9 0%,#e4eef3 50%,#f1f6f9 100%);background-size:200% 100%;animation:cv-shim 1.3s linear infinite;}
+.cvx .cvd-err{color:#be123c;}
+.cvx .cvd-err b{color:#9f1239;}
+.cvx .cvd-err .cvd-link{margin-top:6px;}

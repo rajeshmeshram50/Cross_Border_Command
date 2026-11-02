@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { moduleVisible } from '../../utils/menuAccess';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
-import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS, INVENTORY_GROUPS } from '../../constants';
+import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS, INVENTORY_GROUPS, CREDVAULT_GROUPS } from '../../constants';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -46,6 +46,9 @@ const PERM_ALIAS: Record<string, string> = {
      with — so it opens for the same people rather than showing locked for a
      reason that has nothing to do with permissions. */
   'master.product_flags': 'master.warehouse_master',
+  /* CredVault — every screen rides on the one Credentials Vault grant;
+     what each person may do inside is decided by the screens and the API. */
+  ...Object.fromEntries(CREDVAULT_GROUPS.flatMap(g => g.children.map(l => [l.id, 'credentials-vault']))),
 };
 
 const permSlugFor = (leafId: string): string => PERM_ALIAS[leafId] ?? leafId;
@@ -131,6 +134,18 @@ const LEAF_DESC: Record<string, string> = {
   'master.zone_master': 'Define storage zones within each warehouse.',
   'master.racks': 'Configure racks and bin locations in each zone.',
   'master.product_flags': 'Manage handling and storage flags for products.',
+
+  /* CredVault — the prototype's mega-menu wording. */
+  'cv.dashboard': 'Overview of every vault, credential count & health.',
+  'cv.password_health': 'Spot weak, reused & expiring passwords.',
+  'cv.my_vault': 'Your personal logins, notes & secrets.',
+  'cv.team_vault': 'Credentials shared within your team.',
+  'cv.critical_vault': 'High-risk credentials behind extra approval.',
+  'cv.access_requests': 'Approve or reject requests for critical credentials.',
+  'cv.policies': 'Password rules, sharing limits & approvals.',
+  'cv.import_recovery': 'Import from other managers and recover vault data.',
+  'cv.audit_logs': 'Every view, copy, share & change, time-stamped.',
+  'cv.recycle_bin': 'Restore or permanently purge deleted items.',
 };
 
 // Top-level slug → route.
@@ -178,6 +193,21 @@ function invLeafPath(id: string): string {
   const slug = id.replace(/^master\./, '').replace(/_/g, '-');
   return `/inventory-management/${slug === 'racks' ? 'rack-master' : slug}`;
 }
+
+/* CredVault leaf → route: /credentials-vault/<screen>. */
+const CV_LEAF_PATH: Record<string, string> = {
+  'cv.dashboard': '/credentials-vault/dashboard',
+  'cv.password_health': '/credentials-vault/password-health',
+  'cv.my_vault': '/credentials-vault/my-vault',
+  'cv.team_vault': '/credentials-vault/team-vault',
+  'cv.critical_vault': '/credentials-vault/critical-vault',
+  'cv.access_requests': '/credentials-vault/access-requests',
+  'cv.policies': '/credentials-vault/policies',
+  'cv.import_recovery': '/credentials-vault/import-recovery',
+  'cv.audit_logs': '/credentials-vault/audit-logs',
+  'cv.recycle_bin': '/credentials-vault/recycle-bin',
+};
+const cvLeafPath = (id: string): string => CV_LEAF_PATH[id] ?? '/credentials-vault/dashboard';
 
 // HRMS leaf → route (mirrors LayoutMenuData.hrLeafLink). HR groups also carry
 // a few master.* leaves (Attendance Master Mgmt) that reuse the /master shell.
@@ -227,7 +257,7 @@ function p2pLeafPath(id: string): string {
   }
 }
 
-type DD = 'sales' | 'clm' | 'hr' | 'p2p' | 'inv';
+type DD = 'sales' | 'clm' | 'hr' | 'p2p' | 'inv' | 'cv';
 
 export default function IdimsHeader() {
   const navigate = useNavigate();
@@ -538,12 +568,15 @@ export default function IdimsHeader() {
       items.push({ id: 'branches', label: 'Branches', icon: IC.branch });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      /* CredVault — the client admin is its Vault Admin: access requests and
+         policies are decided there, so the module is in their bar too. */
+      items.push({ id: 'credentials-vault', label: 'CredVault', icon: IC.lock, dd: 'cv' });
       items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
       // Dev Tools — permission-gated (granted per user via the Permissions module).
       if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
-    if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'Credentials Vault', icon: IC.lock });
+    if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'CredVault', icon: IC.lock, dd: 'cv' });
     if (can('project-navigator')) items.push({ id: 'project-navigator', label: 'Project Navigator', icon: IC.compass });
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
     if (hasGroupView('sales.')) items.push({ id: 'sales', label: 'Sales Matrix', icon: IC.trend, dd: 'sales' });
@@ -648,15 +681,20 @@ export default function IdimsHeader() {
     () => INVENTORY_GROUPS.map(g => [g as unknown as Group]), [],
   );
 
+  /* CredVault — three columns, one group each, as the prototype draws them. */
+  const cvCols: Group[][] = useMemo(() => CREDVAULT_GROUPS.map(g => [g as unknown as Group]), []);
+
   const colsFor = (dd: DD): Group[][] =>
-    dd === 'sales' ? salesCols
+    dd === 'cv' ? cvCols
+      : dd === 'sales' ? salesCols
       : dd === 'hr' ? hrCols
         : dd === 'p2p' ? p2pCols
           : dd === 'inv' ? invCols
             : clmCols;
 
   const leafPath = (id: string, kind: DD) =>
-    kind === 'sales' ? salesLeafPath(id)
+    kind === 'cv' ? cvLeafPath(id)
+      : kind === 'sales' ? salesLeafPath(id)
       : kind === 'hr' ? hrLeafPath(id)
         : kind === 'p2p' ? p2pLeafPath(id)
           : kind === 'inv' ? invLeafPath(id)
@@ -750,6 +788,7 @@ export default function IdimsHeader() {
   // not a super-admin. One map, read by both.
   const leafCanView = (leaf: Leaf): boolean => {
     if (isSuperAdmin) return true;
+    if (leaf.id.startsWith('cv.') && user?.user_type === 'client_admin') return true;
     return !!perms[permSlugFor(leaf.id)]?.can_view;
   };
 
@@ -792,6 +831,45 @@ export default function IdimsHeader() {
           </div>
         ))}
       </div>
+    );
+  };
+
+  /* CredVault mega-menu — the prototype's buildCredVault(): a Quick Actions
+     row on top (each opens its screen with the action already started), then
+     Vault Analytics · Vault Management · Vault Administration & Security. */
+  const CV_QUICK: { label: string; path: string; icon: string }[] = [
+    { label: 'Add Credential', path: '/credentials-vault/my-vault?action=add', icon: 'Plus' },
+    { label: 'Add Critical Credential', path: '/credentials-vault/critical-vault?action=add', icon: 'ShieldAlert' },
+    { label: 'Generate Password', path: '/credentials-vault/my-vault?action=generate', icon: 'KeyRound' },
+    { label: 'Recycle Bin', path: '/credentials-vault/recycle-bin', icon: 'Trash2' },
+    { label: 'Import Bulk Credentials', path: '/credentials-vault/import-recovery?tab=import', icon: 'Upload' },
+    { label: 'Download Backup', path: '/credentials-vault/import-recovery?tab=backup', icon: 'Download' },
+  ];
+  const renderCvMega = () => {
+    const enabled = isSuperAdmin || user?.user_type === 'client_admin' || !!perms['credentials-vault']?.can_view;
+    return (
+      <>
+        <div className="p2pj-qa-wrap">
+          <div className="idims-dd-section-label p2pj-qa-label" style={{ color: '#0E7490' }}>
+            <span className="dd-sl-dot" style={{ background: '#0E7490' }} />QUICK ACTIONS
+          </div>
+          <div className="p2pj-qa-row">
+            {CV_QUICK.map(q => {
+              const Icon = getLucide(q.icon);
+              return (
+                <button key={q.label} type="button" className="c2c-paybtn p2pj-actbtn" disabled={!enabled}
+                  onClick={() => { if (enabled) go(q.path); }}>
+                  <span className="c2c-paybtn-ico"><Icon size={12} strokeWidth={2.3} color="#fff" /></span>
+                  <span className="c2c-paybtn-label">{q.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="idims-dd-grid" style={{ gridTemplateColumns: `repeat(${cvCols.length}, 1fr)` }}>
+          {cvCols.map((groups, i) => renderCol(groups, 'cv', COL_ACCENT[i], COL_BG[i], i))}
+        </div>
+      </>
     );
   };
 
@@ -1141,7 +1219,7 @@ export default function IdimsHeader() {
                       >
                         <div className="idims-dd-topbar" />
                         <div className="idims-dd-inner">
-                          {item.dd === 'clm' ? renderClmMega() : (
+                          {item.dd === 'clm' ? renderClmMega() : item.dd === 'cv' ? renderCvMega() : (
                             (() => {
                               // P2P carries its own Figma palette; other mega-menus
                               // cycle the shared accent set. Every column always renders;
@@ -1601,6 +1679,32 @@ const IDIMS_CSS = `
 .idims-dd-inv { width: max-content; min-width: 320px; max-width: calc(100vw - 40px); }
 .idims-dd-inv .idims-dd-grid { grid-template-columns: minmax(300px, max-content); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
+
+/* CredVault mega-menu — the prototype's Quick Actions row (.p2pj-qa-*) and its
+   teal pill buttons (.c2c-paybtn), above the three columns. */
+.p2pj-qa-wrap { margin: 0 0 14px 0; padding: 0 18px; }
+.p2pj-qa-label { padding-bottom: 8px !important; margin-bottom: 10px !important; }
+.p2pj-qa-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 2px 4px 14px; margin: 0; border-bottom: 1px solid #F1F4FB; overflow-x: auto; scrollbar-width: none; }
+.p2pj-qa-row::-webkit-scrollbar { display: none; }
+.p2pj-qa-row .c2c-paybtn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
+.c2c-paybtn { display: inline-flex; align-items: center; gap: 9px; height: 40px; box-sizing: border-box; font-family: inherit; font-size: 11px; font-weight: 800; letter-spacing: -.1px; color: #fff; background: linear-gradient(135deg,#22d3ee,#0891b2 60%,#0e7490); border: none; border-radius: 10px; padding: 0 16px 0 8px; cursor: pointer; white-space: nowrap; position: relative; overflow: hidden; flex-shrink: 0; box-shadow: 0 6px 16px -4px rgba(8,145,178,.55),0 0 0 3px rgba(34,211,238,.16),0 1px 0 rgba(255,255,255,.3) inset; transition: transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s; }
+.c2c-paybtn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.28),transparent); border-radius: 10px 10px 0 0; }
+.c2c-paybtn-ico { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0; position: relative; z-index: 1; background: linear-gradient(145deg,rgba(255,255,255,.3),rgba(255,255,255,.1)); box-shadow: 0 0 0 1px rgba(255,255,255,.32) inset,0 2px 5px rgba(4,55,68,.22); }
+.c2c-paybtn-ico svg { display: block; position: relative; z-index: 1; }
+.c2c-paybtn-label { position: relative; z-index: 1; }
+.c2c-paybtn:hover { transform: translateY(-1.5px); box-shadow: 0 9px 20px -4px rgba(8,145,178,.65),0 0 0 3px rgba(34,211,238,.24),0 1px 0 rgba(255,255,255,.3) inset; }
+.c2c-paybtn:active { transform: translateY(0) scale(.97); }
+.c2c-paybtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.p2pj-actbtn { font-size: 10.5px !important; padding: 8px 11px 8px 6px !important; }
+.p2pj-actbtn .c2c-paybtn-ico { width: 20px !important; height: 20px !important; }
+@media (max-width: 1680px) {
+  .p2pj-qa-row { gap: 6px; }
+  .p2pj-actbtn { font-size: 10px !important; padding: 7px 9px 7px 5px !important; gap: 6px !important; }
+  .p2pj-actbtn .c2c-paybtn-ico { width: 18px !important; height: 18px !important; }
+}
+@media (max-width: 1440px) {
+  .p2pj-actbtn { font-size: 9.5px !important; padding: 7px 7px 7px 5px !important; letter-spacing: -.1px; }
+}
 /* CLM mega layout — 3 sections; Operations + Master Management each split into
    two sub-columns with sub-headers; Without-Shipment nests its agreements. */
 .idims-clm-grid { display: grid; grid-template-columns: 290px 1.1fr 1.35fr; align-items: stretch; }

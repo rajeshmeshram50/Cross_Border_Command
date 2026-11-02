@@ -1,0 +1,23 @@
+/* Add / Edit Credential — the few rules the ported markup needs beyond credvault.css. */
+
+/* "2FA" badge on a type tile, beside "New". */
+.cvx .crd-tile__new.cv-tile-2fa { background: #ecfeff !important; color: #0e7490 !important; border: 1px solid #a5e8f2; }
+
+/* Waiting / failure line inside the authenticator box. */
+.cvx .cp-auth .cv-auth-wait { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 18px 0; font-size: 12px; font-weight: 600; color: #45707f; }
+.cvx .cp-auth .cv-auth-wait .cp-err { margin: 0; min-height: 0; }
+.cvx .cp-auth__full { grid-column: 1 / -1; }
+
+/* Loading / failed shell while the credential or the types load. */
+.cvx .cv-form-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 220px; padding: 30px; font-size: 13px; font-weight: 600; color: #45707f; text-align: center; }
+.cvx .cv-form-wait b { color: #0b3b4a; font-size: 14px; }
+
+/* A credential whose details are locked: editing keeps every field it does not touch. */
+.cvx .cv-form-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+.cvx .cv-form-note svg { flex-shrink: 0; margin-top: 2px; }
+
+/* Risk pill beside the close button in the form header. */
+.cvx .crd-hbtns .znm-flag { white-space: nowrap; }
+
+/* Existing attachment open button is a <button>, styled as the prototype's <a>. */
+.cvx button.crd-att__b { border: 0; background: transparent; cursor: pointer; }

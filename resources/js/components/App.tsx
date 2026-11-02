@@ -137,6 +137,17 @@ const PutawayScan = lazyPage(() => import('../pages/p2p/putaway/PutawayScan'));
 const InventoryScanDevices = lazyPage(() => import('../pages/inventory/InventoryScanDevices'));
 const InventoryScanLog = lazyPage(() => import('../pages/inventory/InventoryScanLog'));
 const InventoryHandheldGuide = lazyPage(() => import('../pages/inventory/InventoryHandheldGuide'));
+// CredVault — the ten screens of the Kryptone CredVault prototype.
+const CvDashboard = lazyPage(() => import('../pages/credvault/dashboard/VaultDashboard'));
+const CvHealth = lazyPage(() => import('../pages/credvault/health/PasswordHealth'));
+const CvMyVault = lazyPage(() => import('../pages/credvault/my-vault/MyVault'));
+const CvTeamVault = lazyPage(() => import('../pages/credvault/team-vault/TeamVault'));
+const CvCritical = lazyPage(() => import('../pages/credvault/critical/CriticalVault'));
+const CvRequests = lazyPage(() => import('../pages/credvault/requests/AccessRequests'));
+const CvPolicies = lazyPage(() => import('../pages/credvault/policies/Policies'));
+const CvImportRecovery = lazyPage(() => import('../pages/credvault/import-recovery/ImportRecovery'));
+const CvAudit = lazyPage(() => import('../pages/credvault/audit/AuditLogs'));
+const CvBin = lazyPage(() => import('../pages/credvault/bin/RecycleBin'));
 const MyTeam = lazyPage(() => import('../pages/MyTeam'));
 const Documentation = lazyPage(() => import('../pages/Documentation'));
 const Inbox = lazyPage(() => import('../pages/Inbox'));
@@ -726,7 +737,18 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/sales/sign-tracker" element={<SalesSignTracker />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               <Route path="/p2p" element={<SalesP2PSummary />} />
-              <Route path="/credentials-vault" element={<ModuleStubPage />} />
+              {/* CredVault — the module opens on its Vault Dashboard, as the prototype does. */}
+              <Route path="/credentials-vault" element={<Navigate to="/credentials-vault/dashboard" replace />} />
+              <Route path="/credentials-vault/dashboard" element={<CvDashboard />} />
+              <Route path="/credentials-vault/password-health" element={<CvHealth />} />
+              <Route path="/credentials-vault/my-vault" element={<CvMyVault />} />
+              <Route path="/credentials-vault/team-vault" element={<CvTeamVault />} />
+              <Route path="/credentials-vault/critical-vault" element={<CvCritical />} />
+              <Route path="/credentials-vault/access-requests" element={<CvRequests />} />
+              <Route path="/credentials-vault/policies" element={<CvPolicies />} />
+              <Route path="/credentials-vault/import-recovery" element={<CvImportRecovery />} />
+              <Route path="/credentials-vault/audit-logs" element={<CvAudit />} />
+              <Route path="/credentials-vault/recycle-bin" element={<CvBin />} />
               <Route path="/dev-tools" element={<DevTools />} />
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />

@@ -1,0 +1,24 @@
+/* CredVault Audit Logs — additions to the prototype's rules: filter row, popover anchor, detail expander, loading. */
+.cvx .cva-rangewrap{position:relative;}
+.cvx .cva-pop{top:calc(100% + 8px);right:0;}
+.cvx .cva-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 14px;border-top:1px solid #e6f4f7;border-bottom:1px solid #e6f4f7;background:#fbfeff;}
+.cvx .cva-filters__l{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7d8b;}
+.cvx .cva-filters__n{margin-left:auto;font-size:11px;color:#94a3b8;}
+.cvx .cva-sel{height:30px;min-width:170px;padding:0 10px;border:1px solid #cdeef5;border-radius:9px;background:#fff;font:inherit;font-size:11.5px;font-weight:700;color:#0f2d38;}
+.cvx .cva-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 10px;border-radius:999px;background:#ecfeff;border:1px solid #a5f3fc;font-size:11.5px;font-weight:700;color:#0e7490;}
+.cvx .cva-chip button{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;border-radius:50%;background:rgba(14,116,144,.12);color:#0e7490;cursor:pointer;}
+.cvx .cva-clear{border:0;background:none;font:inherit;font-size:11.5px;font-weight:700;color:#e11d48;cursor:pointer;}
+.cvx .cva-link{cursor:pointer;}
+.cvx .cva-link:hover{text-decoration:underline;}
+.cvx .cva-det{cursor:pointer;}
+.cvx .cva-det.is-open{white-space:normal;overflow:visible;word-break:break-word;}
+.cvx .cva-busy{opacity:.55;transition:opacity .15s;}
+.cvx .cva-retry{margin-top:8px;}
+.cvx .cva-shim{display:flex;flex-direction:column;gap:10px;padding:14px;}
+.cvx .cva-shim__row{display:flex;align-items:center;gap:12px;height:56px;padding:0 14px;border-radius:14px;background:#f8fcfd;border:1px solid #e6f4f7;}
+.cvx .cva-shim__row i{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,#eef6f8 25%,#dff0f4 50%,#eef6f8 75%);background-size:200% 100%;animation:cvaShim 1.2s linear infinite;}
+.cvx .cva-shim__row i:nth-child(1){width:44px;}
+.cvx .cva-shim__row i:nth-child(2){width:28px;height:28px;border-radius:50%;}
+.cvx .cva-shim__row i:nth-child(3){flex:1;max-width:60%;}
+@keyframes cvaShim{to{background-position:-200% 0;}}
+@media (max-width:640px){.cvx .cva-filters__n{display:none;}.cvx .cva-sel{min-width:0;flex:1;}}

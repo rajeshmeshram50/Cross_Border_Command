@@ -65,6 +65,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RazorpayWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\CredVault\CredVaultController;
 use App\Http\Controllers\Api\Inventory\ProductFlagController;
 use App\Http\Controllers\Api\Inventory\RackController;
 use App\Http\Controllers\Api\Inventory\ShelfController;
@@ -721,6 +722,86 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/product-flags/{id}/status',[ProductFlagController::class, 'setStatus'])->whereNumber('id');
         Route::delete('/product-flags/{id}',       [ProductFlagController::class, 'destroy'])->whereNumber('id');
     });
+
+    /* CredVault — the company password manager. One controller; the spec is
+       docs/CREDVAULT_PROTOTYPE_SHEET.md. Lists take ?tab=&q=&page=&per_page=
+       and return { data, tabs, meta }. Secrets leave only through /reveal,
+       which — like the OTP check — has its own tighter throttle. */
+    Route::prefix('credvault')->middleware('throttle:credvault')->group(function () {
+        Route::get   ('/meta',                              [CredVaultController::class, 'meta']);
+        Route::get   ('/dashboard',                         [CredVaultController::class, 'dashboard']);
+        Route::post  ('/generate-password',                 [CredVaultController::class, 'generatePassword']);
+
+        // Credentials — My / Team / Critical Vault
+        Route::get   ('/credentials',                       [CredVaultController::class, 'index']);
+        Route::get   ('/credentials/next-code',             [CredVaultController::class, 'nextCredentialCode']);   // before /{id}
+        Route::post  ('/credentials',                       [CredVaultController::class, 'store']);
+        Route::get   ('/credentials/{id}',                  [CredVaultController::class, 'show'])->whereNumber('id');
+        Route::put   ('/credentials/{id}',                  [CredVaultController::class, 'update'])->whereNumber('id');
+        // POST too: PHP does not read multipart bodies (attachments) on a PUT.
+        Route::post  ('/credentials/{id}',                  [CredVaultController::class, 'update'])->whereNumber('id');
+        Route::delete('/credentials/{id}',                  [CredVaultController::class, 'destroy'])->whereNumber('id');
+        Route::post  ('/credentials/{id}/reveal',           [CredVaultController::class, 'reveal'])->whereNumber('id')->middleware('throttle:credvault-reveal');
+        Route::post  ('/credentials/{id}/events',           [CredVaultController::class, 'logEvent'])->whereNumber('id');
+        Route::get   ('/credentials/{id}/activity',         [CredVaultController::class, 'activity'])->whereNumber('id');
+        Route::get   ('/credentials/{id}/attachments/{key}',[CredVaultController::class, 'attachment'])->whereNumber('id')->where('key', '[a-z0-9-]{1,40}');
+        // The form's "Link your authenticator app" box: a new secret, verified with the save.
+        Route::post  ('/authenticator/new',                 [CredVaultController::class, 'authenticatorNew']);
+        // The Critical Access Protection pickers.
+        Route::get   ('/approvers',                         [CredVaultController::class, 'approvers']);
+
+        // Sharing
+        Route::get   ('/share-recipients',                  [CredVaultController::class, 'shareRecipients']);
+        Route::post  ('/credentials/{id}/shares',           [CredVaultController::class, 'share'])->whereNumber('id');
+        Route::get   ('/shares',                            [CredVaultController::class, 'sharedByMe']);
+        Route::delete('/shares/{id}',                       [CredVaultController::class, 'revokeShare'])->whereNumber('id');
+
+        // Team Vault
+        Route::get   ('/team/departments',                  [CredVaultController::class, 'teamDepartments']);
+        Route::get   ('/team/departments/{id}',             [CredVaultController::class, 'teamDepartment'])->whereNumber('id');
+        Route::get   ('/team/organisation',                 [CredVaultController::class, 'teamOrganisation']);
+
+        // Critical Access Protection — Vault Admin → Manager → authenticator code
+        Route::post  ('/credentials/{id}/access-requests',  [CredVaultController::class, 'requestAccess'])->whereNumber('id');
+        Route::get   ('/access-requests',                   [CredVaultController::class, 'accessRequests']);
+        Route::get   ('/access-requests/{id}',              [CredVaultController::class, 'accessRequest'])->whereNumber('id');
+        Route::post  ('/access-requests/{id}/approve',      [CredVaultController::class, 'approveRequest'])->whereNumber('id');
+        Route::post  ('/access-requests/{id}/reject',       [CredVaultController::class, 'rejectRequest'])->whereNumber('id');
+        Route::post  ('/access-requests/{id}/cancel',       [CredVaultController::class, 'cancelRequest'])->whereNumber('id');
+        Route::post  ('/access-requests/{id}/verify-otp',   [CredVaultController::class, 'verifyOtp'])->whereNumber('id')->middleware('throttle:credvault-otp');
+        Route::post  ('/access-requests/{id}/lock',         [CredVaultController::class, 'lockRequest'])->whereNumber('id');
+
+        // Password Health
+        Route::get   ('/health',                            [CredVaultController::class, 'health']);
+
+        // Policies
+        Route::get   ('/policies',                          [CredVaultController::class, 'policies']);
+        Route::put   ('/policies',                          [CredVaultController::class, 'updatePolicies']);
+        Route::post  ('/policies/reset',                    [CredVaultController::class, 'resetPolicies']);
+        Route::get   ('/policies/history',                  [CredVaultController::class, 'policyHistory']);
+
+        // Audit Logs
+        Route::get   ('/audit-logs',                        [CredVaultController::class, 'auditLogs']);
+        Route::get   ('/audit-logs/export',                 [CredVaultController::class, 'exportAuditLogs']);
+
+        // Import & Recovery
+        Route::post  ('/imports/preview',                   [CredVaultController::class, 'importPreview']);
+        Route::get   ('/imports/sample',                    [CredVaultController::class, 'importSample']);
+        Route::post  ('/imports',                           [CredVaultController::class, 'import']);
+        Route::get   ('/imports',                           [CredVaultController::class, 'imports']);
+        Route::post  ('/backups',                           [CredVaultController::class, 'backup']);
+        Route::get   ('/backups',                           [CredVaultController::class, 'backups']);
+        Route::get   ('/exports/preview',                   [CredVaultController::class, 'exportPreview']);
+        Route::post  ('/exports',                           [CredVaultController::class, 'export']);
+        Route::get   ('/exports',                           [CredVaultController::class, 'exports']);
+
+        // Recycle Bin
+        Route::get   ('/recycle-bin',                       [CredVaultController::class, 'recycleBin']);
+        Route::post  ('/recycle-bin/{id}/restore',          [CredVaultController::class, 'restore'])->whereNumber('id');
+        Route::delete('/recycle-bin/{id}',                  [CredVaultController::class, 'purge'])->whereNumber('id');
+        Route::delete('/recycle-bin',                       [CredVaultController::class, 'emptyBin']);
+    });
+
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     // Per-deal "is this document needed?" answers for the trade-doc / agreement popup.
     Route::post  ('/clm/leads/{leadId}/doc-needs',               [ClmAgreementController::class, 'setLeadDocNeed'])->whereNumber('leadId');

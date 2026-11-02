@@ -41,6 +41,19 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // CredVault keeps its migrations in their own folder; `migrate` runs them with the rest.
+        $this->loadMigrationsFrom(database_path('migrations/credvault'));
+
+        /* CredVault limits. Named, because a plain throttle:N,1 keys on the
+         * user alone — every throttle on a route then shares one counter, and
+         * the tight OTP limit would count the user's ordinary list calls too.
+         * Each name gets its own bucket. */
+        $byUser = fn (string $bucket) => fn (\Illuminate\Http\Request $r) => $bucket . ':' . ($r->user()?->id ?: $r->ip());
+        \Illuminate\Support\Facades\RateLimiter::for('credvault', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(240)->by($byUser('cv')($r)));
+        // Six-digit codes: 10 tries a minute keeps a guess at 1 in 100,000 per minute.
+        \Illuminate\Support\Facades\RateLimiter::for('credvault-otp', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($byUser('cv-otp')($r)));
+        \Illuminate\Support\Facades\RateLimiter::for('credvault-reveal', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($byUser('cv-reveal')($r)));
+
         /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.
          *
          * Registered rather than hardcoded so the SMTP mailer stays intact and

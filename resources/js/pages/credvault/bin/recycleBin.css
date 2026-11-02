@@ -1,0 +1,10 @@
+/* Recycle Bin — bulk selection, which the prototype does not have. */
+.cvx .rb-srh{display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+.cvx .rb-tbl tr.is-sel td{background:#f0fbfd;}
+.cvx .rb-bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:8px 12px;border-radius:12px;background:#ecfeff;border:1.5px solid #a5e6f1;}
+.cvx .rb-bulk__n{font-size:12.5px;font-weight:700;color:#0c4a5a;margin-right:auto;}
+.cvx .rb-bulk .rb-btn{height:34px;}
+.cvx .rb-bulk .rb-btn:disabled{opacity:.5;cursor:not-allowed;}
+.cvx .rb-bulk__del{width:auto !important;padding:0 14px;}
+.cvx .rb-bulk__clear{height:34px;padding:0 12px;border-radius:10px;border:1.5px solid #dfeaf0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.cvx .rb-bulk__clear:hover{color:#0f172a;border-color:#a5e6f1;}

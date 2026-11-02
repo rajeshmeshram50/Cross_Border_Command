@@ -1,0 +1,37 @@
+/* CredVault — the few app-side rules the extracted prototype styles (credvault.css) assume.
+   The prototype set these on <body>; here they belong to the .cvx root every CredVault
+   page and portalled modal renders inside. */
+
+.cvx {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #0F172A;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.cvx input, .cvx select, .cvx textarea, .cvx button, .cvx optgroup, .cvx option,
+.cvx table, .cvx th, .cvx td { font-family: inherit; }
+.cvx button { cursor: pointer; }
+/* The prototype never disabled these; the port does by access level, so they need a look. */
+.cvx .vd-btn:disabled, .cvx .cstrip__action-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+/* Bootstrap's reboot colours every heading; the prototype has no such rule, so its
+   headings inherit (e.g. the white title on the View drawer's teal header). */
+.cvx h1, .cvx h2, .cvx h3, .cvx h4, .cvx h5, .cvx h6 { color: inherit; }
+/* The prototype's own reset (`*{margin:0;padding:0}`) — without it Bootstrap's reboot
+   margins on p / ul / h* / label leak in. Every extracted rule is .cvx-prefixed, so
+   it is at least as specific and still wins. */
+.cvx *, .cvx *::before, .cvx *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.cvx code { color: inherit; }
+
+/* The page column: the prototype's main area (padding 10px 12px, 6px gaps). */
+.cvx.cv-pagecol { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 100%; background: #F4F6FB; }
+
+/* Portalled overlays sit above the app header. */
+.cvx.cv-portal { position: relative; z-index: 1300; }
+
+/* Loading rows inside a real table, so the header never jumps. */
+.cvx .cv-shimrow td { padding: 14px 10px; }
+.cvx .cv-shimrow i { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #eef2f7 0%, #e2e8f0 50%, #eef2f7 100%); background-size: 200% 100%; animation: cv-shim 1.2s linear infinite; }
+@keyframes cv-shim { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Inline field errors under form inputs. */
+.cvx .cv-ferr { display: block; margin-top: 4px; font-size: 11px; font-weight: 600; color: #be123c; }

@@ -226,6 +226,46 @@ export const INVENTORY_GROUPS: MenuGroup[] = [
   },
 ];
 
+/**
+ * CredVault — the prototype's mega-menu: Vault Analytics · Vault Management ·
+ * Vault Administration & Security. Every leaf rides on the one
+ * `credentials-vault` grant (see PERM_ALIAS in IdimsHeader); the screens and
+ * the API decide what each person may do inside.
+ */
+export const CREDVAULT_GROUPS: MenuGroup[] = [
+  {
+    id: 'cv.analytics',
+    label: 'Vault Analytics',
+    icon: 'LayoutDashboard',
+    children: [
+      { id: 'cv.dashboard', icon: 'LayoutDashboard', label: 'Vault Dashboard' },
+      { id: 'cv.password_health', icon: 'HeartPulse', label: 'Password Health' },
+    ],
+  },
+  {
+    id: 'cv.management',
+    label: 'Vault Management',
+    icon: 'Lock',
+    children: [
+      { id: 'cv.my_vault', icon: 'Lock', label: 'My Vault' },
+      { id: 'cv.team_vault', icon: 'Users', label: 'Team Vault' },
+      { id: 'cv.critical_vault', icon: 'ShieldAlert', label: 'Critical Vault' },
+    ],
+  },
+  {
+    id: 'cv.admin',
+    label: 'Vault Administration & Security',
+    icon: 'ShieldCheck',
+    children: [
+      { id: 'cv.access_requests', icon: 'UserCheck', label: 'Access Request Management' },
+      { id: 'cv.policies', icon: 'ShieldCheck', label: 'CredVault Policies' },
+      { id: 'cv.import_recovery', icon: 'DatabaseBackup', label: 'Import & Recovery' },
+      { id: 'cv.audit_logs', icon: 'FileText', label: 'Audit Logs' },
+      { id: 'cv.recycle_bin', icon: 'Trash2', label: 'Recycle Bin' },
+    ],
+  },
+];
+
 export const HR_GROUPS: MenuGroup[] = [
   {
     id: 'hr.command',

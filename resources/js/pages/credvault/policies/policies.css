@@ -1,0 +1,15 @@
+/* CredVault Policies — the few rules the prototype did not need (read-only note, admin dropdown, loading/error states). */
+.cvx .cvp-ro{display:flex;align-items:center;gap:10px;margin:10px 12px 0;padding:10px 14px;border-radius:12px;background:#f0f9ff;border:1px solid #cdeef5;color:#0e7490;}
+.cvx .cvp-ro b{display:block;font-size:12.5px;color:#0f2d38;}
+.cvx .cvp-ro small{display:block;font-size:11.5px;color:#5f7d8b;}
+.cvx .cvp-select{height:32px;min-width:180px;max-width:240px;padding:0 10px;border:1px solid #cdeef5;border-radius:9px;background:#fff;font:inherit;font-size:11.5px;font-weight:700;color:#0f2d38;}
+.cvx .cvp-select:disabled{opacity:.7;cursor:not-allowed;}
+.cvx .pol-page .pol-sw:disabled,.cvx .pol-page .pol-seg button:disabled{cursor:not-allowed;}
+.cvx .pol-page .pol-seg button:disabled:not(.is-on){opacity:.6;}
+.cvx .pol-row__t .cv-ferr{display:block;margin-top:4px;}
+.cvx .cvp-state{display:flex;flex-direction:column;align-items:center;gap:6px;padding:40px 16px;}
+.cvx .cvp-shim{min-height:240px;display:flex;flex-direction:column;gap:12px;padding:18px;}
+.cvx .cvp-shim i{display:block;height:14px;border-radius:7px;background:linear-gradient(90deg,#eef6f8 25%,#dff0f4 50%,#eef6f8 75%);background-size:200% 100%;animation:cvpShim 1.2s linear infinite;}
+.cvx .cvp-shim i:first-child{width:55%;height:20px;}
+.cvx .cvp-shim i:nth-child(3){width:80%;}
+@keyframes cvpShim{to{background-position:-200% 0;}}

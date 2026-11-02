@@ -1,0 +1,5 @@
+/* Access Request Management — states the prototype did not draw (cancelled, reset) and the unlock countdown. */
+.cvx .ar-st--cancelled{color:#475569;background:#f8fafc;border-color:#cbd5e1;}
+.cvx .ar-st--reset{color:#b45309;background:#fff7ed;border-color:#fed7aa;}
+.cvx .ar-st__sub.ar-cd{display:inline-flex;align-items:center;gap:4px;color:#047857;font-weight:800;font-variant-numeric:tabular-nums;}
+.cvx .arj .ar-why{margin:0;}

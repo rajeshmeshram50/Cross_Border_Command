@@ -1,0 +1,4 @@
+/* Password Health — the View button beside Fix, a disabled Fix (copy-only access) and the over-shared issue colour. */
+.cvx .ph-page .ph-acts{align-items:center;gap:6px;}
+.cvx .ph-page .ph-fix:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.4);transform:none;}
+.cvx .ph-iss--shared svg{color:#d97706;}

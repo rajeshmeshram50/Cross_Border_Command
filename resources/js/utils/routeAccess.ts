@@ -237,7 +237,13 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   // Restore the line below when the pilot ends:
   //   if (path === '/inventory' || path.startsWith('/inventory/')) return isBiz && leaf('inventory');
   if (path === '/inventory' || path.startsWith('/inventory/')) return true;
-  if (path === '/credentials-vault') return isBiz && leaf('credentials-vault');
+  /* CredVault — business users with the module grant, and the client admin:
+     the client admin is the Vault Admin, who approves access requests and
+     sets the policies, so the module is theirs too (the API enforces the
+     same rule). Every screen sits under the one prefix. */
+  if (path === '/credentials-vault' || path.startsWith('/credentials-vault/')) {
+    return isClientAdmin || (isBiz && leaf('credentials-vault'));
+  }
   if (path === '/project-navigator') return isBiz && leaf('project-navigator');
   if (path === '/developers' || path.startsWith('/developers/')) {
     return isBiz && leaf('developers.shipment');
