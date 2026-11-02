@@ -3,12 +3,14 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { IcoBox, IcoDownload, IcoX } from '../../icons';
-import { putawayApi, type PutawayBox } from './putaway-data';
+import { type PutawayBox } from './putaway-data';
+import StickerPdfPreview from './steps/StickerPdfPreview';
 import type { InvoiceRow } from './types';
 import { useToast } from '../../../../contexts/ToastContext';
 
 import './putaway-sticker.css';
-import { putId } from './spi-api';
+import { putId, spiApi } from './spi-api';
+import { PoApiError } from '../order/api/po-api';
 
 const ic = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
@@ -55,8 +57,11 @@ export default function PutawayStickerModal({ box, row, onClose }: {
     if (!row.apiId || !box.apiId || busy) return;
     setBusy(mode);
     try {
-      const blob = await putawayApi.stickerPdf(row.apiId, box.apiId);
-      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      /* Same calls as the Stage 03 sticker: the server PDF, and Print marks
+         the box's sticker as printed before opening it. */
+      if (mode === 'print') await spiApi.printSticker(row.apiId, box.apiId);
+      const blob = await spiApi.stickerPdf(row.apiId, box.apiId);
+      const url = URL.createObjectURL(blob);
       if (mode === 'print') {
         window.open(url, '_blank', 'noopener');
       } else {
@@ -66,8 +71,8 @@ export default function PutawayStickerModal({ box, row, onClose }: {
         a.click();
       }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch {
-      toast.error('Could not get the sticker', 'Please try again.');
+    } catch (e) {
+      toast.error('Could not get the sticker', e instanceof PoApiError ? e.firstError : 'Please try again.');
     } finally {
       setBusy(null);
     }
@@ -105,6 +110,7 @@ export default function PutawayStickerModal({ box, row, onClose }: {
         </div>
 
         <div className="gsm-stage">
+          <StickerPdfPreview spiId={row.apiId ?? null} boxId={box.apiId ?? null} fallback={
           <div className="gsm-face">
             <div className="gsm-strip">
               <div className="gsm-strip-l">
@@ -143,6 +149,7 @@ export default function PutawayStickerModal({ box, row, onClose }: {
               </div>
             </div>
           </div>
+          } />
         </div>
 
         <div className="gsm-actions">
