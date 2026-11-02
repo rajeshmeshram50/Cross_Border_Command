@@ -67,23 +67,36 @@ caption PUT-<box code>
         <style>
             /* Roboto Condensed (bundled TTFs, latin subset). DejaVu stays in the
            stack as the glyph fallback — Roboto's subset has no arrow (→), so
-           the packing scenario borrows it from DejaVu. */
+           the packing scenario borrows it from DejaVu.
+           Each face falls back to the always-present DejaVu TTF when the Roboto
+           file is missing on this server, so the sticker still renders instead
+           of 500-ing. The family name stays 'Roboto Condensed' — every rule
+           below is unchanged. */
+            @php
+                $__face = function (string $roboto, string $deja) {
+                    $r = public_path('fonts/' . $roboto);
+                    return is_file($r) ? $r : public_path('fonts/' . $deja);
+                };
+                $__faceReg   = $__face('RobotoCondensed-Regular.ttf',   'DejaVuSans.ttf');
+                $__faceBold  = $__face('RobotoCondensed-Bold.ttf',      'DejaVuSans-Bold.ttf');
+                $__faceXBold = $__face('RobotoCondensed-ExtraBold.ttf', 'DejaVuSans-Bold.ttf');
+            @endphp
             @font-face {
                 font-family: 'Roboto Condensed';
                 font-weight: 400;
-                src: url("{{ public_path('fonts/RobotoCondensed-Regular.ttf') }}") format('truetype');
+                src: url("{{ $__faceReg }}") format('truetype');
             }
 
             @font-face {
                 font-family: 'Roboto Condensed';
                 font-weight: 700;
-                src: url("{{ public_path('fonts/RobotoCondensed-Bold.ttf') }}") format('truetype');
+                src: url("{{ $__faceBold }}") format('truetype');
             }
 
             @font-face {
                 font-family: 'Roboto Condensed';
                 font-weight: 800;
-                src: url("{{ public_path('fonts/RobotoCondensed-ExtraBold.ttf') }}") format('truetype');
+                src: url("{{ $__faceXBold }}") format('truetype');
             }
 
             /* The page margin is the gap OUTSIDE the frame; the frame itself is
