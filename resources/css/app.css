@@ -395,6 +395,10 @@ body {
      their font from --bs-body-font-family, not from inheritance — point it at
      DM Sans so the whole app is one typeface (QA 205/207/208/210). */
   --bs-body-font-family: var(--font-sans);
+  /* Velzon components (KPI cards, forms, portalled popups) read their font from
+     --vz-body-font-family, which Velzon sets to Rubik — point it at DM Sans too
+     (QA 205/207/208/210). */
+  --vz-body-font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
