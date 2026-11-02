@@ -37,7 +37,7 @@ export function splitQuantity(total: number, boxes: number): SplitBox[] {
 }
 
 export default function MultiBoxPanel({
-  line, boxes, onClose, closeDisabled = false, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onFlagCreated, onBoxQty,
+  line, boxes, onClose, closeDisabled = false, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onFlagCreated, onBoxQty, onRemoveBox,
 }: {
   line: ProductLine;
   boxes: SplitBox[];
@@ -51,6 +51,8 @@ export default function MultiBoxPanel({
   customFlags?: CustomFlag[];
   onFlagCreated?: () => void;
   onBoxQty?: (boxNo: number, qty: number) => void;
+  /** Drops a box that is not saved yet from the split. */
+  onRemoveBox?: (boxNo: number) => void;
 }) {
   /* Boxes still to pack come first, then the saved ones. A pending tab shows
      the code it will get (the next free one), never a "Box n" that reads like
@@ -58,6 +60,13 @@ export default function MultiBoxPanel({
   const ordered = [...boxes.filter(b => !savedCodes[b.no]), ...boxes.filter(b => savedCodes[b.no])];
   const tabLabel = (b: SplitBox) => savedCodes[b.no] ? `✓ ${savedCodes[b.no]}` : previewCodes[b.no] ?? `New box ${ordered.indexOf(b) + 1}`;
   const [active, setActive] = useState(() => ordered[0]?.no ?? 1);
+  /* Once its units are moved into another box, an unsaved box can be closed.
+     The last box is never closed here — the panel's own Close does that. */
+  const removable = (b: SplitBox) => !!onRemoveBox && !readOnly && !savedCodes[b.no] && boxes.length > 1;
+  const removeBox = (no: number) => {
+    if (no === active) setActive(ordered.find(b => b.no !== no)?.no ?? 1);
+    onRemoveBox?.(no);
+  };
   const allocated = boxes.reduce((n, b) => n + b.qty, 0);
 
   const unsaved = boxes.filter(b => !savedCodes[b.no] && b.qty > 0);
@@ -101,6 +110,17 @@ export default function MultiBoxPanel({
             >
               <span className="vmb-tab-num">{tabLabel(b)}</span>
               <span className="vmb-tab-qty">{b.qty}u</span>
+              {removable(b) && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="vmb-tab-x"
+                  title={`Close ${tabLabel(b)}${b.qty > 0 ? ` — its ${b.qty}u go back to unallocated` : ''}`}
+                  aria-label={`Close ${tabLabel(b)}`}
+                  onClick={e => { e.stopPropagation(); removeBox(b.no); }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); removeBox(b.no); } }}
+                >×</span>
+              )}
             </button>
           ))}
         </div>

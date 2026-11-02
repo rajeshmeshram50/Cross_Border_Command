@@ -29,7 +29,7 @@ class SpiActivity extends Model
     public const EVENTS = [
         'created', 'stage1_saved', 'invoice_uploaded', 'eway_uploaded',
         'item_added', 'item_updated', 'item_removed',
-        'box_created', 'box_updated', 'box_deleted', 'packed', 'unpacked', 'sticker_printed',
+        'box_created', 'box_updated', 'box_deleted', 'box_scenario_changed', 'packed', 'unpacked', 'sticker_printed',
         'storage_type_set', 'box_scanned', 'rack_scanned', 'shelf_scanned', 'putaway_confirmed',
         'submitted', 'cancelled', 'zoho_synced', 'zoho_failed',
     ];

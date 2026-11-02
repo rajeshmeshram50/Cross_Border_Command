@@ -619,6 +619,7 @@ class SupplierInvoiceController extends Controller
             $spi = $this->svc->saveItems($spi, $rows, false);
             /* A boxed line that grew has quantity to pack again, so Stage 03
                is no longer done. */
+            $this->svc->normaliseBoxScenarios($spi);
             $this->svc->syncPackingStage($spi);
 
             /* No packing summary here: nothing is packed at Stage 02, so it would

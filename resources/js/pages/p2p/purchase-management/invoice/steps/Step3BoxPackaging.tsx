@@ -534,6 +534,8 @@ export default function Step3BoxPackaging({
     if (count < 1) { fail('A split needs at least 1 box.'); return; }
     if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} unit${line.spiQty === 1 ? '' : 's'} — split it into at most ${maxBoxes} boxes.`); return; }
     setInvalid(null);
+    // A split into one box is just a single box — Scenario 01.
+    if (count === 1) { singleBox(line); return; }
     setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count), of: line.spiQty } }));
   };
 
@@ -557,6 +559,76 @@ export default function Step3BoxPackaging({
       if (!cur || cur.scenario !== 's2') return p;
       return { ...p, [code]: { ...cur, boxes: cur.boxes.map(b => (b.no === boxNo ? { ...b, qty: next } : b)) } };
     });
+  };
+
+  /* Closing an unsaved box of a split. Its units go back to unallocated; when
+     only one box is left, the split is really a single box, so the product
+     switches to Scenario 01 holding all of its units. */
+  /* A saved box re-sent as-is, with a new scenario and quantity. */
+  const bodyFromBox = (box: SpiBox, scenario: SpiBoxBody['scenario'], qty: number): SpiBoxBody => {
+    const num = (v: string | number | null | undefined) => (v === null || v === undefined || v === '' ? null : Number(v));
+    return {
+      scenario,
+      length_cm: num(box.length_cm), width_cm: num(box.width_cm), height_cm: num(box.height_cm),
+      weight_kg: num(box.weight_kg), net_weight_kg: num(box.net_weight_kg), gross_weight_kg: num(box.gross_weight_kg),
+      condition: box.condition as SpiBoxBody['condition'],
+      is_stackable: box.is_stackable ? 1 : 0,
+      temp_min_c: num(box.temp_min_c), temp_max_c: num(box.temp_max_c),
+      flags: box.flags ?? [],
+      items: box.items.map(i => ({
+        supplier_invoice_item_id: i.supplier_invoice_item_id,
+        quantity: qty,
+        is_stackable: !!i.is_stackable,
+        remark: i.remark ?? 'correct',
+        remark_note: i.remark_note ?? null,
+        flags: i.flags ?? box.flags ?? [],
+        serial_no: i.serial_no ?? null, lot_no: i.lot_no ?? null, batch_no: i.batch_no ?? null,
+        cat_no: i.cat_no ?? null, expiry_date: i.expiry_date ?? null, mfg_date: i.mfg_date ?? null,
+      })),
+    };
+  };
+
+  const removeSplitBox = async (line: ProductLine, no: number) => {
+    const pack = packing[line.code];
+    const saved = splitCodes[line.code] ?? {};
+    if (readOnly || pack?.scenario !== 's2' || saved[no]) return;
+    const rest = pack.boxes.filter(b => b.no !== no);
+    if (rest.length === 0 || rest.every(b => saved[b.no])) {
+      /* Only one saved box is left and it is the product's only box: it is
+         really a single box now, so offer to make it Scenario 01. It keeps
+         its quantity — any units it does not hold go back to Remaining Qty. */
+      const savedBox = rest.length === 1 ? boxes.find(b => b.box_code === saved[rest[0].no]) : undefined;
+      if (savedBox && savedBox.scenario === 's2' && onUpdateBox && boxesOf(line.code).length === 1 && !isPlaced(savedBox)) {
+        const inBox = qtyIn(savedBox, line.code);
+        const full = (fullOf(line.code) ?? line).spiQty;
+        const left = Math.round((full - inBox) * 1000) / 1000;
+        const ok = await confirm({
+          title: 'Change to 1 Product → 1 Box?',
+          message: `${putId(savedBox.box_code)} is the only box left for ${line.spiName}. Change its scenario from 1 Product → Multiple Boxes to 1 Product → 1 Box? It keeps its ${inBox} unit${inBox === 1 ? '' : 's'}`
+            + (left > 0 ? ` — the other ${left} go back to Remaining Qty.` : '.'),
+          tone: 'info',
+          confirmLabel: 'Yes, change it',
+          cancelLabel: 'Keep as is',
+        });
+        if (ok) {
+          setSavingKey(`${line.code}#${rest[0].no}`);
+          try {
+            if (!(await onUpdateBox(savedBox.id, bodyFromBox(savedBox, 's1', inBox)))) return;
+          } finally {
+            setSavingKey(null);
+          }
+        }
+      }
+      clearLocal([line.code]);
+      return;
+    }
+    if (rest.length === 1) {
+      setSplitCodes(m => { const next = { ...m }; delete next[line.code]; return next; });
+      setPacking(p => ({ ...p, [line.code]: { scenario: 's1', qty: capTo(line, pack.of, 'This box') } }));
+      toast.info('Changed to 1 Product → 1 Box', `${line.spiName} now goes in a single box.`);
+      return;
+    }
+    setPacking(p => ({ ...p, [line.code]: { ...pack, boxes: rest } }));
   };
 
   const closePack = (code: string) => {
@@ -1052,6 +1124,7 @@ export default function Step3BoxPackaging({
                                 actionLabel: 'Done',
                                 onAction: () => dismissSingle(line.code),
                               } : undefined}
+                              onClose={readOnly || done ? undefined : () => clearLocal([line.code])}
                               customFlags={customFlags} onFlagCreated={onFlagsChanged}
                             />
                           );
@@ -1072,7 +1145,8 @@ export default function Step3BoxPackaging({
                           savingNo={savingKey?.startsWith(`${line.code}#`) ? Number(savingKey.split('#')[1]) : null}
                           readOnly={readOnly}
                           customFlags={customFlags} onFlagCreated={onFlagsChanged}
-                          onBoxQty={(no, q) => setBoxQty(line.code, no, q)} />
+                          onBoxQty={(no, q) => setBoxQty(line.code, no, q)}
+                          onRemoveBox={no => void removeSplitBox(line, no)} />
                       </td>
                     </tr>
                   )}

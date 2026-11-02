@@ -925,6 +925,8 @@
 .vmb-tab.is-active { background: rgba(255,255,255,.95); color: #0c4a6e; font-weight: 800; border-color: rgba(255,255,255,.9); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
 .vmb-tab.is-saved { border-color: rgba(34,197,94,.6); }
 .vmb-tab-num { font-size: 10.5px; font-weight: 700; }
+.vmb-tab-x { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 1px; border-radius: 50%; font-size: 12px; line-height: 1; font-weight: 700; opacity: .7; transition: all .15s; }
+.vmb-tab-x:hover, .vmb-tab-x:focus-visible { opacity: 1; background: rgba(239,68,68,.85); color: #fff; outline: none; }
 .vmb-tab-qty { font-size: 9px; font-weight: 700; opacity: .7; background: rgba(255,255,255,.15); border-radius: 4px; padding: 1px 5px; }
 
 .vmb-tab.is-active .vmb-tab-qty { background: rgba(8,145,178,.12); color: #0e7490; opacity: 1; }
