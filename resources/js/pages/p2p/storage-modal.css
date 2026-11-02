@@ -511,10 +511,10 @@
 /* The trigger's own copy of the tile, a size down. */
 .smod-wh-ico.is-sm svg { width: 15px; height: 15px; }
 
-/* In the flow, under the trigger. Opening it does make the dialog taller,
-   which the design avoids by floating the list — but floating it meant
-   portalling it out of the dialog, and out there it fell behind the dialog's
-   own 80%-black dimmer and could not be seen at all. */
+/* Floats under the trigger (.is-float, placed by WarehousePicker), over the
+   dialog rather than in its flow, so opening it no longer stretches the
+   dialog. Portalled to <body>; the z-index is one above .smod-backdrop -
+   lower than that and it fell behind the dimmer. */
 .smod-wh-panel {
   margin-top: 8px; padding: 8px;
   max-height: 290px;
@@ -524,6 +524,26 @@
   box-shadow: 0 10px 26px -14px rgba(8,60,80,.4);
   scrollbar-width: thin; scrollbar-color: #bfe3ec transparent;
 }
+
+.smod-wh-panel.is-float {
+  position: fixed; z-index: 10000022; margin: 0; padding: 4px 12px; gap: 0;
+  box-sizing: border-box;
+  box-shadow: 0 24px 48px -16px rgba(4,30,44,.45), 0 4px 12px rgba(8,60,80,.08);
+  animation: smodFade .14s ease;
+}
+/* In the floating list the sites are rows of one list, split by hairlines,
+   not a stack of separate cards. */
+.smod-wh-panel.is-float .smod-wh-row {
+  border: 0; border-radius: 0; box-shadow: none; background: transparent;
+  padding: 12px 8px; border-bottom: 1px solid #eef4f7;
+}
+.smod-wh-panel.is-float .smod-wh-row:last-child { border-bottom: 0; }
+.smod-wh-panel.is-float .smod-wh-row:hover { background: #f4fcfd; transform: none; box-shadow: none; }
+.smod-wh-panel.is-float .smod-wh-row.is-selected { background: #ecfbfe; box-shadow: none; }
+[data-bs-theme="dark"] .smod-wh-panel.is-float .smod-wh-row { background: transparent; border-bottom-color: rgba(255,255,255,.07); }
+[data-bs-theme="dark"] .smod-wh-panel.is-float .smod-wh-row:last-child { border-bottom: 0; }
+[data-bs-theme="dark"] .smod-wh-panel.is-float .smod-wh-row:hover { background: rgba(34,211,238,.07); }
+[data-bs-theme="dark"] .smod-wh-panel.is-float .smod-wh-row.is-selected { background: rgba(34,211,238,.12); }
 
 /* The site's own code, with the day it was added under it. */
 .smod-wh-id { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 86px; }

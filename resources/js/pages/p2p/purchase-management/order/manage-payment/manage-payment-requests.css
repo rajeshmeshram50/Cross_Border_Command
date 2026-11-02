@@ -1549,3 +1549,49 @@
   background: rgba(8, 145, 178, .14);
   border-color: rgba(103, 232, 249, .3);
 }
+
+/* ── SPI Payment Requests History: first-load shimmer ──────────────────────
+   Set only by InvoicePaymentsModal (.inv-mpr-*), so the PO popup that shares
+   this file is unchanged. While the first load runs, each figure and its
+   note are a shimmering bar of a fixed width instead of "₹0" that then
+   jumps to the real amount; the TDS button, the request-count badge and
+   the table rows hold their places the same way. */
+@keyframes invMprShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.inv-mpr-skel,
+.inv-mpr-loading .mpr-stat__val,
+.inv-mpr-loading .mpr-stat__sub,
+.inv-mpr-loading .mpr-panel__c {
+  color: transparent !important;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e3f1f5 25%, #f4fbfd 50%, #e3f1f5 75%);
+  background-size: 200% 100%;
+  animation: invMprShimmer 1.3s ease-in-out infinite;
+}
+.inv-mpr-skel { display: inline-block; height: 12px; vertical-align: middle; }
+.inv-mpr-loading .mpr-stat__val { width: 96px; max-width: 100%; }
+.inv-mpr-loading .mpr-stat__sub { width: 128px; max-width: 100%; margin-top: 5px; }
+.inv-mpr-skel--badge { width: 82px; height: 22px; border-radius: 999px; opacity: .45; }
+.inv-mpr-skel--tds { width: 140px; height: 34px; border-radius: 10px; }
+.inv-mpr-skel--btn { width: 138px; height: 34px; border-radius: 10px; margin-left: auto; }
+.inv-mpr-skrows { display: flex; flex-direction: column; }
+.inv-mpr-skrow {
+  display: flex; align-items: center; gap: 28px;
+  padding: 22px 24px; border-top: 1px solid #edf5f8;
+}
+[data-bs-theme="dark"] .inv-mpr-skel,
+[data-bs-theme="dark"] .inv-mpr-loading .mpr-stat__val,
+[data-bs-theme="dark"] .inv-mpr-loading .mpr-stat__sub,
+[data-bs-theme="dark"] .inv-mpr-loading .mpr-panel__c {
+  background: linear-gradient(90deg, rgba(148,163,184,.12) 25%, rgba(148,163,184,.24) 50%, rgba(148,163,184,.12) 75%);
+  background-size: 200% 100%;
+}
+[data-bs-theme="dark"] .inv-mpr-skrow { border-top-color: rgba(255,255,255,.06); }
+@media (prefers-reduced-motion: reduce) {
+  .inv-mpr-skel, .inv-mpr-loading .mpr-stat__val, .inv-mpr-loading .mpr-stat__sub, .inv-mpr-loading .mpr-panel__c { animation: none; }
+}
+/* On the cyan summary band the light shimmer all but vanished - a teal one
+   there; on the dark hero, a translucent white one. */
+.inv-mpr-skel--tds { background: linear-gradient(90deg, rgba(8,145,178,.16) 25%, rgba(8,145,178,.30) 50%, rgba(8,145,178,.16) 75%) !important; background-size: 200% 100% !important; }
+.inv-mpr-skel--sub { width: 200px; height: 10px; }
+.inv-mpr-skel--sub,
+.inv-mpr-skel--badge { background: linear-gradient(90deg, rgba(255,255,255,.14) 25%, rgba(255,255,255,.30) 50%, rgba(255,255,255,.14) 75%) !important; background-size: 200% 100% !important; opacity: 1; }

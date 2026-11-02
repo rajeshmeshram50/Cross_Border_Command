@@ -767,14 +767,23 @@
    card filled — they drop the bar, because a solid card already says which it
    is. */
 
+/* One row, as in the design (CS-926 #72): every card the invoice has - five
+   with a PO and a shipment, fewer without - sits in a single row, each column
+   as wide as the others. It used to drop to three columns below a 1400px
+   window, so a laptop got the money cards on a second row beside a blank
+   third of the width. Only a narrow window (where a fifth of the width is
+   too little for an amount) wraps: three across, then one. The amount scales
+   down a step with the card so a long figure still fits. */
 .pts-refs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, minmax(0, 1.05fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 11px;
 }
 
-@media (max-width: 1400px) { .pts-refs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 860px) { .pts-refs { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .pts-refs { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .pts-refs { grid-template-columns: 1fr; } }
+@media (max-width: 1400px) { .pts-refs .pts-ref__amt { font-size: 20px; letter-spacing: -.5px; } }
 
 .pts-ref {
   position: relative;

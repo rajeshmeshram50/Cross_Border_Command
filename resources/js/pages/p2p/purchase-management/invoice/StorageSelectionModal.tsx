@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
@@ -318,13 +318,63 @@ function WarehousePicker({
 }) {
   const [open, setOpen] = useState(false);
   const picked = warehouses.find(w => w.id === value) ?? null;
+  const trigRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxH: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+    const away = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!trigRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
+    };
     document.addEventListener('keydown', esc, true);
-    return () => document.removeEventListener('keydown', esc, true);
+    document.addEventListener('mousedown', away, true);
+    return () => {
+      document.removeEventListener('keydown', esc, true);
+      document.removeEventListener('mousedown', away, true);
+    };
   }, [open]);
+
+  /* The list floats over the dialog, as the design has it, instead of sitting
+     in the flow and stretching the dialog by its own height. It is portalled
+     to <body> so the dialog's overflow cannot clip it, and stacked one above
+     the backdrop (10000021) - below that it vanished behind the dimmer, which
+     is why it was put in the flow before. Pinned under the trigger and kept
+     there while the dialog body scrolls or the window resizes. */
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const place = () => {
+      const r = trigRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const room = window.innerHeight - r.bottom - 16;
+      setPos({ left: r.left, top: r.bottom + 6, width: r.width, maxH: Math.max(180, room) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  /* Three sites in view, the rest scroll. Measured off the rendered rows (an
+     address line or not changes a row's height), never taller than the room
+     under the trigger. */
+  const SHOWN = 3;
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el || !pos) return;
+    const rows = el.children;
+    let h = pos.maxH;
+    if (rows.length > SHOWN) {
+      const last = rows[SHOWN - 1] as HTMLElement;
+      h = Math.min(h, last.offsetTop + last.offsetHeight + parseFloat(getComputedStyle(el).paddingBottom) + 2);
+    }
+    el.style.maxHeight = `${h}px`;
+  }, [pos, warehouses]);
   const area = sqft(picked?.areaSqft);
 
   const message = state === 'loading' || state === 'idle' ? 'Loading warehouses…'
@@ -335,7 +385,7 @@ function WarehousePicker({
   return (
     <div className={`smod-wh-pick${open ? ' is-open' : ''}`}>
       <button
-        type="button" className="smod-wh-trig"
+        ref={trigRef} type="button" className="smod-wh-trig"
         aria-haspopup="listbox" aria-expanded={open}
         disabled={!!message}
         onClick={() => setOpen(o => !o)}
@@ -356,8 +406,11 @@ function WarehousePicker({
         <span className="smod-wh-chev"><IcoChevronR size={13} /></span>
       </button>
 
-      {open && !message && (
-        <div className="smod-wh-panel" role="listbox">
+      {open && !message && pos && createPortal(
+        <div
+          ref={panelRef} className="smod-wh-panel is-float" role="listbox"
+          style={{ left: pos.left, top: pos.top, width: pos.width }}
+        >
           {warehouses.map(w => (
             <WarehouseRow
               key={w.id}
@@ -366,7 +419,8 @@ function WarehousePicker({
               onSelect={() => { onChange(w.id); setOpen(false); }}
             />
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

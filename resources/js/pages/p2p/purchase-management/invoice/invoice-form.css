@@ -1222,6 +1222,10 @@
 }
 .invf-pb-sticker:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.42); }
 .invf-pb-sticker:active { transform: translateY(0); }
+/* Frozen while a box is opening for edit (CS-1141). */
+.invf-pb-sticker:disabled,
+.invf-packed .invf-pb-sticker:disabled,
+.invf-boxid-btn:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; transform: none; box-shadow: none; }
 
 .invf-packed .invf-packed-table { font-size: 11px; }
 .invf-packed .invf-packed-table thead tr {
@@ -3217,13 +3221,16 @@
   border: 0; background: transparent; cursor: pointer;
   font-family: inherit; font-size: 12.5px; font-weight: 700; letter-spacing: -.1px;
   color: #94a3b8; white-space: nowrap;
-  transition: color .18s ease;
+  transition: color .1s ease;
 }
 .invf-pb-rtab__i {
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
   background: #f1f5f9; color: #94a3b8;
-  transition: all .2s ease;
+  /* Colour only, and quick. `all .2s` faded every property in and out, so
+     the icon just left was still fading while the next one lit up - the
+     previous tab read as still hovered, and the hover as arriving late. */
+  transition: background-color .1s ease, color .1s ease;
 }
 .invf-pb-rtab__i svg { width: 12px; height: 12px; }
 
@@ -3245,7 +3252,7 @@
   padding: 3px 9px; border-radius: 999px;
   background: #eef3f5; border: 1px solid #dde6ea; color: #84a0ab;
   font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-  transition: all .16s;
+  transition: background-color .1s, border-color .1s, color .1s;
 }
 .invf-pb-rtab.is-on .invf-pb-rtab__n {
   color: #0e7490; background: linear-gradient(135deg,#d0fbff,#a8f1fa);
@@ -3255,7 +3262,7 @@
 [data-bs-theme="dark"] .invf-pb-rtab { color: #7f9aa6; }
 [data-bs-theme="dark"] .invf-pb-rtab__i { background: rgba(148,163,184,.12); color: #7f9aa6; }
 [data-bs-theme="dark"] .invf-pb-rtab:hover { color: #cbd5e1; }
-[data-bs-theme="dark"] .invf-pb-rtab:hover .invf-pb-rtab__i { background: rgba(34,211,238,.14); color: #67e8f9; }
+[data-bs-theme="dark"] .invf-pb-rtab:not(.is-on):hover .invf-pb-rtab__i { background: rgba(34,211,238,.14); color: #67e8f9; }
 [data-bs-theme="dark"] .invf-pb-rtab.is-on, [data-bs-theme="dark"] .invf-pb-rtab.is-on:hover { color: #e2e8f0; }
 [data-bs-theme="dark"] .invf-pb-rtab__n { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.24); color: #94a9b6; }
 [data-bs-theme="dark"] .invf-pb-rtab.is-on .invf-pb-rtab__n { color: #0b1922; background: linear-gradient(135deg,#a8f1fa,#67e8f9); border-color: #67e8f9; }

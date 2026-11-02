@@ -367,6 +367,7 @@ export default function PackedProducts({
                       {onEditBox && !lockedCodes.includes(b.code) ? (
                         <button
                           type="button" className="vti-code invf-boxid-btn"
+                          disabled={loadingCode !== null}
                           onClick={() => onEditBox(b.code)}
                           aria-label={`Open box ${putId(b.code)}`}
                         >{putId(b.code)}</button>
@@ -443,10 +444,14 @@ export default function PackedProducts({
                       )}
                       {/* The label names the box it prints, so what is on
                           screen and what comes out of the printer are
-                          visibly the same carton. */}
+                          visibly the same carton. While a box is being
+                          opened for edit every row's actions freeze (CS-1141)
+                          - a sticker opened in that moment raced the edit
+                          drawer and both came up at once. */}
                       <Tooltip label={`Print the sticker for ${putId(b.code)}`}>
                         <button
                           type="button" className="invf-pb-sticker"
+                          disabled={loadingCode !== null}
                           onClick={() => setSticker(b)}
                           aria-label={`Print the sticker for ${putId(b.code)}`}
                         ><IcoPrinter size={14} /><span className="invf-pb-stkid">{putId(b.code)}</span> Sticker</button>

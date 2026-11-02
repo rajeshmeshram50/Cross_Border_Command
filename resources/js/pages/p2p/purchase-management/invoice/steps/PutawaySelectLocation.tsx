@@ -582,9 +582,10 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                         <div className="s4cl-zn__tx">
                           <div>
                             <span className="s4cl-code s4cl-code--z">{z.code}</span>
-                            <b>{z.name || 'Unnamed zone'}</b>
+                            <b title={z.name || undefined}>{z.name || 'Unnamed zone'}</b>
                           </div>
-                          <em>{zoneSub(z, shelves.length)}</em>
+                          {/* Truncates on a narrow pane; the full line is in the tooltip. */}
+                          <em title={zoneSub(z, shelves.length)}>{zoneSub(z, shelves.length)}</em>
                         </div>
                         <span className="s4cl-pill s4cl-pill--g">{z.eligible} available</span>
                         <Meter p={fillOf(shelves)} />
@@ -617,7 +618,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRack(r.id); } }}>
                                   <span className="s4cl-rk__i"><IcoRack /></span>
                                   <span className="s4cl-code s4cl-code--r">{r.code}</span>
-                                  <b className="s4cl-rk__nm">{r.name || 'Unnamed rack'}</b>
+                                  <b className="s4cl-rk__nm" title={r.name || undefined}>{r.name || 'Unnamed rack'}</b>
                                   <span className="s4cl-rk__meta">{many(r.total, 'shelf', 'shelves')}</span>
                                   <span className="s4cl-pill s4cl-pill--g">{av.length} available</span>
                                   {fu.length > 0 && <span className="s4cl-pill s4cl-pill--r">{fu.length} full</span>}
@@ -734,10 +735,10 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           <div className="s4cn-tx">
             <div className="s4cn-t">
               <span className="s4cl-code s4cl-code--z">{z.code}</span>
-              <b>{z.name || 'Unnamed zone'}</b>
+              <b title={z.name || undefined}>{z.name || 'Unnamed zone'}</b>
               {rec?.id === z.id && <span className="s4cn-rec">&#9733; Recommended</span>}
             </div>
-            <div className="s4cn-s">{zoneMeta(z)}</div>
+            <div className="s4cn-s" title={zoneMeta(z)}>{zoneMeta(z)}</div>
             <div className="s4cl-sh__bar g">
               <i className="o" style={{ width: `${Math.min(100, z.used_pct)}%` }} />
               <i className="n" style={{ width: `${Math.max(1.5, Math.min(100, after))}%` }} />

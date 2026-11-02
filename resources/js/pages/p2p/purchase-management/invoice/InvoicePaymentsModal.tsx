@@ -326,12 +326,18 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           <div className="mpr-hero__titleblock">
             <div className="mpr-hero__titlerow">
               <span className="mpr-hero__title" id="inv-mpr-title">Payment Requests History</span>
-              <span className="mpr-hero__badge">
-                <span className="mpr-hero__bdot" />
-                {list.length} request{list.length === 1 ? '' : 's'}
-              </span>
+              {state === 'loading'
+                ? <span className="inv-mpr-skel inv-mpr-skel--badge" aria-hidden />
+                : (
+                  <span className="mpr-hero__badge">
+                    <span className="mpr-hero__bdot" />
+                    {list.length} request{list.length === 1 ? '' : 's'}
+                  </span>
+                )}
             </div>
-            <div className="mpr-hero__sub">{po ? `All requests on ${po.code} and its SPIs` : 'All requests raised on this SPI'}</div>
+            <div className="mpr-hero__sub">{state === 'loading'
+              ? <span className="inv-mpr-skel inv-mpr-skel--sub" aria-hidden />
+              : po ? `All requests on ${po.code} and its SPIs` : 'All requests raised on this SPI'}</div>
           </div>
 
           <InvoiceHeroChips row={row} />
@@ -339,7 +345,11 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>
 
-        <div className="mpr-bd">
+        {/* First load: every figure, the TDS button and the request rows hold
+            their place as a shimmer, so nothing reads ₹0 and then jumps, and
+            the TDS button does not pop in after the cards have drawn. Only the
+            first load - the 20s refresh keeps the figures already on screen. */}
+        <div className={`mpr-bd${state === 'loading' ? ' inv-mpr-loading' : ''}`} aria-busy={state === 'loading'}>
           {state === 'failed' ? (
             <div className="mpr-empty">
               <div className="mpr-empty__t">Could not load the payment requests</div>
@@ -350,7 +360,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
               <Box
                 label="Summary" title="SPI Payment Details Summary"
                 sub="How this SPI's value is made up and where it stands today · read-only"
-                headerExtra={tdsCtl ? (
+                headerExtra={state === 'loading' ? (
+                  <span className="inv-mpr-skel inv-mpr-skel--tds" aria-hidden />
+                ) : tdsCtl ? (
                   <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                     <button
                       type="button"
@@ -420,8 +432,19 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                 </div>
 
                 {state === 'loading' ? (
-                  <div className="mpr-empty">
-                    <div className="mpr-empty__t">Loading payment requests…</div>
+                  <div className="inv-mpr-skrows" aria-label="Loading payment requests…">
+                    {[0, 1, 2].map(i => (
+                      <div className="inv-mpr-skrow" key={i}>
+                        <span className="inv-mpr-skel" style={{ width: 28 }} />
+                        <span className="inv-mpr-skel" style={{ width: 74 }} />
+                        <span className="inv-mpr-skel" style={{ width: 110 }} />
+                        <span className="inv-mpr-skel" style={{ width: 56 }} />
+                        <span className="inv-mpr-skel" style={{ width: 80 }} />
+                        <span className="inv-mpr-skel" style={{ width: 120 }} />
+                        <span className="inv-mpr-skel" style={{ width: 96 }} />
+                        <span className="inv-mpr-skel inv-mpr-skel--btn" />
+                      </div>
+                    ))}
                   </div>
                 ) : list.length === 0 ? (
                   <div className="mpr-empty">
