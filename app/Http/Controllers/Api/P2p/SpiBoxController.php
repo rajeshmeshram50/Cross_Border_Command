@@ -220,8 +220,9 @@ class SpiBoxController extends Controller
             $this->writeItems($box, $data['items']);
             $this->storePhotos($request, $box, (int) $user->id);
             $this->svc->log($spi, 'box_created', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
+            $this->svc->normaliseBoxScenarios($spi);
 
-            $box->load(['items', 'attachments']);
+            $box->refresh()->load(['items', 'attachments']);
             $rows = $this->svc->packingSummary($spi->id);
             $stage = $this->svc->syncPackingStage($spi);
 
@@ -267,6 +268,7 @@ class SpiBoxController extends Controller
             $this->storePhotos($request, $box, (int) $user->id);
 
             $this->svc->log($spi, 'box_updated', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
+            $this->svc->normaliseBoxScenarios($spi);
 
             $box->refresh()->load(['items', 'attachments']);
             $rows = $this->svc->packingSummary($spi->id);
@@ -306,6 +308,7 @@ class SpiBoxController extends Controller
 
             $box->items()->delete();
             $box->delete();
+            $this->svc->normaliseBoxScenarios($spi);
 
             $rows = $this->svc->packingSummary($spi->id);
 

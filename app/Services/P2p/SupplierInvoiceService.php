@@ -182,8 +182,8 @@ class SupplierInvoiceService
             'qty_spi'      => round((float) $rows->sum('qty_spi'), 3),
             'qty_packed'   => round((float) $rows->sum('qty_packed'), 3),
             'qty_pending'  => round((float) $rows->sum('qty_pending'), 3),
-            'lines_done'   => $rows->filter(fn ($r) => $r['qty_pending'] <= 0.001)->count(),
-            'fully_packed' => $rows->every(fn ($r) => $r['qty_pending'] <= 0.001),
+            'lines_done'   => $rows->filter(fn($r) => $r['qty_pending'] <= 0.001)->count(),
+            'fully_packed' => $rows->every(fn($r) => $r['qty_pending'] <= 0.001),
         ];
     }
 
@@ -204,6 +204,40 @@ class SupplierInvoiceService
      * Returns the stage it settled on, so a caller can report it without
      * re-reading the row.
      */
+
+    public function normaliseBoxScenarios(SupplierInvoice $spi): void
+    {
+        $rows = DB::table('p2p_spi_boxes as b')
+            ->join('p2p_spi_box_items as bi', 'bi.box_id', '=', 'b.id')
+            ->join('p2p_supplier_invoice_items as i', 'i.id', '=', 'bi.supplier_invoice_item_id')
+            ->where('b.supplier_invoice_id', $spi->id)
+            ->whereIn('b.scenario', ['s1', 's2'])
+            ->whereNull('b.deleted_at')->whereNull('bi.deleted_at')
+            ->get(['b.id', 'b.box_code', 'b.scenario', 'bi.supplier_invoice_item_id', 'bi.quantity', 'i.qty_spi']);
+
+        foreach ($rows->groupBy('supplier_invoice_item_id') as $itemId => $group) {
+            $only = $group->first();
+            if (
+                $group->count() !== 1 || $only->scenario !== 's2'
+                || abs((float) $only->quantity - (float) $only->qty_spi) >= 0.0005
+            ) {
+                continue;
+            }
+            DB::table('p2p_spi_boxes')->where('id', $only->id)->update(['scenario' => 's1', 'updated_at' => now()]);
+            $this->log($spi, 'box_scenario_changed', [
+                'client_id' => $spi->client_id,
+                'branch_id' => $spi->branch_id,
+                'box_id' => $only->id,
+                'supplier_invoice_item_id' => $itemId,
+                'stage' => 3,
+                'field' => 'scenario',
+                'old_value' => 's2',
+                'new_value' => 's1',
+                'note' => "{$only->box_code}: s2 → s1",
+            ]);
+        }
+    }
+
     public function syncPackingStage(SupplierInvoice $spi): int
     {
         $current = (int) $spi->stage_completed;
@@ -306,16 +340,18 @@ class SupplierInvoiceService
             /* Once the caller names its lines, a row without an id is a NEW
                line - matching it by position would hand an existing line,
                and its boxes, to a different product. */
-            $named    = collect($rows)->contains(fn ($r) => !empty($r['id']));
+            $named    = collect($rows)->contains(fn($r) => !empty($r['id']));
 
             /* What Stage 03 has already boxed, per line. A boxed line may grow
                (the extra shows up as pending on Stage 03) but it may not drop
                below what is in its boxes, change product, or leave the grid. */
             $packed = collect($this->packingSummary($spi->id))
                 ->pluck('qty_packed', 'supplier_invoice_item_id')
-                ->filter(fn ($q) => $q > 0.0005);
-            $refuse = fn (string $message) => abort(response()->json([
-                'status' => false, 'message' => $message, 'errors' => ['items' => [$message]],
+                ->filter(fn($q) => $q > 0.0005);
+            $refuse = fn(string $message) => abort(response()->json([
+                'status' => false,
+                'message' => $message,
+                'errors' => ['items' => [$message]],
             ], 422));
             /* Named by its product, not its description - a description can
                run to paragraphs. */
