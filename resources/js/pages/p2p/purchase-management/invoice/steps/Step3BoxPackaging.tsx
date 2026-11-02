@@ -597,17 +597,18 @@ export default function Step3BoxPackaging({
     if (readOnly || pack?.scenario !== 's2' || saved[no]) return;
     const rest = pack.boxes.filter(b => b.no !== no);
     if (rest.length === 0 || rest.every(b => saved[b.no])) {
-      /* Only one saved box is left and it is the product's only box: it is
-         really a single box now, so offer to make it Scenario 01. It keeps
-         its quantity — any units it does not hold go back to Remaining Qty. */
+      /* Only one saved box is left of this split: it is really a single box
+         now, so offer to make it Scenario 01 — even when the product has
+         boxes from an earlier split, since the scenario belongs to the box.
+         It keeps its quantity; units it does not hold go back to Remaining Qty. */
       const savedBox = rest.length === 1 ? boxes.find(b => b.box_code === saved[rest[0].no]) : undefined;
-      if (savedBox && savedBox.scenario === 's2' && onUpdateBox && boxesOf(line.code).length === 1 && !isPlaced(savedBox)) {
+      if (savedBox && savedBox.scenario === 's2' && onUpdateBox && !isPlaced(savedBox)) {
         const inBox = qtyIn(savedBox, line.code);
         const full = (fullOf(line.code) ?? line).spiQty;
         const left = Math.round((full - inBox) * 1000) / 1000;
         const ok = await confirm({
           title: 'Change to 1 Product → 1 Box?',
-          message: `${putId(savedBox.box_code)} is the only box left for ${line.spiName}. Change its scenario from 1 Product → Multiple Boxes to 1 Product → 1 Box? It keeps its ${inBox} unit${inBox === 1 ? '' : 's'}`
+          message: `${putId(savedBox.box_code)} is the only box left in this split for ${line.spiName}. Change its scenario from 1 Product → Multiple Boxes to 1 Product → 1 Box? It keeps its ${inBox} unit${inBox === 1 ? '' : 's'}`
             + (left > 0 ? ` — the other ${left} go back to Remaining Qty.` : '.'),
           tone: 'info',
           confirmLabel: 'Yes, change it',
