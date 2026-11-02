@@ -446,6 +446,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     Bootstrap's light-header vars would paint over it. */}
                 <thead>
                   <tr>
+                    <th scope="col" className="text-center" style={{ width: 48 }}>#</th>
                     <th scope="col">Date</th>
                     <th scope="col" style={{ minWidth: 280 }}>Attendance Visual</th>
                     <th scope="col">Effective Hours</th>
@@ -497,6 +498,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     if (isOff) {
                       return (
                         <tr key={pageStart + i} className={`att-log-row--off${isHolidayDay ? ' att-log-row--holiday' : ''}${isLeaveDay ? ' att-log-row--leave' : ''}`}>
+                          <td className="text-center text-muted att-log-sno">{pageStart + i + 1}</td>
                           <td className="att-log-datecell">
                             {formattedDate}
                             <span
@@ -528,6 +530,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
 
                     return (
                       <tr key={pageStart + i} className={isOpen ? 'is-open' : ''}>
+                        <td className="text-center text-muted att-log-sno">{pageStart + i + 1}</td>
                         <td className="att-log-datecell">
                           {formattedDate}
                           {/* Half-day leave on a day that was still (partly)
@@ -630,7 +633,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     );
                   })}
                   {visibleLogs.length === 0 && (
-                    <tr><td colSpan={8} className="text-center text-muted py-4">No attendance records for this period.</td></tr>
+                    <tr><td colSpan={9} className="text-center text-muted py-4">No attendance records for this period.</td></tr>
                   )}
                 </tbody>
               </table>
