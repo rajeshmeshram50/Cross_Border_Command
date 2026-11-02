@@ -619,3 +619,73 @@
   border-color: #E2E8F0; color: #64748B; transform: none;
   box-shadow: 0 1px 4px rgba(15,23,42,.06);
 }
+
+/* ── Stage 03→04 warehouse blocker (WarehouseFixModal) ───────────────────────
+   Teal, to match the SPI module (same palette as .smod-head / .smod-next). */
+.whfix-backdrop { position: fixed; inset: 0; z-index: 10000060; background: rgba(2,6,23,.55);
+  display: flex; align-items: center; justify-content: center; padding: 16px; }
+.whfix-box { width: 468px; max-width: 100%; background: var(--vz-card-bg,#fff); color: var(--vz-body-color,#1e293b);
+  border-radius: 16px; box-shadow: 0 30px 60px rgba(6,45,61,.4); overflow: hidden; }
+.whfix-head { position: relative; display: flex; gap: 12px; align-items: center; padding: 16px 18px;
+  background: radial-gradient(420px 150px at 85% -40%, rgba(103,232,249,.4), transparent 70%),
+    linear-gradient(118deg, #062d3d 0%, #0a4d66 42%, #0e7490 78%, #0891b2 100%); }
+.whfix-head::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, #67e8f9 30%, #22d3ee 50%, #67e8f9 70%, transparent); opacity: .85; }
+.whfix-ico { flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(255,255,255,.25), rgba(255,255,255,.12)); border: 1.5px solid rgba(255,255,255,.28);
+  color: #fff; font-size: 19px; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+.whfix-title { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: -.2px; }
+.whfix-sub { font-size: 11.5px; color: rgba(207,250,254,.9); margin-top: 2px; }
+.whfix-body { padding: 16px 18px; }
+.whfix-msg { font-size: 12.5px; line-height: 1.55; margin: 0 0 14px; }
+.whfix-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--vz-secondary-color,#64748b); margin-bottom: 6px; }
+.whfix-none { margin-top: 10px; font-size: 11px; font-weight: 600; color: #b45309; }
+.whfix-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--vz-border-color,#e2e8f0); }
+.whfix-btn-ghost { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--vz-border-color,#cbd5e1);
+  background: transparent; color: var(--vz-body-color,#334155); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.whfix-btn-primary { height: 38px; padding: 0 20px; border-radius: 10px; border: 0;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff; font-size: 12.5px; font-weight: 800;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 5px 18px rgba(6,182,212,.4); }
+.whfix-btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%); }
+.whfix-btn-primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.whfix-spin { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff; border-radius: 50%;
+  animation: whfix-spin .7s linear infinite; }
+@keyframes whfix-spin { to { transform: rotate(360deg); } }
+
+/* WarehouseFixModal · header close + custom dropdown (replaces the <select>). */
+.whfix-x { margin-left: auto; flex-shrink: 0; width: 30px; height: 30px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.12); color: #fff; font-size: 17px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
+.whfix-x:hover { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.5); }
+
+.whfix-dd { position: relative; }
+.whfix-dd-trig { width: 100%; height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  border-radius: 10px; border: 1px solid var(--vz-border-color,#cbd5e1); background: var(--vz-input-bg,#fff);
+  color: var(--vz-body-color,#1e293b); font-size: 12.5px; cursor: pointer; text-align: left; }
+.whfix-dd.is-open .whfix-dd-trig { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.16); }
+.whfix-dd-trig:disabled { opacity: .6; cursor: not-allowed; }
+.whfix-dd-val { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.whfix-dd-val b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whfix-dd-val i { color: #0891b2; flex-shrink: 0; }
+.whfix-dd-ph { color: var(--vz-secondary-color,#94a3b8); }
+.whfix-dd-code { font-size: 10.5px; font-weight: 700; color: #0e7490; background: #ecfeff; border: 1px solid #a5f3fc;
+  border-radius: 6px; padding: 1px 6px; }
+.whfix-dd-chev { margin-left: auto; color: var(--vz-secondary-color,#94a3b8); transition: transform .15s; flex-shrink: 0; }
+.whfix-dd.is-open .whfix-dd-chev { transform: rotate(180deg); }
+
+.whfix-dd-panel { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; max-height: 232px; overflow-y: auto;
+  background: var(--vz-card-bg,#fff); border: 1px solid var(--vz-border-color,#e2e8f0); border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(6,45,61,.22); padding: 4px; }
+.whfix-dd-opt { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--vz-body-color,#1e293b); font-size: 12.5px; cursor: pointer; text-align: left; }
+.whfix-dd-opt:hover:not(.is-blocked) { background: rgba(6,182,212,.08); }
+.whfix-dd-opt.is-sel { background: rgba(6,182,212,.12); }
+.whfix-dd-opt.is-blocked { opacity: .6; cursor: not-allowed; }
+.whfix-dd-opt-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.whfix-dd-opt-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whfix-dd-opt-ok { margin-left: auto; color: #0891b2; font-size: 15px; }
+.whfix-dd-opt-reason { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  color: #dc2626; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+[data-bs-theme="dark"] .whfix-dd-code { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #7dd3e8; }
+[data-bs-theme="dark"] .whfix-dd-opt-reason { color: #f87171; }

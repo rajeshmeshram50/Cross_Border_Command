@@ -36,6 +36,7 @@ import {
 import type { StorageChoice } from './StorageSelectionModal';
 import type { StorageWarehouse } from './types';
 const StorageSelectionModal = lazy(() => import('./StorageSelectionModal'));
+const WarehouseFixModal = lazy(() => import('./WarehouseFixModal'));
 
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
@@ -184,6 +185,10 @@ export default function InvoiceForm({
   /* Cold-chain / hazardous capability of each warehouse for this invoice's
      boxes — greys out incompatible ones in the picker and gates the move. */
   const [eligibility, setEligibility] = useState<WarehouseEligibility | null>(null);
+  /* The Stage 03->04 blocker: the current warehouse can't hold the boxes.
+     Carries its own warehouse list so the fix is picked and applied inline. */
+  const [whBlock, setWhBlock] = useState<{ missing: string[]; list: StorageWarehouse[]; elig: WarehouseEligibility; current: string | null } | null>(null);
+  const [whBlockBusy, setWhBlockBusy] = useState(false);
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -952,19 +957,10 @@ export default function InvoiceForm({
       const curWh = savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null);
       const missing = curWh ? (elig.warehouses[String(curWh)]?.missing ?? []) : [];
       if (curWh && missing.length) {
+        // Pick and apply the fix inline — the dropdown lives in the blocker.
+        const list = await spiApi.warehouses().catch(() => [] as StorageWarehouse[]);
         setSaving(false);
-        const change = await confirm({
-          title: 'Warehouse can’t hold these boxes',
-          tone: 'warning',
-          icon: 'alert-line',
-          message: (
-            <>This invoice has boxes that need <b>{missing.map(m => m.replace(/^a /, '')).join(' and ')}</b>,
-              but the selected warehouse has none. Switch to a warehouse with the right zone before moving to putaway.</>
-          ),
-          confirmLabel: 'Change warehouse',
-          cancelLabel: 'Not now',
-        });
-        if (change) openWhEdit();
+        setWhBlock({ missing, list, elig, current: savedWarehouse ?? warehouseLabel(storage) });
         return;
       }
       await spiApi.completeStage3(spiId);
@@ -973,6 +969,29 @@ export default function InvoiceForm({
       toast.error('Could not finish Stage 03', e instanceof PoApiError ? e.firstError : 'Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* Apply the warehouse chosen in the blocker, then complete Stage 03 and move
+     on — the whole fix without leaving the move the user was making. */
+  const applyWhFix = async (apiId: number) => {
+    if (!spiId || whBlockBusy) return;
+    setWhBlockBusy(true);
+    try {
+      await spiApi.setWarehouse(spiId, apiId);
+      const picked = whBlock?.list.find(w => w.apiId === apiId) ?? null;
+      setStorage({ type: 'own', warehouse: picked ?? undefined });
+      setSavedWarehouse(picked?.name ?? null);
+      setSavedWarehouseId(apiId);
+      setWarehouseRow(null);
+      await spiApi.completeStage3(spiId);
+      setWhBlock(null);
+      advance();
+      toast.success('Warehouse changed', `${picked?.name ?? 'Warehouse'} is saved — moving to putaway.`);
+    } catch (e) {
+      toast.error('Could not change the warehouse', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setWhBlockBusy(false);
     }
   };
 
@@ -1322,6 +1341,19 @@ export default function InvoiceForm({
             eligibility={eligibility}
             onClose={() => setWhEdit(null)}
             onNext={saveWarehouse}
+          />
+        </Suspense>
+      )}
+      {whBlock && (
+        <Suspense fallback={null}>
+          <WarehouseFixModal
+            missing={whBlock.missing}
+            currentName={whBlock.current}
+            warehouses={whBlock.list}
+            eligibility={whBlock.elig}
+            busy={whBlockBusy}
+            onCancel={() => { if (!whBlockBusy) setWhBlock(null); }}
+            onConfirm={applyWhFix}
           />
         </Suspense>
       )}
