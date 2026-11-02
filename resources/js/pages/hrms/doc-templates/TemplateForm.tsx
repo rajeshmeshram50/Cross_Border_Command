@@ -1921,7 +1921,13 @@ function TplFormDarkStyles() {
          but drops to the height of the step pill beside it. */
       .tpl-form-page .tpl-head-back { height: 34px; padding: 0 14px; border-radius: 10px; font-size: 12px; border-color: rgba(255,255,255,.55); }
       .tpl-form-page .tpl-head-back i { font-size: 14px; }
-      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+      /* The header gradient is purple in BOTH themes, so the back pill stays the
+         same white-on-purple here — the card-bg override painted a grey box on
+         the purple strip in dark mode. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-head-back { background: #fff; color: #6d28d9; border-color: rgba(255,255,255,.55); }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back:hover,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-head-back:hover { background: #f5f3ff; border-color: #c4b5fd; }
 
       /* Light bands that would glare on dark: the Summary head and the rule
          between signer rows. */
