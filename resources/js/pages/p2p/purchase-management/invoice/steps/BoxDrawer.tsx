@@ -309,8 +309,16 @@ export default function BoxDrawer({
   // Modal strip: one row when the details and the actions both fit beside
   // the close button, two rows otherwise. Measured from the items themselves
   // (fixed-width, so the answer does not depend on the class it sets).
+  // A laptop-width modal is too narrow for the full strip, but the design
+  // keeps it on one row: in that case the strip goes compact (.is-compact -
+  // the product name gives way with an ellipsis, the "Dimensions" caption
+  // drops, padding tightens) rather than pushing every action to a second
+  // row. Only when even the compact strip cannot fit does it stack.
+  // The compact class changes the widths being measured, so it is lifted
+  // for the measurement and the natural widths are always the ones compared.
   const stripRef = useRef<HTMLDivElement>(null);
-  const [stripStacked, setStripStacked] = useState(false);
+  const [stripLayout, setStripLayout] = useState<'oneline' | 'compact' | 'stacked'>('oneline');
+  const stripStacked = stripLayout === 'stacked';
   useEffect(() => {
     const strip = stripRef.current;
     if (variant !== 'modal' || !strip) return;
@@ -319,9 +327,20 @@ export default function BoxDrawer({
       return kids.reduce((w, k) => w + k.offsetWidth, 0) + (sel === '.vti-dw-toolbar' ? 9 * Math.max(0, kids.length - 1) : 0);
     };
     const measure = () => {
+      const wasCompact = strip.classList.contains('is-compact');
+      if (wasCompact) strip.classList.remove('is-compact');
       // accent 4 + gap 14 + close-button lane 62
       const need = 4 + sum('.vti-dw-strip-left') + 14 + sum('.vti-dw-toolbar') + 62;
-      setStripStacked(need > strip.clientWidth);
+      const product = (strip.querySelector('.strip-product') as HTMLElement | null)?.offsetWidth ?? 0;
+      const dimLabel = (strip.querySelector('.vti-dw-dim-label') as HTMLElement | null)?.offsetWidth ?? 0;
+      const items = strip.querySelectorAll('.vti-dw-strip-left > .vti-dw-strip-item').length;
+      const buttons = strip.querySelectorAll('.vti-dw-toolbar button').length;
+      if (wasCompact) strip.classList.add('is-compact');
+      // What compact saves: the product down to 96px, the caption and its
+      // gap, 6px a side off each detail, about 8px off each button.
+      const saved = Math.max(0, product - 96) + (dimLabel ? dimLabel + 9 : 0) + items * 12 + buttons * 8;
+      const room = strip.clientWidth;
+      setStripLayout(need <= room ? 'oneline' : need - saved <= room ? 'compact' : 'stacked');
     };
     measure();
     // Item widths change once the web fonts arrive, the strip's does not.
@@ -342,7 +361,7 @@ export default function BoxDrawer({
             the unit toggle, Upload and Camera all live in this strip, outside
             the body's veil, so the quantity could still be changed mid-save. */}
         <div ref={stripRef}
-          className={`vti-dw-strip${variant === 'modal' ? (stripStacked ? ' is-stacked' : ' is-oneline') : ''}`}
+          className={`vti-dw-strip${variant === 'modal' ? (stripStacked ? ' is-stacked' : stripLayout === 'compact' ? ' is-oneline is-compact' : ' is-oneline') : ''}`}
           inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
@@ -355,7 +374,7 @@ export default function BoxDrawer({
             <StripItem label={modeKey}><span className="vti-dw-strip-val">{modeLabel}</span></StripItem>
             <div className="vti-dw-strip-sep" />
             <StripItem label="Product" className="strip-product">
-              <span className="vti-dw-strip-val">{line.spiName}</span>
+              <span className="vti-dw-strip-val" title={line.spiName}>{line.spiName}</span>
             </StripItem>
             <div className="vti-dw-strip-sep" />
             <StripItem label={onQuantityChange ? 'Box Quantity' : 'Total Qty'}>

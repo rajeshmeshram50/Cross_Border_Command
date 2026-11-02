@@ -518,6 +518,18 @@
   justify-content: flex-start;
 }
 .vti-dw-modal .vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
+/* .is-compact — still one row, on a laptop-width modal: the product name is
+   the one detail that gives way (ellipsis, full name in its tooltip), the
+   "Dimensions" caption drops (the CM / M toggle says it), and the details
+   and buttons tighten. BoxDrawer only sets it when this is enough to fit. */
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-left { flex: 1 1 auto; min-width: 0; }
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-item { padding-left: 10px; padding-right: 10px; }
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-item.strip-product { flex: 0 1 auto; min-width: 96px; }
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-dim-label { display: none; }
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar { padding-left: 10px; }
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-icon-btn,
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-save-btn,
+.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-sticker-btn { padding-left: 11px; padding-right: 11px; }
 
 @media (max-width: 820px) {
 
