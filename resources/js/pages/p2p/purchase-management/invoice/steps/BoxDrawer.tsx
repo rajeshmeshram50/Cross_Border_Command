@@ -76,6 +76,8 @@ const ADVANCED = [
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
 ] as const;
+/** How much of a long Advanced Details value shows before the ellipsis. */
+const ADV_SHOWN = 20;
 
 export interface BoxSaveData {
   dims: {
@@ -189,6 +191,8 @@ export default function BoxDrawer({
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
+  // Which Advanced Details field is being edited - it shows its full value.
+  const [advFocus, setAdvFocus] = useState<string | null>(null);
   const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>(
     () => (initial ? { ...initial.boxIdentity } : {}),
   );
@@ -714,14 +718,27 @@ export default function BoxDrawer({
                               onChange={v => setBoxIdentity(m => ({ ...m, [f.key]: v }))}
                               placeholder={f.label}
                             />
-                          ) : (
-                            <input
-                              className="vti-dw-inp"
-                              type={f.type} placeholder={f.placeholder}
-                              value={boxIdentity[f.key] ?? ''}
-                              onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
-                            />
-                          )}
+                          ) : (() => {
+                            /* A long serial or lot number ran on past the
+                               field with no way to read the rest. Out of
+                               focus it shows the first 20 characters and an
+                               ellipsis, with the whole value in the tooltip;
+                               in focus it is the full value, to edit. Only
+                               the display is cut - the stored value is not. */
+                            const full = boxIdentity[f.key] ?? '';
+                            const long = full.length > ADV_SHOWN;
+                            return (
+                              <input
+                                className="vti-dw-inp"
+                                type={f.type} placeholder={f.placeholder}
+                                value={long && advFocus !== f.key ? `${full.slice(0, ADV_SHOWN)}…` : full}
+                                title={long ? full : undefined}
+                                onFocus={() => setAdvFocus(f.key)}
+                                onBlur={() => setAdvFocus(k => (k === f.key ? null : k))}
+                                onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
+                              />
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>

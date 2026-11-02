@@ -3370,9 +3370,9 @@
 
 @media (max-width: 1440px) {
   .s4-root .s4rv-flds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .s4-root .s4rv-marks { grid-template-columns: 1fr; }
-  .s4-root .s4rv-mark { border-right: none; border-bottom: 1px solid #eaf5f8; }
-  .s4-root .s4rv-mark:last-child { border-bottom: none; }
+  /* Remark / Condition / Flags no longer stack here: a 1440px window still
+     leaves room for all three side by side. They stack on the pane's own
+     width instead - see "CS-953: Remark, Condition and Flags". */
 }
 @media (max-width: 900px) {
   .s4-root .s4rv-hero { grid-template-columns: auto 1fr; }
@@ -6552,6 +6552,17 @@
   .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) > .s4-panel__body {
     flex: 1 0 auto; overflow: clip; overscroll-behavior-y: auto;
   }
+  /* ...except the box list. Grown to its content, twelve boxes made the left
+     column far taller than the allocation pane, and the row stretched the
+     right card to match - a screen of empty white under its content. The
+     list now adds nothing to the row's height (size containment): the right
+     pane sets it, the list fills exactly that and scrolls the rest of the
+     boxes inside itself. The panels' 560px floor keeps a few boxes in view
+     when the right pane is short or collapsed. */
+  .s4-root:not(.is-fullview) .s4-panel--left:not(.is-collapsed) > .s4-panel__body {
+    flex: 1 1 0; min-height: 0; contain: size;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: none;
+  }
 }
 
 /* Scroll lag, round two: the glass cards that remained on Stage 4 — the
@@ -6606,3 +6617,114 @@
   .s4rv-next, .s4rv-flagmore, .s4ra-use, .s4cl-sh, .s4cn, .s4c3-pill--more,
   .s4ct-manual
 ):hover { transform: none !important; }
+
+/* ── CS-954: nothing on the stage is clipped at a narrow width ────────────
+ * Box Details answered only to the WINDOW (the 1440px / 900px rules above),
+ * but what it actually has is the right pane - which on a laptop, with the
+ * box list open beside it, can be far narrower than the window suggests.
+ * Seven core tiles and the hero's right column (status pill, sticker button)
+ * then ran past the pane edge and were cut off. The review now answers to
+ * the pane's own width: under 980px the hero's status and sticker drop to a
+ * row beneath it and the core tiles go four across; under 560px, two.
+ * The box cards on the left wrap their head (ID, Sticker, status) and their
+ * chip row instead of cutting off whatever did not fit on one line. */
+.s4-root .s4-panel--right > .s4-panel__body { container: s4pane / inline-size; }
+@container s4pane (max-width: 980px) {
+  .s4-root .s4rv-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .s4-root .s4rv-hero__r {
+    grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap;
+    align-items: center; justify-content: space-between;
+  }
+  .s4-root .s4rv-flds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container s4pane (max-width: 560px) {
+  .s4-root .s4rv-flds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* CS-953: Remark, Condition and Flags stay side by side, as in the design,
+   for as long as they fit - the three need about 600px. They used to stack
+   one under another at a 1440px window or a 980px pane, both far wider than
+   that, which left a tall column of three half-empty bands on a laptop. */
+@container s4pane (max-width: 620px) {
+  .s4-root .s4rv-marks { grid-template-columns: 1fr; }
+  .s4-root .s4rv-mark { border-right: none; border-bottom: 1px solid #eaf5f8; }
+  .s4-root .s4rv-mark:last-child { border-bottom: none; }
+}
+.s4-root .s4pkc__hd { flex-wrap: wrap; row-gap: 6px; }
+.s4-root .s4pkc__chips { flex-wrap: wrap; overflow: visible; row-gap: 6px; }
+/* The pane itself must be allowed to shrink. As a flex item its min-width was
+   `auto` - the width of its widest content (the product table, the step band)
+   - so instead of narrowing, it pushed the row past the workspace card, and
+   the card's rounded clip cut the pane's right edge off. At 0 it takes the
+   width it is given; the table scrolls in its own wrapper and the rest wraps. */
+.s4-root .s4-panel--right:not(.is-collapsed) { min-width: 0; }
+
+/* Pick a Box scrollbar (CS-954 #66): the list did scroll, but its thumb was
+   teal at 15% on #F7F9FC - next to invisible, so it looked like there was no
+   scrollbar. A solid thumb, still thin; only this list changes. */
+.s4-root .s4-panel--left .s4-panel__body { scrollbar-width: thin; scrollbar-color: #8fb8c8 transparent; }
+[data-bs-theme="dark"] .s4-root .s4-panel--left .s4-panel__body { scrollbar-color: rgba(255,255,255,.28) transparent; }
+
+/* ── CS-953 #67: Select Putaway Location sits at the pane's foot ──────────
+ * The button came straight after the Box Remark card, so with a short box
+ * it floated half-way down the pane. As the design has it, the review takes
+ * the pane's full height and its footer is the pane's bottom bar: pushed to
+ * the end (margin-top: auto) when the content is short, pinned there
+ * (sticky) while a long box scrolls under it, bled to the pane's side edges
+ * over the body's 10px padding with a hairline on top, the button at the
+ * right. No bottom bleed: the body has no bottom padding (see "The sticky
+ * footer sat 14px above..."), so a -14px margin/offset hung the bar 14px
+ * past the pane, which clipped the bottom off the button. */
+.s4-root .s4-c2-pane.is-visible > .s4h:has(> .s4rv) { flex: 1 0 auto; }
+.s4-root .s4h > .s4rv { flex: 1 0 auto; }
+.s4-root .s4rv > .s4rv-foot {
+  position: sticky; bottom: 0; z-index: 5;
+  margin: auto -10px 0;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid #e3f1f5;
+  box-shadow: 0 -8px 16px -12px rgba(12, 44, 58, .3);
+}
+[data-bs-theme="dark"] .s4-root .s4rv > .s4rv-foot {
+  background: var(--s4d-bg); border-top-color: var(--s4d-line);
+}
+
+/* ── Pick a Box: a category scrolls on its own past four boxes ────────────
+   BoxGroupList caps the group at its first four cards (measured) and sets
+   .is-capped. A little room at the top so the selected card's ring and the
+   hover lift are not clipped by the scroll box; the wheel hands on to the
+   pane once the group reaches its end, as the pane hands on to the page. */
+.s4-root .s4grp__list { position: relative; }
+.s4-root .s4grp__list.is-capped {
+  overflow-y: auto; overflow-x: hidden;
+  padding-top: 3px; margin-top: -3px;
+  scrollbar-width: thin; scrollbar-color: rgba(6, 182, 212, .25) transparent;
+}
+.s4-root .s4grp__list.is-capped::-webkit-scrollbar { width: 6px; }
+.s4-root .s4grp__list.is-capped::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, .25); border-radius: 6px; }
+[data-bs-theme="dark"] .s4-root .s4grp__list.is-capped { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+
+/* ── Pick a Box: the selected card has to be unmistakable ────────────────
+   Selected was a 1px #22d3ee border with an 18% halo - next to the normal
+   card's own teal border and shadow it barely read as different, so the
+   operator could not tell which box the right pane was showing. Now: a 2px
+   solid teal border, a firm halo and a pale teal body. A placed box keeps its green version of the same treatment.
+   The 1px of extra border is taken back from the card's margin so the list
+   does not shift when the selection moves. */
+.s4-root .s4pkc.is-active {
+  border: 2px solid #0891b2; margin: -1px 9px 7px;
+  background: linear-gradient(180deg, #ecfeff 0%, #f4fdff 100%);
+  box-shadow: 0 0 0 3px rgba(8,145,178,.28), 0 14px 28px -14px rgba(8,145,178,.7);
+}
+.s4-root .s4pkc.is-placed.is-active { border-color: #059669; background: linear-gradient(180deg, #e7fbf1 0%, #ecfdf5 100%); box-shadow: 0 0 0 3px rgba(16,185,129,.3), 0 14px 28px -14px rgba(5,150,105,.75); }
+[data-bs-theme="dark"] .s4-root .s4pkc.is-active { background: #133a47; border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.3), 0 10px 24px -12px rgba(0,0,0,.6); }
+[data-bs-theme="dark"] .s4-root .s4pkc.is-placed.is-active { background: #0f3a2f; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.3); }
+
+/* ── CS-953 #68: rack heading on a narrow pane ────────────────────────────
+   The rack name never shrank and the shelf count ("4 shelves") took the
+   flex space without clipping, so on a narrow pane the count ran in under
+   the available/full pills. Now the name gives way first (ellipsis, full
+   name in its tooltip), the count always shows whole, and the pills are
+   pushed to the right edge by the count rather than by a stretched gap. */
+.s4-root .s4cl-rk__nm { flex: 0 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4cl-rk__meta { flex: 0 0 auto; }
+.s4-root .s4cl-rk__meta + .s4cl-pill { margin-left: auto; }

@@ -182,7 +182,7 @@ function AmountCard({ label, value, sub, tone }: { label: string; value: string;
         <span className="pts-ref__ico"><IcoCard /></span>
         <span className="pts-ref__lbl">{label}</span>
       </div>
-      <div className="pts-ref__amt">{value}</div>
+      <div className="pts-ref__amt" title={value}>{value}</div>
       <div className="pts-ref__date">{sub}</div>
     </div>
   );

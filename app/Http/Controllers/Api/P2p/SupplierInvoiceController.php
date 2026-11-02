@@ -1183,9 +1183,10 @@ class SupplierInvoiceController extends Controller
             'supplier'    => [
                 'id'            => $s->vendor?->id,
                 'code'          => $s->vendor?->vendor_code,
-                // Legal name first, as the PO list does — that is the name on
-                // the paperwork; the trading name is the fallback.
-                'name'          => $s->vendor?->legal_name ?: $s->vendor?->company_name,
+                // Company name first - the name the supplier is known by in the
+                // Supplier master and everywhere else in the SPI; the legal
+                // name is only the fallback for a supplier saved without one.
+                'name'          => $s->vendor?->company_name ?: $s->vendor?->legal_name,
                 'risk_level_id' => $s->vendor?->risk_level_id,
                 // The Risk Alert column prints the level's name, not its id.
                 'risk'          => $s->vendor?->riskLevel?->name,

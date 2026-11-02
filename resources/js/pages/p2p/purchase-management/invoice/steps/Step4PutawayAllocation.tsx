@@ -202,6 +202,36 @@ const REMARK_OF: Record<Disposition, string> = {
   damaged: 'Damaged / Rejected', mismatch: 'Mismatched',
 };
 
+/* One category's box cards in Pick a Box. Past four, the group scrolls on its
+   own: its height is capped at the first four cards as rendered (measured,
+   so a card with flags or a long name still counts as one), and the next
+   group's header stays in sight instead of sitting a long list away. */
+const GROUP_CARDS_SHOWN = 4;
+function BoxGroupList({ count, children }: { count: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [cap, setCap] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || count <= GROUP_CARDS_SHOWN) { setCap(null); return; }
+    const measure = () => {
+      const last = el.children[GROUP_CARDS_SHOWN - 1] as HTMLElement | undefined;
+      if (!last) return;
+      const mb = parseFloat(getComputedStyle(last).marginBottom) || 0;
+      setCap(Math.ceil(last.offsetTop + last.offsetHeight + mb));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [count]);
+  return (
+    <div ref={ref} className={`s4grp__list${cap ? ' is-capped' : ''}`}
+      style={cap ? { maxHeight: cap } : undefined}>
+      {children}
+    </div>
+  );
+}
+
 function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
   b: PickBox; selected: boolean; readOnly: boolean;
   onPick: () => void; onSticker: () => void;
@@ -1813,16 +1843,20 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </div>
                   {rows.length === 0
                     ? <div className="s4grp__empty">No boxes in this category</div>
-                    : rows.map(bx => (
-                      <BoxCard
-                        key={bx.id}
-                        b={bx}
-                        selected={selected === bx.code}
-                        readOnly={readOnly}
-                        onPick={() => setSelected(bx.code)}
-                        onSticker={() => setQrFor(bx.code)}
-                      />
-                    ))}
+                    : (
+                      <BoxGroupList count={rows.length}>
+                        {rows.map(bx => (
+                          <BoxCard
+                            key={bx.id}
+                            b={bx}
+                            selected={selected === bx.code}
+                            readOnly={readOnly}
+                            onPick={() => setSelected(bx.code)}
+                            onSticker={() => setQrFor(bx.code)}
+                          />
+                        ))}
+                      </BoxGroupList>
+                    )}
                 </Fragment>
               );
             })}

@@ -443,3 +443,37 @@
   background: rgba(34, 211, 238, .1);
   border-color: rgba(34, 211, 238, .24);
 }
+
+/* CS-940: the storage-type radios and the flag switches, legible in the dark.
+   Both radios were a white disc, told apart only by a small inner dot, and
+   the UNselected card's icon was a bright white tile - so the eye went to
+   the option that was off. Off is now a hollow ring with a dimmed icon;
+   on is a bright cyan ring and dot with a glow, on a card with a solid cyan
+   edge. The switches are restated inside the flag rows with a stronger ring
+   and a bright row edge, so "Allowed" cannot read as "Not Allowed". */
+[data-bs-theme="dark"] .znm-opt { border-color: #2a4a63; }
+[data-bs-theme="dark"] .znm-opt:hover { border-color: #3b6a85; background: #0e1d30; }
+[data-bs-theme="dark"] .znm-opt.is-on {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, .12);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .18);
+}
+[data-bs-theme="dark"] .znm-opt__rd { background: transparent; border-color: #64809a; }
+[data-bs-theme="dark"] .znm-opt.is-on .znm-opt__rd {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, .14);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .znm-opt.is-on .znm-opt__rd::after { background: linear-gradient(135deg, #a5f3fc, #22d3ee); }
+[data-bs-theme="dark"] .znm-opt__ico { color: #67e8f9; background: rgba(34, 211, 238, .1); }
+[data-bs-theme="dark"] .znm-opt.is-on .znm-opt__ico { color: #fff; background: linear-gradient(140deg, #22d3ee, #0891b2); }
+[data-bs-theme="dark"] .znm-opt:not(.is-on) .znm-opt__t b { color: #cbd5e1; }
+
+[data-bs-theme="dark"] .znm-tg { border-color: #2a4a63; }
+[data-bs-theme="dark"] .znm-tg.is-on { border-color: rgba(34, 211, 238, .55); background: rgba(34, 211, 238, .1); }
+[data-bs-theme="dark"] .znm-tg__st { color: #94a3b8; }
+[data-bs-theme="dark"] .znm-tg .whm-toggle.is-on {
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), 0 0 0 3px rgba(34, 211, 238, .32);
+}
+[data-bs-theme="dark"] .znm-tg .whm-toggle.is-on span::after { background: #0891b2; }
