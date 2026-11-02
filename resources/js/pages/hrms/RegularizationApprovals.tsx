@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import BusyOverlay from '../../components/ui/BusyOverlay';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import Tooltip from '../../components/ui/Tooltip';
 import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
 import { to12h, punchPair12h } from '../../utils/timeFormat';
 
@@ -443,50 +444,52 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
         if (r.can_act_now && r.status === 'Pending') {
           return (
             <div className="d-inline-flex align-items-center gap-1">
-              <button
-                type="button"
-                data-tooltip={approving ? 'Approving…' : 'Approve'}
-                data-tooltip-pos="left"
-                aria-label="Approve"
-                aria-busy={approving}
-                disabled={rowBusy}
-                onClick={() => act(r, 'approve')}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  color: '#fff', border: 'none',
-                  // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
-                  // button actually running stays bright and the other one greys out.
-                  opacity: rejecting ? 0.45 : 1,
-                  cursor: rowBusy ? 'wait' : 'pointer',
-                }}
-              >
-                {approving
-                  ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
-                  : <i className="ri-check-line" />}
-              </button>
-              <button
-                type="button"
-                data-tooltip={rejecting ? 'Rejecting…' : 'Reject'}
-                data-tooltip-pos="left"
-                aria-label="Reject"
-                aria-busy={rejecting}
-                disabled={rowBusy}
-                onClick={() => act(r, 'reject')}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                  color: '#fff', border: 'none',
-                  opacity: approving ? 0.45 : 1,
-                  cursor: rowBusy ? 'wait' : 'pointer',
-                }}
-              >
-                {rejecting
-                  ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
-                  : <i className="ri-close-line" />}
-              </button>
+              {/* Portalled Tooltip, not data-tooltip: a CSS pseudo-tooltip is
+                  clipped by the table's scroll overflow / sticky header. */}
+              <Tooltip label={approving ? 'Approving…' : 'Approve'}>
+                <button
+                  type="button"
+                  aria-label="Approve"
+                  aria-busy={approving}
+                  disabled={rowBusy}
+                  onClick={() => act(r, 'approve')}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    color: '#fff', border: 'none',
+                    // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
+                    // button actually running stays bright and the other one greys out.
+                    opacity: rejecting ? 0.45 : 1,
+                    cursor: rowBusy ? 'wait' : 'pointer',
+                  }}
+                >
+                  {approving
+                    ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
+                    : <i className="ri-check-line" />}
+                </button>
+              </Tooltip>
+              <Tooltip label={rejecting ? 'Rejecting…' : 'Reject'}>
+                <button
+                  type="button"
+                  aria-label="Reject"
+                  aria-busy={rejecting}
+                  disabled={rowBusy}
+                  onClick={() => act(r, 'reject')}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+                    color: '#fff', border: 'none',
+                    opacity: approving ? 0.45 : 1,
+                    cursor: rowBusy ? 'wait' : 'pointer',
+                  }}
+                >
+                  {rejecting
+                    ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
+                    : <i className="ri-close-line" />}
+                </button>
+              </Tooltip>
             </div>
           );
         }
@@ -511,6 +514,9 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
         <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
       ) : (
         <BusyOverlay busy={loading && hasLoaded} label="Refreshing requests…">
+          {/* reg-dt-teal: match the DataTable's cyan "teal" accent to the
+              green-teal hr-cstrip--teal page header above it. */}
+          <div className="reg-dt-teal">
           <DataTable
             loading={loading && !hasLoaded}
             data={rows}
@@ -544,6 +550,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
               ? <>No requests match “{debouncedSearch}”.</>
               : <>No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</>}
           />
+          </div>
         </BusyOverlay>
       )}
       <RegularizationDetailModal row={detail} onClose={() => setDetail(null)} />
@@ -560,20 +567,22 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
    Styled as a pill to match the Approve / Reject pills it replaces. */
 function ViewButton({ row, onOpen }: { row: ApiRegularization; onOpen: (r: ApiRegularization) => void }) {
   return (
-    <button
-      type="button"
-      data-tooltip="View details"
-      data-tooltip-pos="left"
-      aria-label="View regularization details"
-      onClick={() => onOpen(row)}
-      /* Colours live in CSS, not here. Inline styles cannot be overridden by a
-         stylesheet without !important, so this pill stayed on its light
-         indigo in dark mode while every other cell on the row darkened with
-         the table. (QA #36) */
-      className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11 att-reg-view"
-    >
-      <i className="ri-eye-line" />View
-    </button>
+    /* Portalled Tooltip, not data-tooltip: a CSS pseudo-tooltip is clipped by
+       the table's scroll overflow / sticky header; this renders above it. */
+    <Tooltip label="View details">
+      <button
+        type="button"
+        aria-label="View regularization details"
+        onClick={() => onOpen(row)}
+        /* Colours live in CSS, not here. Inline styles cannot be overridden by a
+           stylesheet without !important, so this pill stayed on its light
+           indigo in dark mode while every other cell on the row darkened with
+           the table. (QA #36) */
+        className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11 att-reg-view"
+      >
+        <i className="ri-eye-line" />View
+      </button>
+    </Tooltip>
   );
 }
 
