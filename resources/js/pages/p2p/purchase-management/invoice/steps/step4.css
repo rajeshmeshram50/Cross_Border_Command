@@ -6728,3 +6728,30 @@
 .s4-root .s4cl-rk__nm { flex: 0 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; }
 .s4-root .s4cl-rk__meta { flex: 0 0 auto; }
 .s4-root .s4cl-rk__meta + .s4cl-pill { margin-left: auto; }
+
+/* ── Pick a Box: the selected card stays pinned ───────────────────────────
+   While the list scrolls, the selected card sticks just under its group's
+   sticky header (or to the foot of the pane when it is further down), so the
+   box the right pane is showing never scrolls out of sight. An uncapped list
+   drops its own box (display: contents) so the card sticks against the whole
+   pane rather than only within its group; a capped list pins inside its own
+   scroll box. The card sits above the headers so a header sliding up passes
+   under it. */
+.s4-root .s4grp__list:not(.is-capped) { display: contents; }
+.s4-root .s4grp__list > .s4pkc.is-active {
+  position: sticky; z-index: 4;
+  top: var(--s4-pin-top, 64px);
+}
+.s4-root .s4grp__list.is-capped > .s4pkc.is-active { top: 3px; }
+
+/* CS-953 #78: the selected card has to be told apart at a glance - a solid
+   teal stripe down its left edge on top of the ring, and a deeper shadow so
+   it reads as lifted above the list it is pinned over. */
+.s4-root .s4pkc.is-active::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
+  background: linear-gradient(180deg, #22d3ee, #0891b2);
+}
+.s4-root .s4pkc.is-active { box-shadow: 0 0 0 3px rgba(8,145,178,.32), 0 16px 30px -12px rgba(8,145,178,.75); }
+.s4-root .s4pkc.is-placed.is-active::before { background: linear-gradient(180deg, #34d399, #059669); }
+.s4-root .s4pkc.is-placed.is-active { box-shadow: 0 0 0 3px rgba(16,185,129,.32), 0 16px 30px -12px rgba(5,150,105,.75); }
+[data-bs-theme="dark"] .s4-root .s4pkc.is-active { box-shadow: 0 0 0 3px rgba(34,211,238,.34), 0 14px 28px -12px rgba(0,0,0,.7); }

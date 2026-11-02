@@ -14,7 +14,7 @@ const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/Ca
 type Shot = { file: File; url: string };
 export type SavedPhoto = { id: number; name: string; path: string; url?: string | null };
 
-import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
+import TemperatureModal, { formatRange, formatRangeShort, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
   EMPTY_IDENTITY, type BoxContent, type ProductIdentity,
 } from './SelectedProducts';
@@ -191,6 +191,11 @@ export default function BoxDrawer({
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
+  // Any remark but Correct Product has to say what was found, and the save
+  // refuses it without one - so the Remarks field says so up front and
+  // Advanced Details opens to show it.
+  const noteRequired = remark !== 'correct';
+  useEffect(() => { if (noteRequired) setAdvOpen(true); }, [noteRequired]);
   // Which Advanced Details field is being edited - it shows its full value.
   const [advFocus, setAdvFocus] = useState<string | null>(null);
   const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>(
@@ -529,6 +534,7 @@ export default function BoxDrawer({
               onQtyChange={onContentQtyChange}
               qtyMaxOf={contentQtyMaxOf}
               remark={boxIdentity.remarks ?? ''}
+              remarkRequired={noteRequired}
               onRemarkChange={v => setBoxIdentity(m => ({ ...m, remarks: v }))}
             />
           )}
@@ -601,11 +607,11 @@ export default function BoxDrawer({
                   {FLAGS.map(f => {
                     const on = flags.includes(f.id);
                     const cold = f.id === 'coldchain';
-                    const label = cold && on && formatRange(temp)
-                      ? `${f.label} · ${formatRange(temp)}`
-                      : f.label;
+                    const range = cold && on ? formatRange(temp) : '';
+                    const label = range ? `${f.label} · ${formatRangeShort(temp)}` : f.label;
                     return (
-                      <button key={f.id} type="button"
+                      <Tooltip key={f.id} label={`Holds ${temp.min} to ${temp.max}°C`} disabled={!range}>
+                      <button type="button"
                         className={`vti-flag-btn ${f.cls}${on ? ' is-active' : ''}`}
                         aria-pressed={on}
                         onClick={() => {
@@ -616,6 +622,7 @@ export default function BoxDrawer({
                         }}>
                         <IcoWarn size={11} stroke={2.5} />{label}
                       </button>
+                      </Tooltip>
                     );
                   })}
                   {visibleCustomFlags.map(f => {
@@ -722,7 +729,7 @@ export default function BoxDrawer({
               <button type="button" className={`vti-dw-adv-toggle${advOpen ? ' is-open' : ''}`}
                 onClick={() => setAdvOpen(o => !o)}>
                 <IcoChevronR size={10} stroke={2.8} className="adv-chev" />
-                Advanced Details<span style={{ fontWeight: 400, opacity: .6 }}>&nbsp;(optional)</span>
+                Advanced Details<span style={{ fontWeight: 400, opacity: .6 }}>&nbsp;{noteRequired ? '(Remarks required)' : '(optional)'}</span>
               </button>
               {advOpen && (
                 <div className="vti-dw-adv-body is-open">
@@ -763,10 +770,11 @@ export default function BoxDrawer({
                     </div>
                     <div className="vti-adv-line2">
                       <div className="vti-dw-field">
-                        <label className="vti-dw-field-lbl">Remarks</label>
+                        <label className="vti-dw-field-lbl">Remarks{noteRequired && <span className="vti-req">*</span>}</label>
                         <input
-                          className="vti-dw-inp" type="text"
-                          placeholder="Any additional notes about this box..."
+                          className={`vti-dw-inp${noteRequired && !(boxIdentity.remarks ?? '').trim() ? ' is-req-empty' : ''}`} type="text"
+                          placeholder={noteRequired ? 'Required - say what was found with this box...' : 'Any additional notes about this box...'}
+                          required={noteRequired}
                           value={boxIdentity.remarks ?? ''}
                           onChange={e => setBoxIdentity(m => ({ ...m, remarks: e.target.value }))}
                         />

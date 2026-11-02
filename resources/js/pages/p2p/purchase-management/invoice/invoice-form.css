@@ -3464,3 +3464,21 @@
   text-align: left;
 }
 [data-bs-theme="dark"] .vti-dw-advanced > .vti-dw-adv-toggle.vti-dw-adv-toggle { color: #7dd3fc; }
+
+/* CS-1141: transparent click shield while a packed box loads for edit -
+   the whole page waits, so no second action can open under the drawer. */
+.vti-edit-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: transparent;
+  cursor: progress;
+}
+
+/* Box Remarks become mandatory once the remark is anything but Correct
+   Product - a red star on the label and an amber edge while still empty. */
+.vti-req { color: #dc2626; font-size: 1.15em; font-weight: 800; margin-left: 2px; line-height: 1; }
+.vti-dw-inp.is-req-empty,
+.vs3-rmk__in.is-req-empty { border-color: #f59e0b !important; background: #fffbeb !important; }
+[data-bs-theme="dark"] .vti-dw-inp.is-req-empty,
+[data-bs-theme="dark"] .vs3-rmk__in.is-req-empty { border-color: rgba(245,158,11,.6) !important; background: rgba(245,158,11,.08) !important; }

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 /* This stage's own stylesheet — 3,547 rules that were 71% of invoice-form.css
@@ -210,23 +210,40 @@ const GROUP_CARDS_SHOWN = 4;
 function BoxGroupList({ count, children }: { count: number; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [cap, setCap] = useState<number | null>(null);
+  // The selected card pins just under its sticky group header, so it needs
+  // that header's height.
+  const [pinTop, setPinTop] = useState(0);
+  useEffect(() => {
+    const hd = ref.current?.previousElementSibling as HTMLElement | null;
+    if (!hd) return;
+    const measure = () => setPinTop(hd.offsetHeight + 8);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(hd);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     const el = ref.current;
     if (!el || count <= GROUP_CARDS_SHOWN) { setCap(null); return; }
+    // Measured card to card, not from the list's own box: until it is capped
+    // the list is display: contents and has no box of its own. The 3 is the
+    // capped list's top padding.
+    const cards = Array.from(el.children).slice(0, GROUP_CARDS_SHOWN) as HTMLElement[];
     const measure = () => {
-      const last = el.children[GROUP_CARDS_SHOWN - 1] as HTMLElement | undefined;
-      if (!last) return;
+      const first = cards[0];
+      const last = cards[GROUP_CARDS_SHOWN - 1];
+      if (!first || !last) return;
       const mb = parseFloat(getComputedStyle(last).marginBottom) || 0;
-      setCap(Math.ceil(last.offsetTop + last.offsetHeight + mb));
+      setCap(Math.ceil(last.getBoundingClientRect().bottom - first.getBoundingClientRect().top + mb + 3));
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    cards.forEach(c => ro.observe(c));
     return () => ro.disconnect();
   }, [count]);
   return (
     <div ref={ref} className={`s4grp__list${cap ? ' is-capped' : ''}`}
-      style={cap ? { maxHeight: cap } : undefined}>
+      style={{ ...(cap ? { maxHeight: cap } : {}), '--s4-pin-top': `${pinTop}px` } as CSSProperties}>
       {children}
     </div>
   );
@@ -1150,6 +1167,32 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
+  const boxListRef = useRef<HTMLDivElement>(null);
+  // CS-953 #78: the selected box is pinned to the top of Pick a Box. Picking
+  // one scrolls it up to sit just under its group header, where the sticky
+  // rule in step4.css holds it while the rest of the list scrolls under.
+  // Only the list's own scroll boxes move, never the page.
+  useEffect(() => {
+    const body = boxListRef.current;
+    if (!body || !selected) return;
+    const frame = requestAnimationFrame(() => {
+      const card = body.querySelector<HTMLElement>(`.s4pkc[data-boxid="${CSS.escape(selected)}"]`);
+      if (!card) return;
+      const list = card.parentElement;
+      const bodyTop = body.getBoundingClientRect().top;
+      if (list?.classList.contains('s4grp__list') && list.classList.contains('is-capped')) {
+        // A long group scrolls itself: card to the top of the group, group
+        // header to the top of the pane.
+        list.scrollTo({ top: list.scrollTop + card.getBoundingClientRect().top - list.getBoundingClientRect().top - 3, behavior: 'smooth' });
+        const hd = list.previousElementSibling as HTMLElement | null;
+        if (hd) body.scrollTo({ top: body.scrollTop + hd.getBoundingClientRect().top - bodyTop, behavior: 'smooth' });
+        return;
+      }
+      const pinTop = parseFloat(list ? getComputedStyle(list).getPropertyValue('--s4-pin-top') : '') || 0;
+      body.scrollTo({ top: body.scrollTop + card.getBoundingClientRect().top - bodyTop - pinTop, behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selected]);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
@@ -1828,7 +1871,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             <div className="s4-panel__collapsed-label">Pick a Box</div>
           </div>
 
-          <div className="s4-panel__body s4-boxlist">
+          <div className="s4-panel__body s4-boxlist" ref={boxListRef}>
             {GROUPS.map(g => {
               const rows = shown.filter(x => x.type === g.key);
               return (
@@ -2035,6 +2078,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       remark={products[0]?.remark && products[0].remark !== 'Not marked' ? products[0].remark : null}
                       condition={CONDITION_LABEL[box.condition] ?? null}
                       flags={boxFlagNames}
+                      coldRange={rawBox && rawBox.temp_min_c != null && rawBox.temp_max_c != null
+                        ? { min: String(rawBox.temp_min_c), max: String(rawBox.temp_max_c) } : null}
                       stackable={box.stackable}
                       products={products}
                       totalQty={box.qty}

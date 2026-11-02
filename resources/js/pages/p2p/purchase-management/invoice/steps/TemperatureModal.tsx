@@ -27,6 +27,20 @@ export const TEMP_PRESETS = [
 export const formatRange = (r: TempRange) =>
   r.min !== '' && r.max !== '' ? `${r.min}…${r.max}°C` : '';
 
+/** Keeps the first four digits of a limit and marks the cut, so a long figure
+ *  cannot stretch the chip. The full range goes in the chip's tooltip. */
+const clipDigits = (v: string) => {
+  let digits = 0;
+  for (let i = 0; i < v.length; i++) {
+    if (/\d/.test(v[i]) && ++digits === 4) return i + 1 < v.length ? `${v.slice(0, i + 1)}…` : v;
+  }
+  return v;
+};
+
+/** The chip's own short form of the range: "2.00 to 8.00°C". */
+export const formatRangeShort = (r: TempRange) =>
+  r.min !== '' && r.max !== '' ? `${clipDigits(r.min)} to ${clipDigits(r.max)}°C` : '';
+
 /**
  * Temperature Range — opened by the Cold Chain flag.
  *

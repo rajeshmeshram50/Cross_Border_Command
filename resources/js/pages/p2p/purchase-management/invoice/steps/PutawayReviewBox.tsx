@@ -19,6 +19,8 @@ import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { IcoBox, IcoLines, IcoCheck, IcoTag } from '../../../icons';
 import { putId } from '../spi-api';
+import Tooltip from '../../../../../components/ui/Tooltip';
+import { formatRangeShort, type TempRange } from './TemperatureModal';
 
 export interface ReviewProduct {
   code: string;
@@ -96,19 +98,25 @@ function flagTone(name: string): { cls: string; ico: ReactNode } {
    same bargain the packing step makes with "+N more". */
 const FLAGS_SHOWN = 4;
 
-function FlagChip({ name }: { name: string }) {
+/* Cold Chain carries its band, as the packing step shows it - cut short on
+   the chip, whole in the tooltip. */
+function FlagChip({ name, temp }: { name: string; temp?: TempRange | null }) {
   const tone = flagTone(name);
-  return <span className={`s4rv-flag${tone.cls}`}>{tone.ico}{titleCase(name)}</span>;
+  const range = temp && name.trim().toLowerCase() === 'cold chain' ? formatRangeShort(temp) : '';
+  const chip = (
+    <span className={`s4rv-flag${tone.cls}`}>{tone.ico}{titleCase(name)}{range && ` · ${range}`}</span>
+  );
+  return range ? <Tooltip label={`Holds ${temp!.min} to ${temp!.max}°C`}>{chip}</Tooltip> : chip;
 }
 
-function FlagRow({ flags }: { flags: string[] }) {
+function FlagRow({ flags, temp }: { flags: string[]; temp?: TempRange | null }) {
   const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   const shown = flags.slice(0, FLAGS_SHOWN);
   const hidden = flags.slice(FLAGS_SHOWN);
 
   return (
     <>
-      {shown.map(f => <FlagChip key={f} name={f} />)}
+      {shown.map(f => <FlagChip key={f} name={f} temp={temp} />)}
       {hidden.length > 0 && (
         <button
           type="button"
@@ -223,7 +231,7 @@ function Field({ label, unit, value, auto }: {
 
 export default function PutawayReviewBox({
   boxId, sectionKey, sectionLabel, scenarioNo, scenarioText, modeLabel,
-  packedOn, done, core, remark, condition, flags, stackable,
+  packedOn, done, core, remark, condition, flags, stackable, coldRange = null,
   products, totalQty, note, onSticker, onNext, nextDisabled = false,
 }: {
   boxId: string;
@@ -244,6 +252,8 @@ export default function PutawayReviewBox({
   remark: string | null;
   condition: string | null;
   flags: string[];
+  /** The box's cold-chain band, shown on the Cold Chain chip. */
+  coldRange?: TempRange | null;
   stackable: boolean | null;
   products: ReviewProduct[];
   totalQty: number;
@@ -339,7 +349,7 @@ export default function PutawayReviewBox({
             <span className="s4rv-mark__lbl">Product Flags</span>
             <span className="s4rv-flagwrap">
               {flags.length
-                ? <FlagRow flags={flags} />
+                ? <FlagRow flags={flags} temp={coldRange} />
                 : <span className="s4rv-napill">NA</span>}
               {/* The switch reads as one control with its label inside, the
                   way the packing step shows it — not a loose toggle next to

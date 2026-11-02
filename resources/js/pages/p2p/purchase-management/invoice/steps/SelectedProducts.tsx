@@ -65,13 +65,15 @@ const ADV_COLUMNS: IdentityColumn[] = [
 
 function SelectedProducts({
   rows, identities, onIdentityChange, onRemove, onClear, onQtyChange, qtyMaxOf,
-  remark, onRemarkChange,
+  remark, onRemarkChange, remarkRequired = false,
 }: {
   rows: BoxContent[];
   /* The box's note. It belongs to the carton rather than to any row, but it
      sits in THIS card because it is read along with the contents — given a
      card of its own it looked like a second box's worth of detail. */
   remark?: string;
+  /** Any remark but Correct Product needs a note - shown as mandatory. */
+  remarkRequired?: boolean;
   onRemarkChange?: (value: string) => void;
   onQtyChange?: (code: string, qty: number) => void;
   /** Ceiling for a row's stepper. Defaults to the line's whole SPI quantity,
@@ -156,13 +158,14 @@ function SelectedProducts({
         <div className="vs3-rmk">
           <div className="vs3-rmk__hd">
             <span className="vs3-rmk__ico">{IcoNote}</span>
-            Box Remark
+            Box Remark{remarkRequired && <span className="vti-req">*</span>}
           </div>
           <div className="vs3-rmk__body">
             <input
-              className="vs3-rmk__in"
+              className={`vs3-rmk__in${remarkRequired && !(remark ?? '').trim() ? ' is-req-empty' : ''}`}
               type="text"
-              placeholder="Any additional notes about this box…"
+              required={remarkRequired}
+              placeholder={remarkRequired ? 'Required - say what was found with this box…' : 'Any additional notes about this box…'}
               value={remark ?? ''}
               onChange={e => onRemarkChange(e.target.value)}
             />

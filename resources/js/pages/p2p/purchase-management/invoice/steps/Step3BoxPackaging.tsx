@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { IcoBox, IcoCheck, IcoChevron, IcoLock, IcoShip } from '../../../icons';
 import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -722,8 +723,7 @@ export default function Step3BoxPackaging({
     }
     if (onLoadBox) {
       setLoadingEdit(box.box_code);
-      await onLoadBox(box.id);
-      setLoadingEdit(null);
+      try { await onLoadBox(box.id); } finally { setLoadingEdit(null); }
     }
     setDropped([]);
     setEditQty(null);
@@ -1239,6 +1239,14 @@ export default function Step3BoxPackaging({
         editingBoxId={editingBox?.box_code ?? null}
         lockedCodes={boxes.filter(isPlaced).map(b => b.box_code)}
       />
+
+      {/* CS-1141: while a box loads for edit nothing else on the page takes a
+          click - a sticker, another box or a stage tab opened in that wait
+          came up together with the edit drawer. */}
+      {loadingEdit && createPortal(
+        <div className="vti-edit-shield" aria-busy="true" aria-label={`Opening ${putId(loadingEdit)}`} />,
+        document.body,
+      )}
     </StickerApiContext.Provider>
   );
 }
