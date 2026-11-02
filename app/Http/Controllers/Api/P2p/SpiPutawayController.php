@@ -64,7 +64,7 @@ class SpiPutawayController extends Controller
             $full = $this->isFullPutaway($spi->warehouse_id);
 
             $rows = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->get()
-                ->map(fn ($p) => $p->toArray() + [
+                ->map(fn($p) => $p->toArray() + [
                     'box_code'         => $p->box?->box_code,
                     'next_scan'        => $p->nextScan($full),
                     'ready_to_confirm' => $p->isReadyToConfirm($full),
@@ -90,7 +90,6 @@ class SpiPutawayController extends Controller
 
     /* ══════════════════════════ WRITE ══════════════════════════ */
 
-    /** PUT /p2p/spi/{id}/storage-type — step 1 of the screen: choose the warehouse. */
     public function setStorageType(Request $request, int $id)
     {
         try {
@@ -98,7 +97,35 @@ class SpiPutawayController extends Controller
 
             $this->tenantUser($request);
             $spi  = $this->findSpi($id);
-            $data = $request->validate(['warehouse_id' => ['required', 'integer']]);
+            $data = $request->validate(['warehouse_id' => ['present', 'nullable', 'integer']]);
+
+            if (!$spi->isEditable()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is {$spi->status} and can no longer be edited.",
+                ], 422));
+            }
+            if ((int) $spi->stage_completed >= 3 || $spi->putaways()->exists()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "Stage 03 of {$spi->code} is complete — the warehouse is fixed for putaway.",
+                ], 422));
+            }
+
+            if ($data['warehouse_id'] === null) {
+                $old = $spi->warehouse_id;
+                $spi->forceFill(['warehouse_id' => null])->save();
+                if ($old) $this->svc->log($spi, 'storage_type_set', ['new_value' => 'Third Party Warehouse', 'stage' => (int) $spi->stage_completed]);
+
+                DB::commit();
+
+                return response()->json(['status' => true, 'data' => [
+                    'warehouse_id' => null,
+                    'wh_name' => null,
+                    'wh_type' => 'third_party',
+                    'putaway_mode' => 'summary',
+                ]], 200);
+            }
 
             /* Scoped to the invoice's client AND BRANCH: an id alone is not
                proof of ownership, and this column has no foreign key behind it.
@@ -112,7 +139,7 @@ class SpiPutawayController extends Controller
             $wh = DB::table('inventory_warehouses')
                 ->where('id', $data['warehouse_id'])
                 ->where('client_id', $spi->client_id)
-                ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $spi->branch_id))
+                ->where(fn($w) => $w->whereNull('branch_id')->orWhere('branch_id', $spi->branch_id))
                 ->first();
             if (!$wh) {
                 abort(response()->json(['status' => false, 'message' => 'That warehouse does not exist.'], 422));
@@ -126,7 +153,7 @@ class SpiPutawayController extends Controller
             }
 
             $spi->forceFill(['warehouse_id' => $data['warehouse_id']])->save();
-            $this->svc->log($spi, 'storage_type_set', ['new_value' => $wh->wh_name, 'stage' => 4]);
+            $this->svc->log($spi, 'storage_type_set', ['new_value' => $wh->wh_name, 'stage' => (int) $spi->stage_completed]);
 
             DB::commit();
 
@@ -178,12 +205,19 @@ class SpiPutawayController extends Controller
         if ($data['scan_type'] === 'box' && !$box) {
             $value = $data['scanned_value'];
 
-            $this->refuse($spi, $data, $user,
+            $this->refuse(
+                $spi,
+                $data,
+                $user,
                 $other ? 'wrong_spi' : 'unknown_code',
                 $other
                     ? "{$value} is box {$other->box_code} on " . ($other->invoice?->code ?: 'another invoice') . '.'
                     : "No box matches {$value}.",
-                null, null, null, $other?->id);
+                null,
+                null,
+                null,
+                $other?->id
+            );
         }
 
         if (!$box) {
@@ -198,9 +232,16 @@ class SpiPutawayController extends Controller
         }
 
         if ($next !== $data['scan_type']) {
-            $this->refuse($spi, $data, $user, 'out_of_order',
+            $this->refuse(
+                $spi,
+                $data,
+                $user,
+                'out_of_order',
                 'Scan the ' . ($next ?? 'nothing — the chain is complete') . ' before the ' . $data['scan_type'] . '.',
-                $box, $row, $next);
+                $box,
+                $row,
+                $next
+            );
         }
 
         /* Resolve WHERE the scan points, not just that it happened. Without
@@ -208,14 +249,19 @@ class SpiPutawayController extends Controller
            one thing Stage 04 exists to capture. */
         $place = $this->resolveLocation($data['scan_type'], $data['scanned_value'], $spi, $row);
         if (is_string($place)) {
-            $this->refuse($spi, $data, $user,
+            $this->refuse(
+                $spi,
+                $data,
+                $user,
                 $place === 'inactive' ? 'inactive_location' : ($place === 'not_on_rack' ? 'shelf_not_on_rack' : 'unknown_code'),
                 match ($place) {
                     'inactive'    => "{$data['scanned_value']} is not active — pick another location.",
                     'not_on_rack' => "{$data['scanned_value']} is not on the rack you scanned.",
                     default       => "No {$data['scan_type']} matches {$data['scanned_value']}.",
                 },
-                $box, $row);
+                $box,
+                $row
+            );
         }
 
         // ── Accepted ──
@@ -236,7 +282,9 @@ class SpiPutawayController extends Controller
 
             $this->logScan($spi, $data, $user, 'success', null, null, $box, $row);
             $this->svc->log($spi, $data['scan_type'] . '_scanned', [
-                'box_id' => $box->id, 'new_value' => $data['scanned_value'], 'stage' => 4,
+                'box_id' => $box->id,
+                'new_value' => $data['scanned_value'],
+                'stage' => 4,
             ]);
 
             $row->refresh();
@@ -284,8 +332,10 @@ class SpiPutawayController extends Controller
             ])->save();
 
             $this->svc->log($spi, 'putaway_confirmed', [
-                'box_id' => $row->box_id, 'new_value' => $row->destination,
-                'note'   => $data['note'] ?? null, 'stage' => 4,
+                'box_id' => $row->box_id,
+                'new_value' => $row->destination,
+                'note'   => $data['note'] ?? null,
+                'stage' => 4,
             ]);
 
             $row->refresh();
@@ -468,8 +518,14 @@ class SpiPutawayController extends Controller
      * is why no transaction is open around the refusal path.
      */
     private function refuse(
-        SupplierInvoice $spi, array $data, $user, string $reason, string $message,
-        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null,
+        SupplierInvoice $spi,
+        array $data,
+        $user,
+        string $reason,
+        string $message,
+        ?SpiBox $box = null,
+        ?SpiPutaway $row = null,
+        ?string $expected = null,
         ?int $resolvedId = null
     ): never {
         $this->logScan($spi, $data, $user, 'failed', $reason, $message, $box, $row, $expected, $resolvedId);
@@ -484,9 +540,15 @@ class SpiPutawayController extends Controller
      * the box belonged here, while resolved_id keeps the evidence.
      */
     private function logScan(
-        SupplierInvoice $spi, array $data, $user, string $result,
-        ?string $reason = null, ?string $message = null,
-        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null,
+        SupplierInvoice $spi,
+        array $data,
+        $user,
+        string $result,
+        ?string $reason = null,
+        ?string $message = null,
+        ?SpiBox $box = null,
+        ?SpiPutaway $row = null,
+        ?string $expected = null,
         ?int $resolvedId = null
     ): void {
         SpiScanLog::create([

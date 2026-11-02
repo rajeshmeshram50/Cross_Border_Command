@@ -539,6 +539,11 @@ export const spiApi = {
           addedOn: w.created_at ?? undefined,
         }))),
 
+  /** Change the invoice's warehouse; null is a Third Party warehouse. Refused once Stage 03 is complete. */
+  setWarehouse: (spiId: number, warehouseId: number | null) =>
+    call('SPI warehouse', () => api.put(`/p2p/spi/${spiId}/storage-type`, { warehouse_id: warehouseId }),
+      (b) => (b as { data?: { warehouse_id: number | null; wh_name: string | null } } | null)?.data ?? null),
+
   warehouseDetail: (id: number) =>
     call('Warehouse', () => api.get(`/inventory/warehouses/${id}`), (b) => {
       const d = (b as { data?: WarehouseDetail } | null)?.data ?? null;
