@@ -111,8 +111,8 @@ export default function HrHoliday() {
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('All');
-  const [yearFilter, setYearFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [yearFilter, setYearFilter] = useState<string[]>([]);
   /* A list, because the popup allows more than one group (QA 8). Empty is
      this filter's way of saying All. */
   const [groupFilter, setGroupFilter] = useState<string[]>([]);
@@ -120,8 +120,7 @@ export default function HrHoliday() {
   // Leave Management pattern. Three selects were the whole reason this
   // toolbar could not hold a single line.
   const [filterOpen, setFilterOpen] = useState(false);
-  const activeFilterCount = groupFilter.length
-    + [typeFilter, yearFilter].filter(v => v !== 'All').length;
+  const activeFilterCount = groupFilter.length + typeFilter.length + yearFilter.length;
 
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState<number>(() => {
@@ -162,8 +161,8 @@ export default function HrHoliday() {
           page: page + 1,
           per_page: perPage,
           ...(search.trim() ? { search: search.trim() } : {}),
-          ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
-          ...(yearFilter !== 'All' ? { year: yearFilter } : {}),
+          ...(typeFilter.length ? { type: typeFilter.join(',') } : {}),
+          ...(yearFilter.length ? { year: yearFilter.join(',') } : {}),
           ...(groupFilter.length ? { holiday_group_id: groupFilter.join(',') } : {}),
         },
       });
@@ -181,7 +180,7 @@ export default function HrHoliday() {
       if (token === reqRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, search, typeFilter, yearFilter, groupFilter.join(',')]);
+  }, [page, perPage, search, typeFilter.join(','), yearFilter.join(','), groupFilter.join(',')]);
 
   const refreshAll = () => { fetchGroups(); fetchHolidays(); };
 
@@ -568,7 +567,7 @@ export default function HrHoliday() {
               emptyMessage={
                 <>
                   <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {(search.trim() || typeFilter !== 'All' || yearFilter !== 'All' || groupFilter.length)
+                  {(search.trim() || typeFilter.length || yearFilter.length || groupFilter.length)
                     ? 'No holidays match your filters'
                     : 'No holidays yet — click Add Holiday or Import Excel to get started'}
                 </>
@@ -1045,7 +1044,7 @@ function ManageGroupsModal({
 type HolidayFacetKey = 'group' | 'type' | 'year';
 /* `group` is a list — that facet allows several groups at once (QA 8);
    type and year stay single-select. */
-export type HolidayFilterValues = { group: string[]; type: string; year: string };
+export type HolidayFilterValues = { group: string[]; type: string[]; year: string[] };
 
 const HOLIDAY_FACET_ICONS: Record<HolidayFacetKey, ReactNode> = {
   group: (
@@ -1116,17 +1115,18 @@ export function HolidayFilterModal({
       // Drop any 'All' sentinel — an empty selection already means All.
       .filter(o => o.value !== 'All');
 
-  const isMulti = (k: HolidayFacetKey) => k === 'group';
-  /* Each picked value counts, the way every other filter popup counts. */
-  const facetCount = (k: HolidayFacetKey) =>
-    isMulti(k) ? draft.group.length : (draft[k] !== 'All' ? 1 : 0);
+  // All three facets are multi-select now — an empty array means "All", so a
+  // facet nobody touched counts 0 (no stray "1 selected" badge).
+  const facetCount = (k: HolidayFacetKey) => draft[k].length;
   const selectedCount = FACETS.reduce((n, f) => n + facetCount(f.key), 0);
-  const isChecked = (value: string) =>
-    isMulti(active) ? draft.group.includes(value) : draft[active] === value;
-  // Re-clicking a chosen option clears it: back to All, or out of the list.
-  const pick = (value: string) => setDraft(prev => isMulti(active)
-    ? { ...prev, group: prev.group.includes(value) ? prev.group.filter(v => v !== value) : [...prev.group, value] }
-    : { ...prev, [active]: prev[active] === value ? 'All' : value });
+  const isChecked = (value: string) => draft[active].includes(value);
+  // Re-clicking a chosen option removes it from the selection.
+  const pick = (value: string) => setDraft(prev => ({
+    ...prev,
+    [active]: prev[active].includes(value)
+      ? prev[active].filter(v => v !== value)
+      : [...prev[active], value],
+  }));
 
   const currentList = optsFor(active);
   const searched = search.trim()
@@ -1135,7 +1135,7 @@ export function HolidayFilterModal({
 
   const onApplyClick = () => { onApply(draft); onClose(); };
   const onReset = () => {
-    const cleared: HolidayFilterValues = { group: [], type: 'All', year: 'All' };
+    const cleared: HolidayFilterValues = { group: [], type: [], year: [] };
     setDraft(cleared);
     onApply(cleared);
   };
@@ -1214,13 +1214,13 @@ export function HolidayFilterModal({
                   return (
                     <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
                       <input
-                        type={isMulti(active) ? 'checkbox' : 'radio'}
+                        type="checkbox"
                         name={`holiday-facet-${active}`}
                         checked={checked}
                         readOnly
                         onClick={() => pick(opt.value)}
                       />
-                      <span className={`lfm-check ${isMulti(active) ? '' : 'lfm-check-round'}`} aria-hidden="true">
+                      <span className="lfm-check" aria-hidden="true">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
