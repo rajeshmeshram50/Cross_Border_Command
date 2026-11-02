@@ -304,7 +304,10 @@ export default function InvoiceForm({
                   gst: Number(it.gst_pct) || 0,
                 };
               }));
-              setRemovedLines([]);
+              const billed = new Set(existing.items.map(it =>
+                ((it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id))?.pi_item_id));
+              const fromPi = rowsFromPi(pi);
+              setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
             } else if (existing.shipment_order_id) {
               const pi = await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => []);
               if (!live) return;
@@ -434,7 +437,7 @@ export default function InvoiceForm({
     setLines(ls => {
       const out = [...ls];
       for (const r of [...removedLines].sort((a, b) => a.at - b.at)) {
-        out.splice(Math.min(r.at, out.length), 0, r.line);
+        out.splice(Math.min(r.at, out.length), 0, { ...r.line, spiItemId: undefined });
       }
       return out;
     });
@@ -726,7 +729,6 @@ export default function InvoiceForm({
         ? { ...l, spiItemId: saved[n++]?.id }
         : { ...l, spiItemId: undefined }));
       setLines(withIds);
-      setRemovedLines([]);
       setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
       setFiles({});
       if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
