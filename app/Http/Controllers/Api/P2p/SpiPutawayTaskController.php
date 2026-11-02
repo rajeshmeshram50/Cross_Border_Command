@@ -675,13 +675,17 @@ class SpiPutawayTaskController extends Controller
             : DB::table('scan_devices')->whereIn('id', $devs)->get(['id', 'serial', 'label'])->keyBy('id');
 
         $timeline = $log->map(function (PutawayActivityLog $l) use ($names, $devs) {
-            $dev = $l->device_id ? $devs->get($l->device_id) : null;
+            $dev  = $l->device_id ? $devs->get($l->device_id) : null;
+            $meta = is_array($l->meta) ? $l->meta : [];
             return [
                 'id'           => (int) $l->id,
                 'at'           => optional($l->created_at)->toIso8601String(),
                 'event'        => $l->event,
                 'ok'           => $l->event !== PutawayActivityLog::SCAN_FAILED,
-                'reason_label' => $this->refusalLabel(is_array($l->meta) ? ($l->meta['reason'] ?? null) : null),
+                'reason_label' => $this->refusalLabel($meta['reason'] ?? null),
+                // Which leg was scanned (box / shelf / zone / rack), so the log
+                // can name what was verified instead of a bare "Scan verified".
+                'slot'         => $meta['slot'] ?? null,
                 'location'     => $this->locationText($l->to_location),
                 'actor'        => $l->actor_id ? $names->get($l->actor_id) : null,
                 'device'       => $dev ? ($dev->label ?: $dev->serial) : null,

@@ -407,6 +407,8 @@ export type PutawayLogRow = {
   event: string;
   ok: boolean;
   reason_label: string | null;
+  /** Which leg was scanned — box / shelf / zone / rack — for the log label. */
+  slot: string | null;
   location: string | null;
   actor: string | null;
   device: string | null;
