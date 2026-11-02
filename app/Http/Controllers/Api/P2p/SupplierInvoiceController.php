@@ -1722,6 +1722,24 @@ class SupplierInvoiceController extends Controller
             ], 422));
         }
 
+        /* The chosen warehouse must be able to hold the boxes just packed —
+           a cold-chain or hazardous box needs a zone that allows it, and the
+           warehouse was picked at Stage 01 before any box had a flag. Blocked
+           here (not only when the warehouse is edited) because the move into
+           putaway is the last point before it is fixed. Third Party (null) has
+           no zones and takes a summary putaway, so it is never checked. */
+        $missing = app(\App\Services\Inventory\WarehouseCapabilityService::class)
+            ->missingFor($spi->id, $spi->warehouse_id ? (int) $spi->warehouse_id : null);
+        if ($missing) {
+            abort(response()->json([
+                'status'                 => false,
+                'message'                => 'The selected warehouse has no ' . implode(' and ', $missing)
+                    . " — the boxes on {$spi->code} need it. Change the warehouse before moving to putaway.",
+                'warehouse_incompatible' => true,
+                'missing'                => $missing,
+            ], 422));
+        }
+
         /* The box saves already moved the column — this endpoint exists so
            Next has something to await and something to be refused by, not
            because the stamp depends on it. Same rule either way. */

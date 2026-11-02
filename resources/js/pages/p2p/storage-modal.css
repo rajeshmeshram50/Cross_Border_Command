@@ -562,6 +562,19 @@
 .smod-wh-area b { font-size: 12.5px; font-weight: 800; color: #0F2A38; letter-spacing: -.2px; }
 .smod-wh-dash { color: #cbd5e1; font-weight: 700; }
 
+/* A warehouse with no zone for these boxes' cold-chain / hazardous needs —
+   shown so the user sees why it is out, but not selectable. */
+.smod-req-note {
+  margin: 0 0 12px 14px; padding: 8px 11px; border-radius: 9px;
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+  font-size: 11px; font-weight: 600; line-height: 1.45;
+}
+.smod-wh-row.is-blocked { opacity: .62; cursor: not-allowed; }
+.smod-wh-row.is-blocked:hover { background: transparent; }
+.smod-wh-block { display: inline-flex; align-items: center; gap: 4px; color: #dc2626; font-weight: 700; }
+[data-bs-theme="dark"] .smod-req-note { background: rgba(249,115,22,.12); border-color: rgba(251,146,60,.4); color: #fdba74; }
+[data-bs-theme="dark"] .smod-wh-block { color: #f87171; }
+
 /* "Own Warehouse", not a liveness light: the badge says whose building it is.
    The dot the old badge drew belonged to a status this row never carried. */
 .smod-wh-badge { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; text-transform: none; letter-spacing: .2px; font-size: 10px; padding: 4px 10px; }

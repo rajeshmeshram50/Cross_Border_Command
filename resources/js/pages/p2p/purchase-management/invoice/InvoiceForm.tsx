@@ -27,7 +27,7 @@ import SupplierDocsNoticeModal, { type SupplierDocsNotice } from '../order/creat
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
+import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
@@ -181,6 +181,9 @@ export default function InvoiceForm({
      until Stage 03 is complete. */
   const [storage, setStorage] = useState<StorageChoice>(input.storage);
   const [whEdit, setWhEdit] = useState<{ list: StorageWarehouse[]; state: 'loading' | 'ready' | 'failed' } | null>(null);
+  /* Cold-chain / hazardous capability of each warehouse for this invoice's
+     boxes — greys out incompatible ones in the picker and gates the move. */
+  const [eligibility, setEligibility] = useState<WarehouseEligibility | null>(null);
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -457,6 +460,8 @@ export default function InvoiceForm({
   const openWhEdit = () => {
     if (whLocked) return;
     setWhEdit({ list: [], state: 'loading' });
+    // Refresh capability so incompatible warehouses are greyed out live.
+    if (spiId) spiApi.warehouseEligibility(spiId).then(setEligibility).catch(() => { /* picker just won't grey — the guard still holds */ });
     spiApi.warehouses()
       .then(list => setWhEdit(w => (w ? { list, state: 'ready' } : w)))
       .catch(() => setWhEdit(w => (w ? { ...w, state: 'failed' } : w)));
@@ -924,6 +929,29 @@ export default function InvoiceForm({
     if (!spiId || saving) return;
     setSaving(true);
     try {
+      /* The warehouse must be able to hold the boxes before putaway — a
+         cold-chain / hazardous box needs a zone that allows it, and the
+         warehouse was picked at Stage 01 before any box had a flag. */
+      const elig = await spiApi.warehouseEligibility(spiId);
+      setEligibility(elig);
+      const curWh = savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null);
+      const missing = curWh ? (elig.warehouses[String(curWh)]?.missing ?? []) : [];
+      if (curWh && missing.length) {
+        setSaving(false);
+        const change = await confirm({
+          title: 'Warehouse can’t hold these boxes',
+          tone: 'warning',
+          icon: 'alert-line',
+          message: (
+            <>This invoice has boxes that need <b>{missing.map(m => m.replace(/^a /, '')).join(' and ')}</b>,
+              but the selected warehouse has none. Switch to a warehouse with the right zone before moving to putaway.</>
+          ),
+          confirmLabel: 'Change warehouse',
+          cancelLabel: 'Not now',
+        });
+        if (change) openWhEdit();
+        return;
+      }
       await spiApi.completeStage3(spiId);
       advance();
     } catch (e) {
@@ -1275,6 +1303,7 @@ export default function InvoiceForm({
             referenceKind={isDirect ? 'supplier' : 'po'}
             warehouses={whEdit.list}
             warehousesState={whEdit.state}
+            eligibility={eligibility}
             onClose={() => setWhEdit(null)}
             onNext={saveWarehouse}
           />

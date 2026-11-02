@@ -8,6 +8,7 @@ use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SpiScanLog;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\Inventory\StickerKey;
+use App\Services\Inventory\WarehouseCapabilityService;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +30,10 @@ use Illuminate\Validation\Rule;
  */
 class SpiPutawayController extends Controller
 {
-    public function __construct(private SupplierInvoiceService $svc) {}
+    public function __construct(
+        private SupplierInvoiceService $svc,
+        private WarehouseCapabilityService $capability,
+    ) {}
 
     private function tenantUser(Request $request)
     {
@@ -152,6 +156,19 @@ class SpiPutawayController extends Controller
                 ], 422));
             }
 
+            // Cold-chain / hazardous boxes need a warehouse with a zone that
+            // allows it — the putaway would otherwise have nowhere to land.
+            $missing = $this->capability->missingFor($spi->id, (int) $wh->id);
+            if ($missing) {
+                abort(response()->json([
+                    'status'                 => false,
+                    'message'                => "{$wh->wh_name} has no " . implode(' and ', $missing)
+                        . " — the boxes on {$spi->code} need it. Pick a warehouse that has it.",
+                    'warehouse_incompatible' => true,
+                    'missing'                => $missing,
+                ], 422));
+            }
+
             $spi->forceFill(['warehouse_id' => $data['warehouse_id']])->save();
             $this->svc->log($spi, 'storage_type_set', ['new_value' => $wh->wh_name, 'stage' => (int) $spi->stage_completed]);
 
@@ -172,6 +189,46 @@ class SpiPutawayController extends Controller
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * GET /p2p/spi/{id}/warehouse-eligibility
+     *
+     * What this invoice's boxes require (cold-chain / hazardous) and, for every
+     * own warehouse in scope, whether it can hold them. Drives the change-
+     * warehouse picker: incompatible warehouses are shown with the reason, and
+     * the Stage 03 -> 04 move is blocked until a compatible one is set.
+     */
+    public function warehouseEligibility(Request $request, int $id)
+    {
+        $this->tenantUser($request);
+        $spi = $this->findSpi($id);
+
+        $required = $this->capability->requiredFor($spi->id);
+
+        $warehouseIds = DB::table('inventory_warehouses')
+            ->where('client_id', $spi->client_id)
+            ->where('wh_type', 'own')
+            ->where('status', 1)
+            ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $spi->branch_id))
+            ->pluck('id');
+
+        $warehouses = [];
+        foreach ($warehouseIds as $wid) {
+            $have    = $this->capability->capabilitiesOf((int) $wid);
+            $missing = $this->capability->missingGiven($required, (int) $wid);
+            $warehouses[(string) $wid] = [
+                'cold_chain' => $have['cold_chain'],
+                'hazardous'  => $have['hazardous'],
+                'compatible' => empty($missing),
+                'missing'    => $missing,
+            ];
+        }
+
+        return response()->json(['status' => true, 'data' => [
+            'required'   => $required,
+            'warehouses' => $warehouses,
+        ]], 200);
     }
 
     /**

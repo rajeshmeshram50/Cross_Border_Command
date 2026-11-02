@@ -8,7 +8,16 @@ import {
 } from '../../icons';
 import { formatDmy } from '../../../../utils/formatDmy';
 import type { StorageWarehouse } from './types';
+import type { WarehouseEligibility } from './spi-api';
 import '../../storage-modal.css';
+
+/** "No cold-chain zone / hazardous-goods zone" for an incompatible warehouse,
+ *  or null when it can hold this invoice's boxes (or eligibility is unknown). */
+const whBlockReason = (elig: WarehouseEligibility | null | undefined, apiId: number | undefined): string | null => {
+  const e = apiId == null ? undefined : elig?.warehouses[String(apiId)];
+  if (!e || e.compatible) return null;
+  return 'No ' + e.missing.map(m => m.replace(/^a /, '')).join(' / ');
+};
 
 export type StorageType = 'own' | 'third-party';
 
@@ -25,12 +34,14 @@ const STORAGE_LABEL: Record<StorageType, string> = {
 };
 
 export default function StorageSelectionModal({
-  reference, referenceKind, warehouses, warehousesState = 'ready', onClose, onNext,
+  reference, referenceKind, warehouses, warehousesState = 'ready', eligibility = null, onClose, onNext,
 }: {
   reference: string;
   referenceKind: 'po' | 'supplier';
   warehouses: StorageWarehouse[];
   warehousesState?: 'idle' | 'loading' | 'ready' | 'failed';
+  /** Cold/haz capability per warehouse; incompatible ones are shown disabled. */
+  eligibility?: WarehouseEligibility | null;
   onClose: () => void;
   onNext: (choice: StorageChoice) => void | boolean | Promise<boolean | void>;
 }) {
@@ -44,7 +55,14 @@ export default function StorageSelectionModal({
 
   const skipsWarehouse = type === 'third-party';
 
-  const canAdvance = step === 1 ? !!type : step === 2 ? !!warehouseId : true;
+  // An incompatible warehouse can't be advanced even if somehow selected.
+  const selectedBlocked = warehouse ? whBlockReason(eligibility, warehouse.apiId) : null;
+  const reqLabels = [
+    eligibility?.required.cold_chain ? 'cold-chain' : null,
+    eligibility?.required.hazardous ? 'hazardous' : null,
+  ].filter(Boolean) as string[];
+
+  const canAdvance = step === 1 ? !!type : step === 2 ? (!!warehouseId && !selectedBlocked) : true;
 
   const [leaving, setLeaving] = useState(false);
 
@@ -160,11 +178,18 @@ export default function StorageSelectionModal({
             Choose the warehouse where this invoice&rsquo;s goods will be temporarily staged.
           </div>
 
+          {reqLabels.length > 0 && (
+            <div className="smod-req-note">
+              These boxes need {reqLabels.join(' & ')} storage — only warehouses with the right zone can be selected.
+            </div>
+          )}
+
           <WarehousePicker
             warehouses={warehouses}
             state={warehousesState}
             value={warehouseId}
             onChange={setWarehouseId}
+            eligibility={eligibility}
           />
         </div>
         )}
@@ -269,21 +294,26 @@ const sqft = (n?: number) =>
   n == null ? null : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 
 function WarehouseRow({
-  warehouse: w, selected, onSelect,
+  warehouse: w, selected, onSelect, blockedReason = null,
 }: {
   warehouse: StorageWarehouse;
   selected: boolean;
   onSelect: () => void;
+  /** Set when the warehouse can't hold these boxes — row is disabled. */
+  blockedReason?: string | null;
 }) {
   const area = sqft(w.areaSqft);
+  const blocked = !!blockedReason;
   return (
     <div
-      className={`smod-wh-row${selected ? ' is-selected' : ''}`}
-      onClick={onSelect}
+      className={`smod-wh-row${selected ? ' is-selected' : ''}${blocked ? ' is-blocked' : ''}`}
+      onClick={() => { if (!blocked) onSelect(); }}
       role="option"
       aria-selected={selected}
-      tabIndex={0}
+      aria-disabled={blocked}
+      tabIndex={blocked ? -1 : 0}
       onKeyDown={e => {
+        if (blocked) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
       }}
     >
@@ -302,19 +332,22 @@ function WarehouseRow({
         {w.kind === 'tpl' ? 'Third Party' : 'Own Warehouse'}
       </span>
       <span className="smod-wh-area">
-        {area ? <><b>{area}</b> Sq. Ft</> : <span className="smod-wh-dash">—</span>}
+        {blocked
+          ? <span className="smod-wh-block"><IcoX size={11} stroke={2.6} /> {blockedReason}</span>
+          : area ? <><b>{area}</b> Sq. Ft</> : <span className="smod-wh-dash">—</span>}
       </span>
     </div>
   );
 }
 
 function WarehousePicker({
-  warehouses, state, value, onChange,
+  warehouses, state, value, onChange, eligibility,
 }: {
   warehouses: StorageWarehouse[];
   state: 'idle' | 'loading' | 'ready' | 'failed';
   value: string | null;
   onChange: (id: string) => void;
+  eligibility?: WarehouseEligibility | null;
 }) {
   const [open, setOpen] = useState(false);
   const picked = warehouses.find(w => w.id === value) ?? null;
@@ -411,14 +444,18 @@ function WarehousePicker({
           ref={panelRef} className="smod-wh-panel is-float" role="listbox"
           style={{ left: pos.left, top: pos.top, width: pos.width }}
         >
-          {warehouses.map(w => (
-            <WarehouseRow
-              key={w.id}
-              warehouse={w}
-              selected={w.id === value}
-              onSelect={() => { onChange(w.id); setOpen(false); }}
-            />
-          ))}
+          {warehouses.map(w => {
+            const blocked = whBlockReason(eligibility, w.apiId);
+            return (
+              <WarehouseRow
+                key={w.id}
+                warehouse={w}
+                selected={w.id === value}
+                blockedReason={blocked}
+                onSelect={() => { if (blocked) return; onChange(w.id); setOpen(false); }}
+              />
+            );
+          })}
         </div>,
         document.body,
       )}
