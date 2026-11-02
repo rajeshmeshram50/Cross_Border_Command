@@ -3,16 +3,19 @@ import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker'
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { createPortal } from 'react-dom';
-import { Field } from '../../order/create-po/form-fields';
+import { Field, WizSpinner } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoPlus, IcoUndo, IcoUser, IcoVan } from '../../../icons';
+import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPencil, IcoPin, IcoPlus, IcoUndo, IcoUser, IcoVan } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
-import { today } from '../invoice-draft';
+import { draftFromSupplier, today } from '../invoice-draft';
+import { spiApi } from '../spi-api';
 
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
+const AddSupplierFlow = lazy(() => import('../../order/create-po/AddSupplierFlow'));
+const warmSupplierFlow = () => { void import('../../order/create-po/AddSupplierFlow'); };
 
 const FILE_NAME_MAX = 25;
 
@@ -113,8 +116,44 @@ export default function Step2InvoiceProducts({
   }, [check]);
 
   const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
+
+  /* Direct SPI only: the supplier was picked on this invoice, so it can be
+     edited from here. A With-PO invoice takes its supplier from the PO. */
+  const toast = useToast();
+  const [supEditOpen, setSupEditOpen] = useState(false);
+  const [supRefreshing, setSupRefreshing] = useState(false);
+  const canEditSupplier = direct && !readOnly && draft.vendorId != null;
+  const refreshSupplier = async () => {
+    if (draft.vendorId == null) return;
+    setSupRefreshing(true);
+    try {
+      const { detail } = await spiApi.vendorDetail(draft.vendorId);
+      set(draftFromSupplier(detail));
+      toast.success('Supplier updated', `${detail.code} — ${detail.name} details refreshed on this invoice.`);
+    } catch {
+      toast.error('Could not refresh the supplier', 'The changes were saved, but this form could not reload them — reopen it to see them.');
+    } finally {
+      setSupRefreshing(false);
+    }
+  };
+  const supplierEdit = canEditSupplier ? (
+    <Tooltip label={supRefreshing ? 'Refreshing the supplier…' : `Edit ${draft.supplier || 'the supplier'} in the Supplier master`}>
+      <button
+        type="button"
+        className="spi-dt-pill-edit"
+        aria-label="Edit supplier"
+        aria-busy={supRefreshing}
+        disabled={supRefreshing}
+        onPointerEnter={warmSupplierFlow}
+        onClick={e => { e.stopPropagation(); setSupEditOpen(true); }}
+      >
+        {supRefreshing ? <WizSpinner /> : <IcoPencil />}
+      </button>
+    </Tooltip>
+  ) : undefined;
+
   const headPills = [
-    <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />,
+    <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono extra={supplierEdit} />,
     <HeadPill key="name" icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />,
     <HeadPill key="state" icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />,
   ];
@@ -133,6 +172,11 @@ export default function Step2InvoiceProducts({
   return (
     <>
       <StageSummary draft={draft} upto={1} direct={direct} />
+      {supEditOpen && draft.vendorId != null && (
+        <Suspense fallback={null}>
+          <AddSupplierFlow vendorId={draft.vendorId} onClose={() => setSupEditOpen(false)} onSaved={() => void refreshSupplier()} />
+        </Suspense>
+      )}
 
       <div className={`spi-dt-sec ${invOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head cpf-clickable" onClick={() => setInvOpen(o => !o)}>

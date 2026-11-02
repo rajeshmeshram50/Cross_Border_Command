@@ -615,6 +615,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // stamps its own timestamp, so it is not idempotent.
         Route::get   ('/{id}/putaway',               [SpiPutawayController::class, 'index'])->whereNumber('id');
         Route::put   ('/{id}/storage-type',          [SpiPutawayController::class, 'setStorageType'])->whereNumber('id');
+        Route::get   ('/{id}/warehouse-eligibility', [SpiPutawayController::class, 'warehouseEligibility'])->whereNumber('id');
         Route::post  ('/{id}/putaway/scan',          [SpiPutawayController::class, 'scan'])->whereNumber('id');
         Route::put   ('/{id}/putaway/{row}/confirm', [SpiPutawayController::class, 'confirm'])->whereNumber('id')->whereNumber('row');
 

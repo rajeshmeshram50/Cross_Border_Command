@@ -4,7 +4,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import {
-  Box, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
+  Box, PoSummaryCards, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { PoApiError, poPaymentApi, type PoPayRequest, type PoPaymentsPayload } from '../order/api/po-api';
@@ -358,8 +358,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           ) : (
             <>
               <Box
-                label="Summary" title="SPI Payment Details Summary"
-                sub="How this SPI's value is made up and where it stands today · read-only"
+                label="Summary" title={po ? 'PO Payment Details Summary' : 'SPI Payment Details Summary'}
+                sub={po ? `How ${po.code}'s value is made up and where it stands today · read-only`
+                  : "How this SPI's value is made up and where it stands today · read-only"}
                 headerExtra={state === 'loading' ? (
                   <span className="inv-mpr-skel inv-mpr-skel--tds" aria-hidden />
                 ) : tdsCtl ? (
@@ -384,6 +385,14 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   </div>
                 ) : undefined}
               >
+                {/* With a PO: the PO's own figures, the same cards Manage Payment
+                    Requests shows on the PO. A Direct SPI shows its own. */}
+                {po ? (
+                  <PoSummaryCards
+                    total={po.grand_total} paid={po.paid} balance={po.balance} net={po.net_payable} complete={po.complete}
+                    split={{ base: po.base_amount, gst: po.gst_amount, extra: po.extra_charges, gstPct: po.gst_pct }}
+                    ccy={po.currency_code} />
+                ) : (
                 <div className="mpr-stats">
                   <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
                     value={money(base)} sub="Pre-tax invoice value" />
@@ -399,6 +408,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
                     value={money(balance)} sub={balance <= 0 ? 'Settled in full' : 'Still to be released'} />
                 </div>
+                )}
               </Box>
 
               <Box

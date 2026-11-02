@@ -14,8 +14,7 @@ import {
 } from './zone-data';
 
 const PURPOSES = [
-  'Receiving / Inward', 'Bulk Storage', 'Pick Face / Forward Picking',
-  'Quarantine / QA Hold', 'Returns', 'Dispatch / Staging', 'Other',
+  'Extra Quantity', 'Damaged Quantity', 'Mismatch Products', 'Shipment Dispatch Quantity', 'Other',
 ];
 const TYPE_LABEL: Record<ZoneType, string> = {
   rack: 'Storage Zone (With Rack)',
@@ -289,6 +288,14 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   const freeArea = picked
     ? Math.max(0, picked.area - picked.used + (zone && zone.warehouseId === picked.apiId ? Number(zone.area) || 0 : 0))
     : NaN;
+  /* Live against the typed area (CS-940 #14): what is left after this zone,
+     and the over-size message as soon as the figure stops fitting rather
+     than only on Save. */
+  const typedArea = Number(shownArea);
+  const leftAfter = picked && typedArea > 0 ? freeArea - typedArea : NaN;
+  const liveAreaErr = picked && leftAfter < 0
+    ? `Exceeds the free area by ${inWhole.format(-leftAfter)} Sq. Ft — only ${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft is still free in ${picked.id}`
+    : '';
 
   const other: Unit = unit === 'm' ? 'ft' : 'm';
   const k = unit === 'm' ? FEET_PER_METRE : 1 / FEET_PER_METRE;
@@ -480,15 +487,16 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               />
             </Field>
             <Field
-              label="Zone Area (Sq. Ft)" req error={errors.area}
-              hint={areaFromFloor
-                ? 'Taken from the measured floor area'
-                : picked ? `${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft still free in ${picked.id}`
-                  : 'Must fit within the warehouse area'}
+              label="Zone Area (Sq. Ft)" req error={liveAreaErr || errors.area}
+              hint={!picked
+                ? 'Must fit within the warehouse area'
+                : Number.isFinite(leftAfter)
+                  ? `${areaFromFloor ? 'From the measured floor area · ' : ''}${inWhole.format(leftAfter)} of ${inWhole.format(picked.area)} Sq. Ft will remain free in ${picked.id}`
+                  : `${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft still free in ${picked.id}`}
             >
               <div className="whm-suf">
                 <input
-                  className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}`}
+                  className={`spi-dt-inp${liveAreaErr || errors.area ? ' is-invalid' : ''}`}
                   type="number" min={1} placeholder="e.g. 5000"
                   readOnly={areaFromFloor}
                   value={shownArea}

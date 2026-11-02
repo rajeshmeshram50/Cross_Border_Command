@@ -83,14 +83,27 @@ const procOf = (_r: PoListRow): { label: string; tone: string } | null => {
   return null;
 };
 
+/**
+ * The order's physical inspection. An order that needs one can be invoiced
+ * only once it is completed; until then it is listed but cannot be picked.
+ */
+const inspectionOf = (r: PoListRow): { label: string; tone: string; blocked: boolean } => {
+  if (r.physical_inspection !== 'yes') return { label: 'Inspection: No', tone: 'live', blocked: false };
+  if (r.inspection_status === 'completed') return { label: 'Inspection: Done', tone: 'done', blocked: false };
+  return { label: 'Inspection: Pending', tone: 'warn', blocked: true };
+};
+
 function Row({ r, on, onPick }: { r: PoListRow; on: boolean; onPick: () => void }) {
   const proc = procOf(r);
+  const insp = inspectionOf(r);
+  const pick = () => { if (!insp.blocked) onPick(); };
   return (
     <div
-      className={`spim${on ? ' sel' : ''}`}
-      role="option" aria-selected={on} tabIndex={0}
-      onClick={onPick}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }}
+      className={`spim${on ? ' sel' : ''}${insp.blocked ? ' is-locked' : ''}`}
+      role="option" aria-selected={on} aria-disabled={insp.blocked} tabIndex={insp.blocked ? -1 : 0}
+      title={insp.blocked ? 'Physical inspection pending' : undefined}
+      onClick={pick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}
     >
       <span className="spim-code">{r.code}</span>
       <div className="spim-main">
@@ -98,7 +111,8 @@ function Row({ r, on, onPick }: { r: PoListRow; on: boolean; onPick: () => void 
         <div className="spim-sub">{refsOf(r)}</div>
       </div>
       <span className="spim-amt">{amountOf(r)}</span>
-      {proc ? <span className={`spim-st spim-st--${proc.tone}`}>{proc.label}</span> : <span />}
+      {proc ? <span className={`spim-st spim-st--${proc.tone}`}>{proc.label}</span>
+        : <span className={`spim-st spim-st--${insp.tone}`}>{insp.label}</span>}
       <span className="spim-tick"><IcoTick /></span>
     </div>
   );

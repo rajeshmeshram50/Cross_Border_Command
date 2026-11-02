@@ -10,7 +10,7 @@ import { HeadPill } from '../order/create-po/CreatePoForm';
 import { WizSpinner } from '../order/create-po/form-fields';
 import {
   IcoBriefcase, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLock, IcoRefLines,
-  IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
+  IcoPencil, IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
@@ -27,13 +27,15 @@ import SupplierDocsNoticeModal, { type SupplierDocsNotice } from '../order/creat
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
+import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
+import type { StorageWarehouse } from './types';
+const StorageSelectionModal = lazy(() => import('./StorageSelectionModal'));
 
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
@@ -175,6 +177,13 @@ export default function InvoiceForm({
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
   const [savedWarehouseId, setSavedWarehouseId] = useState<number | null>(null);
   const [warehouseRow, setWarehouseRow] = useState<WarehouseDetail | null>(null);
+  /* The storage picked before the form opened; the header's Edit can change it
+     until Stage 03 is complete. */
+  const [storage, setStorage] = useState<StorageChoice>(input.storage);
+  const [whEdit, setWhEdit] = useState<{ list: StorageWarehouse[]; state: 'loading' | 'ready' | 'failed' } | null>(null);
+  /* Cold-chain / hazardous capability of each warehouse for this invoice's
+     boxes — greys out incompatible ones in the picker and gates the move. */
+  const [eligibility, setEligibility] = useState<WarehouseEligibility | null>(null);
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -380,7 +389,7 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [input.poId, input.spiId, set, toast]);
 
-  const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
+  const warehouseId = savedWarehouseId ?? storage.warehouse?.apiId ?? null;
 
   const [removedLines, setRemovedLines] = useState<{ at: number; line: ProductLine }[]>([]);
 
@@ -445,6 +454,47 @@ export default function InvoiceForm({
   const [stage, setStage] = useState(0);
   const [reached, setReached] = useState(0);
 
+  /* Warehouse: editable until Stage 03 is complete. From Stage 04 on, putaway
+     allocates inside it, so it is fixed. */
+  const whLocked = viewOnly || reached >= 3 || stage >= 3;
+  const openWhEdit = () => {
+    if (whLocked) return;
+    setWhEdit({ list: [], state: 'loading' });
+    // Refresh capability so incompatible warehouses are greyed out live.
+    if (spiId) spiApi.warehouseEligibility(spiId).then(setEligibility).catch(() => { /* picker just won't grey — the guard still holds */ });
+    spiApi.warehouses()
+      .then(list => setWhEdit(w => (w ? { list, state: 'ready' } : w)))
+      .catch(() => setWhEdit(w => (w ? { ...w, state: 'failed' } : w)));
+  };
+  const saveWarehouse = async (choice: StorageChoice): Promise<boolean> => {
+    const id = choice.type === 'own' ? choice.warehouse?.apiId ?? null : null;
+    if (spiId) {
+      try {
+        await spiApi.setWarehouse(spiId, id);
+      } catch (e) {
+        toast.error('Could not change the warehouse', e instanceof PoApiError ? e.firstError : 'Please try again.');
+        return false;
+      }
+    }
+    setStorage(choice);
+    setSavedWarehouse(id ? choice.warehouse?.name ?? null : null);
+    setSavedWarehouseId(id);
+    setWarehouseRow(null);
+    setWhEdit(null);
+    toast.success('Warehouse changed', `${warehouseLabel(choice)}${spiId ? ' is saved on this invoice.' : ' — saved with Stage 01.'}`);
+    return true;
+  };
+  const whEditBtn = (
+    <Tooltip label={whLocked
+      ? (viewOnly ? 'This invoice can no longer be edited' : 'Stage 03 is complete — the warehouse is fixed for putaway')
+      : 'Change the warehouse'}>
+      <button type="button" className="spi-dt-pill-edit" aria-label="Change the warehouse"
+        disabled={whLocked} onClick={openWhEdit}>
+        <IcoPencil />
+      </button>
+    </Tooltip>
+  );
+
   const warehouseRowId = warehouseRow?.id ?? null;
   useEffect(() => {
     if (!warehouseId) { setWarehouseRow(null); return; }
@@ -483,7 +533,7 @@ export default function InvoiceForm({
         purchase_order_id: null,
         vendor_id: draft.vendorId,
         document_type: directDocType(),
-        warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+        warehouse_id: savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null),
         ...directLinks.current,
       });
       savedVendor.current = draft.vendorId;
@@ -505,7 +555,7 @@ export default function InvoiceForm({
           purchase_order_id: null,
           vendor_id: draft.vendorId,
           document_type: directDocType(),
-          warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+          warehouse_id: savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null),
           ...directLinks.current,
         });
         savedVendor.current = draft.vendorId;
@@ -542,7 +592,7 @@ export default function InvoiceForm({
         purchase_order_id: input.poId ?? null,
         vendor_id: draft.vendorId,
         document_type: draft.docType === 'International' ? 'international' : 'domestic',
-        warehouse_id: input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null,
+        warehouse_id: storage.type === 'own' ? storage.warehouse?.apiId ?? null : null,
       });
       setSpiId(spi.id);
       setSpiCode(spi.code);
@@ -879,6 +929,29 @@ export default function InvoiceForm({
     if (!spiId || saving) return;
     setSaving(true);
     try {
+      /* The warehouse must be able to hold the boxes before putaway — a
+         cold-chain / hazardous box needs a zone that allows it, and the
+         warehouse was picked at Stage 01 before any box had a flag. */
+      const elig = await spiApi.warehouseEligibility(spiId);
+      setEligibility(elig);
+      const curWh = savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null);
+      const missing = curWh ? (elig.warehouses[String(curWh)]?.missing ?? []) : [];
+      if (curWh && missing.length) {
+        setSaving(false);
+        const change = await confirm({
+          title: 'Warehouse can’t hold these boxes',
+          tone: 'warning',
+          icon: 'alert-line',
+          message: (
+            <>This invoice has boxes that need <b>{missing.map(m => m.replace(/^a /, '')).join(' and ')}</b>,
+              but the selected warehouse has none. Switch to a warehouse with the right zone before moving to putaway.</>
+          ),
+          confirmLabel: 'Change warehouse',
+          cancelLabel: 'Not now',
+        });
+        if (change) openWhEdit();
+        return;
+      }
       await spiApi.completeStage3(spiId);
       advance();
     } catch (e) {
@@ -1024,11 +1097,12 @@ export default function InvoiceForm({
                     : null,
                   { key: 'proc', icon: <IcoBriefcase />, label: 'PROCUREMENT CASE ID', value: draft.procurementCode || '—', mono: true },
                   { key: 'sup', icon: <IcoUser />, label: 'SUPPLIER', value: draft.supplier || input.supplier },
-                  { key: 'wh', icon: <IcoWarehouse />, label: 'WAREHOUSE', value: savedWarehouse ?? warehouseLabel(input.storage) },
+                  { key: 'wh', icon: <IcoWarehouse />, label: 'WAREHOUSE', value: savedWarehouse ?? warehouseLabel(storage), extra: whEditBtn },
                 ].filter((p): p is NonNullable<typeof p> => p !== null);
                 return pills.map((p, i) => (
                   <Fragment key={p.key}>
-                    <HeadPill icon={p.icon} label={p.label} value={p.value} mono={p.mono} alt={i % 2 === 0} />
+                    <HeadPill icon={p.icon} label={p.label} value={p.value} mono={p.mono} alt={i % 2 === 0}
+                      extra={'extra' in p ? p.extra : undefined} />
                     {i < pills.length - 1 && <span className="spi-dt-dots">⋮</span>}
                   </Fragment>
                 ));
@@ -1038,7 +1112,7 @@ export default function InvoiceForm({
                   <span className="spi-dt-dots">⋮</span>
                   <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
                   <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} alt />
+                  <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(storage)} alt extra={whEditBtn} />
                 </>
               )}
             </div>
@@ -1143,21 +1217,21 @@ export default function InvoiceForm({
                   <Suspense fallback={<StageSkeleton stage={3} />}>
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId} direct={isDirect}
-                    warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
+                    warehouse={savedWarehouse ?? warehouseLabel(storage)}
                     spiCode={spiCode}
                     onProgress={onPutawayProgress}
                     onLoadBox={spiId ? loadBox : undefined}
                     warehouseInfo={{
-                      code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
+                      code: warehouseRow?.wh_code ?? storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
-                      name: warehouseRow?.wh_name ?? savedWarehouse ?? warehouseLabel(input.storage),
+                      name: warehouseRow?.wh_name ?? savedWarehouse ?? warehouseLabel(storage),
                       address: warehouseRow?.address ?? null,
                       location: warehouseRow
                         ? [warehouseRow.city, warehouseRow.state, warehouseRow.pincode].filter(Boolean).join(', ') || null
-                        : input.storage.warehouse?.location ?? null,
+                        : storage.warehouse?.location ?? null,
                       typeLabel: warehouseRow?.wh_type_label ?? null,
                       areaSqft: warehouseRow?.area_sqft ?? null,
-                      own: input.storage.type === 'own',
+                      own: storage.type === 'own',
                     }}
                     readOnly={viewOnly} />
                   </Suspense>
@@ -1221,6 +1295,19 @@ export default function InvoiceForm({
       </div>
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
+      )}
+      {whEdit && (
+        <Suspense fallback={null}>
+          <StorageSelectionModal
+            reference={spiCode ?? invoiceNo}
+            referenceKind={isDirect ? 'supplier' : 'po'}
+            warehouses={whEdit.list}
+            warehousesState={whEdit.state}
+            eligibility={eligibility}
+            onClose={() => setWhEdit(null)}
+            onNext={saveWarehouse}
+          />
+        </Suspense>
       )}
       {vaultOpen && vaultTarget && (
         <Suspense fallback={null}>

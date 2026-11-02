@@ -985,7 +985,7 @@ function zebraTaskId(i: number): string {
 }
 
 type LogKind = 'pick' | 'zone' | 'loc' | 'method' | 'task' | 'scan' | 'err' | 'done' | 'cancel';
-type LogEntry = { k: LogKind; t: string; d: string; time: string };
+type LogEntry = { k: LogKind; t: string; d: string; time: string; by?: string | null };
 
 const hhmmss = () => {
   const n = new Date();
@@ -1024,23 +1024,33 @@ const logTime = (at: string | null): string => {
   return `${date}, ${time}`;
 };
 
+/** A verified scan names what was scanned, not a bare "Scan verified" — a
+ *  put-away verifies the box, then the shelf (zone/rack on the way). */
+const SCAN_SLOT_LABEL: Record<string, string> = {
+  box: 'Box scanned', shelf: 'Shelf scanned', zone: 'Zone scanned', rack: 'Rack scanned',
+};
+
 /** Map the server's frozen box log to the popover's entries. The UI-only
  *  breadcrumbs (pick / zone / method) are not persisted, so the log shows the
  *  real events: assign, scan, confirm, release. */
 const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] =>
   rows.flatMap((r): LogEntry[] => {
     const time = logTime(r.at);
+    const by = r.actor ?? null;
     const withDev = (s: string) => [s, r.device].filter(Boolean).join(' · ');
+    // Carry the server's actor on every row — manual and zebra alike — so the
+    // log shows who did it, not a hardcoded desk name.
+    const mk = (k: LogKind, t: string, d: string): LogEntry[] => [{ k, t, d, time, by }];
     switch (r.event) {
-      case 'assigned':         return [{ k: 'loc', t: 'Location assigned', d: r.location ?? '', time }];
-      case 'reassigned':       return [{ k: 'loc', t: 'Location reassigned', d: r.location ?? '', time }];
-      case 'task_created':     return [{ k: 'task', t: 'Zebra scan task created', d: '', time }];
-      case 'task_cancelled':   return [{ k: 'cancel', t: 'Zebra scan task cancelled', d: '', time }];
-      case 'scan_passed':      return [{ k: 'scan', t: 'Scan verified', d: withDev(r.location ?? ''), time }];
-      case 'scan_failed':      return [{ k: 'err', t: 'Scan rejected', d: r.reason_label ?? '', time }];
-      case 'confirmed_manual': return [{ k: 'done', t: 'Putaway confirmed (manual)', d: r.location ?? '', time }];
-      case 'confirmed_device': return [{ k: 'done', t: 'Putaway confirmed', d: withDev(r.location ?? ''), time }];
-      case 'released':         return [{ k: 'cancel', t: 'Box released', d: '', time }];
+      case 'assigned':         return mk('loc', 'Location assigned', r.location ?? '');
+      case 'reassigned':       return mk('loc', 'Location reassigned', r.location ?? '');
+      case 'task_created':     return mk('task', 'Zebra scan task created', '');
+      case 'task_cancelled':   return mk('cancel', 'Zebra scan task cancelled', '');
+      case 'scan_passed':      return mk('scan', SCAN_SLOT_LABEL[r.slot ?? ''] ?? 'Scan verified', withDev(r.location ?? ''));
+      case 'scan_failed':      return mk('err', 'Scan rejected', r.reason_label ?? '');
+      case 'confirmed_manual': return mk('done', 'Putaway confirmed (manual)', ['Manual confirmation', r.location].filter(Boolean).join(' · '));
+      case 'confirmed_device': return mk('done', 'Putaway confirmed', withDev(r.location ?? ''));
+      case 'released':         return mk('cancel', 'Box released', '');
       // lock_acquired / lock_released are internal — not shown.
       default:                 return [];
     }
@@ -1131,7 +1141,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
             <div className="s4lg-tx">
               <div className="s4lg-row"><b>{e.t}</b><time>{e.time}</time></div>
               {e.d && <em>{e.d}</em>}
-              <span className="s4lg-by"><IcoUserSm />SPI Putaway Desk</span>
+              <span className="s4lg-by"><IcoUserSm />{e.by || 'SPI Putaway Desk'}</span>
             </div>
           </div>
         )) : (
@@ -1144,7 +1154,6 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
       </div>
       <div className="s4lg-note">
         Activity is logged from Pick a Box through Putaway Allocation confirmation.
-        User names will come from the signed-in account.
       </div>
     </div>,
     document.body);

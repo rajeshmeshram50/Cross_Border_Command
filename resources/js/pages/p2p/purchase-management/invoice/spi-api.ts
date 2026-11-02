@@ -407,9 +407,18 @@ export type PutawayLogRow = {
   event: string;
   ok: boolean;
   reason_label: string | null;
+  /** Which leg was scanned — box / shelf / zone / rack — for the log label. */
+  slot: string | null;
   location: string | null;
   actor: string | null;
   device: string | null;
+};
+
+/** Per-warehouse cold/haz capability for an invoice's boxes — drives the
+ *  change-warehouse picker and the Stage 03 -> 04 move guard. */
+export type WarehouseEligibility = {
+  required: { cold_chain: boolean; hazardous: boolean };
+  warehouses: Record<string, { cold_chain: boolean; hazardous: boolean; compatible: boolean; missing: string[] }>;
 };
 
 export type PutawayRow = {
@@ -538,6 +547,17 @@ export const spiApi = {
           kind: w.wh_type,
           addedOn: w.created_at ?? undefined,
         }))),
+
+  /** Change the invoice's warehouse; null is a Third Party warehouse. Refused once Stage 03 is complete. */
+  setWarehouse: (spiId: number, warehouseId: number | null) =>
+    call('SPI warehouse', () => api.put(`/p2p/spi/${spiId}/storage-type`, { warehouse_id: warehouseId }),
+      (b) => (b as { data?: { warehouse_id: number | null; wh_name: string | null } } | null)?.data ?? null),
+
+  /** What the invoice's boxes need, and which own warehouses can hold them. */
+  warehouseEligibility: (spiId: number) =>
+    call('Warehouse eligibility', () => api.get(`/p2p/spi/${spiId}/warehouse-eligibility`),
+      (b) => (b as { data?: WarehouseEligibility } | null)?.data
+        ?? { required: { cold_chain: false, hazardous: false }, warehouses: {} as WarehouseEligibility['warehouses'] }),
 
   warehouseDetail: (id: number) =>
     call('Warehouse', () => api.get(`/inventory/warehouses/${id}`), (b) => {
