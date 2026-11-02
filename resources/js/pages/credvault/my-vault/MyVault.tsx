@@ -36,6 +36,12 @@ const STEP_ICO = {
   cred: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 17c.6-1.8 2-2.8 3.5-2.8s2.9 1 3.5 2.8"/><line x1="15" y1="10" x2="18" y2="10"/><line x1="15" y1="14" x2="18" y2="14"/>',
   folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
 };
+const STEPS = [
+  { icon: STEP_ICO.cred, title: 'Add Credential', desc: 'Save a login, secure note, card, or API key with its URL, username, and password.' },
+  { icon: STEP_ICO.folder, title: 'Organise with Folders & Tags', desc: 'Group credentials by system, project, or purpose so they are quick to find.' },
+  { icon: IC.shield, title: 'Keep Passwords Strong', desc: 'Generate strong passwords and fix weak, reused, or expiring ones flagged by Password Health.' },
+  { icon: IC.share, title: 'Share Securely When Needed', desc: 'Share a credential with a colleague or team, with view-only or edit access you can revoke.' },
+];
 const BAN = '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>';
 const PERM_ICO: Record<Perm, string> = {
   use: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3',
@@ -183,12 +189,7 @@ export default function MyVault() {
 
       <CvBrief icon={IC.lock} label="My Vault" defaultOpen
         sub="Saving your personal credentials securely, keeping them organised and strong, and sharing them only when needed."
-        steps={[
-          { icon: STEP_ICO.cred, title: 'Add Credential', desc: 'Save a login, secure note, card, or API key with its URL, username, and password.' },
-          { icon: STEP_ICO.folder, title: 'Organise with Folders & Tags', desc: 'Group credentials by system, project, or purpose so they are quick to find.' },
-          { icon: IC.shield, title: 'Keep Passwords Strong', desc: 'Generate strong passwords and fix weak, reused, or expiring ones flagged by Password Health.' },
-          { icon: IC.share, title: 'Share Securely When Needed', desc: 'Share a credential with a colleague or team, with view-only or edit access you can revoke.' },
-        ]} />
+        steps={STEPS} />
 
       <CvCard>
         <CvTabsRow tabs={tabs} active={tab} onTab={k => { setTab(k as TabKey); setPage(1); setShareCred(null); }} search={q} onSearch={setQ}
@@ -256,7 +257,6 @@ export default function MyVault() {
           </div>
         ) : (
           <CredentialTable rows={rows} startIndex={start} loading={loading} emptyTitle={emptyTitle} emptySub={emptySub}
-            onAdd={dq || tab === 'shared' || failed ? undefined : () => setForm({})}
             onEdit={r => setForm({ credentialId: r.id })}
             onShare={r => setShareId(r.id)}
             onView={r => setViewId(r.id)}

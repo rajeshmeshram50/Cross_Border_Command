@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { cvApi, CvApiError, type CredentialRow, type Meta, type Risk, type Twofa, type TypeDef } from './cvApi';
 import { CV_ICONS } from './cvIcons';
+import '../../components/ui/DataTable.css';
+import '../p2p/p2p-master-management/supplier-management/supplier-management.css';
+import '../sales/core-masters/customer/SalesCustomers.css';
 import './credvault.css';
 import './credvault-app.css';
 
@@ -158,29 +161,33 @@ export function useNow(active = true): number {
 
 /* ══════════════════════════ PAGE SHELL ══════════════════════════ */
 
-/** The page column every CredVault screen sits in (the prototype's whm-page). */
+/** The page column every CredVault screen sits in — the Customers list's .smc-root. */
 export function CvPage({ className = '', children }: { className?: string; children: ReactNode }) {
-  return <div className={`cvx cv-pagecol whm-page ${className}`}>{children}</div>;
+  return <div className={`cvx smc-root whm-page ${className}`}>{children}</div>;
 }
 
-/** The teal header strip: icon, title, subtitle, actions (the prototype's .cstrip). */
+/** The header strip: the Customers list's .sup-fig .cstrip; --teal keeps CredVault's cyan. */
 export function CvStrip({ icon, title, sub, actions, tone = 'teal' }: {
   icon: string; title: string; sub: ReactNode; actions?: ReactNode; tone?: string;
 }) {
   return (
-    <div className={`cstrip cstrip--${tone}`}>
-      <span className="cstrip__accent" /><span className="cstrip__glow" /><span className="cstrip__sheen" />
-      <div className="cstrip__left">
-        <div className="cstrip__avatar-wrap">
-          <div className="cstrip__avatar"><Svg d={icon} size={17} stroke="#fff" /></div>
-          <span className="cstrip__online-dot" />
+    <div className="sup-fig">
+      <div className={`cstrip cstrip--${tone}`}>
+        <span className="cstrip__accent" />
+        <span className="cstrip__glow" />
+        <span className="cstrip__sheen" />
+        <div className="cstrip__left">
+          <div className="cstrip__avatar-wrap">
+            <div className="cstrip__avatar"><Svg d={icon} size={17} stroke="#fff" /></div>
+            <span className="cstrip__online-dot" />
+          </div>
+          <div className="min-w-0">
+            <div className="cstrip__title">{title}</div>
+            <div className="cstrip__sub">{sub}</div>
+          </div>
         </div>
-        <div>
-          <div className="cstrip__title">{title}</div>
-          <div className="cstrip__sub">{sub}</div>
-        </div>
+        {actions && <div className="cstrip__right">{actions}</div>}
       </div>
-      {actions && <div className="cstrip__right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{actions}</div>}
     </div>
   );
 }
@@ -190,15 +197,15 @@ export function StripBtn({ icon, children, onClick, ghost, disabled, title }: {
   icon: string; children: ReactNode; onClick?: () => void; ghost?: boolean; disabled?: boolean; title?: string;
 }) {
   return (
-    <button type="button" className={`cstrip__action-btn whm-addbtn${ghost ? ' cstrip__action-btn--ghost' : ''}`}
-      onClick={onClick} disabled={disabled} title={title} data-h40="1">
+    <button type="button" className={`cstrip__action-btn${ghost ? ' cstrip__action-btn--ghost' : ''}`}
+      onClick={onClick} disabled={disabled} title={title}>
       {!ghost && <span className="cstrip__action-btn-sheen" />}
       <Svg d={icon} size={13} />{children}
     </button>
   );
 }
 
-/** "What We Are Doing Here" — collapsible, four numbered steps (the prototype's .bref-box). */
+/** "What We Are Doing Here" — the Customers list's .sup-fig .bref-box; --teal keeps the cyan. */
 export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
   icon: string; label: string; sub: string;
   steps: { icon: string; title: string; desc: string }[];
@@ -206,30 +213,32 @@ export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className={`bref-box bref-box--teal${open ? '' : ' is-collapsed'}`}>
-      <div className="bref-box__header" onClick={() => setOpen(o => !o)} role="button" aria-expanded={open}>
-        <div className="bref-box__header-ico"><Svg d={icon} size={13} /></div>
-        <div className="bref-box__header-mid">
-          <div className="bref-box__header-row">
-            <div className="bref-box__header-label">{label}</div>
-            <div className="bref-box__header-sep" />
-            <div className="bref-box__header-title">What We Are Doing Here</div>
-          </div>
-          <div className="bref-box__header-sub">{sub}</div>
-        </div>
-        <div className="bref-box__header-right"><div className="bref-box__toggle"><Svg d={IC.chevDown} size={10} /></div></div>
-      </div>
-      <div className="bref-box__body whm-brefbody">
-        {steps.map((s, i) => (
-          <div className="bref-item" key={s.title}>
-            <div className="bref-item__top">
-              <div className="bref-item__ico"><Svg d={s.icon} size={11} /></div>
-              <span className="bref-item__num">Step {String(i + 1).padStart(2, '0')}</span>
+    <div className="sup-fig">
+      <div className={`bref-box bref-box--teal${open ? '' : ' is-collapsed'}`}>
+        <div className="bref-box__header" onClick={() => setOpen(o => !o)} role="button" aria-expanded={open}>
+          <div className="bref-box__header-ico"><Svg d={icon} size={15} /></div>
+          <div className="bref-box__header-mid">
+            <div className="bref-box__header-row">
+              <div className="bref-box__header-label">{label}</div>
+              <div className="bref-box__header-sep" />
+              <div className="bref-box__header-title">What We Are Doing Here</div>
             </div>
-            <div className="bref-item__title">{s.title}</div>
-            <div className="bref-item__desc">{s.desc}</div>
+            <div className="bref-box__header-sub">{sub}</div>
           </div>
-        ))}
+          <div className="bref-box__header-right"><div className="bref-box__toggle"><Svg d={IC.chevDown} size={10} /></div></div>
+        </div>
+        <div className="bref-box__body">
+          {steps.map((s, i) => (
+            <div className="bref-item" key={s.title}>
+              <div className="bref-item__top">
+                <div className="bref-item__ico"><Svg d={s.icon} size={12} /></div>
+                <span className="bref-item__num">Step {String(i + 1).padStart(2, '0')}</span>
+              </div>
+              <div className="bref-item__title">{s.title}</div>
+              <div className="bref-item__desc">{s.desc}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -237,26 +246,51 @@ export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
 
 /** The card that holds tabs + search + list (the prototype's .bst-wrap/.bst-card). */
 export function CvCard({ children }: { children: ReactNode }) {
-  return <div className="bst-wrap"><div className="bst-card">{children}</div></div>;
+  const ref = useRef<HTMLDivElement>(null);
+  // Reaches the bottom of the viewport like the Customers card (its fit()): the room
+  // left in .main-content below the card, less the footer + 8px. A floor, not a cap,
+  // so a full page of rows still grows the card.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      const scroller = el.closest('.main-content') as HTMLElement | null;
+      const top = scroller
+        ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
+      const space = scroller ? scroller.clientHeight : window.innerHeight;
+      const foot = (document.querySelector('footer.footer') as HTMLElement | null)?.offsetHeight ?? 0;
+      el.style.minHeight = `${Math.max(240, space - top - (foot > 0 ? foot + 8 : 15))}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    // The header strip and the collapsible brief above move the card's top.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : undefined;
+    for (let s = el.parentElement?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
+    return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
+  }, []);
+  return <div className="bst-wrap"><div className="bst-card" ref={ref}>{children}</div></div>;
 }
 
 export interface CvTab { key: string; label: string; icon: string; count?: number | null }
-/** Tab bar with counts (.smt-proctype-tabs) and the search box (.bst-search) on one row. */
+/** Tab rail with counts (the My Workplace .dt-tabrail, teal) and the search box (.bst-search) on one row. */
 export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra }: {
   tabs: CvTab[]; active: string; onTab: (k: string) => void;
   search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode;
 }) {
   return (
     <div className="parch-main-row whm-main-row">
-      <div className="smt-proctype-tabs parch-main-tabs" role="tablist">
-        {tabs.map(t => (
-          <button key={t.key} type="button" role="tab" aria-selected={active === t.key}
-            className={`smt-proctype-tab${active === t.key ? ' is-active' : ''}`} data-pt="svc-phys" onClick={() => onTab(t.key)}>
-            <span className="smt-proctype-tab__ico"><Svg icon={t.icon} d={t.icon.startsWith('<') ? t.icon : undefined} size={15} /></span>
-            <span className="smt-proctype-tab__lbl">{t.label}</span>
-            <span className="bst-tab-c parch-main-c">{t.count ?? '·'}</span>
-          </button>
-        ))}
+      <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
+        <div className="dt-tabs" role="tablist">
+          {tabs.map(t => (
+            <button key={t.key} type="button" role="tab" aria-selected={active === t.key}
+              className={`dt-tab ${active === t.key ? 'on' : 'off'}`} onClick={() => onTab(t.key)}>
+              <span className="smt-proctype-tab__ico"><Svg icon={t.icon} d={t.icon.startsWith('<') ? t.icon : undefined} size={14} /></span>
+              {t.label}
+              <span className="dt-tab-count">{t.count ?? '·'}</span>
+            </button>
+          ))}
+        </div>
       </div>
       {extra}
       {onSearch && (
