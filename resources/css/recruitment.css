@@ -13326,13 +13326,15 @@
    won the tie and put back the padding and height this is setting. */
 /* QA 204: the import-punches body and footer must share one background in
    dark mode. Both go transparent so the single modal-content colour shows
-   through, instead of Velzon giving the footer its own shade. */
-.imp-modal .modal-body,
-.imp-modal .modal-footer,
-[data-bs-theme="dark"] .imp-modal .modal-body,
-[data-bs-theme="dark"] .imp-modal .modal-footer,
-[data-layout-mode="dark"] .imp-modal .modal-body,
-[data-layout-mode="dark"] .imp-modal .modal-footer {
+   through, instead of Velzon giving the footer its own shade. Generalised to
+   every .hrms-modal (e.g. Register Device) — the footer was a shade off the
+   body there too. */
+.hrms-modal .modal-body,
+.hrms-modal .modal-footer,
+[data-bs-theme="dark"] .hrms-modal .modal-body,
+[data-bs-theme="dark"] .hrms-modal .modal-footer,
+[data-layout-mode="dark"] .hrms-modal .modal-body,
+[data-layout-mode="dark"] .hrms-modal .modal-footer {
   background: transparent;
 }
 
