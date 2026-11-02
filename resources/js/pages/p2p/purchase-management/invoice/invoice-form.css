@@ -2987,6 +2987,17 @@
 .spi-invform .spi-prodtbl .cpd-del {
   width: 40px; height: 40px; min-height: 40px;
 }
+/* Stage 02 (Direct SPI): edit-supplier button trailing the Supplier Code pill. */
+.spi-dt-pill-edit {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; margin-left: 4px; border: 0; border-radius: 8px; cursor: pointer; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 2px 8px rgba(8, 145, 178, .28); transition: transform .12s, box-shadow .15s;
+}
+.spi-dt-pill-edit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(8, 145, 178, .36); }
+.spi-dt-pill-edit:disabled { opacity: .5; cursor: not-allowed; }
+.spi-dt-pill-edit svg { width: 13px; height: 13px; }
+
 /* Stage 02's refused-save red, for the two controls whose own border this
    form restates: the date picker (MasterDatePicker's .invalid is (0,2,0)
    and its orange-red is not the red the inputs beside it use) and the
