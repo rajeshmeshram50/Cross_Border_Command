@@ -8609,6 +8609,48 @@
   white-space: nowrap;
 }
 
+/* Manage Permission section header — icon chip, title, subtitle, enabled count. */
+.pm-qa-ico {
+  flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #7c3aed;
+  background: rgba(124, 58, 237, .12);
+  border: 1px solid rgba(124, 58, 237, .22);
+}
+.pm-qa-title { font-size: 13.5px; font-weight: 800; color: var(--vz-heading-color, #1e293b); line-height: 1.2; }
+.pm-qa-sub { font-size: 11px; color: var(--vz-secondary-color); margin-top: 1px; }
+.pm-qa-count {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--vz-secondary-color);
+  background: rgba(124, 58, 237, .08); border: 1px solid rgba(124, 58, 237, .2);
+  border-radius: 999px; padding: 4px 12px;
+}
+.pm-qa-count i { font-size: 13px; color: #7c3aed; }
+.pm-qa-count strong { font-size: 13px; font-weight: 800; color: #7c3aed; }
+.pm-qa-count-label { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .pm-qa-count { background: rgba(124, 58, 237, .16); border-color: rgba(124, 58, 237, .38); }
+[data-bs-theme="dark"] .pm-qa-count i,
+[data-bs-theme="dark"] .pm-qa-count strong { color: #c4b5fd; }
+[data-bs-theme="dark"] .pm-qa-ico { color: #c4b5fd; background: rgba(124, 58, 237, .2); border-color: rgba(124, 58, 237, .4); }
+
+/* Module-row icon chip in the permission matrix — themed so it isn't a pale
+   low-contrast box in dark mode. */
+.perm-mod-ico { background: rgba(64, 81, 137, .12); color: rgb(64, 81, 137); }
+[data-bs-theme="dark"] .perm-mod-ico { background: rgba(129, 149, 214, .22); color: #aab6e6; }
+
+/* Regularization table: the DataTable's "teal" accent is cyan, but the page
+   header (hr-cstrip--teal) is green-teal. Remap the accent to Tailwind teal so
+   the table matches its header. Scoped so other accent="teal" tables keep cyan. */
+.reg-dt-teal .dt-root[data-accent="teal"],
+.reg-dt-teal .dt-tabrail[data-accent="teal"],
+.reg-dt-teal .dt-search[data-accent="teal"],
+.reg-dt-teal .dt-search--detached[data-accent="teal"] {
+  --dt-a-50: #f0fdfa; --dt-a-100: #ccfbf1; --dt-a-150: #ccfbf1; --dt-a-200: #99f6e4;
+  --dt-a-300: #5eead4; --dt-a-400: #2dd4bf; --dt-a-500: #14b8a6; --dt-a-600: #0d9488;
+  --dt-a-700: #0f766e; --dt-a-800: #115e59; --dt-a-rgb: 13, 148, 136;
+}
+
 .att-cal-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));

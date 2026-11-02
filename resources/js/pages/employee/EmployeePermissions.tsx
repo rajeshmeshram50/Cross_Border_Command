@@ -281,72 +281,14 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           .ep-save-btn--solid:disabled { opacity: 0.7; cursor: not-allowed; }
         `}</style>
 
-        {/* Slim hero strip */}
-        <div style={{ padding: '9px 18px' }}>
-          <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-            <div className="d-flex align-items-center gap-2 min-w-0">
-              <div className="min-w-0">
-                <h5 className="mb-0 fw-bold text-white d-flex align-items-center gap-2" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
-                  Manage Permissions
-                </h5>
-                <div className="d-flex align-items-center flex-wrap gap-1 mt-1" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.65)' }}>
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); onBack(); }}
-                    className="text-decoration-none"
-                    style={{ color: 'rgba(255,255,255,0.78)' }}
-                  >
-                    Employees
-                  </a>
-                  <i className="ri-arrow-right-s-line" />
-                  <span>{employee?.name || employeeId}</span>
-                  <i className="ri-arrow-right-s-line" />
-                  <span className="fw-semibold" style={{ color: '#fff' }}>Permissions</span>
-                </div>
-              </div>
-            </div>
-            {/* Save first, Back second — swapped from the other way round. Both
-                are 40px / 10px-radius so the pair reads as one control block;
-                the breadcrumb under the title still walks back as well. */}
-            <div className="d-flex align-items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              className="ep-hdr-btn ep-save-btn flex-shrink-0"
-              onClick={handleSave}
-              disabled={saving}
-              style={{ minWidth: 170 }}
-            >
-              {saving ? (
-                <>
-                  <Spinner size="sm" type="border" style={{ width: '0.95rem', height: '0.95rem', borderWidth: 2, color: '#0c1740' }} />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  {/* me-2 dropped — the flex `gap` already spaces the icon, and
-                      the two together pushed the label off-centre. */}
-                  <i className="ri-shield-check-line" style={{ color: '#0c1740', fontSize: 16 }}></i>
-                  Save Permissions
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onBack}
-              className="ep-hdr-btn ep-back-btn flex-shrink-0"
-            >
-              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
-            </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Identity row — avatar leads, name/email/chips on the right.
-            Sits on the same navy background, separated by a subtle 1px line. */}
+        {/* Profile hero — identity leads, the Save/Back actions stay on the right.
+            The old "Manage Permissions" title + breadcrumb row was dropped; the
+            employee's own details are the header now. */}
         <div
-          className="d-flex gap-2 align-items-center"
-          style={{ padding: '10px 18px', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          className="d-flex gap-3 align-items-start justify-content-between flex-wrap"
+          style={{ padding: '14px 18px' }}
         >
+          <div className="d-flex gap-2 align-items-center min-w-0 flex-grow-1">
           <div
             className="d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
             style={{
@@ -466,59 +408,78 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
               );
             })()}
           </div>
+          </div>
+          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              className="ep-hdr-btn ep-save-btn flex-shrink-0"
+              onClick={handleSave}
+              disabled={saving}
+              style={{ minWidth: 170 }}
+            >
+              {saving ? (
+                <>
+                  <Spinner size="sm" type="border" style={{ width: '0.95rem', height: '0.95rem', borderWidth: 2, color: '#0c1740' }} />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <i className="ri-shield-check-line" style={{ color: '#0c1740', fontSize: 16 }}></i>
+                  Save Permissions
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              className="ep-hdr-btn ep-back-btn flex-shrink-0"
+            >
+              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
+            </button>
+          </div>
         </div>
       </Card>
 
-      <Card className="shadow-sm">
-        {/* The matrix is closed while the save is in flight.
-            `saving` disabled the two Save buttons and nothing else, so boxes
-            could still be ticked during the request — and those ticks were not
-            in the payload that had already gone out. The save then reported
-            success over a screen that no longer matched what was stored, and
-            the next reload silently dropped them. BusyOverlay takes the
-            pointer events with it (see .busy-content.is-busy), so the whole
-            grid — quick actions included — is out of reach until the answer is
-            back. */}
-        <BusyOverlay busy={saving} label="Saving permissions…">
-          <PermissionMatrix
-            modules={modules}
-            matrix={matrix}
-            onChange={setMatrix}
-            grantableBy={isSuperAdmin ? null : myPerms}
-          />
-        </BusyOverlay>
-
-        <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
-          <span className="text-muted fs-13">
-            <i className="ri-edit-box-line me-1 text-primary"></i>
-            Editing: <strong className="text-dark">{employee?.name || employeeId}</strong>
-          </span>
-          {/* Same button as the header's — same 40px / 10px box, same label and
-              icon, same hover. The FILL differs on purpose: the header's is
-              white because it sits on navy, and white on this light footer
-              would be invisible. Geometry is what makes them read as the same
-              control; colour is what makes each readable where it sits. */}
-          <button
-            type="button"
-            className="ep-hdr-btn ep-save-btn--solid"
-            onClick={handleSave}
-            disabled={saving}
-            style={{ minWidth: 180 }}
-          >
-            {saving ? (
-              <>
-                <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <>
-                <i className="ri-shield-check-line" style={{ fontSize: 16 }}></i>
-                Save Permissions
-              </>
-            )}
-          </button>
-        </CardBody>
-      </Card>
+      {/* The matrix (rows 2 and 3) is closed while the save is in flight, so a
+          tick cannot slip in behind a request already sent — BusyOverlay takes
+          the pointer events with it (see .busy-content.is-busy). */}
+      <BusyOverlay busy={saving} label="Saving permissions…">
+        <PermissionMatrix
+          modules={modules}
+          matrix={matrix}
+          onChange={setMatrix}
+          grantableBy={isSuperAdmin ? null : myPerms}
+          footer={
+            /* Save bar — flush at the bottom of the table card, a top-border
+               divider from the grid, symmetric padding above and below. */
+            <div className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3">
+              <span className="text-muted fs-13">
+                <i className="ri-edit-box-line me-1 text-primary"></i>
+                Editing: <strong className="text-dark">{employee?.name || employeeId}</strong>
+              </span>
+              <button
+                type="button"
+                className="ep-hdr-btn ep-save-btn--solid"
+                onClick={handleSave}
+                disabled={saving}
+                style={{ minWidth: 180 }}
+              >
+                {saving ? (
+                  <>
+                    <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-shield-check-line" style={{ fontSize: 16 }}></i>
+                    Save Permissions
+                  </>
+                )}
+              </button>
+            </div>
+          }
+        />
+      </BusyOverlay>
     </>
   );
 }
