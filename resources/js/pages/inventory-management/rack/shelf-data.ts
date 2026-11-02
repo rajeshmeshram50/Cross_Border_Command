@@ -6,8 +6,7 @@ export const SHELF_TYPES = [
 ];
 
 export const SHELF_PURPOSES = [
-  'Fast-Moving Picking', 'Bulk / Reserve Storage', 'Small Parts & Bins', 'Cold Chain Stock',
-  'Hazardous Goods', 'Returns / QC Hold', 'Kitting & Assembly', 'Dispatch Staging', 'Other',
+  'Extra Quantity', 'Damaged Quantity', 'Mismatch Products', 'Shipment Dispatch Quantity', 'Other',
 ];
 
 export interface ShelfDims {
