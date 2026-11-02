@@ -412,18 +412,26 @@ export default function InvoiceForm({
   );
   const lineName = (l: ProductLine) => `${l.code ? `${l.code} — ` : ''}${l.spiName || l.poName || 'this product'}`;
 
+  /* CS-1139: a line packed on Stage 03 cannot come off the invoice. Asked
+     before the table's "Remove it?" dialog, so a blocked line gets only the
+     warning - never the dialog, and never a "Removed" toast. */
+  const removeBlocked = useCallback((index: number) => {
+    const line = lines[index];
+    if (!line || packedOf(line) <= 0) return false;
+    toast.warning('Already packed in boxes',
+      `${lineName(line)} has ${packedOf(line)} packed on Stage 03 — remove it from its boxes there before taking it off the invoice.`);
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, packedOf, toast]);
+
+  /** Whether the line actually came off - the table only says "Removed" when it did. */
   const removeLine = useCallback((index: number) => {
     const line = lines[index];
-    if (!line) return;
-    if (packedOf(line) > 0) {
-      toast.warning('Already packed in boxes',
-        `${lineName(line)} has ${packedOf(line)} packed on Stage 03 — remove it from its boxes there before taking it off the invoice.`);
-      return;
-    }
+    if (!line || removeBlocked(index)) return false;
     setLines(ls => ls.filter((_, i) => i !== index));
     if (matchedToPi) setRemovedLines(r => [...r, { at: index, line }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, matchedToPi, packedOf, toast]);
+    return true;
+  }, [lines, matchedToPi, removeBlocked]);
 
   const restoreLines = useCallback(() => {
     setLines(ls => {
@@ -1189,7 +1197,7 @@ export default function InvoiceForm({
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     matched={matchedToPi}
-                    onChangeLine={changeLine} onRemoveLine={removeLine} onAddLine={addLine}
+                    onChangeLine={changeLine} onRemoveLine={removeLine} removeLineBlocked={removeBlocked} onAddLine={addLine}
                     removedCount={removedLines.length} onRestoreLines={restoreLines} direct={isDirect}
                     issues={stage2Check ? stage2Issues : undefined} check={stage2Check} />
                 )}

@@ -500,36 +500,38 @@
                  clear of the close button;
    .is-stacked — details on the first row, every action on a second row
                  starting under them.
-   Written against .vti-dw-modal so it outranks the window media queries. */
-.vti-dw-modal .vti-dw-strip.is-oneline { flex-wrap: nowrap; }
-.vti-dw-modal .vti-dw-strip.is-oneline .vti-dw-strip-left {
+   Applies to the modal and the inline box panel alike. */
+.vti-dw-strip.vti-dw-strip.is-oneline { flex-wrap: nowrap; }
+.vti-dw-strip.vti-dw-strip.is-oneline .vti-dw-strip-left {
   flex: 0 1 auto; width: auto; flex-wrap: nowrap; padding-right: 0;
 }
-.vti-dw-modal .vti-dw-strip.is-oneline .vti-dw-toolbar {
+.vti-dw-strip.vti-dw-strip.is-oneline .vti-dw-toolbar {
   flex: 0 0 auto; width: auto; flex-wrap: nowrap;
   margin: 0 0 0 auto;
-  padding: 0 62px 0 14px;
+  padding: 0 16px 0 14px;
 }
-.vti-dw-modal .vti-dw-strip.is-stacked .vti-dw-strip-left { flex: 1 1 calc(100% - 4px); width: auto; }
-.vti-dw-modal .vti-dw-strip.is-stacked .vti-dw-toolbar {
+/* The modal keeps its lane clear of the close button. */
+.vti-dw-modal .vti-dw-strip.vti-dw-strip.is-oneline .vti-dw-toolbar { padding-right: 62px; }
+.vti-dw-strip.vti-dw-strip.is-stacked .vti-dw-strip-left { flex: 1 1 calc(100% - 4px); width: auto; }
+.vti-dw-strip.vti-dw-strip.is-stacked .vti-dw-toolbar {
   flex: 1 1 100%;
   margin: 0;
   padding: 2px 16px 12px 20px;
   justify-content: flex-start;
 }
-.vti-dw-modal .vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
+.vti-dw-strip.vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
 /* .is-compact — still one row, on a laptop-width modal: the product name is
    the one detail that gives way (ellipsis, full name in its tooltip), the
    "Dimensions" caption drops (the CM / M toggle says it), and the details
    and buttons tighten. BoxDrawer only sets it when this is enough to fit. */
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-left { flex: 1 1 auto; min-width: 0; }
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-item { padding-left: 10px; padding-right: 10px; }
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-strip-item.strip-product { flex: 0 1 auto; min-width: 96px; }
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-dim-label { display: none; }
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar { padding-left: 10px; }
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-icon-btn,
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-save-btn,
-.vti-dw-modal .vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-sticker-btn { padding-left: 11px; padding-right: 11px; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-strip-left { flex: 1 1 auto; min-width: 0; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-strip-item { padding-left: 10px; padding-right: 10px; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-strip-item.strip-product { flex: 0 1 auto; min-width: 96px; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-dim-label { display: none; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-toolbar { padding-left: 10px; }
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-icon-btn,
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-save-btn,
+.vti-dw-strip.vti-dw-strip.is-compact .vti-dw-toolbar .vti-dw-sticker-btn { padding-left: 11px; padding-right: 11px; }
 
 @media (max-width: 820px) {
 

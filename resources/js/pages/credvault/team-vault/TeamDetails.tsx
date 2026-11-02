@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { cvApi, type Loose } from '../cvApi';
+import type { Loose } from '../cvApi';
 import { errMsg, initials, Svg } from '../shared';
+import { tvData } from './tvData';
 import { buildHierarchy, deptIcon, LV_ORDER, LV_SHORT, toCounts, TV_IC, type Hierarchy, type LevelCounts, type TreeNode } from './tvShared';
 
 /**
@@ -68,7 +69,7 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
 
   const loadList = () => {
     setListErr(null);
-    cvApi.departments().then(setList).catch(e => setListErr(errMsg(e)));
+    tvData.departments().then(setList).catch(e => setListErr(errMsg(e)));
   };
   useEffect(loadList, []);
 
@@ -80,7 +81,7 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
     if (!dept) { setTree(null); setStats(null); setTreeErr(null); return; }
     let on = true;
     setTreeLoading(true); setTreeErr(null); setTree(null);
-    const req = dept.key === 'admin' ? cvApi.organisation() : cvApi.department(dept.key);
+    const req = dept.key === 'admin' ? tvData.organisation() : tvData.department(dept.key);
     req.then(d => {
       if (!on) return;
       const h = buildHierarchy(d.members ?? [], {

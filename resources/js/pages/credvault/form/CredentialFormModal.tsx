@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { cvApi, type CredentialDetail } from '../cvApi';
+import { useEffect, useMemo, useState } from 'react';
+import { cvApi, type CredentialDetail, type CredentialRow, type TypeDef } from '../cvApi';
 import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
 import CredentialForm from './CredentialForm';
 import TypePicker from './TypePicker';
@@ -15,6 +15,8 @@ import './form.css';
  *   critical        add from the Critical Vault: risk critical, protection on
  *   prefillPassword add from Generate Password → "Use in New Credential"
  *   scope / departmentId  add into the Team Vault
+ *   previewRow      design preview (Team Vault on dummy data): edit this row,
+ *                   prefilled from the row itself; nothing is loaded or saved
  */
 export interface CredentialFormProps {
   credentialId?: number;
@@ -23,8 +25,35 @@ export interface CredentialFormProps {
   prefillPassword?: string;
   scope?: 'personal' | 'team';
   departmentId?: number | null;
+  previewRow?: CredentialRow;
   onClose: () => void;
   onSaved: (c: CredentialDetail) => void;
+}
+
+/** A sample password per strength score (strengthOf), so the preview's meter
+ *  reads what the row says: Weak, Fair, Good, Strong. */
+const SAMPLE_PW = ['', 'tally123', 'tallycloud2026', 'Tally@2026', 'Tq#9vL!m2Rx$8wPz'];
+
+/** A dummy row as the edit form reads a loaded credential, filled the way the
+ *  design shows it: fields from the type, URL and username off the row, a
+ *  sample secret at the row's strength (masked until shown), the rotation and
+ *  the protected settings (risk, 2FA) open to change. */
+function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
+  const loose = row as unknown as Record<string, unknown>;
+  return {
+    ...row,
+    rotation_days: row.rotation_days ?? 90,
+    can: row.can ? { ...row.can, edit_protection: true } : row.can,
+    locked: false, updated_by: row.owner.name,
+    fields: T.fields.filter(f => f.kind !== 'file').map(f => {
+      const own = typeof loose[f.key] === 'string' ? loose[f.key] as string : null;
+      const value = f.secret ? (row.has_password ? SAMPLE_PW[row.strength] || null : null)
+        : own ?? (f.kind === 'url' ? row.url : null);
+      return { key: f.key, label: f.label, kind: f.kind, value, masked: f.secret, has_value: f.secret ? row.has_password : !!value };
+    }),
+    recovery: { reg_email: null, reg_phone: null, has_recovery_key: false },
+    notes: null, attachments: [],
+  };
 }
 
 /** The overlay shown while the types or the credential load, or when either fails. */
@@ -56,7 +85,7 @@ function Wait({ title, text, onClose, error, onRetry }: { title: string; text: s
   );
 }
 
-export default function CredentialFormModal({ credentialId, initialType, critical, prefillPassword, scope, departmentId, onClose, onSaved }: CredentialFormProps) {
+export default function CredentialFormModal({ credentialId, initialType, critical, prefillPassword, scope, departmentId, previewRow, onClose, onSaved }: CredentialFormProps) {
   const { meta, typeOf, error: metaFailed, reload: reloadMeta } = useCvMeta();
   const [typeKey, setTypeKey] = useState<string | null>(credentialId ? null : initialType ?? null);
   const [detail, setDetail] = useState<CredentialDetail | null>(null);
@@ -64,8 +93,12 @@ export default function CredentialFormModal({ credentialId, initialType, critica
   const [retrying, setRetrying] = useState(false);
   const retryMeta = () => { setRetrying(true); reloadMeta().finally(() => setRetrying(false)); };
 
+  const previewT = previewRow ? typeOf(previewRow.type) : null;
+  const preview = useMemo(() => (previewRow && previewT ? previewDetail(previewRow, previewT) : null), [previewRow, previewT]);
+  useEffect(() => { if (preview) { setDetail(preview); setTypeKey(preview.type); } }, [preview]);
+
   useEffect(() => {
-    if (!credentialId) return;
+    if (!credentialId || previewRow) return;
     let on = true;
     setDetail(null);
     setFailed(null);
@@ -93,7 +126,7 @@ export default function CredentialFormModal({ credentialId, initialType, critica
   else if (!T) content = <TypePicker meta={meta} onPick={setTypeKey} onClose={onClose} />;
   else {
     content = (
-      <CredentialForm key={`${T.key}:${detail?.id ?? 'new'}`} meta={meta} T={T} detail={detail}
+      <CredentialForm key={`${T.key}:${detail?.id ?? 'new'}`} meta={meta} T={T} detail={detail} preview={!!previewRow}
         init={{ critical, prefillPassword, scope, departmentId }}
         onClose={onClose} onSaved={onSaved}
         onChangeType={credentialId ? undefined : () => setTypeKey(null)} />

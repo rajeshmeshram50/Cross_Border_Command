@@ -6738,11 +6738,15 @@
    scroll box. The card sits above the headers so a header sliding up passes
    under it. */
 .s4-root .s4grp__list:not(.is-capped) { display: contents; }
+/* Both edges: `top` holds it once the list scrolls past it, `bottom` holds it
+   at the foot while it is still further down - with only `top`, a selected
+   card below the fold simply scrolled out of sight. */
 .s4-root .s4grp__list > .s4pkc.is-active {
   position: sticky; z-index: 4;
   top: var(--s4-pin-top, 64px);
+  bottom: 4px;
 }
-.s4-root .s4grp__list.is-capped > .s4pkc.is-active { top: 3px; }
+.s4-root .s4grp__list.is-capped > .s4pkc.is-active { top: 3px; bottom: 3px; }
 
 /* CS-953 #78: the selected card has to be told apart at a glance - a solid
    teal stripe down its left edge on top of the ring, and a deeper shadow so

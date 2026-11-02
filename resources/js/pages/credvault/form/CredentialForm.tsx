@@ -70,8 +70,10 @@ const fileIco = (n: string) => {
   return /^(png|jpe?g|gif|webp)$/.test(e) ? 'img' : e === 'pdf' ? 'pdf' : /^(xlsx?|csv)$/.test(e) ? 'xls' : 'doc';
 };
 
-export default function CredentialForm({ meta, T, detail, init, onClose, onSaved, onChangeType }: {
+export default function CredentialForm({ meta, T, detail, init, preview = false, onClose, onSaved, onChangeType }: {
   meta: Meta; T: TypeDef; detail: CredentialDetail | null; init: FormInit;
+  /** Design preview on dummy data: the form works, Save writes nothing. */
+  preview?: boolean;
   onClose: () => void; onSaved: (c: CredentialDetail) => void; onChangeType?: () => void;
 }) {
   const toast = useToast();
@@ -95,7 +97,8 @@ export default function CredentialForm({ meta, T, detail, init, onClose, onSaved
     T.fields.forEach(f => {
       if (f.kind === 'file') return;
       if (f.kind === 'toggle') v[f.key] = detail ? (detail.twofa === 'yes' ? 'yes' : 'no') : (startCritical && pol.cp_otp ? 'yes' : 'no');
-      else v[f.key] = detail && !f.secret ? (dField.get(f.key)?.value ?? '') : '';
+      // The server never sends a secret; the design preview's sample one is shown masked.
+      else v[f.key] = detail && (!f.secret || preview) ? (dField.get(f.key)?.value ?? '') : '';
     });
     if (prefillKey) v[prefillKey] = init.prefillPassword!;
     return v;
@@ -808,6 +811,12 @@ export default function CredentialForm({ meta, T, detail, init, onClose, onSaved
       files.forEach(([k, f]) => fd.append(`files[${k}]`, f));
       attNew.forEach(a => fd.append('attachments[]', a.file));
       payload = fd;
+    }
+
+    if (preview) {
+      toast.info('Design preview', 'Team Vault is on dummy data - the changes were not saved.');
+      onClose();
+      return;
     }
 
     setSaving(true);

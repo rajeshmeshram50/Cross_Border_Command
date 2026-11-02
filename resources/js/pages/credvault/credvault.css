@@ -4802,3 +4802,298 @@
 .cvx #cpOv .rv-node.is-click:hover .rv-node__ico{transform:translateY(-1px);box-shadow:0 6px 14px rgba(16,185,129,.28)}
 .cvx #cpOv .rv-node.is-view .rv-node__ico{box-shadow:0 0 0 4px rgba(14,116,144,.18)}
 .cvx #cpOv .rv-dots i.is-view{box-shadow:0 0 0 2px rgba(14,116,144,.25)}
+
+/* ── Team Vault toolbar on the house sizes ─────────────────────────────────
+   The CLM numbers (clmShared .clm-tabrail / .clm-tab / .clm-search): a 40px
+   tab in a 48px rail (3px padding + 1px border each side) and a 48px search
+   beside it. Team Vault ran the module's older rail - 8px around a 28px icon
+   made a 44px tab, and 6px + 1.5px made a 58px rail next to a 46px search -
+   so its toolbar stood taller than every other module's. Geometry only;
+   colours and the active gradient are unchanged. */
+.cvx .tv-pane--r .tvc-top .smt-proctype-tabs{height:48px;box-sizing:border-box;padding:3px;gap:8px;border-width:1px;border-radius:11px;align-items:center;}
+.cvx .tv-pane--r .tvc-top .smt-proctype-tab{height:40px;box-sizing:border-box;padding:0 14px 0 6px;gap:8px;border-radius:8px;}
+.cvx .tv-pane--r .tvc-top .smt-proctype-tab__ico{width:28px;height:28px;}
+.cvx .tv-pane--r .tvc-top .bst-search.whm-main-search{height:48px;min-height:48px;box-sizing:border-box;border-radius:11px;}
+/* Team Vault spacing: 8px everywhere. Measured, the page mixed 6px between
+   its three blocks, 10px between the step cards, 10-12px inside the panes and
+   10/12px round the page, against 8px between the panes and in the lists.
+   Scoped to the Team Vault page (the column that holds .tv-split). */
+.cvx.cv-pagecol:has(> .tv-split){padding:0;gap:8px;}
+/* The step cards spaced themselves with a 7px/5px margin each (10px between,
+   7px to the edges); now an 8px grid gap and 8px round them, no margins. */
+.cvx.cv-pagecol:has(> .tv-split) .bref-box:not(.is-collapsed) .whm-brefbody{gap:8px;padding:8px;}
+.cvx.cv-pagecol:has(> .tv-split) .whm-brefbody .bref-item{margin:0;}
+.cvx .tv-split .tv-pane__bd{padding:8px;}
+.cvx .tv-split .tv-pane--r .tvc-bd{padding:8px;gap:8px;}
+/* ...and 8px inside every block too. The page column's own padding is 0:
+   .page-content already holds the page 8px off the window, and the two
+   together made 16px. Inside: the header card (icon 31px in, Export 21px
+   off the right), the What We Are Doing header (12px), the step cards
+   (10-11px), both pane headers (11-12px) and the department cards (12px)
+   all sit on 8px now, and the credentials list no longer bleeds 4px past
+   its pane on either side. */
+.cvx.cv-pagecol:has(> .tv-split) > .cstrip{padding:8px;}
+.cvx.cv-pagecol:has(> .tv-split) > .cstrip .cstrip__left{padding-left:0;}
+.cvx.cv-pagecol:has(> .tv-split) > .bref-box .bref-box__header{padding:8px;}
+.cvx.cv-pagecol:has(> .tv-split) .whm-brefbody .bref-item{padding:8px;}
+.cvx .tv-split .tv-pane__hd{padding:8px;}
+.cvx .tv-split .tvx-dc, .cvx .tv-split .tvx-adm{padding:8px;}
+.cvx .tv-split .tvc-bd .tvc-list{margin-left:0;margin-right:0;}
+/* The rail and the search measure the same 48px, but did not read it: the
+   rail's grey hairline on a grey fill vanished, the active tab's 22px shadow
+   spilled below the rail, and the search beside them had a crisp teal edge -
+   so the search looked the taller box. Both now wear the CLM treatment: the
+   same 1px teal hairline and a pale teal wash, and the selected tab's shadow
+   stays inside the rail. */
+.cvx .tv-pane--r .tvc-top .smt-proctype-tabs{border:1px solid #c9f1f8;background:linear-gradient(180deg,#f6feff,#f0fdff);box-shadow:none;}
+.cvx .tv-pane--r .tvc-top .smt-proctype-tab.is-active{box-shadow:0 2px 6px -2px rgba(15,58,77,.35),0 1px 0 rgba(255,255,255,.2) inset;}
+.cvx .tv-pane--r .tvc-top .bst-search.whm-main-search{border:1px solid #c9f1f8;background:linear-gradient(180deg,#ffffff,#f6feff);box-shadow:none;}
+[data-bs-theme="dark"] .cvx .tv-pane--r .tvc-top .smt-proctype-tabs,
+[data-bs-theme="dark"] .cvx .tv-pane--r .tvc-top .bst-search.whm-main-search{border-color:rgba(34,211,238,.22);background:rgba(6,182,212,.08);}
+/* A short page (one row, a search hit) left the table and pager floating at
+   the top of the card over empty space. The list now fills the pane and the
+   table takes the slack, so the pager sits on the card's foot; a long page
+   still grows past it and the pane scrolls as before. */
+.cvx .tv-split .tvc-bd .tvc-list{flex:1 0 auto;display:flex;flex-direction:column;}
+.cvx .tv-split .tvc-bd .tvc-list > .whm-tblwrap{flex:1 0 auto;}
+/* Header over content: Category's chip and group sit centred in the cell but
+   its header was left, so the label hung off to one side - centred to match,
+   as My Vault already does. The name's sub-line was a flex row: a long URL
+   squeezed its icon to nothing and could not end in an ellipsis. As a plain
+   line the icon keeps its size and the text cuts with "...". */
+.cvx .tvc-list .whm-tbl.mv-tbl thead th.mv-th-3, .cvx .tvc-list .whm-tbl.mv-tbl tbody td:nth-child(4){text-align:center !important;}
+.cvx .tvc-list .mv-tbl .mv-catc{align-items:center !important;margin:0 auto;}
+.cvx .tvc-list .mv-tbl .whm-namecell__loc{display:block;}
+.cvx .tvc-list .mv-tbl .whm-namecell__loc > svg{display:inline-block;vertical-align:-2px;margin-right:4px;}
+
+/* Form dropdowns are the house MasterSelect (CrdSelect). Its trigger is sized
+   and tinted like the form's inputs, and clears the field's leading icon. */
+.cvx #crd-host .crd-ms{flex:1 1 auto;min-width:0;width:100%;}
+.cvx #crd-host .crd-ms .master-select-toggle{height:40px;padding:0 10px 0 13px;font-size:12.5px;font-weight:500;color:#0c2c3a;background:#fff;border:1.5px solid #b9e3ec;border-radius:10px;box-shadow:0 1px 2px rgba(8,145,178,.06);}
+.cvx #crd-host .mapsup-inputwrap .mapsup-input-ico ~ .crd-ms .master-select-toggle{padding-left:36px;}
+.cvx #crd-host .crd-ms .master-select-toggle:hover:not(:disabled){border-color:#67e8f9;box-shadow:0 2px 6px rgba(8,145,178,.1);}
+.cvx #crd-host .crd-ms .master-select-wrap.show .master-select-toggle{border-color:#22d3ee !important;box-shadow:0 0 0 4px rgba(34,211,238,.16) !important;}
+.cvx #crd-host .crd-ms .master-select-toggle:disabled{opacity:.6;cursor:not-allowed;}
+.cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-ffield.is-edited .crd-ms .master-select-toggle{border-color:#f59e0b !important;background-color:#fffbeb !important;box-shadow:0 0 0 3px rgba(245,158,11,.12) !important;}
+.cvx #crd-host .sh-box .crd-ms .master-select-toggle{height:40px;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-toggle{background:#0f2530;border-color:rgba(34,211,238,.28);color:#e2f4f8;}
+
+/* Add / Edit Credential form · dark mode. Only its dropdowns had a dark rule,
+   so in dark mode the form was white cards and white inputs round two dark
+   selects. Same recipe as the Team Vault page below: deep teal-slate surfaces,
+   faint teal hairlines, inputs the dropdowns' #0f2530, teal text lifted to
+   #67e8f9. The header band already reads on dark and is left alone; the QR
+   frame stays white so the code still scans. */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick){background:#0b1d26 !important;box-shadow:0 40px 90px -20px rgba(0,0,0,.7),0 0 0 1px rgba(34,211,238,.14) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-body{background:linear-gradient(180deg,#0c2029 0%,#0a1a22 100%) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-seccard{background:rgba(255,255,255,.03) !important;border-color:rgba(34,211,238,.16) !important;box-shadow:none !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-sechead{border-bottom-color:rgba(34,211,238,.12);}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-sechead__title{color:#e2f4f8 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-sechead__sub,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-hint{color:#8fb3c2 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-flabel{color:#7cc4d6 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .req{color:#fb7185 !important;}
+/* chips: "Auto" lock and "Optional" */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-lock{background:rgba(148,163,184,.12) !important;border-color:rgba(148,163,184,.26) !important;color:#a8bfca !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-opt{background:rgba(34,211,238,.1) !important;border-color:rgba(34,211,238,.3) !important;color:#67e8f9 !important;}
+/* inputs: editable like the dropdowns; locked ones a step quieter */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-finput,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-inputwrap:not(.is-frozen) .mapsup-finput{background:#0f2530 !important;border-color:rgba(34,211,238,.28) !important;color:#e2f4f8 !important;box-shadow:none !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-finput::placeholder{color:#5f8494 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-inputwrap:not(.is-frozen) .mapsup-finput:focus{border-color:#22d3ee !important;box-shadow:0 0 0 4px rgba(34,211,238,.16) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-inputwrap.is-frozen .mapsup-finput,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-finput:disabled,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-finput[readonly]{background:rgba(255,255,255,.04) !important;border-color:rgba(148,163,184,.22) !important;color:#9fb8c4 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-ffield.is-edited .mapsup-inputwrap:not(.is-frozen) .mapsup-finput{background:rgba(245,158,11,.1) !important;border-color:#f59e0b !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-ffield.is-edited .crd-ms .master-select-toggle{background-color:rgba(245,158,11,.1) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-input-ico{color:#67e8f9;}
+/* password / key buttons and the strength meter */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-pw__btns{background:rgba(34,211,238,.06) !important;border-color:rgba(34,211,238,.2) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-pw__b:not(.crd-pw__b--gen){color:#67e8f9 !important;}
+/* hover and "shown" (eye on) were still the light white tile */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-pw__b:not(.crd-pw__b--gen):hover,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-pw__b.is-on:not(.crd-pw__b--gen){background:rgba(34,211,238,.18) !important;color:#cffafe !important;box-shadow:inset 0 0 0 1px rgba(34,211,238,.35) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-pw__b+.crd-pw__b::before{background:rgba(34,211,238,.2);}
+/* empty bars only: kept below the meter's own [data-s] fills so those still win */
+[data-bs-theme="dark"] .cvx .mv-meter__bars i{background:rgba(255,255,255,.1);}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mv-meter__lbl{filter:brightness(1.35);}
+/* attachments drop zone and the 2FA toggle */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-att{background:rgba(34,211,238,.05) !important;border-color:rgba(34,211,238,.3) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-att b{color:#e2f4f8 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-att span:not(.crd-att__ico){color:#8fb3c2 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-tg{background:rgba(34,211,238,.08) !important;border-color:rgba(34,211,238,.25) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .crd-tg__st{color:#67e8f9 !important;}
+/* 2FA panel */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-fcard{background:rgba(255,255,255,.03) !important;border-color:rgba(34,211,238,.16) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-frow{border-color:rgba(34,211,238,.14) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-frow__ico,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-keybar__ico{background:rgba(34,211,238,.12) !important;color:#67e8f9 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-frow__t b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-auth__title,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-stp > div > b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-vcard__hd b{color:#e2f4f8 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-frow__t span,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-auth__tag,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-stp > div > span,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-vcard__hd span,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-keybar__t span,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-vcard__ft{color:#8fb3c2 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-stp > div > span b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-auth__cap,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-keybar code{color:#67e8f9 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-chip.is-no{background:rgba(251,146,60,.12) !important;border-color:rgba(251,146,60,.35) !important;color:#fdba74 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-auth{background:rgba(34,211,238,.05) !important;border-color:rgba(34,211,238,.22) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-keybar,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-vcard{background:#0f2530 !important;border-color:rgba(34,211,238,.22) !important;box-shadow:none !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-keybar__cp{background:rgba(34,211,238,.1) !important;border-color:rgba(34,211,238,.3) !important;color:#67e8f9 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-d{background:#0b1d26 !important;border-color:rgba(34,211,238,.25) !important;color:#e2f4f8 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-d__sep{background:rgba(148,163,184,.4) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .cp-vcard__ft{border-top-color:rgba(34,211,238,.12) !important;}
+/* footer */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) > .mapsup-footer{background:linear-gradient(180deg,#0c2029,#0a1a22) !important;border-top-color:rgba(34,211,238,.14) !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-footer__info{background:rgba(255,255,255,.04) !important;border-color:rgba(34,211,238,.18) !important;color:#9fb8c4 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-footer__info b{color:#67e8f9 !important;}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box:not(.crd-box--pick) .mapsup-footer__btn--ghost{background:rgba(34,211,238,.08) !important;border-color:rgba(34,211,238,.35) !important;color:#67e8f9 !important;}
+
+/* ── Team Vault · dark mode ───────────────────────────────────────────────
+   Every CredVault rule above is drawn for light mode only, so in dark mode the
+   page stayed a block of white cards. This is the CLM Segment Master look:
+   deep teal-slate surfaces, a faint teal hairline, translucent teal for
+   headers, zebra and hover, white sheens dimmed right down. The teal
+   gradients that carry meaning (icons, the active tab, the admin and hero
+   cards, the level stripes) stay as they are. Team Vault page only. */
+[data-bs-theme="dark"] .cvx.tv-page{background:transparent;--tvd-bg:#0d1a22;--tvd-card:#11222c;--tvd-raise:#152a36;--tvd-line:rgba(34,211,238,.16);--tvd-line2:rgba(34,211,238,.28);--tvd-tx:#e2f4f8;--tvd-mu:#8fb3c1;--tvd-dim:#6b8f9d;}
+
+/* Header strip + What We Are Doing Here */
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal{border-color:#0e5063;background:linear-gradient(110deg,#0b2430 0%,#0c2c39 45%,#0e3646 100%);box-shadow:0 2px 0 rgba(255,255,255,.04) inset,0 8px 28px rgba(0,0,0,.4);}
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__glow{opacity:.35;}
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__sheen{background:linear-gradient(180deg,rgba(255,255,255,.05),transparent);}
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__title{color:#cffafe;}
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__sub{color:#67e8f9;}
+[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__online-dot{border-color:#0c2c39;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal{border-color:#0e5063;background:var(--tvd-card);box-shadow:0 8px 28px rgba(0,0,0,.35);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header{background:linear-gradient(110deg,#0b2430 0%,#0e3646 100%);border-bottom-color:#0e5063;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header::before{opacity:.3;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header::after{background:linear-gradient(180deg,rgba(255,255,255,.05),transparent);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-label{color:#22d3ee;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-sep{background:#0e5063;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-title{color:#cffafe;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-sub{color:#67e8f9;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__toggle{background:rgba(6,182,212,.12);border-color:rgba(34,211,238,.3);color:#67e8f9;box-shadow:none;}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__body{background:var(--tvd-bg);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item{background:var(--tvd-card);border-color:var(--tvd-line);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item:hover{border-color:var(--tvd-line2);box-shadow:0 6px 18px rgba(0,0,0,.35);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-item__title{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-item__num, [data-bs-theme="dark"] .cvx.tv-page .bref-item__desc{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item__ico{color:#22d3ee;}
+
+/* The two panes, their headers and the collapsed rail */
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane{background:var(--tvd-card);border-color:var(--tvd-line);box-shadow:0 10px 26px -18px rgba(0,0,0,.8);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__hd{background:linear-gradient(100deg,#0b2430,#0e3646 60%,#104252);border-bottom-color:var(--tvd-line);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__t b{color:#cffafe;}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__t small{color:#67e8f9;opacity:.85;}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__tg{color:#67e8f9;background:rgba(6,182,212,.1);border-color:var(--tvd-line2);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__tg:hover{color:#fff;background:linear-gradient(135deg,#22d3ee,#0891b2);border-color:transparent;}
+[data-bs-theme="dark"] .cvx.tv-page .tv-split.is-l-off .tv-pane--l .tv-pane__rail{color:#67e8f9;background:linear-gradient(180deg,#0b2430,#0e3646);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-split.is-l-off .tv-pane--l .tv-pane__rail:hover{background:linear-gradient(180deg,#0e3646,#114a5b);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__rail span{color:#cffafe;}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane__bd{scrollbar-color:#2a4652 transparent;}
+
+/* Team Details · department list */
+[data-bs-theme="dark"] .cvx.tv-page .tvo-search{background:var(--tvd-bg);border-color:var(--tvd-line2);color:var(--tvd-dim);}
+[data-bs-theme="dark"] .cvx.tv-page .tvo-search input{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .tvo-search input::placeholder{color:var(--tvd-dim);}
+[data-bs-theme="dark"] .cvx.tv-page .tvo-meta, [data-bs-theme="dark"] .cvx.tv-page .tvo-none{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc{background:linear-gradient(160deg,var(--tvd-raise) 0%,var(--tvd-card) 100%);border-color:var(--tvd-line);box-shadow:0 12px 24px -20px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc:hover{border-color:rgba(34,211,238,.45);box-shadow:0 18px 30px -18px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc__t b{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc__t small, [data-bs-theme="dark"] .cvx.tv-page .tvx-dc__n small{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc__n b{background:linear-gradient(135deg,#67e8f9,#22d3ee);-webkit-background-clip:text;background-clip:text;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc__bot{border-top-color:var(--tvd-line);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dc__go{color:#22d3ee;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-dist{background:rgba(255,255,255,.06);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-adm, [data-bs-theme="dark"] .cvx.tv-page .tvx-hero{background:linear-gradient(125deg,#083a49 0%,#0b5468 45%,#0e7490 80%,#0891b2 100%);box-shadow:0 16px 28px -18px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-adm__av i{border-color:#0b5468;}
+
+/* Team Details · one department: level counts, toolbar, hierarchy */
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--admin{--lc:#67e8f9;--lb:rgba(14,116,144,.22);--lr:rgba(34,211,238,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--hod{--lc:#5eead4;--lb:rgba(8,145,178,.2);--lr:rgba(34,211,238,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--tl{--lc:#67e8f9;--lb:rgba(34,211,238,.14);--lr:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--exec{--lc:#7dd3fc;--lb:rgba(56,189,248,.14);--lr:rgba(56,189,248,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--emp{--lc:#5eead4;--lb:rgba(45,212,191,.13);--lr:rgba(45,212,191,.3);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lv--intern{--lc:#a9c6d0;--lb:rgba(148,184,196,.12);--lr:rgba(148,184,196,.28);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lvl{background:var(--tvd-raise);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-lvl small{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-bar>span{color:#cffafe;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-bar>span svg{color:#22d3ee;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-seg{background:var(--tvd-bg) !important;border-color:var(--tvd-line2) !important;box-shadow:none;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-seg button{color:var(--tvd-mu) !important;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-seg button:hover:not(.is-on){color:var(--tvd-tx) !important;background:rgba(34,211,238,.1) !important;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-seg button.is-on{color:#fff !important;}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card{background:var(--tvd-raise);border-color:var(--tvd-line);box-shadow:0 6px 14px -12px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card:hover{border-color:var(--lr);box-shadow:0 10px 20px -14px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card.tvx-lv--hod{background:linear-gradient(120deg,rgba(8,145,178,.2),var(--tvd-raise) 70%);border-color:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card.is-sel{border-color:#22d3ee;background:linear-gradient(120deg,rgba(34,211,238,.18),var(--tvd-raise));box-shadow:0 0 0 3px rgba(34,211,238,.18),0 10px 20px -14px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card.tvx-lv--admin{background:linear-gradient(125deg,#083a49,#0b5468 55%,#0e7490);box-shadow:0 12px 24px -14px rgba(0,0,0,.9);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card:not(.tvx-lv--admin) .tvx-tx b{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card:not(.tvx-lv--admin) .tvx-tx small{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tvx-kids>.tvx-n::before, [data-bs-theme="dark"] .cvx.tv-page .tvx-kids>.tvx-n::after{border-color:rgba(34,211,238,.22);}
+
+/* Credentials pane: tab rail, search, member filter */
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane--r .tvc-top .smt-proctype-tab:not(.is-active){color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tv-pane--r .tvc-top .smt-proctype-tab:not(.is-active):hover{color:var(--tvd-tx);background:rgba(34,211,238,.1);}
+[data-bs-theme="dark"] .cvx.tv-page .smt-proctype-tab:not(.is-active) .bst-tab-c{color:#67e8f9;background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .cvx.tv-page .bst-search input{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .bst-search input::placeholder{color:var(--tvd-dim);}
+[data-bs-theme="dark"] .cvx.tv-page .bst-search-clear{background:rgba(255,255,255,.08);color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .bst-search-clear:hover{background:rgba(255,255,255,.14);color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil{background:linear-gradient(120deg,rgba(34,211,238,.14),rgba(45,212,191,.08) 60%,transparent);border-color:var(--tvd-line2);}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil__t small, [data-bs-theme="dark"] .cvx.tv-page .tvc-fil__t i, [data-bs-theme="dark"] .cvx.tv-page .tvc-fil__n{color:var(--tvd-mu);}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil__t b{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil__n{border-right-color:var(--tvd-line2);}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil__n b{color:#67e8f9;}
+[data-bs-theme="dark"] .cvx.tv-page .tvc-fil__x{color:#67e8f9;background:rgba(6,182,212,.1);border-color:var(--tvd-line2);}
+
+/* Credentials table and its empty state */
+[data-bs-theme="dark"] .cvx.tv-page .tvc-list .whm-tblwrap{background:transparent;border-top-color:var(--tvd-line) !important;border-bottom-color:var(--tvd-line) !important;}
+[data-bs-theme="dark"] .cvx.tv-page .whm-tbl thead th{color:#67e8f9;background:#123341;border-bottom-color:var(--tvd-line2);}
+[data-bs-theme="dark"] .cvx.tv-page .whm-tbl tbody td{color:var(--tvd-tx);border-bottom-color:rgba(34,211,238,.08);background:transparent;}
+[data-bs-theme="dark"] .cvx.tv-page .whm-tbl tbody tr:nth-child(even) td{background:rgba(34,211,238,.04);}
+[data-bs-theme="dark"] .cvx.tv-page .whm-tbl tbody tr:hover td{background:rgba(34,211,238,.1);}
+[data-bs-theme="dark"] .cvx.tv-page .whm-sr, [data-bs-theme="dark"] .cvx.tv-page .whm-idpill, [data-bs-theme="dark"] .cvx.tv-page .mv-cat{color:#67e8f9;background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.28);}
+[data-bs-theme="dark"] .cvx.tv-page .whm-namecell__t b, [data-bs-theme="dark"] .cvx.tv-page .mv-ownc b, [data-bs-theme="dark"] .cvx.tv-page .mv-upd-d{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-user, [data-bs-theme="dark"] .cvx.tv-page .mv-catc b, [data-bs-theme="dark"] .cvx.tv-page .mv-upd{color:#c3dbe3;}
+[data-bs-theme="dark"] .cvx.tv-page .whm-iddate, [data-bs-theme="dark"] .cvx.tv-page .whm-namecell__t span, [data-bs-theme="dark"] .cvx.tv-page .mv-tbl .whm-namecell__loc,
+[data-bs-theme="dark"] .cvx.tv-page .mv-catcell small, [data-bs-theme="dark"] .cvx.tv-page .mv-upd small, [data-bs-theme="dark"] .cvx.tv-page .mv-str--na{color:var(--tvd-mu) !important;}
+/* :where() keeps this at the base rule's weight, so the coloured strength bars still win. */
+:where([data-bs-theme="dark"]) .cvx.tv-page .mv-meter__bars i{background:rgba(255,255,255,.1);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-risk--low, [data-bs-theme="dark"] .cvx.tv-page .mv-2fa--on{color:#6ee7b7;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-risk--medium{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-risk--high{color:#fdba74;background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-risk--critical{color:#fda4af;background:rgba(244,63,94,.12);border-color:rgba(244,63,94,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-2fa--off{color:var(--tvd-mu);background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);}
+/* The live table's Risk / Strength / 2FA cells (RiskFlag, StrengthCell, TwofaCell) */
+[data-bs-theme="dark"] .cvx.tv-page .mv-rk--low{color:#6ee7b7;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-rk--medium{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-rk--high{color:#fdba74;background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-rk--critical{color:#fda4af;background:rgba(244,63,94,.12);border-color:rgba(244,63,94,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-2on{color:#67e8f9;background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .znm-flag--no{color:var(--tvd-mu);background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,var(--tvd-raise)),color-mix(in srgb,var(--c) 6%,var(--tvd-card)));border-color:color-mix(in srgb,var(--c) 38%,transparent);box-shadow:0 6px 14px -12px #000;}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg__lbl{color:color-mix(in srgb,var(--c) 55%,#fff);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg__sc{color:var(--tvd-tx);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg__sc small{color:var(--tvd-dim);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg__track{background:rgba(255,255,255,.1);box-shadow:none;}
+[data-bs-theme="dark"] .cvx.tv-page .mv-sg__knob{background:var(--tvd-card);}
+/* The light action buttons are forced with !important, so the dark ones must be too. */
+[data-bs-theme="dark"] .cvx.tv-page button.whm-act:not(.whm-act--edit){color:#67e8f9 !important;background:rgba(6,182,212,.08) !important;border-color:rgba(34,211,238,.28) !important;box-shadow:none !important;}
+[data-bs-theme="dark"] .cvx.tv-page button.whm-act:not(.whm-act--edit):hover:not(:disabled){color:#fff !important;background:#0891b2 !important;border-color:#0891b2 !important;}
+[data-bs-theme="dark"] .cvx.tv-page button.whm-act--danger{color:#fb7185 !important;border-color:rgba(244,63,94,.32) !important;background:rgba(244,63,94,.08) !important;}
+[data-bs-theme="dark"] .cvx.tv-page button.whm-act--danger:hover:not(:disabled){color:#fff !important;background:linear-gradient(140deg,#fb7185,#e11d48 60%,#be123c) !important;border-color:transparent !important;}
+[data-bs-theme="dark"] .cvx.tv-page .mv-team{color:#67e8f9;background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-pers{color:var(--tvd-mu);background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-shared{color:#c4b5fd;background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.32);}
+[data-bs-theme="dark"] .cvx.tv-page .whm-tbl.mv-tbl tbody td.mv-empty{background:transparent !important;}
+[data-bs-theme="dark"] .cvx.tv-page .mv-empty__ico{color:#67e8f9;background:linear-gradient(145deg,rgba(34,211,238,.16),rgba(8,145,178,.1));border-color:var(--tvd-line2);box-shadow:0 10px 24px -10px rgba(0,0,0,.8);}
+[data-bs-theme="dark"] .cvx.tv-page .mv-empty__t{color:#e0f2fe;}
+[data-bs-theme="dark"] .cvx.tv-page .mv-empty__s{color:var(--tvd-mu);}

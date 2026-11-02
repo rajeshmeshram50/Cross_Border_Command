@@ -18,8 +18,13 @@
 .cvx h1, .cvx h2, .cvx h3, .cvx h4, .cvx h5, .cvx h6 { color: inherit; }
 /* The prototype's own reset (`*{margin:0;padding:0}`) — without it Bootstrap's reboot
    margins on p / ul / h* / label leak in. Every extracted rule is .cvx-prefixed, so
-   it is at least as specific and still wins. */
-.cvx *, .cvx *::before, .cvx *::after { box-sizing: border-box; margin: 0; padding: 0; }
+   it is at least as specific and still wins.
+   The app's own pager (WorklistPager, .wl-pager) is left out: it is not
+   prototype markup, and zeroed padding crushed its pills. :where() keeps the
+   reset at the same weight as the plain `.cvx *` it replaces. */
+.cvx :where(:not(.wl-pager, .wl-pager *)),
+.cvx :where(:not(.wl-pager, .wl-pager *))::before,
+.cvx :where(:not(.wl-pager, .wl-pager *))::after { box-sizing: border-box; margin: 0; padding: 0; }
 .cvx code { color: inherit; }
 
 /* The page column: the prototype's main area (padding 10px 12px, 6px gaps). */
@@ -32,6 +37,8 @@
 .cvx .cv-shimrow td { padding: 14px 10px; }
 .cvx .cv-shimrow i { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #eef2f7 0%, #e2e8f0 50%, #eef2f7 100%); background-size: 200% 100%; animation: cv-shim 1.2s linear infinite; }
 @keyframes cv-shim { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* Dark mode: the light greys read as white bars on the dark panes - a faint teal sweep instead. */
+[data-bs-theme="dark"] .cvx .cv-shimrow i { background-image: linear-gradient(90deg, rgba(255,255,255,.04) 0%, rgba(34,211,238,.12) 50%, rgba(255,255,255,.04) 100%); }
 
 /* Inline field errors under form inputs. */
 .cvx .cv-ferr { display: block; margin-top: 4px; font-size: 11px; font-weight: 600; color: #be123c; }

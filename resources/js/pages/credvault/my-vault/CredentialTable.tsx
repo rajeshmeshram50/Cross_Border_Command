@@ -23,6 +23,10 @@ export interface CredentialTableProps {
   onDelete: (row: CredentialRow) => void;
 }
 
+// Usernames past 12 characters are cut with an ellipsis; the full value is the cell's tooltip.
+const USER_SHOWN = 12;
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
 const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Username', 'Owner', 'Risk', 'Strength', '2FA', 'Last Updated', 'Action'];
 
 export default function CredentialTable({ rows, startIndex, loading, emptyTitle, emptySub, onAdd, onEdit, onShare, onView, onCopy, onDelete }: CredentialTableProps) {
@@ -50,7 +54,7 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
                   <td><IdCell code={r.code} date={r.created_at} /></td>
                   <td><NameCell row={r} typeIcon={typeOf(r.type)?.icon} /></td>
                   <td><CategoryCell label={r.type_label} group={r.category_group} /></td>
-                  <td><span className="mv-user">{r.username ? r.username : <span className="mv-str--na">—</span>}</span></td>
+                  <td><span className="mv-user" title={r.username || undefined}>{r.username ? clip(r.username, USER_SHOWN) : <span className="mv-str--na">—</span>}</span></td>
                   <td><OwnerCell row={r} /></td>
                   <td><RiskFlag risk={r.risk} /></td>
                   <td><StrengthCell row={r} /></td>

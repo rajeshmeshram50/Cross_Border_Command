@@ -76,7 +76,7 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, onRemoveLine, onAddLine, removedCount = 0, onRestoreLines,
+  draft, set, lines, onChangeLine, onRemoveLine, removeLineBlocked, onAddLine, removedCount = 0, onRestoreLines,
   taxMode, onPickFile, readOnly = false, direct = false, matched = true, issues, check = 0,
 }: {
   /** Shown only after an Update & Next has been refused; undefined before. */
@@ -88,7 +88,10 @@ export default function Step2InvoiceProducts({
   set: SetDraft;
   lines: ProductLine[];
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
-  onRemoveLine?: (index: number) => void;
+  /** Returns whether the line came off. */
+  onRemoveLine?: (index: number) => boolean;
+  /** Says why a line cannot come off (and returns true) before anything is asked. */
+  removeLineBlocked?: (index: number) => boolean;
   matched?: boolean;
   onAddLine?: () => void;
   removedCount?: number;
@@ -247,7 +250,7 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
+          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} removeBlocked={removeLineBlocked} taxMode={taxMode} readOnly={readOnly}
             twoWay={direct} matched={matched} hasPi={direct || poHasPi} rowIssues={issues?.rows}
             supplierSegments={draft.supplierDetail?.segments ?? null}
             supplierProducts={draft.supplierDetail?.mapped_product_ids ?? null}

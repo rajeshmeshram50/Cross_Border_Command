@@ -21,4 +21,6 @@
 .cvx .cva-shim__row i:nth-child(2){width:28px;height:28px;border-radius:50%;}
 .cvx .cva-shim__row i:nth-child(3){flex:1;max-width:60%;}
 @keyframes cvaShim{to{background-position:-200% 0;}}
+[data-bs-theme="dark"] .cvx .cva-shim__row{background:rgba(255,255,255,.03);border-color:rgba(34,211,238,.14);}
+[data-bs-theme="dark"] .cvx .cva-shim__row i{background-image:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(34,211,238,.12) 50%,rgba(255,255,255,.04) 75%);}
 @media (max-width:640px){.cvx .cva-filters__n{display:none;}.cvx .cva-sel{min-width:0;flex:1;}}

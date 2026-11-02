@@ -326,7 +326,7 @@ export default function BoxDrawer({
   const stripStacked = stripLayout === 'stacked';
   useEffect(() => {
     const strip = stripRef.current;
-    if (variant !== 'modal' || !strip) return;
+    if (!strip) return;
     const sum = (sel: string) => {
       const kids = Array.from(strip.querySelector(sel)?.children ?? []) as HTMLElement[];
       return kids.reduce((w, k) => w + k.offsetWidth, 0) + (sel === '.vti-dw-toolbar' ? 9 * Math.max(0, kids.length - 1) : 0);
@@ -334,8 +334,9 @@ export default function BoxDrawer({
     const measure = () => {
       const wasCompact = strip.classList.contains('is-compact');
       if (wasCompact) strip.classList.remove('is-compact');
-      // accent 4 + gap 14 + close-button lane 62
-      const need = 4 + sum('.vti-dw-strip-left') + 14 + sum('.vti-dw-toolbar') + 62;
+      // accent 4 + gap 14 + the right edge: the modal's close-button lane
+      // (62), or plain padding in the inline panel, whose Close sits above.
+      const need = 4 + sum('.vti-dw-strip-left') + 14 + sum('.vti-dw-toolbar') + (variant === 'modal' ? 62 : 16);
       const product = (strip.querySelector('.strip-product') as HTMLElement | null)?.offsetWidth ?? 0;
       const dimLabel = (strip.querySelector('.vti-dw-dim-label') as HTMLElement | null)?.offsetWidth ?? 0;
       const items = strip.querySelectorAll('.vti-dw-strip-left > .vti-dw-strip-item').length;
@@ -366,7 +367,7 @@ export default function BoxDrawer({
             the unit toggle, Upload and Camera all live in this strip, outside
             the body's veil, so the quantity could still be changed mid-save. */}
         <div ref={stripRef}
-          className={`vti-dw-strip${variant === 'modal' ? (stripStacked ? ' is-stacked' : stripLayout === 'compact' ? ' is-oneline is-compact' : ' is-oneline') : ''}`}
+          className={`vti-dw-strip${stripStacked ? ' is-stacked' : stripLayout === 'compact' ? ' is-oneline is-compact' : ' is-oneline'}`}
           inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">

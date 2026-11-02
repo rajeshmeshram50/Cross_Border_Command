@@ -113,8 +113,12 @@ const zoneSub = (z: PutawayZone, shelves: number) =>
  *  for being inactive, held by another picker, too short for the box or the
  *  wrong temperature can sit at any fill at all, and judging it by percentage
  *  filed those under "Fully Utilized" whenever they happened to be full-ish —
- *  which is most of them, so the second band almost never appeared. */
-const CAPACITY_REASONS = new Set(['full', 'over_weight', 'over_capacity']);
+ *  which is most of them, so the second band almost never appeared.
+ *  Only `full` counts. "Not enough free space" (over_capacity) and "Not
+ *  enough free load" (over_weight) are a location that still has room, just
+ *  not enough for THIS box - a smaller box would go there - so they are Not
+ *  Eligible, not Fully Utilized (#75). */
+const CAPACITY_REASONS = new Set(['full']);
 
 /** Only reached when the payload carries no code (older responses). */
 const FULL_PCT = 75;

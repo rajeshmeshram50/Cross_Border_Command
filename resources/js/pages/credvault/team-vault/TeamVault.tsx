@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialRow, type PageMeta } from '../cvApi';
-import { copyText, CvBrief, CvPage, CvPager, CvStrip, errMsg, StripBtn, Svg, useDebounced } from '../shared';
+import { copyText, CvBrief, CvPage, CvStrip, errMsg, StripBtn, Svg, useDebounced } from '../shared';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import CredentialTable from '../my-vault/CredentialTable';
 import ViewDrawer from '../my-vault/ViewDrawer';
 import ShareModal from '../my-vault/ShareModal';
@@ -10,6 +11,7 @@ import CredentialFormModal from '../form/CredentialFormModal';
 import UnlockModal from '../critical/UnlockModal';
 import TeamDetails, { type OpenDept } from './TeamDetails';
 import ExportModal from './ExportModal';
+import { tvData, TV_DUMMY } from './tvData';
 import { LV_SHORT, TV_IC, type TreeNode } from './tvShared';
 
 /**
@@ -45,6 +47,7 @@ export default function TeamVault() {
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [meta, setMeta] = useState<PageMeta | null>(null);
@@ -63,7 +66,7 @@ export default function TeamVault() {
   useEffect(() => {
     const my = ++seq.current;
     setLoading(true); setLoadErr(null); setMemberErr(null);
-    cvApi.list({ tab, q: dq, page, department_id: deptId, member_employee_id: memberEmp })
+    tvData.list({ tab, q: dq, page, per_page: pageSize, department_id: deptId, member_employee_id: memberEmp })
       .then(r => {
         if (my !== seq.current) return;
         setRows(r.data); setTabs(r.tabs); setMeta(r.meta);
@@ -79,7 +82,7 @@ export default function TeamVault() {
       .finally(() => { if (my === seq.current) setLoading(false); });
   // toast is stable; listing re-runs on the inputs below only.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, dq, page, deptId, memberEmp, reload]);
+  }, [tab, dq, page, pageSize, deptId, memberEmp, reload]);
 
   useEffect(() => { setPage(1); }, [dq]);
 
@@ -92,7 +95,16 @@ export default function TeamVault() {
   const selectMember = (n: TreeNode | null) => { setMember(n); setPage(1); setTab('team'); };
   const goPage = (p: number) => { setPage(p); if (bdRef.current) bdRef.current.scrollTop = 0; };
 
+  /* On dummy data the rows' ids exist nowhere on the server, so anything that
+     would open or change a credential says so instead of failing - except
+     Edit, which opens the real form prefilled from the row (nothing saved). */
+  const open = (next: Overlay) => {
+    if (TV_DUMMY && !(next?.kind === 'form' && next.id)) toast.info('Design preview', 'Team Vault is showing dummy data — this action opens once it is on live data.');
+    else setOverlay(next);
+  };
+
   const onCopy = async (row: CredentialRow) => {
+    if (TV_DUMMY) { open(null); return; }
     try {
       const r = await cvApi.reveal(row.id, 'copy');
       await copyText(r.value, r.clear_clipboard_after);
@@ -136,7 +148,7 @@ export default function TeamVault() {
         icon={TV_IC.team}
         title="Team Vault"
         sub="Shared credentials for your team — everyone with access uses the same login, with every view and copy recorded."
-        actions={<StripBtn icon={TV_IC.download} onClick={() => setOverlay({ kind: 'export' })}>Export Credentials</StripBtn>}
+        actions={<StripBtn icon={TV_IC.download} onClick={() => open({ kind: 'export' })}>Export Credentials</StripBtn>}
       />
 
       <CvBrief
@@ -217,16 +229,18 @@ export default function TeamVault() {
                 loading={loading}
                 emptyTitle={emptyTitle}
                 emptySub={emptySub}
-                onAdd={showChip || loadErr || dq ? undefined : () => setOverlay({ kind: 'form' })}
-                onEdit={r => setOverlay({ kind: 'form', id: r.id })}
-                onShare={r => setOverlay({ kind: 'share', id: r.id })}
-                onView={r => setOverlay({ kind: 'view', id: r.id })}
+                onAdd={showChip || loadErr || dq ? undefined : () => open({ kind: 'form' })}
+                onEdit={r => open({ kind: 'form', id: r.id })}
+                onShare={r => open({ kind: 'share', id: r.id })}
+                onView={r => open({ kind: 'view', id: r.id })}
                 onCopy={onCopy}
-                onDelete={r => setOverlay({ kind: 'bin', row: r })}
+                onDelete={r => open({ kind: 'bin', row: r })}
               />
-              {meta && !loading && (
-                <CvPager page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={meta.per_page} onPage={goPage} />
-              )}
+              {/* The house pager (CLM, SPI): Showing pill, Rows per page, page pill, arrows. */}
+              <WorklistPager className="wl-teal" loading={loading}
+                total={total} page={meta?.current_page ?? page} pageSize={pageSize}
+                onPage={goPage} onPageSize={n => { setPageSize(n); setPage(1); }} />
+
             </div>
           </div>
         </section>
@@ -238,6 +252,7 @@ export default function TeamVault() {
       )}
       {overlay?.kind === 'form' && (
         <CredentialFormModal credentialId={overlay.id} scope="team" departmentId={deptId}
+          previewRow={TV_DUMMY && overlay.id ? rows.find(r => r.id === overlay.id) : undefined}
           onClose={() => setOverlay(null)} onSaved={() => { setOverlay(null); refresh(); }} />
       )}
       {overlay?.kind === 'share' && (

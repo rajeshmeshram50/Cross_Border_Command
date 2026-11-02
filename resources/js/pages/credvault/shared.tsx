@@ -475,7 +475,7 @@ export function NameCell({ row, typeIcon }: { row: Pick<CredentialRow, 'name' | 
       <span className="whm-namecell__ico"><Svg icon={typeIcon ?? 'lock'} size={15} /></span>
       <div className="whm-namecell__t">
         <b>{row.name}</b>
-        {sub && <span className="whm-namecell__loc"><Svg icon={subIcon} size={11} />{sub}</span>}
+        {sub && <span className="whm-namecell__loc" title={sub}><Svg icon={subIcon} size={11} />{sub}</span>}
       </div>
     </div>
   );
@@ -491,7 +491,7 @@ export function OwnerCell({ row }: { row: Pick<CredentialRow, 'owner' | 'scope' 
   return (
     <div className="mv-ownc">
       <span className="mv-ownc__av">{row.owner.initials}</span>
-      <div><b>{row.owner.is_me ? 'You' : row.owner.name}</b>{badge}</div>
+      <div><b title={row.owner.is_me ? undefined : row.owner.name}>{row.owner.is_me ? 'You' : row.owner.name}</b>{badge}</div>
     </div>
   );
 }

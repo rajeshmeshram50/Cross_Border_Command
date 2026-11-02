@@ -16,14 +16,18 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true, rowIssues,
+  lines, onChange, onRemove, removeBlocked, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote, hasPi = true, rowIssues,
   supplierSegments = null, supplierProducts = null,
 }: {
   lines: ProductLine[];
   /** Cells a refused Update & Next flagged, by line index. */
   rowIssues?: Record<number, { product?: string; qty?: string }>;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
-  onRemove?: (index: number) => void;
+  /** Returns whether the line came off; "Removed" is said only when it did. */
+  onRemove?: (index: number) => boolean;
+  /** Checked before the "Remove it?" dialog: true means the line cannot come
+   *  off, and the caller has already said why. */
+  removeBlocked?: (index: number) => boolean;
   readOnly?: boolean;
 
   taxMode?: TaxMode;
@@ -45,7 +49,7 @@ export default function ProductTable({
   const toast = useToast();
   const askRemove = useCallback(async (index: number) => {
     const line = lines[index];
-    if (!line || !onRemove) return;
+    if (!line || !onRemove || removeBlocked?.(index)) return;
     const name = line.spiName || line.piName;
     const after = tableTotals(lines.filter((_, i) => i !== index), taxMode, twoWay);
     const ok = await confirm({
@@ -57,9 +61,8 @@ export default function ProductTable({
       confirmLabel: 'Remove it',
     });
     if (!ok) return;
-    onRemove(index);
-    toast.info('Removed', name);
-  }, [confirm, lines, onRemove, taxMode, toast, twoWay, totals.cost]);
+    if (onRemove(index)) toast.info('Removed', name);
+  }, [confirm, lines, onRemove, removeBlocked, taxMode, toast, twoWay, totals.cost]);
   const [master, setMaster] = useState<ProductOpt[]>([]);
   const needsNames = lines.some(l => l.productId != null && !l.code);
   const wantMaster = !readOnly || needsNames;
