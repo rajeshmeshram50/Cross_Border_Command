@@ -109,10 +109,14 @@ class SpiPutawayController extends Controller
                     'message' => "{$spi->code} is {$spi->status} and can no longer be edited.",
                 ], 422));
             }
-            if ((int) $spi->stage_completed >= 3 || $spi->putaways()->exists()) {
+            /* Fixed only once putaway has actually STARTED — a box assigned a
+               location commits the warehouse. Box packaging being complete does
+               not: before any box is placed, changing the warehouse is safe, and
+               the Stage 03->04 capability blocker depends on being able to. */
+            if ($spi->putaways()->exists()) {
                 abort(response()->json([
                     'status'  => false,
-                    'message' => "Stage 03 of {$spi->code} is complete — the warehouse is fixed for putaway.",
+                    'message' => "Putaway has already started for {$spi->code} — the warehouse can no longer be changed.",
                 ], 422));
             }
 

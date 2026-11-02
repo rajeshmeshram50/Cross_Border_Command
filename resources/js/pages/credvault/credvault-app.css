@@ -19,16 +19,14 @@
 /* The prototype's own reset (`*{margin:0;padding:0}`) — without it Bootstrap's reboot
    margins on p / ul / h* / label leak in. Every extracted rule is .cvx-prefixed, so
    it is at least as specific and still wins.
-   The app's own pager (WorklistPager, .wl-pager) is left out: it is not
-   prototype markup, and zeroed padding crushed its pills. :where() keeps the
-   reset at the same weight as the plain `.cvx *` it replaces. */
-.cvx :where(:not(.wl-pager, .wl-pager *)),
-.cvx :where(:not(.wl-pager, .wl-pager *))::before,
-.cvx :where(:not(.wl-pager, .wl-pager *))::after { box-sizing: border-box; margin: 0; padding: 0; }
+   Two pieces of app markup are left out, since zeroed padding crushed them:
+   the pager (WorklistPager, .wl-pager) and the shared list tab rail
+   (DataTable.css .dt-tabrail). :where() keeps the reset at the same weight
+   as the plain `.cvx *` it replaces. */
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *)),
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *))::before,
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *))::after { box-sizing: border-box; margin: 0; padding: 0; }
 .cvx code { color: inherit; }
-
-/* The page column: the prototype's main area (padding 10px 12px, 6px gaps). */
-.cvx.cv-pagecol { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 100%; background: #F4F6FB; }
 
 /* Portalled overlays sit above the app header. */
 .cvx.cv-portal { position: relative; z-index: 1300; }

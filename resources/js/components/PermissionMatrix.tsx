@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
-import { Badge, Button, CardBody, Input, Spinner } from 'reactstrap';
+import { useEffect, useMemo, useState, useRef, type ReactElement, type ReactNode } from 'react';
+import { Badge, Button, Card, CardBody, Input, Spinner } from 'reactstrap';
 import { resolveDependencies } from '../utils/moduleDependencies';
 
 export interface PermModule {
@@ -119,6 +119,9 @@ interface Props {
   loading?: boolean;
   /** Auto-expand all Master category parents by default */
   autoExpandMasterCategories?: boolean;
+  /** Rendered inside the table card, below the grid — keeps the save bar in the
+   *  same card as the table instead of a separate one. */
+  footer?: ReactNode;
 }
 
 export default function PermissionMatrix({
@@ -128,6 +131,7 @@ export default function PermissionMatrix({
   grantableBy = null,
   loading = false,
   autoExpandMasterCategories = true,
+  footer,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
@@ -457,10 +461,7 @@ export default function PermissionMatrix({
                 <i className={`ri-arrow-${isOpen ? 'down' : 'right'}-s-line fs-16 text-muted`}></i>
               </button>
               <div className="avatar-xs">
-                <span
-                  className="avatar-title rounded fs-4"
-                  style={{ background: 'rgba(64,81,137,0.12)', color: ACCENT }}
-                >
+                <span className="avatar-title rounded fs-4 perm-mod-ico">
                   <i className={`ri-folder${isOpen ? '-open' : ''}-fill`}></i>
                 </span>
               </div>
@@ -535,10 +536,7 @@ export default function PermissionMatrix({
 
 
               <div className="avatar-xs">
-                <span
-                  className="avatar-title rounded fs-4"
-                  style={{ background: 'rgba(64,81,137,0.12)', color: ACCENT }}
-                >
+                <span className="avatar-title rounded fs-4 perm-mod-ico">
                   <i className={leafStyle.icon}></i>
                 </span>
               </div>
@@ -626,64 +624,86 @@ export default function PermissionMatrix({
 
   return (
     <>
-      {/* 18px to match the hero card above — the employee avatar and the page
-          title both start there, so this row lines up with them instead of
-          sitting on its own inset. */}
-      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '8px 18px' }}>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          {/* `px-3` dropped: the CardBody already sets the left inset, and the
-              label's own 16px on top of it pushed "QUICK ACTIONS" a clear 36px
-              in — visibly further right than everything above it. */}
-          <span className="text-dark fs-11 fw-semibold text-uppercase py-2">
-            <i className="ri-flashlight-line me-1"></i> Quick Actions :
-          </span>
+      {/* Row 2 — the Manage Permission section bar, as its own card. 8px below,
+          matching the hero gap above it. */}
+      <Card className="shadow-sm mb-2">
+      <CardBody style={{ background: 'var(--vz-secondary-bg)', padding: '10px 18px', borderRadius: 'inherit' }}>
+        <div className="d-flex align-items-center gap-3 flex-wrap">
+          {/* Left — section identity, like the module's other section headers:
+              an icon chip, a title and a one-line subtitle. */}
+          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+            <span className="pm-qa-ico"><i className="ri-shield-keyhole-line"></i></span>
+            <div>
+              <div className="pm-qa-title">Manage Permission</div>
+              <div className="pm-qa-sub">Grant or revoke module access</div>
+            </div>
+          </div>
 
-          {/* Utility buttons — all uniform light */}
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
-            <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
-          </Button>
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
-            <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
-          </Button>
-          <Button
-            color="light" size="sm" className="rounded-pill px-3 border"
-            onClick={() => {
-              const next: Record<number, boolean> = {};
-              modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
-              setExpanded(next);
-            }}
-          >
-            <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
-          </Button>
-          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
-            <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
-          </Button>
+          {/* Quick actions flow inline after the title; the enabled count is
+              pushed right with ms-auto. No centering wrapper — that forced the
+              count onto its own line when the bar got narrow. */}
+          <div className="d-inline-flex align-items-center gap-2">
+            <span className="pm-qa-label">Selection</span>
+              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
+                <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
+              </Button>
+              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
+                <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
+              </Button>
+            </div>
 
-          <span className="vr mx-1 opacity-50"></span>
+            <span className="vr mx-1 opacity-50"></span>
 
-          {/* Per-permission column toggles — all light, icon carries the colour */}
-          {PERMS.map(p => (
-            <Button
-              key={p.key}
-              color="light"
-              size="sm"
-              className="rounded-pill px-3 border"
-              onClick={() => toggleColumn(p.key)}
-            >
-              <i className={`${p.icon} me-1 align-bottom text-${p.color}`}></i>
-              <span className="text-muted">{p.label}</span>
-            </Button>
-          ))}
+            <div className="d-inline-flex align-items-center gap-2">
+              <span className="pm-qa-label">View</span>
+              <Button
+                color="light" size="sm" className="rounded-pill px-3 border"
+                onClick={() => {
+                  const next: Record<number, boolean> = {};
+                  modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
+                  setExpanded(next);
+                }}
+              >
+                <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
+              </Button>
+              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
+                <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
+              </Button>
+            </div>
 
-          {/* Counter */}
-          <span className="ms-auto text-muted fs-12 fw-medium">
-            <strong className="text-dark fs-13">{totalChecks}</strong>
-            {' / '}{maxChecks} enabled
+            <span className="vr mx-1 opacity-50"></span>
+
+            {/* Per-permission column toggles — all light, icon carries the colour */}
+            <div className="d-inline-flex align-items-center gap-2 flex-wrap">
+              <span className="pm-qa-label">Permissions</span>
+              {PERMS.map(p => (
+                <Button
+                  key={p.key}
+                  color="light"
+                  size="sm"
+                  className="rounded-pill px-3 border"
+                  onClick={() => toggleColumn(p.key)}
+                >
+                  <i className={`${p.icon} me-1 align-bottom text-${p.color}`}></i>
+                  <span className="text-muted">{p.label}</span>
+                </Button>
+              ))}
+            </div>
+
+          {/* Right — enabled count, pushed right. */}
+          <span className="pm-qa-count flex-shrink-0 ms-auto">
+            <i className="ri-shield-check-line"></i>
+            <strong>{totalChecks}</strong>{' / '}{maxChecks}
+            <span className="pm-qa-count-label">enabled</span>
           </span>
         </div>
       </CardBody>
+      </Card>
 
-      <div className="px-3 pt-2 pb-2">
+      {/* Row 3 — the permission matrix table, direct on the card (no inner
+          padded/bordered box). overflow-hidden clips the grid and footer to
+          the card's rounded corners. */}
+      <Card className="shadow-sm overflow-hidden">
         <style>{`
           .perm-matrix-table .form-check-input:checked {
             background-color: ${ACCENT};
@@ -706,16 +726,12 @@ export default function PermissionMatrix({
         `}</style>
         <div
           ref={gridRef}
-          className="table-responsive perm-matrix-table rounded-3"
+          className="table-responsive perm-matrix-table"
           style={{
-            border: '1px solid var(--vz-border-color)',
-            /* The grid scrolls itself rather than stretching the page.
-               Expanded, this table is ~8,500px tall: laid out at full height it
-               made the browser paint the whole thing behind a page-length
-               scroll (which is what felt heavy and smeared), the column headers
-               slid away so a checkbox no longer told you which right it was,
-               and the Save button ended up ~8,900px down the page. */
-            height: gridH ? `${gridH}px` : undefined,
+            /* maxHeight only — the grid shrinks to its content when short (so the
+               footer sits right under the last row, no empty gap), and caps +
+               scrolls when the expanded table is tall (~8,500px) instead of
+               stretching the page behind a page-length scroll. */
             maxHeight: gridH ? `${gridH}px` : undefined,
             overflowY: 'auto',
             overflowX: 'auto',
@@ -766,7 +782,10 @@ export default function PermissionMatrix({
               </tbody>
             </table>
           ) : (
-            <table className="table align-middle table-nowrap table-hover mb-0">
+            // Fixed layout so the %-width columns fit the container exactly —
+            // auto layout + table-nowrap let long names push the table wider,
+            // showing a horizontal scrollbar that read as a gap above the footer.
+            <table className="table align-middle table-nowrap table-hover mb-0" style={{ tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr style={{
                   background: 'var(--vz-secondary-bg)',
@@ -803,7 +822,8 @@ export default function PermissionMatrix({
             </table>
           )}
         </div>
-      </div>
+      {footer}
+      </Card>
     </>
   );
 }

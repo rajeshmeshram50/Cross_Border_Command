@@ -3158,7 +3158,7 @@ const CSS = `
 [data-bs-theme="dark"] .esm-modal{background:#15112a;color:#e2e8f0;}
 /* Nested Add-Payment popup (over the overview) — styled like the PO "Update PO
    Payment" dialog: teal header + outstanding-balance strip + form. */
-.esm-sub-backdrop{position:fixed;inset:0;z-index:9600;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.esm-sub-backdrop{position:fixed;inset:0;z-index:9600;background:rgba(2,6,23,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;}
 .esm-sub-modal{width:100%;max-width:1080px;max-height:92vh;display:flex;flex-direction:column;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);}
 .esm-sub-modal--settle{max-width:980px;}
 [data-bs-theme="dark"] .esm-sub-modal{background:#0f172a;color:#e2e8f0;}
@@ -3660,14 +3660,21 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-file-x:hover,
 [data-bs-theme="dark"] .esm-ded-x:hover,
 [data-bs-theme="dark"] .esm-srow-x:hover:not(:disabled){background:rgba(244,63,94,.20);border-color:#f43f5e;color:#fda4af;}
+/* Dark-mode base for the +Add and ✕ pills — light tints looked like white
+   boxes on the dark modal. */
+[data-bs-theme="dark"] .esm-add-btn{background:rgba(16,185,129,.16);border-color:rgba(16,185,129,.45);color:#6ee7b7;}
+[data-bs-theme="dark"] .esm-add-btn:hover{background:rgba(16,185,129,.26);}
+[data-bs-theme="dark"] .esm-ded-add{background:rgba(124,92,252,.16);border-color:rgba(167,139,250,.5);color:#c4b5fd;}
+[data-bs-theme="dark"] .esm-ded-add:hover{background:rgba(124,92,252,.26);}
+[data-bs-theme="dark"] .esm-ded-x{background:rgba(244,63,94,.14);border-color:rgba(244,63,94,.4);color:#fda4af;}
 .esm-btn-primary{font-family:var(--font-sans);border:none;border-radius:10px;height:40px;min-height:40px;padding:0 22px;font-size:12.5px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(120deg,#7c5cfc,#a78bfa);box-shadow:0 4px 12px rgba(124,92,252,.28);}
 .esm-btn-primary:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* Review footer — approve / reject */
-.esm-btn-approve{border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#7c5cfc,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
+.esm-btn-approve{border:none;border-radius:10px;height:40px;min-height:40px;padding:0 24px;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
 .esm-btn-approve:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-approve:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
-.esm-btn-reject{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 4px 12px rgba(225,29,72,.28);}
+.esm-btn-reject{border:none;border-radius:10px;height:40px;min-height:40px;padding:0 22px;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 4px 12px rgba(225,29,72,.28);}
 .esm-btn-reject:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-reject:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 .esm-reject-in{flex:1;min-width:0;}
@@ -3681,9 +3688,9 @@ textarea.esm-in{resize:vertical;}
    containing block or it would cover the whole viewport instead. */
 .esm-sub-modal{position:relative;}
 .esm-confirm{position:relative;width:100%;max-width:440px;background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;box-shadow:0 30px 80px rgba(15,23,42,.5);}
-[data-bs-theme="dark"] .esm-confirm{background:#0f172a;color:#e2e8f0;}
+[data-bs-theme="dark"] .esm-confirm{background:#1a1636;color:#e2e8f0;border:1px solid rgba(139,122,252,.22);box-shadow:0 24px 70px rgba(0,0,0,.6);}
 .esm-confirm-ico{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
-.esm-confirm-ico.is-approve{background:linear-gradient(135deg,#7c5cfc,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
+.esm-confirm-ico.is-approve{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
 .esm-confirm-ico.is-reject{background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 8px 20px rgba(225,29,72,.32);}
 .esm-confirm-title{font-size:17px;font-weight:800;color:#0f172a;}
 [data-bs-theme="dark"] .esm-confirm-title{color:#e2e8f0;}

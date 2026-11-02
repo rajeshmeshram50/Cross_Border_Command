@@ -36,6 +36,7 @@ import {
 import type { StorageChoice } from './StorageSelectionModal';
 import type { StorageWarehouse } from './types';
 const StorageSelectionModal = lazy(() => import('./StorageSelectionModal'));
+const WarehouseFixModal = lazy(() => import('./WarehouseFixModal'));
 
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
@@ -184,6 +185,10 @@ export default function InvoiceForm({
   /* Cold-chain / hazardous capability of each warehouse for this invoice's
      boxes — greys out incompatible ones in the picker and gates the move. */
   const [eligibility, setEligibility] = useState<WarehouseEligibility | null>(null);
+  /* The Stage 03->04 blocker: the current warehouse can't hold the boxes.
+     Carries its own warehouse list so the fix is picked and applied inline. */
+  const [whBlock, setWhBlock] = useState<{ missing: string[]; list: StorageWarehouse[]; elig: WarehouseEligibility; current: string | null } | null>(null);
+  const [whBlockBusy, setWhBlockBusy] = useState(false);
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -299,7 +304,10 @@ export default function InvoiceForm({
                   gst: Number(it.gst_pct) || 0,
                 };
               }));
-              setRemovedLines([]);
+              const billed = new Set(existing.items.map(it =>
+                ((it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id))?.pi_item_id));
+              const fromPi = rowsFromPi(pi);
+              setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
             } else if (existing.shipment_order_id) {
               const pi = await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => []);
               if (!live) return;
@@ -437,7 +445,7 @@ export default function InvoiceForm({
     setLines(ls => {
       const out = [...ls];
       for (const r of [...removedLines].sort((a, b) => a.at - b.at)) {
-        out.splice(Math.min(r.at, out.length), 0, r.line);
+        out.splice(Math.min(r.at, out.length), 0, { ...r.line, spiItemId: undefined });
       }
       return out;
     });
@@ -729,7 +737,6 @@ export default function InvoiceForm({
         ? { ...l, spiItemId: saved[n++]?.id }
         : { ...l, spiItemId: undefined }));
       setLines(withIds);
-      setRemovedLines([]);
       setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
       setFiles({});
       if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
@@ -746,20 +753,35 @@ export default function InvoiceForm({
   const boxLines = lines.filter(l => l.spiItemId != null && l.spiQty > 0);
 
   const [nextBoxCodes, setNextBoxCodes] = useState<string[]>([]);
+  // Step 03 reports how many unsaved boxes it shows; only that many codes
+  // are previewed. The seq guard drops a slower, older response.
+  const codeCountRef = useRef(0);
+  const codesSeqRef = useRef(0);
+  const fetchBoxCodes = useCallback((id: number, count: number) => {
+    const seq = ++codesSeqRef.current;
+    if (count <= 0) { setNextBoxCodes([]); return Promise.resolve(); }
+    return spiApi.nextBoxCodes(id, Math.min(count, 100))
+      .then(codes => { if (seq === codesSeqRef.current) setNextBoxCodes(codes); })
+      .catch(() => {});
+  }, []);
+  const needBoxCodes = useCallback((count: number) => {
+    const grew = count > codeCountRef.current;
+    codeCountRef.current = count;
+    if (spiId && grew) void fetchBoxCodes(spiId, count);
+  }, [spiId, fetchBoxCodes]);
 
   const [placedBoxIds, setPlacedBoxIds] = useState<number[]>([]);
   const reloadBoxes = useCallback(async (id: number) => {
-    const [list, codes, board] = await Promise.all([
+    const [list, , board] = await Promise.all([
       spiApi.boxes(id),
-      spiApi.nextBoxCodes(id, 50).catch(() => [] as string[]),
+      fetchBoxCodes(id, codeCountRef.current),
       spiApi.putawayBoard(id).catch(() => null),
     ]);
     setBoxes(list);
-    setNextBoxCodes(codes);
     setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed' || r.status === 'awaiting_scan').map(r => r.box_id));
     if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
-  }, []);
+  }, [fetchBoxCodes]);
 
   useEffect(() => {
     if (!spiId) return;
@@ -945,19 +967,10 @@ export default function InvoiceForm({
       const curWh = savedWarehouseId ?? (storage.type === 'own' ? storage.warehouse?.apiId ?? null : null);
       const missing = curWh ? (elig.warehouses[String(curWh)]?.missing ?? []) : [];
       if (curWh && missing.length) {
+        // Pick and apply the fix inline — the dropdown lives in the blocker.
+        const list = await spiApi.warehouses().catch(() => [] as StorageWarehouse[]);
         setSaving(false);
-        const change = await confirm({
-          title: 'Warehouse can’t hold these boxes',
-          tone: 'warning',
-          icon: 'alert-line',
-          message: (
-            <>This invoice has boxes that need <b>{missing.map(m => m.replace(/^a /, '')).join(' and ')}</b>,
-              but the selected warehouse has none. Switch to a warehouse with the right zone before moving to putaway.</>
-          ),
-          confirmLabel: 'Change warehouse',
-          cancelLabel: 'Not now',
-        });
-        if (change) openWhEdit();
+        setWhBlock({ missing, list, elig, current: savedWarehouse ?? warehouseLabel(storage) });
         return;
       }
       await spiApi.completeStage3(spiId);
@@ -966,6 +979,29 @@ export default function InvoiceForm({
       toast.error('Could not finish Stage 03', e instanceof PoApiError ? e.firstError : 'Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* Apply the warehouse chosen in the blocker, then complete Stage 03 and move
+     on — the whole fix without leaving the move the user was making. */
+  const applyWhFix = async (apiId: number) => {
+    if (!spiId || whBlockBusy) return;
+    setWhBlockBusy(true);
+    try {
+      await spiApi.setWarehouse(spiId, apiId);
+      const picked = whBlock?.list.find(w => w.apiId === apiId) ?? null;
+      setStorage({ type: 'own', warehouse: picked ?? undefined });
+      setSavedWarehouse(picked?.name ?? null);
+      setSavedWarehouseId(apiId);
+      setWarehouseRow(null);
+      await spiApi.completeStage3(spiId);
+      setWhBlock(null);
+      advance();
+      toast.success('Warehouse changed', `${picked?.name ?? 'Warehouse'} is saved — moving to putaway.`);
+    } catch (e) {
+      toast.error('Could not change the warehouse', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setWhBlockBusy(false);
     }
   };
 
@@ -1208,6 +1244,7 @@ export default function InvoiceForm({
                     lines={spiId ? boxLines : lines}
                     boxes={boxes}
                     nextBoxCodes={nextBoxCodes}
+                    onNeedBoxCodes={spiId ? needBoxCodes : undefined}
                     flagMaster={flagMaster}
                     onFlagsChanged={() => { spiApi.productFlags().then(setFlagMaster).catch(() => {}); }}
                     readOnly={viewOnly || putawayLocked}
@@ -1314,6 +1351,19 @@ export default function InvoiceForm({
             eligibility={eligibility}
             onClose={() => setWhEdit(null)}
             onNext={saveWarehouse}
+          />
+        </Suspense>
+      )}
+      {whBlock && (
+        <Suspense fallback={null}>
+          <WarehouseFixModal
+            missing={whBlock.missing}
+            currentName={whBlock.current}
+            warehouses={whBlock.list}
+            eligibility={whBlock.elig}
+            busy={whBlockBusy}
+            onCancel={() => { if (!whBlockBusy) setWhBlock(null); }}
+            onConfirm={applyWhFix}
           />
         </Suspense>
       )}
