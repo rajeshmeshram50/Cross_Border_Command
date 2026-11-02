@@ -77,7 +77,7 @@ const todayIso = () => {
 };
 
 export default function Step3BoxPackaging({
-  draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
+  draft, lines, boxes = [], nextBoxCodes = [], onNeedBoxCodes, flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
   spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [], onLoadBox, direct = false,
 }: {
   onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
@@ -89,6 +89,7 @@ export default function Step3BoxPackaging({
   lines: ProductLine[];
   boxes?: SpiBox[];
   nextBoxCodes?: string[];
+  onNeedBoxCodes?: (count: number) => void;
   flagMaster?: ProductFlagOption[];
   readOnly?: boolean;
   onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
@@ -288,6 +289,7 @@ export default function Step3BoxPackaging({
     }
   }
   if (mixedBox?.length) slotKeys.push('mixed');
+  useEffect(() => { onNeedBoxCodes?.(slotKeys.length); }, [slotKeys.length, onNeedBoxCodes]);
   const codeFor = (key: string) => {
     const i = slotKeys.indexOf(key);
     return (i >= 0 ? nextBoxCodes[i] : undefined) ?? 'New box';

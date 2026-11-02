@@ -738,20 +738,35 @@ export default function InvoiceForm({
   const boxLines = lines.filter(l => l.spiItemId != null && l.spiQty > 0);
 
   const [nextBoxCodes, setNextBoxCodes] = useState<string[]>([]);
+  // Step 03 reports how many unsaved boxes it shows; only that many codes
+  // are previewed. The seq guard drops a slower, older response.
+  const codeCountRef = useRef(0);
+  const codesSeqRef = useRef(0);
+  const fetchBoxCodes = useCallback((id: number, count: number) => {
+    const seq = ++codesSeqRef.current;
+    if (count <= 0) { setNextBoxCodes([]); return Promise.resolve(); }
+    return spiApi.nextBoxCodes(id, Math.min(count, 100))
+      .then(codes => { if (seq === codesSeqRef.current) setNextBoxCodes(codes); })
+      .catch(() => {});
+  }, []);
+  const needBoxCodes = useCallback((count: number) => {
+    const grew = count > codeCountRef.current;
+    codeCountRef.current = count;
+    if (spiId && grew) void fetchBoxCodes(spiId, count);
+  }, [spiId, fetchBoxCodes]);
 
   const [placedBoxIds, setPlacedBoxIds] = useState<number[]>([]);
   const reloadBoxes = useCallback(async (id: number) => {
-    const [list, codes, board] = await Promise.all([
+    const [list, , board] = await Promise.all([
       spiApi.boxes(id),
-      spiApi.nextBoxCodes(id, 50).catch(() => [] as string[]),
+      fetchBoxCodes(id, codeCountRef.current),
       spiApi.putawayBoard(id).catch(() => null),
     ]);
     setBoxes(list);
-    setNextBoxCodes(codes);
     setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed' || r.status === 'awaiting_scan').map(r => r.box_id));
     if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
-  }, []);
+  }, [fetchBoxCodes]);
 
   useEffect(() => {
     if (!spiId) return;
@@ -1200,6 +1215,7 @@ export default function InvoiceForm({
                     lines={spiId ? boxLines : lines}
                     boxes={boxes}
                     nextBoxCodes={nextBoxCodes}
+                    onNeedBoxCodes={spiId ? needBoxCodes : undefined}
                     flagMaster={flagMaster}
                     onFlagsChanged={() => { spiApi.productFlags().then(setFlagMaster).catch(() => {}); }}
                     readOnly={viewOnly || putawayLocked}
