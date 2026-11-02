@@ -7,6 +7,7 @@ import {
 import { InvoiceHeroChips } from './payment-chips';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { useToast } from '../../../../contexts/ToastContext';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import type { InvoiceRow } from './types';
 import type { InvoicePaymentRequest, SpiPayFigures } from './InvoicePaymentsModal';
 import type { ReleasePayment } from '../order/manage-payment/MakePoPaymentModal';
@@ -65,7 +66,7 @@ export default function InvoicePaymentModal({
   row: InvoiceRow;
   request: InvoicePaymentRequest;
   spiId: number;
-  poId: number;
+  poId: number | null;
   figures: SpiPayFigures;
   onChanged: () => Promise<void> | void;
   onOpenTds?: () => void;
@@ -89,8 +90,13 @@ export default function InvoicePaymentModal({
 
   const loadReleases = useCallback(async () => {
     try {
-      const res = await poPaymentApi.payments(poId, request.rid);
-      setReleases(res.payments.map(toRelease));
+      if (poId) {
+        const res = await poPaymentApi.payments(poId, request.rid);
+        setReleases(res.payments.map(toRelease));
+      } else {
+        const res = await poPaymentApi.detail(request.rid);
+        setReleases(res.payments.filter(p => p.payment_request_id === request.rid).map(toRelease));
+      }
     } catch (e) {
       toast.error('Could not load the payment history', e instanceof PoApiError ? e.firstError : 'Please try again.');
     } finally {
@@ -121,7 +127,8 @@ export default function InvoicePaymentModal({
     const target = releases[i];
     if (!target?.id) return false;
     try {
-      await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
+      if (poId) await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
+      else await spiPaymentApi.updatePayment(spiId, request.rid, target.id, payBody(p));
       toast.success('Payment updated', `${request.id} now shows ${money(p.amount)} for this entry.`);
       await afterChange();
       return true;
@@ -132,12 +139,27 @@ export default function InvoicePaymentModal({
     if (!target?.id || busyIdx !== null) return;
     setBusyIdx(i);
     try {
-      await poPaymentApi.deletePayment(poId, request.rid, target.id);
+      if (poId) await poPaymentApi.deletePayment(poId, request.rid, target.id);
+      else await spiPaymentApi.deletePayment(spiId, request.rid, target.id);
       toast.success('Payment removed', `${money(target.amount)} is back in the balance.`);
       await afterChange();
     } catch (e) { failToast('Could not delete the payment', e); } finally { setBusyIdx(null); }
   };
   const [form, setForm] = useState<true | number | null>(null);
+
+  /* CS-934: paged in the browser — the releases of one request are already in
+     hand. Each row carries its index in `releases` because edit and delete
+     address a payment by that position, and on page two the loop index is
+     no longer it. Same pager and sizes as the PO's Make Payment popup. */
+  const [payPage, setPayPage] = useState(1);
+  const [payPageSize, setPayPageSize] = useState(5);
+  const payPages = Math.max(1, Math.ceil(releases.length / payPageSize));
+  // A deleted payment can leave the last page empty — step back onto it.
+  useEffect(() => { if (payPage > payPages) setPayPage(payPages); }, [payPage, payPages]);
+  const pagedReleases = releases
+    .map((p, i) => ({ p, i }))
+    .slice((payPage - 1) * payPageSize, payPage * payPageSize);
+
   const { base, gst, extra, total, paid, balance, pctPaid, tds } = figures;
 
   const approvedRequest = request.status === 'approved';
@@ -231,8 +253,8 @@ export default function InvoicePaymentModal({
                 <button
                   type="button"
                   className={`mpr-tdsbtn${tdsSaved ? ' mpr-tdsbtn--edit' : ''}`}
-                  title={tdsSaved ? 'Revise the TDS withheld on the purchase order'
-                    : 'Withhold tax at source on the purchase order'}
+                  title={tdsSaved ? `Revise the TDS withheld on the ${poId ? 'purchase order' : 'invoice'}`
+                    : `Withhold tax at source on the ${poId ? 'purchase order' : 'invoice'}`}
                   onClick={onOpenTds}
                 >
                   <span className="mpr-tdsbtn__ico">
@@ -304,7 +326,7 @@ export default function InvoicePaymentModal({
                   <div className="cpay-empty__t">No payments recorded yet</div>
                   <div className="cpay-empty__s">Use Add New Payment to record a release against this request.</div>
                 </div>
-              ) : releases.map((p, i) => (
+              ) : pagedReleases.map(({ p, i }) => (
                 <div className="cpay-cols cpay-row" key={p.id ?? `${p.utr}-${i}`}>
                   <span className="mpr-sr" data-l="Sr. No">{i + 1}</span>
                   <span data-l="Paid Against Request ID">
@@ -362,6 +384,18 @@ export default function InvoicePaymentModal({
                   </span>
                 </div>
               ))}
+              {!loading && (
+                <WorklistPager
+                  className="wl-teal"
+                  total={releases.length}
+                  page={payPage}
+                  pageSize={payPageSize}
+                  onPage={setPayPage}
+                  onPageSize={(n) => { setPayPageSize(n); setPayPage(1); }}
+                  pageSizeOptions={[5, 10, 25]}
+                  hideNavWhenSinglePage
+                />
+              )}
             </div>
           </div>
         </div>

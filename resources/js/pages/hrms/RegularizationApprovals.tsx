@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
-import { Shimmer } from '../../components/ui/Shimmer';
 import BusyOverlay from '../../components/ui/BusyOverlay';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
@@ -503,19 +502,17 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
 
   return (
     <>
-      {/* First load has nothing to stand over, so it keeps the skeleton. Every
-          REFRESH after that — approving a row, a request filed from the panel
-          above — blurs the table it already has instead of replacing it with a
-          grey block. That is why `loading` is NOT handed to the table: the
-          component greys its whole card, which is the behaviour this overlay
-          exists to avoid. */}
-      {loading && !hasLoaded ? (
-        <Shimmer height={120} radius={10} />
-      ) : error ? (
+      {/* First load shows the DataTable's OWN skeleton (QA 197) — the module's
+          table skeleton, not a bare grey block. Every REFRESH after that —
+          approving a row, a request filed above — blurs the table already on
+          screen via the overlay rather than greying the whole card, so
+          `loading` reaches the table only on the first load. */}
+      {error ? (
         <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
       ) : (
-        <BusyOverlay busy={loading} label="Refreshing requests…">
+        <BusyOverlay busy={loading && hasLoaded} label="Refreshing requests…">
           <DataTable
+            loading={loading && !hasLoaded}
             data={rows}
             columns={columns}
             accent="teal"
@@ -530,6 +527,10 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
             searchDebounce={0}
             searchPlaceholder="Search employee, date, type, reason…"
             serial
+            /* Fill the viewport down to the footer, like every other HRMS list
+               (HrEmployees, Leave, Payroll...). Without it the card hugged its
+               rows and left a large blank below on a short result (QA 193). */
+            fitToViewport
             /* The server owns paging, search and the tab counts. pageIndex is
                0-based here and 1-based in the request. */
             serverPagination={{

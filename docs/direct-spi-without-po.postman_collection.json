@@ -91,6 +91,16 @@
             "key": "spiItemId2",
             "value": "",
             "description": "The second line, captured by the first save"
+        },
+        {
+            "key": "paymentRequestId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "paymentId",
+            "value": "",
+            "type": "string"
         }
     ],
     "auth": {
@@ -1744,33 +1754,30 @@
             ]
         },
         {
-            "name": "08 · Payments — BLOCKED for Direct SPI",
+            "name": "08 - Payments against a Direct SPI",
+            "description": "The flow, in order, with what each step does today.\n\n  1 TDS            WORKS\n  2 Raise request  WORKS\n  3 Approve        WORKS\n  4 Record payment WORKS\n  5 History        WORKS\n\npayment_type is an enum of four EXACT, capitalised strings:\n  Advance Payment | Partial Payment | Final Payment | Balance Payment\nAnything else is 422 \"The selected payment type is invalid.\"\n\nA Direct-SPI request is the SAME row as a PO's with the other parent\nset: purchase_order_id NULL, supplier_invoice_id named. So the inbox,\nshow and the decision endpoint all serve it - there is no separate\napproval endpoint to call.\n\nNOT built for a Direct SPI yet: editing or deleting a recorded payment\n(those endpoints are still PO-keyed), and posting one to Zoho Books.",
             "item": [
                 {
-                    "name": "Payment history (works)",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const d = pm.response.json().data;",
-                                    "pm.test('po block is null', () => pm.expect(d.po).to.eql(null));",
-                                    "pm.test('ledger falls back to the invoice', () => pm.expect(d.ledger.source).to.eql('supplier_invoice'));"
-                                ]
-                            }
-                        }
-                    ],
+                    "name": "1 - Deduct TDS (WORKS)",
                     "request": {
-                        "method": "GET",
+                        "method": "PUT",
                         "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
                             }
                         ],
+                        "description": "Cut on taxable_total, NOT grand_total - TDS is not deducted on GST.\n\nSend either tds_percentage or tds_amount; the other is derived.\nZero is valid and is what unlocks step 2, which is gated on\ntds_updated_at.\n\nOn spiId 9: 2% of 136,500 = 2,730, leaving 158,340 net payable.",
                         "url": {
-                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests",
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/tds",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -1778,37 +1785,40 @@
                                 "p2p",
                                 "spi",
                                 "{{spiId}}",
-                                "payment-requests"
+                                "tds"
                             ]
                         },
-                        "description": "THE READ SIDE WORKS. p2p_po_payment_requests already carries supplier_invoice_id, so the per-invoice history is genuinely keyed to the invoice.\n\n`ledger` is new and is what the screen should read. The ceiling used to be returned only as `po`, which is null on a Direct SPI, leaving nothing to validate against. `ledger` NAMES its source:\n\n  source = purchase_order     PO-backed: the order's balance, unchanged\n  source = supplier_invoice   Direct: the invoice's own tds/paid/balance\n\nnet_payable = grand_total - tds_amount on both sides. TDS is cut on the TAXABLE base, not the grand total — GST is not subject to TDS.\n\npaid_amount is NULL until the first payment. \"The ledger has not been opened\" is not the same as a zero balance, which is why the column has no 0.00 default."
-                    }
-                },
-                {
-                    "name": "422 · raise a payment request (expected failure)",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "pm.test('422 refused — GAP C', () => pm.response.to.have.status(422));"
-                                ]
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tds_percentage\": 2\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
                             }
                         }
-                    ],
+                    },
+                    "response": []
+                },
+                {
+                    "name": "2 - Raise a payment request (WORKS)",
                     "request": {
                         "method": "POST",
                         "header": [
                             {
-                                "key": "Content-Type",
-                                "value": "application/json"
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
                             },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
                             }
                         ],
+                        "description": "Raised against the invoice itself - purchase_order_id comes back\nNULL and supplier_invoice_id names it.\n\npayment_type is an enum of four EXACT, capitalised strings:\n  Advance Payment | Partial Payment | Final Payment | Balance Payment\nAnything else is 422 \"The selected payment type is invalid.\"\n\nThe ceiling is the invoice's own net payable less everything\npending or approved: on spiId 9 after a 47,502 request, 110,838\nis left and asking for more is refused.\n\nrequested_to must be an ACTIVE user of the INVOICE'S branch. A\nclient_admin is rejected - a request stops at the branch head.\n\nSave the returned request id into {{paymentRequestId}} for step 3.",
                         "url": {
                             "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests",
                             "host": [
@@ -1823,10 +1833,288 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"payment_type\": \"advance\",\n  \"requested_amount\": 10000,\n  \"requested_to\": {{approverUserId}},\n  \"reason\": \"Advance against the direct invoice\"\n}"
+                            "raw": "{\n    \"payment_type\": \"Advance Payment\",\n    \"percentage\": 30,\n    \"requested_amount\": 47502,\n    \"reason\": \"Advance against the supplier invoice\",\n    \"requested_to\": \"{{approverUserId}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3 - Approve or reject (WORKS)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "The shared decision endpoint - no SPI variant exists or is needed.\n\nOnly the person it was sent to can decide it, and only once.\napproved_amount may cut the request but never exceed it, and it\ncannot exceed what is still open on the invoice.\n\ndecision: approved | rejected. A rejection needs a note.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/payment-requests/{{paymentRequestId}}/decision",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "payment-requests",
+                                "{{paymentRequestId}}",
+                                "decision"
+                            ]
                         },
-                        "description": "EXPECTED 422: \"... is a standalone invoice — it has no purchase order to pay against.\"\n\nstoreFromSpi() reads the invoice's purchase_order_id and hands over to the PO flow. With no order there is nothing to hand to.\n\nThe SCHEMA is ready (purchase_order_id nullable on both payment tables, supplier_invoice_id on p2p_po_payments). What is missing is the controller: payable() gates on PO state (isCancelled / status=submitted / signingStarted), saveTds() computes on $order->taxable_total and writes to the order, and the SPI is validated as BELONGING to a PO.\n\nIt needs the same subject-based refactor already applied to PoGstApprovalController."
-                    }
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"decision\": \"approved\",\n    \"approved_amount\": 47502,\n    \"note\": \"Approved\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3b - Reject instead",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "The other outcome. The note is required here and capped at 300\ncharacters; on an approval it is a remark, capped at 400.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/payment-requests/{{paymentRequestId}}/decision",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "payment-requests",
+                                "{{paymentRequestId}}",
+                                "decision"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"decision\": \"rejected\",\n    \"note\": \"Not this cycle\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "4 - Record the payment + proof (WORKS)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "multipart/form-data, because the payment carries its transfer proof.\n\nFIELDS\n  amount             required, min 1\n  bank_name          optional, max 128\n  utr_cheque_number  optional, 6-22 letters or digits, unique company-wide\n  utr_cheque_date    optional, not in the future\n  proof              optional file - pdf, doc, docx, xls, xlsx,\n                     jpg, jpeg, png, webp - max 10MB\n\nDo NOT set Content-Type by hand: Postman writes it with the boundary,\nand a hand-typed one omits the boundary so the file arrives empty.\n\nTwo ceilings, and the message says which one stopped you:\n  · what the REQUEST still has approved and unpaid\n  · what the INVOICE still owes (grand_total - TDS - payments so far)\n\nThe request must be APPROVED; pending or declined is refused.\n\nThe file is stored under storage/app/public/p2p/spi-payments/{spiId}\nand comes back as proof_path / proof_name on the payment.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests/{{paymentRequestId}}/payments",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "payment-requests",
+                                "{{paymentRequestId}}",
+                                "payments"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "amount",
+                                    "value": "20000",
+                                    "type": "text",
+                                    "description": "Required, min 1. Capped by the request's approval AND the invoice balance."
+                                },
+                                {
+                                    "key": "bank_name",
+                                    "value": "HDFC",
+                                    "type": "text",
+                                    "description": "Optional, max 128."
+                                },
+                                {
+                                    "key": "utr_cheque_number",
+                                    "value": "UTRSPI000002",
+                                    "type": "text",
+                                    "description": "6-22 letters or digits. Unique across the company - reusing one names the payment holding it."
+                                },
+                                {
+                                    "key": "utr_cheque_date",
+                                    "value": "2026-10-29",
+                                    "type": "text",
+                                    "description": "Optional, not in the future."
+                                },
+                                {
+                                    "key": "proof",
+                                    "type": "file",
+                                    "src": [],
+                                    "description": "The transfer proof: pdf, doc, docx, xls, xlsx, jpg, jpeg, png or webp, max 10MB."
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "5 - Payment history for this SPI (WORKS)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Every request raised against this invoice, with its status.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/payment-requests",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "payment-requests"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "6 - The request, as the approver sees it",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "show() for one request. For a Direct SPI `po` comes back null and\n`spi` carries the figures instead - net payable, paid, balance and\nwhat is still open to request.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/payment-requests/{{paymentRequestId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "payment-requests",
+                                "{{paymentRequestId}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "7 - The inbox list",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "Direct-SPI requests appear here too. They were invisible until the\nlookup stopped INNER JOINing the purchase order - a request with no\norder was dropped by the join, so the inbox and the decision\nendpoint both behaved as though it did not exist.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/orders/payment-requests?tab=pending",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "payment-requests?tab=pending"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "8 - The SPI ledger",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "description": "tds_amount, paid_amount and balance_amount on the invoice itself.",
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}"
+                            ]
+                        }
+                    },
+                    "response": []
                 }
             ]
         },

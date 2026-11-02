@@ -730,8 +730,8 @@ const STAGE2_CSS = `
 .st2-pick-title { font-size: 15px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
 .st2-pick-sub   { display: block; font-size: 11px; color: rgba(255,255,255,.85); margin-top: 3px; font-weight: 500; }
 .st2-pick-close {
-  width: 28px; height: 28px; border: none; cursor: pointer;
-  background: rgba(255,255,255,.20); color: #fff; border-radius: 8px;
+  width: 40px; height: 40px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.20); color: #fff; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
 }
 .st2-pick-close:hover { background: rgba(255,255,255,.32); }
@@ -784,8 +784,8 @@ const STAGE2_CSS = `
 .st2-pick-btn {
   display: inline-flex; align-items: center; justify-content: center;
   box-sizing: border-box; height: 40px;
-  padding: 0 28px; border-radius: 11px; border: 1.5px solid transparent;
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all .18s ease;
+  padding: 0 28px; border-radius: 10px; border: 1.5px solid transparent;
+  font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .18s ease;
 }
 .st2-pick-btn:disabled { opacity: .55; cursor: not-allowed; }
 .st2-pick-btn-ghost { background: #fff; border-color: #e2e8f0; color: #475569; }

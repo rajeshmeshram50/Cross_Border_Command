@@ -374,19 +374,19 @@ const LDV_CSS = `
 }
 .ldv-head-left { display: flex; align-items: center; gap: 11px; flex: 1; min-width: 0; }
 .ldv-head-icon {
-  width: 34px; height: 34px; border-radius: 10px;
+  width: 40px; height: 40px; border-radius: 10px;
   background: rgba(255,255,255,.2);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .ldv-head-icon svg { width: 16px; height: 16px; }
-.ldv-head-title { font-size: 14.5px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
-.ldv-head-sub { font-size: 10.5px; opacity: .85; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ldv-head-title { font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: -.2px; }
+.ldv-head-sub { font-size: 11px; font-weight: 500; opacity: .9; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .ldv-status {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 11px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  font-size: 10px; font-weight: 600; letter-spacing: .02em;
   background: rgba(255,255,255,.20); color: #fff;
   border: 1px solid rgba(255,255,255,.35);
 }
@@ -399,8 +399,8 @@ const LDV_CSS = `
 }
 
 .ldv-close {
-  width: 26px; height: 26px; border: none; background: rgba(255,255,255,.18);
-  color: #fff; border-radius: 8px; cursor: pointer;
+  box-sizing: border-box; width: 40px; height: 40px; flex-shrink: 0; border: none; background: rgba(255,255,255,.18);
+  color: #fff; border-radius: 10px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s;
 }
@@ -448,21 +448,21 @@ const LDV_CSS = `
 .ldv-card-icon svg { width: 14px; height: 14px; }
 .ldv-card-body { flex: 1; min-width: 0; }
 .ldv-label {
-  font-size: 8.5px; font-weight: 800; color: #94a3b8;
+  font-size: 9px; font-weight: 700; color: #94a3b8;
   letter-spacing: .10em; text-transform: uppercase; margin-bottom: 2px;
 }
 .ldv-card-val { line-height: 1.3; }
 .ldv-value {
-  font-size: 11.5px; font-weight: 700; color: #0f172a;
+  font-size: 12px; font-weight: 600; color: #1e293b;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
 }
 .ldv-value-muted { color: #cbd5e1; font-weight: 500; }
-.ldv-link { color: #0891b2; text-decoration: none; font-size: 11.5px; font-weight: 600; }
+.ldv-link { color: #0891b2; text-decoration: none; font-size: 12px; font-weight: 600; }
 .ldv-link:hover { text-decoration: underline; }
 
 .ldv-chip {
   display: inline-block; padding: 2px 9px; border-radius: 6px;
-  font-size: 10px; font-weight: 700; border: 1.5px solid;
+  font-size: 10px; font-weight: 600; border: 1.5px solid;
 }
 .ldv-chip-violet { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .ldv-chip-green  { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
@@ -475,10 +475,11 @@ const LDV_CSS = `
 }
 .ldv-foot-meta {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10.5px; color: #0891b2;
+  font-size: 11px; font-weight: 500; color: #0891b2;
 }
 .ldv-btn {
-  padding: 7px 22px; border-radius: 8px; font-size: 11px; font-weight: 700;
+  box-sizing: border-box; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 22px; border-radius: 10px; font-size: 11.5px; font-weight: 700;
   cursor: pointer; border: 1.5px solid transparent; transition: all .15s;
 }
 .ldv-btn-primary {
@@ -523,8 +524,8 @@ const LDV_CSS = `
 
 @media (max-width: 720px) {
   .ldv-head { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
-  .ldv-head-title { font-size: 16px; }
-  .ldv-head-icon { width: 36px; height: 36px; }
+  .ldv-head-title { font-size: 15px; }
+  .ldv-head-icon { width: 40px; height: 40px; }
   .ldv-status { order: 3; flex-basis: 100%; justify-content: flex-start; }
   .ldv-body { padding: 14px 16px; }
   .ldv-foot { padding: 12px 16px; flex-direction: column; gap: 10px; align-items: stretch; }

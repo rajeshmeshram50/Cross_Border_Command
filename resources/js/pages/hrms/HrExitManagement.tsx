@@ -3435,7 +3435,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 )}
                 <span className="ep-head-chip"><i className="ri-time-line" />Status: {statusOf(currentKey)}</span>
                 <span className="ep-head-chip ep-head-chip--profile">
-                  <MiniProgressRing value={progressPct} />
+                  {/* Same number the list shows in Exit Readiness — both derive
+                     from the exit's current stage, so they must not disagree. */}
+                  <MiniProgressRing value={employee?.exitReadiness ?? progressPct} />
                   <span className="ep-head-chip-profile-text">
                     <span className="ep-head-chip-profile-label">Profile</span>
                     <span className="ep-head-chip-profile-sub">Completion</span>

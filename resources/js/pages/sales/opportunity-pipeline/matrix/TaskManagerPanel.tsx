@@ -227,17 +227,17 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
       <div className="smd-deal-tabs dt-tabrail hr-dt" data-accent="violet">
         <div className="dt-tabs" role="tablist">
           <button type="button" role="tab" aria-selected className="dt-tab on smd-deal-tab">
-            ✓ Task Manager
+            Task Manager
             {initial?.id != null && <span className="tm-saved-badge" title="Saved on server">●</span>}
           </button>
           <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            ⚡ Chanakya<span className="smd-deal-tab-soon">SOON</span>
+            Chanakya<span className="smd-deal-tab-soon">SOON</span>
           </button>
           <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            ◎ Sarthi<span className="smd-deal-tab-soon">SOON</span>
+            Sarthi<span className="smd-deal-tab-soon">SOON</span>
           </button>
           <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            ◆ Chat View<span className="smd-deal-tab-soon">SOON</span>
+            Chat View<span className="smd-deal-tab-soon">SOON</span>
           </button>
         </div>
       </div>

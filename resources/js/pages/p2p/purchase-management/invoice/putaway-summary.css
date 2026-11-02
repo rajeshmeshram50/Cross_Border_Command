@@ -4,8 +4,8 @@
    file holds the card, its hero and the analytics tiles. */
 
 .pts-card {
-  width: min(1640px, 99vw);
-  max-height: 94vh;
+  width: min(1640px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -13,18 +13,31 @@
   background: #fff;
   /* `.spi-mdl` rings itself in a 1.5px white edge, which the other P2P modals
      want and this card does not — the design has only the two shadows. */
-  box-shadow: 0 44px 110px rgba(6, 182, 212, .28), 0 10px 34px rgba(0, 0, 0, .22);
+  box-shadow: 0 24px 48px rgba(6, 182, 212, .22), 0 8px 20px rgba(0, 0, 0, .2);
 }
 
 [data-bs-theme="dark"] .pts-card {
-  box-shadow: 0 44px 110px rgba(0, 0, 0, .5), 0 10px 34px rgba(0, 0, 0, .34);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, .5), 0 8px 20px rgba(0, 0, 0, .34);
 }
 
-.pts-backdrop {
+/* No backdrop blur: blurring the whole page behind a card this size is
+   re-computed on every scroll frame and made the popup stutter on machines
+   without a strong GPU. A slightly darker scrim reads the same.
+   Written as .spi-mdl-backdrop.pts-backdrop, not .pts-backdrop alone: the
+   shared rule that adds blur(4px) is bundled into both p2p-common and
+   p2p-detail, and the p2p-detail chunk is often injected AFTER this sheet
+   (it loads lazily with the SPI form). At equal weight the later sheet won,
+   so the blur came back on some loads and not others — the intermittent
+   lag. One class heavier, this wins whatever the load order.
+   text-rendering back to auto: the shared backdrop asks for
+   optimizeLegibility (kerning and ligatures on every glyph), which is a
+   measurable layout cost on a popup this text-heavy as it first renders. */
+.spi-mdl-backdrop.pts-backdrop {
+  text-rendering: auto;
   padding: 24px;
-  background: rgba(5, 18, 32, .62);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
+  background: rgba(5, 18, 32, .7);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .pts-card:focus {
@@ -143,7 +156,7 @@
   overflow-x: auto;
   scrollbar-width: thin;
   border: 1px solid rgba(255, 255, 255, .26);
-  border-radius: 13px;
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .08));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 5px 18px rgba(2, 44, 54, .14);
 }
@@ -243,18 +256,24 @@
 
 /* "Own" / "3P" beside the warehouse: solid white on the teal bar, which is
    the one thing in the strip that is meant to stand out of it. */
+/* Sized as the design draws it: a small tag beside the value, not a
+   button-sized pill — 8px type on a 2px / 7px pad. A third-party warehouse
+   reads "Third Party" in amber, as the design has it. */
 .pts-badge {
   flex-shrink: 0;
   margin-left: 8px;
-  padding: 3px 9px;
+  padding: 2px 7px;
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
+  line-height: 1.2;
   letter-spacing: .03em;
+  white-space: nowrap;
   color: #0e7490;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(3, 37, 48, .22);
+  box-shadow: 0 1px 3px rgba(3, 37, 48, .18);
 }
+.pts-badge--3p { color: #c2410c; }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 
@@ -267,6 +286,10 @@
   scrollbar-color: #8ecfdd transparent;
   padding: 13px 18px 16px;
   background: linear-gradient(180deg, #f4fbfe, #fff);
+  /* Own compositing layer, so scrolling the sections does not repaint the
+     card, its shadow and the hero with it. */
+  will-change: scroll-position;
+  contain: paint;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1449,3 +1472,82 @@
   .pts-sec-right { margin-left: 0; flex-wrap: wrap; }
   .pts-sec .spi-dt-sec-mid { flex: 1 1 160px; }
 }
+
+/* ── Loading and failed states (CS-132) ──────────────────────────────────
+   Loading: the four sections drawn in their real grids with shimmer bars
+   (.spi-sk-bar) in place of the figures. Failed: a distinct red notice, so
+   "still working" and "could not load" never look alike. */
+.pts-skel .spi-dt-sec-head { cursor: default; }
+.pts-skel__mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.pts-skel__ico {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(90deg, #e4eff4 25%, #f3fafc 37%, #e4eff4 63%);
+  background-size: 400% 100%;
+  animation: spi-sk-shim 1.5s ease-in-out infinite;
+}
+.pts-skel__card {
+  display: flex; border-radius: 14px;
+  border: 1.5px solid #e3f1f5; background: #fbfeff;
+}
+.pts-skel__card--tile { flex-direction: column; align-items: center; justify-content: center; gap: 9px; height: 68px; }
+.pts-skel__card--row  { align-items: center; gap: 12px; height: 66px; padding: 0 16px; }
+.pts-skel__card--ref  { flex-direction: column; justify-content: center; gap: 12px; height: 134px; padding: 0 16px; }
+.pts-skel__rows { display: flex; flex-direction: column; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .pts-skel__ico { animation: none; } }
+[data-bs-theme="dark"] .pts-skel__card { background: rgba(34, 211, 238, .04); border-color: rgba(34, 211, 238, .14); }
+[data-bs-theme="dark"] .pts-skel__ico {
+  background: linear-gradient(90deg, rgba(34,211,238,.08) 25%, rgba(34,211,238,.16) 37%, rgba(34,211,238,.08) 63%);
+  background-size: 400% 100%;
+}
+
+.pts-fail {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 40px 20px; text-align: center;
+  border-radius: 16px; border: 1.5px dashed #fecaca; background: #fff7f7;
+}
+.pts-fail__ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin-bottom: 4px; border-radius: 50%;
+  color: #dc2626; background: #fee2e2;
+}
+.pts-fail b { font-size: 14px; font-weight: 800; color: #991b1b; }
+.pts-fail > span:last-child { font-size: 12px; font-weight: 500; color: #7f1d1d; max-width: 460px; line-height: 1.55; }
+[data-bs-theme="dark"] .pts-fail { background: rgba(239, 68, 68, .08); border-color: rgba(239, 68, 68, .35); }
+[data-bs-theme="dark"] .pts-fail__ico { background: rgba(239, 68, 68, .18); color: #fca5a5; }
+[data-bs-theme="dark"] .pts-fail b { color: #fecaca; }
+[data-bs-theme="dark"] .pts-fail > span:last-child { color: #fca5a5; }
+
+/* The strip's two ends, rounded as the design draws them: 12px on the bar,
+   and the end pills follow the same curve so a hover fill on the first or
+   last one cannot square off a corner inside the rounded bar. */
+.pts-pills .spi-dt-pill:first-child { border-radius: 12px 0 0 12px; }
+.pts-pills .spi-dt-pill:last-child  { border-radius: 0 12px 12px 0; }
+
+/* ── The pill strip never scrolls sideways ────────────────────────────────
+   The ten pills need ~1545px on one line; any narrower and the strip grew a
+   horizontal scrollbar under the hero. Measured against the hero, not the
+   window (the popup stops at 1640px):
+   - under 1580px: compact — the icon squares go and the cells tighten, which
+     keeps all ten on one line down to ~1080px;
+   - under 1120px: two rows of five, equal columns, the outer corners still
+     rounded and a hairline between the rows. A value too long for its cell
+     ends in an ellipsis; the pill's tooltip carries the whole of it. */
+.pts-hero { container: ptshero / inline-size; }
+@container ptshero (max-width: 1580px) {
+  .pts-pills .spi-dt-pill-ico { display: none; }
+  .pts-pills .spi-dt-pill { padding: 8px 10px; gap: 6px; }
+}
+@container ptshero (max-width: 1120px) {
+  .pts-pills { flex-wrap: wrap; overflow: visible; }
+  .pts-pills .spi-dt-pill,
+  .pts-pills .spi-dt-pill:nth-child(5) { flex: 1 1 20%; min-width: 0; border-radius: 0; }
+  .pts-pills .spi-dt-pill:nth-child(5n+1) { border-left: none; }
+  .pts-pills .spi-dt-pill:nth-child(n+6) { border-top: 1px solid rgba(255, 255, 255, .18); }
+  .pts-pills .spi-dt-pill:first-child { border-radius: 12px 0 0 0; }
+  .pts-pills .spi-dt-pill:nth-child(5) { border-radius: 0 12px 0 0; }
+  .pts-pills .spi-dt-pill:nth-child(6) { border-radius: 0 0 0 12px; }
+  .pts-pills .spi-dt-pill:last-child { border-radius: 0 0 12px 0; }
+  .pts-pills .spi-dt-pill-txt { min-width: 0; }
+  .pts-pills .spi-dt-pill-val { overflow: hidden; text-overflow: ellipsis; }
+}
+.pts-temp.pts-temp--ok { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }

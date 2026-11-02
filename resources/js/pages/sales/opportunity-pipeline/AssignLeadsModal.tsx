@@ -475,15 +475,15 @@ const ALM_CSS = `
 }
 .alm-head-left { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
 .alm-head-icon {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 40px; height: 40px; border-radius: 10px;
   background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center;
 }
-.alm-head-title { font-size: 16px; font-weight: 600; line-height: 1.2; }
-.alm-head-sub { font-size: 11px; opacity: .85; line-height: 1.3; margin-top: 2px; }
+.alm-head-title { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.alm-head-sub { font-size: 11px; font-weight: 500; opacity: .9; line-height: 1.3; margin-top: 2px; }
 .alm-close {
   position: relative; z-index: 1;
-  width: 28px; height: 28px; border: none; background: rgba(255,255,255,.15);
-  color: #fff; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-sizing: border-box; width: 40px; height: 40px; flex-shrink: 0; border: none; background: rgba(255,255,255,.15);
+  color: #fff; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background .15s;
 }
 .alm-close:hover:not(:disabled) { background: rgba(255,255,255,.28); }
@@ -574,7 +574,8 @@ const ALM_CSS = `
 .alm-foot-actions { display: flex; align-items: center; gap: 8px; }
 .alm-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  box-sizing: border-box; height: 40px; justify-content: center;
+  padding: 0 18px; border-radius: 10px; font-size: 11.5px; font-weight: 700;
   cursor: pointer; border: 1.5px solid transparent; transition: all .18s ease;
 }
 .alm-btn:disabled { opacity: .55; cursor: not-allowed; }

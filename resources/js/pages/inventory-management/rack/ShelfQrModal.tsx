@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
+import { useLabelPdf } from '../label-pdf';
 import '../warehouse/warehouse-master.css';
 import './rack-shelves.css';
 import type { Zone, ZoneWarehouse } from '../zone/zone-data';
@@ -74,7 +75,10 @@ export default function ShelfQrModal({ shelf: s, rack: r, warehouse: w, zone: z,
 
   const shownCode = code || s.id;
 
+  const label = useLabelPdf('shelves', s.apiId);
+
   const download = () => {
+    if (label.ready) { label.save(`${shownCode}-Label.pdf`); return; }
     const c = canvasRef.current;
     if (!c || state !== 'ready') return;
     const a = document.createElement('a');
@@ -104,7 +108,15 @@ export default function ShelfQrModal({ shelf: s, rack: r, warehouse: w, zone: z,
         </div>
 
         <div className="spi-mdl-body">
-          <div className="whm-qr">
+          {label.ready && (
+            <iframe className="whm-label-pv" src={`${label.url}#toolbar=0&navpanes=0&view=FitH`} title="Label preview" />
+          )}
+          {label.loading && (
+            <div className="whm-label-pv whm-label-pv--load" role="status">
+              <span className="spi-btn-spin" aria-hidden />Loading label…
+            </div>
+          )}
+          <div className="whm-qr" style={label.ready || label.loading ? { display: 'none' } : undefined}>
             <div className="whm-qr__code">
               <canvas ref={canvasRef} width={196} height={196}
                 style={{ display: state === 'ready' ? 'block' : 'none' }} />
@@ -125,8 +137,8 @@ export default function ShelfQrModal({ shelf: s, rack: r, warehouse: w, zone: z,
           <span className="whm-qr__note">Max {s.max.toLocaleString('en-IN')} kg</span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
-            <button type="button" className="spi-mdl-confirm" onClick={download} disabled={state !== 'ready'}>
-              <IcoDownload /> Download QR
+            <button type="button" className="spi-mdl-confirm" onClick={download} disabled={!label.ready && state !== 'ready'}>
+              <IcoDownload /> {label.ready ? 'Download Label' : 'Download QR'}
             </button>
           </div>
         </div>

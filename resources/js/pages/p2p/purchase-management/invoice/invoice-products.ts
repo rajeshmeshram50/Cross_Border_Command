@@ -202,6 +202,8 @@ export function linesFromPo(items: PoItem[], open: Record<number, SpiPoOpen>): P
 
 export type SpiItemsPayload = {
   items: Array<{
+    /** The saved line this row is; null for a new one. Stage 03 boxes point at it. */
+    id: number | null;
     po_item_id: number | null;
     pi_item_id: number | null;
     product_id: number;
@@ -230,6 +232,7 @@ export function itemsPayload(lines: ProductLine[], mode: TaxMode): SpiItemsPaylo
     items: billed.map(l => {
       const c = lineTotals(l, mode);
       return {
+        id: l.spiItemId ?? null,
         po_item_id: l.poItemId ?? null,
         pi_item_id: l.piItemId ?? null,
         product_id: l.productId!,

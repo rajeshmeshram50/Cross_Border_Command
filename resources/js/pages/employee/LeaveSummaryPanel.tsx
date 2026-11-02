@@ -94,6 +94,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  /* The active status tab. 'All' first, the way every HRMS list opens. */
+  const [leaveTab, setLeaveTab] = useState<'All' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'>('All');
   const [approversFor, setApproversFor] = useState<number | null>(null);
   const [approversList, setApproversList] = useState<ApiLeaveApprover[]>([]);
   const [detailsType, setDetailsType] = useState<ApiEmployeeBalanceType | null>(null);
@@ -123,8 +125,21 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
 
   useEffect(() => { refetch(); }, [refetch]);
 
+  /* The pending card list above the table keeps its own section. */
   const pending = useMemo(() => requests.filter(r => r.status === 'Pending'), [requests]);
-  const history = useMemo(() => requests.filter(r => r.status !== 'Pending'), [requests]);
+  /* One row per status for the tab counts, and the rows the open tab shows.
+     A status outside the four known ones still lands under All. */
+  const leaveCounts = useMemo(() => ({
+    All:       requests.length,
+    Pending:   requests.filter(r => r.status === 'Pending').length,
+    Approved:  requests.filter(r => r.status === 'Approved').length,
+    Rejected:  requests.filter(r => r.status === 'Rejected').length,
+    Cancelled: requests.filter(r => r.status === 'Cancelled').length,
+  }), [requests]);
+  const shownRequests = useMemo(
+    () => leaveTab === 'All' ? requests : requests.filter(r => r.status === leaveTab),
+    [requests, leaveTab],
+  );
   /* Leave History columns for the shared DataTable — paging, sorting and the
      footer are the component's own, so there's no local page state here. */
   const historyColumns: DataTableColumn<ApiLeaveRequest>[] = useMemo(() => [
@@ -278,6 +293,13 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
            #ece6ff, a lilac disc on the dark card. */
         /* Violet accent used by the tab's icon and its inline links. #5a3fd1
            is a deep violet — fine on white, near-invisible on the dark card. */
+        /* View Approvers chip (QA 200): an outlined pill, not a bare
+           underlined link, legible in both themes. */
+        .lsp-view-approvers { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px; margin-top: 2px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #5a3fd1; background: rgba(124,92,252,0.10); border: 1px solid rgba(124,92,252,0.30); cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+        .lsp-view-approvers:hover { background: rgba(124,92,252,0.18); border-color: rgba(124,92,252,0.50); }
+        .lsp-view-approvers i { font-size: 13px; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-view-approvers { color: #c4b5fd; background: rgba(167,139,250,0.14); border-color: rgba(167,139,250,0.34); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-view-approvers:hover { background: rgba(167,139,250,0.22); border-color: rgba(167,139,250,0.50); }
         .lsp-accent { color: #5a3fd1; }
         .lsp-danger { color: #dc2626; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-danger { color: #fca5a5; }
@@ -384,10 +406,12 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
                   <div style={{ fontSize: 13, fontWeight: 600 }}>Pending</div>
                   <button
                     type="button"
-                    className="btn btn-link p-0 lsp-accent" style={{ fontSize: 12, textDecoration: 'underline' }}
+                    /* A visible chip, not a bare underlined link that reads as
+                       body text and is easy to miss (QA 200). */
+                    className="lsp-view-approvers"
                     onClick={(e) => { e.stopPropagation(); openApprovers(r.id); }}
                   >
-                    View Approvers
+                    <i className="ri-group-line" /> View Approvers
                   </button>
                 </div>
               </div>
@@ -568,22 +592,36 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       </div>
 
       <div>
-        <h6 className="fw-bold mb-2 ep-sec-head">Leave History</h6>
+        <h6 className="fw-bold mb-2 ep-sec-head">Leave Requests</h6>
         {/* Shared DataTable — same component as Holidays, Hiring Requests and
             the rest of HRMS, so the header band, sortable columns and the
             "Showing X–Y of Z / Rows per page" footer match everywhere. */}
         <DataTable
-          data={history}
+          data={shownRequests}
           columns={historyColumns}
           loading={loading}
           accent="violet"
+          /* SR NO, which every other list in the module shows (QA 175). */
+          serial
+          /* Status tabs like the Leave module. They run over ALL requests, so
+             Pending appears here — it used to be filtered out and shown
+             nowhere. */
+          tabs={[
+            { key: 'All',       label: 'All Leaves', icon: 'ri-stack-line',           count: leaveCounts.All },
+            { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: leaveCounts.Pending },
+            { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: leaveCounts.Approved },
+            { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: leaveCounts.Rejected },
+            { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: leaveCounts.Cancelled },
+          ]}
+          activeTab={leaveTab}
+          onTabChange={k => setLeaveTab(k as typeof leaveTab)}
           /* .ep-hero, not .hr-cstrip, so the HRMS skin has to be named —
              without it the base skin's solid accent header band shows. */
           className="hr-dt"
           pageSize={10}
           minWidth={720}
           onRowClick={(r) => setDetailsRequestId(r.id)}
-          emptyMessage="No Leave history to show."
+          emptyMessage="No leave requests to show."
         />
       </div>
 

@@ -189,7 +189,7 @@ export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmi
               <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
                 value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
               <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                value={money(total)} sub={figures.tds > 0 ? `${money(figures.tds)} TDS on the PO` : 'No TDS withheld'} />
+                value={money(total)} sub={figures.tds > 0 ? `${money(figures.tds)} TDS withheld` : 'No TDS withheld'} />
               <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                 value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
               <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"

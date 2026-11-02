@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
    reason. */
 import './step4.css';
 import {
-  putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
+  putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayLogRow, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
@@ -602,7 +602,7 @@ const coreOf = (b: SpiBox | undefined) => {
   return {
     length: n(b?.length_cm), width: n(b?.width_cm), height: n(b?.height_cm),
     weight: n(b?.weight_kg), net: n(b?.net_weight_kg), gross: n(b?.gross_weight_kg),
-    vol: cc > 0 ? (cc / 5000).toFixed(2) : null,
+    vol: cc > 0 ? (cc / 6000).toFixed(2) : null,
     unit: 'cm',
   };
 };
@@ -967,6 +967,38 @@ const LOG_ICO: Record<LogKind, ReactNode> = {
   err: <IcoWarn />, done: <IcoTick />, cancel: <IcoCancelSm />,
 };
 
+/** A persisted log timestamp → "DD MMM, HH:mm:ss" (real time, not this session's). */
+const logTime = (at: string | null): string => {
+  if (!at) return '';
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', { hour12: false });
+  return `${date}, ${time}`;
+};
+
+/** Map the server's frozen box log to the popover's entries. The UI-only
+ *  breadcrumbs (pick / zone / method) are not persisted, so the log shows the
+ *  real events: assign, scan, confirm, release. */
+const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] =>
+  rows.flatMap((r): LogEntry[] => {
+    const time = logTime(r.at);
+    const withDev = (s: string) => [s, r.device].filter(Boolean).join(' · ');
+    switch (r.event) {
+      case 'assigned':         return [{ k: 'loc', t: 'Location assigned', d: r.location ?? '', time }];
+      case 'reassigned':       return [{ k: 'loc', t: 'Location reassigned', d: r.location ?? '', time }];
+      case 'task_created':     return [{ k: 'task', t: 'Zebra scan task created', d: '', time }];
+      case 'task_cancelled':   return [{ k: 'cancel', t: 'Zebra scan task cancelled', d: '', time }];
+      case 'scan_passed':      return [{ k: 'scan', t: 'Scan verified', d: withDev(r.location ?? ''), time }];
+      case 'scan_failed':      return [{ k: 'err', t: 'Scan rejected', d: r.reason_label ?? '', time }];
+      case 'confirmed_manual': return [{ k: 'done', t: 'Putaway confirmed (manual)', d: r.location ?? '', time }];
+      case 'confirmed_device': return [{ k: 'done', t: 'Putaway confirmed', d: withDev(r.location ?? ''), time }];
+      case 'released':         return [{ k: 'cancel', t: 'Box released', d: '', time }];
+      // lock_acquired / lock_released are internal — not shown.
+      default:                 return [];
+    }
+  });
+
 function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose }: {
   anchor: HTMLElement | null;
   boxCode: string | null;
@@ -998,12 +1030,23 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     };
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
+    return () => window.removeEventListener('resize', place);
   }, [anchor, entries.length]);
+
+  /* Scrolling anything outside the pop-over closes it, like a menu. It used
+     to chase its button on every scroll frame, so scrolling the page or a
+     pane dragged the log along over the content. Scrolling the log's own
+     list is left alone. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return;
+      onCloseRef.current();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, []);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
@@ -1284,6 +1327,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [scanSteps, setScanSteps] = useState(0);
   const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
   const [logsOpen, setLogsOpen] = useState(false);
+  /* The box's FROZEN scan log, fetched from the server — same every view. It
+     replaces the session-built log, which was stamped with THIS session's
+     clock and so looked different each time the SPI was opened (CS-1144). */
+  const [serverLog, setServerLog] = useState<LogEntry[]>([]);
   const logBtnRef = useRef<HTMLButtonElement>(null);
   const addLog = (code: string | null | undefined, k: LogKind, t: string, d = '') => {
     if (!code) return;
@@ -1320,6 +1367,17 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (!box || !onLoadBox) return;
     void onLoadBox(box.id);
   }, [box?.id]);
+
+  /* Load the box's frozen scan log when its popover opens (and re-load after a
+     scan/confirm in THIS session so the new persisted row shows up). */
+  useEffect(() => {
+    if (!logsOpen || !box || !spiId) { setServerLog([]); return; }
+    let live = true;
+    spiApi.putawayBoxActivity(spiId, box.id)
+      .then(res => { if (live) setServerLog(fromServerLog(res.timeline)); })
+      .catch(() => { if (live) setServerLog([]); });
+    return () => { live = false; };
+  }, [logsOpen, box?.id, spiId, placedAt, scanSteps]);
 
   const qrBox = qrFor ? all.find(b => b.code === qrFor) ?? null : null;
   const qrRaw = useMemo(() => (qrFor ? boxes.find(b => b.box_code === qrFor) : undefined), [boxes, qrFor]);
@@ -1639,6 +1697,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       .catch(() => {});
   }, [scanOpen]);
 
+  /* No "is-scrolling" class here any more. It was added at the start of every
+     scroll and removed 150ms after it, to pause hovers and animations — but
+     its rule matched every element on the stage, so each add and each remove
+     re-styled the whole document (~25ms, over 100ms on a slow PC). A touchpad
+     scrolls in bursts, so it fired again and again: a freeze at the start and
+     end of each burst, which is the slow-motion jerk QA saw. */
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
       {!fs && <StageSummary draft={draft} upto={3} direct={direct} boxes={boxes} />}
@@ -1786,7 +1850,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <ScanLogs
                 anchor={logBtnRef.current}
                 boxCode={box?.code ?? null}
-                entries={box ? logs[box.code] ?? [] : []}
+                entries={serverLog}
                 method={methodPick === 'zebra' || scanTask ? 'Using Zebra Device'
                   : methodPick === 'manual' ? 'Manual Confirmation'
                   : 'Method not chosen'}
@@ -2519,12 +2583,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </span>
                 )}
               </div>
-              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close">
+              {/* CS-953 #52/#53: frozen while the cancel request runs — closing
+                  the dialog or keeping a task that is being cancelled would
+                  leave the box's state out of step with the server. */}
+              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close"
+                disabled={cancelBusy}>
                 &times;
               </button>
             </div>
 
-            <div className="s4qm__bd">
+            <div className="s4qm__bd" inert={cancelBusy}>
               <div className="s4ct-warn">
                 <span className="s4ct-warn__i"><IcoZvZebra /></span>
                 <div>
@@ -2561,7 +2629,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__ft s4ct-ft">
-              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}>
+              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}
+                disabled={cancelBusy}>
                 Keep Task
               </button>
               <button

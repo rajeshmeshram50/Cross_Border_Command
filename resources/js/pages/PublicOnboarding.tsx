@@ -748,7 +748,11 @@ export default function PublicOnboarding() {
           border-color: #60a5fa;
           box-shadow: 0 0 0 3px rgba(96,165,250,0.22);
         }
-        .emp-label { font-size: 12px; font-weight: 600; color: var(--vz-heading-color, #374151); letter-spacing: 0; text-transform: none; margin-bottom: 5px; display: block; }
+        /* 10.5px, the field-label size the rest of the product uses (QA 161).
+           This page injects its styles as an inline <style>, so it lands AFTER
+           the linked sheets and wins at equal specificity - which is why
+           editing recruitment.css alone never moved this label. */
+        .emp-label { font-size: 10.5px; font-weight: 700; color: var(--vz-heading-color, #374151); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; display: block; }
         [data-bs-theme="dark"] .emp-label { color: #e5e7eb; }
         .emp-label .req { color: #f06548; margin-left: 2px; }
 
@@ -1206,7 +1210,7 @@ export default function PublicOnboarding() {
           min-height: 40px;
           padding-top: 8px;
           padding-bottom: 8px;
-          font-size: 13.5px;
+          font-size: 13px;
           border-radius: 10px;
         }
         /* Bring the field icon up a notch so it centers in the taller input */
@@ -1253,7 +1257,8 @@ export default function PublicOnboarding() {
           flex: 1 1 auto;
         }
         .onb-welcome-title {
-          font-size: 13px; font-weight: 700; letter-spacing: -0.005em;
+          /* 17px — the form header size (QA 161). */
+          font-size: 17px; font-weight: 700; letter-spacing: -0.005em;
           color: var(--vz-heading-color, #0f1e4b); line-height: 1.2;
           /* Long org names wrap onto a second line rather than stretching
              the card sideways. break-word handles unspaced gibberish too. */
@@ -1261,7 +1266,7 @@ export default function PublicOnboarding() {
           overflow-wrap: anywhere;
         }
         .onb-welcome-sub {
-          font-size: 11.5px; color: var(--vz-secondary-color, #6b7280);
+          font-size: 12px; color: var(--vz-secondary-color, #6b7280);
           margin-top: 1px;
           word-break: break-word;
           overflow-wrap: anywhere;
@@ -1379,11 +1384,16 @@ export default function PublicOnboarding() {
           flex-direction: column;
           gap: 6px;
         }
+        /* The form rows the fields actually sit in. This selector is more
+           specific than .emp-label, so it decided the size on every labelled
+           input on this page - 13px, where the module uses 10.5 (QA 161). */
         .onb-hrow > .emp-label {
           margin: 0;
           text-align: left;
-          font-size: 13px;
-          font-weight: 600;
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
           color: var(--vz-heading-color, #374151);
         }
         .onb-hrow > .onb-hrow-input {

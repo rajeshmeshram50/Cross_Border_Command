@@ -2814,6 +2814,65 @@
 }
 .spi-list .spi-head-btn { padding-left: 20px; padding-right: 20px; }
 
+/* The list's empty state ("No matching invoices" / "No entries yet").
+   It lived in invoice-form.css, the form's sheet, which the list does not
+   load — so until a form had been opened the title and the note ran together
+   on one unstyled line at the table's far left. Here, with the page it
+   belongs to.
+   The message sits in a cell spanning a table several screens wide, so
+   centring it in the cell put it off to the right, and it scrolled sideways
+   with the columns. It is pinned to the left edge of the scroll box and made
+   exactly as wide as the visible area (the box is its container, so 100cqw
+   is the width you can see), which keeps it in the middle of the screen
+   whatever the horizontal scroll. The table fills the box's height, so the
+   row - and the message in it - centres vertically too. */
+.spi-list .ord-table-scroll { container-type: inline-size; }
+.spi-list .ord-table.ord-table--empty { height: 100%; }
+.spi-list .ord-table .ord-emptyrow > td {
+  padding: 0;
+  background: #fff;
+  border-bottom: 0;
+  vertical-align: middle;
+}
+.spi-list .ord-table .ord-emptybox {
+  position: sticky; left: 0;
+  width: 100cqw; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 6px;
+  padding: 40px 20px;
+  text-align: center;
+}
+.spi-list .ord-table .ord-emptybox::before {
+  content: '';
+  width: 46px; height: 46px; margin-bottom: 6px;
+  border-radius: 14px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230891b2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") center / 20px no-repeat,
+    #ecfbfe;
+  box-shadow: inset 0 0 0 1px #cdeef6;
+}
+.spi-list .ord-table .ord-emptybox b {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0c4a6e;
+  letter-spacing: -.1px;
+}
+.spi-list .ord-table .ord-emptybox span {
+  max-width: 430px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.55;
+}
+[data-bs-theme="dark"] .spi-list .ord-table .ord-emptyrow > td { background: #0b1922; }
+[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox::before {
+  background-color: rgba(34, 211, 238, .1);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .25);
+}
+[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox b { color: #e2e8f0; }
+[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox span { color: #7f9aa6; }
+
 /* Hover flicker on the row actions. On hover an .ord-btn lifts 1px
    (order.css), which pulls its bottom edge out from under a pointer resting
    on that edge — hover drops, the button settles back under the pointer,

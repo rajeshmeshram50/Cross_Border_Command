@@ -1,6 +1,7 @@
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../../components/ui/DataTable';
+import Tooltip from '../../../components/ui/Tooltip';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
@@ -115,25 +116,27 @@ export default function HiringTab() {
                  additionally be reopened + edited before submitting to HR. */
               return (
                 <div className="d-inline-flex align-items-center justify-content-center gap-1">
-                  <button
-                    type="button"
-                    className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                    data-tooltip="View"
-                    aria-label="View hiring request"
-                    onClick={() => setHiringViewing(r)}
-                  >
-                    <i className="ri-eye-line" />
-                  </button>
-                  {r.status === 'Draft' && !r._hasRecruitment && (
+                  <Tooltip label="View">
                     <button
                       type="button"
                       className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                      data-tooltip="Edit Draft"
-                      aria-label="Edit Draft"
-                      onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                      aria-label="View hiring request"
+                      onClick={() => setHiringViewing(r)}
                     >
-                      <ActionIcon icon="edit-svg" />
+                      <i className="ri-eye-line" />
                     </button>
+                  </Tooltip>
+                  {r.status === 'Draft' && !r._hasRecruitment && (
+                    <Tooltip label="Edit Draft">
+                      <button
+                        type="button"
+                        className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                        aria-label="Edit Draft"
+                        onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                      >
+                        <ActionIcon icon="edit-svg" />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               );
@@ -177,34 +180,30 @@ export default function HiringTab() {
               {/* KPI strip — matches the recruitment KPI shape (top accent
                   strip + label/number + iconTile). Scoped to this manager's
                   own raised requests. */}
-              <Row className="g-3 mb-3 align-items-stretch">
+              <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
                 {[
-                  { label: 'Total',     value: stats.total,     icon: 'ri-file-list-3-line', accent: 'linear-gradient(135deg,#4338ca 0%,#6366f1 60%,#818cf8 100%)', deep: '#4338ca' },
-                  { label: 'Draft',     value: stats.draft,     icon: 'ri-draft-line',       accent: 'linear-gradient(135deg,#525252 0%,#737373 60%,#a3a3a3 100%)', deep: '#525252' },
-                  { label: 'Submitted', value: stats.submitted, icon: 'ri-send-plane-line',  accent: 'linear-gradient(135deg,#7c3aed 0%,#9333ea 60%,#a855f7 100%)', deep: '#7c3aed' },
-                  { label: 'Critical',  value: stats.critical,  icon: 'ri-flashlight-line',  accent: 'linear-gradient(135deg,#be123c 0%,#ef4444 60%,#fb7185 100%)', deep: '#be123c' },
+                  { label: 'TOTAL',     value: stats.total,     icon: 'ri-file-list-3-line', strip: '#6366f1' },
+                  { label: 'DRAFT',     value: stats.draft,     icon: 'ri-draft-line',       strip: '#737373' },
+                  { label: 'SUBMITTED', value: stats.submitted, icon: 'ri-send-plane-line',  strip: '#7c3aed' },
+                  { label: 'CRITICAL',  value: stats.critical,  icon: 'ri-flashlight-line',  strip: '#ef4444' },
                 ].map(k => (
                   <Col key={k.label} xl={3} md={6} sm={6} xs={12}>
-                    <div className="ep-hr-kpi ht-kpi-tile">
-                      <span className="ht-kpi-accent" style={{ ['--ht-accent' as any]: k.accent }} />
-                      <div className="d-flex align-items-start justify-content-between gap-2">
-                        <div className="min-w-0">
-                          <p className="mb-1 text-uppercase fw-semibold ht-kpi-label">
-                            {k.label}
-                          </p>
-                          {hiringLoading
-                            ? <Shimmer height={26} width={48} />
-                            : <h3 className="mb-0 fw-bold ht-kpi-number" style={{ ['--ht-deep' as any]: k.deep }}>{k.value}</h3>}
-                        </div>
-                        <span className="ep-hr-kpi-icon d-inline-flex align-items-center justify-content-center rounded-3 ht-kpi-icon"
-                          style={{ ['--ht-accent' as any]: k.accent }}>
-                          <i className={`${k.icon} ep-fs-18`} />
+                    <div className="rec-kpi-card">
+                      <span className="rec-kpi-strip" style={{ background: k.strip }} />
+                      <div className="rec-kpi-text">
+                        <span className="rec-kpi-label">{k.label}</span>
+                        <span className="rec-kpi-num">
+                          {hiringLoading ? <Shimmer height={24} width={44} /> : k.value}
                         </span>
                       </div>
+                      <span className="rec-kpi-icon" style={{ background: k.strip }}>
+                        <i className={k.icon} />
+                      </span>
                     </div>
                   </Col>
                 ))}
               </Row>
+
               <style>{`
                 .ep-hr-kpi:hover {
                   transform: translateY(-2px);
@@ -229,6 +228,12 @@ export default function HiringTab() {
                 columns={hiringColumns}
                 loading={hiringLoading}
                 accent="violet"
+                /* SR NO, which every other list in the module shows (QA 172). */
+                serial
+                /* The HRMS header skin is scoped to .dt-root.hr-dt OR a .dt-root
+                   inside a page carrying .hr-cstrip. This tab renders in a
+                   modal, so it matched neither and took the saturated default. */
+                className="hr-dt"
                 pageSize={10}
                 minWidth={880}
                 emptyMessage={

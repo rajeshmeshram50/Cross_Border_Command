@@ -1531,3 +1531,21 @@
 .mpr-card .mpr-tdsbtn {
   height: 34px;
 }
+
+/* Where a request was raised from: the PO, this SPI or a sibling SPI. */
+.mpr-from {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+}
+
+[data-bs-theme="dark"] .mpr-from {
+  color: #67e8f9;
+  background: rgba(8, 145, 178, .14);
+  border-color: rgba(103, 232, 249, .3);
+}

@@ -8,8 +8,13 @@ return [
     'convert_entities' => true,
 
     'options' => [
-        'font_dir' => storage_path('fonts/'),
-        'font_cache' => storage_path('fonts/'),
+        /* Under framework/cache (always web-writable, unlike a custom storage/
+           fonts dir that a deploy's chmod can miss). dompdf regenerates this
+           cache per server anyway — the cache filename is md5(absolute font
+           path), so it differs between machines and must be writable, not
+           shipped. The directory is ensured in AppServiceProvider::boot. */
+        'font_dir' => storage_path('framework/cache/dompdf-fonts'),
+        'font_cache' => storage_path('framework/cache/dompdf-fonts'),
         'temp_dir' => sys_get_temp_dir(),
         'chroot' => realpath(base_path()),
         'allowed_protocols' => [

@@ -54,6 +54,16 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\RateLimiter::for('credvault-otp', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($byUser('cv-otp')($r)));
         \Illuminate\Support\Facades\RateLimiter::for('credvault-reveal', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($byUser('cv-reveal')($r)));
 
+        /* dompdf's font cache must exist and be writable (it writes a .ufm per
+           @font-face font on first render). Created here, at request time, so
+           the web server owns it — a dir shipped in git is owned by the deploy
+           user and the web server cannot write into it (storage/fonts did
+           exactly that in production). */
+        $fontDir = config('dompdf.options.font_dir');
+        if ($fontDir && ! is_dir($fontDir)) {
+            @mkdir($fontDir, 0775, true);
+        }
+
         /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.
          *
          * Registered rather than hardcoded so the SMTP mailer stays intact and

@@ -2,12 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import {
   Box, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { PoApiError, poPaymentApi, type PoPayRequest, type PoPaymentsPayload } from '../order/api/po-api';
-import { spiPaymentApi, type SpiPaymentSummary, type SpiRaiseBody } from './spi-api';
+import { spiPaymentApi, type SpiPayRequestRow, type SpiPaymentSummary, type SpiRaiseBody } from './spi-api';
 import type { InvoiceRow } from './types';
 
 const DeductTdsModal = lazy(() => import('../order/manage-payment/DeductTdsModal'));
@@ -29,6 +30,10 @@ export interface InvoicePaymentRequest {
   status: 'approved' | 'pending' | 'declined';
   approved: number;
   paid: number;
+  /** Raised from this SPI (always, on a Direct SPI). */
+  own: boolean;
+  /** Where it was raised from when not this SPI: a sibling SPI's code, or null for the PO. */
+  from: string | null;
 }
 
 export interface SpiPayFigures {
@@ -52,9 +57,7 @@ export interface SpiRequestTotals {
   available: number;
 }
 
-type RequestWithSpi = PoPayRequest & { supplier_invoice_id?: number | null };
-
-const toRequest = (r: RequestWithSpi): InvoicePaymentRequest => ({
+const toRequest = (r: PoPayRequest, spiId: number | null): InvoicePaymentRequest => ({
   rid: r.id,
   id: r.code,
   date: r.requested_at ?? '',
@@ -66,7 +69,28 @@ const toRequest = (r: RequestWithSpi): InvoicePaymentRequest => ({
   status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'declined' : 'pending',
   approved: r.approved_amount ?? 0,
   paid: r.paid_amount,
+  own: r.supplier_invoice_id === spiId,
+  from: r.supplier_invoice_code ?? null,
 });
+
+const fromSpiRow = (r: SpiPayRequestRow): InvoicePaymentRequest => {
+  const to = r.requested_to && typeof r.requested_to === 'object' ? r.requested_to : null;
+  return {
+    rid: r.id,
+    id: r.code ?? `#${r.id}`,
+    date: r.requested_at ?? '',
+    type: r.payment_type ?? '—',
+    pct: r.percentage ?? 0,
+    amount: r.requested_amount ?? 0,
+    approver: to?.name ?? r.requested_to_name ?? '—',
+    role: to?.role ?? 'Approver',
+    status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'declined' : 'pending',
+    approved: r.approved_amount ?? 0,
+    paid: r.paid_amount ?? 0,
+    own: true,
+    from: null,
+  };
+};
 
 const STATUS = {
   approved: { cls: 'mpr-st--done', label: 'Approved' },
@@ -126,12 +150,65 @@ export default function InvoicePaymentsModal({ row, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, tdsBusy]);
 
+  const direct = state === 'ready' && !summary?.po;
+  /* With a PO: every request on it - raised on the PO, from this SPI or from
+     a sibling SPI - so each screen of the PO and its SPIs shows the same list. */
   const list = useMemo(
-    () => (poData?.requests ?? [])
-      .filter(r => (r as RequestWithSpi).supplier_invoice_id === spiId)
-      .map(r => toRequest(r as RequestWithSpi)),
-    [poData, spiId],
+    () => (summary && !summary.po
+      ? (summary.requests ?? []).map(fromSpiRow)
+      : (poData?.requests ?? []).map(r => toRequest(r, spiId))),
+    [summary, poData, spiId],
   );
+  const ownList = useMemo(() => list.filter(q => q.own), [list]);
+  const ledger = summary?.ledger ?? null;
+
+  /* Paged like the PO's Payment Requests popup: five to a page by default,
+     the size the user picks after that. Kept in range when a refresh shortens
+     the list under the current page. */
+  const [reqPage, setReqPage] = useState(1);
+  const [reqPageSize, setReqPageSize] = useState(5);
+  const reqPages = Math.max(1, Math.ceil(list.length / reqPageSize));
+  useEffect(() => { if (reqPage > reqPages) setReqPage(reqPages); }, [reqPage, reqPages]);
+  const pagedList = useMemo(
+    () => list.slice((reqPage - 1) * reqPageSize, reqPage * reqPageSize),
+    [list, reqPage, reqPageSize],
+  );
+
+  /* CS-929: the approver decides on another screen, and this popup read its
+     requests once, when it opened — so an approved request went on saying
+     "Awaiting Approval" until the popup was reopened. While anything is with
+     an approver the figures are re-read every 20s, and at once whenever this
+     tab or window is looked at again — the same rule the PO popup follows. */
+  const awaiting = list.some(q => q.status === 'pending');
+  useEffect(() => {
+    if (!awaiting) return;
+    const tick = () => { if (!document.hidden) void load(); };
+    const id = window.setInterval(tick, 20000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [awaiting, load]);
+
+  // Say what changed when it changes, rather than leaving a badge to turn green unnoticed.
+  const lastStatus = useRef<Record<number, string>>({});
+  useEffect(() => {
+    const seen = lastStatus.current;
+    for (const q of list) {
+      if (seen[q.rid] === 'pending' && q.status !== 'pending') {
+        if (q.status === 'approved') {
+          toast.success(`${q.id} approved`, q.approved ? `${money(q.approved)} is ready to pay.` : 'It can now be paid.');
+        } else {
+          toast.warning(`${q.id} declined`, 'Nothing can be paid against it.');
+        }
+      }
+      seen[q.rid] = q.status;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
 
   const spi = summary?.spi;
   const po = poData?.po ?? null;
@@ -142,36 +219,65 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
   const requested = list.reduce((n, q) => n + q.amount, 0);
   const approvedAmt = list.filter(q => q.status === 'approved').reduce((n, q) => n + q.approved, 0);
-  const paid = spi?.paid_amount ?? list.reduce((n, q) => n + q.paid, 0);
+  const paid = direct && ledger ? ledger.paid_amount : spi?.paid_amount ?? ownList.reduce((n, q) => n + q.paid, 0);
+  // Released across every listed request: the PO and all its SPIs.
+  const listPaid = direct ? paid : list.reduce((n, q) => n + q.paid, 0);
+  const netPayable = direct && ledger ? ledger.net_payable : total;
   const pendingAmt = list.filter(q => q.status === 'pending').reduce((n, q) => n + q.amount, 0);
   const approvedCount = list.filter(q => q.status === 'approved').length;
   const pendingCount = list.filter(q => q.status === 'pending').length;
   const readyToPay = list.filter(q => q.status === 'approved').reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0);
-  const balance = spi?.balance ?? Math.max(0, total - paid);
-  const pctPaid = total > 0 ? Math.round((paid / total) * 100) : 0;
-  const spiCommitted = pendingAmt + approvedAmt;
-  const available = Math.max(0, Math.min(
-    poData?.requests_summary.open_to_request ?? 0,
-    Math.round((total - spiCommitted) * 100) / 100,
-  ));
+  const balance = direct && ledger ? ledger.balance_amount : spi?.balance ?? Math.max(0, total - paid);
+  const pctPaid = netPayable > 0 ? Math.round((paid / netPayable) * 100) : 0;
+  // This SPI's own requests only: the rest of the PO is already in open_to_request.
+  const spiCommitted = ownList.reduce((n, q) => n + (q.status === 'pending' ? q.amount : q.status === 'approved' ? q.approved : 0), 0);
+  const available = direct
+    ? Math.max(0, Math.round((netPayable - spiCommitted) * 100) / 100)
+    : Math.max(0, Math.min(
+      poData?.requests_summary.open_to_request ?? 0,
+      Math.round((total - spiCommitted) * 100) / 100,
+    ));
 
-  const figures: SpiPayFigures = { base, gst, extra, total, paid, balance, pctPaid, tds: po?.tds_amount ?? 0 };
+  const tdsAmount = direct ? ledger?.tds_amount ?? 0 : po?.tds_amount ?? 0;
+  const figures: SpiPayFigures = { base, gst, extra, total, paid, balance, pctPaid, tds: tdsAmount };
+
+  const tdsCtl = po
+    ? (po.tds_applies ? {
+      code: po.code, docLabel: 'PO', saved: po.tds_saved, locked: po.tds_locked,
+      lockedBy: po.tds_locked_by, room: Math.max(0, po.balance), base: po.base_amount,
+      gst: po.gst_amount, extra: po.extra_charges, total: po.grand_total, amount: po.tds_amount,
+    } : null)
+    : direct && spi && (ledger?.tds_applies ?? row.documentType !== 'international') ? {
+      code: spi.code, docLabel: 'SPI',
+      saved: ledger?.tds_saved ?? (ledger?.tds_amount ?? 0) > 0,
+      locked: ledger?.tds_locked ?? (paid > 0 || approvedCount > 0),
+      lockedBy: ledger?.tds_locked_by ?? (paid > 0 ? 'payment' : approvedCount > 0 ? 'approval' : null),
+      room: Math.max(0, balance), base, gst, extra, total, amount: ledger?.tds_amount ?? 0,
+    } : null;
+  /* The raise popup is about THIS SPI, so its request figures are this SPI's
+     own - the list above also carries the PO's and the sibling SPIs'. */
+  const ownApproved = ownList.filter(q => q.status === 'approved');
+  const ownPending = ownList.filter(q => q.status === 'pending');
   const totals: SpiRequestTotals = {
-    requested, approvedTotal: approvedAmt, pendingAmt, pendingCount,
-    approvedUnpaid: readyToPay, requestCount: list.length, available,
+    requested: ownList.reduce((n, q) => n + q.amount, 0),
+    approvedTotal: ownApproved.reduce((n, q) => n + q.approved, 0),
+    pendingAmt: ownPending.reduce((n, q) => n + q.amount, 0),
+    pendingCount: ownPending.length,
+    approvedUnpaid: ownApproved.reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0),
+    requestCount: ownList.length,
+    available,
   };
 
-  const standalone = state === 'ready' && !summary?.po;
-  const needsTds = !!po && po.tds_applies && !po.tds_saved;
+  const needsTds = po ? po.tds_applies && !po.tds_saved : !!tdsCtl && !tdsCtl.saved;
   const whyNoRequest = state !== 'ready' ? 'Loading…'
-    : standalone ? 'This is a standalone invoice — it has no purchase order to pay against.'
+      : direct && needsTds ? 'Deduct the TDS on this invoice first (even as 0) — then a payment request can be raised.'
       : balance <= 0 ? 'This SPI is paid in full — nothing is left to request.'
         : available <= 0 ? 'Nothing left to request — the balance is already covered by open requests.'
           : undefined;
 
   const openRaise = () => {
     if (needsTds) {
-      toast.warning('Deduct TDS first', `Save the TDS on ${po?.code} (even as 0) before raising a payment request.`);
+      toast.warning('Deduct TDS first', `Save the TDS on ${tdsCtl?.code ?? po?.code} (even as 0) before raising a payment request.`);
       setTdsOpen(true);
       return;
     }
@@ -179,12 +285,13 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   };
 
   const saveTds = async (amount: number) => {
-    if (!po || tdsBusy) return;
+    if (!tdsCtl || tdsBusy) return;
     setTdsBusy(true);
     try {
-      setPoData(await poPaymentApi.saveTds(po.id, { tds_amount: amount }));
+      if (po) setPoData(await poPaymentApi.saveTds(po.id, { tds_amount: amount }));
+      else if (spiId) await spiPaymentApi.saveTds(spiId, { tds_amount: amount });
       setTdsOpen(false);
-      toast.success('TDS saved', `${money(amount)} withheld on ${po.code}.`);
+      toast.success('TDS saved', `${money(amount)} withheld on ${tdsCtl.code}.`);
       void load();
     } catch (e) {
       toast.error('Could not save the TDS', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -224,7 +331,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                 {list.length} request{list.length === 1 ? '' : 's'}
               </span>
             </div>
-            <div className="mpr-hero__sub">All requests raised on this SPI</div>
+            <div className="mpr-hero__sub">{po ? `All requests on ${po.code} and its SPIs` : 'All requests raised on this SPI'}</div>
           </div>
 
           <InvoiceHeroChips row={row} />
@@ -243,16 +350,16 @@ export default function InvoicePaymentsModal({ row, onClose }: {
               <Box
                 label="Summary" title="SPI Payment Details Summary"
                 sub="How this SPI's value is made up and where it stands today · read-only"
-                headerExtra={po?.tds_applies ? (
+                headerExtra={tdsCtl ? (
                   <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                     <button
                       type="button"
-                      className={`mpr-tdsbtn${po.tds_saved ? ' mpr-tdsbtn--edit' : ''}`}
-                      title={po.tds_locked
-                        ? `TDS on ${po.code} is fixed — ${po.tds_locked_by === 'approval'
+                      className={`mpr-tdsbtn${tdsCtl.saved ? ' mpr-tdsbtn--edit' : ''}`}
+                      title={tdsCtl.locked
+                        ? `TDS on ${tdsCtl.code} is fixed — ${tdsCtl.lockedBy === 'approval'
                           ? 'a payment request has already been approved against this net'
                           : 'a payment is already recorded'}`
-                        : po.tds_saved ? `Revise the TDS withheld on ${po.code}` : `Withhold tax at source on ${po.code}`}
+                        : tdsCtl.saved ? `Revise the TDS withheld on ${tdsCtl.code}` : `Withhold tax at source on ${tdsCtl.code}`}
                       onClick={() => setTdsOpen(true)}
                     >
                       <span className="mpr-tdsbtn__ico">
@@ -260,7 +367,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                           <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
                         </svg>
                       </span>
-                      <span>{po.tds_locked ? 'View TDS' : po.tds_saved ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+                      <span>{tdsCtl.locked ? 'View TDS' : tdsCtl.saved ? 'Revise TDS' : 'Deduct TDS Here'}</span>
                     </button>
                   </div>
                 ) : undefined}
@@ -273,7 +380,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
                     value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                    value={money(total)} sub={po ? `${money(po.tds_amount)} TDS on ${po.code}` : 'Standalone invoice'} />
+                    value={money(total)} sub={po ? `${money(po.tds_amount)} TDS on ${po.code}`
+                      : tdsAmount > 0 ? `${money(tdsAmount)} TDS · net ${money(netPayable)}` : 'No TDS withheld'} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                     value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
@@ -283,7 +391,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
               <Box
                 label="Summary" title="All Request Details Summary"
-                sub="Running totals as on today, across every request raised on this SPI"
+                sub={po ? `Running totals as on today, across every request on ${po.code} and its SPIs`
+                  : 'Running totals as on today, across every request raised on this SPI'}
               >
                 <div className="mpr-stats">
                   <Stat icon={STAT_ICONS.doc} label="Total Requests" value={String(list.length)}
@@ -297,7 +406,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount"
                     value={money(approvedAmt)} sub={`${money(readyToPay)} awaiting release`} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
-                    value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
+                    value={money(listPaid)} sub={po ? `Released across ${po.code} and its SPIs` : `${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Open To Request"
                     value={money(available)} sub={available > 0 ? 'Can still be requested' : 'Nothing left to request'} />
                 </div>
@@ -318,9 +427,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <div className="mpr-empty">
                     <div className="mpr-empty__t">No payment requests yet</div>
                     <div className="mpr-empty__s">
-                      {standalone
-                        ? 'This is a standalone invoice with no purchase order, so payment requests cannot be raised on it.'
-                        : 'Requests raised against this invoice will appear here with their approval decision and every payment released against them.'}
+                      Requests raised against this invoice will appear here with their approval decision and every payment released against them.
                     </div>
                   </div>
                 ) : (
@@ -330,17 +437,23 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                         'Requested To', 'Request Approval Status', 'Approved Amount', 'Paid Amount', 'Action']
                         .map(h => <span className="mpr-c" key={h}>{h}</span>)}
                     </div>
-                    {list.map((q, i) => {
+                    {pagedList.map((q, i) => {
                       const st = STATUS[q.status];
                       const due = q.approved - q.paid;
                       const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
                       return (
                         <div className="mpr-row" key={q.rid}>
-                          <span className="mpr-c mpr-sr" data-l="Sr No">{i + 1}</span>
+                          {/* keeps counting across pages: 6, 7, 8 on page two */}
+                          <span className="mpr-c mpr-sr" data-l="Sr No">{(reqPage - 1) * reqPageSize + i + 1}</span>
                           <span className="mpr-c" data-l="Payment Request ID">
                             <span className="mpr-idcell">
                               <span className="mpr-idpill">{q.id}</span>
                               <span className="mpr-iddate">{q.date ? shortDate(q.date) : '—'}</span>
+                              {po && (
+                                <span className="mpr-from" title={q.own ? 'Raised from this SPI' : q.from ? `Raised from ${q.from}` : `Raised on ${po.code}`}>
+                                  {q.own ? 'This SPI' : q.from ?? 'PO'}
+                                </span>
+                              )}
                             </span>
                           </span>
                           <span className="mpr-c" data-l="Payment Type"><span className="mpr-type">{q.type}</span></span>
@@ -409,6 +522,16 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                         </div>
                       );
                     })}
+                    <WorklistPager
+                      className="wl-teal"
+                      total={list.length}
+                      page={reqPage}
+                      pageSize={reqPageSize}
+                      onPage={setReqPage}
+                      onPageSize={(n) => { setReqPageSize(n); setReqPage(1); }}
+                      pageSizeOptions={[5, 10, 25]}
+                      hideNavWhenSinglePage
+                    />
                   </div>
                 )}
               </div>
@@ -442,17 +565,17 @@ export default function InvoicePaymentsModal({ row, onClose }: {
         </div>
       </div>
 
-      {payFor && spiId && po && (
+      {payFor && spiId && (po || direct) && (
         <Suspense fallback={null}>
           <InvoicePaymentModal
             row={row}
             request={payFor}
             spiId={spiId}
-            poId={po.id}
+            poId={po?.id ?? null}
             figures={figures}
             onChanged={load}
-            onOpenTds={po.tds_applies ? () => setTdsOpen(true) : undefined}
-            tdsSaved={po.tds_saved}
+            onOpenTds={tdsCtl ? () => setTdsOpen(true) : undefined}
+            tdsSaved={tdsCtl?.saved ?? false}
             onClose={() => setPayForId(null)}
           />
         </Suspense>
@@ -468,19 +591,19 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           />
         </Suspense>
       )}
-      {tdsOpen && po && (
+      {tdsOpen && tdsCtl && (
         <Suspense fallback={null}>
           <DeductTdsModal
-            po={po.code}
-            docLabel="PO"
-            base={po.base_amount}
-            gst={po.gst_amount}
-            extra={po.extra_charges}
-            total={po.grand_total}
-            room={Math.max(0, po.balance)}
-            saved={po.tds_amount}
-            firstSave={!po.tds_saved}
-            readOnly={po.tds_locked}
+            po={tdsCtl.code}
+            docLabel={tdsCtl.docLabel}
+            base={tdsCtl.base}
+            gst={tdsCtl.gst}
+            extra={tdsCtl.extra}
+            total={tdsCtl.total}
+            room={tdsCtl.room}
+            saved={tdsCtl.amount}
+            firstSave={!tdsCtl.saved}
+            readOnly={tdsCtl.locked}
             busy={tdsBusy}
             onSave={amount => { void saveTds(amount); }}
             onClose={() => setTdsOpen(false)}

@@ -290,8 +290,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={heroIco}><i className="ri-stack-line" /></span>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
-                <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
+                <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
+                <div style={{ fontSize: 12, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
               </div>
             </div>
             {/* The page action sits in the header, ahead of the close button —
@@ -305,6 +305,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           {/* HISTORY is the base popup's only content. */}
           <div className="bpw-body" style={body}>
             <DataTable<any>
+              /* Portaled outside the .hr-cstrip page, so the HRMS header skin
+                 must be asked for by class, not inherited. */
+              className="hr-dt"
               data={history}
               columns={historyColumns}
               /* In the toolbar, not above the card: the left half was empty and
@@ -341,8 +344,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <span style={heroIco}><i className="ri-stack-line" /></span>
                 <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
-                  <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
+                    <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
+                  <div style={{ fontSize: 12, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
                 </div>
               </div>
               <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close"><i className="ri-close-line" /></button>

@@ -1707,8 +1707,8 @@ const STAGE5_CSS = `
 .s5-summary-btn {
   display: inline-flex; align-items: center; gap: 6px;
   box-sizing: border-box; height: 40px;
-  padding: 0 16px; border-radius: 9px; cursor: pointer;
-  font-family: inherit; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  padding: 0 16px; border-radius: 10px; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; white-space: nowrap;
   background: linear-gradient(135deg, #4c1d95, #6d28d9); color: #fff; border: none;
   box-shadow: 0 3px 10px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.16);
   transition: all .18s;
@@ -1811,9 +1811,10 @@ const STAGE5_CSS = `
 .s5-acts { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: nowrap; }
 .s5-act-sep { width: 1px; height: 20px; background: #e2e8f0; flex-shrink: 0; }
 .s5-convert2 {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
-  font-family: inherit; font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 14px; border-radius: 10px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; border: none;
   box-shadow: 0 2px 8px rgba(124,58,237,.3); transition: all .15s;
 }
@@ -1840,7 +1841,7 @@ const STAGE5_CSS = `
    ONE neutral resting style so the row reads as a tidy, uniform toolbar. Each
    variant only contributes its accent colour on hover. */
 .s5-icn {
-  width: 28px; height: 28px; border-radius: 7px; cursor: pointer; flex-shrink: 0;
+  box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; cursor: pointer; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b;
   transition: all .15s;
@@ -1929,7 +1930,7 @@ const STAGE5_CSS = `
 .s5-ps-asof { display: inline-flex; flex-direction: column; background: rgba(255,255,255,.08); border: 1px solid rgba(125,211,252,.22); border-radius: 9px; padding: 6px 12px; }
 .s5-ps-asof-lbl { font-size: 7.5px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 1px; }
 .s5-ps-asof-val { font-size: 11px; font-weight: 800; color: #fff; }
-.s5-ps-x { width: 32px; height: 32px; border-radius: 9px; border: 1.5px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; transition: all .15s; }
+.s5-ps-x { box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; transition: all .15s; }
 .s5-ps-x:hover { background: rgba(239,68,68,.35); border-color: rgba(239,68,68,.5); color: #fff; }
 
 /* Stats bar */
@@ -1978,7 +1979,7 @@ const STAGE5_CSS = `
 .s5-ps-diff.over { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
 .s5-ps-diff.under { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
 .s5-ps-acts { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
-.s5-ps-act { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #bae6fd; background: #f0f9ff; color: #0891b2; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
+.s5-ps-act { box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid #bae6fd; background: #f0f9ff; color: #0891b2; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-act-dl:hover:not(:disabled) { background: #0c4a6e; }
 .s5-ps-act:disabled { opacity: .5; cursor: not-allowed; }
@@ -1991,10 +1992,10 @@ const STAGE5_CSS = `
 .s5-ps-foot-note { display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #64748b; }
 .s5-ps-foot-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.7); }
 .s5-ps-foot-btns { display: flex; align-items: center; gap: 8px; }
-.s5-ps-export { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 9px; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #fff, #f0f9ff); font-family: inherit; font-size: 10.5px; font-weight: 700; color: #0369a1; cursor: pointer; box-shadow: 0 1px 4px rgba(8,145,178,.1); transition: all .15s; }
+.s5-ps-export { display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 10px; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #fff, #f0f9ff); font-family: inherit; font-size: 11.5px; font-weight: 700; color: #0369a1; cursor: pointer; box-shadow: 0 1px 4px rgba(8,145,178,.1); transition: all .15s; }
 .s5-ps-export:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-export:disabled { opacity: .5; cursor: not-allowed; }
-.s5-ps-close-btn { display: inline-flex; align-items: center; box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 9px; border: none; cursor: pointer; font-family: inherit; font-size: 10.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
+.s5-ps-close-btn { display: inline-flex; align-items: center; box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 10px; border: none; cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
 .s5-ps-close-btn:hover { background: linear-gradient(135deg, #0369a1, #0c4a6e); transform: translateY(-1px); }
 
 /* ─── Dark mode ─── */

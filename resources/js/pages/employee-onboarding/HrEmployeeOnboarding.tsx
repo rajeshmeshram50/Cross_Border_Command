@@ -2629,7 +2629,7 @@ const validateStage1 = (): boolean => {
    second full PUT /employees/{id} plus a second onSaved refetch — four
    sequential round trips to save one stage. Stage 4 already carries its own
    bump in the payload (below); this gives Stage 3 the same. (QA #7) */
-const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = false, macroStage?: number): Promise<boolean> => {
+const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = false, macroStage?: number, quiet = false): Promise<boolean> => {
   if (!emp?.dbId || s1Saving) return false;
   if (!skipValidate && !validateStage1()) return false;
   setS1Saving(true);
@@ -2729,12 +2729,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       stage1SavedSigRef.current = sig;
       if (!silent) {
         onSaved?.();
-        if (markComplete) {
-          toast.success('Stage 1 saved', 'Setup details persisted.');
-        } else if (skipValidate) {
-          toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
-        } else {
-          toast.success('Saved', 'Your changes have been persisted.');
+        /* quiet: the caller shows its own one-line confirmation (Stage 3 Next),
+           so skip ours — else both "Draft saved" and the caller's toast fire. */
+        if (!quiet) {
+          if (markComplete) {
+            toast.success('Stage 1 saved', 'Setup details persisted.');
+          } else if (skipValidate) {
+            toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
+          } else {
+            toast.success('Saved', 'Your changes have been persisted.');
+          }
         }
       }
       return true;
@@ -3073,18 +3077,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           : 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.',
       };
     }
-    /* Stage 5 had no arm here, so the rail let the policies be skipped
-       entirely — the gap #145 closed on the Next Stage button only. */
+    /* Policies & Agreements is optional to advance (QA #43): only a sent
+       document still awaiting signature holds the step. */
     if (activeStage === 5) {
-      if (stage5AllSigned) return { ok: true };
+      if (stage5CanAdvance) return { ok: true };
 
-      const notSent = Math.max(0, stage5Total - stage5Sent);
       return {
         ok: false,
-        reason: !stage5Loaded      ? 'Still loading the document list — try again in a moment.'
-          : !stage5Finalized       ? 'Tick the documents this employee needs, then Finalize the set before continuing.'
-          : notSent > 0            ? `${notSent} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} not sent yet. Send each for signature first.`
-                                   : `${stage5Total - stage5Signed} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} still awaiting signature.`,
+        reason: !stage5Loaded
+          ? 'Still loading the document list — try again in a moment.'
+          : `${stage5AwaitingSig} of ${stage5Sent} sent document${stage5Sent === 1 ? '' : 's'} still awaiting signature.`,
       };
     }
     return { ok: true };
@@ -3298,6 +3300,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // Done only when the set is FINALISED and every ticked document is signed.
   const stage5AllSigned = stage5Loaded && stage5Finalized && stage5Signed >= stage5Total;
   const stage5IsDone = macroCompleted >= 5 && stage5AllSigned;
+  /* Advancing Policies & Agreements is optional — HR may proceed without
+     sending anything and collect signatures later (QA #43, relaxes #145).
+     Only a document already SENT and still unsigned holds the step, so an
+     in-flight signature is not stranded. */
+  const stage5AwaitingSig = Math.max(0, stage5Sent - stage5Signed);
+  const stage5CanAdvance = stage5Loaded && stage5AwaitingSig === 0;
   const allPriorStagesDone =
     stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
   const isActivated = macroCompleted >= 6;
@@ -4423,7 +4431,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         }
         setNextLoading(true);
         // The macro bump rides along in this save — see saveStage1's macroStage.
-        const ok = await saveStage1(false, true, false, 3);
+        // quiet=true: this handler owns the single confirmation below (QA #42).
+        const ok = await saveStage1(false, true, false, 3, true);
         if (!ok) { setNextLoading(false); return; }
         setNextLoading(false);
         toast.success('Stage 3 saved', 'Provisioning & asset details persisted.');
@@ -4440,17 +4449,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             return;
           }
         }
-        /* Stage 5 shared this branch without a check of its own, so the
-           policies could be skipped entirely (#145). A template still to go
-           out is one whose custom fields were never filled. */
-        if (activeStage === 5 && !stage5AllSigned) {
-          const notSent = Math.max(0, stage5Total - stage5Sent);
+        /* Policies & Agreements is optional to advance (QA #43): proceed even
+           when nothing was sent. Only a sent document still awaiting signature
+           holds the step. */
+        if (activeStage === 5 && !stage5CanAdvance) {
           toast.error(
-            'Policies & Agreements — incomplete',
-            !stage5Loaded        ? 'Still loading the document list — try again in a moment.'
-            : !stage5Finalized   ? 'Tick the documents this employee needs, then Finalize the set before continuing.'
-            : notSent > 0        ? `${notSent} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} not sent yet. Send each for signature first.`
-                                 : `${stage5Total - stage5Signed} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} still awaiting signature.`,
+            'Policies & Agreements — in progress',
+            !stage5Loaded
+              ? 'Still loading the document list — try again in a moment.'
+              : `${stage5AwaitingSig} of ${stage5Sent} sent document${stage5Sent === 1 ? '' : 's'} still awaiting signature — finish or recall those before continuing.`,
           );
           return;
         }

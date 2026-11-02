@@ -149,6 +149,12 @@ Route::get('/announcements/{id}/attachment',     [AnnouncementController::class,
    is why it can sit out here without auth. */
 Route::get('/dev/mail-preview/{template}', [\App\Http\Controllers\Api\DevToolsController::class, 'mailPreview']);
 
+/* Box-sticker face preview — renders the blade from synthetic data (query
+   params drive cold/haz/fragile/stack/condition/scenario/refs) so the design
+   can be tuned without a real SPI/box. Local-only: the controller 404s
+   elsewhere, so it sits here without auth. */
+Route::get('/p2p/spi/sticker-preview', [SpiBoxController::class, 'stickerPreview']);
+
 // Protected
 Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
@@ -631,6 +637,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Step 03 · Option 01 — hand it to the floor; the box stays unplaced.
         Route::post  ('/{id}/putaway/{row}/scan-task',      [SpiPutawayTaskController::class, 'store'])->whereNumber('id')->whereNumber('row');
         Route::get   ('/{id}/putaway/tasks',                [SpiPutawayTaskController::class, 'index'])->whereNumber('id');
+        // A box's frozen scan log (handheld + manual), read-only.
+        Route::get   ('/{id}/putaway/boxes/{box}/activity', [SpiPutawayTaskController::class, 'boxActivity'])->whereNumber('id')->whereNumber('box');
 
         /* Payment Requests History for ONE invoice. The requests themselves are
            still raised and decided on the PO — this is the read that scopes
@@ -639,10 +647,19 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         /* Raised from the invoice, but it still belongs to the PO — same
            ceiling, same approver rules, same deduction. The SPI screen
            therefore never needs to know the purchase order id. */
+        /* TDS on a DIRECT invoice. A PO-backed one is refused and sent to
+           its order — every payment request is gated on tds_updated_at,
+           and before this there was no way to set it without a PO. */
+        Route::put   ('/{id}/tds',                              [PoPaymentRequestController::class, 'saveTdsForSpi'])->whereNumber('id');
         Route::post  ('/{id}/payment-requests',                  [PoPaymentRequestController::class, 'storeFromSpi'])->whereNumber('id');
         // The "Make SPI Payment" button. Still recorded against the PO.
         Route::post  ('/{id}/payment-requests/{req}/payments',   [PoPaymentRequestController::class, 'storePaymentFromSpi'])
             ->whereNumber('id')->whereNumber('req');
+        // Edit (multipart, for a corrected proof) and delete a Direct-SPI payment.
+        Route::post  ('/{id}/payment-requests/{req}/payments/{payment}', [PoPaymentRequestController::class, 'updatePaymentFromSpi'])
+            ->whereNumber('id')->whereNumber('req')->whereNumber('payment');
+        Route::delete('/{id}/payment-requests/{req}/payments/{payment}', [PoPaymentRequestController::class, 'destroyPaymentFromSpi'])
+            ->whereNumber('id')->whereNumber('req')->whereNumber('payment');
 
         // Zoho Books — only a standalone invoice creates its own bill.
         Route::post  ('/{id}/zoho-sync',    [SupplierInvoiceController::class, 'zohoSync'])->whereNumber('id');

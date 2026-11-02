@@ -21,6 +21,7 @@ import SelectedProducts, {
 import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
 import { putId } from '../spi-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
 function SavedShot({ photo, onRemove, busy = false }: { photo: SavedPhoto; onRemove?: () => void; busy?: boolean }) {
@@ -106,7 +107,7 @@ export interface BoxInitial {
   photos?: SavedPhoto[];
 }
 
-const VOLUMETRIC_DIVISOR = 5000;
+const VOLUMETRIC_DIVISOR = 6000;
 
 const dimStr = (v: number | null | undefined) => (v == null ? '' : String(v));
 
@@ -174,7 +175,9 @@ export default function BoxDrawer({
   );
   const [condition, setCondition] = useState<string>(initial?.condition ?? 'perfect');
   const [flags, setFlags] = useState<string[]>(initial?.flagIds ?? []);
-  const [stackable, setStackable] = useState(initial?.stackable ?? true);
+  const [stackable, setStackable] = useState(
+    (initial?.stackable ?? true) && !(initial?.flagIds ?? []).includes('fragile'),
+  );
   const [flagsOpen, setFlagsOpen] = useState(false);
   const CUSTOM_FLAGS_SHOWN = 1;
   const visibleCustomFlags = customFlags.slice(0, CUSTOM_FLAGS_SHOWN);
@@ -207,14 +210,20 @@ export default function BoxDrawer({
     setRemoving(r => r.filter(x => x !== p.id));
   };
 
+  const toast = useToast();
   const [camOpen, setCamOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addPhotos = useCallback((files: File[]) => {
-    const pics = files.filter(f => f.type.startsWith('image/'));
+    const pics = files.filter(f => /^image\/(jpeg|png)$/.test(f.type) && /\.(jpe?g|png)$/i.test(f.name));
+    const rejected = files.filter(f => !pics.includes(f));
+    if (rejected.length) {
+      toast.warning('Only JPG or PNG images allowed',
+        `${rejected.map(f => f.name).join(', ')} ${rejected.length === 1 ? 'is' : 'are'} not supported. Upload box photos as JPG or PNG.`);
+    }
     if (!pics.length) return;
     setPhotos(p => [...p, ...pics.map(file => ({ file, url: URL.createObjectURL(file) }))]);
-  }, []);
+  }, [toast]);
 
   const dropPhoto = (url: string) => {
     URL.revokeObjectURL(url);
@@ -231,6 +240,10 @@ export default function BoxDrawer({
   const mixedCarton = !!contents;
 
   const qtyMax = Math.max(quantity, quantityMax ?? line.spiQty);
+  const [qtyText, setQtyText] = useState(String(quantity));
+  useEffect(() => {
+    setQtyText(t => (Number(t) === quantity ? t : String(quantity)));
+  }, [quantity]);
 
   const volumetric = (() => {
     const toCm = (v: string) => (Number(v) || 0) * (unit === 'm' ? 100 : 1);
@@ -279,8 +292,40 @@ export default function BoxDrawer({
     };
   };
 
-  const toggleFlag = (id: string) =>
+  /* A fragile box cannot carry weight, so Fragile and Stackable exclude each other. */
+  const toggleFlag = (id: string) => {
+    if (id === 'fragile' && !flags.includes(id)) setStackable(false);
     setFlags(f => (f.includes(id) ? f.filter(x => x !== id) : [...f, id]));
+  };
+  const toggleStackable = () => {
+    if (!stackable) setFlags(f => f.filter(x => x !== 'fragile'));
+    setStackable(s => !s);
+  };
+
+  // Modal strip: one row when the details and the actions both fit beside
+  // the close button, two rows otherwise. Measured from the items themselves
+  // (fixed-width, so the answer does not depend on the class it sets).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripStacked, setStripStacked] = useState(false);
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (variant !== 'modal' || !strip) return;
+    const sum = (sel: string) => {
+      const kids = Array.from(strip.querySelector(sel)?.children ?? []) as HTMLElement[];
+      return kids.reduce((w, k) => w + k.offsetWidth, 0) + (sel === '.vti-dw-toolbar' ? 9 * Math.max(0, kids.length - 1) : 0);
+    };
+    const measure = () => {
+      // accent 4 + gap 14 + close-button lane 62
+      const need = 4 + sum('.vti-dw-strip-left') + 14 + sum('.vti-dw-toolbar') + 62;
+      setStripStacked(need > strip.clientWidth);
+    };
+    measure();
+    // Item widths change once the web fonts arrive, the strip's does not.
+    document.fonts?.ready.then(measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [variant, quantity, saved, saving]);
 
   const Shell = variant === 'accordion' ? AccordionShell
     : variant === 'modal' ? ModalShell
@@ -292,7 +337,9 @@ export default function BoxDrawer({
         {/* inert while saving, like the body below: the quantity stepper,
             the unit toggle, Upload and Camera all live in this strip, outside
             the body's veil, so the quantity could still be changed mid-save. */}
-        <div className="vti-dw-strip" inert={saving} aria-busy={saving}>
+        <div ref={stripRef}
+          className={`vti-dw-strip${variant === 'modal' ? (stripStacked ? ' is-stacked' : ' is-oneline') : ''}`}
+          inert={saving} aria-busy={saving}>
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
             <StripItem label="Box ID" className="strip-boxid">
@@ -313,21 +360,26 @@ export default function BoxDrawer({
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit fewer"
                     disabled={quantity <= 0}
-                    onClick={() => onQuantityChange(Math.max(0, quantity - 1))}
+                    onClick={() => onQuantityChange(Math.max(0, Math.round((quantity - 1) * 1000) / 1000))}
                   >&minus;</button>
+                  {/* Decimals allowed: a unit shipped in parts puts 0.5 of it in a box. */}
                   <input
-                    type="text" inputMode="numeric" className="vti-dw-qty-val"
-                    value={quantity}
+                    type="text" inputMode="decimal" className="vti-dw-qty-val"
+                    value={qtyText}
                     aria-label="Units in this box"
                     onChange={e => {
-                      const n = Number(e.target.value.replace(/[^\d]/g, '')) || 0;
+                      const raw = e.target.value.replace(/[^\d.]/g, '');
+                      if (!/^\d*(\.\d{0,3})?$/.test(raw)) return;
+                      setQtyText(raw);
+                      const n = Number(raw) || 0;
                       onQuantityChange(Math.min(Math.max(0, n), qtyMax));
                     }}
+                    onBlur={() => setQtyText(String(quantity))}
                   />
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit more"
                     disabled={quantity >= qtyMax}
-                    onClick={() => onQuantityChange(Math.min(qtyMax, quantity + 1))}
+                    onClick={() => onQuantityChange(Math.min(qtyMax, Math.round((quantity + 1) * 1000) / 1000))}
                   >+</button>
                   <span className="vti-dw-qty-max">/ {qtyMax}</span>
                 </span>
@@ -562,8 +614,10 @@ export default function BoxDrawer({
                     );
                   })}
                   {hiddenCustomFlags.length > 0 && (
+                    <Tooltip label={`${hiddenCustomFlags.length} more flag${hiddenCustomFlags.length === 1 ? '' : 's'}`}>
                     <button type="button" className="vti-flag-more"
                       aria-haspopup="dialog" aria-expanded={!!flagPop}
+                      aria-label={`${hiddenCustomFlags.length} more flags`}
                       onClick={e => {
                         if (flagPop) { setFlagPop(null); return; }
                         const b = e.currentTarget.getBoundingClientRect();
@@ -572,17 +626,18 @@ export default function BoxDrawer({
                         const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
                         setFlagPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
                       }}>
-                      +{hiddenCustomFlags.length} more
+                      +{hiddenCustomFlags.length}
                       {hiddenOnCount > 0 && (
                         <span className="vti-flag-more__on">{hiddenOnCount}</span>
                       )}
                     </button>
+                    </Tooltip>
                   )}
                   <div
                     className={`vti-stack-toggle${stackable ? ' is-stack' : ''}`}
                     role="switch" tabIndex={0} aria-checked={stackable}
-                    onClick={() => setStackable(s => !s)}
-                    onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setStackable(s => !s); } }}
+                    onClick={toggleStackable}
+                    onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleStackable(); } }}
                   >
                     <span className="vti-stack-sw"><span className="vti-stack-knob" /></span>
                     <span className="vti-stack-txt">Stackable</span>
@@ -731,7 +786,7 @@ export default function BoxDrawer({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
         multiple
         hidden
         onChange={e => {

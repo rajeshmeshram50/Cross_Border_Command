@@ -730,10 +730,10 @@ const STAGE6_CSS = `
   margin-top: 10px;
   display: inline-flex; align-items: center; gap: 8px;
   box-sizing: border-box; height: 40px;
-  padding: 0 20px; border-radius: 11px;
+  padding: 0 20px; border-radius: 10px;
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #fff; font-family: inherit;
-  font-size: 12.5px; font-weight: 800;
+  font-size: 11.5px; font-weight: 700;
   border: none; cursor: pointer;
   box-shadow: 0 6px 18px rgba(245, 158, 11, .40);
   transition: all .15s;

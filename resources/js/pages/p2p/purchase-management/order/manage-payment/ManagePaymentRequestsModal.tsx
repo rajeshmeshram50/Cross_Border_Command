@@ -34,6 +34,8 @@ type PaymentRequest = {
   status: ReqStatus;
   approved: number;
   paid: number;
+  /** The SPI it was raised from; null when raised on the PO. */
+  from: string | null;
 };
 
 
@@ -42,6 +44,7 @@ function toRow(q: PoPayRequest): PaymentRequest {
     rid: q.id, id: q.code, pct: q.percentage, date: q.requested_at ?? '', type: q.payment_type,
     amount: q.requested_amount, approver: q.requested_to.name ?? '—', role: q.requested_to.role ?? '',
     status: q.status, approved: q.approved_amount ?? 0, paid: q.paid_amount,
+    from: q.supplier_invoice_code ?? null,
   };
 }
 
@@ -93,6 +96,7 @@ function RequestRow({ q, index, net, onPay, ccy }: {
         <span className="mpr-idcell">
           <span className="mpr-idpill">{q.id}</span>
           <span className="mpr-iddate">{shortDate(q.date)}</span>
+          <span className="mpr-from" title={q.from ? `Raised from ${q.from}` : 'Raised on this PO'}>{q.from ?? 'PO'}</span>
         </span>
       </span>
 
@@ -425,6 +429,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   return createPortal(
 
     <div className="spi-mdl-backdrop">
+
       {payReq && (
         <Suspense fallback={<TdsLoading />}>
           <MakePoPaymentModal

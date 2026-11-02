@@ -100,7 +100,7 @@ const truncTip = (value?: string | null, max = 15) => {
 const bottomReserve = (): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  if (f?.classList.contains('app-footer-auto')) return 15;
+  // Reserve the footer height + 8px so the card ends above it (see DataTable).
   const fh = f?.offsetHeight ?? 0;
   return fh > 0 ? fh + 8 : 15;
 };

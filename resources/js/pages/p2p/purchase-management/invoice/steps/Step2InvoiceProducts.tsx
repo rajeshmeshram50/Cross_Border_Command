@@ -10,6 +10,7 @@ import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
+import { today } from '../invoice-draft';
 
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
@@ -162,7 +163,7 @@ export default function Step2InvoiceProducts({
                   SPI has no purchase order, so nothing to hold it to. */}
               <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
                 invalid={!!issues?.invoiceDate}
-                minDate={!direct && draft.poDate ? draft.poDate : undefined} />
+                minDate={!direct && draft.poDate ? draft.poDate : undefined} maxDate={today()} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req error={issues?.invoiceFile}>
               <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly}
@@ -204,6 +205,8 @@ export default function Step2InvoiceProducts({
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
             twoWay={direct} matched={matched} hasPi={direct || poHasPi} rowIssues={issues?.rows}
+            supplierSegments={draft.supplierDetail?.segments ?? null}
+            supplierProducts={draft.supplierDetail?.mapped_product_ids ?? null}
             sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
           {matched && removedCount > 0 && onRestoreLines && !readOnly && (
             <div className="invf-removed">
@@ -215,7 +218,10 @@ export default function Step2InvoiceProducts({
               </button>
             </div>
           )}
-          {onAddLine && !readOnly && !(direct && draft.shipmentId) && (
+          {/* Only a Direct SPI without a shipment can add lines. A With-PO
+              invoice bills what the PO ordered, and a shipment-linked one
+              bills its PI, so both take their products from the source. */}
+          {onAddLine && !readOnly && direct && !draft.shipmentId && (
             <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
               <IcoPlus /> Add Product
             </button>

@@ -2978,9 +2978,14 @@
 .cand-sample-modal {
   border-radius: 16px !important;
   overflow: hidden;
+  /* DM Sans across the whole Sample Import popup. */
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   box-shadow:
     0 30px 60px rgba(15,23,42,0.30),
     0 12px 24px rgba(15,23,42,0.18);
+}
+.cand-sample-modal :where(h1, h2, h3, h4, h5, h6, p, span, div, td, th, button, a, label, li) {
+  font-family: inherit;
 }
 .cand-sample-head {
   position: relative;
@@ -3111,7 +3116,8 @@
   border-top-color: var(--vz-border-color);
 }
 .cand-sample-download {
-  height: 38px;
+  /* 40px, matching the Close button (.rec-btn-ghost) — QA 206. */
+  height: 40px;
   padding: 0 18px;
   border-radius: 10px;
   border: 0;
@@ -4676,11 +4682,12 @@
 .ep-head-top { display: flex; align-items: flex-start; gap: 14px; }
 .ep-head-avatar {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 48px; height: 48px;
+  /* 40px, consistent with the app's avatar/logo size (QA 207). */
+  width: 40px; height: 40px;
   border-radius: 11px;
   border: 1px solid rgba(255,255,255,0.30);
   color: #ffffff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.02em;
   flex-shrink: 0;
@@ -4953,6 +4960,11 @@
 }
 
 .ep-close {
+  /* The row is align-items: flex-start, so this sat level with the top of
+     the avatar while the chip beside it - taller, it carries the progress
+     ring - ran on below. Centre just the button; re-aligning the whole row
+     would move the avatar and the name block too. */
+  align-self: center;
   width: 32px; height: 32px;
   border-radius: 9px;
   background: rgba(255,255,255,0.18);
@@ -5173,8 +5185,11 @@
 .ep-stage-banner-title { font-size: 14px; font-weight: 600; line-height: 1.2; }
 .ep-stage-banner-sub { font-size: 11.5px; color: rgba(255,255,255,0.88); margin-top: 2px; }
 
+/* The one place this is sized. A second copy further down said 10px, and
+   neither named a family, so it rendered in the body's Rubik. */
 .ep-section-label {
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #6d28d9;
@@ -5189,10 +5204,9 @@
 [data-bs-theme="dark"] .ep-section-label { color: #c4b5fd; }
 
 .ep-field { display: flex; flex-direction: column; gap: 4px; }
-/* NOTE: EmployeeProfile.css carries a second .ep-field-label at the same
-   specificity, so which of the two wins is decided by bundler load order.
-   Both now name the family, so the face is the same either way (#164).
-   The sizes still differ (10.5 here, 11 there) and want reconciling. */
+/* EmployeeProfile.css carries a second .ep-field-label at the same
+   specificity. Both now name the family AND the same size, so load order no
+   longer decides anything (#164, QA 190). Change one, change the other. */
 .ep-field-label {
   font-family: var(--font-sans);
   font-size: 10.5px;
@@ -6253,7 +6267,7 @@
 
 .ep-head { padding: 12px 16px; }
 .ep-head-top { gap: 12px; }
-.ep-head-avatar { width: 43px; height: 43px; font-size: 14.5px; }
+.ep-head-avatar { width: 40px; height: 40px; font-size: 14px; }
 .ep-head-title { font-size: 15.5px; }
 .ep-head-sub { font-size: 10.5px; }
 .ep-head-status-pill { padding: 2px 9px; font-size: 9px; }
@@ -6273,8 +6287,10 @@
 .ep-stage-pct { font-size: 10px; }
 
 .ep-content { padding: 12px 18px; }
-.ep-section-label { font-size: 10px; }
-.ep-field-label { font-size: 9.5px; }
+/* Every copy of this rule says 10.5px now. There are four of them across
+   two files at three specificities, and chasing which one wins on a given
+   screen is not worth the time — they agree instead. */
+.ep-field-label { font-size: 10.5px; }
 
 .ep-input, .ep-select { height: 33px; padding: 0 10px; font-size: 11.5px; }
 .ep-textarea { min-height: 50px; padding: 6px 10px; font-size: 11.5px; }
@@ -6982,7 +6998,10 @@
 }
 /* Inactive pills carried --dt-a-700 (#6d28d9): dark violet, legible on the
    light trough and nearly invisible once the trough went dark. */
-[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off { color: #c4b5fd; }
+/* Borderless in dark too: the base dark .dt-tab.off adds a white outline,
+   and the ev rail is a soft-trough strip where only the active pill is
+   drawn. Unselected tabs carry no border (QA 191, 192). */
+[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off { color: #c4b5fd; background: transparent; border-color: transparent; box-shadow: none; }
 [data-bs-theme="dark"] .ev-tabstrip .dt-tab.off:hover {
   background: rgba(167, 139, 250, 0.12);
   color: #ddd6fe;
@@ -10792,9 +10811,13 @@
 .att-reg-keka-body { padding: 14px 22px 12px; max-height: 78vh; overflow-y: auto; }
 
 .att-reg-keka-field { margin-bottom: 12px; }
+/* 10.5px — the field-label size the module uses (QA 190). It was 13px,
+   the same as the VALUE inside the field below it, so label and content
+   read as one line of equal weight. */
 .att-reg-keka-label {
   display: block;
-  font-size: 13px; font-weight: 700; color: var(--vz-body-color);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--vz-secondary-color);
   margin-bottom: 6px;
 }
 
@@ -11525,8 +11548,12 @@
   background: #1c2531;
   color: #e6e8ec;
 }
+/* THE copy that decides this label, because every line is !important and
+   that beats the specificity of the four other declarations of the same
+   class. 10.5px, the module field-label size (QA 190). If this needs to
+   change again, change it HERE - editing the others has no effect. */
 .ep-field-label {
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   font-weight: 700 !important;
   color: var(--vz-secondary-color) !important;
   letter-spacing: 0.06em !important;
@@ -12199,6 +12226,16 @@
           .onb-url-input            { background: #f7f8fc !important; }
           .onb-helper-text          { color: #6b7280; }
           .onb-secondary-btn        { background: #fff; color: #475569; border: 1px solid #e5e7eb; }
+          /* Both footer buttons on the module scale (QA 160). They were taking
+             Bootstrap .btn padding, which gave 41.1px and 13px Rubik - the
+             "Done" button carries no class of its own, so the rule is scoped
+             to the modal rather than to a class. */
+          .onb-modal-content .modal-footer .btn,
+          .onb-modal-content .btn.rounded-pill {
+            height: 40px; min-height: 40px; padding: 0 18px;
+            font-family: var(--font-sans); font-size: 12.5px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          }
           [data-bs-theme="dark"] .onb-success-banner,
           [data-layout-mode="dark"] .onb-success-banner {
             background: linear-gradient(135deg, rgba(10,179,156,0.18), rgba(10,179,156,0.08)) !important;
@@ -13287,6 +13324,18 @@
    Three classes, because .master-modal .form-control matches the same input
    with the same weight and is declared later — without the extra class it
    won the tie and put back the padding and height this is setting. */
+/* QA 204: the import-punches body and footer must share one background in
+   dark mode. Both go transparent so the single modal-content colour shows
+   through, instead of Velzon giving the footer its own shade. */
+.imp-modal .modal-body,
+.imp-modal .modal-footer,
+[data-bs-theme="dark"] .imp-modal .modal-body,
+[data-bs-theme="dark"] .imp-modal .modal-footer,
+[data-layout-mode="dark"] .imp-modal .modal-body,
+[data-layout-mode="dark"] .imp-modal .modal-footer {
+  background: transparent;
+}
+
 .imp-modal .hrms-file-input.form-control {
   height: 38px;
   line-height: 36px;

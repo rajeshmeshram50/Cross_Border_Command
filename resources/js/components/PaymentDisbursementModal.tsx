@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { MasterSelect } from './ui/MasterSelect';
 
 /**
  * "Proceed to Pay" disbursement flow:
@@ -41,13 +42,41 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
   const [step, setStep] = useState<Step>('mode');
   const [payment, setPayment] = useState<Payment | null>(null);
   const [busy, setBusy] = useState(false);
-  const [prep, setPrep] = useState({ prepared_by: '', verified_by: '', approved_by: '' });
+  /* Who ran the payroll + their acknowledgement, replacing the 3 free-text
+     sign-off names. The approve API still takes the three fields, so the runner
+     is mapped onto them until the backend is updated. */
+  const [runBy, setRunBy] = useState('');
+  const [acked, setAcked] = useState(false);
+  const [emps, setEmps] = useState<{ value: string; label: string; code?: string }[]>([]);
   const [result, setResult] = useState<{ paid: number; held: number; batch_ref: string } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [tab, setTab] = useState<BankGroup>('hdfc');
 
   useEffect(() => {
-    if (open) { setStep('mode'); setPayment(null); setPrep({ prepared_by: '', verified_by: '', approved_by: '' }); setResult(null); setTab('hdfc'); }
+    if (open) { setStep('mode'); setPayment(null); setRunBy(''); setAcked(false); setResult(null); setTab('hdfc'); }
+  }, [open]);
+
+  /* Active employees for the "ran the payroll" dropdown — loaded once the modal
+     opens so the list is ready by the time the approval step is reached. */
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    api.get('/employees', { params: { view: 'list', enabled: 1, per_page: 1000 } })
+      .then(res => {
+        if (!live) return;
+        const rows = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+        setEmps(rows.map((e: any) => {
+          const nm = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
+          // code → the badge pill shown FIRST, label → the name after it.
+          return {
+            value: String(e.emp_code ?? e.id),
+            code: e.emp_code ? String(e.emp_code) : undefined,
+            label: nm,
+          };
+        }));
+      })
+      .catch(() => { if (live) setEmps([]); });
+    return () => { live = false; };
   }, [open]);
 
   const readyRows = useMemo(() => payment?.rows.filter(r => r.status === 'Ready') ?? [], [payment]);
@@ -80,13 +109,23 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
   const submitApproval = async () => {
     if (!payment) return;
-    if (!prep.prepared_by.trim() || !prep.verified_by.trim() || !prep.approved_by.trim()) {
-      toast.error('All three approvals required', 'Prepared, Verified and Approved are mandatory.');
+    if (!runBy) {
+      toast.error('Select who ran the payroll', 'Pick the employee who processed this payroll.');
       return;
     }
+    if (!acked) {
+      toast.error('Acknowledgement required', 'Tick the box to confirm you ran and verified this payroll.');
+      return;
+    }
+    // The approve API still takes three names; map the runner onto all three
+    // and send run_by / acknowledged alongside for when the backend adopts them.
+    const runnerName = emps.find(e => e.value === runBy)?.label ?? runBy;
     setBusy(true);
     try {
-      await api.post(`/payroll/payment/${payment.id}/approve`, prep);
+      await api.post(`/payroll/payment/${payment.id}/approve`, {
+        prepared_by: runnerName, verified_by: runnerName, approved_by: runnerName,
+        run_by: runBy, acknowledged: acked,
+      });
       const res = await api.post(`/payroll/payment/${payment.id}/initiate`);
       const d = res.data?.data ?? {};
       setResult({ paid: d.paid ?? 0, held: d.held ?? 0, batch_ref: d.batch_ref ?? '' });
@@ -302,23 +341,44 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
   // ── STEP: 3-LEVEL APPROVAL ──
   if (step === 'approval' && payment) {
+    const canSubmit = !!runBy && acked;
     return shell(<>
-      <Header icon="ri-shield-check-line" iconTint="#fdf3d6" iconFg="#a06f00" title="Approval Required" sub="3-level sign-off before payment execution" onClose={onClose} />
+      <Header icon="ri-shield-check-line" iconTint="#fdf3d6" iconFg="#a06f00" title="Approval Required" sub="Confirm who ran this payroll, then approve" onClose={onClose} />
       <div style={{ padding: 20 }}>
-        {([['prepared_by', 'Prepared By', 'Name of HR executive who prepared'], ['verified_by', 'Verified By', 'Name of Finance Manager who verified'], ['approved_by', 'Approved By', 'Name of Director / CEO who approved']] as const).map(([k, label, ph]) => (
-          <div className="mb-3" key={k}>
-            <label className="form-label fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.04em' }}>{label} <span className="text-danger">*</span></label>
-            <input className="form-control" placeholder={ph} value={(prep as any)[k]} onChange={e => setPrep(p => ({ ...p, [k]: e.target.value }))} />
-          </div>
-        ))}
-        <div className="p-2 px-3 mb-3 pdm-info-amber" style={{ background: '#fef9e7', border: '1px solid #f6e3a1', borderRadius: 10, fontSize: 12.5, color: '#a06f00' }}>
-          <i className="ri-alert-line me-1" /> All three approvals are mandatory. Payment will only execute after this form is submitted.
+        <div className="mb-3">
+          <label className="form-label fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.04em' }}>
+            Payroll run by <span className="text-danger">*</span>
+          </label>
+          <MasterSelect
+            value={runBy}
+            options={emps}
+            placeholder="Select the employee who ran this payroll…"
+            onChange={(v) => setRunBy(v)}
+          />
         </div>
-        <div className="d-flex gap-2">
-          <button type="button" className="btn btn-light flex-shrink-0" onClick={() => setStep('advice')} disabled={busy}>Back</button>
-          <button type="button" className="btn fw-bold text-white flex-grow-1" disabled={busy}
-            style={{ background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', opacity: busy ? 0.7 : 1 }} onClick={submitApproval}>
-            {busy ? <i className="ri-loader-4-line me-1" /> : <i className="ri-check-double-line me-1" />} Confirm &amp; Approve Payment
+
+        <label className="d-flex align-items-start gap-2 mb-3" style={{ cursor: 'pointer' }}>
+          <input type="checkbox" className="form-check-input mt-1 flex-shrink-0" checked={acked}
+            onChange={e => setAcked(e.target.checked)} />
+          <span style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+            I acknowledge that I ran and verified the <b>{cycleLabel}</b> payroll, that the amounts are correct,
+            and I authorise this payment.
+          </span>
+        </label>
+
+        <div className="p-2 px-3 mb-3 pdm-info-amber" style={{ background: '#fef9e7', border: '1px solid #f6e3a1', borderRadius: 10, fontSize: 12.5, color: '#a06f00' }}>
+          <i className="ri-alert-line me-1" /> Payment will only execute after this form is submitted.
+        </div>
+
+        <div className="d-flex gap-2 align-items-center">
+          <button type="button" className="btn btn-light flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style={{ height: 40, fontSize: 13, fontWeight: 600, padding: '0 18px' }}
+            onClick={() => setStep('advice')} disabled={busy}>Back</button>
+          <button type="button" className="btn text-white flex-grow-1 d-inline-flex align-items-center justify-content-center gap-1"
+            disabled={busy || !canSubmit}
+            style={{ height: 40, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', opacity: (busy || !canSubmit) ? 0.6 : 1 }}
+            onClick={submitApproval}>
+            {busy ? <i className="ri-loader-4-line" /> : <i className="ri-check-double-line" />} Confirm &amp; Approve Payment
           </button>
         </div>
       </div>

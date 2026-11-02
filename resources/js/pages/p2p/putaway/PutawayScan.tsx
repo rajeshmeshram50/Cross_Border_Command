@@ -837,33 +837,15 @@ export default function PutawayScan() {
 
   /* A finished box gets the whole screen, not a banner above the slots, the
      box details and a scan field. The operator is holding a carton and needs
-     one fact: it is done, and where. Everything else reads as an instruction
-     to carry on scanning.
-     Covers both routes to "finished" — a box scanned against a task that is
-     now complete, and a box with no open task that was placed earlier. */
-  // `placed` already returned above, so this is the task-complete route only.
-  const finishedBox = state.box?.box_code ?? null;
-  const finishedAt  = dest?.full ?? null;
+     one fact: it is done, and where.
 
-  if (done) {
-    return (
-      <div className="pwscan pwscan--blocked">
-        <div className="pwscan-card">
-          <div className="pwscan-blockmark">&#10003;</div>
-          <h1>Put-away already completed</h1>
-          <p>
-            {finishedBox ? <><b>{finishedBox}</b> is already put away</> : 'This box is already put away'}
-            {finishedAt ? <> at <b>{finishedAt}</b>.</> : '.'}
-          </p>
-          {/* A badge, not a button. The next box is scanned with the trigger,
-              which navigates on its own — a button here would be a second way
-              to do nothing. */}
-          <span className="pwscan-badge pwscan-badge--done">Put-away completed</span>
-        </div>
-      </div>
-    );
-  }
-
+     That screen is <Done>, rendered below — it carries the control that moves
+     on to the next box. A second `if (done)` used to sit here and return a
+     card that said "Put-away already completed" with no such control, which
+     made every FIRST put-away read as a repeat and left the operator
+     reloading the page to scan again. A box somebody else had already stored
+     is a different case and still has its own screen: `placed` returns
+     further up. */
   /* One input, rendered in one of two places — the ref must stay on a single
      instance or focus-capture lands on whichever React mounted last. The
      label sits with it: that is where the operator is looking. */

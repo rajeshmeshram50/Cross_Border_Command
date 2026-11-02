@@ -233,8 +233,18 @@ export default function InventoryScanDevices() {
       </Card>
 
       {/* ------------------------------------------------------ enroll modal */}
-      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} centered>
-        <ModalHeader toggle={() => setModalOpen(false)}>Enroll device</ModalHeader>
+      {/* Enrolling locks the dialog like the Customer form's save: a sheet
+          over it with the ring and "Saving…", and Esc / ✕ / Cancel do
+          nothing until the request is back. */}
+      <Modal isOpen={modalOpen} toggle={() => { if (!saving) setModalOpen(false); }} centered
+        backdrop={saving ? 'static' : true} keyboard={!saving}>
+        {saving && (
+          <div className="isd-saving" role="status" aria-live="polite">
+            <span className="isd-saving__spin" aria-hidden />
+            Saving…
+          </div>
+        )}
+        <ModalHeader toggle={() => { if (!saving) setModalOpen(false); }}>Enroll device</ModalHeader>
         <Form onSubmit={onSubmit}>
           <ModalBody>
             <FormGroup>
@@ -272,7 +282,7 @@ export default function InventoryScanDevices() {
             </FormGroup>
           </ModalBody>
           <ModalFooter>
-            <Button color="light" onClick={() => setModalOpen(false)}>Cancel</Button>
+            <Button color="light" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</Button>
             <Button color="primary" type="submit" disabled={saving}>Enroll &amp; issue credential</Button>
           </ModalFooter>
         </Form>

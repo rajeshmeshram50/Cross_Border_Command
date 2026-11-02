@@ -13,6 +13,7 @@ export interface InvoiceDraft {
   deliveryLocation: string;
   paymentType: string;
   physInspection: boolean;
+  inspectionDone: boolean;
   taxMode: TaxMode | null;
   currency: string;
   exchangeRate: string;
@@ -60,12 +61,16 @@ export interface InvoiceDraft {
   ewayBillFile: string;
 }
 
-const today = () => {
+export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const day = (v: string | null | undefined) => (v ? v.slice(0, 10) : '');
+
+/** Physical inspection as the SPI shows it: Done or Pending when the PO asks for one. */
+export const inspectionLabel = (d: Pick<InvoiceDraft, 'physInspection' | 'inspectionDone'>) =>
+  !d.physInspection ? 'Not Applicable' : d.inspectionDone ? 'Done' : 'Pending';
 
 export function draftFromSupplier(sup: SupplierDetail): Partial<InvoiceDraft> {
   return {
@@ -136,6 +141,7 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
     deliveryLocation: po.delivery_location ?? '',
     paymentType: po.payment_type ?? '',
     physInspection: po.physical_inspection === 'yes',
+    inspectionDone: po.inspection_status === 'completed',
     taxMode: po.document_type === 'international' ? 'export' : (po.tax_mode ?? null),
     currency: po.currency_code ?? '',
     exchangeRate: po.exchange_rate ?? '',
@@ -174,6 +180,7 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmen
     deliveryLocation: '',
     paymentType: '',
     physInspection: false,
+    inspectionDone: false,
     taxMode: null,
     currency: '',
     exchangeRate: '',

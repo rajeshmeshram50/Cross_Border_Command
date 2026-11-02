@@ -1369,8 +1369,8 @@ const STAGE3_CSS = `
   padding: 0 14px; border: none; cursor: pointer;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
-  font-family: inherit; font-size: 11px; font-weight: 700;
-  border-radius: 7px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  border-radius: 10px;
   box-shadow: 0 2px 6px rgba(124,58,237,.30);
   transition: all .12s;
 }
@@ -1389,7 +1389,7 @@ const STAGE3_CSS = `
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 2px 6px rgba(124,58,237,.30);
   transition: all .12s;
 }
@@ -1412,12 +1412,12 @@ const STAGE3_CSS = `
 /* Convert-to-Sourcing-Required — compact icon tile, amber (the colour of the
    Required tab it sends the row to). Tooltip carries the label. */
 .s3-convert-btn {
-  width: 30px; height: 30px; padding: 0;
+  width: 40px; height: 40px; padding: 0; box-sizing: border-box;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid #ddd6fe; cursor: pointer;
   background: linear-gradient(135deg, #faf5ff, #ede9fe);
   color: #6d28d9;
-  border-radius: 8px;
+  border-radius: 10px;
   transition: all .12s;
 }
 .s3-convert-btn:hover:not(:disabled) {
@@ -1484,7 +1484,7 @@ const STAGE3_CSS = `
   padding: 0 24px; border: none; cursor: pointer;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
-  font-family: inherit; font-size: 13px; font-weight: 700;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   border-radius: 10px;
   display: inline-flex; align-items: center; gap: 10px;
   box-shadow: 0 4px 12px rgba(124,58,237,.35);

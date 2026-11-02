@@ -123,8 +123,8 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     vendorId ? poLookupApi.supplier(vendorId) : Promise.resolve(null),
     vendorId ? poLookupApi.supplierVault(vendorId) : Promise.resolve(null),
     vendorId ? poApi.list({ vendor_id: vendorId, per_page: 20 }) : Promise.resolve(null),
-    poDocumentApi.list(row.poId),
-    needsInspection ? poInspectionApi.show(row.poId) : Promise.resolve(null),
+    row.poId ? poDocumentApi.list(row.poId) : Promise.resolve(null),
+    needsInspection && row.poId ? poInspectionApi.show(row.poId) : Promise.resolve(null),
   ]);
   const ok = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === 'fulfilled' ? r.value : null);
 
@@ -137,10 +137,14 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     .sort((a, b) => b.poDate.localeCompare(a.poDate));
 
   const doc = docOf(row);
-  const current = d.po.requests.find((q) => q.id === row.id);
-  const others = d.po.requests.filter((q) => q.id !== row.id);
+  /* A Direct SPI has no d.po; its sibling requests arrive under d.spi. Reading
+     only d.po left the Linked requests panel empty for a Direct SPI. */
+  const poRequests = d.po?.requests ?? d.spi?.requests ?? [];
+  const current = poRequests.find((q) => q.id === row.id);
+  const others = poRequests.filter((q) => q.id !== row.id);
   const linked = [...(current ? [current] : []), ...others].map((q) => linkedRow(q, row));
-  const codeOf = new Map(d.po.requests.map((q) => [q.id, q] as const));
+  const codeOf = new Map(poRequests.map((q) => [q.id, q] as const));
+  const sp = d.spi?.spi ?? null;
 
   const inspection = ok(insp);
   const products: InspectionProduct[] = (inspection?.lines ?? []).map((l) => ({
@@ -165,11 +169,18 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     row,
     supplier: toSupplier(ok(sup), row, ok(vault)),
     doc,
-    ledger: {
+    ledger: d.po ? {
       total: d.po.po.grand_total, net: d.po.po.net_payable, paid: d.po.po.paid, balance: d.po.po.balance,
       approvedTotal: d.po.requests_summary.approved_amount,
       available: d.po.requests_summary.open_to_request,
       prevRequested: Math.max(0, d.po.requests_summary.requested_amount - row.requestedAmount),
+    } : {
+      total: sp?.grand_total ?? row.totalAmount, net: sp?.net_payable ?? row.totalAmount,
+      paid: sp?.paid ?? 0, balance: sp?.balance ?? 0,
+      /* Across ALL the SPI's requests, from the summary - not this one request. */
+      approvedTotal: d.spi?.requests_summary?.approved_amount ?? row.approvedAmount ?? 0,
+      available: d.spi?.requests_summary?.open_to_request ?? sp?.open_to_request ?? 0,
+      prevRequested: Math.max(0, (d.spi?.requests_summary?.requested_amount ?? row.requestedAmount) - row.requestedAmount),
     },
     linked,
     payments: d.payments.map((p) => {

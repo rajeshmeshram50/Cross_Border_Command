@@ -8,6 +8,7 @@ import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
+import { useCardFloor } from '../../../hooks/useCardFloor';
 
 /**
  * Generate Document — 3-step wizard launched from a template row.
@@ -150,6 +151,10 @@ export default function GenerateDocument() {
   const navigate = useNavigate();
   const { id: routeId } = useParams<{ id?: string }>();
   const templateId = routeId ? Number(routeId) : null;
+
+  /* Card floor: fill down to 8px above the app footer, so a short step
+     (e.g. no custom fields) leaves no blank band below the card. */
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [bootstrapping, setBootstrapping] = useState(true);
   const [template, setTemplate] = useState<TemplateRow | null>(null);
@@ -501,12 +506,14 @@ export default function GenerateDocument() {
   };
 
   // ── Render ───────────────────────────────────────────────────────────────
+  useCardFloor(cardRef, [step, bootstrapping, generated]);
+
   if (bootstrapping || !template) {
     // Skeleton mirrors the wizard shell (gradient header → step strip →
     // employee-select body → footer) so the layout doesn't jump when it loads.
     return (
       <div className="rec-page gd-page">
-        <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
+        <Card innerRef={cardRef} style={{ borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {/* Header band */}
           <div style={headerGradient}>
             <div className="d-flex align-items-center gap-3" style={{ padding: '16px 22px' }}>
@@ -529,7 +536,7 @@ export default function GenerateDocument() {
           </div>
 
           {/* Body — employee select list */}
-          <CardBody style={{ padding: 22 }}>
+          <CardBody style={{ padding: 22, flex: 1, minHeight: 0 }}>
             <Shimmer width={200} height={14} style={{ marginBottom: 16 }} />
             <div style={{ display: 'grid', gap: 10 }}>
               {Array.from({ length: 6 }).map((_, i) => (
@@ -564,7 +571,7 @@ export default function GenerateDocument() {
     return (
       <div className="rec-page gd-page">
         <ScopedStyles />
-        <Card style={{ borderRadius: 14, overflow: 'hidden' }}>
+        <Card innerRef={cardRef} style={{ borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={headerGradient}>
             <div style={{ padding: '20px 24px', color: '#fff' }}>
               <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 4 }}>Done.</div>
@@ -576,7 +583,7 @@ export default function GenerateDocument() {
               </div>
             </div>
           </div>
-          <CardBody style={{ padding: 18 }}>
+          <CardBody style={{ padding: 18, flex: 1, minHeight: 0 }}>
             <div style={{ display: 'grid', gap: 8 }}>
               {generated.map(g => {
                 const name = g.employee ? `${g.employee.first_name ?? ''} ${g.employee.last_name ?? ''}`.trim() : `#${g.employee_id}`;
@@ -614,7 +621,7 @@ export default function GenerateDocument() {
   return (
     <div className="rec-page gd-page">
       <ScopedStyles />
-      <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
+      <Card innerRef={cardRef} style={{ borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={headerGradient}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap" style={{ padding: '16px 22px' }}>
             <div className="d-flex align-items-center gap-3 min-w-0">
@@ -638,7 +645,7 @@ export default function GenerateDocument() {
 
         <StepStrip step={step} />
 
-        <CardBody style={{ padding: 22 }} className="gd-body">
+        <CardBody style={{ padding: 22, flex: 1, minHeight: 0 }} className="gd-body">
           {step === 1 && (
             <Step1
               employees={eligibleEmployees}

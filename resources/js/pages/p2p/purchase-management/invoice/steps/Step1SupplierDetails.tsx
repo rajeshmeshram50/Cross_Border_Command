@@ -11,7 +11,7 @@ import { poLookupApi, type PoDetail, type SupplierOption } from '../../order/api
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { legalFromVault } from '../../order/create-po/supplier-checks';
-import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
+import { draftFromScrutiny, draftFromSupplier, inspectionLabel, newestScrutiny } from '../invoice-draft';
 import { spiApi } from '../spi-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 
@@ -68,7 +68,7 @@ export default function Step1SupplierDetails({
 
   const {
     poType, docType, transport, poDate, deliveryDate, deliveryLocation, paymentType,
-    physInspection, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
+    physInspection, inspectionDone, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
     address, country, state, stateCode, city, contactName, designation, contactNumber, email,
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
     currency, exchangeRate, incoTerm, portLoading, portDischarge, finalDestination, countryOrigin,
@@ -203,6 +203,10 @@ export default function Step1SupplierDetails({
   };
 
   const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const supplierLocked = direct && !hasPo && (approval?.status === 'pending' || approval?.status === 'approved');
+  const supplierLockedMsg = approval?.status === 'approved'
+    ? 'A senior approved this supplier for this invoice — the supplier can no longer be changed.'
+    : 'Sent for senior approval — the supplier cannot be changed while the request is open.';
   const domesticList = useRef<Promise<SupplierOption[]> | null>(null);
   const domesticSuppliers = () => {
     domesticList.current ??= poLookupApi.suppliers('domestic').catch(e => { domesticList.current = null; throw e; });
@@ -401,7 +405,7 @@ export default function Step1SupplierDetails({
             </Field>
             <Field label="Physical Inspection Status">
               <div className="spi-dt-inp-auto">
-                <input className="spi-dt-inp" value={physInspection ? 'Required' : 'Not Applicable'} readOnly />
+                <input className="spi-dt-inp" value={inspectionLabel({ physInspection, inspectionDone })} readOnly />
                 <span className="spi-dt-auto">{physInspection ? 'MANDATORY' : 'NOT REQUIRED'}</span>
               </div>
             </Field>
@@ -475,9 +479,10 @@ export default function Step1SupplierDetails({
                 <span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details
               </div>
               {!hasPo && (
-                <Tooltip label="Onboard a supplier that is not in this list"><button type="button" className="cpf-addbtn"
+                <Tooltip label={supplierLocked ? supplierLockedMsg : 'Onboard a supplier that is not in this list'}><button type="button" className="cpf-addbtn"
+                  disabled={supplierLocked}
                   onPointerEnter={warmSupplierFlow}
-                  onClick={e => { e.stopPropagation(); setAdding(true); }}>
+                  onClick={e => { e.stopPropagation(); if (!supplierLocked) setAdding(true); }}>
                   <IcoPlus /> Add Supplier
                 </button></Tooltip>
               )}
@@ -490,6 +495,10 @@ export default function Step1SupplierDetails({
                   <div className="cpf-supsel">
                     {hasPo || readOnly ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
+                    ) : supplierLocked ? (
+                      <Tooltip label={supplierLockedMsg}>
+                        <div className="cpf-suplock"><EditSelect readOnly value={supplier} options={[]} onChange={() => {}} /></div>
+                      </Tooltip>
                     ) : (
                       <MasterSelect
                         value={draft.vendorId != null ? String(draft.vendorId) : ''}

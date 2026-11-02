@@ -586,7 +586,7 @@ export const LFM_CSS = `
   color: #fff; font-size: 11.5px; font-weight: 700; white-space: nowrap;
 }
 .lfm-close {
-  width: 32px; height: 32px; border: none; border-radius: 9px;
+  box-sizing: border-box; width: 40px; height: 40px; border: none; border-radius: 10px;
   background: rgba(255,255,255,.16); color: #fff; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s; flex-shrink: 0; position: relative; z-index: 1;
@@ -670,8 +670,9 @@ export const LFM_CSS = `
   display: flex; flex-direction: column; gap: 10px;
 }
 .lfm-btn {
-  padding: 9px 14px; border-radius: 10px;
-  font: inherit; font-size: 12.5px; font-weight: 700;
+  box-sizing: border-box; height: 40px;
+  padding: 0 14px; border-radius: 10px;
+  font: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer; border: none; transition: all .15s;
 }
 .lfm-btn-primary {
@@ -682,7 +683,7 @@ export const LFM_CSS = `
 .lfm-btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
 .lfm-btn-reset {
   background: transparent; border: none; cursor: pointer;
-  font: inherit; font-size: 12px; font-weight: 600; color: #94a3b8;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: #94a3b8;
   padding: 4px 0; transition: color .15s;
 }
 .lfm-btn-reset:hover { color: var(--lfm-c-600); }

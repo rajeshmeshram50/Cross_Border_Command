@@ -6,7 +6,7 @@ import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedBox } from './PackedProducts';
 import { StickerApiContext } from './BoxStickerModal';
 import type { CustomFlag } from './ProductFlagsModal';
-import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
+import MultiBoxPanel, { maxSplitBoxes, splitQuantity, type SplitBox } from './MultiBoxPanel';
 import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -162,6 +162,28 @@ export default function Step3BoxPackaging({
   const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
 
   const drawerOpen = pendingLines.some(l => !!packing[l.code]) || !!mixedBox?.length;
+
+  /* Past five products the table scrolls under its sticky header instead of
+     growing. The cap is the header plus the first five rows as rendered, so
+     it holds exactly five whatever a row's height (a long name, a lock). */
+  const ROWS_SHOWN = 5;
+  const rowsWrapRef = useRef<HTMLDivElement>(null);
+  const [rowsCap, setRowsCap] = useState<number | null>(null);
+  useEffect(() => {
+    const wrap = rowsWrapRef.current;
+    if (!wrap || drawerOpen || pendingLines.length <= ROWS_SHOWN) { setRowsCap(null); return; }
+    const measure = () => {
+      const head = wrap.querySelector('thead') as HTMLElement | null;
+      const rows = Array.from(wrap.querySelectorAll('tbody > tr.vti-prod-row')).slice(0, ROWS_SHOWN) as HTMLElement[];
+      // +2 for the borders, and the horizontal scrollbar when there is one
+      const hBar = wrap.offsetHeight - wrap.clientHeight;
+      setRowsCap((head?.offsetHeight ?? 0) + rows.reduce((h, r) => h + r.offsetHeight, 0) + hBar + 2);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [drawerOpen, pendingLines.length]);
   const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
 
@@ -501,7 +523,7 @@ export default function Step3BoxPackaging({
   const applySplit = (line: ProductLine) => {
     if (readOnly || packing[line.code]) return;
     const raw = (subBox[line.code] ?? '').trim();
-    const maxBoxes = Math.max(1, Math.floor(line.spiQty));
+    const maxBoxes = maxSplitBoxes(line.spiQty);
     const fail = (msg: string) => {
       setInvalid(line.code);
       window.setTimeout(() => setInvalid(null), 2000);
@@ -510,7 +532,7 @@ export default function Step3BoxPackaging({
     if (!/^\d+$/.test(raw)) { fail('Enter a whole number of boxes, like 3.'); return; }
     const count = parseInt(raw, 10);
     if (count < 1) { fail('A split needs at least 1 box.'); return; }
-    if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} units — it cannot fill more than ${maxBoxes} boxes.`); return; }
+    if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} unit${line.spiQty === 1 ? '' : 's'} — split it into at most ${maxBoxes} boxes.`); return; }
     setInvalid(null);
     setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count), of: line.spiQty } }));
   };
@@ -521,8 +543,8 @@ export default function Step3BoxPackaging({
     const line = lines.find(l => l.code === code);
     const total = pack.of;
     const others = pack.boxes.reduce((n, b) => (b.no === boxNo ? n : n + b.qty), 0);
-    const max = Math.max(0, total - others);
-    const wanted = Math.max(0, qty);
+    const max = Math.max(0, Math.round((total - others) * 1000) / 1000);
+    const wanted = Math.max(0, Math.round(qty * 1000) / 1000);
     if (wanted > max) {
       toast.warning(
         `Box ${boxNo} can hold at most ${max} unit${max === 1 ? '' : 's'}`,
@@ -830,7 +852,9 @@ export default function Step3BoxPackaging({
           </div>
         )}
 
-        <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
+        <div ref={rowsWrapRef}
+          className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}
+          style={rowsCap ? { maxHeight: rowsCap } : undefined}>
           <table className="vti-table vti-boxgen">
             <thead>
               <tr>
@@ -876,6 +900,13 @@ export default function Step3BoxPackaging({
                     ? 'Scenario 03 · Multiple Products → 1 Box'
                     : 'Scenario 01 · 1 Product → 1 Box';
                 const scenarioNo = split ? 'Scenario 02' : mixed ? 'Scenario 03' : 'Scenario 01';
+                /* A ticked row is headed for the master carton (Scenario 03),
+                   so its Sub-Box Count and + Single Box lock the way a packed
+                   mixed row's do, as the design has it — splitting or single-
+                   boxing it now would fight the Pack into 1 Box it is part of.
+                   Unticking frees them again. (A ticked row is never packed:
+                   only unpacked rows have a checkbox.) */
+                const mixedLock = mixed || isTicked;
                 return (
                   <Fragmentish key={line.code}>
                   <tr className={`vti-prod-row${pack ? ' is-open' : ''}${isTicked ? ' is-selected' : ''}`}>
@@ -953,10 +984,10 @@ export default function Step3BoxPackaging({
                       </>
                     )}
                     <td>
-                      {single || mixed ? (
-                        <div className="vti-scn-lock">
+                      {single || mixedLock ? (
+                        <div className="vti-scn-lock is-on">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <div className="vti-subbox-cell">
@@ -969,19 +1000,26 @@ export default function Step3BoxPackaging({
                             onChange={e => setSubBox(s => ({ ...s, [line.code]: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySplit(line); } }}
                           />
-                          <button type="button"
-                            className={`vti-btn-apply${split ? ' is-done' : ''}`}
-                            onClick={() => (split ? void reset(line.code) : applySplit(line))}>
-                            {split ? `✓ ${pack.boxes.length} Boxes` : 'Apply'}
-                          </button>
+                          {/* Once applied this is a status, not a reset: the split is
+                              undone only through ✕ on the scenario chip, which confirms. */}
+                          <Tooltip label="Split applied — use ✕ on the scenario chip to change it" disabled={!split}>
+                            <button type="button"
+                              className={`vti-btn-apply${split ? ' is-done' : ''}`}
+                              aria-disabled={split || undefined}
+                              onClick={() => (split
+                                ? toast.info(`${pack.boxes.length} boxes applied`, `To change the split for ${line.spiName}, use ✕ on its scenario chip.`)
+                                : applySplit(line))}>
+                              {split ? `✓ ${pack.boxes.length} Boxes` : 'Apply'}
+                            </button>
+                          </Tooltip>
                         </div>
                       )}
                     </td>
                     <td>
-                      {split || mixed ? (
-                        <div className="vti-scn-lock">
+                      {split || mixedLock ? (
+                        <div className="vti-scn-lock is-on">
                           <IcoLock size={10} stroke={2.6} />
-                          <span className="vti-scn-lock-lbl">Locked · {scenarioNo}</span>
+                          <span className="vti-scn-lock-lbl">Locked · {mixedLock ? 'Scenario 03' : scenarioNo}</span>
                         </div>
                       ) : (
                         <button type="button" className={`vti-btn-single${single ? ' is-on' : ''}`}

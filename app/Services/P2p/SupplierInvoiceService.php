@@ -303,6 +303,28 @@ class SupplierInvoiceService
             $existing = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)->get();
             $byId     = $existing->keyBy('id');
             $byLine   = $existing->keyBy('line_no');
+            /* Once the caller names its lines, a row without an id is a NEW
+               line - matching it by position would hand an existing line,
+               and its boxes, to a different product. */
+            $named    = collect($rows)->contains(fn ($r) => !empty($r['id']));
+
+            /* What Stage 03 has already boxed, per line. A boxed line may grow
+               (the extra shows up as pending on Stage 03) but it may not drop
+               below what is in its boxes, change product, or leave the grid. */
+            $packed = collect($this->packingSummary($spi->id))
+                ->pluck('qty_packed', 'supplier_invoice_item_id')
+                ->filter(fn ($q) => $q > 0.0005);
+            $refuse = fn (string $message) => abort(response()->json([
+                'status' => false, 'message' => $message, 'errors' => ['items' => [$message]],
+            ], 422));
+            /* Named by its product, not its description - a description can
+               run to paragraphs. */
+            $products = DB::table('products')->whereIn('id', $existing->pluck('product_id'))
+                ->get(['id', 'product_code', 'name'])->keyBy('id');
+            $nameOf = function (SupplierInvoiceItem $i) use ($products) {
+                $p = $products[$i->product_id] ?? null;
+                return $p ? trim(($p->product_code ? "{$p->product_code} — " : '') . $p->name) : "Line {$i->line_no}";
+            };
 
             $kept = [];
 
@@ -314,11 +336,21 @@ class SupplierInvoiceService
                 $item = null;
                 if ($id && $byId->has($id)) {
                     $item = $byId[$id];
-                } elseif (!$id && $byLine->has($i + 1)) {
+                } elseif (!$id && !$named && $byLine->has($i + 1)) {
                     $item = $byLine[$i + 1];
                 }
                 // Never twice: two payload rows must not collapse into one line.
                 if ($item && in_array($item->id, $kept, true)) $item = null;
+
+                if ($item && isset($packed[$item->id])) {
+                    $boxed = round((float) $packed[$item->id], 3);
+                    if ((int) $row['product_id'] !== (int) $item->product_id) {
+                        $refuse("{$nameOf($item)} is already packed in boxes on Stage 03 — its product cannot be changed.");
+                    }
+                    if ((float) $row['qty_spi'] < $boxed - 0.0005) {
+                        $refuse("{$nameOf($item)} has {$boxed} already packed in boxes on Stage 03 — the quantity can be increased but not reduced below {$boxed}.");
+                    }
+                }
 
                 if ($item) {
                     $item->fill($row)->save();
@@ -344,6 +376,9 @@ class SupplierInvoiceService
                 ->whereNotIn('id', $kept ?: [0])->get();
 
             foreach ($dropped as $item) {
+                if (isset($packed[$item->id])) {
+                    $refuse("{$nameOf($item)} is already packed in boxes on Stage 03 — it cannot be removed from the invoice.");
+                }
                 $this->syncFulfilment($item, SpiPoFulfilment::EVENT_CANCELLED, (float) $item->qty_spi);
                 $this->log($spi, 'item_removed', [
                     'supplier_invoice_item_id' => $item->id,

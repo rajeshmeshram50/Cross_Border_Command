@@ -9,6 +9,7 @@ import SearchClear from '../../../components/ui/SearchClear';
 import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
+import { useCardFloor } from '../../../hooks/useCardFloor';
 import { useToast } from '../../../contexts/ToastContext';
 import { WarehouseApiError, warehouseApi, type Warehouse, type WarehouseCounts, type WarehouseTab } from './warehouse-data';
 const WarehouseQrModal = lazy(() => import('./WarehouseQrModal'));
@@ -222,6 +223,10 @@ export default function WarehouseMaster() {
   const rows = list.rows;
   const total = list.meta?.total ?? 0;
   const page = list.page;
+  // CS-939 #17: the card reaches the bottom of the window even with no rows
+  const cardRef = useRef<HTMLDivElement>(null);
+  useCardFloor(cardRef, [briefOpen]);
+
   const start = (page - 1) * pageSize;
   const changePageSize = useCallback((n: number) => choosePageSize(n), [choosePageSize]);
   const loading = list.loading || list.replacing;
@@ -273,7 +278,7 @@ export default function WarehouseMaster() {
         </div>
       </div>
 
-      <div className="spi-card ord-list">
+      <div className="spi-card ord-list" ref={cardRef}>
         <div className="spi-segrow">
           <div className="spi-seg" role="tablist" aria-label="Warehouse type">
             {TABS.map(t => (

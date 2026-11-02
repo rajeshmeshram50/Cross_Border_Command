@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Inventory\LocationLock;
 use App\Models\Inventory\LocationOccupancy;
 use App\Models\Inventory\PutawayActivityLog;
+use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SpiPutawayTask;
 use App\Models\P2p\SupplierInvoice;
@@ -640,6 +641,72 @@ class SpiPutawayTaskController extends Controller
         $cap = (float) DB::table('inventory_shelves')->where('id', $occ->shelf_id)->value('max_weight_kg');
 
         return $cap > 0 ? round((float) $occ->weight_kg / $cap * 100, 2) : null;
+    }
+
+    /**
+     * GET /{id}/putaway/boxes/{box}/activity — the box's FROZEN scan log.
+     *
+     * Box-scoped, not task-scoped: a box reaches its shelf by handheld scan OR
+     * by manual allocation, and only this table holds both (every row carries
+     * box_id). Read-only — nothing is written on view, so the log never changes
+     * once the placement is done. This is what the Scan Logs popover shows,
+     * instead of a log rebuilt from the current browser session.
+     */
+    public function boxActivity(Request $request, int $id, int $boxId)
+    {
+        $user = $this->tenantUser($request);
+
+        $box = SpiBox::where('supplier_invoice_id', $id)
+            ->where('client_id', $user->client_id)
+            ->find($boxId);
+        if (!$box) $this->missing("No box {$boxId} on this invoice.");
+
+        $log = PutawayActivityLog::where('client_id', $user->client_id)
+            ->where('box_id', $box->id)
+            ->orderBy('id')
+            ->get();
+
+        $names = $log->pluck('actor_id')->filter()->unique();
+        $names = $names->isEmpty() ? collect()
+            : DB::table('users')->whereIn('id', $names)->pluck('name', 'id');
+
+        $devs = $log->pluck('device_id')->filter()->unique();
+        $devs = $devs->isEmpty() ? collect()
+            : DB::table('scan_devices')->whereIn('id', $devs)->get(['id', 'serial', 'label'])->keyBy('id');
+
+        $timeline = $log->map(function (PutawayActivityLog $l) use ($names, $devs) {
+            $dev = $l->device_id ? $devs->get($l->device_id) : null;
+            return [
+                'id'           => (int) $l->id,
+                'at'           => optional($l->created_at)->toIso8601String(),
+                'event'        => $l->event,
+                'ok'           => $l->event !== PutawayActivityLog::SCAN_FAILED,
+                'reason_label' => $this->refusalLabel(is_array($l->meta) ? ($l->meta['reason'] ?? null) : null),
+                'location'     => $this->locationText($l->to_location),
+                'actor'        => $l->actor_id ? $names->get($l->actor_id) : null,
+                'device'       => $dev ? ($dev->label ?: $dev->serial) : null,
+            ];
+        })->values();
+
+        return response()->json(['status' => true, 'data' => [
+            'box_code' => $box->box_code,
+            'timeline' => $timeline,
+        ]], 200);
+    }
+
+    /** A to_location snapshot → "WH → ZONE → RACK → SHELF" in codes. */
+    private function locationText($snap): ?string
+    {
+        if (!is_array($snap)) return null;
+        $shelf = $snap['shelf'] ?? null;
+        $parts = array_filter([
+            $snap['warehouse']['code'] ?? null,
+            $snap['zone']['code'] ?? null,
+            $snap['rack']['code'] ?? null,
+            // A shelf has no code — its rack code plus the level is its name.
+            $shelf['level_no'] ?? null ? (($snap['rack']['code'] ?? 'RC') . '-SH-' . str_pad((string) $shelf['level_no'], 2, '0', STR_PAD_LEFT)) : null,
+        ]);
+        return $parts ? implode(' → ', $parts) : null;
     }
 
     private function body(SpiPutawayTask $task, ?SpiPutaway $row): array
