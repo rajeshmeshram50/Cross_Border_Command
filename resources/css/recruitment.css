@@ -13323,6 +13323,18 @@
    Three classes, because .master-modal .form-control matches the same input
    with the same weight and is declared later — without the extra class it
    won the tie and put back the padding and height this is setting. */
+/* QA 204: the import-punches body and footer must share one background in
+   dark mode. Both go transparent so the single modal-content colour shows
+   through, instead of Velzon giving the footer its own shade. */
+.imp-modal .modal-body,
+.imp-modal .modal-footer,
+[data-bs-theme="dark"] .imp-modal .modal-body,
+[data-bs-theme="dark"] .imp-modal .modal-footer,
+[data-layout-mode="dark"] .imp-modal .modal-body,
+[data-layout-mode="dark"] .imp-modal .modal-footer {
+  background: transparent;
+}
+
 .imp-modal .hrms-file-input.form-control {
   height: 38px;
   line-height: 36px;
