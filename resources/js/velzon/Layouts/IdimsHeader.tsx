@@ -613,6 +613,12 @@ export default function IdimsHeader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  /* CredVault opens from its own button in the top row, so the bottom bar (and
+     its overflow measurement) leaves it out. navItems keeps it for the module
+     search, the current-page match and the mobile panel. */
+  const cvItem = navItems.find(i => i.id === 'credentials-vault');
+  const barItems = useMemo(() => navItems.filter(i => i.id !== 'credentials-vault'), [navItems]);
+
 
   /* ── Overflow measurement ─────────────────────────────────────────────
      A hidden "ghost" row renders every nav item at full width so we can
@@ -640,10 +646,10 @@ export default function IdimsHeader() {
     if (navItemsRef.current) ro.observe(navItemsRef.current);
     window.addEventListener('resize', compute);
     return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
-  }, [navItems]);
+  }, [barItems]);
 
-  const visibleNav = navItems.slice(0, visibleCount);
-  const overflowNav = navItems.slice(visibleCount);
+  const visibleNav = barItems.slice(0, visibleCount);
+  const overflowNav = barItems.slice(visibleCount);
 
   /* ── Mega-menu column layouts ── */
   const salesCols: Group[][] = useMemo(
@@ -1040,6 +1046,25 @@ export default function IdimsHeader() {
             </div>
 
             <div className="idims-nav-right">
+              {cvItem && (
+                <div className="idims-dd-wrap">
+                  <button type="button"
+                    className={`idims-cv-btn ${openDD === 'cv' ? 'dd-open' : ''} ${currentTopId === cvItem.id ? 'is-current' : ''}`}
+                    aria-current={currentTopId === cvItem.id ? 'page' : undefined}
+                    onClick={() => { setBranchOpen(false); setProfileOpen(false); setMoreOpen(false); setSearchOpen(false); setOpenDD(o => o === 'cv' ? null : 'cv'); }}>
+                    <span className="idims-cv-ico">{cvItem.icon}</span>
+                    <span className="idims-cv-label">{cvItem.label}</span>
+                    <span className="dd-chev">{IC.chevSm}</span>
+                  </button>
+                  {openDD === 'cv' && (
+                    <div className="idims-dropdown">
+                      <div className="idims-dd-topbar" />
+                      <div className="idims-dd-inner">{renderCvMega()}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Default / Brand theme switch */}
               <div className="idims-theme-switch" title="Switch brand theme">
                 <span className="idims-theme-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
@@ -1177,7 +1202,7 @@ export default function IdimsHeader() {
             {/* Hidden ghost row — measures every item's natural width so the
                 overflow calc knows how many fit before collapsing to "More". */}
             <div className="idims-nav-ghost" ref={navGhostRef} aria-hidden="true">
-              {navItems.map(item => (
+              {barItems.map(item => (
                 <span className="idims-nav-btn" key={item.id}>
                   <span className="idims-ico">{item.icon}</span>{item.label}
                   {item.dd && <span className="dd-chev">{IC.chevSm}</span>}
@@ -1560,6 +1585,12 @@ const IDIMS_CSS = `
 
 /* Right controls */
 .idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
+.idims-cv-btn { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px 0 6px; border: 0; border-radius: 12px; flex-shrink: 0; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#A78BFA 0%,#8B5CF6 45%,#7C3AED 100%); box-shadow: 0 4px 14px rgba(124,58,237,.35), inset 0 1px 0 rgba(255,255,255,.25); transition: transform .16s, box-shadow .16s; }
+.idims-cv-btn:hover, .idims-cv-btn.dd-open { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.45), inset 0 1px 0 rgba(255,255,255,.25); }
+.idims-cv-btn.dd-open .dd-chev { transform: rotate(180deg); }
+.idims-cv-ico { width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.22); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+.idims-cv-ico svg { width: 14px; height: 14px; }
+.idims-cv-btn .dd-chev { display: flex; opacity: .85; transition: transform .2s; }
 .idims-theme-switch { display: flex; align-items: center; gap: 9px; flex-shrink: 0; padding: 4px 10px 4px 11px; border-radius: 999px; background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; }
 .idims-theme-switch-label { font-size: 11.5px; font-weight: 400; color: #6B7280; user-select: none; white-space: nowrap; }
 .idims-brand .idims-theme-switch-label { color: var(--bp, #7C3AED); }
@@ -1947,6 +1978,8 @@ const IDIMS_CSS = `
   .idims-hamburger { display: flex; order: 0; }
   /* line 1: controls pinned to the right of the hamburger */
   .idims-nav-right { order: 1; margin-left: auto; gap: 8px; }
+  .idims-cv-btn { padding: 0 6px; }
+  .idims-cv-label, .idims-cv-btn .dd-chev { display: none; }
   /* line 2: search grows, branch sits beside it */
   .idims-search { order: 5; flex: 1 1 60%; min-width: 170px; width: auto; }
   .idims-branch-wrap { order: 6; margin-left: 0; flex: 0 0 auto; }
