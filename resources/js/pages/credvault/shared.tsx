@@ -525,7 +525,7 @@ export function OwnerCell({ row }: { row: Pick<CredentialRow, 'owner' | 'scope' 
   return (
     <div className="mv-ownc">
       <span className="mv-ownc__av">{row.owner.initials}</span>
-      <div><b title={row.owner.is_me ? undefined : row.owner.name}>{row.owner.is_me ? 'You' : row.owner.name}</b>{badge}</div>
+      <div><b title={row.owner.is_me ? undefined : row.owner.name ?? undefined}>{row.owner.is_me ? 'You' : row.owner.name}</b>{badge}</div>
     </div>
   );
 }

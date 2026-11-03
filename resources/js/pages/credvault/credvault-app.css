@@ -39,9 +39,9 @@
 }
 
 
-.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *)),
-.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *))::before,
-.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *))::after {
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *, .dt-root, .dt-root *)),
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *, .dt-root, .dt-root *))::before,
+.cvx :where(:not(.wl-pager, .wl-pager *, .dt-tabrail, .dt-tabrail *, .dt-root, .dt-root *))::after {
    box-sizing: border-box;
    margin: 0;
    padding: 0;

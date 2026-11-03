@@ -14817,186 +14817,6 @@
   border-color: transparent !important;
 }
 
-.cvx .sb-tbl .sb-to .mv-ownc__av.sb-av--team {
-  background: linear-gradient(135deg, #0b4f63, #0891b2) !important;
-}
-
-.cvx .sb-tbl .sb-sub {
-  display: block;
-  font-size: 10.5px;
-  color: #6a869c;
-  margin-top: 1px;
-}
-
-.cvx .sb-perm {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 800;
-  border: 1px solid;
-  white-space: nowrap;
-}
-
-.cvx .sb-perm--use {
-  color: #0369a1;
-  background: #f0f9ff;
-  border-color: #bae6fd;
-}
-
-.cvx .sb-perm--view {
-  color: #0e7490;
-  background: #ecfeff;
-  border-color: #a5e6f1;
-}
-
-.cvx .sb-perm--copy {
-  color: #0f766e;
-  background: #effcf9;
-  border-color: #a7eee0;
-}
-
-.cvx .sb-perm--full {
-  color: #b45309;
-  background: #fffbeb;
-  border-color: #fcd9a0;
-}
-
-.cvx .sb-reason {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  max-width: 220px;
-  font-size: 11.5px;
-  line-height: 1.35;
-  color: #45707f;
-  text-align: left;
-  margin: 0 auto;
-}
-
-.cvx .sb-st {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 800;
-  border: 1px solid;
-  white-space: nowrap;
-}
-
-.cvx .sb-st i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.cvx .sb-st--active {
-  color: #047857;
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-}
-
-.cvx .sb-st--soon {
-  color: #b45309;
-  background: #fffbeb;
-  border-color: #fcd9a0;
-}
-
-.cvx .sb-st--expired {
-  color: #64748b;
-  background: #f1f5f9;
-  border-color: #dbe3ea;
-}
-
-.cvx .sb-st--revoked {
-  color: #be123c;
-  background: #fff1f2;
-  border-color: #fecdd3;
-}
-
-.cvx .sb-tbl tr.sb-dead td {
-  background: #fbfcfd !important;
-}
-
-.cvx .sb-tbl tr.sb-dead .whm-namecell__t b,
-.cvx .sb-tbl tr.sb-dead .sb-to b {
-  color: #64748b;
-}
-
-.cvx .whm-tbl.sb-tbl thead th,
-.cvx .whm-tbl.sb-tbl tbody td {
-  text-align: center !important;
-}
-
-.cvx .whm-tbl.sb-tbl thead th.sb-th-2,
-.cvx .whm-tbl.sb-tbl tbody td:nth-child(3),
-.cvx .whm-tbl.sb-tbl thead th.sb-th-3,
-.cvx .whm-tbl.sb-tbl tbody td:nth-child(4),
-.cvx .whm-tbl.sb-tbl thead th.sb-th-7,
-.cvx .whm-tbl.sb-tbl tbody td:nth-child(8) {
-  text-align: left !important;
-}
-
-.cvx .sb-tbl .sb-reason {
-  margin: 0;
-}
-
-.cvx .sb-tbl .whm-idcell {
-  align-items: center !important;
-}
-
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl thead th,
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl tbody td {
-  text-align: center !important;
-  vertical-align: middle;
-}
-
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl thead th.sb-th-2,
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl tbody td:nth-child(3),
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl thead th.sb-th-3,
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl tbody td:nth-child(4),
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl thead th.sb-th-7,
-.cvx #mvListWrap .whm-tbl.mv-tbl.sb-tbl tbody td:nth-child(8) {
-  text-align: left !important;
-}
-
-.cvx #mvListWrap .sb-tbl .whm-idcell {
-  align-items: center !important;
-  margin: 0 auto;
-}
-
-.cvx #mvListWrap .sb-tbl .sb-to {
-  justify-content: flex-start;
-}
-
-.cvx #mvListWrap .sb-tbl .whm-namecell {
-  min-width: 200px;
-}
-
-.cvx #mvListWrap .sb-tbl td:nth-child(4) {
-  min-width: 170px;
-}
-
-.cvx #mvListWrap .sb-tbl td:nth-child(8) {
-  min-width: 200px;
-}
-
-.cvx #mvListWrap .sb-tbl .sb-reason {
-  max-width: 240px;
-  margin: 0 !important;
-}
-
-.cvx #mvListWrap .sb-tbl .whm-acts {
-  justify-content: center;
-}
 
 .cvx .ar-page .whm-tbl.mv-tbl thead th {
   padding: 11px 6px !important;
@@ -29845,7 +29665,8 @@
    headers, zebra and hover, white sheens dimmed right down. The teal
    gradients that carry meaning (icons, the active tab, the admin and hero
    cards, the level stripes) stay as they are. Team Vault page only. */
-[data-bs-theme="dark"] .cvx.tv-page {
+[data-bs-theme="dark"] .cvx.tv-page,
+[data-bs-theme="dark"] .cvx .sup-fig {
   background: transparent;
   --tvd-bg: #0d1a22;
   --tvd-card: #11222c;
@@ -29858,98 +29679,98 @@
 }
 
 /* Header strip + What We Are Doing Here */
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal {
   border-color: #0e5063;
   background: linear-gradient(110deg, #0b2430 0%, #0c2c39 45%, #0e3646 100%);
   box-shadow: 0 2px 0 rgba(255, 255, 255, .04) inset, 0 8px 28px rgba(0, 0, 0, .4);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__glow {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal .cstrip__glow {
   opacity: .35;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__sheen {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal .cstrip__sheen {
   background: linear-gradient(180deg, rgba(255, 255, 255, .05), transparent);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__title {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal .cstrip__title {
   color: #cffafe;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__sub {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal .cstrip__sub {
   color: #67e8f9;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .cstrip--teal .cstrip__online-dot {
+[data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal .cstrip__online-dot {
   border-color: #0c2c39;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal {
   border-color: #0e5063;
   background: var(--tvd-card);
   box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header {
   background: linear-gradient(110deg, #0b2430 0%, #0e3646 100%);
   border-bottom-color: #0e5063;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header::before {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header::before {
   opacity: .3;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header::after {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header::after {
   background: linear-gradient(180deg, rgba(255, 255, 255, .05), transparent);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-label {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header-label {
   color: #22d3ee;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-sep {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header-sep {
   background: #0e5063;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-title {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header-title {
   color: #cffafe;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__header-sub {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__header-sub {
   color: #67e8f9;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__toggle {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__toggle {
   background: rgba(6, 182, 212, .12);
   border-color: rgba(34, 211, 238, .3);
   color: #67e8f9;
   box-shadow: none;
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-box__body {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-box__body {
   background: var(--tvd-bg);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-item {
   background: var(--tvd-card);
   border-color: var(--tvd-line);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item:hover {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-item:hover {
   border-color: var(--tvd-line2);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-item__title {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-item__title {
   color: var(--tvd-tx);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-item__num,
-[data-bs-theme="dark"] .cvx.tv-page .bref-item__desc {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-item__num,
+[data-bs-theme="dark"] .cvx .sup-fig .bref-item__desc {
   color: var(--tvd-mu);
 }
 
-[data-bs-theme="dark"] .cvx.tv-page .bref-box--teal .bref-item__ico {
+[data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-item__ico {
   color: #22d3ee;
 }
 
