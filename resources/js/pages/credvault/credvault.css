@@ -17590,6 +17590,20 @@
   color: #67e8f9 !important;
 }
 
+[data-bs-theme="dark"] .cvx #crd-host .crd-tg:not(.is-on) .crd-tg__sw {
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .22), inset 0 1px 3px rgba(0, 0, 0, .35);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .crd-tg:not(.is-on) .crd-tg__sw i {
+  background: linear-gradient(180deg, #c9dde4, #93b4c0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .45);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .crd-tg:not(.is-on) .crd-tg__sw i::after {
+  background: #3d6270;
+}
+
 /* 2FA panel */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-fcard {
   background: rgba(255, 255, 255, .03) !important;
@@ -17920,6 +17934,15 @@
 
 [data-bs-theme="dark"] .cvx.tv-page .tvx-adm__av i {
   border-color: #0b5468;
+}
+
+/* Icon and avatar tiles on the teal cards: glass like the stat boxes, not white */
+[data-bs-theme="dark"] .cvx.tv-page .tvx-hero__ico,
+[data-bs-theme="dark"] .cvx.tv-page .tvx-adm__av,
+[data-bs-theme="dark"] .cvx.tv-page .tvx-card.tvx-lv--admin .tvx-av {
+  color: #cffafe;
+  background: rgba(255, 255, 255, .12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22), 0 8px 16px -8px rgba(0, 0, 0, .6);
 }
 
 /* Team Details · one department: level counts, toolbar, hierarchy */
@@ -18291,4 +18314,101 @@
 .cvx .dt-lead:has(> .tvc-top) {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.cvx #crd-host .ex-box .ex-warn b {
+  font-weight: 700;
+}
+
+/* Export Credentials popup · dark mode (its chips, summary, format cards and toggles were white) */
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-all {
+  color: #67e8f9;
+  background: rgba(6, 182, 212, .1);
+  border-color: rgba(34, 211, 238, .3);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-cat,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-modes button,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-tg {
+  color: #e2f4f8;
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(34, 211, 238, .2);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-cat.is-on,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-modes button.is-on,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-tg.is-on {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .45);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-cat b,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-modes b,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-tg__t b {
+  color: #e2f4f8;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-modes button.is-on b,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-tg.is-on .gp-tg__t b {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-modes small,
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .gp-tg__t small {
+  color: #8fb3c2;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-cat i {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .14);
+  border-color: rgba(34, 211, 238, .3);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-sum {
+  color: #8fb3c2;
+  background: rgba(34, 211, 238, .05);
+  border-color: rgba(34, 211, 238, .28);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-sum span {
+  color: #a8c6d1;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-sum b {
+  color: #e2f4f8;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-warn {
+  background: rgba(244, 63, 94, .1);
+  border-color: rgba(244, 63, 94, .32);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-warn b {
+  color: #fda4af;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-warn span {
+  color: #fecdd3;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-ack {
+  color: #e2f4f8;
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(34, 211, 238, .2);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-ack .dl-ack__box {
+  background: transparent;
+  border-color: rgba(251, 113, 133, .6);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-ack:has(input:checked) {
+  color: #fecdd3;
+  background: rgba(244, 63, 94, .1);
+  border-color: rgba(244, 63, 94, .32);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ex-box .ex-ack input:checked+.dl-ack__box {
+  background: linear-gradient(135deg, #F43F5E, #E11D48);
+  border-color: transparent;
 }

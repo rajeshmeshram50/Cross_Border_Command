@@ -412,7 +412,13 @@ export default function PackedProducts({
                     ))}
                   </td>
 
-                  <td className="invf-c-qty"><span className="invf-pb-qty">{qty}</span></td>
+                  <td className="invf-c-qty">
+                    <Tooltip label={b.items.length > 1
+                      ? `${qty} units in ${putId(b.code)} — ${b.items.map(it => `${it.qty} × ${it.line.code}`).join(', ')}`
+                      : `${qty} ${qty === 1 ? 'unit' : 'units'} in ${putId(b.code)}`}>
+                      <span className="invf-pb-qty">{qty}</span>
+                    </Tooltip>
+                  </td>
 
                   <td className="invf-pb-dims">{dimText(b.dims)}</td>
                   <td className="invf-c-qty">{wtText(b.netWt)}</td>

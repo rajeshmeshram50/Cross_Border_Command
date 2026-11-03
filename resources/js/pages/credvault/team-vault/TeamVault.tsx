@@ -100,7 +100,7 @@ export default function TeamVault() {
      Edit, which opens the real form prefilled from the row (nothing saved). */
   const open = (next: Overlay) => {
     // Edit and Share open the real popups filled from the row (nothing is saved); the rest says so.
-    const previewable = (next?.kind === 'form' && !!next.id) || next?.kind === 'share';
+    const previewable = (next?.kind === 'form' && !!next.id) || next?.kind === 'share' || next?.kind === 'export';
     if (TV_DUMMY && !previewable) toast.info('Design preview', 'Team Vault is showing dummy data — this action opens once it is on live data.');
     else setOverlay(next);
   };
@@ -250,7 +250,7 @@ export default function TeamVault() {
         <UnlockModal credentialId={overlay.id} onClose={() => setOverlay(null)} onChanged={refresh}
           onFullDetails={id => setOverlay({ kind: 'view', id })} />
       )}
-      {overlay?.kind === 'export' && <ExportModal scope="team" onClose={() => setOverlay(null)} />}
+      {overlay?.kind === 'export' && <ExportModal scope="team" onClose={() => setOverlay(null)} preview={TV_DUMMY} loadPreview={tvData.exportPreview} />}
     </CvPage>
   );
 }

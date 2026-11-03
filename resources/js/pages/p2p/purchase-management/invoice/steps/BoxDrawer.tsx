@@ -385,6 +385,7 @@ export default function BoxDrawer({
             <div className="vti-dw-strip-sep" />
             <StripItem label={onQuantityChange ? 'Box Quantity' : 'Total Qty'}>
               {onQuantityChange ? (
+                <Tooltip label={`${quantity} of ${qtyMax} ${qtyMax === 1 ? 'unit' : 'units'} in this box`}>
                 <span className="vti-dw-qty">
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit fewer"
@@ -412,8 +413,11 @@ export default function BoxDrawer({
                   >+</button>
                   <span className="vti-dw-qty-max">/ {qtyMax}</span>
                 </span>
+                </Tooltip>
               ) : (
-                <span className="vti-dw-strip-qty"><span className="vti-dw-strip-qty-dot" />{quantity} Units</span>
+                <Tooltip label={`${quantity} ${quantity === 1 ? 'unit' : 'units'} in this box`}>
+                  <span className="vti-dw-strip-qty"><span className="vti-dw-strip-qty-dot" />{quantity} Units</span>
+                </Tooltip>
               )}
             </StripItem>
           </div>
@@ -494,7 +498,7 @@ export default function BoxDrawer({
             <div className="vti-dw-saving" role="status" aria-live="polite">
               <span className="vti-dw-saving__box">
                 <span className="vti-dw-saving__spin" aria-hidden />
-                Saving the box…
+                {initial ? 'Updating…' : 'Saving…'}
               </span>
             </div>
           )}

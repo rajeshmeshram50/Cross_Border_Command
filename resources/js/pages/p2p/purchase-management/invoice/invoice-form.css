@@ -422,24 +422,21 @@
 
 .vti-dw-saving {
   position: absolute; inset: 0; z-index: 20;
-  display: flex; align-items: flex-start; justify-content: center;
-  padding-top: 90px;
+  display: flex; align-items: center; justify-content: center;
   background: rgba(246,253,255,.62);
-  -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   cursor: progress;
 }
+/* The Customer form's save lock in teal: a ring with the word under it, no card. */
 .vti-dw-saving__box {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 10px 18px; border-radius: 999px;
-  background: #fff; border: 1.5px solid rgba(6,182,212,.3);
-  box-shadow: 0 8px 24px -10px rgba(8,145,178,.55);
-  font-size: 12px; font-weight: 800; color: #0e7490; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  font-size: 13px; font-weight: 700; letter-spacing: .2px; color: #0e7490; white-space: nowrap;
 }
 @keyframes vtiDwSpin { to { transform: rotate(360deg); } }
 .vti-dw-saving__spin {
-  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid currentColor; border-top-color: transparent;
-  animation: vtiDwSpin .6s linear infinite;
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  border: 3.5px solid rgba(8,145,178,.22); border-top-color: #0891b2;
+  animation: vtiDwSpin .7s linear infinite;
 }
 [data-bs-theme="dark"] .vti-dw-saving { background: rgba(8,20,28,.6); }
 /* The strip is inert while saving (BoxDrawer); its controls dim so they do
@@ -450,7 +447,8 @@
 .vti-dw-strip[inert] .vti-dw-unit-toggle,
 .vti-dw-strip[inert] .vti-dw-icon-btn,
 .vti-dw-strip[inert] .vti-dw-sticker-btn { opacity: .55; }
-[data-bs-theme="dark"] .vti-dw-saving__box { background: #0f2630; border-color: rgba(34,211,238,.35); color: #7dd3e8; }
+[data-bs-theme="dark"] .vti-dw-saving__box { color: #7dd3e8; }
+[data-bs-theme="dark"] .vti-dw-saving__spin { border-color: rgba(34,211,238,.22); border-top-color: #22d3ee; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
 
 .vti-dw-section::before, .vti-dw-advanced::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; z-index: 2; background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #0e7490 100%); border-radius: 14px 0 0 14px; }
@@ -975,6 +973,10 @@
 .vmb-wrap { min-width: 0; }
 
 .vti-table td.vti-desc { text-align: left; }
+/* Stage 3 Box Generation: the shared description cell (ProductDescription), two lines. */
+.vti-boxgen td.vti-desc .cpd-desc { min-width: 0; max-width: 260px; }
+.vti-boxgen td.vti-desc .cpd-desc__wrap { max-height: 30px; }
+[data-bs-theme="dark"] .vti-boxgen tbody tr { --cpd-rowbg: #0e1b24; }
 .vti-desc__wrap {
   display: block;
   white-space: nowrap;

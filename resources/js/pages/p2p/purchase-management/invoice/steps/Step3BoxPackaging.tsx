@@ -7,8 +7,9 @@ import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedBox } from './PackedProducts';
 import { StickerApiContext } from './BoxStickerModal';
 import type { CustomFlag } from './ProductFlagsModal';
-import MultiBoxPanel, { maxSplitBoxes, splitQuantity, type SplitBox } from './MultiBoxPanel';
-import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
+import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
+import MultiBoxPanel,{ maxSplitBoxes, splitQuantity, type SplitBox } from './MultiBoxPanel';
+import { lineTotals, truncateName, NAME_MAX, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
@@ -101,6 +102,8 @@ export default function Step3BoxPackaging({
   const toast = useToast();
   const confirm = useConfirm();
   const [pkgOpen, setPkgOpen] = useState(true);
+  // The product whose detail view is open, from "Read more" on its description.
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [subBox, setSubBox] = useState<Record<string, string>>({});
 
   const codeOfItem = useMemo(
@@ -927,6 +930,7 @@ export default function Step3BoxPackaging({
           </div>
         )}
 
+        <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
         <div ref={rowsWrapRef}
           className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}
           style={rowsCap ? { maxHeight: rowsCap } : undefined}>
@@ -1034,9 +1038,10 @@ export default function Step3BoxPackaging({
                       </div>
                     </td>
                     <td className="vti-desc">
-                      <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
-                        <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
-                      </Tooltip>
+                      <ProductDescription
+                        text={line.description}
+                        onOpen={line.productId == null ? undefined : () => setDetailId(line.productId!)}
+                      />
                     </td>
                     <td><span className="vti-qty-badge">{full?.spiQty ?? line.spiQty}</span></td>
                     <td>
