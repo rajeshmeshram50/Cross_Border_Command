@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Attachment, type CredentialDetail, type FieldDef, type Loose, type Meta, type Risk, type TypeDef } from '../cvApi';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
@@ -216,7 +217,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   });
   const askClose = () => onClose();
 
-
   const clr = (k: string) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; });
   const setVal = (k: string, v: string) => { setVals(s => ({ ...s, [k]: v })); clr('fields.' + k); };
   const ffCls = (k: string, extra = '') => `mapsup-ffield${extra}${errors[k] ? ' is-err' : ''}${changed(k) ? ' is-edited' : ''}`;
@@ -332,6 +332,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               </div>
             );
           }
+        } else if (f.kind === 'date') {
+          ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal" onChange={v => onText(v)} />;
         } else {
           ctl = (
             <input id={`crdF_${f.key}`} type={f.kind} className={cls} value={val} placeholder={ph}
@@ -344,7 +346,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               badge={generated.has(f.key) && f.key === prefillKey
                 ? <span className="mapsup-lock mapsup-lock--auto"><Svg icon="key" size={9} sw={2.6} /> Generated</span> : undefined} />
             <div className={wrapCls}>
-              <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>
+              {f.kind !== 'date' && <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>}
               {ctl}
             </div>
             {meter}

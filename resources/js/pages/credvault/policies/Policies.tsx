@@ -2,14 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Loose, type Policy, type PolicyRule, type Risk } from '../cvApi';
 import { CvPage, CvStrip, StripBtn, ConfirmModal, Svg, IC, cap, errMsg, initials, useCvMeta } from '../shared';
+import CrdSelect from '../form/CrdSelect';
 import './policies.css';
-
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault Policies — the prototype's policiesBody / polGridHtml: one card
- * per policy area (rules + insight box + "Live in your vault" numbers), the
- * Change History card, and the unsaved-changes bar. Vault Admins edit; anyone
- * else reads the same cards with every control disabled.
- * ───────────────────────────────────────────────────────────────────────── */
 
 const ICO = {
   key: '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
@@ -40,7 +34,6 @@ const ICO = {
 
 const SEC_ICON: Record<string, string> = { password: ICO.key, twofa: ICO.shield, sharing: ICO.share, critical: ICO.lock, bin: ICO.bin };
 
-/** Each rule's row icon, as polBodyHtml draws them. */
 const RULE_ICON: Record<string, string> = {
   min_strength: ICO.pulse, rotation_default: ICO.rot, rotation_warn: ICO.clock, gen_length: ICO.key, gen_symbols: ICO.hash,
   twofa_risks: ICO.shield,
@@ -52,7 +45,6 @@ const RULE_ICON: Record<string, string> = {
 const RISKS: Risk[] = ['critical', 'high', 'medium', 'low'];
 const STR = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
-/** The grid's compact option labels (polGridHtml shortens "30 days" → "30d" etc.). */
 const short = (l: string) => l.replace(/^(\d+) days$/, '$1d').replace(/^No limit$/, 'None').replace(/^(\d+) min$/, '$1m').replace(/^1 hour$/, '1h');
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -106,7 +98,6 @@ export default function Policies() {
   const insights = (data?.insights ?? {}) as Loose;
   const stats = (data?.history ?? {}) as Loose;
   const defaults = (data?.defaults ?? null) as Policy | null;
-  // Controls lock while a save is in flight — load() replaces the draft afterwards, so edits made meanwhile would be lost.
   const editable = canEdit && !saving;
 
   const changed = useMemo(() => (saved && draft
@@ -124,7 +115,6 @@ export default function Policies() {
     set('twofa_risks', RISKS.filter(x => a.includes(x)));
   }
 
-  /** Lowering the bin retention purges anything already older than the new period, so confirm that first. */
   function requestSave() {
     if (!draft || !changed.length || saving) return;
     if (saved && changed.includes('bin_days') && Number(draft.bin_days) < Number(saved.bin_days)) { setConfirmBin(true); return; }
@@ -163,7 +153,6 @@ export default function Policies() {
     }
   }
 
-  /* ── controls ── */
   const sw = (k: keyof Policy) => {
     const on = !!draft?.[k];
     return (
@@ -193,15 +182,13 @@ export default function Policies() {
       })}
     </div>
   );
-  // The prototype picks the Default Vault Admin from a segmented list; a long list becomes a dropdown.
   const adminPicker = () => {
     const opts = [{ value: null as number | null, label: 'Any Vault Admin' }, ...admins.map(a => ({ value: a.id as number | null, label: a.name }))];
     if (opts.length <= 4) return seg('cp_admin_user_id', opts);
     return (
-      <select className="cvp-select" value={draft?.cp_admin_user_id ?? ''} disabled={!editable}
-        onChange={e => set('cp_admin_user_id', e.target.value ? Number(e.target.value) : null)}>
-        {opts.map(o => <option key={String(o.value)} value={o.value ?? ''}>{o.label}</option>)}
-      </select>
+      <CrdSelect value={draft?.cp_admin_user_id ? String(draft.cp_admin_user_id) : ''} disabled={!editable}
+        options={opts.map(o => ({ value: o.value === null ? '' : String(o.value), label: o.label }))}
+        onChange={v => set('cp_admin_user_id', v ? Number(v) : null)} />
     );
   };
   const control = (r: PolicyRule): ReactNode => {
@@ -230,7 +217,6 @@ export default function Policies() {
     );
   };
 
-  /* ── per-card extras ── */
   const flow = () => {
     if (!draft) return null;
     const steps = [draft.cp_admin, draft.cp_manager, draft.cp_otp].filter(Boolean).length;

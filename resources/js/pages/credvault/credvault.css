@@ -4178,8 +4178,10 @@
   width: auto !important;
 }
 
-.cvx #crd-host .sh-box .sh-date .mapsup-finput {
-  height: 40px !important;
+.cvx #crd-host .sh-box .sh-date,
+.cvx #crd-host .sh-box .sh-date .master-datepicker-wrap,
+.cvx #crd-host .sh-box .sh-date .master-datepicker-toggle {
+  height: 100% !important;
 }
 
 .cvx #crd-host .sh-box .sh-exp {
@@ -4312,7 +4314,7 @@
 }
 
 .cvx #crd-host .sh-box .sh-durrow {
-  align-items: center;
+  align-items: stretch;
 }
 
 .cvx #crd-host .sh-box .sh-date {
@@ -15471,7 +15473,6 @@
     justify-content: flex-start
   }
 
-  
   }
 
 .cvx.idims-dark .cp-box {
@@ -17198,23 +17199,12 @@
 .cvx .cp-err--c:empty {
   display: none
 }
-
-/* CredVault tab row (CvTabsRow): the rail is the prototype's own .smt-proctype-tabs
-   (58px: 6px padding + 1.5px border round 44px tabs); the search matches its height. */
 .cvx .tvc-top .bst-search.whm-main-search {
   height: 58px;
   min-height: 58px;
   box-sizing: border-box;
   border-radius: 11px;
 }
-
-/* Team Vault spacing: 8px everywhere. Measured, the page mixed 6px between
-   its three blocks, 10px between the step cards, 10-12px inside the panes and
-   10/12px round the page, against 8px between the panes and in the lists.
-   Scoped to the Team Vault page (the column that holds .tv-split). */
-
-/* The step cards spaced themselves with a 7px/5px margin each (10px between,
-   7px to the edges); now an 8px grid gap and 8px round them, no margins. */
 
 .cvx .tv-split .tv-pane__bd {
   padding: 8px;
@@ -17224,14 +17214,6 @@
   padding: 8px;
   gap: 8px;
 }
-
-/* ...and 8px inside every block too. The page column's own padding is 0:
-   .page-content already holds the page 8px off the window, and the two
-   together made 16px. Inside: the header card (icon 31px in, Export 21px
-   off the right), the What We Are Doing header (12px), the step cards
-   (10-11px), both pane headers (11-12px) and the department cards (12px)
-   all sit on 8px now, and the credentials list no longer bleeds 4px past
-   its pane on either side. */
 
 .cvx .tv-split .tv-pane__hd {
   padding: 8px;
@@ -17246,8 +17228,6 @@
   margin-left: 0;
   margin-right: 0;
 }
-
-/* The search keeps a pale teal hairline and wash. */
 .cvx .tvc-top .bst-search.whm-main-search {
   border: 1px solid #c9f1f8;
   background: linear-gradient(180deg, #ffffff, #f6feff);
@@ -17260,11 +17240,6 @@
   border-color: rgba(34, 211, 238, .22);
   background: rgba(6, 182, 212, .08);
 }
-
-/* A short page (one row, a search hit) left the table and pager floating at
-   the top of the card over empty space. The list now fills the pane and the
-   table takes the slack, so the pager sits on the card's foot; a long page
-   still grows past it and the pane scrolls as before. */
 .cvx .tvc-bd .tvc-list {
   flex: 1 0 auto;
   display: flex;
@@ -17274,12 +17249,6 @@
 .cvx .tvc-bd .tvc-list>.whm-tblwrap {
   flex: 1 0 auto;
 }
-
-/* Header over content: Category's chip and group sit centred in the cell but
-   its header was left, so the label hung off to one side - centred to match,
-   as My Vault already does. The name's sub-line was a flex row: a long URL
-   squeezed its icon to nothing and could not end in an ellipsis. As a plain
-   line the icon keeps its size and the text cuts with "...". */
 .cvx .tvc-list .whm-tbl.mv-tbl thead th.mv-th-3,
 .cvx .tvc-list .whm-tbl.mv-tbl tbody td:nth-child(4) {
   text-align: center !important;
@@ -17299,16 +17268,15 @@
   vertical-align: -2px;
   margin-right: 4px;
 }
-
-/* Form dropdowns are the house MasterSelect (CrdSelect). Its trigger is sized
-   and tinted like the form's inputs, and clears the field's leading icon. */
-.cvx #crd-host .crd-ms {
+.cvx #crd-host .crd-ms,
+.cvx #crd-host .mapsup-inputwrap .master-datepicker-wrap {
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
 }
 
-.cvx #crd-host .crd-ms .master-select-toggle {
+.cvx #crd-host .crd-ms .master-select-toggle,
+.cvx #crd-host .mapsup-inputwrap .master-datepicker-toggle {
   height: 40px;
   padding: 0 10px 0 13px;
   font-size: 12.5px;
@@ -17324,7 +17292,8 @@
   padding-left: 36px;
 }
 
-.cvx #crd-host .crd-ms .master-select-toggle:hover:not(:disabled) {
+.cvx #crd-host .crd-ms .master-select-toggle:hover:not(:disabled),
+.cvx #crd-host .mapsup-inputwrap .master-datepicker-toggle:hover {
   border-color: #67e8f9;
   box-shadow: 0 2px 6px rgba(8, 145, 178, .1);
 }
@@ -17339,7 +17308,8 @@
   cursor: not-allowed;
 }
 
-.cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-ms .master-select-toggle {
+.cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-ms .master-select-toggle,
+.cvx #crd-host .crd-box .mapsup-ffield.is-edited .master-datepicker-toggle {
   border-color: #f59e0b !important;
   background-color: #fffbeb !important;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, .12) !important;
@@ -17349,18 +17319,12 @@
   height: 40px;
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-toggle {
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-toggle,
+[data-bs-theme="dark"] .cvx #crd-host .mapsup-inputwrap .master-datepicker-toggle {
   background: #0f2530;
   border-color: rgba(34, 211, 238, .28);
   color: #e2f4f8;
 }
-
-/* Add / Edit Credential form · dark mode. Only its dropdowns had a dark rule,
-   so in dark mode the form was white cards and white inputs round two dark
-   selects. Same recipe as the Team Vault page below: deep teal-slate surfaces,
-   faint teal hairlines, inputs the dropdowns' #0f2530, teal text lifted to
-   #67e8f9. The header band already reads on dark and is left alone; the QR
-   frame stays white so the code still scans. */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box,
 [data-bs-theme="dark"] .cvx .vd {
   background: #0b1d26 !important;
@@ -17396,7 +17360,9 @@
 [data-bs-theme="dark"] .cvx .vd .vd-tl,
 [data-bs-theme="dark"] .cvx .vd .vd-xt,
 [data-bs-theme="dark"] .cvx .vd .vd-ic,
-[data-bs-theme="dark"] .cvx .vd .vd-ft {
+[data-bs-theme="dark"] .cvx .vd .vd-ft,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file {
   background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(34, 211, 238, .16) !important;
   box-shadow: none !important;
@@ -17426,7 +17392,9 @@
 [data-bs-theme="dark"] .cvx .vd .vd-empty b,
 [data-bs-theme="dark"] .cvx .vd .vd-tl__i b,
 [data-bs-theme="dark"] .cvx .vd .vd-ft__i b,
-[data-bs-theme="dark"] .cvx .vd .vd-xt__hd b {
+[data-bs-theme="dark"] .cvx .vd .vd-xt__hd b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__txt {
   color: #e2f4f8 !important;
 }
 
@@ -17459,7 +17427,9 @@
 [data-bs-theme="dark"] .cvx .vd .vd-empty span,
 [data-bs-theme="dark"] .cvx .vd .vd-tl__i small,
 [data-bs-theme="dark"] .cvx .vd .vd-ft__i small,
-[data-bs-theme="dark"] .cvx .vd .vd-xt__att>small {
+[data-bs-theme="dark"] .cvx .vd .vd-xt__att>small,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f small,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__hint {
   color: #8fb3c2 !important;
 }
 
@@ -17470,11 +17440,10 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .req {
   color: #fb7185 !important;
 }
-
-/* chips: "Auto" lock and "Optional" */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-lock,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cap:not(.is-yes) i,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) .sh-perm__ck {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) .sh-perm__ck,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__b:not(:hover) {
   background: rgba(148, 163, 184, .12) !important;
   border-color: rgba(148, 163, 184, .26) !important;
   color: #a8bfca !important;
@@ -17494,8 +17463,6 @@
   border-color: rgba(34, 211, 238, .3) !important;
   color: #67e8f9 !important;
 }
-
-/* inputs: editable like the dropdowns; locked ones a step quieter */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-finput,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-inputwrap:not(.is-frozen) .mapsup-finput {
   background: #0f2530 !important;
@@ -17527,15 +17494,14 @@
   border-color: #f59e0b !important;
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-ms .master-select-toggle {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-ms .master-select-toggle,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .master-datepicker-toggle {
   background-color: rgba(245, 158, 11, .1) !important;
 }
 
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-input-ico {
   color: #67e8f9;
 }
-
-/* password / key buttons and the strength meter */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-pw__btns {
   background: rgba(34, 211, 238, .06) !important;
   border-color: rgba(34, 211, 238, .2) !important;
@@ -17544,8 +17510,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-pw__b:not(.crd-pw__b--gen) {
   color: #67e8f9 !important;
 }
-
-/* hover and "shown" (eye on) were still the light white tile */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-pw__b:not(.crd-pw__b--gen):hover,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-pw__b.is-on:not(.crd-pw__b--gen) {
   background: rgba(34, 211, 238, .18) !important;
@@ -17556,8 +17520,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-pw__b+.crd-pw__b::before {
   background: rgba(34, 211, 238, .2);
 }
-
-/* empty bars only: kept below the meter's own [data-s] fills so those still win */
 [data-bs-theme="dark"] .cvx .mv-meter__bars i,
 [data-bs-theme="dark"] .cvx .gp-meter__track {
   background: rgba(255, 255, 255, .1);
@@ -17566,8 +17528,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mv-meter__lbl {
   filter: brightness(1.35);
 }
-
-/* attachments drop zone and the 2FA toggle */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att {
   background: rgba(34, 211, 238, .05) !important;
   border-color: rgba(34, 211, 238, .3) !important;
@@ -17589,8 +17549,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-tg__st {
   color: #67e8f9 !important;
 }
-
-/* 2FA panel */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-fcard {
   background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(34, 211, 238, .16) !important;
@@ -17665,8 +17623,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-vcard__ft {
   border-top-color: rgba(34, 211, 238, .12) !important;
 }
-
-/* footer */
 [data-bs-theme="dark"] .cvx #crd-host .crd-box>.mapsup-footer {
   background: linear-gradient(180deg, #0c2029, #0a1a22) !important;
   border-top-color: rgba(34, 211, 238, .14) !important;
@@ -17687,14 +17643,6 @@
   border-color: rgba(34, 211, 238, .35) !important;
   color: #67e8f9 !important;
 }
-
-/* ── Team Vault · dark mode ───────────────────────────────────────────────
-   Every CredVault rule above is drawn for light mode only, so in dark mode the
-   page stayed a block of white cards. This is the CLM Segment Master look:
-   deep teal-slate surfaces, a faint teal hairline, translucent teal for
-   headers, zebra and hover, white sheens dimmed right down. The teal
-   gradients that carry meaning (icons, the active tab, the admin and hero
-   cards, the level stripes) stay as they are. Team Vault page only. */
 [data-bs-theme="dark"] .cvx,
 [data-bs-theme="dark"] .cvx .sup-fig {
   background: transparent;
@@ -17707,8 +17655,6 @@
   --tvd-mu: #8fb3c1;
   --tvd-dim: #6b8f9d;
 }
-
-/* Header strip + What We Are Doing Here */
 [data-bs-theme="dark"] .cvx .sup-fig .cstrip--teal {
   border-color: #0e5063;
   background: linear-gradient(110deg, #0b2430 0%, #0c2c39 45%, #0e3646 100%);
@@ -17803,8 +17749,6 @@
 [data-bs-theme="dark"] .cvx .sup-fig .bref-box--teal .bref-item__ico {
   color: #22d3ee;
 }
-
-/* The two panes, their headers and the collapsed rail */
 [data-bs-theme="dark"] .cvx.tv-page .tv-pane {
   background: var(--tvd-card);
   border-color: var(--tvd-line);
@@ -17853,8 +17797,6 @@
 [data-bs-theme="dark"] .cvx.tv-page .tv-pane__bd {
   scrollbar-color: #2a4652 transparent;
 }
-
-/* Team Details · department list */
 [data-bs-theme="dark"] .cvx.tv-page .tvo-search {
   background: var(--tvd-bg);
   border-color: var(--tvd-line2);
@@ -17921,8 +17863,6 @@
 [data-bs-theme="dark"] .cvx.tv-page .tvx-adm__av i {
   border-color: #0b5468;
 }
-
-/* Team Details · one department: level counts, toolbar, hierarchy */
 [data-bs-theme="dark"] .cvx.tv-page .tvx-lv--admin {
   --lc: #67e8f9;
   --lb: rgba(14, 116, 144, .22);
@@ -18033,8 +17973,6 @@
 [data-bs-theme="dark"] .cvx.tv-page .tvx-kids>.tvx-n::after {
   border-color: rgba(34, 211, 238, .22);
 }
-
-/* Credentials pane: tab rail, search, member filter */
 [data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tab:not(.is-active),
 [data-bs-theme="dark"] .cvx .vd .vd-ptabs .smt-proctype-tab:not(.is-active) {
   color: var(--tvd-mu);
@@ -18097,8 +18035,6 @@
   background: rgba(6, 182, 212, .1);
   border-color: var(--tvd-line2);
 }
-
-/* Credentials table and its empty state */
 [data-bs-theme="dark"] .cvx.tv-page .tvc-list .whm-tblwrap {
   background: transparent;
   border-top-color: var(--tvd-line) !important;
@@ -18149,13 +18085,9 @@
 [data-bs-theme="dark"] .cvx .mv-str--na {
   color: var(--tvd-mu) !important;
 }
-
-/* :where() keeps this at the base rule's weight, so the coloured strength bars still win. */
 :where([data-bs-theme="dark"]) .cvx .mv-meter__bars i {
   background: rgba(255, 255, 255, .1);
 }
-
-/* The live table's Risk / Strength / 2FA cells (RiskFlag, StrengthCell, TwofaCell) */
 [data-bs-theme="dark"] .cvx .mv-rk--low,
 [data-bs-theme="dark"] .cvx .vd .vd-b--low {
   color: #6ee7b7;
@@ -18224,8 +18156,6 @@
 [data-bs-theme="dark"] .cvx .mv-sg__knob {
   background: var(--tvd-card);
 }
-
-/* The light action buttons are forced with !important, so the dark ones must be too. */
 [data-bs-theme="dark"] .cvx button.whm-act:not(.whm-act--edit) {
   color: #67e8f9 !important;
   background: rgba(6, 182, 212, .08) !important;
@@ -18291,4 +18221,9 @@
 .cvx .dt-lead:has(> .tvc-top) {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.master-datepicker-popup.crd-cal {
+  min-width: 0 !important;
+  width: 320px !important;
 }

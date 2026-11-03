@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type Loose, type Perm } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import { Shimmer } from '../../../components/ui/Shimmer';
 import { cap, CvPortal, errMsg, Svg, useCvMeta } from '../shared';
 import CrdSelect from '../form/CrdSelect';
 
 export interface ShareModalProps {
   credentialId: number;
-  /** Design preview (Team Vault on dummy data): share this row with these
-   *  recipients; nothing is loaded from or sent to the server. */
   previewRow?: CredentialRow;
   previewRecipients?: () => Promise<{ users: Loose[]; teams: Loose[] }>;
   onClose: () => void;
@@ -39,6 +38,47 @@ function endOf(dur: string): Date | null {
   return new Date(Date.now() + +dur * 864e5);
 }
 
+function ShimHead() {
+  return (
+    <div className="mapsup-sechead">
+      <Shimmer width={32} height={32} radius={9} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}><Shimmer width={130} height={12} /><Shimmer width={220} height={10} /></div>
+    </div>
+  );
+}
+
+function ShareShimmer() {
+  return (
+    <>
+      <div className="sh-cred">
+        <Shimmer width={40} height={40} radius={12} />
+        <div className="sh-cred__t" style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}><Shimmer width={160} height={13} /><Shimmer width={240} height={10} /></div>
+        <Shimmer width={70} height={22} radius={999} />
+      </div>
+      <div className="mapsup-seccard gp-card">
+        <ShimHead />
+        <Shimmer width="100%" height={46} radius={12} />
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}><Shimmer width={90} height={10} /><Shimmer width="100%" height={40} radius={10} /><Shimmer width="80%" height={10} /></div>
+      </div>
+      <div className="mapsup-seccard gp-card">
+        <ShimHead />
+        <div className="sh-perms">{[0, 1, 2, 3].map(i => <Shimmer key={i} width="100%" height={56} radius={13} />)}</div>
+        <div className="sh-durrow">
+          <span className="gp-len__top"><Shimmer width={110} height={10} /></span>
+          <Shimmer width={230} height={46} radius={12} />
+          <Shimmer width="100%" height={46} radius={10} />
+        </div>
+        <div style={{ marginTop: 8 }}><Shimmer width="100%" height={96} radius={12} /></div>
+        <div style={{ marginTop: 8 }}><Shimmer width="100%" height={36} radius={10} /></div>
+      </div>
+      <div className="mapsup-seccard gp-card">
+        <ShimHead />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}><Shimmer width={120} height={10} /><Shimmer width="100%" height={96} radius={10} /></div>
+      </div>
+    </>
+  );
+}
+
 export default function ShareModal({ credentialId, previewRow, previewRecipients, onClose, onShared }: ShareModalProps) {
   const toast = useToast();
   const { meta, typeOf } = useCvMeta();
@@ -58,7 +98,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
 
   useEffect(() => {
     let on = true;
-    // The popup reads only the row's own fields (name, code, type, risk, username), so a row stands in for the detail.
     const load = previewRow && previewRecipients
       ? Promise.all([Promise.resolve(previewRow as unknown as CredentialDetail), previewRecipients()])
       : Promise.all([cvApi.show(credentialId), cvApi.recipients()]);
@@ -66,7 +105,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
       .then(([c, r]) => { if (on) { setCred(c); setPeople(r); } })
       .catch(e => { if (on) { toast.error('Could not open sharing', errMsg(e)); closeRef.current(); } });
     return () => { on = false; };
-  // previewRow / previewRecipients are fixed for the popup's life.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [credentialId, toast]);
 
@@ -91,7 +129,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   const end = endOf(dur);
   const permDef = meta?.permissions.find(p => p.key === perm);
   const clr = (k: string) => setErrs(p => { if (!p[k]) return p; const n = { ...p }; delete n[k]; return n; });
-
 
   const save = async () => {
     if (!cred || !meta || busy) return;
@@ -153,7 +190,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
 
             <div className="mapsup-body gp-body sh-body">
               {!cred || !meta ? (
-                <div className="sh-cred" style={{ opacity: .6 }}><span className="sh-cred__ico"><Svg icon="lock" size={18} /></span><div className="sh-cred__t"><b>Loading…</b></div></div>
+                <ShareShimmer />
               ) : (
                 <>
                   <div className="sh-cred">

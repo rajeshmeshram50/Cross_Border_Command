@@ -1,6 +1,5 @@
 
 
-  /* Custom MasterSelect — replaces native <select> dropdowns */
   .master-select-wrap { width: 100%; }
   .master-select-toggle {
     display: flex;
@@ -20,8 +19,6 @@
     box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
     transition: border-color .18s ease, box-shadow .18s ease;
   }
-  /* Extra left padding only when sitting inside a master-field wrapper
-     (accommodates the prefix icon used in master-modal forms) */
   .master-field .master-select-toggle { padding-left: 36px; }
   .master-select-toggle:hover:not(:disabled) {
     border-color: rgba(99,102,241,0.55);
@@ -35,8 +32,6 @@
     border-color: #f06548 !important;
     box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important;
   }
-  /* Muted text, not opacity: a translucent control picks up whatever panel
-     is behind it and stops matching the fields beside it. */
   .master-select-toggle:disabled {
     background: var(--vz-card-bg);
     color: var(--vz-secondary-color);
@@ -57,23 +52,15 @@
     align-items: center;
     color: var(--vz-heading-color, var(--vz-body-color));
     flex-grow: 1;
-    /* min-width:0 lets this flex child shrink below its content width so the
-       inner text can actually ellipsize (the toggle is display:flex). Without
-       it a long product name overflows the field instead of truncating. */
     min-width: 0;
     overflow: hidden;
   }
-  /* The truncating label; a trailing badge (Active/Inactive) is a sibling and
-     stays visible while this text collapses to an ellipsis. */
   .master-select-value-text {
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* Shimmer placeholder shown while the dropdown's master is fetching —
-   * cleaner than the grey "Loading…" text and signals to the user that
-   * the field is populating, not stuck. */
   @keyframes master-select-shimmer-kf {
     0%   { background-position: -260px 0; }
     100% { background-position:  260px 0; }
@@ -107,11 +94,6 @@
   }
   .master-modal .master-select-menu.dropdown-menu,
   div.master-select-menu.dropdown-menu {
-    /* Width is set inline by JS at runtime to match the trigger's
-       offsetWidth. Before, `width: 100% / min-width: 100% !important` made
-       the menu fill the body when portalled there — producing a
-       full-screen-width strip at the bottom of the page. Inline width
-       wins because nothing here uses !important on width now. */
     border-radius: 10px !important;
     padding: 6px !important;
     box-shadow: 0 14px 30px rgba(18,38,63,0.14), 0 2px 8px rgba(18,38,63,0.06) !important;
@@ -123,12 +105,8 @@
     -webkit-backdrop-filter: none !important;
     opacity: 1 !important;
     filter: none !important;
-    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile
-       and the Add Customer modal (z-index 10000) so the portalled menu
-       isn't trapped behind any in-app modal backdrop. */
     z-index: 11000 !important;
   }
-  /* Search row at the top of the menu (sticks — not part of scroll area) */
   .master-select-search {
     position: relative;
     padding: 2px 2px 6px 2px;
@@ -147,8 +125,6 @@
   .master-select-search-input {
     width: 100%;
     height: 34px;
-    /* 34px right as well as left: the clear button is pinned in that
-       gutter, so a long query must not run underneath it. */
     padding: 6px 34px 6px 34px;
     border: 1px solid var(--vz-border-color);
     border-radius: 8px;
@@ -167,14 +143,6 @@
     color: var(--vz-secondary-color);
     opacity: 0.65;
   }
-  /* The x that empties the box.
-     SearchClear carries no positioning of its own by design: it expects to be
-     the last child of a FLEX search row and simply sit after the input. This
-     wrapper is the one exception in the app - position:relative with an
-     absolutely-placed magnifier and a full-width block input - so the button
-     flowed BELOW the input and landed on top of the first option. Pin it in
-     the input's right gutter, mirroring how the magnifier is pinned left
-     (same top formula: the row's 6px bottom padding shifts its centre). */
   .master-select-search .ui-search-clear {
     position: absolute;
     right: 8px;
@@ -183,32 +151,14 @@
     width: 22px;
     height: 22px;
   }
-  /* Scroll area — caps to ~4 items, rest scrolls */
   .master-select-list {
     max-height: 152px;
     overflow-y: auto;
-    /* Long option labels used to widen the rows past the menu, which produced a
-       horizontal scrollbar and left hover/active highlighting only half-painted.
-       Labels now ellipsis instead; nothing should ever scroll sideways here. */
     overflow-x: hidden;
-
-    /* Keep the wheel INSIDE the list. Without this, reaching the last option
-       hands the remaining scroll to whatever is behind the menu — inside the
-       Employee wizard that is the modal body, so the entire form lurched
-       upward mid-pick. That hand-off is what read as "scroll not working". */
     overscroll-behavior: contain;
-    /* Reserve the scrollbar's width even when it isn't showing. Typing in the
-       search box filters the list down past the scroll threshold, the bar
-       disappears, and every row shifted ~6px sideways on each keystroke. */
     scrollbar-gutter: stable;
-    /* Applies to keyboard/programmatic scrolls (arrow keys walking the list);
-       wheel and drag stay native so they never feel laggy. */
     scroll-behavior: smooth;
-    /* Momentum scrolling on touch/trackpad surfaces. */
     -webkit-overflow-scrolling: touch;
-    /* Firefox ignores ::-webkit-scrollbar entirely and was drawing the OS
-       default — a chunky grey bar next to the slim one every other browser
-       showed here. */
     scrollbar-width: thin;
     scrollbar-color: var(--vz-border-color) transparent;
   }
@@ -233,10 +183,6 @@
     padding: 8px 12px !important;
     border-radius: 6px !important;
     font-size: 13px !important;
-    /* Pinned so a row is an exact 37px (8 + 20 + 8 + 1 margin). Inherited
-       line-height put it at 19.5px, giving fractional row heights — every
-       option then landed on a half-pixel boundary and the text shimmered
-       while the list scrolled. */
     line-height: 20px !important;
     color: var(--vz-body-color) !important;
     transition: background .15s ease, color .15s ease;
@@ -247,10 +193,6 @@
     background: var(--vz-secondary-bg) !important;
     color: var(--vz-heading-color, var(--vz-body-color)) !important;
   }
-  /* In dark mode --vz-secondary-bg is nearly identical to the menu's own
-     #2a2f34 background, so the hover was effectively invisible (QA: "no
-     visible hover effect on dropdown"). Pin an explicit violet-tinted hover
-     so the highlighted option is clearly distinguishable on the dark menu. */
   [data-bs-theme="dark"] .master-select-item:hover,
   [data-bs-theme="dark"] .master-select-item:focus,
   [data-layout-mode="dark"] .master-select-item:hover,
@@ -263,10 +205,6 @@
     color: #6366f1 !important;
     font-weight: 600;
   }
-  /* The option's identifier, drawn as a chip ahead of its name so the ids
-     line up in a column of their own. Monospace and tabular, because these
-     are read by position (WH-001 against WH-010), not as words; it never
-     shrinks, since half an id is no id at all. */
   .master-select-code {
     flex: 0 0 auto;
     margin-right: 10px;
@@ -282,9 +220,6 @@
     border: 1px solid #bfeef4;
     white-space: nowrap;
   }
-  /* Beside a code chip the name is the record's own, not a setting someone
-     picked from a list, so it carries the weight the list row gives it —
-     at 500 it read as the placeholder it had just replaced. */
   .master-select-code + .master-select-value-text { font-weight: 700; color: #0c2c3a; }
   [data-bs-theme="dark"] .master-select-code + .master-select-value-text { color: #e2e8f0; }
   [data-bs-theme="dark"] .master-select-code {
@@ -297,14 +232,10 @@
     font-size: 12px;
     color: var(--vz-secondary-color);
     text-align: center;
-    /* A custom `emptyText` explains WHY the list is empty, so it runs to a
-       sentence or two. "No options" never wrapped; these must. */
     line-height: 1.45;
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  /* Mini popup opened by a "+N more" overflow pill (portalled to <body>) —
-     lists the hidden tags. Sits above the option menu (z-index 11000). */
   .master-select-badge-pop {
     display: flex;
     flex-direction: column;
@@ -328,10 +259,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* min-width:0 + max-width:100% let a long tag (e.g. a pasted-junk segment
-       name) truncate within the popup instead of stretching to its min-content
-       width and leaking outside the modal — a flex item defaults to
-       min-width:auto, which overrode the ellipsis. */
     min-width: 0;
     max-width: 100%;
   }
@@ -345,10 +272,6 @@
     background: rgba(124,92,252,0.28);
     color: #e9d5ff;
   }
-
-  /* The foot of a client-paged list: how many of the total are on screen, and
-     the loader while the next ten come in. Also clickable, for a list too
-     short to scroll. */
   .master-select-more {
     display: flex;
     align-items: center;
@@ -376,12 +299,6 @@
   }
 
   @keyframes master-select-spin { to { transform: rotate(360deg); } }
-
-  /* Option checkbox in the multi-select list.
-     Unchecked on dark is a transparent box with a light rim rather than a
-     white fill: a white square on a near-black panel reads as the selected
-     state, which is the opposite of what it means. Checked keeps the violet
-     in both themes, so "on" looks the same wherever you see it. */
   .master-select-check {
     width: 16px; height: 16px;
     margin-right: 8px;
@@ -404,3 +321,17 @@
     background: #7c5cfc;
     border-color: #7c5cfc;
   }
+body:has(:is(.ord-page, .cvx)) .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(8, 145, 178, .55);
+  box-shadow: 0 2px 6px rgba(8, 145, 178, .08);
+}
+body:has(:is(.ord-page, .cvx)) .master-select-wrap.show .master-select-toggle {
+  border-color: #0891b2 !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .15), 0 4px 12px rgba(8, 145, 178, .12) !important;
+}
+body:has(:is(.ord-page, .cvx)) .master-select-wrap.show .master-select-chev { color: #0891b2; }
+body:has(:is(.ord-page, .cvx)) .master-select-search-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(34, 211, 238, .18); }
+body:has(:is(.ord-page, .cvx)) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
+[data-bs-theme="dark"] body:has(:is(.ord-page, .cvx)) .master-select-item:hover,
+[data-bs-theme="dark"] body:has(:is(.ord-page, .cvx)) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
+[data-bs-theme="dark"] body:has(:is(.ord-page, .cvx)) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
