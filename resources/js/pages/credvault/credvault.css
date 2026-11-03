@@ -18368,3 +18368,66 @@
   min-width: 0 !important;
   width: 320px !important;
 }
+
+/* Move to Recycle Bin and the other ConfirmModal popups · dark mode, in their red theme */
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-cred,
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-pts,
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ack {
+  background: rgba(244, 63, 94, .045) !important;
+  border-color: rgba(251, 113, 133, .2) !important;
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-pt+.mb-pt {
+  border-top-color: rgba(251, 113, 133, .16);
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-pt>span {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .12);
+  border-color: rgba(251, 113, 133, .3);
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-pt:last-child>span {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(251, 191, 36, .3);
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-cred__t .whm-idpill {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .12);
+  border-color: rgba(251, 113, 133, .32);
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ack .dl-ack__box {
+  background: transparent;
+  border-color: rgba(251, 113, 133, .55);
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ack:hover .dl-ack__box {
+  border-color: #fb7185;
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ack:has(input:checked) {
+  color: #fecdd3 !important;
+  background: rgba(244, 63, 94, .1) !important;
+  border-color: rgba(251, 113, 133, .4) !important;
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ack input:checked+.dl-ack__box {
+  color: #fff;
+  background: linear-gradient(135deg, #fb7185, #e11d48);
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-ft {
+  background: transparent !important;
+  border-color: rgba(251, 113, 133, .14) !important;
+}
+
+[data-bs-theme="dark"] .cvx .dl-modal.mb .mb-btn--go:disabled {
+  opacity: 1;
+  color: rgba(254, 205, 211, .45);
+  background: rgba(244, 63, 94, .14);
+  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, .22);
+}
