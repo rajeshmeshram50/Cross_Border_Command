@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Attachment, type CredentialDetail, type FieldDef, type Loose, type Meta, type Risk, type TypeDef } from '../cvApi';
-import { Svg, bytes, cap, copyText, errMsg } from '../shared';
+import { ConfirmModal, IC, Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, hasTwofaSwitch, isEmail,
+  PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, isEmail,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor, verifyTotp,
 } from './formHelpers';
-import { AUTH_EMPTY, AuthBox, AuthChip, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
-
-/* ─────────────────────────────────────────────────────────────────────────
- * Step 2 of Add Credential, and Edit — crdOpenForm + crdSave + the Critical
- * Access Protection wrapper (cpBindForm / cpAuthInit / the crdSave override).
- *
- * Edit saves only what changed: the API keeps every field left out, so a
- * secret is never needed in the browser to save an unrelated change.
- * ───────────────────────────────────────────────────────────────────────── */
+import { AUTH_EMPTY, AuthBox, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
 
 export interface FormInit {
   critical?: boolean; prefillPassword?: string; scope?: 'personal' | 'team'; departmentId?: number | null;
@@ -25,7 +17,6 @@ const SHIELD_CHECK = '<path d="M9 12l2 2 4-4M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 1
 const EYE_OFF = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22"/>';
 const KEEP = 'Leave blank to keep the saved value';
 
-/** Server error keys → the data-f key of the field they belong to. */
 function normKey(k: string): string {
   if (k.startsWith('files.')) return 'fields.' + k.slice(6);
   if (/^attachments\.\d+$/.test(k) || k.startsWith('remove_attachments')) return 'attachments';
@@ -61,7 +52,6 @@ function Section({ ico, title, sub, items, wide, after }: {
   );
 }
 
-// Risk and 2FA guard the credential; the server lets only the owner or a Vault Admin change them.
 const PROTECT_HINT = 'Only the owner or a Vault Admin can change this.';
 const LOCKED_STYLE: CSSProperties = { opacity: .6, cursor: 'not-allowed' };
 
@@ -72,7 +62,6 @@ const fileIco = (n: string) => {
 
 export default function CredentialForm({ meta, T, detail, init, preview = false, onClose, onSaved, onChangeType }: {
   meta: Meta; T: TypeDef; detail: CredentialDetail | null; init: FormInit;
-  /** Design preview on dummy data: the form works, Save writes nothing. */
   preview?: boolean;
   onClose: () => void; onSaved: (c: CredentialDetail) => void; onChangeType?: () => void;
 }) {
@@ -82,7 +71,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const locked = editing && !detail!.fields;
   const canProtect = !editing || !!detail!.can?.edit_protection;
   const isPw = secretIsPassword(T);
-  const hasMain = hasTwofaSwitch(T);
   const toggleField = T.fields.find(f => f.key === 'twofa' && f.kind === 'toggle');
   const ex = T.extras;
   const dField = useMemo(() => new Map((detail?.fields ?? []).map(f => [f.key, f])), [detail]);
@@ -91,13 +79,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     : null;
   const startCritical = !editing && !!init.critical;
 
-  /* ── state ── */
   const [vals, setVals] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
     T.fields.forEach(f => {
       if (f.kind === 'file') return;
-      if (f.kind === 'toggle') v[f.key] = detail ? (detail.twofa === 'yes' ? 'yes' : 'no') : (startCritical && pol.cp_otp ? 'yes' : 'no');
-      // The server never sends a secret; the design preview's sample one is shown masked.
+      if (f.kind === 'toggle') v[f.key] = detail?.twofa === 'yes' ? 'yes' : 'no';
       else v[f.key] = detail && (!f.secret || preview) ? (dField.get(f.key)?.value ?? '') : '';
     });
     if (prefillKey) v[prefillKey] = init.prefillPassword!;
@@ -106,7 +92,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [name, setName] = useState(detail?.name ?? '');
   const [risk, setRisk] = useState<Risk>(detail?.risk ?? (init.critical ? 'critical' : T.risk));
   const [rotation, setRotation] = useState(detail ? String(detail.rotation_days ?? '') : String(pol.rotation_default ?? ''));
-  const [twofa, setTwofa] = useState(detail ? detail.twofa === 'yes' : startCritical && T.twofa && pol.cp_otp);
+  const [twofa, setTwofa] = useState(detail?.twofa === 'yes');
   const [notes, setNotes] = useState(detail?.notes ?? '');
   const [regEmail, setRegEmail] = useState(detail?.recovery?.reg_email ?? '');
   const [regPhone, setRegPhone] = useState(detail?.recovery?.reg_phone ?? '');
@@ -141,14 +127,13 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
   const twofaOn = T.twofa ? twofa : toggleField ? vals.twofa === 'yes' : false;
   const critical = risk === 'critical';
-  const needAuth = hasMain ? twofaOn : critical && canProtect && prot.otp && pol.cp_otp;
+  const needAuth = critical && canProtect && prot.otp && pol.cp_otp;
   const [auth, setAuth] = useState<AuthState>(() => ({ ...AUTH_EMPTY, linkedOnServer: !!(P?.otp && P?.otp_linked) }));
   const verifiedAt = useRef(0);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  /* ── effects ── */
   useEffect(() => {
     const r = () => setWide(window.innerWidth > 980);
     window.addEventListener('resize', r);
@@ -208,7 +193,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   attUrls.current = attNew;
   useEffect(() => () => attUrls.current.forEach(a => URL.revokeObjectURL(a.url)), []);
 
-  /* ── change tracking (crdTrackEdits) ── */
   const snap = (): Record<string, string> => {
     const s: Record<string, string> = {
       name, risk, rotation_days: rotation, twofa: String(twofa), notes, reg_email: regEmail, reg_phone: regPhone,
@@ -225,7 +209,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   if (!orig.current) orig.current = now;
   const changed = (k: string) => editing && orig.current![k] !== now[k];
   const changedCount = editing ? Object.keys(now).filter(k => orig.current![k] !== now[k]).length : 0;
-  // Approver ids filled in from the server's defaults are not the user's change.
   const dirty = Object.keys(now).some(k => {
     if (orig.current![k] === now[k]) return false;
     if ((k === 'lock_admin' || k === 'lock_manager') && !protIdsTouched.current) return orig.current![k].split('|')[0] !== now[k].split('|')[0];
@@ -233,22 +216,23 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   });
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
-  const askClose = () => { if (!dirtyRef.current || window.confirm('Discard your unsaved changes?')) onClose(); };
+  const [askDiscard, setAskDiscard] = useState(false);
+  const askDiscardRef = useRef(false);
+  askDiscardRef.current = askDiscard;
+  const askClose = () => { if (dirtyRef.current) setAskDiscard(true); else onClose(); };
 
-  // Esc on a form with changes asks first; capture runs before the portal's own Esc-to-close.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !dirtyRef.current) return;
       e.stopPropagation();
-      if (window.confirm('Discard your unsaved changes?')) onCloseRef.current();
+      setAskDiscard(!askDiscardRef.current);
     };
     document.addEventListener('keydown', k, true);
     return () => document.removeEventListener('keydown', k, true);
   }, []);
 
-  /* ── helpers ── */
   const clr = (k: string) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; });
   const setVal = (k: string, v: string) => { setVals(s => ({ ...s, [k]: v })); clr('fields.' + k); };
   const ffCls = (k: string, extra = '') => `mapsup-ffield${extra}${errors[k] ? ' is-err' : ''}${changed(k) ? ' is-edited' : ''}`;
@@ -261,7 +245,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     copyText(v).then(() => toast.success('Copied to clipboard')).catch(() => toast.error('Could not copy — your browser blocked the clipboard'));
   };
 
-  /* ── a type field (crdField) ── */
   const fieldItem = (f: FieldDef) => {
     const k = 'fields.' + f.key;
     const span = fieldSpan(f);
@@ -416,7 +399,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     ),
   });
 
-  /* ── section 1: Credential Details ── */
   const s1 = [
     frozen('Credential ID', 'hash', code || '…'),
     {
@@ -448,7 +430,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
   }
 
-  /* ── section 3: Recovery & Proof (crdXtSection) ── */
   const maxAtt = meta.file_types.max_attachments;
   const attCount = attKeep.length + attNew.length;
   const addFiles = (list: FileList | null) => {
@@ -576,7 +557,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   if (ex.attachments) xtParts.push('supporting files');
   const xtSub = 'Optional — ' + xtParts.join(', ').replace(/, ([^,]*)$/, ' and $1') + ' for this ' + T.label.toLowerCase();
 
-  /* ── section 4: Security Details ── */
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
@@ -624,7 +604,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   secBits.push('remark');
   const secSub = secBits.slice(0, -1).join(', ').replace(/^./, c => c.toUpperCase()) + ' and ' + secBits[secBits.length - 1] + ' for this ' + T.label.toLowerCase();
 
-  /* ── authenticator ── */
   const verifyCode = async (): Promise<boolean> => {
     const c6 = auth.code.replace(/\s/g, '');
     if (!auth.secret) return false;
@@ -644,38 +623,14 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       onRetry={fetchSecret}
       onCopyKey={() => { if (auth.secret) copyText(auth.secret).then(() => toast.success('Setup key copied')).catch(() => toast.error('Could not copy')); }} />
   );
-  const mainCard = hasMain && T.twofa && twofaOn ? (
-    <div className="cp-fcard cp-fcard--main" data-f="totp_code_main">
-      <div className="cp-frow cp-frow--main">
-        <span className="cp-frow__ico"><Svg d={CP_I.phone} size={16} /></span>
-        <div className="cp-frow__t"><b>2FA — Authenticator app</b><span>Link your authenticator app. A 6-digit code from it will be needed to open this credential.</span></div>
-        <AuthChip a={auth} />
-      </div>
-      {authBox}
-    </div>
-  ) : null;
-  // The Password type keeps its 2FA switch among its fields: the authenticator card follows that section.
-  const toggleCard = hasMain && !T.twofa && twofaOn ? (
-    <div className="cp-fcard cp-fcard--main">
-      <div className="cp-frow cp-frow--main">
-        <span className="cp-frow__ico"><Svg d={CP_I.phone} size={16} /></span>
-        <div className="cp-frow__t"><b>2FA — Authenticator app</b><span>Link your authenticator app. A 6-digit code from it will be needed to open this credential.</span></div>
-        <AuthChip a={auth} />
-      </div>
-      {authBox}
-    </div>
-  ) : null;
 
   const adminOptions: CrdOption[] = [{ value: '', label: 'Any Vault Admin' },
     ...((approvers?.admins ?? []) as Loose[]).map(a => ({ value: String(a.id), label: String(a.name) }))];
   const managerOptions: CrdOption[] = [{ value: '', label: 'The requester’s reporting manager' },
     ...((approvers?.managers ?? []) as Loose[]).map(a => ({ value: String(a.id), label: `${a.name}${a.role ? ' · ' + a.role : ''}` }))];
-  // Keep a saved approver selectable while the list loads (or if it has left the list).
   if (prot.adminUserId && !adminOptions.some(o => o.value === prot.adminUserId)) adminOptions.push({ value: prot.adminUserId, label: P?.admin_user?.name ?? 'Loading…' });
   if (prot.managerUserId && !managerOptions.some(o => o.value === prot.managerUserId)) managerOptions.push({ value: prot.managerUserId, label: P?.manager_user?.name ?? 'Loading…' });
 
-  /* ── save (crdSave + the protection wrapper) ── */
-  // Held from the first click, across the authenticator check, so a double click can't create twice.
   const save = async () => {
     if (savingRef.current) return;
     savingRef.current = true;
@@ -722,7 +677,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       return;
     }
 
-    // The authenticator must be linked before a 2FA-locked credential is saved.
     let sendTotp = false;
     if (needAuth && !auth.linkedOnServer) {
       let ok = auth.verified;
@@ -733,7 +687,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         bodyRef.current?.querySelector('.cp-auth')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
-      // The server accepts a code within one 30 s step of now: an older verification needs a fresh code.
       if (Date.now() - verifiedAt.current > 25000) {
         setAuth(a => ({ ...a, verified: false, code: '', error: 'That code has expired. Enter the current 6-digit code from your app, then save again.' }));
         toast.warning('Enter a fresh authenticator code to save');
@@ -746,17 +699,15 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       }
       sendTotp = true;
     }
-    // The raw choices: the policy's step switches are applied by the server each time the credential is opened.
     const lockAdmin = prot.admin;
     const lockManager = prot.manager;
-    const lockOtp = hasMain ? twofaOn : prot.otp;
+    const lockOtp = prot.otp;
     if (critical && canProtect && !lockAdmin && !lockManager && !lockOtp) {
       toast.warning('Turn on at least one protection step for a critical credential');
       bodyRef.current?.querySelector('#cpSec')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
 
-    /* payload — edit sends only what changed */
     const body: Record<string, unknown> = {};
     const put = (k: string, v: unknown, snapKey = k) => { if (!editing || changed(snapKey)) body[k] = v; };
     if (!editing) body.type = T.key;
@@ -771,7 +722,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       const v = f.kind === 'toggle' ? (vals[f.key] ?? 'no') : (vals[f.key] ?? '').trim();
       if (editing) {
         if (!changed('fields.' + f.key)) return;
-        if (f.secret && !v) return; // blank secret = keep
+        if (f.secret && !v) return;
         fields[f.key] = v;
       } else if (v) fields[f.key] = v;
     });
@@ -786,7 +737,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       if (critical) {
         put('lock_admin', lockAdmin);
         put('lock_manager', lockManager);
-        if (!hasMain) put('lock_otp', lockOtp);
+        put('lock_otp', lockOtp);
         put('lock_admin_user_id', lockAdmin && prot.adminUserId ? Number(prot.adminUserId) : null, 'lock_admin');
         put('lock_manager_user_id', lockManager && prot.managerUserId ? Number(prot.managerUserId) : null, 'lock_manager');
       }
@@ -844,7 +795,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
   };
 
-  /* ── render ── */
   const typeItems = T.fields.map(fieldItem);
   const l = T.label.toLowerCase();
   const updated = detail?.updated_at
@@ -883,16 +833,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           )}
           <Section ico="lock" title="Credential Details" sub={`ID, name and category of this ${l} credential`} items={s1} wide={wide} />
           <Section ico={T.icon} title={`${T.label} Details`} sub={`${T.description || `Only the fields a ${l} needs`} — only what a ${l} needs`}
-            items={typeItems} wide={wide} after={toggleCard} />
+            items={typeItems} wide={wide} />
           {xtItems.length > 0 && <Section ico={SHIELD_CHECK} title="Recovery & Proof" sub={xtSub} items={xtItems} wide={wide} />}
-          <Section ico="shield" title="Security Details" sub={secSub} items={s3} wide={wide} after={mainCard} />
+          <Section ico="shield" title="Security Details" sub={secSub} items={s3} wide={wide} />
           {critical && canProtect && (
             <div id="cpSec">
               <Section ico="lock" title="Critical Access Protection" sub="Locks this credential behind approvals and 2FA — applied every time it is revealed" wide={false}
                 items={[{
                   span: 4,
                   render: () => (
-                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={hasMain} twofaOn={twofaOn}
+                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={false} twofaOn={twofaOn}
                       set={p => { if ('adminUserId' in p || 'managerUserId' in p) protIdsTouched.current = true; setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
                       adminOptions={adminOptions} managerOptions={managerOptions} auth={auth} authBox={authBox} errors={errors} />
                   ),
@@ -921,6 +871,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           </div>
         </div>
       </div>
+      {askDiscard && (
+        <ConfirmModal title="Discard your changes?" sub="The changes you made in this form will be lost." icon={IC.close}
+          confirmLabel="Discard" confirmIcon={IC.close} onConfirm={() => { setAskDiscard(false); onCloseRef.current(); }}
+          onClose={() => setAskDiscard(false)} />
+      )}
     </div>
   );
 }
