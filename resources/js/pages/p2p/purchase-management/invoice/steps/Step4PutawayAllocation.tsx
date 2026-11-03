@@ -1031,10 +1031,34 @@ const SCAN_SLOT_LABEL: Record<string, string> = {
 };
 
 /** Map the server's frozen box log to the popover's entries. The UI-only
- *  breadcrumbs (pick / zone / method) are not persisted, so the log shows the
- *  real events: assign, scan, confirm, release. */
-const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] =>
-  rows.flatMap((r): LogEntry[] => {
+ *  breadcrumbs (pick / method) are not persisted, so for a clean MANUAL putaway
+ *  the two real events (location selected, placed) are expanded into the four
+ *  Stage-4 steps — Steps 1 & 3 borrow the adjacent real time (CS-1144). A Zebra
+ *  or edged log (scans, failures, release) keeps the per-event mapping. */
+const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] => {
+  const hasDeviceFlow = rows.some(r =>
+    ['task_created', 'task_cancelled', 'scan_passed', 'scan_failed', 'confirmed_device'].includes(r.event));
+  const released = rows.some(r => r.event === 'released');
+  const assigned = [...rows].reverse().find(r => r.event === 'assigned' || r.event === 'reassigned');
+  const confirmed = [...rows].reverse().find(r => r.event === 'confirmed_manual');
+
+  if (assigned && !hasDeviceFlow && !released) {
+    const aTime = logTime(assigned.at), aBy = assigned.actor ?? null, loc = assigned.location ?? '';
+    const steps: LogEntry[] = [
+      { k: 'task', t: 'Step 1 · Box picked', d: '', time: aTime, by: aBy },
+      { k: 'loc', t: 'Step 2 · Location selected', d: loc, time: aTime, by: aBy },
+    ];
+    if (confirmed) {
+      const cTime = logTime(confirmed.at), cBy = confirmed.actor ?? null;
+      steps.push(
+        { k: 'task', t: 'Step 3 · Manual confirmation', d: 'Manual confirmation', time: cTime, by: cBy },
+        { k: 'done', t: 'Step 4 · Putaway placed', d: confirmed.location ?? loc, time: cTime, by: cBy },
+      );
+    }
+    return steps;
+  }
+
+  return rows.flatMap((r): LogEntry[] => {
     const time = logTime(r.at);
     const by = r.actor ?? null;
     const withDev = (s: string) => [s, r.device].filter(Boolean).join(' · ');
@@ -1055,6 +1079,7 @@ const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] =>
       default:                 return [];
     }
   });
+};
 
 function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose }: {
   anchor: HTMLElement | null;
@@ -1413,6 +1438,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
      replaces the session-built log, which was stamped with THIS session's
      clock and so looked different each time the SPI was opened (CS-1144). */
   const [serverLog, setServerLog] = useState<LogEntry[]>([]);
+  // The box's real server timestamps (task created + each leg scanned), read
+  // from the frozen activity so the Zebra view shows the same time as the log
+  // instead of this session's clock. (CS-1144)
+  const [legTimes, setLegTimes] = useState<{ created?: string; box?: string; shelf?: string }>({});
   const logBtnRef = useRef<HTMLButtonElement>(null);
   const addLog = (code: string | null | undefined, k: LogKind, t: string, d = '') => {
     if (!code) return;
@@ -1460,6 +1489,26 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       .catch(() => { if (live) setServerLog([]); });
     return () => { live = false; };
   }, [logsOpen, box?.id, spiId, placedAt, scanSteps]);
+
+  // Real timestamps for the Zebra view, so its times match the frozen log.
+  useEffect(() => {
+    if (!box || !spiId || !scanTask) { setLegTimes({}); return; }
+    let live = true;
+    spiApi.putawayBoxActivity(spiId, box.id)
+      .then(res => {
+        if (!live) return;
+        const t: { created?: string; box?: string; shelf?: string } = {};
+        res.timeline.forEach(r => {
+          if (!r.at) return;
+          if (r.event === 'task_created') t.created = r.at;
+          if (r.event === 'scan_passed' && r.slot === 'box') t.box = r.at;
+          if (r.event === 'scan_passed' && r.slot === 'shelf') t.shelf = r.at;
+        });
+        setLegTimes(t);
+      })
+      .catch(() => { if (live) setLegTimes({}); });
+    return () => { live = false; };
+  }, [box?.id, spiId, scanTask?.id, scanSteps]);
 
   const qrBox = qrFor ? all.find(b => b.code === qrFor) ?? null : null;
   const qrRaw = useMemo(() => (qrFor ? boxes.find(b => b.box_code === qrFor) : undefined), [boxes, qrFor]);
@@ -1937,8 +1986,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 anchor={logBtnRef.current}
                 boxCode={box?.code ?? null}
                 entries={serverLog}
+                /* Session method first; then fall back to the persisted log so a
+                   completed putaway reopened later still names how it was placed,
+                   instead of "Method not chosen". (CS-1144) */
                 method={methodPick === 'zebra' || scanTask ? 'Using Zebra Device'
                   : methodPick === 'manual' ? 'Manual Confirmation'
+                  : serverLog.some(e => /manual/i.test(e.t) || /manual/i.test(e.d)) ? 'Manual Confirmation'
+                  : serverLog.some(e => e.k === 'scan' || /zebra|scanned|device/i.test(e.t)) ? 'Using Zebra Device'
                   : 'Method not chosen'}
                 task={scanTask?.id ?? null}
                 scans={scanTask ? scanSteps : 0}
@@ -2177,7 +2231,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             allocRef={methodRef.alloc}
             onCancelTask={() => setCancelAsk(true)}
             spiCode={spiCode}
-            createdAt={new Date(scanTask.at).toLocaleString('en-GB',
+            createdAt={new Date(legTimes.created ?? scanTask.at).toLocaleString('en-GB',
               { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
               .replace(',', ' ·')}
             box={{ code: box.code, name: box.name }}
@@ -2195,6 +2249,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             }}
             reservedPct={reserved}
             serverScans={scanSteps}
+            boxScannedAt={legTimes.box}
+            shelfScannedAt={legTimes.shelf}
             onClose={() => setScanOpen(false)}
             onScan={(leg, ok) => {
               const what = leg === 'box' ? 'Box QR' : sp.kind === 'zone' ? 'Zone QR' : 'Shelf QR';

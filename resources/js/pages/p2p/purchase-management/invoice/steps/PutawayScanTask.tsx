@@ -90,6 +90,7 @@ const F = ({ k, v, na }: { k: string; v: ReactNode; na?: boolean }) => (
 export default function PutawayScanTask({
   taskId, allocRef = null, spiCode = null, createdAt, box, spot, reservedPct,
   onClose, onComplete, onCancelTask, onScan, serverScans = 0,
+  boxScannedAt, shelfScannedAt,
 }: {
   taskId: string;
   /** What the allocation is locked under once both scans pass. */
@@ -108,14 +109,20 @@ export default function PutawayScanTask({
   /** Each leg as it resolves, so the stage can write it into the scan logs. */
   onScan?: (leg: 'box' | 'loc', ok: boolean) => void;
   serverScans?: number;
+  /** Real server scan times (ISO) so the legs show the same time as the log,
+   *  not this session's clock. Absent → fall back to the clock for a live scan. */
+  boxScannedAt?: string;
+  shelfScannedAt?: string;
 }) {
   const [qr, setQr] = useState<Leg>({ state: 'idle' });
   const [sh, setSh] = useState<Leg>({ state: 'idle' });
 
   useEffect(() => {
-    if (serverScans >= 1) setQr(l => (l.state === 'ok' ? l : { state: 'ok', at: clock() }));
-    if (serverScans >= 2) setSh(l => (l.state === 'ok' ? l : { state: 'ok', at: clock() }));
-  }, [serverScans]);
+    const at = (iso?: string, prev?: string) =>
+      iso ? new Date(iso).toLocaleTimeString('en-GB', { hour12: false }) : (prev ?? clock());
+    if (serverScans >= 1) setQr(l => (l.state === 'fail' ? l : { state: 'ok', at: at(boxScannedAt, l.at) }));
+    if (serverScans >= 2) setSh(l => (l.state === 'fail' ? l : { state: 'ok', at: at(shelfScannedAt, l.at) }));
+  }, [serverScans, boxScannedAt, shelfScannedAt]);
   const done = qr.state === 'ok' && sh.state === 'ok';
   const failed = qr.state === 'fail' || sh.state === 'fail';
   /* "Putaway Completed", not "Device Verified · 2/2". Once both legs pass the
