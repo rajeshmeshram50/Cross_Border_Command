@@ -134,7 +134,7 @@ export interface CredentialRow {
   name: string; url: string | null; username: string | null; scope: 'personal' | 'team';
   owner: { id: number; name: string | null; initials: string; is_me: boolean };
   department: { id: number; name: string | null } | null;
-  risk: Risk; strength: number; strength_label: string; strength_pct: number; has_password: boolean; twofa: Twofa;
+  risk: Risk; strength: string | null; strength_level: number; has_password: boolean; twofa: Twofa;
   rotation_days: number | null; next_rotation_due: string | null; rotation_state: 'ok' | 'soon' | 'over' | null;
   protected: boolean; lock_steps: LockStep[];
   access: { permission: Perm; via: Via } | null; can: Can | null; unlock: UnlockState | null;
@@ -240,27 +240,30 @@ export type Loose = Record<string, any>;
 
 let metaCache: Promise<Meta> | null = null;
 
+const vaultPath = (critical: boolean) => (critical ? '/critical-vault' : '/normal-vault');
+
 export const cvApi = {
   /* Setup */
   meta: (fresh = false): Promise<Meta> => {
     if (!metaCache || fresh) metaCache = get<{ data: Meta }>('/meta').then(r => r.data).catch(e => { metaCache = null; throw e; });
     return metaCache;
   },
-  approvers: (q?: string) => get<{ data: Loose }>('/approvers', { q }).then(r => r.data),
-  newAuthenticator: (label?: string) => send<{ data: { secret: string; secret_display: string; otpauth_uri: string; works_with: string } }>('post', '/authenticator/new', { label }).then(r => r.data),
+  approvers: (q?: string) => get<{ data: Loose }>('/critical-vault/approvers', { q }).then(r => r.data),
+  newAuthenticator: (label?: string) => send<{ data: { secret: string; secret_display: string; otpauth_uri: string; works_with: string } }>('post', '/critical-vault/two-step/google/new', { label }).then(r => r.data),
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength: number; meets_policy: boolean } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
   /* Credentials */
   list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', q),
-  nextCode: () => get<{ data: { next_code: string } }>('/credentials/next-code').then(r => r.data.next_code),
+  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow>>(`${vaultPath(critical)}/credentials`, q),
+  nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
   /** JSON, or FormData when files go with it (sent as POST — PHP reads no multipart PUT). */
-  create: (body: Loose | FormData) => send<{ data: CredentialDetail; message: string }>('post', '/credentials', body),
-  update: (id: number, body: Loose | FormData) => (body instanceof FormData
-    ? send<{ data: CredentialDetail; message: string }>('post', `/credentials/${id}`, body)
-    : send<{ data: CredentialDetail; message: string }>('put', `/credentials/${id}`, body)),
-  remove: (id: number) => send<{ message: string; data: { id: number; purges_at?: string; removed_share?: boolean } }>('delete', `/credentials/${id}`),
+  create: (body: Loose | FormData, critical = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials`, body),
+  update: (id: number, body: Loose | FormData, critical = false) => (body instanceof FormData
+    ? send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials/${id}`, body)
+    : send<{ data: CredentialDetail; message: string }>('put', `${vaultPath(critical)}/credentials/${id}`, body)),
+  remove: (id: number, critical = false) => send<{ message: string; data: { id: number; purges_at?: string; removed_share?: boolean } }>('delete', `${vaultPath(critical)}/credentials/${id}`),
   reveal: (id: number, action: 'reveal' | 'copy', field?: string) => send<{ data: { field: string; label: string; value: string; hide_after_seconds: number; clear_clipboard_after: number } }>('post', `/credentials/${id}/reveal`, { action, field }).then(r => r.data),
   event: (id: number, action: 'view' | 'launch' | 'copy', field?: string) => send('post', `/credentials/${id}/events`, { action, field }),
   activity: (id: number, page = 1) => get<{ data: AuditEvent[]; meta: PageMeta }>(`/credentials/${id}/activity`, { page }),
@@ -278,14 +281,14 @@ export const cvApi = {
   organisation: () => get<{ data: Loose }>('/team/organisation').then(r => r.data),
 
   /* Access requests */
-  requestAccess: (credId: number, body: { reason?: string; duration_minutes?: number }) => send<{ data: AccessRequestRow; message: string }>('post', `/credentials/${credId}/access-requests`, body),
-  requests: (q: Q) => get<ListResponse<AccessRequestRow>>('/access-requests', q),
-  request: (id: number) => get<{ data: AccessRequestRow }>(`/access-requests/${id}`).then(r => r.data),
-  approve: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/access-requests/${id}/approve`, { note }),
-  reject: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/access-requests/${id}/reject`, { note }),
-  cancel: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/access-requests/${id}/cancel`, {}),
-  verifyOtp: (id: number, code: string) => send<{ data: AccessRequestRow; message: string }>('post', `/access-requests/${id}/verify-otp`, { code }),
-  lock: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/access-requests/${id}/lock`, {}),
+  requestAccess: (credId: number, body: { reason?: string; duration_minutes?: number }) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/credentials/${credId}/access-requests`, body),
+  requests: (q: Q) => get<ListResponse<AccessRequestRow>>('/critical-vault/access-requests', q),
+  request: (id: number) => get<{ data: AccessRequestRow }>(`/critical-vault/access-requests/${id}`).then(r => r.data),
+  approve: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/approve`, { note }),
+  reject: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/reject`, { note }),
+  cancel: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/cancel`, {}),
+  verifyOtp: (id: number, code: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/verify-otp`, { code }),
+  lock: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/lock`, {}),
 
   /* Password Health */
   health: (q: Q) => get<{ data: HealthIssue[]; tabs: Record<string, number>; meta: PageMeta; summary: Loose }>('/health', q),

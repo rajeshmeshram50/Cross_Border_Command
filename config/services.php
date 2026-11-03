@@ -85,4 +85,9 @@ return [
         'expense_title_cf' => env('ZOHO_BOOKS_EXPENSE_TITLE_CF', 'cf_expense_title'),
     ],
 
+    // CredVault Critical Vault — the inbox email 2-step codes go to unless the owner picks another.
+    'credvault' => [
+        'otp_email' => env('CREDVAULT_OTP_EMAIL', 'php@inhpl.com'),
+    ],
+
 ];

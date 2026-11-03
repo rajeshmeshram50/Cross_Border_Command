@@ -31,7 +31,8 @@ class AuditLog extends Model
         'cancel'       => ['Request cancelled', 'info'],
         'unlock'       => ['Critical unlocked', 'critical'],
         'lock'         => ['Locked again', 'info'],
-        'otp_failed'   => ['Wrong authenticator code', 'warn'],
+        'otp_failed'   => ['Wrong 2-step code', 'warn'],
+        'otp_sent'     => ['Email code sent', 'info'],
         'export'       => ['Exported', 'critical'],
         'bin'          => ['Moved to bin', 'warn'],
         'restore'      => ['Restored', 'info'],
@@ -41,7 +42,7 @@ class AuditLog extends Model
         'backup'       => ['Backup created', 'warn'],
         'backupfail'   => ['Backup attempt failed', 'critical'],
         'health_fixed' => ['Health issue resolved', 'info'],
-        'totp_linked'  => ['Authenticator linked', 'info'],
+        'totp_linked'  => ['2-step linked', 'info'],
     ];
 
     /** Actions that touch a secret directly — on a critical credential they are security alerts. */
@@ -53,10 +54,10 @@ class AuditLog extends Model
         'launch' => 'launched the website of', 'create' => 'added', 'edit' => 'updated', 'share' => 'shared',
         'revoke' => 'revoked access to', 'request' => 'requested access to', 'approve' => 'approved access to',
         'reject' => 'rejected access to', 'cancel' => 'cancelled the access request for', 'unlock' => 'unlocked',
-        'lock' => 'locked', 'otp_failed' => 'entered wrong authenticator codes for', 'export' => 'exported',
+        'lock' => 'locked', 'otp_failed' => 'entered wrong 2-step codes for', 'otp_sent' => 'had an email code sent for', 'export' => 'exported',
         'bin' => 'moved to the recycle bin', 'restore' => 'restored', 'purge' => 'permanently deleted',
         'policy' => 'changed a CredVault policy', 'importx' => 'imported credentials', 'backup' => 'downloaded a backup',
-        'backupfail' => 'attempted a backup', 'health_fixed' => 'resolved a health issue on', 'totp_linked' => 'linked an authenticator to',
+        'backupfail' => 'attempted a backup', 'health_fixed' => 'resolved a health issue on', 'totp_linked' => 'linked 2-step verification to',
     ];
 
     public const SEVERITY_LABELS = ['info' => 'Info', 'warn' => 'Warning', 'critical' => 'Critical'];

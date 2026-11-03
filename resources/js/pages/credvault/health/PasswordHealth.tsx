@@ -104,7 +104,7 @@ function Detail({ x, fixed }: { x: HealthIssue; fixed: boolean }) {
   if (fixed) return x.detail ? <div className="ph-dl"><small>{x.detail}</small></div> : <span className="ph-act">—</span>;
   if (x.type === 'weak') {
     const st = num(d.strength ?? c.strength);
-    return <StrengthCell row={{ has_password: c.has_password !== false, strength: st, strength_label: d.strength_label || STR_LBL[st] || 'Weak' }} />;
+    return <StrengthCell row={{ has_password: c.has_password !== false, strength_level: st, strength: d.strength_label || STR_LBL[st] || 'Weak' }} />;
   }
   if (x.type === 'reused') {
     const same = (d.same_as ?? []) as { id: number; code: string; name: string }[];

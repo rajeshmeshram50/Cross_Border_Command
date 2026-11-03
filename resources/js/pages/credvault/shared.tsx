@@ -418,14 +418,14 @@ export function RiskFlag({ risk }: { risk: Risk }) {
   return <div className="znm-flagcell"><span className={`znm-flag mv-rk mv-rk--${risk}`}><i />{cap(risk)}</span></div>;
 }
 
-export function StrengthCell({ row }: { row: Pick<CredentialRow, 'has_password' | 'strength' | 'strength_label'> }) {
+export function StrengthCell({ row }: { row: Pick<CredentialRow, 'has_password' | 'strength' | 'strength_level'> }) {
   if (!row.has_password) return <span className="znm-flag znm-flag--no">N/A</span>;
-  const pct = row.strength * 25;
-  const lv = STR_LV[row.strength] || 'weak';
+  const pct = row.strength_level * 25;
+  const lv = STR_LV[row.strength_level] || 'weak';
   return (
-    <div className={`mv-sg mv-sg--${lv}`} title={`Password strength: ${row.strength_label} · ${pct}/100`}>
+    <div className={`mv-sg mv-sg--${lv}`} title={`Password strength: ${row.strength ?? ''} · ${pct}/100`}>
       <div className="mv-sg__top">
-        <span className="mv-sg__lbl"><i />{row.strength_label}</span>
+        <span className="mv-sg__lbl"><i />{row.strength}</span>
         <span className="mv-sg__sc">{pct}<small>/100</small></span>
       </div>
       <div className="mv-sg__track"><span className="mv-sg__fill" style={{ width: `${pct}%` }} /><span className="mv-sg__knob" style={{ left: `${pct}%` }} /></div>

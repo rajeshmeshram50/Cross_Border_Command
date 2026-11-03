@@ -25,6 +25,12 @@ class Credential extends Model
     public const SCOPES = ['personal', 'team'];
     public const RISKS  = ['low', 'medium', 'high', 'critical'];
     public const TWOFA  = ['yes', 'no', 'na'];
+
+    /** One table, two vaults, each with its own code series: CRD-0001 … and CCRD-0001 … */
+    public const VAULTS = ['normal', 'critical'];
+    public const VAULT_PREFIX = ['normal' => 'CRD', 'critical' => 'CCRD'];
+    /** Critical-vault 2-step: an authenticator app (Google / Microsoft / Authy) or a code sent by email. */
+    public const TWOFA_METHODS = ['google', 'email'];
     public const ROTATIONS = [30, 60, 90, 180];
 
     public const STRENGTH_LABELS = [0 => '', 1 => 'Weak', 2 => 'Fair', 3 => 'Good', 4 => 'Strong'];
@@ -216,9 +222,9 @@ class Credential extends Model
     ];
 
     protected $fillable = [
-        'client_id', 'branch_id', 'code', 'type', 'category_group', 'name', 'scope', 'owner_id', 'department_id',
+        'client_id', 'branch_id', 'code', 'vault', 'type', 'category_group', 'name', 'scope', 'owner_id', 'department_id',
         'url', 'username', 'secret', 'secret_hash', 'fields', 'notes', 'attachments',
-        'risk', 'strength', 'has_password', 'twofa', 'rotation_days', 'password_changed_at',
+        'risk', 'strength', 'has_password', 'twofa', 'twofa_method', 'twofa_email', 'twofa_linked_at', 'rotation_days', 'password_changed_at',
         'lock_admin', 'lock_manager', 'lock_otp', 'lock_admin_user_id', 'lock_manager_user_id',
         'totp_secret', 'totp_linked_at',
         'created_by', 'updated_by', 'deleted_by',
@@ -241,6 +247,7 @@ class Credential extends Model
         'lock_otp'            => 'boolean',
         'password_changed_at' => 'datetime',
         'totp_linked_at'      => 'datetime',
+        'twofa_linked_at'     => 'datetime',
     ];
 
     /** Each type's tile icon — the prototype's `ico` per CRD_TYPES entry (names of its CRD_I set). */
@@ -357,22 +364,45 @@ class Credential extends Model
     /**
      * The unlock steps in force, in their fixed order — the credential's own
      * switches, each gated by the tenant policy, as the prototype's cpLock().
-     * The admin and manager steps exist only on a critical credential; the
-     * authenticator step is the policy's cp_otp on a critical one, and the
-     * credential's own 2FA lock on any other.
+     * Only the Critical Vault has steps: in the Normal Vault 2-step is a flag
+     * that is recorded, never asked for.
      *
      * @return string[] subset of ['admin', 'manager', 'otp']
      */
     public function lockSteps(): array
     {
+        if (!$this->isCriticalVault()) return [];
         $p = Policy::for((int) $this->client_id);
-        $critical = $this->risk === 'critical';
 
         return array_keys(array_filter([
-            'admin'   => $critical && $p['cp_admin'] && $this->lock_admin,
-            'manager' => $critical && $p['cp_manager'] && $this->lock_manager,
-            'otp'     => $this->lock_otp && (!$critical || $p['cp_otp']),
+            'admin'   => $p['cp_admin'] && $this->lock_admin,
+            'manager' => $p['cp_manager'] && $this->lock_manager,
+            'otp'     => $p['cp_otp'] && $this->lock_otp,
         ]));
+    }
+
+    public function isCriticalVault(): bool
+    {
+        return $this->vault === 'critical';
+    }
+
+    /** The 2-step method is set up and verified — the unlock's code step can run. */
+    public function twoStepLinked(): bool
+    {
+        return match ($this->twofa_method) {
+            'google' => (bool) $this->totp_linked_at,
+            'email'  => $this->twofa_linked_at && filled($this->twofa_email),
+            default  => false,
+        };
+    }
+
+    /** "ph•••@inhpl.com" — where an email code goes, without spelling it out. */
+    public static function maskEmail(?string $email): ?string
+    {
+        if (!$email || !str_contains($email, '@')) return null;
+        [$local, $domain] = explode('@', $email, 2);
+
+        return mb_substr($local, 0, 2) . '•••@' . $domain;
     }
 
     /** Whether any unlock step guards this credential right now. */
@@ -381,10 +411,10 @@ class Credential extends Model
         return $this->lockSteps() !== [];
     }
 
-    /** The critical-vault display id, CCRD-0012 for CRD-0012 — stable, unlike the prototype's position count. */
+    /** The critical-vault id (CCRD-0012) — its own series, so it is simply the code. */
     public function criticalCode(): ?string
     {
-        return $this->risk === 'critical' && $this->code ? 'C' . $this->code : null;
+        return $this->isCriticalVault() ? $this->code : null;
     }
 
     public function owner(): BelongsTo

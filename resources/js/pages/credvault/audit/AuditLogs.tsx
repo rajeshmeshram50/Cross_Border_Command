@@ -2,16 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type AuditEvent, type PageMeta } from '../cvApi';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { CvPage, CvStrip, StripBtn, CvPager, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
+import CrdSelect from '../form/CrdSelect';
 import './audit.css';
-
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault Audit Logs — the prototype's auditLogsBody: tabs (all / mine /
- * team / alerts), the time-range switch with its custom date popover, search,
- * the summary strip, and the day-grouped timeline (alListHtml). The API
- * scopes it: a Vault Admin sees the company, anyone else their own events
- * and the events on credentials they own.
- * ───────────────────────────────────────────────────────────────────────── */
 
 const CAL = '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
 const PULSE = '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>';
@@ -22,7 +16,6 @@ const MONITOR = '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y
 const SLIDERS = '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>';
 const FILTER = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
 
-/** Each action's timeline icon (the prototype's AL_ACT[k][1]). */
 const ACT_ICON: Record<string, string> = {
   view: IC.view, reveal: IC.view, copy: IC.copy,
   launch: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
@@ -91,13 +84,11 @@ export default function AuditLogs() {
     action: action || undefined, credential_id: credId ?? undefined, q: dq || undefined,
   }), [tab, range, from, to, action, credId, dq]);
 
-  // The page belongs to one set of filters: any filter change starts again at page 1.
   const fkey = JSON.stringify(filters);
   const [pg, setPg] = useState({ key: fkey, page: 1 });
   const page = pg.key === fkey ? pg.page : 1;
   const setPage = useCallback((p: number) => setPg({ key: fkey, page: p }), [fkey]);
 
-  // A stale response must not overwrite a newer one when filters change quickly.
   const seq = useRef(0);
   const load = useCallback(async () => {
     const my = ++seq.current;
@@ -154,7 +145,6 @@ export default function AuditLogs() {
     ? `${fmtD(from) || 'start'} – ${fmtD(to) || 'today'}`
     : range === '24h' ? 'last 24 hours' : range === '7d' ? 'last 7 days' : range === '30d' ? 'last 30 days' : 'all time';
 
-  /* ── summary strip (alSummaryHtml) ── */
   const card = (cls: string, ico: string, v: number | string, l: string, sub: string) => (
     <div className={`phx-card phx-card--${cls}`} key={cls}>
       <span className="phx-card__glow" />
@@ -183,7 +173,6 @@ export default function AuditLogs() {
     </div>
   );
 
-  /* ── timeline (alListHtml) ── */
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   const dayLbl = (iso: string) => {
     const x = new Date(iso); x.setHours(0, 0, 0, 0);
@@ -321,10 +310,10 @@ export default function AuditLogs() {
 
         <div className="cva-filters">
           <span className="cva-filters__l"><Svg d={FILTER} size={12} />Filter</span>
-          <select className="cva-sel" value={action} onChange={e => setAction(e.target.value)} aria-label="Action">
-            <option value="">All actions</option>
-            {(meta?.audit_actions ?? []).map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
-          </select>
+          <div className="cva-sel-ms" style={{ minWidth: 200 }}>
+            <CrdSelect value={action} onChange={setAction}
+              options={[{ value: '', label: 'All actions' }, ...(meta?.audit_actions ?? []).map(a => ({ value: a.key, label: a.label }))]} />
+          </div>
           {credId && (
             <span className="cva-chip"><Svg icon="lock" size={11} />{credLabel || `Credential #${credId}`}
               <button type="button" data-h40="skip" onClick={clearCred} aria-label="Clear credential filter"><Svg d={IC.close} size={11} sw={2.6} /></button>
@@ -343,7 +332,6 @@ export default function AuditLogs() {
   );
 }
 
-/** "Custom date range" popover (alCustOpen / alCustApply). */
 function CustomRange({ from, to, onApply, onClose }: { from: string; to: string; onApply: (f: string, t: string) => void; onClose: () => void }) {
   const today = ymd(new Date());
   const [f, setF] = useState(from || ymd(new Date(Date.now() - 29 * 864e5)));
@@ -351,7 +339,7 @@ function CustomRange({ from, to, onApply, onClose }: { from: string; to: string;
   const [e, setE] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const out = (ev: MouseEvent) => { if (ref.current && !ref.current.contains(ev.target as Node) && !(ev.target as HTMLElement).closest('.al-cust')) onClose(); };
+    const out = (ev: MouseEvent) => { if (ref.current && !ref.current.contains(ev.target as Node) && !(ev.target as HTMLElement).closest('.al-cust') && !(ev.target as HTMLElement).closest('.master-datepicker-popup')) onClose(); };
     const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose(); };
     document.addEventListener('mousedown', out);
     document.addEventListener('keydown', esc);
@@ -364,8 +352,8 @@ function CustomRange({ from, to, onApply, onClose }: { from: string; to: string;
   return (
     <div className="al-pop cva-pop" ref={ref} role="dialog" aria-label="Custom date range">
       <div className="al-pop__hd"><Svg d={CAL} size={14} /><b>Custom date range</b></div>
-      <div className="al-pop__f"><label>From</label><input type="date" max={today} value={f} onChange={x => { setF(x.target.value); setE(''); }} /></div>
-      <div className="al-pop__f"><label>To</label><input type="date" max={today} value={t} onChange={x => { setT(x.target.value); setE(''); }} /></div>
+      <div className="al-pop__f"><label>From</label><MasterDatePicker maxDate={today} value={f} onChange={v => { setF(v); setE(''); }} /></div>
+      <div className="al-pop__f"><label>To</label><MasterDatePicker maxDate={today} value={t} onChange={v => { setT(v); setE(''); }} /></div>
       <div className="al-pop__err">{e}</div>
       <div className="al-pop__a">
         <button type="button" data-h40="skip" className="al-pop__btn" onClick={onClose}>Cancel</button>

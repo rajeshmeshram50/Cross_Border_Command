@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "CredVault — Password Manager API",
-        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
+        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Two vaults: normal-vault/* (CRD-0001…, 2-step only recorded) and critical-vault/* (CCRD-0001…, approvals + 2-step by Google Authenticator or email). Everything else is shared.\r\n3. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -195,7 +195,7 @@
                     ]
                 },
                 {
-                    "name": "Next credential code (preview)",
+                    "name": "Next CRD- code — Normal Vault (preview)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -205,12 +205,48 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/next-code",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/next-code",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
+                                "credentials",
+                                "next-code"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Next CCRD- code — Critical Vault (preview)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/next-code",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
                                 "credentials",
                                 "next-code"
                             ]
@@ -239,12 +275,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/approvers",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/approvers",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "approvers"
                             ]
                         }
@@ -536,8 +573,8 @@
             ]
         },
         {
-            "name": "02 · My Vault — credentials",
-            "description": "Add, view, edit, reveal. A list or detail response never carries a secret — /reveal is the only way out, and every reveal is audited.",
+            "name": "02 · Normal Vault (My Vault) — credentials",
+            "description": "CRD-0001 … — risk low, medium or high; the 2FA switch is only recorded, nothing is linked or asked on reveal. Add, view, edit, reveal. A list or detail response never carries a secret — /reveal is the only way out, and every reveal is audited.",
             "item": [
                 {
                     "name": "Create login",
@@ -554,12 +591,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -588,6 +626,100 @@
                     ]
                 },
                 {
+                    "name": "Create — 2FA on is only recorded (no link, no lock)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Wiki 2FA {{$timestamp}}\",\n    \"twofa\": true,\n    \"fields\": {\n        \"url\": \"https://wiki.example.com\",\n        \"username\": \"wiki\",\n        \"password\": \"Str0ng!Passw0rd#2026\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Create — risk critical refused (422, use the Critical Vault)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Crit {{$timestamp}}\",\n    \"risk\": \"critical\",\n    \"fields\": {\n        \"url\": \"https://x.example.com\",\n        \"username\": \"a\",\n        \"password\": \"Str0ng!Passw0rd#2026\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "Create — weak password blocked by policy (422)",
                     "request": {
                         "method": "POST",
@@ -602,12 +734,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -648,12 +781,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -694,12 +828,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -740,12 +875,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -784,12 +920,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ]
                         },
@@ -851,12 +988,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?tab=all&page=1&per_page=10",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=all&page=1&per_page=10",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ],
                             "query": [
@@ -898,12 +1036,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?tab=mine",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=mine",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ],
                             "query": [
@@ -937,12 +1076,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?tab=team",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=team",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ],
                             "query": [
@@ -976,12 +1116,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?tab=shared",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=shared",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ],
                             "query": [
@@ -1015,12 +1156,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?q=zoho&type=login&group=Logins%20%26%20Access",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?q=zoho&type=login&group=Logins%20%26%20Access",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials"
                             ],
                             "query": [
@@ -1437,12 +1579,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{credId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{credId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{credId}}"
                             ]
@@ -1484,12 +1627,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{credId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{credId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{credId}}"
                             ]
@@ -1531,12 +1675,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{credId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{credId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{credId}}"
                             ]
@@ -1574,12 +1719,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{docId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{docId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{docId}}"
                             ]
@@ -2178,12 +2324,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{sharedWithMeId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{sharedWithMeId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{sharedWithMeId}}"
                             ]
@@ -2616,7 +2763,7 @@
         },
         {
             "name": "05 · Critical Vault & Access Requests",
-            "description": "Run top to bottom. As in the prototype, the authenticator is linked inside the Add form: \"New authenticator\" returns a secret (saved as {{totpSecret}}), and the save sends it with one code — the pre-request scripts compute {{otpCode}}.\n\nFlow: link app in the save → request → Vault Admin approves → Manager approves → OTP → unlocked for the window → lock.",
+            "description": "CCRD-0001 … — always critical. Run top to bottom. 2-step is linked inside the Add form, by Google Authenticator or by an email code (see 05b). For Google: \"New authenticator\" returns a secret (saved as {{totpSecret}}), and the save sends it with one code — the pre-request scripts compute {{otpCode}}.\n\nFlow: link app in the save → request → Vault Admin approves → Manager approves → OTP → unlocked for the window → lock.",
             "item": [
                 {
                     "name": "New authenticator (QR + setup key)",
@@ -2633,13 +2780,15 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/authenticator/new",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/two-step/google/new",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
-                                "authenticator",
+                                "critical-vault",
+                                "two-step",
+                                "google",
                                 "new"
                             ]
                         },
@@ -2668,6 +2817,154 @@
                     ]
                 },
                 {
+                    "name": "Google — check a code from the app",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/two-step/google/verify",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "two-step",
+                                "google",
+                                "verify"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"secret\": \"{{totpSecret}}\",\n    \"code\": \"{{otpCode}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                                    "const s = (pm.collectionVariables.get('totpSecret') || '').replace(/[^A-Z2-7]/gi, '').toUpperCase();",
+                                    "let bits = ''; for (const c of s) bits += b32.indexOf(c).toString(2).padStart(5, '0');",
+                                    "let hex = ''; for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                                    "const step = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                                    "const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(step), CryptoJS.enc.Hex.parse(hex)).toString();",
+                                    "const off = parseInt(h.substr(-1), 16);",
+                                    "const code = ((parseInt(h.substr(off * 2, 8), 16) & 0x7fffffff) % 1000000).toString().padStart(6, '0');",
+                                    "pm.collectionVariables.set('otpCode', code);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Next CCRD- code (preview)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/next-code",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials",
+                                "next-code"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Create critical — risk high refused (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bad risk {{$timestamp}}\",\n    \"risk\": \"high\",\n    \"fields\": {\n        \"url\": \"https://x.example.com\",\n        \"username\": \"a\",\n        \"password\": \"Str0ng!Passw0rd#2026\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "Create critical card — 2FA not linked (422)",
                     "request": {
                         "method": "POST",
@@ -2682,12 +2979,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials"
                             ]
                         },
@@ -2728,18 +3026,19 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials"
                             ]
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"type\": \"card\",\n    \"name\": \"Corporate Amex {{$timestamp}}\",\n    \"fields\": {\n        \"holder\": \"Accounts Dept\",\n        \"cardno\": \"4111 1111 1111 1111\",\n        \"exp\": \"12/29\",\n        \"cvv\": \"123\",\n        \"issuer\": \"HDFC Bank\"\n    },\n    \"lock_admin\": true,\n    \"lock_manager\": true,\n    \"lock_otp\": true,\n    \"totp_secret\": \"{{totpSecret}}\",\n    \"totp_code\": \"{{otpCode}}\"\n}",
+                            "raw": "{\n    \"type\": \"card\",\n    \"name\": \"Corporate Amex {{$timestamp}}\",\n    \"fields\": {\n        \"holder\": \"Accounts Dept\",\n        \"cardno\": \"4111 1111 1111 1111\",\n        \"exp\": \"12/29\",\n        \"cvv\": \"123\",\n        \"issuer\": \"HDFC Bank\"\n    },\n    \"lock_admin\": true,\n    \"lock_manager\": true,\n    \"lock_otp\": true,\n    \"twofa_method\": \"google\",\n    \"totp_secret\": \"{{totpSecret}}\",\n    \"totp_code\": \"{{otpCode}}\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -2823,19 +3122,16 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?risk=critical&tab=all",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials?tab=all",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials"
                             ],
                             "query": [
-                                {
-                                    "key": "risk",
-                                    "value": "critical"
-                                },
                                 {
                                     "key": "tab",
                                     "value": "all"
@@ -2866,19 +3162,16 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?risk=critical&tab=mine",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials?tab=mine",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials"
                             ],
                             "query": [
-                                {
-                                    "key": "risk",
-                                    "value": "critical"
-                                },
                                 {
                                     "key": "tab",
                                     "value": "mine"
@@ -2909,19 +3202,16 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials?risk=critical&tab=others",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials?tab=others",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials"
                             ],
                             "query": [
-                                {
-                                    "key": "risk",
-                                    "value": "critical"
-                                },
                                 {
                                     "key": "tab",
                                     "value": "others"
@@ -3004,12 +3294,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{criticalId}}/access-requests",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{criticalId}}/access-requests",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials",
                                 "{{criticalId}}",
                                 "access-requests"
@@ -3054,12 +3345,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{criticalId}}/access-requests",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{criticalId}}/access-requests",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials",
                                 "{{criticalId}}",
                                 "access-requests"
@@ -3098,12 +3390,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests?tab=to_me",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=to_me",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests"
                             ],
                             "query": [
@@ -3147,12 +3440,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests?tab=all",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=all",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests"
                             ],
                             "query": [
@@ -3200,12 +3494,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}/approve",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}",
                                 "approve"
@@ -3248,12 +3543,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}/approve",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}",
                                 "approve"
@@ -3306,12 +3602,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}/approve",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}",
                                 "approve"
@@ -3360,12 +3657,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}"
                             ]
@@ -3398,12 +3696,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}/verify-otp",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/verify-otp",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}",
                                 "verify-otp"
@@ -3589,12 +3888,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId}}/lock",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/lock",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId}}",
                                 "lock"
@@ -3628,12 +3928,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{criticalId}}/access-requests",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{criticalId}}/access-requests",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials",
                                 "{{criticalId}}",
                                 "access-requests"
@@ -3678,12 +3979,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId2}}/reject",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId2}}/reject",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId2}}",
                                 "reject"
@@ -3736,12 +4038,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{criticalId}}/access-requests",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{criticalId}}/access-requests",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "credentials",
                                 "{{criticalId}}",
                                 "access-requests"
@@ -3786,12 +4089,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/access-requests/{{requestId3}}/cancel",
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId3}}/cancel",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "critical-vault",
                                 "access-requests",
                                 "{{requestId3}}",
                                 "cancel"
@@ -3805,6 +4109,500 @@
                                     "language": "json"
                                 }
                             }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "05b · Critical Vault — email 2-step",
+            "description": "The second 2-step method. Codes go to {{otpInbox}} (php@inhpl.com by default) — paste the code from the email into {{emailOtpCode}} before each verify. A code lasts 10 minutes and works once; one send per 30 s.",
+            "item": [
+                {
+                    "name": "Email — send a setup code",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/two-step/email/send",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "two-step",
+                                "email",
+                                "send"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{otpInbox}}\",\n    \"label\": \"Treasury server\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.token; if (v !== undefined && v !== null) pm.collectionVariables.set('emailOtpToken', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Email — verify the setup code",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/two-step/email/verify",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "two-step",
+                                "email",
+                                "verify"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{emailOtpToken}}\",\n    \"code\": \"{{emailOtpCode}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Create critical server — email 2-step",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"server\",\n    \"name\": \"Treasury server {{$timestamp}}\",\n    \"fields\": {\n        \"host\": \"10.0.0.9\",\n        \"os\": \"Linux\",\n        \"username\": \"root\",\n        \"password\": \"R00t!Vault#2026x\"\n    },\n    \"lock_admin\": false,\n    \"lock_manager\": true,\n    \"lock_otp\": true,\n    \"twofa_method\": \"email\",\n    \"twofa_email\": \"{{otpInbox}}\",\n    \"email_otp_token\": \"{{emailOtpToken}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('emailCritId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Same token again (422 — a token links one credential)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"server\",\n    \"name\": \"Treasury server 2 {{$timestamp}}\",\n    \"fields\": {\n        \"host\": \"10.0.0.9\",\n        \"username\": \"root\",\n        \"password\": \"R00t!Vault#2026x\"\n    },\n    \"lock_otp\": true,\n    \"twofa_method\": \"email\",\n    \"twofa_email\": \"{{otpInbox}}\",\n    \"email_otp_token\": \"{{emailOtpToken}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Request access (manager step, then the email code)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{emailCritId}}/access-requests",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials",
+                                "{{emailCritId}}",
+                                "access-requests"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('emailRequestId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Approve — Reporting Manager",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{emailRequestId}}/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{emailRequestId}}",
+                                "approve"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Send the unlock code (emailed to the inbox)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{emailRequestId}}/send-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{emailRequestId}}",
+                                "send-otp"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Verify the emailed code → unlocked",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{emailRequestId}}/verify-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{emailRequestId}}",
+                                "verify-otp"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"code\": \"{{emailOtpCode}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Reveal (unlocked)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{emailCritId}}/reveal",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{emailCritId}}",
+                                "reveal"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"reveal\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Lock now",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{emailRequestId}}/lock",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{emailRequestId}}",
+                                "lock"
+                            ]
                         }
                     },
                     "event": [
@@ -5557,12 +6355,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{teamCredId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{teamCredId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{teamCredId}}"
                             ]
@@ -5756,12 +6555,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{teamCredId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{teamCredId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{teamCredId}}"
                             ]
@@ -5884,12 +6684,13 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/credentials/{{docId}}",
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{docId}}",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "credvault",
+                                "normal-vault",
                                 "credentials",
                                 "{{docId}}"
                             ]
@@ -6073,6 +6874,29 @@
         {
             "key": "importRows",
             "value": "[]"
+        },
+        {
+            "key": "otpInbox",
+            "value": "php@inhpl.com",
+            "description": "Critical Vault email 2-step: the inbox the codes go to"
+        },
+        {
+            "key": "emailOtpToken",
+            "value": "",
+            "description": "Saved by \"Email — send a setup code\""
+        },
+        {
+            "key": "emailOtpCode",
+            "value": "",
+            "description": "Paste the 6-digit code from the email before each email verify"
+        },
+        {
+            "key": "emailCritId",
+            "value": ""
+        },
+        {
+            "key": "emailRequestId",
+            "value": ""
         }
     ]
 }

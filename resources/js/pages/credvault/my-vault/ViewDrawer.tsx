@@ -299,8 +299,8 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   /* ── panes ── */
   let body: ReactNode;
   if (tab === 'overview') {
-    const pct = d.strength_pct;
-    const lv = ['', 'weak', 'fair', 'good', 'strong'][d.strength] || 'weak';
+    const pct = d.strength_level * 25;
+    const lv = ['', 'weak', 'fair', 'good', 'strong'][d.strength_level] || 'weak';
     const due = d.next_rotation_due;
     const left = due ? Math.ceil((new Date(due).getTime() - Date.now()) / 864e5) : 0;
     const plain = fields.filter(f => !f.masked && f.kind !== 'file' && f.value && (f.value === d.url || f.value === d.username));
@@ -335,7 +335,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
           {kv('Risk level', <Badge cls={d.risk} dot>{cap(d.risk)}</Badge>)}
           {d.has_password && kv('Password strength', (
             <div className={`mv-sg mv-sg--${lv} vd-sg`}>
-              <div className="mv-sg__top"><span className="mv-sg__lbl"><i />{d.strength_label}</span><span className="mv-sg__sc">{pct}<small>/100</small></span></div>
+              <div className="mv-sg__top"><span className="mv-sg__lbl"><i />{d.strength}</span><span className="mv-sg__sc">{pct}<small>/100</small></span></div>
               <div className="mv-sg__track"><span className="mv-sg__fill" style={{ width: `${pct}%` }} /><span className="mv-sg__knob" style={{ left: `${pct}%` }} /></div>
             </div>
           ))}
