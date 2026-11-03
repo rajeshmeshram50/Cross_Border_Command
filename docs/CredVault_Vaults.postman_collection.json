@@ -17453,7 +17453,628 @@
             ]
         },
         {
-            "name": "12 · Critical Vault — email 2-step",
+            "name": "12 · Share — person or team, with email",
+            "description": "POST /credentials/{id}/shares — the Share Credential popup. After the share is saved, an email goes out with the popup's details: the credential (name, ID, type, username, risk), the permission and what it allows, access until, the reason, and who shared it. Never a secret.\n\n• Individual (recipient_type user): one email to that person.\n• Team (recipient_type team, a department): one email to every active member of the team except the sharer, in Bcc (batches of 50).\n\nThe response's data.mail says what happened: status sent | partly_sent | failed | mail_off | no_recipients, with recipients, sent and failed. A mail failure never undoes the share. The bell notification goes to the same people.",
+            "item": [
+                {
+                    "name": "Share recipients — people and teams",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/share-recipients",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "share-recipients"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.users[0].id; if (v !== undefined && v !== null) pm.collectionVariables.set('shareUserId', String(v)); } catch (e) {}",
+                                    "try { const v = b.data.teams[0].id; if (v !== undefined && v !== null) pm.collectionVariables.set('shareTeamId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Share recipients — search",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/share-recipients?q=a",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "share-recipients"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "a"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Individual — View, 7 days (email to the person)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_login_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_login_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"view\",\n    \"duration_days\": 7,\n    \"reason\": \"Month-end GST filing in Tally\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('shareId', String(v)); } catch (e) {}",
+                                    "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });",
+                                    "pm.test('one recipient', () => pm.expect(b.data.mail.recipients).to.eql(1));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Individual — same person again: renewed as Copy, 30 days (\"Share updated\" email)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_login_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_login_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"copy\",\n    \"duration_days\": 30,\n    \"reason\": \"Needs to copy it into the Tally client\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Team — Use Only, 30 days (email to every member)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_login_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_login_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"team\",\n    \"recipient_id\": \"{{shareTeamId}}\",\n    \"permission\": \"use\",\n    \"duration_days\": 30,\n    \"reason\": \"The team signs in to file shipping invoices\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('teamShareId', String(v)); } catch (e) {}",
+                                    "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Individual — Full Access with an end date (expires_at)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_server_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_server_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-23\",\n    \"reason\": \"Handover while I am on leave\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — View, 1 day (email says it needs the unlock approvals)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{critical_bank_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{critical_bank_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"view\",\n    \"duration_days\": 1,\n    \"reason\": \"Salary upload today\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — Full Access refused (422, no email)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{critical_bank_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{critical_bank_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"duration_days\": 1,\n    \"reason\": \"Not allowed on critical\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "No reason (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_login_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_login_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"view\",\n    \"duration_days\": 7\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Beyond the policy maximum (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials/{{normal_login_id}}/shares",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials",
+                                "{{normal_login_id}}",
+                                "shares"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"view\",\n    \"duration_days\": 90,\n    \"reason\": \"Too long a share\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — all",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — one credential",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?credential_id={{normal_login_id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "credential_id",
+                                    "value": "{{normal_login_id}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Revoke the team share",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares/{{teamShareId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares",
+                                "{{teamShareId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Revoke again (409)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares/{{teamShareId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares",
+                                "{{teamShareId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "13 · Critical Vault — email 2-step",
             "description": "The second method. The code goes to {{otpInbox}} (php@inhpl.com by default). After each send, paste the 6-digit code from the email into {{emailOtpCode}}. A code lasts 10 minutes and works once; one send per 30 s.",
             "item": [
                 {
@@ -17815,7 +18436,7 @@
             ]
         },
         {
-            "name": "13 · Critical Vault — unlock (access requests)",
+            "name": "14 · Critical Vault — unlock (access requests)",
             "description": "Request → Vault Admin approves → Manager approves → 2-step code → unlocked for the window → lock. Google: the pre-request script computes the code. Email: send-otp mails it; paste it into {{emailOtpCode}}.",
             "item": [
                 {
@@ -19074,6 +19695,22 @@
         },
         {
             "key": "normal_login_att",
+            "value": ""
+        },
+        {
+            "key": "shareUserId",
+            "value": ""
+        },
+        {
+            "key": "shareTeamId",
+            "value": ""
+        },
+        {
+            "key": "shareId",
+            "value": ""
+        },
+        {
+            "key": "teamShareId",
             "value": ""
         },
         {

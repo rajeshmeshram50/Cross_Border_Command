@@ -1,9 +1,10 @@
 # CredVault — Normal Vault & Critical Vault: Backend API Sheet
 
 **Scope:** backend only — the APIs of My Vault (Normal Vault) and the Critical Vault, and the Postman collection for them.
-**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 14 folders, 252 requests. Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single.
+**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 15 folders, 266 requests. Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single. Plus **Share with email** to a person or a team.
 **Last checked:** 03/11/2026:
-- **Collection:** 249 / 249 passed (the 3 logins are skipped because the runner uses ready-made tokens).
+- **Collection:** 263 / 263 passed (the 3 logins are skipped because the runner uses ready-made tokens).
+- **Share email:** 19 / 19 checks, plus the Bcc check (§2, Share).
 - **API read-back:** 513 / 513 checks on every credential, list and single.
 - **Database:** every saved field checked against the request.
 
@@ -82,6 +83,64 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 ### Strength in the responses
 
 The list rows (`GET …/credentials`) and the single credential (`GET /credentials/{id}`) return strength as a **name**: `"strength": "Strong"`. The names are `Weak`, `Fair`, `Good`, `Strong`, or `null` when the type has no password (e.g. Passkey, ID documents). There is **no percentage** (`strength_pct` was removed). `strength_level` (0–4) is there for sorting.
+
+### Share — with an email to the person or the team
+
+`POST /credvault/credentials/{id}/shares` — the **Share Credential** popup, for either vault. Needs Full Access on the credential.
+
+| Field | Values | Popup |
+|---|---|---|
+| `recipient_type` | `user` \| `team` | Individual / Team |
+| `recipient_id` | a user id, or a department id | Share with (from `GET /share-recipients`: `users[]`, and `teams[]` with member counts) |
+| `permission` | `use` \| `view` \| `copy` \| `full` | Use Only · View · Copy · Full Access |
+| `duration_days` *or* `expires_at` | 1 \| 7 \| 30 (\| 90) · or a date `Y-m-d` | 1 day · 7 days · 30 days · Pick an end date |
+| `reason` | 5–500 characters (required by the default policy) | Reason for sharing |
+
+**Rules:**
+- **Policy maximum:** 30 days by default; a longer one → 422. Without a policy maximum, a share may have no end date.
+- **Critical credentials:**
+  - never shared with Full Access (422);
+  - always need an end date;
+  - can't be shared at all if the policy turns critical sharing off (403).
+- **Re-share:** someone with a Full share can re-share, but never beyond their own end date.
+- **Same recipient again:** sharing again renews the live share (200 instead of 201) and sends a "Share updated" email.
+
+**Who gets the email:**
+
+| Shared with | Email |
+|---|---|
+| A person | One email, to that person, greeting them by name |
+| A team | Every active login in that department (by the user's department, or their HR record's) **except the sharer**. One email in **Bcc**, in batches of 50, so members don't see each other's addresses. Members also get the bell notification. |
+
+**What the email shows** (the popup's details, never a secret):
+- **Subject:** "{sharer} shared “{credential}” ({code}) with you" (or "with your team {team}"), with a "Share updated:" prefix on a renewal.
+- **The credential:** name, CRD- / CCRD- ID, type, username or host (masked when it is a secret id), group and risk badge.
+- **Team shares:** the team name and its member count.
+- **Permission:** with its description.
+- **What you can do:** the popup's six ticks and crosses. Use Only gives sign in; View adds see the password; Copy adds copy it; Full Access adds edit, re-share and delete.
+- **Access until:** "{Permission} access until dd/mm/yyyy, then revoked automatically", or no end date.
+- **The reason**, who shared it (and their designation) and when, plus an **Open in CredVault** button (My Vault).
+- **Critical credentials:** a note that opening it needs the unlock approvals.
+
+**The response** adds `data.mail`:
+
+```json
+"mail": { "status": "sent", "recipients": 6, "sent": 6, "failed": 0 }
+```
+
+| `status` | Meaning |
+|---|---|
+| `sent` | Every email went out |
+| `partly_sent` / `failed` | Some or all failed: logged, and the share still stands |
+| `mail_off` | Email is turned off by the platform admin |
+| `no_recipients` | Nobody with a valid email to send to |
+
+The message adds "Email sent to N people.", and the audit log gets "Share email to {recipient}: N sent".
+
+Related endpoints:
+- `GET /credvault/share-recipients?q=` — who it can be shared with.
+- `GET /credvault/shares?tab=all|active|soon|expired|revoked` — Shared By Me.
+- `DELETE /credvault/shares/{id}` — revoke; again → 409.
 
 ### Shared by both vaults
 
@@ -287,8 +346,9 @@ attachments[0]=<file: access-approval.pdf>
 | 09 | **Get Critical Vault (list)** | 9 | Tabs all / mine / others; search; filters; paging; `?vault=critical` |
 | 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields, strength name. Plus reveal while locked → 423 |
 | 11 | Delete Critical Vault | 2 | To the Recycle Bin (owner / Vault Admin); get single afterwards → 404 |
-| 12 | Email 2-step | 7 | Send, verify, add with email; the same token again → 422; switch an existing credential to email |
-| 13 | Unlock | 24 | The full Google unlock and the full email unlock (request → admin → manager → code → reveal → lock), reject, cancel, lists |
+| 12 | **Share — person or team, with email** | 14 | Recipients and search; Individual View 7 days (email to 1); renew as Copy 30 days ("Share updated" email); **Team Use Only 30 days (email to every member)**; Full Access with an `expires_at` date; Critical View 1 day; refusals: Full on critical, no reason, beyond the policy maximum; Shared By Me; revoke, revoke again → 409 |
+| 13 | Email 2-step | 7 | Send, verify, add with email; the same token again → 422; switch an existing credential to email |
+| 14 | Unlock | 24 | The full Google unlock and the full email unlock (request → admin → manager → code → reveal → lock), reject, cancel, lists |
 
 **How to run it:**
 1. Fill `baseUrl`, `email` / `password`, `adminEmail` / `adminPassword`, `managerEmail` / `managerPassword`.
@@ -305,7 +365,9 @@ attachments[0]=<file: access-approval.pdf>
 
 | Check | Result |
 |---|---|
-| The collection, top to bottom | **249 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
+| The collection, top to bottom | **263 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
+| Share emails, read back from the mail log | **19 / 19**: one email to the person; subject with sharer, credential and code; View with its description; the six can-do ticks match the permission; the end date; reason, risk, username and greeting; the open link; **no password**; renewal sends "Share updated" with Copy; a team share sends one email for all 6 members with "your team Export-Import (7 members)"; Use Only shows only sign in; bell notifications for all recipients; each email in the audit log; a critical share notes the unlock approvals and hides the account number; a refused share sends nothing |
+| Team Bcc, in-process (`Mail::fake`) | Bcc = exactly the 6 team members, the sharer excluded; `mail.sent = 6` |
 | Every credential read back through the API, both lists and all 50 singles | **513 / 513**: right vault and prefix; strength a name (never a percentage) and equal to the stored level; every field of each Normal credential returned with its edited value; secrets masked; files present; Critical ones locked with an unlock plan and no fields |
 | Every saved field compared in the database (decrypted) with its Edit request | All match on the 45 that keep their edited values. The other 5 are changed again by later requests on purpose (a password-only edit and an attachment note, the Critical note's Manager step turned off, and the 2 deleted) |
 | Files | 4 attachments on each Attachments-box type (2 from the add, 2 from the edit); the file replaced on each file-field type |

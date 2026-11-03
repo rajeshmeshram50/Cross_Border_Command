@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\CredVault;
 
 use App\Http\Controllers\Controller;
+use App\Mail\CredVaultShareMail;
+use App\Mail\PasswordChangedMail;
 use App\Models\CredVault\AccessRequest;
 use App\Models\CredVault\AuditLog;
 use App\Models\CredVault\Credential;
@@ -17,6 +19,8 @@ use App\Models\User;
 use App\Services\CredVault\EmailOtp;
 use App\Services\CredVault\Totp;
 use App\Services\CredVault\VaultFile;
+use App\Support\BrandingResolver;
+use App\Support\Settings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -29,6 +33,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -620,14 +625,19 @@ class CredVaultController extends Controller
                 ?? $this->reject('That person is not an active user of your company.', 'recipient_id', 404);
             if ($to->id === $c->owner_id) $this->reject('That person owns this credential already.', 'recipient_id');
             if ($to->id === $u->id) $this->reject('You cannot share a credential with yourself.', 'recipient_id');
-            $toName = $to->name;
+            $toName  = $to->name;
+            $members = collect([$to]);
+            $teamSize = null;
         } else {
             $dep = $this->clientDepartments($u)->firstWhere('id', $d['recipient_id'])
                 ?? $this->reject('That team does not exist.', 'recipient_id', 404);
-            $toName = $dep->name;
+            $toName  = $dep->name;
+            $all      = $this->teamMembers($u->client_id, $dep->id);
+            $teamSize = $all->count();
+            $members  = $all->where('id', '!=', $u->id)->values();   // the sharer is not told of their own share
         }
 
-        $share = $this->inTransaction('share the credential', function () use ($c, $u, $d, $until, $reason, $toName) {
+        $share = $this->inTransaction('share the credential', function () use ($c, $u, $d, $until, $reason, $toName, $members) {
             $match = fn ($q) => $q->where('credential_id', $c->id)->where('recipient_type', $d['recipient_type'])
                 ->where($d['recipient_type'] === 'user' ? 'recipient_user_id' : 'recipient_department_id', $d['recipient_id'])
                 ->whereNull('revoked_at');
@@ -654,24 +664,96 @@ class CredVaultController extends Controller
             $this->audit($u, 'share', $c, ($renewed ? 'Share renewed for ' : 'Shared with ') . $toName
                 . ' · ' . ucfirst($d['permission']) . ($until ? ' until ' . $until->format('d/m/Y') : ' · no expiry'),
                 ['share_id' => $share->id, 'permission' => $d['permission']]);
-            if ($share->recipient_type === 'user') {
-                $this->notify([$share->recipient_user_id], 'shared', $renewed ? 'Share updated' : 'Credential shared with you',
-                    "{$u->name} shared “{$c->name}” with you (" . ucfirst($d['permission']) . ($until ? ', until ' . $until->format('d/m/Y') : '') . ').',
-                    ['credential_id' => $c->id, 'url' => '/credentials-vault/my-vault']);
-            }
+            // The bell: the person, or every member of the team.
+            $this->notify($members->pluck('id')->all(), 'shared', $renewed ? 'Share updated' : 'Credential shared with ' . ($share->recipient_type === 'team' ? "your team {$toName}" : 'you'),
+                "{$u->name} shared “{$c->name}” with " . ($share->recipient_type === 'team' ? "your team {$toName}" : 'you')
+                . ' (' . ucfirst($d['permission']) . ($until ? ', until ' . $until->format('d/m/Y') : '') . ').',
+                ['credential_id' => $c->id, 'url' => '/credentials-vault/my-vault']);
 
             return [$share, $renewed];
         });
 
         [$row, $renewed] = $share;
         $row->load(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name']);
+        $mail = $this->mailShare($request, $u, $c, $row, $members, $renewed, $toName, $teamSize);
 
         return response()->json([
             'status'  => true,
             'message' => ($renewed ? 'Share updated for ' : 'Shared with ') . $toName . '.'
-                . ($capped ? ' It ends on ' . $capped->format('d/m/Y') . ', when your own access does.' : ''),
-            'data'    => $this->shareRow($row, $u->client_id),
+                . ($capped ? ' It ends on ' . $capped->format('d/m/Y') . ', when your own access does.' : '')
+                . ($mail['sent'] ? ' Email sent to ' . $mail['sent'] . ' ' . Str::plural('person', $mail['sent']) . '.' : ''),
+            'data'    => $this->shareRow($row, $u->client_id) + ['mail' => $mail],
         ], $renewed ? 200 : 201);
+    }
+
+    /** Active logins of the company in the team (the same department test as deptOf: the user's, else their HR record's). */
+    protected function teamMembers(int $clientId, int $deptId): Collection
+    {
+        // An HR record links to its login by user_id, or by emp_code = the login's employee_code (as employeeOf).
+        $emps = Employee::where('client_id', $clientId)->where('department_id', $deptId)->get(['user_id', 'emp_code']);
+        $ids = $emps->pluck('user_id')->filter()->all();
+        $codes = $emps->pluck('emp_code')->filter()->all();
+
+        return User::where('client_id', $clientId)->where('status', 'active')
+            ->where(fn ($w) => $w->where('department_id', $deptId)
+                ->orWhere(fn ($x) => $x->whereNull('department_id')->where(fn ($y) => $y->whereIn('id', $ids)->orWhereIn('employee_code', $codes))))
+            ->orderBy('name')->get(['id', 'name', 'email', 'designation']);
+    }
+
+    /**
+     * The share email — the Share popup's details, never a secret. A person gets their own;
+     * a team's members get one in BCC batches of 50. A mail failure is logged and reported
+     * in `mail`, and never undoes the share.
+     *
+     * @return array{status:string, recipients:int, sent:int, failed:int}
+     */
+    protected function mailShare(Request $request, User $u, Credential $c, CredentialShare $s, Collection $members, bool $renewed, string $toName, ?int $teamSize = null): array
+    {
+        $to = $members->filter(fn ($m) => filter_var($m->email, FILTER_VALIDATE_EMAIL))->values();
+        $out = ['status' => 'sent', 'recipients' => $to->count(), 'sent' => 0, 'failed' => 0];
+        if (!$to->count()) return ['status' => 'no_recipients'] + $out;
+        if (!Settings::shouldSendMail()) return ['status' => 'mail_off'] + $out;
+
+        $def  = Credential::typeDef($c->type);
+        $team = $s->recipient_type === 'team' ? ['name' => $toName, 'members' => $teamSize ?? $members->count()] : null;
+        $data = [
+            'credential' => ['code' => $c->code, 'name' => $c->name, 'type_label' => $def['label'] ?? $c->type, 'group' => $c->category_group,
+                             'detail' => $c->username ?: $this->host($c->url), 'risk' => $c->risk],
+            'permission' => $s->permission,
+            'until'      => $s->expires_at?->format('d/m/Y'),
+            'reason'     => $s->reason,
+            'shared_by'  => ['name' => $u->name, 'designation' => $u->designation],
+            'shared_at'  => now('Asia/Kolkata')->format('d M Y, h:i A'),
+            'team'       => $team,
+            'renewed'    => $renewed,
+            'open_url'   => str_replace('/login', '/credentials-vault/my-vault', PasswordChangedMail::resolveLoginUrl($request)),
+        ];
+        $brand = BrandingResolver::forUser($u);
+
+        $send = function (callable $fn, int $n) use (&$out, $c) {
+            try {
+                $fn();
+                $out['sent'] += $n;
+            } catch (\Throwable $e) {
+                $out['failed'] += $n;
+                Log::warning('CredVault: share email not sent', ['credential_id' => $c->id, 'error' => $e->getMessage()]);
+            }
+        };
+        if (!$team) {
+            $m = $to->first();
+            $send(fn () => Mail::to($m->email, $m->name)->send(new CredVaultShareMail($data, $m->name, $brand)), 1);
+        } else {
+            foreach ($to->chunk(50) as $batch) {
+                $send(fn () => Mail::to((string) config('mail.from.address'), "{$toName} team")
+                    ->bcc($batch->map(fn ($m) => ['email' => $m->email, 'name' => $m->name])->values()->all())
+                    ->send(new CredVaultShareMail($data, null, $brand)), $batch->count());
+            }
+        }
+        if ($out['failed']) $out['status'] = $out['sent'] ? 'partly_sent' : 'failed';
+        $this->audit($u, 'share', $c, "Share email to {$toName}: {$out['sent']} sent" . ($out['failed'] ? ", {$out['failed']} failed" : ''),
+            ['share_id' => $s->id, 'mail' => $out]);
+
+        return $out;
     }
 
     /**
