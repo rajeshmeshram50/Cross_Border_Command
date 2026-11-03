@@ -1,0 +1,896 @@
+{
+    "info": {
+        "name": "CredVault — Export Credentials API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "Export Credentials (Team Vault): My or Team, filtered as the table, every table column in the file.\n\nBEFORE YOU START\n1. Fill baseUrl, email/password (an employee with Credentials Vault → View), adminEmail/adminPassword (a client admin of the same company), managerEmail/managerPassword (that employee's reporting manager, in the same team). `password` is also the account password for the export with passwords.\n2. Run 00 · Setup (it saves myDepartmentId), then 01 · Export Credentials in order.\n\nFILE COLUMNS: Sr. No · Credential ID · Created On · Credential Name · Website / App · Type · Category · Username · Owner · Access · Department · Vault · Risk · Strength · 2FA · Rotation (days) · Last Updated · [Password / Secret] · [Notes].\nResponse headers: X-CredVault-Code (EX-…), X-CredVault-Count, X-CredVault-Withheld.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Export Credentials."
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "00 · Setup",
+            "description": "Log in three people: the requester ({{token}}), the Vault Admin ({{adminToken}}) and the requester's reporting manager ({{managerToken}}). Then read the types and the two vaults.",
+            "item": [
+                {
+                    "name": "Login — requester (employee)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Vault Admin (client admin)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('adminToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('adminToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — requester's reporting manager",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('managerToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('managerToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Meta — 25 types, vaults, 2-step methods",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/meta",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "meta"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.me.department_id; if (v !== undefined && v !== null) pm.collectionVariables.set('myDepartmentId', String(v)); } catch (e) {}",
+                                    "pm.test('25 types', () => pm.expect(b.data.types.length).to.eql(25));",
+                                    "pm.test('two vaults', () => pm.expect(b.data.vaults.map(v => v.prefix)).to.eql(['CRD', 'CCRD']));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 · Export Credentials",
+            "description": "The Export Credentials popup.\n\n• GET /exports/preview — the popup before the download: total, selected (\"20 of 41\"), a count per category box, the My / Team tab counts.\n• POST /exports — the file: tab (mine | team, required), department_id, vault, risk, type, q, groups[] (the ticked categories), format csv | json, include_notes, include_passwords (+ acknowledge and account_password).\n• GET /exports — the history.\n\nThe first request adds a colleague's team credential, so the Team exports have something to export (Team Credentials are your team's credentials that are not yours).",
+            "item": [
+                {
+                    "name": "Add a team credential as a colleague (the manager)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation (colleague) {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "description": "Team Credentials are the credentials of your team that are not yours, so a colleague adds one here."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Add one of my credentials (for the My export)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Zoho Books Admin {{$timestamp}}\",\n    \"notes\": \"Accounts team\",\n    \"fields\": {\n        \"url\": \"https://books.zoho.in\",\n        \"username\": \"admin@inorbvict.com\",\n        \"password\": \"Zb!Admin-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export popup — counts, My Credentials",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports/preview?tab=mine",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports",
+                                "preview"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('5 categories that add up', () => { pm.expect(b.data.groups.length).to.eql(5); pm.expect(b.data.groups.reduce((n, g) => n + g.count, 0)).to.eql(b.data.total); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export popup — counts, Team Credentials (the selected team)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports/preview?tab=team&department_id={{myDepartmentId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports",
+                                "preview"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{myDepartmentId}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('both tab counts', () => pm.expect(b.data.tabs).to.include.keys('mine', 'team'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export popup — counts with categories ticked",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports/preview?tab=team&department_id={{myDepartmentId}}&groups%5B%5D=Logins%20%26%20Access",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports",
+                                "preview"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{myDepartmentId}}"
+                                },
+                                {
+                                    "key": "groups[]",
+                                    "value": "Logins & Access"
+                                }
+                            ]
+                        },
+                        "description": "Add more groups[] rows for more categories. data.selected is the \"20 of 41\" number."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Team Credentials, CSV, notes, no passwords",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"team\",\n    \"department_id\": \"{{myDepartmentId}}\",\n    \"format\": \"csv\",\n    \"include_notes\": true,\n    \"include_passwords\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "The response is the file. Headers: X-CredVault-Code (EX-…), X-CredVault-Count, X-CredVault-Withheld."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Team Credentials, two categories only",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"team\",\n    \"department_id\": \"{{myDepartmentId}}\",\n    \"groups\": [\n        \"Logins & Access\",\n        \"Personal & Lifestyle\"\n    ],\n    \"format\": \"csv\",\n    \"include_notes\": true,\n    \"include_passwords\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Team Credentials, JSON, with the table filters",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"team\",\n    \"department_id\": \"{{myDepartmentId}}\",\n    \"q\": \"github\",\n    \"type\": \"login\",\n    \"vault\": \"normal\",\n    \"format\": \"json\",\n    \"include_notes\": false,\n    \"include_passwords\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Nothing in the team matching → 422 \"No credentials match this selection\"."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — My Credentials, CSV",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"mine\",\n    \"format\": \"csv\",\n    \"include_notes\": true,\n    \"include_passwords\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export with passwords",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"mine\",\n    \"format\": \"csv\",\n    \"include_notes\": true,\n    \"include_passwords\": true,\n    \"acknowledge\": true,\n    \"account_password\": \"{{password}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Readable passwords need acknowledge: true (\"I understand the risk\") AND your account password. Protected (locked critical) secrets are written as \"[Protected — unlock in CredVault]\"."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export with passwords — not acknowledged (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"mine\",\n    \"format\": \"csv\",\n    \"include_passwords\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export with passwords — wrong account password (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tab\": \"mine\",\n    \"format\": \"csv\",\n    \"include_passwords\": true,\n    \"acknowledge\": true,\n    \"account_password\": \"wrong-password\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — no tab (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"include_passwords\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export history",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/exports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "exports"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
+        },
+        {
+            "key": "email",
+            "value": ""
+        },
+        {
+            "key": "password",
+            "value": ""
+        },
+        {
+            "key": "adminEmail",
+            "value": ""
+        },
+        {
+            "key": "adminPassword",
+            "value": ""
+        },
+        {
+            "key": "managerEmail",
+            "value": ""
+        },
+        {
+            "key": "managerPassword",
+            "value": ""
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "adminToken",
+            "value": ""
+        },
+        {
+            "key": "managerToken",
+            "value": ""
+        },
+        {
+            "key": "myDepartmentId",
+            "value": ""
+        }
+    ]
+}

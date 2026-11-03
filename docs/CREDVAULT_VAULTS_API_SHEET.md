@@ -1,12 +1,13 @@
 # CredVault — Normal Vault & Critical Vault: Backend API Sheet
 
 **Scope:** backend only — the APIs of My Vault (Normal Vault) and the Critical Vault, and the Postman collection for them.
-**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 16 folders, 301 requests. Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single. Plus **Team Vault** (departments, hierarchy, team credentials) and **Share with email** to a person or a team.
+**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 16 folders, 315 requests. Team Vault alone: [CredVault_TeamVault.postman_collection.json](CredVault_TeamVault.postman_collection.json) (29 requests, with Export). Export alone: [CredVault_Export.postman_collection.json](CredVault_Export.postman_collection.json) (18 requests). Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single. Plus **Team Vault** (departments, hierarchy, team credentials) and **Share with email** to a person or a team.
 **Last checked:** 03/11/2026:
-- **Collection:** 298 / 298 passed (the 3 logins are skipped because the runner uses ready-made tokens).
+- **Collection:** 311 / 311 passed (Team Vault alone 25 / 25, Export alone 14 / 14) (the 3 logins are skipped because the runner uses ready-made tokens).
 - **Share email:** 19 / 19 checks, plus the Bcc check (§2, Share).
 - **Shared By Me** (filters and rows) and the php@inhpl.com copy: 34 / 34.
 - **Team Vault** (departments, hierarchy tree, team credentials): 22 / 22.
+- **Export Credentials** (tab + filters, counts = the table's tabs, file columns): 23 / 23.
 - **⚠ Real SMTP is failing:** Gmail rejects the `.env` login for dev@inhpl.com ("535 Username and Password not accepted"), so **no email leaves the app** until `MAIL_PASSWORD` is replaced with a valid Google app password (§6).
 - **API read-back:** 513 / 513 checks on every credential, list and single.
 - **Database:** every saved field checked against the request.
@@ -142,6 +143,47 @@ The **hierarchy tree** is ready to draw. Every node has its own type and childre
 - **Placement:** each member sits under their reporting manager. A member whose manager is outside the department hangs from the Admin.
 - **Order:** children are sorted by level (HOD → TL → Executive → Employee → Intern), then by name.
 - **Organisation view:** a node `{ "type": "department", "name", "members", … }` sits between the Admin and that department's people.
+
+### Export Credentials — My or Team, filtered, every table column
+
+The **Export Credentials** popup. **The key `tab` comes first:**
+- `mine` — My Credentials;
+- `team` — Team Credentials: your team's credentials that aren't yours and aren't shared with you.
+
+The same filters as the table follow, so **the counts in the popup equal the tab badges in the table**.
+
+| Request | What it does |
+|---|---|
+| `GET /credvault/exports/preview?tab=&department_id=&vault=&risk=&type=&q=&groups[]=` | The popup before the download: `total`, `selected` (the "20 of 41"), `groups[]` — one per category box with `count` and `selected` — `protected`, `tabs` { mine, team } (the table's badges), and `columns` |
+| `POST /credvault/exports` | The file. Body: `tab` (**required**: `mine` \| `team`), `department_id` (Team), `vault`, `risk`, `type`, `q`, `groups[]` (the ticked categories; none = all), `format` `csv` \| `json`, `include_notes`, `include_passwords` (+ `acknowledge: true` and `account_password`) |
+| `GET /credvault/exports` | Export history (EX-… codes) |
+
+| Key | Values | Popup / table |
+|---|---|---|
+| `tab` | `mine` \| `team` (the old `scope` = `personal` \| `team` still works) | My Credentials / Team Credentials |
+| `department_id` | the selected team (Team tab only) | "Credentials shared within the selected team" |
+| `vault` · `risk` · `type` · `q` | as the table's filters and search | the table |
+| `groups[]` | Logins & Access · Finance & Banking · Development & IT · Identity & Documents · Personal & Lifestyle | What to export (Select all / Clear all) |
+| `format` | `csv` (Excel / Sheets) \| `json` (an array, one object per row, the same keys) | File format |
+| `include_notes` | true / false | Include notes |
+| `include_passwords` | true / false: needs `acknowledge: true` ("I understand the risk…") **and** your `account_password` | Include passwords + the risk box |
+
+**The file's columns** — every column of the table, in its order, then the optional two:
+
+`Sr. No · Credential ID · Created On · Credential Name · Website / App · Type · Category · Username · Owner · Access (Personal / Team / Shared with you) · Department · Vault (Normal / Critical) · Risk · Strength · 2FA · Rotation (days) · Last Updated · [Password / Secret] · [Notes]`
+
+**The response** is the file itself (download): `team-credentials-YYYYMMDD.csv` or `my-credentials-YYYYMMDD.csv`, with these headers:
+- `X-CredVault-Code` (EX-…);
+- `X-CredVault-Count` (rows);
+- `X-CredVault-Withheld` — secrets not written: a locked critical credential reads "[Protected — unlock in CredVault]", and a share without copy rights "[No copy permission]".
+
+Each export is audit-logged and listed in the history.
+
+**Refusals (422):**
+- no `tab`;
+- nothing matches the selection;
+- passwords without `acknowledge`, or with a wrong `account_password`;
+- an unknown category or format.
 
 ### Strength in the responses
 
@@ -463,7 +505,7 @@ attachments[0]=<file: access-approval.pdf>
 | 09 | **Get Critical Vault (list)** | 9 | Tabs all / mine / others; search; filters; paging; `?vault=critical` |
 | 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields and no values, strength name. Plus reveal while locked → 423 |
 | 11 | Delete Critical Vault | 2 | To the Recycle Bin (owner / Vault Admin); get single afterwards → 404 |
-| 12 | **Team Vault** | 11 | Departments (admin card + department cards) and search; one department (stats, the Admin chip first, members, tree); unknown department → 404; organisation (View all); add a team credential; table: My Credentials, Team Credentials for a department, search, a member's credentials, critical team credentials |
+| 12 | **Team Vault** | 24 | Departments (admin card + department cards) and search; one department (stats, the Admin chip first, members, tree); unknown department → 404; organisation (View all); add a team credential; table: My Credentials, Team Credentials for a department, search, a member's credentials, critical team credentials; **Export**: a colleague's team credential; popup counts for My, for Team, with categories ticked; files: Team CSV, two categories, JSON with filters, My CSV, with passwords; refusals: not acknowledged, wrong account password, no tab; history |
 | 13 | **Share — person or team, with email** | 38 | Recipients and search; Individual View 7 days (email to 1); renew as Copy 30 days ("Share updated" email); **Team Use Only 30 days (email to every member)**; Full Access with an `expires_at` date; Critical View 1 day; refusals: Full on critical, no reason, beyond the policy maximum; **Shared By Me: all 5 tabs, search, credential, permission (one / several), teams, one person, one team, vault, risk, type, group, shared-on and expires ranges, combined filters, 3 sorts, paging, 2 refusals**; Shared With Me; revoke, revoke again → 409 |
 | 14 | Email 2-step | 7 | Send, verify, add with email; the same token again → 422; switch an existing credential to email |
 | 15 | Unlock | 24 | The full Google unlock and the full email unlock (request → admin → manager → code → reveal → lock), reject, cancel, lists |
@@ -483,12 +525,13 @@ attachments[0]=<file: access-approval.pdf>
 
 | Check | Result |
 |---|---|
-| The collection, top to bottom | **298 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
+| The collection, top to bottom | **310 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
 | Share emails, read back from the mail log | **19 / 19**: one email to the person; subject with sharer, credential and code; View with its description; the six can-do ticks match the permission; the end date; reason, risk, username and greeting; the open link; **no password**; renewal sends "Share updated" with Copy; a team share sends one email for all 6 members with "your team Export-Import (7 members)"; Use Only shows only sign in; bell notifications for all recipients; each email in the audit log; a critical share notes the unlock approvals and hides the account number; a refused share sends nothing |
 | Team Bcc, in-process (`Mail::fake`) | Bcc = exactly the 6 team members, the sharer excluded; `mail.sent = 6` |
 | Shared By Me + the copy | **34 / 34**: `copy_to` php@inhpl.com, and Cc php@inhpl.com on all 5 share emails (person and team); the row cells (sr_no, code, url, created_on, vault, recipient name / initials / designation / team members, permission label, shared_on date and time, `expires.left` "24h left" / "7 days left", status labels, `can`, revoked rows can't be revoked); expiring soon first; tab counts; every filter (permission one and several, team, one person, vault, risk, type, group, 3 tabs, shared-on and expires ranges, search, combined); sort by expiry and by name; paging; echoed filters; 3 refusals |
 | Get single in plain text | **14 / 14**: the owner gets every value (password, account number, recovery key, registered email and phone, notes) and an exact `all_values`; secret fields come back with `secret: true, masked: false`; the read is in the audit log as a reveal; create and edit responses carry no secret; a View share sees everything; a Use Only share sees no secret, no `all_values`, no notes; a locked critical credential shows no fields and no values, and after the unlock the password in plain text; the 2-step secret is never returned |
 | Team Vault | **22 / 22**: the admin card (Vault Admin, members = the level bar total, departments, HODs); department cards (HOD name, initials and role, members = their level bar, credential counts) and search; the department view (stats, the Admin chip first, the tree rooted at the Vault Admin with **every member exactly once** and every `children_count` / `team_size` right, a manager holding their reports); 404; the organisation (department nodes, every member once); a team credential shows under Team Credentials for another member with tab counts and the full row, under My Credentials for its owner, in the member filter, in search, and in the department's count |
+| Export Credentials | **23 / 23**: popup counts equal the table's My and Team tab counts (and the department); 5 categories add up to the total; ticked categories give the selected count; the old `scope=personal` key still works; the Team CSV has as many rows as the popup said, every table column in order, a team row with its values as the table shows them (type, category, username, owner, Access "Team", department, vault, strength, notes, created date), Sr. No 1…n, no password column unless asked; the category filter; search + JSON; the type filter; the My export (owner only, Access "Personal", the my- file name); 4 refusals; the history. (An export *with* passwords needs a real account password, so it's left for Postman.) |
 | Real SMTP (one email to php@inhpl.com) | **Failed: Gmail refused the login** — see §6 |
 | Every credential read back through the API, both lists and all 50 singles | **590 / 590**: right vault and prefix; every field of each Normal credential in plain text and equal to `all_values`; strength a name (never a percentage) and equal to the stored level; every field of each Normal credential returned with its edited value; secrets masked; files present; Critical ones locked with an unlock plan and no fields |
 | Every saved field compared in the database (decrypted) with its Edit request | All match on the 45 that keep their edited values. The other 5 are changed again by later requests on purpose (a password-only edit and an attachment note, the Critical note's Manager step turned off, and the 2 deleted) |

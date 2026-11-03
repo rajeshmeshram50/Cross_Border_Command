@@ -1861,27 +1861,84 @@ class CredVaultController extends Controller
     }
 
     /**
-     * GET /credvault/exports/preview?scope=team|personal — the Export popup
-     * before anything downloads: a count per category group and the total.
+     * The export's selection, exactly the table's: tab mine (My Credentials) or team (Team
+     * Credentials — the team's, not yours, not shared with you), then the table's filters.
+     * `scope` (team | personal) is the older name of the tab and still accepted.
+     */
+    protected function exportRules(): array
+    {
+        return [
+            'tab'           => ['nullable', Rule::in(['mine', 'team'])],
+            'scope'         => ['nullable', Rule::in(['team', 'personal', 'mine'])],
+            'department_id' => ['nullable', 'integer', 'min:1'],
+            'vault'         => ['nullable', Rule::in(Credential::VAULTS)],
+            'risk'          => ['nullable', Rule::in(Credential::RISKS)],
+            'type'          => ['nullable', Rule::in(array_keys(Credential::TYPES))],
+            'q'             => ['nullable', 'string', 'max:100'],
+            'groups'        => ['nullable', 'array'],
+            'groups.*'      => ['distinct', Rule::in(Credential::GROUPS)],
+        ];
+    }
+
+    protected function exportTab(array $d): string
+    {
+        return $d['tab'] ?? (in_array($d['scope'] ?? 'team', ['personal', 'mine'], true) ? 'mine' : 'team');
+    }
+
+    /** @return Collection the credentials of the selection (groups not applied), with _rank for fileSecret */
+    protected function exportSet(User $u, array $d, bool $light = false): Collection
+    {
+        $tab = $this->exportTab($d);
+        $q = $this->visibleQuery($u)->with(['owner:id,name', 'department:id,name']);
+        foreach (['vault' => 'vault', 'risk' => 'risk', 'type' => 'type'] as $k => $col) {
+            if (!empty($d[$k])) $q->where("credvault_credentials.{$col}", $d[$k]);
+        }
+        if ($tab === 'mine') {
+            $q->where('owner_id', $u->id);
+        } else {
+            $q->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $this->sharedWithMeIds($u));
+            if (!empty($d['department_id'])) $q->where('department_id', $d['department_id']);
+        }
+        $this->credentialSearch($q, $u, $d['q'] ?? null);
+        $all = $q->orderBy('code')->get($light ? self::LIGHT_COLUMNS : ['*']);
+        $acc = $this->accessMap($all, $u);
+
+        return $all->each(fn ($c) => $c->setAttribute('_rank', $acc[$c->id][0] ?? self::RANK_USE)->setAttribute('_via', $acc[$c->id][1] ?? null))->values();
+    }
+
+    /**
+     * GET /credvault/exports/preview?tab=mine|team&department_id=&vault=&risk=&type=&q= — the Export
+     * popup before anything downloads: a count per category (the "What to export" boxes), the total,
+     * how many are protected, and both tab counts — the same numbers as the table's tabs.
      */
     public function exportPreview(Request $request)
     {
         $u = $this->tenantUser($request);
-        $d = $request->validate(['scope' => ['nullable', Rule::in(['team', 'personal'])]]);
-        $creds = $this->fileScope($u, ($d['scope'] ?? 'team') === 'team' ? 'team' : 'mine', true);
+        $d = $request->validate($this->exportRules());
+        $tab = $this->exportTab($d);
+        $creds = $this->exportSet($u, $d, true);
+        $picked = !empty($d['groups']) ? $creds->whereIn('category_group', $d['groups']) : $creds;
 
         return response()->json(['status' => true, 'data' => [
-            'scope'  => $d['scope'] ?? 'team',
-            'total'  => $creds->count(),
-            'groups' => collect(Credential::GROUPS)->map(fn ($g) => ['group' => $g, 'count' => $creds->where('category_group', $g)->count()])->values(),
-            'protected' => $creds->filter(fn ($c) => $c->isProtected())->count(),
+            'tab'       => $tab,
+            'scope'     => $tab === 'mine' ? 'personal' : 'team',
+            'filters'   => array_filter(array_intersect_key($d, array_flip(['department_id', 'vault', 'risk', 'type', 'q', 'groups'])), fn ($v) => $v !== null && $v !== '' && $v !== []),
+            'total'     => $creds->count(),
+            'selected'  => $picked->count(),
+            'groups'    => collect(Credential::GROUPS)->map(fn ($g) => ['group' => $g, 'count' => $creds->where('category_group', $g)->count(),
+                'selected' => empty($d['groups']) || in_array($g, $d['groups'], true)])->values(),
+            'protected' => $picked->filter(fn ($c) => $c->isProtected())->count(),
+            'tabs'      => ['mine' => $this->exportSet($u, ['tab' => 'mine'] + $d, true)->count(), 'team' => $this->exportSet($u, ['tab' => 'team'] + $d, true)->count()],
+            'columns'   => ['always' => self::EXPORT_COLUMNS, 'with_passwords' => 'Password / Secret', 'with_notes' => 'Notes'],
         ]], 200);
     }
 
     /**
-     * POST /credvault/exports { scope: team|personal, groups?[], format: csv|json, include_notes, include_passwords, acknowledge, account_password }
+     * POST /credvault/exports { tab: mine|team, department_id?, vault?, risk?, type?, q?, groups?[],
+     *                          format: csv|json, include_notes, include_passwords, acknowledge, account_password }
      *
-     * The Team Vault "Export Credentials" popup, columns as the prototype's.
+     * The "Export Credentials" popup: the table's selection (tab + filters), narrowed to the ticked
+     * categories, with every column the table shows (EXPORT_COLUMNS).
      * The file is plain text, so including passwords takes the acknowledgement
      * AND the account password; secrets of protected credentials are written
      * as "[Protected — unlock in CredVault]".
@@ -1889,10 +1946,7 @@ class CredVaultController extends Controller
     public function export(Request $request)
     {
         $u = $this->tenantUser($request);
-        $d = $request->validate([
-            'scope'             => ['required', Rule::in(['team', 'personal'])],
-            'groups'            => ['nullable', 'array'],
-            'groups.*'          => ['distinct', Rule::in(Credential::GROUPS)],
+        $d = $request->validate($this->exportRules() + [
             'format'            => ['required', Rule::in(['csv', 'json'])],
             'include_notes'     => ['sometimes', 'boolean'],
             'include_passwords' => ['required', 'boolean'],
@@ -1904,12 +1958,15 @@ class CredVaultController extends Controller
             $this->reject('Your account password is incorrect.', 'account_password');
         }
 
-        $creds = $this->fileScope($u, $d['scope'] === 'team' ? 'team' : 'mine')
+        if (empty($d['tab']) && empty($d['scope'])) $this->reject('Choose what to export: tab mine (My Credentials) or team (Team Credentials).', 'tab');
+        $tab = $this->exportTab($d);
+        $d['scope'] = $tab === 'mine' ? 'personal' : 'team';
+        $creds = $this->exportSet($u, $d)
             ->when(!empty($d['groups']), fn ($c) => $c->whereIn('category_group', $d['groups']))->values();
         if ($creds->isEmpty()) $this->reject('No credentials match this selection.', 'groups');
 
         [$cols, $rows, $withheld] = $this->exportRows($creds, $d['include_passwords'], $d['include_notes'] ?? true);
-        $file = ($d['scope'] === 'team' ? 'team' : 'my') . '-vault-credentials-' . now()->format('Ymd') . '.' . $d['format'];
+        $file = ($tab === 'team' ? 'team' : 'my') . '-credentials-' . now()->format('Ymd') . '.' . $d['format'];
         $body = VaultFile::build($cols, $rows, $d['format']);
 
         $t = $this->inTransaction('record the export', function () use ($u, $d, $rows, $body, $file) {
@@ -3195,27 +3252,33 @@ class CredVaultController extends Controller
         return [($def['sec'] ? ($c->fields[$def['sec']] ?? null) : null) ?? ($c->has_password ? $c->secret : '') ?? '', false];
     }
 
+    /** The export file's columns — every column of the credentials table, in its order. */
+    protected const EXPORT_COLUMNS = ['Sr. No', 'Credential ID', 'Created On', 'Credential Name', 'Website / App', 'Type', 'Category', 'Username',
+        'Owner', 'Access', 'Department', 'Vault', 'Risk', 'Strength', '2FA', 'Rotation (days)', 'Last Updated'];
+
     /**
-     * The Team Vault export, column for column as the prototype's exOpen():
-     * Credential ID, Name, Type, Category, Website / App, Username, Owner,
-     * Vault, Risk, 2FA, Rotation (days), Last Updated, [Password / Secret], [Notes].
+     * The export rows: EXPORT_COLUMNS, then [Password / Secret], [Notes].
      *
      * @return array{0:array,1:array,2:int} columns, rows, secrets withheld
      */
     protected function exportRows(Collection $creds, bool $withSecrets, bool $withNotes): array
     {
-        $cols = ['Credential ID', 'Name', 'Type', 'Category', 'Website / App', 'Username', 'Owner', 'Vault', 'Risk', '2FA', 'Rotation (days)', 'Last Updated'];
+        $cols = self::EXPORT_COLUMNS;
         if ($withSecrets) $cols[] = 'Password / Secret';
         if ($withNotes)   $cols[] = 'Notes';
 
         $withheld = 0;
-        $rows = $creds->map(function ($c) use ($withSecrets, $withNotes, &$withheld) {
+        $via = ['owner' => 'Personal', 'admin' => 'Team', 'hod' => 'Team', 'team' => 'Team', 'share' => 'Shared with you'];
+        $rows = $creds->values()->map(function ($c, $i) use ($withSecrets, $withNotes, &$withheld, $via) {
             $r = [
-                'Credential ID' => $c->code, 'Name' => $c->name, 'Type' => Credential::typeDef($c->type)['label'] ?? $c->type,
-                'Category' => $c->category_group, 'Website / App' => $c->url ?? '', 'Username' => $c->username ?? '',
-                'Owner' => $c->owner?->name, 'Vault' => $c->scope === 'team' ? 'Team' : 'Personal', 'Risk' => $c->risk,
-                '2FA' => ['yes' => 'Enabled', 'no' => 'Disabled', 'na' => 'N/A'][$c->twofa], 'Rotation (days)' => $c->rotation_days ?? '',
-                'Last Updated' => $c->updated_at?->format('Y-m-d H:i'),
+                'Sr. No' => $i + 1, 'Credential ID' => $c->code, 'Created On' => $c->created_at?->format('d/m/Y'),
+                'Credential Name' => $c->name, 'Website / App' => $c->url ?? '', 'Type' => Credential::typeDef($c->type)['label'] ?? $c->type,
+                'Category' => $c->category_group, 'Username' => $c->username ?? '', 'Owner' => $c->owner?->name,
+                'Access' => $c->scope === 'team' && ($c->_via ?? null) === 'owner' ? 'Team' : ($via[$c->_via ?? ''] ?? ($c->scope === 'team' ? 'Team' : 'Personal')),
+                'Department' => $c->department?->name ?? '', 'Vault' => $c->vault === 'critical' ? 'Critical' : 'Normal',
+                'Risk' => ucfirst($c->risk), 'Strength' => Credential::STRENGTH_LABELS[$c->strength] ?? '',
+                '2FA' => ['yes' => 'Enabled', 'no' => 'Not enabled', 'na' => 'N/A'][$c->twofa] ?? '', 'Rotation (days)' => $c->rotation_days ?? '',
+                'Last Updated' => $c->updated_at?->format('d/m/Y H:i'),
             ];
             if ($withSecrets) {
                 [$r['Password / Secret'], $held] = $this->fileSecret($c);
