@@ -17588,7 +17588,13 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__list,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__tip,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-tile,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on):hover {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on):hover,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-card,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-out,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-out__btns,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes button,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-seg,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-meter__bits {
   background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(34, 211, 238, .16) !important;
   box-shadow: none !important;
@@ -17602,7 +17608,12 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-tile__l,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__tip b,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-none b,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on):hover .crd-nav__t {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on):hover .crd-nav__t,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-out__v,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-tg__t b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-len__top b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-sep b {
   color: #e2f4f8 !important;
 }
 
@@ -17613,7 +17624,14 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__h,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on) .crd-nav__t,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__tip span,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-none {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-none,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes small,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-tg__t small,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-len__v,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-len__sc,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-note,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-meter__bits,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-seg button:not(.is-on) {
   color: #8fb3c2 !important;
 }
 
@@ -17633,7 +17651,8 @@
 }
 
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-opt,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on) .crd-nav__c {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on) .crd-nav__c,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes button.is-on {
   background: rgba(34, 211, 238, .1) !important;
   border-color: rgba(34, 211, 238, .3) !important;
   color: #67e8f9 !important;
@@ -17701,7 +17720,8 @@
 }
 
 /* empty bars only: kept below the meter's own [data-s] fills so those still win */
-[data-bs-theme="dark"] .cvx .mv-meter__bars i {
+[data-bs-theme="dark"] .cvx .mv-meter__bars i,
+[data-bs-theme="dark"] .cvx .gp-meter__track {
   background: rgba(255, 255, 255, .1);
 }
 
