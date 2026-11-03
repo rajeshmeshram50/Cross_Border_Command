@@ -85,7 +85,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     T.fields.forEach(f => {
       if (f.kind === 'file') return;
       if (f.kind === 'toggle') v[f.key] = detail?.twofa === 'yes' ? 'yes' : 'no';
-      else v[f.key] = detail && (!f.secret || preview) ? (dField.get(f.key)?.value ?? '') : '';
+      else v[f.key] = detail ? (detail.all_values?.[f.key] ?? (!f.secret || preview ? dField.get(f.key)?.value : null) ?? '') : '';
     });
     if (prefillKey) v[prefillKey] = init.prefillPassword!;
     return v;
@@ -97,7 +97,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [notes, setNotes] = useState(detail?.notes ?? '');
   const [regEmail, setRegEmail] = useState(detail?.recovery?.reg_email ?? '');
   const [regPhone, setRegPhone] = useState(detail?.recovery?.reg_phone ?? '');
-  const [rkey, setRkey] = useState('');
+  const [rkey, setRkey] = useState(detail?.all_values?.recovery_key ?? detail?.recovery?.recovery_key ?? '');
   const [scope, setScope] = useState<'personal' | 'team'>(detail?.scope ?? init.scope ?? 'personal');
   const [deptId, setDeptId] = useState(String(detail?.department?.id ?? init.departmentId ?? meta.me.department_id ?? ''));
   const [fieldFiles, setFieldFiles] = useState<Record<string, File>>({});
@@ -666,7 +666,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (regEmailErr) errs.reg_email = regEmailErr;
     const regPhoneErr = ex.reg_phone && regPhone.trim() ? phoneError(regPhone) : null;
     if (regPhoneErr) errs.reg_phone = regPhoneErr;
-    if (ex.recovery_key && rkey.trim() && rkey.trim().length < 4) errs.recovery_key = 'The recovery key looks too short';
+    if (ex.recovery_key && check('recovery_key') && rkey.trim() && rkey.trim().length < 4) errs.recovery_key = 'The recovery key looks too short';
     if (isPw && T.sec) {
       const pw = vals[T.sec] ?? '';
       if (pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
@@ -733,7 +733,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (Object.keys(fields).length) body.fields = fields;
     if (ex.reg_email) put('reg_email', regEmail.trim() || null);
     if (ex.reg_phone) put('reg_phone', regPhone.trim() || null);
-    if (ex.recovery_key && rkey.trim()) body.recovery_key = rkey.trim();
+    if (ex.recovery_key && rkey.trim() && (!editing || changed('recovery_key'))) body.recovery_key = rkey.trim();
     if (canProtect) {
       put('scope', scope);
       if (scope === 'team') put('department_id', deptId ? Number(deptId) : null, 'department_id');

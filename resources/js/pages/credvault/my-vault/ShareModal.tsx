@@ -152,6 +152,10 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
     try {
       const r = await cvApi.share(cred.id, body);
       toast.success(r.message, `${cred.name} · ${r.data.permission_label}`);
+      const mail = r.data.mail;
+      if (mail && (mail.status === 'failed' || mail.status === 'partly_sent')) {
+        toast.warning('Shared, but the email did not reach everyone', `${mail.failed} of ${mail.recipients} email${mail.recipients === 1 ? '' : 's'} could not be sent. The share is saved.`);
+      }
       onShared?.();
       onClose();
     } catch (err) {

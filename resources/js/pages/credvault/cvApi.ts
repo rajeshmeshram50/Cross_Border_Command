@@ -147,7 +147,8 @@ export interface PlanStep { step: number; key: LockStep; label: string; approver
 export interface CredentialDetail extends CredentialRow {
   locked: boolean; updated_by: string | null;
   fields?: DetailField[];
-  recovery?: { reg_email: string | null; reg_phone: string | null; has_recovery_key: boolean };
+  recovery?: { reg_email: string | null; reg_phone: string | null; has_recovery_key: boolean; recovery_key?: string | null };
+  all_values?: Record<string, string | null>;
   notes?: string | null; attachments?: Attachment[];
   shares?: ShareRow[];
   protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; policy: { admin: boolean; manager: boolean; otp: boolean } };
@@ -156,6 +157,7 @@ export interface CredentialDetail extends CredentialRow {
   health?: { resolved: { type: string; severity: string; issue: string }[]; still_open: { type: string; severity: string; issue: string }[] };
 }
 
+export interface ShareMail { status: 'sent' | 'partly_sent' | 'failed' | 'mail_off' | 'no_recipients'; recipients: number; sent: number; failed: number }
 export interface ShareRow {
   id: number;
   credential: { id: number; code: string; name: string; type: string; type_label: string; category_group: string | null; risk: Risk; url: string | null; updated_at: string | null } | null;
@@ -272,7 +274,7 @@ export const cvApi = {
 
   /* Sharing */
   recipients: (q?: string) => get<{ data: { users: Loose[]; teams: Loose[] } }>('/share-recipients', { q }).then(r => r.data),
-  share: (id: number, body: Loose) => send<{ data: ShareRow; message: string }>('post', `/credentials/${id}/shares`, body),
+  share: (id: number, body: Loose) => send<{ data: ShareRow & { mail?: ShareMail }; message: string }>('post', `/credentials/${id}/shares`, body),
   sharedByMe: (q: Q) => get<ListResponse<ShareRow>>('/shares', q),
   revoke: (shareId: number) => send<{ data: ShareRow; message: string }>('delete', `/shares/${shareId}`),
 
