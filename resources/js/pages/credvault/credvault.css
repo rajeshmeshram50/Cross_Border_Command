@@ -5740,11 +5740,22 @@
   grid-template-columns: 56px minmax(0, 1fr) !important;
 }
 
-/* --tv-h: the room down to the footer, set by TeamVault (useFillToFoot) */
+/* --tv-h: the room down to the footer, set by TeamVault (useFillToFoot).
+   The right pane grows with its rows (the pager caps them), so the page is the
+   only scroller there; the left pane takes the row's height (contain: size keeps
+   a long tree from stretching it) and scrolls its own list. */
 .cvx .tv-pane {
-  height: var(--tv-h, 620px);
+  min-height: var(--tv-h, 620px);
   display: flex;
   flex-direction: column;
+}
+
+.cvx .tv-split > .tv-pane:not(.tv-pane--r) {
+  contain: size;
+}
+
+.cvx .tv-split > .tv-pane--r > .tv-pane__bd {
+  overflow-y: visible;
 }
 
 .cvx .tv-pane__hd {
@@ -17212,20 +17223,6 @@
   flex: 1 0 auto;
 }
 
-/* Team Vault: the list fills its fixed-height pane and may shrink below its rows, so the table scrolls inside while the tabs and pager stay put */
-.cvx .tv-split .tvc-bd .tvc-list,
-.cvx .tv-split .tvc-bd .tvc-list>.whm-tblwrap {
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.cvx .tv-split .tvc-bd .tvc-list>.whm-tblwrap {
-  overflow-y: auto;
-}
-
-.cvx .tv-split .tvc-bd .whm-tbl.mv-tbl tbody td.mv-empty {
-  padding: 40px 16px !important;
-}
 .cvx .tvc-list .whm-tbl.mv-tbl thead th.mv-th-3,
 .cvx .tvc-list .whm-tbl.mv-tbl tbody td:nth-child(4) {
   text-align: center !important;

@@ -59,8 +59,8 @@ export default function TeamVault() {
   const seq = useRef(0);
   const bdRef = useRef<HTMLDivElement | null>(null);
   const splitRef = useRef<HTMLDivElement | null>(null);
-  // Both panes reach the footer, so only the panes scroll, never the page as well.
-  useFillToFoot(splitRef, (el, px) => el.style.setProperty('--tv-h', `${px}px`), 460);
+  // Both panes reach the footer, never shorter than 620px: a short screen scrolls the page down to them instead of crushing them.
+  useFillToFoot(splitRef, (el, px) => el.style.setProperty('--tv-h', `${px}px`), 620);
 
   const deptId = dept && dept.key !== 'admin' ? dept.key : null;
   // The admin node sees everything, as in the prototype — no member filter for it.
