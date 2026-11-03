@@ -184,14 +184,18 @@ export default function HrLeaveApprovals() {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, total: n } = await leaveRequestsApi.approvalsPage({
+      const { data, total: n, counts } = await leaveRequestsApi.approvalsPage({
         status: status === 'All' ? undefined : status,
         search: debouncedSearch || undefined,
         page,
         per_page: perPage,
+        // Per-status totals across every tab, so a tab's badge doesn't read 0
+        // just because another tab is the one currently loaded. (#60)
+        with_counts: true,
       });
       setRows(data);
       setTotal(n);
+      if (counts) setStatusCounts(counts);
     } catch (err) {
       console.warn('[HrLeaveApprovals] load failed', err);
       setRows([]);
@@ -279,11 +283,9 @@ export default function HrLeaveApprovals() {
     }
   };
 
-  const counts = useMemo(() => {
-    const c = { Pending: 0, Approved: 0, Rejected: 0, Cancelled: 0 };
-    rows.forEach(r => { c[r.status] = (c[r.status] || 0) + 1; });
-    return c;
-  }, [rows]);
+  // Tab counts come from the server, across every status under the current
+  // search — independent of which tab is open, which the page's rows are not.
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   return (
     <Row>
@@ -315,9 +317,9 @@ export default function HrLeaveApprovals() {
                 gap: 4,
               }}
             >
-              {(['Pending', 'Approved', 'Rejected', 'All'] as StatusFilter[]).map(s => {
+              {(['All', 'Pending', 'Approved', 'Rejected'] as StatusFilter[]).map(s => {
                 const on = status === s;
-                const count = s === 'All' ? undefined : counts[s as keyof typeof counts];
+                const count = statusCounts[s];
                 return (
                   <button
                     key={s}

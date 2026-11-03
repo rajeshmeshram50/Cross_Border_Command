@@ -830,26 +830,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   fields instead of a control group of their own. */}
               <div className="ssm-field ssm-field--wide">
                 <label className="ssm-label">Statutory Components</label>
-                {/* Payroll gates the whole employee on `enable_payroll` before
-                    it looks at any of these, so with it off the ticks below are
-                    a statement of intent and nothing more — no PF, ESI or PT is
-                    deducted and no payslip is produced at all.
-                    Compensation labels that toggle "PF Applicable for this
-                    Employee", which is why this modal showing PF ✓ beside it
-                    read as the two screens contradicting each other. Saying so
-                    here is what reconciles them: both are right, and the
-                    employee is simply off payroll. (#36) */}
-                {employee.enable_payroll === false && (
-                  <div className="ssm-payroll-off">
-                    <i className="ri-error-warning-line" />
-                    <span>
-                      This employee is currently <strong>off payroll</strong> —
-                      the Compensation step&rsquo;s &ldquo;PF Applicable for this Employee&rdquo;
-                      toggle is off. Nothing selected here is deducted, and no payslip is
-                      generated, until it is switched back on.
-                    </span>
-                  </div>
-                )}
+                {/* The off-payroll note is gone: it pointed at the Compensation
+                    "Include in Payroll" / PF Applicable toggle, which has since
+                    been removed, so the message named a control that no longer
+                    exists. (#50) */}
                 <div className="ssm-toggles">
                   {([
                     { on: pfApplicable,  set: setPfApplicable,  label: 'PF', meta: '12% of basic' },

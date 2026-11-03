@@ -95,9 +95,11 @@ class Branch extends Model
      * existing payroll runs until an admin edits the branch.
      */
     public const LATE_MARK_DEFAULTS = [
-        'enabled'   => true,
-        'count'     => 3,
-        'deduction' => 'half_day',
+        'enabled'     => true,
+        'count'       => 3,
+        'deduction'   => 'half_day',
+        // false = any N late marks in the period; true = only N in a row. (#53)
+        'consecutive' => false,
     ];
 
     /** Days of LOP charged per completed block, keyed by deduction option. */
@@ -137,10 +139,11 @@ class Branch extends Model
         }
 
         return [
-            'enabled'   => !$countUnusable
+            'enabled'     => !$countUnusable
                 && filter_var($value['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
-            'count'     => $count,
-            'deduction' => $deduction,
+            'count'       => $count,
+            'deduction'   => $deduction,
+            'consecutive' => filter_var($value['consecutive'] ?? false, FILTER_VALIDATE_BOOLEAN),
         ];
     }
 

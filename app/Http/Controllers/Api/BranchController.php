@@ -225,6 +225,8 @@ class BranchController extends Controller
             'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
             // Half day / full day only — payroll works in 0.5-day steps.
             'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
+            // false = any N late marks in the period; true = only N in a row. (#53)
+            'late_mark_policy.consecutive' => 'sometimes|boolean',
             // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
@@ -623,6 +625,8 @@ class BranchController extends Controller
             'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
             // Half day / full day only — payroll works in 0.5-day steps.
             'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
+            // false = any N late marks in the period; true = only N in a row. (#53)
+            'late_mark_policy.consecutive' => 'sometimes|boolean',
             // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
