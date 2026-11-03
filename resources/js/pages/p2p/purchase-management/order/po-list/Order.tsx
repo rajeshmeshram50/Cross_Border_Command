@@ -237,6 +237,7 @@ export type OrderRow = {
   /** Supplier master code, on rows loaded from /p2p/orders. */
   supplierCode?: string;
   invoices: InvoiceLine[];
+  spis?: { code: string; date: string }[];
   zohoSynced: boolean;
   /** Something of this PO is already in Zoho — the tracker has a story to tell. */
   zohoStarted: boolean;
@@ -416,6 +417,7 @@ export function toOrderRow(r: PoListRow): OrderRow {
     balance: Number(r.balance_amount) || 0,
     breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
     invoices: [],
+    spis: (r.spis ?? []).map(s => ({ code: s.code, date: s.date ?? '' })),
     // Synced once the PO + bill are in Zoho, every payment is posted to the bill and,
     // on a cancelled PO, the vendor credit and its refunds are there too.
     zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments && (!r.refund || r.refund.zoho_synced),

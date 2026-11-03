@@ -52,6 +52,8 @@ export type PoLinkRefs = {
   shipment_code: string | null; shipment_date: string | null;
   pi_code: string | null; pi_date: string | null;
   customer_name: string | null; opportunity_code: string | null;
+  /** SPIs mapped to the order, oldest first. */
+  spis?: { code: string; date: string | null }[];
 };
 
 export type PoListRow = PoLinkRefs & {

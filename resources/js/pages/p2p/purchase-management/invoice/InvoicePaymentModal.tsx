@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import {
-  Box, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
+  Box, PoSummaryCards, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { downloadFile } from '../../../../utils/downloadFile';
@@ -11,7 +11,7 @@ import WorklistPager from '../../../../components/ui/WorklistPager';
 import type { InvoiceRow } from './types';
 import type { InvoicePaymentRequest, SpiPayFigures } from './InvoicePaymentsModal';
 import type { ReleasePayment } from '../order/manage-payment/MakePoPaymentModal';
-import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentRow } from '../order/api/po-api';
+import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentRow, type PoPaymentsPayload } from '../order/api/po-api';
 import { spiPaymentApi } from './spi-api';
 
 import '../../p2p-detail.css';
@@ -61,12 +61,15 @@ function Field({ label, mod, children }: { label: string; mod?: string; children
 }
 
 export default function InvoicePaymentModal({
-  row, request, spiId, poId, figures, onChanged, onOpenTds, tdsSaved, onClose,
+  row, request, spiId, poId, po = null, figures, onChanged, onOpenTds, tdsSaved, onClose,
 }: {
   row: InvoiceRow;
   request: InvoicePaymentRequest;
   spiId: number;
   poId: number | null;
+  /* With a PO the money moves on the order, so its paid / balance are the
+     PO's - the SPI's own columns stay 0. */
+  po?: PoPaymentsPayload['po'] | null;
   figures: SpiPayFigures;
   onChanged: () => Promise<void> | void;
   onOpenTds?: () => void;
@@ -246,8 +249,8 @@ export default function InvoicePaymentModal({
           </Box>
 
           <Box
-            label="Summary" title="SPI Payment Details Summary"
-            sub="How this SPI's value is made up and where it stands today · read-only"
+            label="Summary" title={po ? 'PO Payment Details Summary' : 'SPI Payment Details Summary'}
+            sub={`How this ${po ? 'PO' : 'SPI'}'s value is made up and where it stands today · read-only`}
             headerExtra={onOpenTds ? (
               <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                 <button
@@ -265,6 +268,12 @@ export default function InvoicePaymentModal({
               </div>
             ) : undefined}
           >
+            {po ? (
+              <PoSummaryCards
+                total={po.grand_total} paid={po.paid} balance={po.balance} net={po.net_payable} complete={po.complete}
+                split={{ base: po.base_amount, gst: po.gst_amount, extra: po.extra_charges, gstPct: po.gst_pct }}
+                ccy={po.currency_code} />
+            ) : (
             <div className="mpr-stats">
               <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
                 value={money(base)} sub="Pre-tax invoice value" />
@@ -279,6 +288,7 @@ export default function InvoicePaymentModal({
               <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
                 value={money(balance)} sub={balance === 0 ? 'Settled in full' : 'Still to be released'} />
             </div>
+            )}
           </Box>
 
           <div className="mpr-panel">

@@ -4,10 +4,10 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { shortDesignation } from '../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import {
-  Box, Stat, STAT_ICONS, ICON_X, ICON_PENCIL, PAYMENT_TYPES, PaymentWait, money,
+  Box, PoSummaryCards, Stat, STAT_ICONS, ICON_X, ICON_PENCIL, PAYMENT_TYPES, PaymentWait, money,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
-import { PoApiError, poApprovalApi, type GstApprover } from '../order/api/po-api';
+import { PoApiError, poApprovalApi, type GstApprover, type PoPaymentsPayload } from '../order/api/po-api';
 import type { InvoiceRow } from './types';
 import type { SpiPayFigures, SpiRequestTotals } from './InvoicePaymentsModal';
 import type { SpiRaiseBody } from './spi-api';
@@ -30,8 +30,10 @@ const ICON_ALERT = (
 const TYPE_OPTIONS = PAYMENT_TYPES.map(t => ({ value: t, label: t }));
 const REASON_MAX = 300;
 
-export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmit, onClose }: {
+export default function InvoiceRaiseRequestModal({ row, po = null, figures, totals, onSubmit, onClose }: {
   row: InvoiceRow;
+  /* With a PO the summary is the order's own value, as on its other popups. */
+  po?: PoPaymentsPayload['po'] | null;
   figures: SpiPayFigures;
   totals: SpiRequestTotals;
   onSubmit: (body: SpiRaiseBody, approverName: string) => Promise<void>;
@@ -178,9 +180,15 @@ export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmi
 
         <div className="mpr-bd">
           <Box
-            label="Summary" title="SPI Payment Details Summary"
-            sub="How this SPI's value is made up and where it stands today · read-only"
+            label="Summary" title={po ? 'PO Payment Details Summary' : 'SPI Payment Details Summary'}
+            sub={`How this ${po ? 'PO' : 'SPI'}'s value is made up and where it stands today · read-only`}
           >
+            {po ? (
+              <PoSummaryCards
+                total={po.grand_total} paid={po.paid} balance={po.balance} net={po.net_payable} complete={po.complete}
+                split={{ base: po.base_amount, gst: po.gst_amount, extra: po.extra_charges, gstPct: po.gst_pct }}
+                ccy={po.currency_code} />
+            ) : (
             <div className="mpr-stats">
               <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
                 value={money(base)} sub="Pre-tax invoice value" />
@@ -195,6 +203,7 @@ export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmi
               <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
                 value={money(balance)} sub={complete ? 'Settled in full' : 'Still to be released'} />
             </div>
+            )}
           </Box>
 
           <Box

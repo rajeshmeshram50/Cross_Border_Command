@@ -401,8 +401,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
                     value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                    value={money(total)} sub={po ? `${money(po.tds_amount)} TDS on ${po.code}`
-                      : tdsAmount > 0 ? `${money(tdsAmount)} TDS · net ${money(netPayable)}` : 'No TDS withheld'} />
+                    value={money(total)} sub={tdsAmount > 0 ? `${money(tdsAmount)} TDS · net ${money(netPayable)}` : 'No TDS withheld'} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                     value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
@@ -605,6 +604,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
             request={payFor}
             spiId={spiId}
             poId={po?.id ?? null}
+            po={po}
             figures={figures}
             onChanged={load}
             onOpenTds={tdsCtl ? () => setTdsOpen(true) : undefined}
@@ -617,6 +617,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
         <Suspense fallback={null}>
           <InvoiceRaiseRequestModal
             row={row}
+            po={po}
             figures={figures}
             totals={totals}
             onSubmit={raise}
