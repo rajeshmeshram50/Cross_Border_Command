@@ -29,7 +29,7 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
     if (busy) return;
     setBusy(true);
     try {
-      const r = await cvApi.remove(row.id);
+      const r = await cvApi.remove(row.id, row.risk === 'critical');
       toast.warning(r.message);
       onDone();
     } catch (e) {

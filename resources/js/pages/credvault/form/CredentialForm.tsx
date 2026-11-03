@@ -5,7 +5,7 @@ import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, isEmail,
+  PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, hasTwofaSwitch, isEmail,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor, verifyTotp,
 } from './formHelpers';
 import { AUTH_EMPTY, AuthBox, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
@@ -91,7 +91,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     return v;
   });
   const [name, setName] = useState(detail?.name ?? '');
-  const [risk, setRisk] = useState<Risk>(detail?.risk ?? (init.critical ? 'critical' : T.risk));
+  const [risk, setRisk] = useState<Risk>(detail?.risk ?? (init.critical ? 'critical' : T.risk === 'critical' ? 'high' : T.risk));
   const [rotation, setRotation] = useState(detail ? String(detail.rotation_days ?? '') : String(pol.rotation_default ?? ''));
   const [twofa, setTwofa] = useState(detail?.twofa === 'yes');
   const [notes, setNotes] = useState(detail?.notes ?? '');
@@ -115,6 +115,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [approvers, setApprovers] = useState<Loose | null>(null);
 
   const wasCritical = detail?.risk === 'critical';
+  const inCritical = !!init.critical || wasCritical;
   const P = detail?.protection;
   const [prot, setProt] = useState<ProtectionValue>(() => ({
     admin: wasCritical && P ? P.admin : true,
@@ -128,7 +129,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
   const twofaOn = T.twofa ? twofa : toggleField ? vals.twofa === 'yes' : false;
   const critical = risk === 'critical';
-  const needAuth = critical && canProtect && prot.otp && pol.cp_otp;
+  const twofaLocks = critical && hasTwofaSwitch(T);
+  const needAuth = critical && canProtect && (twofaLocks ? twofaOn : prot.otp && pol.cp_otp);
   const [auth, setAuth] = useState<AuthState>(() => ({ ...AUTH_EMPTY, linkedOnServer: !!(P?.otp && P?.otp_linked) }));
   const verifiedAt = useRef(0);
 
@@ -145,7 +147,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   useEffect(() => {
     if (editing) return;
     let on = true;
-    cvApi.nextCode().then(c => { if (on) setCode(c); }).catch(() => { if (on) setCode('Auto'); });
+    cvApi.nextCode(!!init.critical).then(c => { if (on) setCode(c); }).catch(() => { if (on) setCode('Auto'); });
     return () => { on = false; };
   }, [editing]);
 
@@ -546,7 +548,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      meta.risks.filter(r => r.key !== 'critical' || init.critical || wasCritical).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
+      meta.risks.filter(r => (r.key === 'critical') === inCritical).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
   ];
   if (isPw) {
     s3.push(selItem('rotation_days', 'Password Rotation', 'cal', false, rotation,
@@ -687,7 +689,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
     const lockAdmin = prot.admin;
     const lockManager = prot.manager;
-    const lockOtp = prot.otp;
+    const lockOtp = twofaLocks ? twofaOn : prot.otp;
     if (critical && canProtect && !lockAdmin && !lockManager && !lockOtp) {
       toast.warning('Turn on at least one protection step for a critical credential');
       bodyRef.current?.querySelector('#cpSec')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -758,7 +760,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      const r = editing ? await cvApi.update(detail!.id, payload) : await cvApi.create(payload);
+      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
       toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
       onSaved(r.data);
     } catch (e) {
@@ -828,7 +830,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                 items={[{
                   span: 4,
                   render: () => (
-                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={false} twofaOn={twofaOn}
+                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={twofaLocks} twofaOn={twofaOn}
                       set={p => { if ('adminUserId' in p || 'managerUserId' in p) protIdsTouched.current = true; setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
                       adminOptions={adminOptions} managerOptions={managerOptions} auth={auth} authBox={authBox} errors={errors} />
                   ),

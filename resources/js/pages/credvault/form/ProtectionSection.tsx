@@ -246,7 +246,8 @@ export function ProtectionBody({ v, set, policy, hasMain, twofaOn, adminOptions,
       {hasMain ? (
         <Row n={3} ico={CP_I.phone} t="2FA — Authenticator app"
           d="Uses the “2FA” field in this form — switch it on and link your authenticator app. A 6-digit code is then needed before this credential opens."
-          extra={step3Chip} />
+          extra={step3Chip}
+          panel={twofaOn ? authBox : null} />
       ) : (
         <Row n={3} ico={CP_I.phone} t="2FA — Authenticator app"
           d="A 6-digit code from Google / Microsoft Authenticator is needed before the credential opens. Link the app below."

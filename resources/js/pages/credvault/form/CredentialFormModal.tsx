@@ -48,7 +48,7 @@ function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
     locked: false, updated_by: row.owner.name,
     fields: T.fields.filter(f => f.kind !== 'file').map(f => {
       const own = typeof loose[f.key] === 'string' ? loose[f.key] as string : null;
-      const value = f.secret ? (row.has_password ? SAMPLE_PW[row.strength] || null : null)
+      const value = f.secret ? (row.has_password ? SAMPLE_PW[row.strength_level] || null : null)
         : own ?? (f.kind === 'url' ? row.url : null);
       return { key: f.key, label: f.label, kind: f.kind, value, masked: f.secret, has_value: f.secret ? row.has_password : !!value };
     }),

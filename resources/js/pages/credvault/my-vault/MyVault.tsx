@@ -112,7 +112,7 @@ export default function MyVault() {
           if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
           setShares(r.data); setPm(r.meta); setCounts(c.tabs);
         } else {
-          const r = await cvApi.list({ tab, q: dq, page, per_page: perPage });
+          const r = await cvApi.vaultList(false, { tab, q: dq, page, per_page: perPage });
           if (n !== seq.current) return;
           if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
           setRows(r.data); setPm(r.meta); setCounts(r.tabs);
