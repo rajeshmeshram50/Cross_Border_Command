@@ -51,7 +51,7 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
                   <td><OwnerCell row={r} /></td>
                   <td><RiskFlag risk={r.risk} /></td>
                   <td><StrengthCell row={r} /></td>
-                  <td><TwofaCell twofa={r.twofa} /></td>
+                  <td><TwofaCell twofa={r.twofa} type={typeOf(r.type)} /></td>
                   <td><UpdatedCell iso={r.updated_at} /></td>
                   <td>
                     <div className="whm-acts">

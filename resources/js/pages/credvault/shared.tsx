@@ -433,12 +433,15 @@ export function StrengthCell({ row }: { row: Pick<CredentialRow, 'has_password' 
   );
 }
 
-export function TwofaCell({ twofa }: { twofa: Twofa }) {
+export const typeHasTwofa = (T?: TypeDef) => !!T && (T.twofa || T.fields.some(f => f.key === 'twofa' && f.kind === 'toggle'));
+
+export function TwofaCell({ twofa, type }: { twofa: Twofa; type?: TypeDef }) {
+  const supported = type ? typeHasTwofa(type) || twofa === 'yes' : twofa !== 'na';
   return (
     <div className="znm-flagcell">
-      {twofa === 'na' ? <span className="znm-flag znm-flag--no">N/A</span>
+      {!supported ? <span className="znm-flag znm-flag--no">N/A</span>
         : twofa === 'yes' ? <span className="znm-flag mv-2on"><Svg icon="shield" size={11} />Enabled</span>
-          : <span className="znm-flag znm-flag--no">Not Enabled</span>}
+          : <span className="znm-flag znm-flag--no">Disabled</span>}
     </div>
   );
 }
@@ -552,7 +555,7 @@ export function credentialColumns({ critical = false, typeOf }: { critical?: boo
     { header: 'Strength', id: 'strength', meta: { width: '10%', align: 'center' },
       cell: ({ row: { original: r } }) => <StrengthCell row={r} /> },
     { header: '2FA', id: 'twofa', meta: { width: '7%', align: 'center' },
-      cell: ({ row: { original: r } }) => <TwofaCell twofa={r.twofa} /> },
+      cell: ({ row: { original: r } }) => <TwofaCell twofa={r.twofa} type={typeOf(r.type)} /> },
     { header: 'Last Updated', id: 'updated', meta: { width: '8%' },
       cell: ({ row: { original: r } }) => <UpdatedCell iso={r.updated_at} /> },
   ];
