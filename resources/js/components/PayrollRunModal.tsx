@@ -731,9 +731,6 @@ export default function PayrollRunModal({
               actions (Open Employee / Go to Attendance), which do real work. */}
           <div className="prm-footer">
             <div className="d-flex gap-2 ms-auto flex-wrap">
-              <button type="button" className="prm-btn prm-btn--ghost-violet" onClick={onClose}>
-                <i className="ri-layout-grid-line me-1" /> Open Execution View
-              </button>
               <button
                 type="button"
                 className="prm-btn prm-btn--dark"

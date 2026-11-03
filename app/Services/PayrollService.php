@@ -1923,7 +1923,21 @@ class PayrollService
          * stay an honest attendance figure further down (#114). */
         $absenceLopDays = $lopDays;
 
-        $lateLopDays = \App\Models\Branch::lateMarkLopFor($latePolicy, (int) $lateMarks);
+        /* "Consecutive" (branch setting, #53): only a run of `count` late marks
+         * in a row deducts, and the run resets on any worked day that was on
+         * time. "Any" keeps the original total-count rule. */
+        $lateConsecutive = (bool) ($latePolicy['consecutive'] ?? false);
+        if ($latePolicy['enabled'] && $lateConsecutive) {
+            $ded = \App\Models\Branch::LATE_MARK_DEDUCTIONS[$latePolicy['deduction']];
+            $run = 0; $blocks = 0;
+            foreach (($att['late_seq'] ?? []) as $isLate) {
+                if ($isLate) { $run++; if ($run % $latePolicy['count'] === 0) $blocks++; }
+                else { $run = 0; }
+            }
+            $lateLopDays = $blocks * $ded;
+        } else {
+            $lateLopDays = \App\Models\Branch::lateMarkLopFor($latePolicy, (int) $lateMarks);
+        }
         $lateUnit    = $latePolicy['deduction'] === 'full_day' ? 'full day' : 'half day';
         if ($lateLopDays > 0) {
             $lopDays += $lateLopDays;
@@ -1931,12 +1945,13 @@ class PayrollService
             // Pluralised because "every 1 late marks = full day" read like a bug
             // report of its own on the review screen.
             $lateBlock = $latePolicy['count'] === 1 ? 'late mark' : 'late marks';
+            $lateMode  = $lateConsecutive ? 'consecutive ' : '';
             $lateDays  = $this->trimNum($lateLopDays);
             $exceptions = $this->withException(
                 $exceptions,
                 'info',
                 "{$lateMarks} late marks → {$lateDays} day" . ($lateLopDays == 1 ? '' : 's') . " LOP "
-                    . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
+                    . "(branch rule: every {$latePolicy['count']} {$lateMode}{$lateBlock} = {$lateUnit}; "
                     . "verify hours covered before approving)."
             );
         } elseif ($lateMarks > 0) {
@@ -3500,6 +3515,10 @@ class PayrollService
         $workedDates = [];
         /** Days the short-hours policy demoted, for the payslip warning. */
         $shortDays = [];
+        // Ordered late / not-late per WORKED day, for the consecutive late-mark
+        // rule (#53). Non-worked days are omitted so a weekend/leave doesn't
+        // itself break a run of late arrivals.
+        $lateMarkByDate = [];
         foreach ($rows as $r) {
             $status = (string) ($r->status ?? '');
             $hasIn  = !empty($r->check_in_at);
@@ -3574,6 +3593,9 @@ class PayrollService
 
             $credit = round($present - $creditBefore, 2);
             $key    = Carbon::parse($r->attendance_date)->toDateString();
+            if ($worked) {
+                $lateMarkByDate[$key] = ($status === 'Late') || ($status === 'Half Day' && $arrivedLate);
+            }
 
             /* Rule 3 (PAY-17) — short hours demote a full day to half (or to
              * nothing) per the branch policy. Applied here, at the point the
@@ -3599,9 +3621,11 @@ class PayrollService
                 $workedDates[$key] = round(($workedDates[$key] ?? 0) + $credit, 2);
             }
         }
+        ksort($lateMarkByDate);
         return [
             'present' => round($present, 2),
             'late' => $late,
+            'late_seq' => array_values($lateMarkByDate),
             'missing' => $missing,
             'rows' => $rows->count(),
             'worked_dates' => $workedDates,

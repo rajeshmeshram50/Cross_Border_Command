@@ -32,6 +32,7 @@ const empty = {
   late_mark_enabled: 'yes',
   late_mark_count: '3',
   late_mark_deduction: 'half_day',
+  late_mark_consecutive: 'any',
   gst_number: '', pan_number: '', registration_number: '',
   gst_state_code: '', cin: '', iec: '',
   drug_license: '', pcpndt_no: '', aeo_code: '',
@@ -667,6 +668,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         late_mark_enabled: rawLate && rawLate.enabled === false ? 'no' : 'yes',
         late_mark_count: String(rawLate?.count ?? 3),
         late_mark_deduction: rawLate?.deduction === 'full_day' ? 'full_day' : 'half_day',
+        late_mark_consecutive: rawLate?.consecutive ? 'consecutive' : 'any',
         industry: b.industry || '', description: b.description || '',
         gst_number: b.gst_number || '', pan_number: b.pan_number || '',
         registration_number: b.registration_number || '',
@@ -799,10 +801,12 @@ export default function BranchForm({ onBack, editId }: Props) {
         enabled: form.late_mark_enabled !== 'no',
         count: Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3)),
         deduction: form.late_mark_deduction === 'full_day' ? 'full_day' : 'half_day',
+        consecutive: form.late_mark_consecutive === 'consecutive',
       };
       delete payload.late_mark_enabled;
       delete payload.late_mark_count;
       delete payload.late_mark_deduction;
+      delete payload.late_mark_consecutive;
 
       if (isEdit) {
         if (logoFile || profilePhotoFile || signatureFile) {
@@ -1694,6 +1698,7 @@ export default function BranchForm({ onBack, editId }: Props) {
               const enabled = form.late_mark_enabled !== 'no';
               const count   = Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3));
               const perCut  = form.late_mark_deduction === 'full_day' ? 1 : 0.5;
+              const consecutive = form.late_mark_consecutive === 'consecutive';
 
               return (
                 <div className="mb-3" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '14px 16px', background: 'var(--vz-light, rgba(0,0,0,0.015))' }}>
@@ -1705,7 +1710,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                   </div>
 
                   <Row className="g-3">
-                    <Col md={enabled ? 4 : 12}>
+                    <Col md={enabled ? 3 : 12}>
                       <Lbl>Deduct for Late Marks <span style={{ color: '#dc2626' }}>*</span></Lbl>
                       <Input type="select" style={css.input} value={form.late_mark_enabled}
                         onChange={e => {
@@ -1721,7 +1726,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                     </Col>
                     {enabled && (
                       <>
-                        <Col md={4}>
+                        <Col md={3}>
                           <Lbl>Late Marks Count <span style={{ color: '#dc2626' }}>*</span></Lbl>
                           <Input type="number" min={1} max={31} style={css.input}
                             invalid={!!lateMarkError}
@@ -1732,7 +1737,21 @@ export default function BranchForm({ onBack, editId }: Props) {
                             {lateMarkError || 'Number of late marks that trigger one deduction.'}
                           </div>
                         </Col>
-                        <Col md={4}>
+                        <Col md={3}>
+                          <Lbl>Counting <span style={{ color: '#dc2626' }}>*</span></Lbl>
+                          <Input type="select" style={css.input}
+                            value={form.late_mark_consecutive}
+                            onChange={e => set('late_mark_consecutive', e.target.value)}>
+                            <option value="any">Any {count} in the period</option>
+                            <option value="consecutive">{count} in a row (consecutive)</option>
+                          </Input>
+                          <div className="text-muted" style={{ fontSize: 11 }}>
+                            {consecutive
+                              ? `Only ${count} late marks in a row are cut; a punctual day resets the run.`
+                              : `Any ${count} late marks across the period are cut.`}
+                          </div>
+                        </Col>
+                        <Col md={3}>
                           <Lbl>Leave Cut <span style={{ color: '#dc2626' }}>*</span></Lbl>
                           <Input type="select" style={css.input}
                             value={form.late_mark_deduction}
@@ -1750,9 +1769,11 @@ export default function BranchForm({ onBack, editId }: Props) {
                     {enabled ? (
                       <span>
                         <span className="fw-semibold">Example:</span>{' '}
-                        {count} late marks = <span className="fw-semibold">{perCut === 1 ? '1 day' : 'half day'}</span> cut,{' '}
-                        {count * 2} late marks = <span className="fw-semibold">{perCut * 2} day{perCut * 2 === 1 ? '' : 's'}</span> cut.
-                        Fewer than {count} late marks in the period cost nothing.
+                        {count}{consecutive ? ' consecutive' : ''} late marks = <span className="fw-semibold">{perCut === 1 ? '1 day' : 'half day'}</span> cut,{' '}
+                        {count * 2}{consecutive ? ' in a row' : ''} = <span className="fw-semibold">{perCut * 2} day{perCut * 2 === 1 ? '' : 's'}</span> cut.{' '}
+                        {consecutive
+                          ? `A run shorter than ${count} in a row costs nothing; a punctual day resets the run.`
+                          : `Fewer than ${count} late marks in the period cost nothing.`}
                       </span>
                     ) : (
                       <span className="text-muted">
