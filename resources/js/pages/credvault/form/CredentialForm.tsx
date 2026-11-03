@@ -5,7 +5,7 @@ import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, hasTwofaSwitch, isEmail,
+  PHONE_CHARS, STR_LBL, checkField, emailError, fieldSpan, fillRows, generatePassword, hasTwofaSwitch, phoneError,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor, verifyTotp,
 } from './formHelpers';
 import { AUTH_EMPTY, AuthBox, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
@@ -240,7 +240,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const cls = `mapsup-finput has-ico${f.mono ? ' crd-mono' : ''}`;
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
-    const onText = (v: string) => setVal(f.key, f.upper ? v.toUpperCase() : v);
+    const onText = (v: string) => setVal(f.key, f.kind === 'tel' ? PHONE_CHARS(v) : f.upper ? v.toUpperCase() : v);
+    const onLeave = () => {
+      const v = (vals[f.key] ?? '').trim();
+      const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v) : null;
+      if (m) setErrors(e => ({ ...e, [k]: m }));
+    };
     const req = f.required && !(editing && had && (f.secret || f.kind === 'file'));
 
     return {
@@ -339,7 +344,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         } else {
           ctl = (
             <input id={`crdF_${f.key}`} type={f.kind} className={cls} value={val} placeholder={ph}
-              maxLength={f.max ?? undefined} autoComplete="off" onChange={e => onText(e.target.value)} />
+              maxLength={f.kind === 'tel' ? 16 : f.kind === 'email' ? 191 : f.max ?? undefined} autoComplete="off"
+              inputMode={f.kind === 'tel' ? 'tel' : f.kind === 'email' ? 'email' : undefined}
+              onChange={e => onText(e.target.value)} onBlur={onLeave} />
           );
         }
         return (
@@ -447,7 +454,13 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         <div className="mapsup-inputwrap">
           <span className="mapsup-input-ico"><Svg icon={ico} size={13} /></span>
           <input className="mapsup-finput has-ico" type={type} value={value} placeholder={ph} autoComplete="off"
-            maxLength={type === 'tel' ? 16 : 191} onChange={e => { set(e.target.value); clr(k); }} />
+            maxLength={type === 'tel' ? 16 : 191} inputMode={type === 'tel' ? 'tel' : 'email'}
+            onChange={e => { set(type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value); clr(k); }}
+            onBlur={() => {
+              const v = value.trim();
+              const m = v ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;
+              if (m) setErrors(e => ({ ...e, [k]: m }));
+            }} />
         </div>
         <span className="crd-hint">{hint}</span>
         <Err msg={errors[k]} />
@@ -648,8 +661,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       const m = checkField(f, v);
       if (m) errs[k] = m;
     });
-    if (ex.reg_email && regEmail.trim() && !isEmail(regEmail.trim())) errs.reg_email = 'Enter a valid email address';
-    if (ex.reg_phone && regPhone.trim() && !PHONE_RE.test(regPhone.trim())) errs.reg_phone = 'Enter a valid phone number, e.g. +91 98200 11223';
+    const regEmailErr = ex.reg_email && regEmail.trim() ? emailError(regEmail) : null;
+    if (regEmailErr) errs.reg_email = regEmailErr;
+    const regPhoneErr = ex.reg_phone && regPhone.trim() ? phoneError(regPhone) : null;
+    if (regPhoneErr) errs.reg_phone = regPhoneErr;
     if (ex.recovery_key && rkey.trim() && rkey.trim().length < 4) errs.recovery_key = 'The recovery key looks too short';
     if (isPw && T.sec) {
       const pw = vals[T.sec] ?? '';

@@ -73,15 +73,36 @@ export function fillRows(spans: number[]): number[] {
 }
 
 const URL_RE = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}|^(https?:\/\/)?\d{1,3}(\.\d{1,3}){3}/i;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9_%+-])?@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 export const PHONE_RE = /^\+?[\d\s()-]{10,16}$/;
+export const PHONE_CHARS = (v: string) => v.replace(/[^\d+\s()-]/g, '').replace(/(?!^)\+/g, '');
+
+export function phoneError(v: string): string | null {
+  const t = v.trim();
+  if (!/^\+?[\d\s()-]+$/.test(t)) return 'Use digits only, with an optional + at the start';
+  const digits = t.replace(/\D/g, '').length;
+  if (digits < 10) return 'Phone number is too short — enter at least 10 digits';
+  if (digits > 15) return 'Phone number is too long — at most 15 digits';
+  if (t.length > 16) return 'Too many spaces or symbols — keep it to 16 characters, e.g. +91 98200 11223';
+  return null;
+}
+
+export function emailError(v: string): string | null {
+  const t = v.trim();
+  if (t.length > 191) return 'Email address is too long';
+  if (/\s/.test(t)) return 'Email address cannot contain spaces';
+  if (!t.includes('@')) return 'Email address needs an @, e.g. name@company.com';
+  if (t.includes('..')) return 'Email address cannot contain two dots in a row';
+  if (!EMAIL_RE.test(t)) return 'Enter a valid email address, e.g. name@company.com';
+  return null;
+}
 
 /** crdSave's per-field check — the server repeats these and more. */
 export function checkField(f: FieldDef, val: string): string | null {
   const k = f.key;
   if (f.kind === 'url' && !URL_RE.test(val)) return 'Enter a valid URL';
-  if (f.kind === 'email' && !EMAIL_RE.test(val)) return 'Enter a valid email address';
-  if (f.kind === 'tel' && !PHONE_RE.test(val)) return 'Enter a valid phone number, e.g. +91 98200 11223';
+  if (f.kind === 'email') return emailError(val);
+  if (f.kind === 'tel') return phoneError(val);
   if (k === 'cardno' && !/^\d{12,19}$/.test(val.replace(/[\s-]/g, ''))) return 'Card number must be 12–19 digits';
   if (k === 'exp' && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(val)) return 'Use MM/YY, e.g. 08/28';
   if (k === 'cvv' && !/^\d{3,4}$/.test(val)) return 'CVV must be 3 or 4 digits';
