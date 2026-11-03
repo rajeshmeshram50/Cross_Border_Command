@@ -1,0 +1,729 @@
+{
+    "info": {
+        "name": "CredVault — Team Vault API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "The Team Vault screen: the Team Details pane (admin card + department cards), one department (stats, level chips, hierarchy tree), View all (organisation), and the My Credentials / Team Credentials table.\n\nBEFORE YOU START\n1. Fill baseUrl, email/password (an employee with Credentials Vault → View), adminEmail/adminPassword (a client admin of the same company), managerEmail/managerPassword.\n2. Run 00 · Setup, then 01 · Team Vault in order: later requests read teamDeptId and teamMemberEmployeeId saved by earlier ones.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Team Vault."
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "00 · Setup",
+            "description": "Log in three people: the requester ({{token}}), the Vault Admin ({{adminToken}}) and the requester's reporting manager ({{managerToken}}). Then read the types and the two vaults.",
+            "item": [
+                {
+                    "name": "Login — requester (employee)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Vault Admin (client admin)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('adminToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('adminToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — requester's reporting manager",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('managerToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('managerToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Meta — 25 types, vaults, 2-step methods",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/meta",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "meta"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('25 types', () => pm.expect(b.data.types.length).to.eql(25));",
+                                    "pm.test('two vaults', () => pm.expect(b.data.vaults.map(v => v.prefix)).to.eql(['CRD', 'CCRD']));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 · Team Vault — departments, hierarchy, team credentials",
+            "description": "The Team Vault screen.\n\n• Left pane: GET /team/departments — the admin card (Vault Admin, members, departments, HODs, level bar) and one card per department (HOD name + initials, members, level bar, team credential counts).\n• Department view: GET /team/departments/{id} — stats (members, levels, teams), the level chips (Admin, HOD, TL, Executive, Employee, Intern), members (flat) and tree (Vault Admin → each person under their manager, with children_count and team_size on every node).\n• View all: GET /team/organisation — the same for every department, with a department node under the Admin.\n• The table: GET /normal-vault/credentials?tab=mine|team&department_id=&member_employee_id=&q=.",
+            "item": [
+                {
+                    "name": "Departments — admin card + department cards",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/team/departments",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "team",
+                                "departments"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.departments[0].id; if (v !== undefined && v !== null) pm.collectionVariables.set('teamDeptId', String(v)); } catch (e) {}",
+                                    "pm.test('admin card', () => { pm.expect(b.data.admin.admins[0].role).to.eql('Vault Administrator'); pm.expect(b.data.admin).to.include.keys('members', 'departments', 'hods', 'levels'); });",
+                                    "pm.test('department cards', () => b.data.departments.forEach(d => pm.expect(d).to.include.keys('id', 'name', 'hod', 'members', 'levels', 'credentials', 'critical_credentials')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Departments — search",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/team/departments?q=a",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "team",
+                                "departments"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "a"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "One department — stats, level chips, members, tree",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/team/departments/{{teamDeptId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "team",
+                                "departments",
+                                "{{teamDeptId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.members[0].employee_id; if (v !== undefined && v !== null) pm.collectionVariables.set('teamMemberEmployeeId', String(v)); } catch (e) {}",
+                                    "pm.test('stats', () => pm.expect(b.data.stats).to.include.keys('members', 'levels', 'teams', 'hods', 'credentials'));",
+                                    "pm.test('Admin chip first', () => pm.expect(b.data.levels[0].level).to.eql('admin'));",
+                                    "pm.test('tree from the Vault Admin', () => { pm.expect(b.data.tree.type).to.eql('admin'); pm.expect(b.data.tree.children_count).to.eql(b.data.tree.children.length); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "One department — unknown (404)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/team/departments/999999",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "team",
+                                "departments",
+                                "999999"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Organisation — View all (every department)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/team/organisation",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "team",
+                                "organisation"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('department nodes under the Admin', () => b.data.tree.children.forEach(c => pm.expect(c.type).to.eql('department')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Add a team credential (Team Vault)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "No department_id: it goes to your own team. Send department_id only for your own team, or one you head or administer (any other → 403)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('teamCredId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Table — My Credentials",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=mine&page=1&per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                },
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Table — Team Credentials (one department)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=team&department_id={{teamDeptId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{teamDeptId}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('tab counts', () => pm.expect(b.tabs).to.include.keys('mine', 'team'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Table — Team Credentials, search",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=team&department_id={{teamDeptId}}&q=github",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{teamDeptId}}"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "github"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Table — credentials a member can open (member chip)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=team&member_employee_id={{teamMemberEmployeeId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "member_employee_id",
+                                    "value": "{{teamMemberEmployeeId}}"
+                                }
+                            ]
+                        },
+                        "description": "A member with no login yet answers 422 (\"has no CredVault login yet\")."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Table — all critical team credentials (shared list)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/credentials?tab=team&department_id={{teamDeptId}}&vault=critical",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{teamDeptId}}"
+                                },
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
+        },
+        {
+            "key": "email",
+            "value": ""
+        },
+        {
+            "key": "password",
+            "value": ""
+        },
+        {
+            "key": "adminEmail",
+            "value": ""
+        },
+        {
+            "key": "adminPassword",
+            "value": ""
+        },
+        {
+            "key": "managerEmail",
+            "value": ""
+        },
+        {
+            "key": "managerPassword",
+            "value": ""
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "adminToken",
+            "value": ""
+        },
+        {
+            "key": "managerToken",
+            "value": ""
+        },
+        {
+            "key": "teamDeptId",
+            "value": ""
+        },
+        {
+            "key": "teamMemberEmployeeId",
+            "value": ""
+        },
+        {
+            "key": "teamCredId",
+            "value": ""
+        }
+    ]
+}

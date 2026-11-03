@@ -977,8 +977,10 @@ class CredVaultController extends Controller
      * GET /credvault/team/departments/{id} — one department's hierarchy.
      * GET /credvault/team/organisation       — the admin card's "View all": every department.
      *
-     * Members come flat, each with manager_employee_id and a level, so the
-     * client draws the tree; a member whose manager sits outside the set is a root.
+     * Members come flat (each with manager_employee_id and a level) and as `tree`, ready to draw:
+     * the Vault Admin at the root, then each member under their manager — a member whose manager
+     * sits outside the set hangs from the root (in the organisation view, from their department's
+     * node). Every node carries children_count (direct reports, the "2 ▾" badge) and team_size.
      */
     public function teamDepartment(Request $request, int $id)
     {
@@ -1025,6 +1027,8 @@ class CredVaultController extends Controller
             ];
         })->values();
         $counts = $members->countBy('level')->all();
+        $admins = User::whereIn('id', $this->adminIds($u->client_id))->orderBy('id')->get(['id', 'name']);
+        $counts = ['admin' => $admins->count()] + $counts;   // the department's "Admin" chip: the Vault Admin(s)
 
         $creds = Credential::where('client_id', $u->client_id)->where('scope', 'team')
             ->when($dep, fn ($q) => $q->where('department_id', $dep->id))
@@ -1043,7 +1047,47 @@ class CredVaultController extends Controller
             ],
             'levels'  => $this->levelList($counts),
             'members' => $members,
+            'tree'    => $this->hierarchyTree($members, $admins, $dep),
         ];
+    }
+
+    /** The members as nested nodes under the Vault Admin; cycle-safe, children ordered by level then name. */
+    protected function hierarchyTree(Collection $members, Collection $admins, ?Departments $dep): array
+    {
+        $rank = array_flip(array_keys(self::LEVELS));
+        $kids = $members->groupBy(fn ($m) => $m['manager_employee_id'] ?? 0);
+        $seen = [];
+        $build = function (array $m) use (&$build, $kids, $rank, &$seen): array {
+            $seen[$m['employee_id']] = true;
+            $children = collect($kids[$m['employee_id']] ?? [])->reject(fn ($c) => isset($seen[$c['employee_id']]))
+                ->sortBy([fn ($a, $b) => ($rank[$a['level']] ?? 9) <=> ($rank[$b['level']] ?? 9), fn ($a, $b) => strcasecmp($a['name'], $b['name'])])
+                ->map(fn ($c) => $build($c))->values()->all();
+
+            return ['type' => 'member', 'employee_id' => $m['employee_id'], 'user_id' => $m['user_id'], 'name' => $m['name'], 'initials' => $m['initials'],
+                    'designation' => $m['designation'], 'level' => $m['level'], 'level_label' => $m['level_label'], 'department' => $m['department'],
+                    'children_count' => count($children), 'team_size' => array_sum(array_map(fn ($c) => 1 + $c['team_size'], $children)), 'children' => $children];
+        };
+        $sortRoots = fn ($c) => $c->sortBy([fn ($a, $b) => ($rank[$a['level']] ?? 9) <=> ($rank[$b['level']] ?? 9), fn ($a, $b) => strcasecmp($a['name'], $b['name'])]);
+        $roots = $sortRoots(collect($kids[0] ?? []));
+
+        if ($dep) {
+            $children = $roots->map(fn ($m) => $build($m))->values()->all();
+        } else {
+            // The organisation: a node per department between the Vault Admin and its people.
+            $children = $roots->groupBy(fn ($m) => $m['department']['id'])->map(function ($g) use ($build, $members) {
+                $nodes = $g->map(fn ($m) => $build($m))->values()->all();
+                $d = $g->first()['department'];
+                return ['type' => 'department', 'department_id' => $d['id'], 'name' => $d['name'], 'initials' => $this->initials($d['name']),
+                        'members' => $members->where('department.id', $d['id'])->count(),
+                        'children_count' => count($nodes), 'team_size' => array_sum(array_map(fn ($c) => 1 + $c['team_size'], $nodes)), 'children' => $nodes];
+            })->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
+        }
+        $a = $admins->first();
+
+        return ['type' => 'admin', 'user_id' => $a?->id, 'name' => $a?->name ?? 'Vault Admin', 'initials' => $this->initials($a?->name ?? 'Vault Admin'),
+                'designation' => 'Vault Administrator', 'level' => 'admin', 'level_label' => self::LEVELS['admin'] ?? 'Admin',
+                'children_count' => count($children), 'team_size' => array_sum(array_map(fn ($c) => ($c['type'] === 'department' ? 0 : 1) + $c['team_size'], $children)),
+                'children' => $children];
     }
 
     /** [department_id => [level => active members]] for the tenant, in one query. */
@@ -3943,7 +3987,7 @@ class CredVaultController extends Controller
     {
         if (!filled($d->head)) return null;
 
-        return ['id' => $this->deptHeads($clientId)[(int) $d->id] ?? null, 'name' => $d->head];
+        return ['id' => $this->deptHeads($clientId)[(int) $d->id] ?? null, 'name' => $d->head, 'initials' => $this->initials($d->head), 'role' => 'HOD'];
     }
 
     /** The login behind the user's reporting manager, by either link HR may have used. */
