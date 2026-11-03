@@ -240,7 +240,14 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const cls = `mapsup-finput has-ico${f.mono ? ' crd-mono' : ''}`;
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
-    const onText = (v: string) => setVal(f.key, f.kind === 'tel' ? PHONE_CHARS(v) : f.upper ? v.toUpperCase() : v);
+    const onText = (raw: string) => {
+      const v = f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
+      setVal(f.key, v);
+      if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
+        const m = v.trim() ? checkField(f, v.trim()) : null;
+        if (m) setErrors(e => ({ ...e, [k]: m }));
+      }
+    };
     const onLeave = () => {
       const v = (vals[f.key] ?? '').trim();
       const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v) : null;
@@ -456,7 +463,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           <span className="mapsup-input-ico"><Svg icon={ico} size={13} /></span>
           <input className="mapsup-finput has-ico" type={type} value={value} placeholder={ph} autoComplete="off"
             maxLength={type === 'tel' ? 16 : 191} inputMode={type === 'tel' ? 'tel' : 'email'}
-            onChange={e => { set(type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value); clr(k); }}
+            onChange={e => {
+              const v = type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value;
+              set(v);
+              const m = errors[k] && v.trim() ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;
+              if (m) setErrors(x => ({ ...x, [k]: m })); else clr(k);
+            }}
             onBlur={() => {
               const v = value.trim();
               const m = v ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;

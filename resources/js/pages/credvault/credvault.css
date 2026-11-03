@@ -17406,7 +17406,8 @@
 [data-bs-theme="dark"] .cvx .dl-modal .dl-text b,
 [data-bs-theme="dark"] .cvx .dl-modal .mb-ack,
 [data-bs-theme="dark"] .cvx .dl-modal .dl-ack,
-[data-bs-theme="dark"] .cvx .dl-modal .dl-title {
+[data-bs-theme="dark"] .cvx .dl-modal .dl-title,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm.is-on b {
   color: #e2f4f8 !important;
 }
 

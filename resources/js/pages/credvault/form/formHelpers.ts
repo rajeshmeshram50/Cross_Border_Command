@@ -83,6 +83,11 @@ const EMAIL_MSG = 'Enter a valid email address';
 export function phoneError(v: string): string | null {
   const t = v.trim();
   if (!/^\+?[\d\s()-]+$/.test(t) || t.length > 16) return PHONE_MSG;
+  if (!/^\+?\(?\d/.test(t) || !/\d$/.test(t)) return PHONE_MSG;
+  if (/[\s-]{2,}|\(\s*\)|\+\s*[\s-]/.test(t)) return PHONE_MSG;
+  let depth = 0;
+  for (const ch of t) { if (ch === '(') depth++; if (ch === ')' && --depth < 0) return PHONE_MSG; }
+  if (depth !== 0) return PHONE_MSG;
   const digits = t.replace(/\D/g, '').length;
   return digits < 10 || digits > 15 ? PHONE_MSG : null;
 }

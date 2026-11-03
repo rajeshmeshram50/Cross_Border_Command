@@ -1,8 +1,5 @@
 /* Add / Edit Credential — the few rules the ported markup needs beyond credvault.css. */
 
-/* "2FA" badge on a type tile, beside "New". */
-.cvx .crd-tile__new.cv-tile-2fa { background: #ecfeff !important; color: #0e7490 !important; border: 1px solid #a5e8f2; }
-
 /* Waiting / failure line inside the authenticator box. */
 .cvx .cp-auth .cv-auth-wait { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 18px 0; font-size: 12px; font-weight: 600; color: #45707f; }
 .cvx .cp-auth .cv-auth-wait .cp-err { margin: 0; min-height: 0; }
@@ -20,4 +17,4 @@
 .cvx .crd-hbtns .znm-flag { white-space: nowrap; }
 
 /* Existing attachment open button is a <button>, styled as the prototype's <a>. */
-.cvx button.crd-att__b { border: 0; background: transparent; cursor: pointer; }
+.cvx button.crd-att__b { border: 0; cursor: pointer; }
