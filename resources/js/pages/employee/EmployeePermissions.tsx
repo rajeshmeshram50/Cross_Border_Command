@@ -255,6 +255,19 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
             transform: translateY(-1px);
           }
 
+          /* Square dismiss control — the hero's only action now. */
+          .ep-close-btn {
+            width: 34px; padding: 0;
+            background: rgba(255,255,255,0.14);
+            border: 1.5px solid rgba(255,255,255,0.60);
+            color: #fff;
+          }
+          .ep-close-btn:hover {
+            background: rgba(255,255,255,0.28);
+            border-color: #fff;
+            transform: translateY(-1px);
+          }
+
           .ep-save-btn {
             background: #fff; color: #0c1740; border: 1.5px solid #fff;
             box-shadow: 0 4px 14px rgba(0,0,0,0.35);
@@ -409,32 +422,17 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
             })()}
           </div>
           </div>
-          <div className="d-flex align-items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              className="ep-hdr-btn ep-save-btn flex-shrink-0"
-              onClick={handleSave}
-              disabled={saving}
-              style={{ minWidth: 170 }}
-            >
-              {saving ? (
-                <>
-                  <Spinner size="sm" type="border" style={{ width: '0.95rem', height: '0.95rem', borderWidth: 2, color: '#0c1740' }} />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <i className="ri-shield-check-line" style={{ color: '#0c1740', fontSize: 16 }}></i>
-                  Save Permissions
-                </>
-              )}
-            </button>
+          {/* Close only — Save lives in the footer bar, so the hero carries just
+              the dismiss control (ticket: drop Save here, Back → close icon). */}
+          <div className="d-flex align-items-start flex-shrink-0">
             <button
               type="button"
               onClick={onBack}
-              className="ep-hdr-btn ep-back-btn flex-shrink-0"
+              className="ep-hdr-btn ep-close-btn flex-shrink-0"
+              title="Close"
+              aria-label="Close"
             >
-              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
+              <i className="ri-close-line" style={{ fontSize: 20 }} />
             </button>
           </div>
         </div>
