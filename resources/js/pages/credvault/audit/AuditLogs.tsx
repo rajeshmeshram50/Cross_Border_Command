@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type AuditEvent, type PageMeta } from '../cvApi';
-import { CvPage, CvStrip, StripBtn, CvPager, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
+import { CvPage, CvStrip, StripBtn, CvPager, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
 import './audit.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -294,17 +294,10 @@ export default function AuditLogs() {
       {summaryStrip}
 
       <div className="bst-wrap"><div className="bst-card">
-        <div className="parch-main-row whm-main-row al-top">
-          <div className="smt-proctype-tabs parch-main-tabs" role="tablist">
-            {TABS.map(([k, l, ico]) => (
-              <button key={k} type="button" role="tab" aria-selected={tab === k} data-pt="svc-phys"
-                className={`smt-proctype-tab${tab === k ? ' is-active' : ''}`} onClick={() => setTab(k)}>
-                <span className="smt-proctype-tab__ico"><Svg d={ico} size={15} /></span>
-                <span className="smt-proctype-tab__lbl">{l}</span>
-                <span className="bst-tab-c parch-main-c">{tabs[k] ?? '·'}</span>
-              </button>
-            ))}
-          </div>
+        <CvTabsRow className="tvc-top al-top"
+          tabs={TABS.map(([k, l, ico]) => ({ key: k, label: l, icon: ico, count: tabs[k] }))}
+          active={tab} onTab={k => setTab(k as typeof tab)}
+          extra={
           <div className="al-tools">
             <div className="cva-rangewrap">
               <div className="al-range">
@@ -324,7 +317,7 @@ export default function AuditLogs() {
               {q && <button type="button" className="bst-search-clear" onClick={() => setQ('')} aria-label="Clear search"><Svg d={IC.close} size={13} sw={2.4} /></button>}
             </div>
           </div>
-        </div>
+          } />
 
         <div className="cva-filters">
           <span className="cva-filters__l"><Svg d={FILTER} size={12} />Filter</span>

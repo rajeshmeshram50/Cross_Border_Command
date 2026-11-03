@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialRow, type PageMeta } from '../cvApi';
-import { copyText, CvBrief, CvPage, CvStrip, errMsg, StripBtn, Svg, useDebounced } from '../shared';
+import { copyText, CvBrief, CvPage, CvStrip, CvTabsRow, errMsg, StripBtn, Svg, useDebounced } from '../shared';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import CredentialTable from '../my-vault/CredentialTable';
 import ViewDrawer from '../my-vault/ViewDrawer';
@@ -185,29 +185,10 @@ export default function TeamVault() {
             <div className="tv-pane__t"><b>Credentials</b><small>{rightSub}</small></div>
           </div>
           <div className="tv-pane__bd tvc-bd" ref={bdRef}>
-            <div className="parch-main-row whm-main-row tvc-top">
-              <div className="smt-proctype-tabs parch-main-tabs" role="tablist">
-                {TABS.map(t => (
-                  <button key={t.k} type="button" role="tab" aria-selected={tab === t.k} data-pt="svc-phys"
-                    className={`smt-proctype-tab${tab === t.k ? ' is-active' : ''}`}
-                    onClick={() => { setTab(t.k); setPage(1); }}>
-                    <span className="smt-proctype-tab__ico"><Svg d={t.i} size={15} /></span>
-                    <span className="smt-proctype-tab__lbl">{t.l}</span>
-                    <span className="bst-tab-c parch-main-c">{tabs[t.k] ?? '·'}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="bst-search parch-search whm-main-search">
-                <Svg d={TV_IC.search} size={14} stroke="#94a3b8" />
-                <input type="text" value={q} onChange={e => setQ(e.target.value)} autoComplete="off" aria-label="Search"
-                  placeholder="Search by credential ID, name, category, username or owner..." />
-                {q && (
-                  <button type="button" className="bst-search-clear" onClick={() => setQ('')} aria-label="Clear search">
-                    <Svg d={TV_IC.close} size={13} sw={2.4} />
-                  </button>
-                )}
-              </div>
-            </div>
+            <CvTabsRow
+              tabs={TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: tabs[t.k] }))}
+              active={tab} onTab={k => { setTab(k as Tab); setPage(1); }}
+              search={q} onSearch={setQ} placeholder="Search by credential ID, name, category, username or owner..." />
 
             <div className="tvc-list">
               {showChip && member && (

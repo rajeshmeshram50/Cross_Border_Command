@@ -234,12 +234,12 @@ export function CvCard({ children }: { children: ReactNode }) {
 }
 
 export interface CvTab { key: string; label: string; icon: string; count?: number | null }
-export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra }: {
+export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra, className = 'tvc-top' }: {
   tabs: CvTab[]; active: string; onTab: (k: string) => void;
-  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode;
+  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode; className?: string;
 }) {
   return (
-    <div className="parch-main-row whm-main-row tvc-top">
+    <div className={`parch-main-row whm-main-row ${className}`}>
       <div className="smt-proctype-tabs parch-main-tabs" role="tablist">
         {tabs.map(t => (
           <button key={t.key} type="button" role="tab" aria-selected={active === t.key} data-pt="svc-phys"

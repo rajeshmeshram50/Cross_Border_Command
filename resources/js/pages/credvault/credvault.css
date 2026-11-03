@@ -17798,39 +17798,11 @@
   display: none
 }
 
-/* ── Team Vault toolbar on the house sizes ─────────────────────────────────
-   The CLM numbers (clmShared .clm-tabrail / .clm-tab / .clm-search): a 40px
-   tab in a 48px rail (3px padding + 1px border each side) and a 48px search
-   beside it. Team Vault ran the module's older rail - 8px around a 28px icon
-   made a 44px tab, and 6px + 1.5px made a 58px rail next to a 46px search -
-   so its toolbar stood taller than every other module's. Geometry only;
-   colours and the active gradient are unchanged. */
-.cvx .tvc-top .smt-proctype-tabs {
-  height: 48px;
-  box-sizing: border-box;
-  padding: 3px;
-  gap: 8px;
-  border-width: 1px;
-  border-radius: 11px;
-  align-items: center;
-}
-
-.cvx .tvc-top .smt-proctype-tab {
-  height: 40px;
-  box-sizing: border-box;
-  padding: 0 14px 0 6px;
-  gap: 8px;
-  border-radius: 8px;
-}
-
-.cvx .tvc-top .smt-proctype-tab__ico {
-  width: 28px;
-  height: 28px;
-}
-
+/* CredVault tab row (CvTabsRow): the rail is the prototype's own .smt-proctype-tabs
+   (58px: 6px padding + 1.5px border round 44px tabs); the search matches its height. */
 .cvx .tvc-top .bst-search.whm-main-search {
-  height: 48px;
-  min-height: 48px;
+  height: 58px;
+  min-height: 58px;
   box-sizing: border-box;
   border-radius: 11px;
 }
@@ -17874,22 +17846,7 @@
   margin-right: 0;
 }
 
-/* The rail and the search measure the same 48px, but did not read it: the
-   rail's grey hairline on a grey fill vanished, the active tab's 22px shadow
-   spilled below the rail, and the search beside them had a crisp teal edge -
-   so the search looked the taller box. Both now wear the CLM treatment: the
-   same 1px teal hairline and a pale teal wash, and the selected tab's shadow
-   stays inside the rail. */
-.cvx .tvc-top .smt-proctype-tabs {
-  border: 1px solid #c9f1f8;
-  background: linear-gradient(180deg, #f6feff, #f0fdff);
-  box-shadow: none;
-}
-
-.cvx .tvc-top .smt-proctype-tab.is-active {
-  box-shadow: 0 2px 6px -2px rgba(15, 58, 77, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
-}
-
+/* The search keeps a pale teal hairline and wash. */
 .cvx .tvc-top .bst-search.whm-main-search {
   border: 1px solid #c9f1f8;
   background: linear-gradient(180deg, #ffffff, #f6feff);
