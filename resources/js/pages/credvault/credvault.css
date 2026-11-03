@@ -17326,7 +17326,8 @@
   color: #e2f4f8;
 }
 [data-bs-theme="dark"] .cvx #crd-host .crd-box,
-[data-bs-theme="dark"] .cvx .vd {
+[data-bs-theme="dark"] .cvx .vd,
+[data-bs-theme="dark"] .cvx .dl-modal {
   background: #0b1d26 !important;
   box-shadow: 0 40px 90px -20px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .14) !important;
 }
@@ -17362,7 +17363,12 @@
 [data-bs-theme="dark"] .cvx .vd .vd-ic,
 [data-bs-theme="dark"] .cvx .vd .vd-ft,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-cred,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-pts,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-ack,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-ack,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-ft {
   background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(34, 211, 238, .16) !important;
   box-shadow: none !important;
@@ -17394,7 +17400,13 @@
 [data-bs-theme="dark"] .cvx .vd .vd-ft__i b,
 [data-bs-theme="dark"] .cvx .vd .vd-xt__hd b,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f b,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__txt {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__txt,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-cred__t b,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-pt b,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-text b,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-ack,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-ack,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-title {
   color: #e2f4f8 !important;
 }
 
@@ -17429,7 +17441,10 @@
 [data-bs-theme="dark"] .cvx .vd .vd-ft__i small,
 [data-bs-theme="dark"] .cvx .vd .vd-xt__att>small,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__f small,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__hint {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-file__hint,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-cred__t small,
+[data-bs-theme="dark"] .cvx .dl-modal .mb-pt small,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-text {
   color: #8fb3c2 !important;
 }
 
@@ -17443,7 +17458,9 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-lock,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cap:not(.is-yes) i,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) .sh-perm__ck,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__b:not(:hover) {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att__b:not(:hover),
+[data-bs-theme="dark"] .cvx .dl-modal .mb-btn--ghost,
+[data-bs-theme="dark"] .cvx .dl-modal .dl-cancel {
   background: rgba(148, 163, 184, .12) !important;
   border-color: rgba(148, 163, 184, .26) !important;
   color: #a8bfca !important;
