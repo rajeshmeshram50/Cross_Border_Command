@@ -347,7 +347,9 @@ export default function InvoiceList() {
       </div>
 
       {paymentsRow && (
-        <InvoicePaymentsModal row={paymentsRow} onClose={() => setPaymentsRow(null)} />
+        /* Payments, requests and TDS are changed inside the modal, so the
+           row's Payment Progress is reloaded when it closes. */
+        <InvoicePaymentsModal row={paymentsRow} onClose={() => { setPaymentsRow(null); reloadList(); }} />
       )}
 
       {vaultRow && (
