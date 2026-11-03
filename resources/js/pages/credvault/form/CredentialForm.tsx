@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Attachment, type CredentialDetail, type FieldDef, type Loose, type Meta, type Risk, type TypeDef } from '../cvApi';
-import { ConfirmModal, IC, Svg, bytes, cap, copyText, errMsg } from '../shared';
+import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
   PHONE_RE, STR_LBL, checkField, fieldSpan, fillRows, generatePassword, isEmail,
@@ -214,24 +214,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if ((k === 'lock_admin' || k === 'lock_manager') && !protIdsTouched.current) return orig.current![k].split('|')[0] !== now[k].split('|')[0];
     return true;
   });
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
-  const [askDiscard, setAskDiscard] = useState(false);
-  const askDiscardRef = useRef(false);
-  askDiscardRef.current = askDiscard;
-  const askClose = () => { if (dirtyRef.current) setAskDiscard(true); else onClose(); };
+  const askClose = () => onClose();
 
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !dirtyRef.current) return;
-      e.stopPropagation();
-      setAskDiscard(!askDiscardRef.current);
-    };
-    document.addEventListener('keydown', k, true);
-    return () => document.removeEventListener('keydown', k, true);
-  }, []);
 
   const clr = (k: string) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; });
   const setVal = (k: string, v: string) => { setVals(s => ({ ...s, [k]: v })); clr('fields.' + k); };
@@ -560,7 +544,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      meta.risks.map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
+      meta.risks.filter(r => r.key !== 'critical' || init.critical || wasCritical).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
   ];
   if (isPw) {
     s3.push(selItem('rotation_days', 'Password Rotation', 'cal', false, rotation,
@@ -871,11 +855,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           </div>
         </div>
       </div>
-      {askDiscard && (
-        <ConfirmModal title="Discard your changes?" sub="The changes you made in this form will be lost." icon={IC.close}
-          confirmLabel="Discard" confirmIcon={IC.close} onConfirm={() => { setAskDiscard(false); onCloseRef.current(); }}
-          onClose={() => setAskDiscard(false)} />
-      )}
     </div>
   );
 }

@@ -927,15 +927,6 @@
   box-shadow: 0 0 0 3px rgba(34, 211, 238, .16);
 }
 
-.cvx .mapsup-fselect {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%230891b2' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 13px center;
-  padding-right: 32px;
-  cursor: pointer;
-}
-
 .cvx .mapsup-inputwrap.is-frozen input {
   padding-right: 32px;
   background: linear-gradient(135deg, #f4f8fa, #eef3f6) !important;
@@ -2544,56 +2535,6 @@
   color: #0e7490;
 }
 
-.cvx #crd-host .crd-dd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12.5px;
-  padding-right: 10px !important;
-}
-
-.cvx #crd-host .crd-dd__v {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #0c2c3a;
-}
-
-.cvx #crd-host .crd-dd__v.is-ph {
-  color: #94a3b8;
-}
-
-.cvx #crd-host .crd-dd__chev {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #0891b2;
-  background: #ecfeff;
-  border: 1px solid #c9eef5;
-  transition: transform .2s, background .2s, color .2s;
-}
-
-.cvx #crd-host .crd-dd.is-open {
-  border-color: #22d3ee !important;
-  box-shadow: 0 0 0 4px rgba(34, 211, 238, .16) !important;
-}
-
-.cvx #crd-host .crd-dd.is-open .crd-dd__chev {
-  transform: rotate(180deg);
-  color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0891b2);
-  border-color: transparent;
-}
-
 .cvx #crd-host .crd-tile[hidden],
 .cvx #crd-host .crd-none[hidden] {
   display: none !important;
@@ -4069,8 +4010,7 @@
 }
 
 .cvx #crd-host .crd-box .mapsup-ffield.is-edited .mapsup-inputwrap .mapsup-finput,
-.cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-tg,
-.cvx #crd-host .crd-box .mapsup-ffield.is-edited .mapsup-inputwrap .crd-dd {
+.cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-tg {
   border-color: #f59e0b !important;
   background-color: #fffbeb !important;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, .12) !important;
@@ -4144,8 +4084,7 @@
   gap: 6px !important;
 }
 
-.cvx #crd-host .sh-box .mapsup-finput,
-.cvx #crd-host .sh-box .crd-dd {
+.cvx #crd-host .sh-box .mapsup-finput {
   height: 40px !important;
   min-height: 40px !important;
 }
@@ -4380,144 +4319,6 @@
   min-width: 0;
 }
 
-.cvx #crd-host .sh-box .sh-date__btn {
-  width: 100%;
-  height: 52px !important;
-  min-height: 52px !important;
-  position: relative;
-}
-
-.cvx #crd-host .sh-box .sh-date__btn .mapsup-input-ico {
-  left: 12px;
-}
-
-.cvx .sh-cal {
-  position: fixed;
-  z-index: 10000060;
-  width: 300px;
-  padding: 12px;
-  border-radius: 16px;
-  background: #fff;
-  border: 1px solid #cfe9f0;
-  font-family: 'DM Sans', system-ui, sans-serif;
-  box-shadow: 0 26px 54px -18px rgba(8, 40, 60, .5);
-  animation: sdxPopIn .14s ease both;
-}
-
-.cvx .sh-cal__hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.cvx .sh-cal__hd b {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #0c2c3a;
-}
-
-.cvx .sh-cal__nav {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid #c9eef5;
-  background: #ecfeff;
-  color: #0891b2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.cvx .sh-cal__nav:hover:not(:disabled) {
-  color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0891b2);
-  border-color: transparent;
-}
-
-.cvx .sh-cal__nav:disabled {
-  opacity: .35;
-  cursor: not-allowed;
-}
-
-.cvx .sh-cal__wk,
-.cvx .sh-cal__g {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
-}
-
-.cvx .sh-cal__wk span {
-  text-align: center;
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: .05em;
-  color: #7b97a6;
-  padding: 4px 0;
-}
-
-.cvx .sh-cal__g button {
-  height: 34px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  color: #24485a;
-  transition: background .12s;
-}
-
-.cvx .sh-cal__g button:hover:not(:disabled) {
-  background: #ecfeff;
-  color: #0e7490;
-}
-
-.cvx .sh-cal__g button.is-today {
-  box-shadow: inset 0 0 0 1.5px #67e8f9;
-  color: #0e7490;
-}
-
-.cvx .sh-cal__g button.is-sel {
-  color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
-  box-shadow: 0 6px 12px -6px rgba(8, 145, 178, .8);
-}
-
-.cvx .sh-cal__g button.is-past {
-  color: #cbd5e1;
-  cursor: not-allowed;
-}
-
-.cvx .sh-cal__ft {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #edf5f8;
-}
-
-.cvx .sh-cal__ft button {
-  height: 32px;
-  border-radius: 9px;
-  border: 1px solid #c9eef5;
-  background: #f5fdff;
-  color: #0e7490;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.cvx .sh-cal__ft button:hover {
-  color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0891b2);
-  border-color: transparent;
-}
-
 .cvx #crd-host .sh-box .gp-card:nth-of-type(4) .crd-ta {
   min-height: 96px !important;
   height: 96px !important;
@@ -4569,11 +4370,6 @@
 
 .cvx #crd-host .sh-box .sh-exp {
   margin-top: 8px !important;
-}
-
-.cvx #crd-host .sh-box .sh-date__btn {
-  height: 50px !important;
-  min-height: 50px !important;
 }
 
 .cvx #crd-host .sh-box .gp-card:nth-of-type(4) {
@@ -15715,14 +15511,6 @@
   border: 1px solid #e2e8f0
 }
 
-.cvx .cp-fcard--main {
-  margin-top: 14px
-}
-
-.cvx .cp-frow--main {
-  grid-template-columns: 36px minmax(0, 1fr) auto
-}
-
 .cvx .cp-chip.is-no {
   background: #fff7ed;
   color: #c2410c;
@@ -17467,7 +17255,8 @@
 }
 
 [data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tabs,
-[data-bs-theme="dark"] .cvx .tvc-top .bst-search.whm-main-search {
+[data-bs-theme="dark"] .cvx .tvc-top .bst-search.whm-main-search,
+[data-bs-theme="dark"] .cvx .vd .vd-ptabs {
   border-color: rgba(34, 211, 238, .22);
   background: rgba(6, 182, 212, .08);
 }
@@ -17572,7 +17361,8 @@
    faint teal hairlines, inputs the dropdowns' #0f2530, teal text lifted to
    #67e8f9. The header band already reads on dark and is left alone; the QR
    frame stays white so the code still scans. */
-[data-bs-theme="dark"] .cvx #crd-host .crd-box {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box,
+[data-bs-theme="dark"] .cvx .vd {
   background: #0b1d26 !important;
   box-shadow: 0 40px 90px -20px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .14) !important;
 }
@@ -17594,13 +17384,26 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-out__btns,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes button,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-seg,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-meter__bits {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-meter__bits,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cred,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-caps,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-exp,
+[data-bs-theme="dark"] .cvx .vd .vd-secret,
+[data-bs-theme="dark"] .cvx .vd .vd-kvs,
+[data-bs-theme="dark"] .cvx .vd .vd-person,
+[data-bs-theme="dark"] .cvx .vd .vd-empty,
+[data-bs-theme="dark"] .cvx .vd .vd-tl,
+[data-bs-theme="dark"] .cvx .vd .vd-xt,
+[data-bs-theme="dark"] .cvx .vd .vd-ic,
+[data-bs-theme="dark"] .cvx .vd .vd-ft {
   background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(34, 211, 238, .16) !important;
   box-shadow: none !important;
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-sechead {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-sechead,
+[data-bs-theme="dark"] .cvx .vd .vd-kv {
   border-bottom-color: rgba(34, 211, 238, .12);
 }
 
@@ -17613,7 +17416,17 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes b,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-tg__t b,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-len__top b,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-sep b {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-sep b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cred__t b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) b,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cap.is-yes,
+[data-bs-theme="dark"] .cvx .vd .vd-secret__t b,
+[data-bs-theme="dark"] .cvx .vd .vd-kv__v,
+[data-bs-theme="dark"] .cvx .vd .vd-person b,
+[data-bs-theme="dark"] .cvx .vd .vd-empty b,
+[data-bs-theme="dark"] .cvx .vd .vd-tl__i b,
+[data-bs-theme="dark"] .cvx .vd .vd-ft__i b,
+[data-bs-theme="dark"] .cvx .vd .vd-xt__hd b {
   color: #e2f4f8 !important;
 }
 
@@ -17631,7 +17444,22 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-len__sc,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-note,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-meter__bits,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-seg button:not(.is-on) {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-seg button:not(.is-on),
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cred__t span,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm small,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-note,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-caps__t,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cap:not(.is-yes),
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-exp,
+[data-bs-theme="dark"] .cvx .vd .vd-secret__t small,
+[data-bs-theme="dark"] .cvx .vd .vd-kv__l,
+[data-bs-theme="dark"] .cvx .vd .vd-sub,
+[data-bs-theme="dark"] .cvx .vd .vd-own small,
+[data-bs-theme="dark"] .cvx .vd .vd-person small,
+[data-bs-theme="dark"] .cvx .vd .vd-empty span,
+[data-bs-theme="dark"] .cvx .vd .vd-tl__i small,
+[data-bs-theme="dark"] .cvx .vd .vd-ft__i small,
+[data-bs-theme="dark"] .cvx .vd .vd-xt__att>small {
   color: #8fb3c2 !important;
 }
 
@@ -17644,7 +17472,9 @@
 }
 
 /* chips: "Auto" lock and "Optional" */
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-lock {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-lock,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-cap:not(.is-yes) i,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) .sh-perm__ck {
   background: rgba(148, 163, 184, .12) !important;
   border-color: rgba(148, 163, 184, .26) !important;
   color: #a8bfca !important;
@@ -17652,7 +17482,14 @@
 
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-opt,
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-nav__b:not(.is-on) .crd-nav__c,
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes button.is-on {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .gp-modes button.is-on,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm.is-on,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-perm:not(.is-on) .sh-perm__ico,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .sh-exp b,
+[data-bs-theme="dark"] .cvx .vd .vd-b--teal,
+[data-bs-theme="dark"] .cvx .vd .vd-ft__i>svg,
+[data-bs-theme="dark"] .cvx .vd .vd-person.is-owner,
+[data-bs-theme="dark"] .cvx .vd .vd-tl__i:not(:first-child) .vd-tl__dot {
   background: rgba(34, 211, 238, .1) !important;
   border-color: rgba(34, 211, 238, .3) !important;
   color: #67e8f9 !important;
@@ -17684,7 +17521,8 @@
   color: #9fb8c4 !important;
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .mapsup-inputwrap:not(.is-frozen) .mapsup-finput {
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .mapsup-inputwrap:not(.is-frozen) .mapsup-finput,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-ffield.is-edited .crd-tg {
   background: rgba(245, 158, 11, .1) !important;
   border-color: #f59e0b !important;
 }
@@ -18197,7 +18035,8 @@
 }
 
 /* Credentials pane: tab rail, search, member filter */
-[data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tab:not(.is-active) {
+[data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tab:not(.is-active),
+[data-bs-theme="dark"] .cvx .vd .vd-ptabs .smt-proctype-tab:not(.is-active) {
   color: var(--tvd-mu);
 }
 
@@ -18317,37 +18156,43 @@
 }
 
 /* The live table's Risk / Strength / 2FA cells (RiskFlag, StrengthCell, TwofaCell) */
-[data-bs-theme="dark"] .cvx .mv-rk--low {
+[data-bs-theme="dark"] .cvx .mv-rk--low,
+[data-bs-theme="dark"] .cvx .vd .vd-b--low {
   color: #6ee7b7;
   background: rgba(16, 185, 129, .12);
   border-color: rgba(16, 185, 129, .32);
 }
 
-[data-bs-theme="dark"] .cvx .mv-rk--medium {
+[data-bs-theme="dark"] .cvx .mv-rk--medium,
+[data-bs-theme="dark"] .cvx .vd .vd-b--medium {
   color: #fcd34d;
   background: rgba(245, 158, 11, .12);
   border-color: rgba(245, 158, 11, .32);
 }
 
-[data-bs-theme="dark"] .cvx .mv-rk--high {
+[data-bs-theme="dark"] .cvx .mv-rk--high,
+[data-bs-theme="dark"] .cvx .vd .vd-b--high {
   color: #fdba74;
   background: rgba(249, 115, 22, .12);
   border-color: rgba(249, 115, 22, .32);
 }
 
-[data-bs-theme="dark"] .cvx .mv-rk--critical {
+[data-bs-theme="dark"] .cvx .mv-rk--critical,
+[data-bs-theme="dark"] .cvx .vd .vd-b--critical {
   color: #fda4af;
   background: rgba(244, 63, 94, .12);
   border-color: rgba(244, 63, 94, .32);
 }
 
-[data-bs-theme="dark"] .cvx .mv-2on {
+[data-bs-theme="dark"] .cvx .mv-2on,
+[data-bs-theme="dark"] .cvx .vd .vd-b--ok {
   color: #67e8f9;
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .32);
 }
 
-[data-bs-theme="dark"] .cvx .znm-flag--no {
+[data-bs-theme="dark"] .cvx .znm-flag--no,
+[data-bs-theme="dark"] .cvx .vd .vd-b--off {
   color: var(--tvd-mu);
   background: rgba(255, 255, 255, .05);
   border-color: rgba(255, 255, 255, .12);

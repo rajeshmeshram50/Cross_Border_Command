@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ShimmerForm } from '../../../components/ui/Shimmer';
 import { cvApi, type CredentialDetail, type CredentialRow, type TypeDef } from '../cvApi';
 import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
 import CredentialForm from './CredentialForm';
@@ -64,14 +65,16 @@ function Wait({ title, text, onClose, error, onRetry }: { title: string; text: s
         <div className="mapsup-header">
           <div className="mapsup-hrow">
             <div className="mapsup-title-wrap">
-              <div className="mapsup-hicon crd-phd__ico"><Svg icon={error ? 'x' : 'lock'} size={20} /></div>
+              <div className="mapsup-hicon crd-hicon"><Svg icon={error ? 'x' : 'lock'} size={20} /></div>
               <div className="mapsup-title-block"><h3 className="mapsup-title">{title}</h3></div>
             </div>
             <button type="button" className="mapsup-close" onClick={onClose} aria-label="Close"><Svg icon="x" size={13} sw={2.8} /></button>
           </div>
         </div>
         <div className="mapsup-body">
-          <div className="cv-form-wait">{error ? <><b>Could not open the form</b><span>{text}</span></> : <span>{text}</span>}</div>
+          {error
+            ? <div className="cv-form-wait"><b>Could not open the form</b><span>{text}</span></div>
+            : <ShimmerForm sections={3} cols={4} fieldsPerSection={4} header={false} />}
         </div>
         <div className="mapsup-footer">
           <div className="mapsup-footer__info" />

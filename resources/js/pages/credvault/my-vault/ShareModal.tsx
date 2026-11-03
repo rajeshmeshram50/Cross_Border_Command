@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type Loose, type Perm } from '../cvApi';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { cap, CvPortal, errMsg, Svg, useCvMeta } from '../shared';
+import CrdSelect from '../form/CrdSelect';
 
 export interface ShareModalProps {
   credentialId: number;
@@ -26,7 +28,6 @@ const CAPS: [string, number][] = [
 ];
 const TEAM_ICO = 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0 .01';
 const CLOCK = 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2';
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const isoDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -50,10 +51,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   const [reason, setReason] = useState('');
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [cal, setCal] = useState<{ y: number; m: number } | null>(null);
-  const [calPos, setCalPos] = useState<{ left: number; top: number } | null>(null);
-  const dateBtn = useRef<HTMLButtonElement>(null);
-  const calRef = useRef<HTMLDivElement>(null);
 
   const crit = cred?.risk === 'critical';
   const closeRef = useRef(onClose);
@@ -95,68 +92,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   const permDef = meta?.permissions.find(p => p.key === perm);
   const clr = (k: string) => setErrs(p => { if (!p[k]) return p; const n = { ...p }; delete n[k]; return n; });
 
-  /* ── the end-date calendar (the prototype's sh-cal) ── */
-  const openCal = () => {
-    if (cal) { setCal(null); return; }
-    const cur = dur.startsWith('date:') ? new Date(`${dur.slice(5)}T00:00:00`) : (end ?? new Date());
-    setCal({ y: cur.getFullYear(), m: cur.getMonth() });
-  };
-  useLayoutEffect(() => {
-    if (!cal || !dateBtn.current || !calRef.current) { setCalPos(null); return; }
-    const r = dateBtn.current.getBoundingClientRect();
-    const w = calRef.current.offsetWidth, h = calRef.current.offsetHeight;
-    const below = window.innerHeight - r.bottom - 10;
-    setCalPos({ left: Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12)), top: below >= h ? r.bottom + 6 : Math.max(10, r.top - 6 - h) });
-  }, [cal]);
-  useEffect(() => {
-    if (!cal) return;
-    const out = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (calRef.current?.contains(t) || dateBtn.current?.contains(t)) return;
-      setCal(null);
-    };
-    document.addEventListener('mousedown', out, true);
-    return () => document.removeEventListener('mousedown', out, true);
-  }, [cal]);
-  const pick = (iso: string) => { setCal(null); setDur(`date:${iso}`); clr('dur'); };
-  const nav = (d: number) => setCal(c => {
-    if (!c) return c;
-    let m = c.m + d, y = c.y;
-    if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; }
-    return { y, m };
-  });
-
-  const renderCal = () => {
-    if (!cal) return null;
-    const { y, m } = cal;
-    const first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const sel = dur.startsWith('date:') ? dur.slice(5) : (end ? isoDay(end) : '');
-    const canBack = y > today.getFullYear() || (y === today.getFullYear() && m > today.getMonth());
-    const quick = (n: number, l: string) => <button key={l} type="button" data-h40="skip" onClick={() => pick(isoDay(new Date(Date.now() + n * 864e5)))}>{l}</button>;
-    return (
-      <div ref={calRef} className="sh-cal" style={calPos ? { left: calPos.left, top: calPos.top } : { visibility: 'hidden', left: 0, top: 0 }}>
-        <div className="sh-cal__hd">
-          <button type="button" data-h40="skip" className="sh-cal__nav" onClick={() => nav(-1)} disabled={!canBack}><Svg icon="M15 18l-6-6 6-6" size={14} sw={2.6} /></button>
-          <b>{MONTHS[m]} {y}</b>
-          <button type="button" data-h40="skip" className="sh-cal__nav" onClick={() => nav(1)}><Svg icon="M9 18l6-6-6-6" size={14} sw={2.6} /></button>
-        </div>
-        <div className="sh-cal__wk">{['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(w => <span key={w}>{w}</span>)}</div>
-        <div className="sh-cal__g">
-          {Array.from({ length: first }, (_, i) => <span key={`b${i}`} />)}
-          {Array.from({ length: days }, (_, i) => {
-            const d = i + 1, dt = new Date(y, m, d), iso = `${y}-${pad(m + 1)}-${pad(d)}`;
-            const past = dt < today, isT = +dt === +today;
-            return (
-              <button key={iso} type="button" data-h40="skip" disabled={past} onClick={() => pick(iso)}
-                className={`${past ? 'is-past' : ''}${iso === sel ? ' is-sel' : ''}${isT ? ' is-today' : ''}`}>{d}</button>
-            );
-          })}
-        </div>
-        <div className="sh-cal__ft">{quick(14, '2 weeks')}{quick(60, '2 months')}{quick(90, '3 months')}</div>
-      </div>
-    );
-  };
 
   const save = async () => {
     if (!cred || !meta || busy) return;
@@ -202,7 +137,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   const lv = PERM_LV[perm];
 
   return (
-    <CvPortal onClose={cal ? () => setCal(null) : onClose}>
+    <CvPortal onClose={onClose}>
       <div id="crd-host">
         <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
           <div className="mapsup-box crd-box gp-box sh-box" role="dialog" aria-modal="true" aria-label="Share Credential">
@@ -239,10 +174,8 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                       <label className="mapsup-flabel" htmlFor="crdF_shwho">Share With <span className="req">*</span></label>
                       <div className="mapsup-inputwrap">
                         <span className="mapsup-input-ico"><Svg icon={type === 'team' ? TEAM_ICO : 'user'} size={13} /></span>
-                        <select id="crdF_shwho" className="mapsup-finput has-ico mapsup-fselect" value={who} onChange={e => { setWho(e.target.value); clr('who'); }}>
-                          <option value="">Select {type === 'team' ? 'a team' : 'a person'}…</option>
-                          {options.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-                        </select>
+                        <CrdSelect id="crdF_shwho" value={who} options={options.map(x => ({ value: x.id, label: x.label }))}
+                          placeholder={`Select ${type === 'team' ? 'a team' : 'a person'}…`} onChange={v => { setWho(v); clr('who'); }} />
                       </div>
                       {errs.who && <span className="crd-err cv-ferr">{errs.who}</span>}
                       {!options.length && <span className="crd-err cv-ferr" style={{ color: '#64748b' }}>{type === 'team' ? 'No teams with members yet.' : 'No other active users in your company.'}</span>}
@@ -279,11 +212,8 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                         })}
                       </div>
                       <div className="sh-date">
-                        <button ref={dateBtn} type="button" data-h40="skip" className={`mapsup-finput has-ico crd-dd sh-date__btn${cal ? ' is-open' : ''}`} onClick={openCal}>
-                          <span className="mapsup-input-ico"><Svg icon="cal" size={13} /></span>
-                          <span className={`crd-dd__v${dur.startsWith('date:') ? '' : ' is-ph'}`}>{dur.startsWith('date:') ? longDay(new Date(`${dur.slice(5)}T00:00:00`)) : 'Pick an end date'}</span>
-                          <span className="crd-dd__chev"><Svg icon="M6 9l6 6 6-6" size={14} sw={2.6} /></span>
-                        </button>
+                        <MasterDatePicker value={dur.startsWith('date:') ? dur.slice(5) : ''} minDate={isoDay(new Date(Date.now() + 864e5))}
+                          placeholder="Pick an end date" invalid={!!errs.dur} onChange={v => { if (v) { setDur(`date:${v}`); clr('dur'); } }} />
                       </div>
                     </div>
                     {errs.dur && <span className="crd-err cv-ferr">{errs.dur}</span>}
@@ -332,7 +262,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
               </div>
             </div>
           </div>
-          {renderCal()}
         </div>
       </div>
     </CvPortal>
