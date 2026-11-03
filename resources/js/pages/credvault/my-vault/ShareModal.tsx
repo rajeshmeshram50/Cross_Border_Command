@@ -1,10 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError, type CredentialDetail, type Loose, type Perm } from '../cvApi';
+import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type Loose, type Perm } from '../cvApi';
 import { cap, CvPortal, errMsg, Svg, useCvMeta } from '../shared';
 
 export interface ShareModalProps {
   credentialId: number;
+  /** Design preview (Team Vault on dummy data): share this row with these
+   *  recipients; nothing is loaded from or sent to the server. */
+  previewRow?: CredentialRow;
+  previewRecipients?: () => Promise<{ users: Loose[]; teams: Loose[] }>;
   onClose: () => void;
   onShared?: () => void;
 }
@@ -34,7 +38,7 @@ function endOf(dur: string): Date | null {
   return new Date(Date.now() + +dur * 864e5);
 }
 
-export default function ShareModal({ credentialId, onClose, onShared }: ShareModalProps) {
+export default function ShareModal({ credentialId, previewRow, previewRecipients, onClose, onShared }: ShareModalProps) {
   const toast = useToast();
   const { meta, typeOf } = useCvMeta();
   const [cred, setCred] = useState<CredentialDetail | null>(null);
@@ -57,10 +61,16 @@ export default function ShareModal({ credentialId, onClose, onShared }: ShareMod
 
   useEffect(() => {
     let on = true;
-    Promise.all([cvApi.show(credentialId), cvApi.recipients()])
+    // The popup reads only the row's own fields (name, code, type, risk, username), so a row stands in for the detail.
+    const load = previewRow && previewRecipients
+      ? Promise.all([Promise.resolve(previewRow as unknown as CredentialDetail), previewRecipients()])
+      : Promise.all([cvApi.show(credentialId), cvApi.recipients()]);
+    load
       .then(([c, r]) => { if (on) { setCred(c); setPeople(r); } })
       .catch(e => { if (on) { toast.error('Could not open sharing', errMsg(e)); closeRef.current(); } });
     return () => { on = false; };
+  // previewRow / previewRecipients are fixed for the popup's life.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [credentialId, toast]);
 
   const ready = !!cred && !!meta;
@@ -161,6 +171,11 @@ export default function ShareModal({ credentialId, onClose, onShared }: ShareMod
     if (dur.startsWith('date:')) body.expires_at = dur.slice(5);
     else if (dur !== '0') body.duration_days = +dur;
 
+    if (previewRow) {
+      toast.info('Design preview', 'Team Vault is on dummy data - the credential was not shared.');
+      onClose();
+      return;
+    }
     setBusy(true);
     try {
       const r = await cvApi.share(cred.id, body);

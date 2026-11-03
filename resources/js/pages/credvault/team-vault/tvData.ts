@@ -199,6 +199,12 @@ const dummy = {
 
   organisation: () => later<Loose>({ members: allMembers(), stats: { departments: DEPTS.length, hods: DEPTS.length } }),
 
+  /** The Share popup's people and teams: every member, and each department as a team. */
+  recipients: () => later<{ users: Loose[]; teams: Loose[] }>({
+    users: allMembers().map(m => ({ id: m.employee_id, name: m.name, designation: `${m.designation} · ${m.department.name}` })),
+    teams: DEPTS.map(d => ({ id: d.id, name: d.name, members: d.lv.reduce((a, b) => a + b, 0) })),
+  }),
+
   list: (q: ListQuery): Promise<ListResult> => {
     const { tab, q: text, page = 1, per_page = 10, department_id, member_employee_id } = q as Loose;
     const inDept = (r: CredentialRow) => !department_id || r.department?.id === department_id;
@@ -228,6 +234,7 @@ const live = {
   departments: () => cvApi.departments(),
   department: (id: number) => cvApi.department(id),
   organisation: () => cvApi.organisation(),
+  recipients: () => cvApi.recipients(),
   list: (q: ListQuery) => cvApi.list(q),
 };
 

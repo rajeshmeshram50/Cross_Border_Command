@@ -99,7 +99,9 @@ export default function TeamVault() {
      would open or change a credential says so instead of failing - except
      Edit, which opens the real form prefilled from the row (nothing saved). */
   const open = (next: Overlay) => {
-    if (TV_DUMMY && !(next?.kind === 'form' && next.id)) toast.info('Design preview', 'Team Vault is showing dummy data — this action opens once it is on live data.');
+    // Edit and Share open the real popups filled from the row (nothing is saved); the rest says so.
+    const previewable = (next?.kind === 'form' && !!next.id) || next?.kind === 'share';
+    if (TV_DUMMY && !previewable) toast.info('Design preview', 'Team Vault is showing dummy data — this action opens once it is on live data.');
     else setOverlay(next);
   };
 
@@ -237,7 +239,9 @@ export default function TeamVault() {
           onClose={() => setOverlay(null)} onSaved={() => { setOverlay(null); refresh(); }} />
       )}
       {overlay?.kind === 'share' && (
-        <ShareModal credentialId={overlay.id} onClose={() => setOverlay(null)} onShared={refresh} />
+        <ShareModal credentialId={overlay.id} onClose={() => setOverlay(null)} onShared={refresh}
+          previewRow={TV_DUMMY ? rows.find(r => r.id === overlay.id) : undefined}
+          previewRecipients={TV_DUMMY ? tvData.recipients : undefined} />
       )}
       {overlay?.kind === 'bin' && (
         <BinConfirm row={overlay.row} onClose={() => setOverlay(null)} onDone={() => { setOverlay(null); refresh(); }} />
