@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../hooks/useScrollLock';
-import { cvApi, CvApiError, type CredentialRow, type Meta, type Risk, type Twofa, type TypeDef } from './cvApi';
+import { IdCell as DtIdCell, PillCell, TruncCell, type DataTableColumn, type DataTableTab } from '../../components/ui/DataTable';
+import { cvApi, CvApiError, type CredentialRow, type Meta, type PageMeta, type Perm, type Risk, type Twofa, type TypeDef } from './cvApi';
 import { CV_ICONS } from './cvIcons';
 import '../../components/ui/DataTable.css';
 import '../p2p/p2p-master-management/supplier-management/supplier-management.css';
@@ -9,21 +10,6 @@ import '../sales/core-masters/customer/SalesCustomers.css';
 import './credvault.css';
 import './credvault-app.css';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault — the pieces every screen shares, ported from the prototype's
- * markup class for class (credvault.css holds its rules, scoped under .cvx):
- * page column, header strip, "What We Are Doing Here" box, tab bar, search,
- * pager, modal portal, and the credential cells (ID, name, category, owner,
- * risk, strength, 2FA, updated) the lists repeat.
- * ───────────────────────────────────────────────────────────────────────── */
-
-/* ══════════════════════════ ICONS ══════════════════════════ */
-
-/**
- * An SVG from the prototype's icon markup: `icon` names an entry of its CRD_I
- * set, `d` passes raw inner markup (as the prototype's mvSv(d) did). The
- * markup is constant code, never user data.
- */
 export function Svg({ icon, d, size = 14, sw = 2.2, stroke = 'currentColor', className }: {
   icon?: string; d?: string; size?: number; sw?: number; stroke?: string; className?: string;
 }) {
@@ -35,7 +21,6 @@ export function Svg({ icon, d, size = 14, sw = 2.2, stroke = 'currentColor', cla
   );
 }
 
-/** Icon markup the screens use besides CRD_I (the prototype's IC / MV_ACT_ICO sets). */
 export const IC = {
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   unlock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
@@ -72,30 +57,24 @@ export const IC = {
   sharedWithYou: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87',
 } as const;
 
-/* ══════════════════════════ FORMAT ══════════════════════════ */
-
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** DD/MM/YYYY — the app-wide date display. */
 export function fmtDate(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '—' : `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
-/** 30 Oct 2026 — the lists' "Last Updated" line. */
 export function fmtDay(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '—' : `${pad(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}`;
 }
-/** 14:05 */
 export function fmtTime(iso?: string | null, seconds = false): string {
   if (!iso) return '';
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}${seconds ? ':' + pad(d.getSeconds()) : ''}`;
 }
-/** "5m ago", "3h ago", "2d ago". */
 export function timeAgo(iso?: string | null): string {
   if (!iso) return '—';
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -104,7 +83,6 @@ export function timeAgo(iso?: string | null): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
-/** mm:ss for the unlock countdown. */
 export function mmss(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
@@ -120,14 +98,10 @@ export function bytes(n?: number | null): string {
   return `${(n / 1048576).toFixed(1)} MB`;
 }
 export const cap = (s?: string | null) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
-/** The message to show for any failure. */
 export function errMsg(e: unknown, fallback = 'Something went wrong. Please try again.'): string {
   return e instanceof CvApiError || e instanceof Error ? e.message || fallback : fallback;
 }
 
-/* ══════════════════════════ DATA HOOKS ══════════════════════════ */
-
-/** /meta — types, enums, policy and "me" — read once and shared by every screen. `reload` retries a failed read. */
 export function useCvMeta(): {
   meta: Meta | null;
   typeOf: (key?: string | null) => TypeDef | undefined;
@@ -145,28 +119,22 @@ export function useCvMeta(): {
   return { meta, typeOf: (key) => (key ? byKey.get(key) : undefined), error, reload };
 }
 
-/** A value that follows `value` after `ms` of quiet — for search boxes. */
 export function useDebounced<T>(value: T, ms = 350): T {
   const [v, setV] = useState(value);
   useEffect(() => { const t = setTimeout(() => setV(value), ms); return () => clearTimeout(t); }, [value, ms]);
   return v;
 }
 
-/** A one-second clock — for the unlock countdowns. */
 export function useNow(active = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (!active) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [active]);
   return now;
 }
 
-/* ══════════════════════════ PAGE SHELL ══════════════════════════ */
-
-/** The page column every CredVault screen sits in — the Customers list's .smc-root. */
 export function CvPage({ className = '', children }: { className?: string; children: ReactNode }) {
   return <div className={`cvx smc-root whm-page ${className}`}>{children}</div>;
 }
 
-/** The header strip: the Customers list's .sup-fig .cstrip; --teal keeps CredVault's cyan. */
 export function CvStrip({ icon, title, sub, actions, tone = 'teal' }: {
   icon: string; title: string; sub: ReactNode; actions?: ReactNode; tone?: string;
 }) {
@@ -192,7 +160,6 @@ export function CvStrip({ icon, title, sub, actions, tone = 'teal' }: {
   );
 }
 
-/** A header-strip button. `ghost` is the outlined secondary style. */
 export function StripBtn({ icon, children, onClick, ghost, disabled, title }: {
   icon: string; children: ReactNode; onClick?: () => void; ghost?: boolean; disabled?: boolean; title?: string;
 }) {
@@ -205,7 +172,6 @@ export function StripBtn({ icon, children, onClick, ghost, disabled, title }: {
   );
 }
 
-/** "What We Are Doing Here" — the Customers list's .sup-fig .bref-box; --teal keeps the cyan. */
 export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
   icon: string; label: string; sub: string;
   steps: { icon: string; title: string; desc: string }[];
@@ -244,12 +210,8 @@ export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
   );
 }
 
-/** The card that holds tabs + search + list (the prototype's .bst-wrap/.bst-card). */
 export function CvCard({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  // Reaches the bottom of the viewport like the Customers card (its fit()): the room
-  // left in .main-content below the card, less the footer + 8px. A floor, not a cap,
-  // so a full page of rows still grows the card.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -264,7 +226,6 @@ export function CvCard({ children }: { children: ReactNode }) {
     };
     fit();
     window.addEventListener('resize', fit);
-    // The header strip and the collapsible brief above move the card's top.
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : undefined;
     for (let s = el.parentElement?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
     return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
@@ -273,24 +234,23 @@ export function CvCard({ children }: { children: ReactNode }) {
 }
 
 export interface CvTab { key: string; label: string; icon: string; count?: number | null }
-/** Tab rail with counts (the My Workplace .dt-tabrail, teal) and the search box (.bst-search) on one row. */
 export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra }: {
   tabs: CvTab[]; active: string; onTab: (k: string) => void;
   search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode;
 }) {
   return (
-    <div className="parch-main-row whm-main-row">
-      <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
-        <div className="dt-tabs" role="tablist">
-          {tabs.map(t => (
-            <button key={t.key} type="button" role="tab" aria-selected={active === t.key}
-              className={`dt-tab ${active === t.key ? 'on' : 'off'}`} onClick={() => onTab(t.key)}>
-              <span className="smt-proctype-tab__ico"><Svg icon={t.icon} d={t.icon.startsWith('<') ? t.icon : undefined} size={14} /></span>
-              {t.label}
-              <span className="dt-tab-count">{t.count ?? '·'}</span>
-            </button>
-          ))}
-        </div>
+    <div className="parch-main-row whm-main-row tvc-top">
+      <div className="smt-proctype-tabs parch-main-tabs" role="tablist">
+        {tabs.map(t => (
+          <button key={t.key} type="button" role="tab" aria-selected={active === t.key} data-pt="svc-phys"
+            className={`smt-proctype-tab${active === t.key ? ' is-active' : ''}`} onClick={() => onTab(t.key)}>
+            <span className="smt-proctype-tab__ico">
+              {t.icon.startsWith('ri-') ? <i className={t.icon} style={{ fontSize: 15 }} /> : <Svg icon={t.icon} d={t.icon.startsWith('<') ? t.icon : undefined} size={15} />}
+            </span>
+            <span className="smt-proctype-tab__lbl">{t.label}</span>
+            <span className="bst-tab-c parch-main-c">{t.count ?? '·'}</span>
+          </button>
+        ))}
       </div>
       {extra}
       {onSearch && (
@@ -308,7 +268,6 @@ export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, 
   );
 }
 
-/** "Showing 1–10 of 42 credentials" · Prev · 1 2 3 · Next (.bst-pager). */
 export function CvPager({ page, lastPage, total, perPage, noun = 'credentials', onPage }: {
   page: number; lastPage: number; total: number; perPage: number; noun?: string; onPage: (p: number) => void;
 }) {
@@ -317,7 +276,6 @@ export function CvPager({ page, lastPage, total, perPage, noun = 'credentials', 
   if (lastPage <= 1) {
     return <div className="bst-pager whm-pager"><span className="bst-pg-info">Showing <b>{total}</b> {total === 1 ? noun.replace(/s$/, '') : noun}</span></div>;
   }
-  // A window of page numbers around the current one.
   const from = Math.max(1, Math.min(page - 2, lastPage - 4));
   const nums = Array.from({ length: Math.min(5, lastPage) }, (_, i) => from + i);
   return (
@@ -334,7 +292,6 @@ export function CvPager({ page, lastPage, total, perPage, noun = 'credentials', 
   );
 }
 
-/** Stand-in rows inside the real table while a page loads. */
 export function ShimRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
   return (
     <>
@@ -345,7 +302,6 @@ export function ShimRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
   );
 }
 
-/** The empty-state row (.mv-empty) with an optional action. */
 export function EmptyRow({ cols, title, sub, action }: { cols: number; title: string; sub: string; action?: ReactNode }) {
   return (
     <tr>
@@ -361,12 +317,6 @@ export function EmptyRow({ cols, title, sub, action }: { cols: number; title: st
   );
 }
 
-/* ══════════════════════════ MODALS ══════════════════════════ */
-
-/**
- * Renders overlays into <body> inside the .cvx scope (so the prototype's
- * rules apply), locks page scroll and closes on Escape.
- */
 export function CvPortal({ onClose, children }: { onClose?: () => void; children: ReactNode }) {
   useScrollLock(true);
   useEffect(() => {
@@ -378,11 +328,6 @@ export function CvPortal({ onClose, children }: { onClose?: () => void; children
   return createPortal(<div className="cvx cv-portal">{children}</div>, document.body);
 }
 
-/**
- * The prototype's confirm dialog (.dl-ov / .dl-modal.mb — "Move to Recycle
- * Bin", revoke, purge): a header with icon, an optional credential chip, a
- * list of consequence points, an acknowledgement checkbox that arms the button.
- */
 export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirmLabel, confirmIcon, busy, onConfirm, onClose, children }: {
   title: string; sub?: ReactNode; icon: string;
   cred?: { icon?: string; name: string; code: string; meta?: string; risk?: Risk };
@@ -436,34 +381,28 @@ export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirm
   );
 }
 
-/* The last value copyText put on the clipboard. Reading the clipboard back from a timer fails while the
-   page is unfocused, so a pending clear trusts this instead: it wipes only if no later copy replaced it. */
 let lastCopyId = 0;
 
 function clearClipboard(id: number) {
   if (lastCopyId !== id) return;
   navigator.clipboard.writeText('').then(() => {}, () => {
-    // Writing needs a focused document: try once more when the user comes back.
     const retry = () => {
       if (document.visibilityState !== 'visible') return;
       window.removeEventListener('focus', retry);
       document.removeEventListener('visibilitychange', retry);
       if (lastCopyId !== id) return;
-      navigator.clipboard.writeText('').then(() => {}, () => { /* still blocked: leave it */ });
+      navigator.clipboard.writeText('').then(() => {}, () => { });
     };
     window.addEventListener('focus', retry);
     document.addEventListener('visibilitychange', retry);
   });
 }
 
-/** Copies text and, as the API asks, clears the clipboard after `clearAfter` seconds unless something newer was copied here. */
 export async function copyText(text: string, clearAfter = 0): Promise<void> {
   await navigator.clipboard.writeText(text);
   const id = ++lastCopyId;
   if (clearAfter > 0) setTimeout(() => clearClipboard(id), clearAfter * 1000);
 }
-
-/* ══════════════════════════ CREDENTIAL CELLS ══════════════════════════ */
 
 const STR_LV = ['', 'weak', 'fair', 'good', 'strong'];
 
@@ -534,7 +473,6 @@ export function UpdatedCell({ iso }: { iso?: string | null }) {
   return <div className="whm-idcell"><b className="mv-upd-d">{fmtDay(iso)}</b><span className="whm-iddate">{fmtTime(iso)}</span></div>;
 }
 
-/** One row action button (.whm-act). */
 export function ActBtn({ icon, title, onClick, tone, disabled }: {
   icon: string; title: string; onClick: () => void; tone?: 'edit' | 'danger'; disabled?: boolean;
 }) {
@@ -544,4 +482,93 @@ export function ActBtn({ icon, title, onClick, tone, disabled }: {
       <Svg d={icon} size={14} />
     </button>
   );
+}
+export type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent';
+
+export const RISK_TONE: Record<Risk, Tone> = { low: 'success', medium: 'warning', high: 'danger', critical: 'danger' };
+export const STRENGTH_TONE: Tone[] = ['danger', 'danger', 'warning', 'info', 'success'];
+export const PERM_TONE: Record<Perm, Tone> = { use: 'neutral', view: 'info', copy: 'accent', full: 'success' };
+
+export function TwoLine({ top, sub }: { top: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-truncate">{top}</div>
+      {sub ? <div className="text-muted text-truncate" style={{ fontSize: 11 }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+export const emptyState = (text: ReactNode, icon = 'ri-lock-2-line') => (
+  <><i className={`${icon} d-block mb-2`} style={{ fontSize: 32, opacity: 0.4 }} />{text}</>
+);
+
+export function cvTableProps({ tabs, activeTab, onTabChange, search, onSearch, placeholder, loading, empty, paging, minWidth = 1100 }: {
+  tabs?: DataTableTab[]; activeTab?: string; onTabChange?: (k: string) => void;
+  search?: string; onSearch?: (v: string) => void; placeholder?: string;
+  loading: boolean; empty: ReactNode; minWidth?: number;
+  paging?: { meta: PageMeta | null; page: number; setPage: (p: number) => void; setPerPage: (n: number) => void };
+}) {
+  return {
+    leadingToolbar: tabs || onSearch ? (
+      <CvTabsRow tabs={(tabs ?? []).map(t => ({ key: t.key, label: t.label, icon: t.icon ?? '', count: t.count ?? null }))}
+        active={activeTab ?? ''} onTab={k => onTabChange?.(k)} search={search} onSearch={onSearch} placeholder={placeholder} />
+    ) : undefined,
+    searchable: false,
+    className: 'hr-dt', serial: true, disableSorting: true, accent: 'teal' as const, minWidth,
+    fitToViewport: true, autoFitRows: true, fillToFooter: true, loading, emptyMessage: empty,
+    ...(paging ? {
+      serverPagination: {
+        total: paging.meta?.total ?? 0,
+        pageIndex: paging.page - 1,
+        onPageChange: (p: number) => paging.setPage(p + 1),
+        onPageSizeChange: (sz: number) => { paging.setPerPage(Math.min(100, sz)); paging.setPage(1); },
+      },
+    } : {}),
+  };
+}
+
+export function credentialColumns({ critical = false }: { critical?: boolean } = {}): DataTableColumn<CredentialRow>[] {
+  return [
+    {
+      header: 'Credential ID', id: 'code', meta: { width: '9%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={<DtIdCell value={critical ? r.critical_code ?? r.code : r.code} />} sub={fmtDate(critical ? r.updated_at : r.created_at)} />,
+    },
+    {
+      header: 'Credential Name', id: 'name', meta: { width: '15%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={<b><TruncCell value={r.name} caseSensitive max={40} /></b>} sub={r.url ?? undefined} />,
+    },
+    {
+      header: 'Category', id: 'category', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={<PillCell value={r.type_label} tone="info" />} sub={r.category_group} />,
+    },
+    {
+      header: 'Username', id: 'username', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <TruncCell value={r.username} caseSensitive max={30} />,
+    },
+    {
+      header: 'Owner', id: 'owner', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => (
+        <TwoLine top={r.owner.is_me ? 'You' : r.owner.name ?? '—'}
+          sub={r.access?.via === 'share' ? 'Shared with you' : r.scope === 'team' ? 'Team' : 'Personal'} />
+      ),
+    },
+    {
+      header: 'Risk', id: 'risk', meta: { width: '7%', align: 'center' },
+      cell: ({ row: { original: r } }) => <PillCell value={cap(r.risk)} tone={RISK_TONE[r.risk]} />,
+    },
+    {
+      header: 'Strength', id: 'strength', meta: { width: '9%', align: 'center' },
+      cell: ({ row: { original: r } }) => (r.has_password
+        ? <PillCell value={`${r.strength_label} · ${r.strength * 25}`} tone={STRENGTH_TONE[r.strength] ?? 'neutral'} />
+        : <PillCell value="N/A" />),
+    },
+    {
+      header: '2FA', id: 'twofa', meta: { width: '7%', align: 'center' },
+      cell: ({ row: { original: r } }) => <PillCell value={r.twofa === 'yes' ? 'Enabled' : r.twofa === 'no' ? 'Not Enabled' : 'N/A'} tone={r.twofa === 'yes' ? 'success' : 'neutral'} />,
+    },
+    {
+      header: 'Last Updated', id: 'updated', meta: { width: '8%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={fmtDay(r.updated_at)} sub={fmtTime(r.updated_at)} />,
+    },
+  ];
 }

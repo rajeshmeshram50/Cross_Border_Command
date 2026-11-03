@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
+import DataTable, { ActionCell, PillCell, TruncCell, IdCell as DtIdCell, type DataTableColumn } from '../../../components/ui/DataTable';
 import { cvApi, type BinRow, type Loose, type PageMeta } from '../cvApi';
 import {
-  ConfirmModal, CvBrief, CvCard, CvPage, CvPager, CvPortal, CvStrip, CvTabsRow, ShimRows, StripBtn, Svg, IC,
-  cap, errMsg, fmtDay, fmtTime, initials, useCvMeta, useDebounced, type CvTab,
+  ConfirmModal, CvBrief, CvPage, CvPortal, CvStrip, StripBtn, Svg, IC, RISK_TONE, TwoLine,
+  cap, cvTableProps, emptyState, errMsg, fmtDay, fmtTime, useCvMeta, useDebounced,
 } from '../shared';
 import './recycleBin.css';
-
-/* CredVault · Recycle Bin — the prototype's recycleBinBody / rbListHtml / rbSummaryHtml. */
 
 const I_ALL = '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><line x1="10" y1="12" x2="14" y2="12"/>';
 const I_SOON = '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/>';
@@ -15,7 +14,6 @@ const I_CLOCK = '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 
 const I_SHIELD = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
 const I_GEAR = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>';
 const I_INFO = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
-const I_CHECK = '<polyline points="20 6 9 17 4 12"/>';
 
 const TABS: { key: string; label: string; icon: string }[] = [
   { key: 'all', label: 'All Items', icon: I_ALL },
@@ -23,7 +21,7 @@ const TABS: { key: string; label: string; icon: string }[] = [
   { key: 'team', label: 'Team Credentials', icon: IC.users },
   { key: 'soon', label: 'Expiring Soon', icon: I_SOON },
 ];
-const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Owner', 'Risk', 'Deleted By', 'Deleted On', 'Auto-delete In', 'Action'];
+const URGENCY_TONE = { bad: 'danger', warn: 'warning', ok: 'success' } as const;
 
 type Ask = { kind: 'purge'; row: BinRow } | { kind: 'bulk'; ids: number[] } | { kind: 'empty' } | null;
 
@@ -34,6 +32,7 @@ export default function RecycleBin() {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [rows, setRows] = useState<BinRow[]>([]);
   const [meta, setMeta] = useState<PageMeta | null>(null);
   const [tabs, setTabs] = useState<Record<string, number>>({});
@@ -50,8 +49,6 @@ export default function RecycleBin() {
   const days: number = summary?.retention_days ?? 30;
   const purgeAllowed = !!summary?.purge_allowed;
 
-  // A tab/search change on page 2+ goes back to page 1 in the same pass, so only one request is sent
-  // (a cancelled duplicate would also swallow the "purged" toast from the request that did the purge).
   const filt = `${tab}|${dq}`;
   const lastFilt = useRef(filt);
 
@@ -62,16 +59,15 @@ export default function RecycleBin() {
     }
     let on = true;
     setLoading(true);
-    cvApi.bin({ tab, q: dq, page }).then(r => {
+    cvApi.bin({ tab, q: dq, page, per_page: perPage }).then(r => {
       if (!on) return;
       setRows(r.data); setMeta(r.meta); setTabs(r.tabs); setSummary(r.summary); setError('');
-      // Drop selections that are no longer on the page.
       setSel(s => new Set([...s].filter(id => r.data.some(x => x.id === id))));
       if (r.purged > 0) toast.warning(`${r.purged} item${r.purged > 1 ? 's' : ''} permanently deleted after ${r.summary?.retention_days ?? ''} days`);
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
     }).catch(e => { if (on) setError(errMsg(e)); }).finally(() => { if (on) setLoading(false); });
     return () => { on = false; };
-  }, [tab, dq, page, reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, dq, page, perPage, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = useCallback(() => setReload(n => n + 1), []);
 
@@ -123,8 +119,6 @@ export default function RecycleBin() {
     } finally { setBusy(false); }
   };
 
-  const tabList: CvTab[] = TABS.map(t => ({ ...t, count: tabs[t.key] ?? null }));
-  const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
   const allOnPage = rows.length > 0 && rows.every(r => sel.has(r.id));
   const toggle = (id: number) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleAll = () => setSel(allOnPage ? new Set() : new Set(rows.map(r => r.id)));
@@ -138,6 +132,74 @@ export default function RecycleBin() {
       <small className="phx-card__s rb-sub">{sub}</small>
     </div>
   );
+
+  const columns = useMemo<DataTableColumn<BinRow>[]>(() => [
+    {
+      id: 'sel', meta: { width: '4%', align: 'center' },
+      header: () => <input type="checkbox" className="form-check-input" checked={allOnPage} onChange={toggleAll} aria-label="Select all on this page" />,
+      cell: ({ row: { original: r } }) => <input type="checkbox" className="form-check-input" checked={sel.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Select ${r.name}`} />,
+    },
+    {
+      header: 'Credential ID', id: 'code', meta: { width: '9%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={<DtIdCell value={r.code} />} sub={r.type_label} />,
+    },
+    {
+      header: 'Credential Name', id: 'name', meta: { width: '15%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={<b><TruncCell value={r.name} caseSensitive max={40} /></b>} sub={r.url ?? undefined} />,
+    },
+    {
+      header: 'Category', id: 'category', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <TruncCell value={r.category_group} caseSensitive />,
+    },
+    {
+      header: 'Owner', id: 'owner', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={r.owner.is_me ? 'You' : r.owner.name ?? '—'} sub={r.scope === 'team' ? 'Team' : 'Personal'} />,
+    },
+    {
+      header: 'Risk', id: 'risk', meta: { width: '7%', align: 'center' },
+      cell: ({ row: { original: r } }) => <PillCell value={cap(r.risk)} tone={RISK_TONE[r.risk]} />,
+    },
+    {
+      header: 'Deleted By', id: 'by', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <TruncCell value={r.deleted_by.name} caseSensitive />,
+    },
+    {
+      header: 'Deleted On', id: 'on', meta: { width: '9%' },
+      cell: ({ row: { original: r } }) => <TwoLine top={fmtDay(r.deleted_at)} sub={fmtTime(r.deleted_at)} />,
+    },
+    {
+      header: 'Auto-delete In', id: 'left', meta: { width: '10%', align: 'center' },
+      cell: ({ row: { original: r } }) => (
+        <TwoLine top={<PillCell value={`${r.days_left} ${r.days_left === 1 ? 'day' : 'days'}`} tone={URGENCY_TONE[r.urgency]} />}
+          sub={`on ${fmtDay(r.purges_at).replace(/ \d{4}$/, '')}`} />
+      ),
+    },
+    {
+      header: 'Action', id: 'actions', meta: { width: '8%', align: 'center' },
+      cell: ({ row: { original: r } }) => (
+        <div className="d-flex justify-content-center gap-1">
+          <ActionCell title={restoring.has(r.id) ? 'Restoring…' : 'Restore'} icon="ri-arrow-go-back-line" tone="success"
+            disabled={restoring.has(r.id) || busy} onClick={() => restore(r)} />
+          {r.can_purge && <ActionCell title="Delete permanently" icon="trash-svg" tone="danger" onClick={() => setAsk({ kind: 'purge', row: r })} />}
+        </div>
+      ),
+    },
+  ], [sel, allOnPage, restoring, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const bulk = sel.size > 0 ? (
+    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+      <span className="text-muted small"><b>{sel.size}</b> selected</span>
+      <button type="button" className="btn btn-sm btn-soft-success" disabled={busy} onClick={() => restoreMany([...sel])}>
+        <i className="ri-arrow-go-back-line me-1" />Restore
+      </button>
+      {purgeAllowed && (
+        <button type="button" className="btn btn-sm btn-soft-danger" disabled={busy} onClick={() => setAsk({ kind: 'bulk', ids: [...sel] })}>
+          <i className="ri-delete-bin-line me-1" />Delete permanently
+        </button>
+      )}
+      <button type="button" className="btn btn-sm btn-link text-muted" onClick={() => setSel(new Set())}>Clear</button>
+    </div>
+  ) : undefined;
 
   const askRow = ask?.kind === 'purge' ? ask.row : null;
   const empty = (summary?.items ?? 0) === 0;
@@ -179,104 +241,17 @@ export default function RecycleBin() {
         {card('green', I_CLOCK, next ? `${next.days} ${next.days === 1 ? 'day' : 'days'}` : '—', 'Next deletion', next ? `Deletes ${next.name}` : 'Bin is empty')}
       </div>
 
-      <CvCard>
-        <CvTabsRow tabs={tabList} active={tab} onTab={setTab} search={q} onSearch={setQ}
-          placeholder="Search by credential ID, name, category or owner..." />
-
-        {sel.size > 0 && (
-          <div className="rb-bulk">
-            <span className="rb-bulk__n"><b>{sel.size}</b> selected</span>
-            <button type="button" data-h40="skip" className="rb-btn rb-btn--ok" disabled={busy} onClick={() => restoreMany([...sel])}>
-              <Svg d={IC.restore} size={13} />Restore
-            </button>
-            {purgeAllowed && (
-              <button type="button" data-h40="skip" className="rb-btn rb-btn--del rb-bulk__del" disabled={busy} onClick={() => setAsk({ kind: 'bulk', ids: [...sel] })}>
-                <Svg d={IC.bin} size={13} />Delete permanently
-              </button>
-            )}
-            <button type="button" data-h40="skip" className="rb-bulk__clear" onClick={() => setSel(new Set())}>Clear</button>
-          </div>
-        )}
-
-        <div id="rbListWrap">
-        <div className="whm-tblwrap">
-          <table className="whm-tbl mv-tbl rb-tbl">
-            <thead>
-              <tr>
-                {COLS.map((c, i) => (
-                  <th key={c} className={`rb-th-${i}`}>
-                    {i === 0
-                      ? <span className="rb-srh"><span className={`ir-ck${allOnPage ? ' is-on' : ''}`} role="checkbox" aria-checked={allOnPage} aria-label="Select all on this page" onClick={toggleAll}><Svg d={I_CHECK} size={10} /></span>{c}</span>
-                      : c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && !rows.length ? <ShimRows cols={COLS.length} /> : error ? (
-                <tr><td colSpan={COLS.length} className="mv-empty"><div className="mv-empty__box">
-                  <div className="mv-empty__ico"><Svg d={IC.shieldAlert} size={24} /></div>
-                  <div className="mv-empty__t">Could not load the recycle bin</div>
-                  <div className="mv-empty__s">{error}</div>
-                  <button type="button" data-h40="skip" className="rb-btn rb-btn--ok" onClick={refresh}><Svg d={IC.restore} size={13} />Try again</button>
-                </div></td></tr>
-              ) : !rows.length ? (
-                <tr><td colSpan={COLS.length} className="mv-empty"><div className="mv-empty__box">
-                  <div className="mv-empty__ico"><Svg d={IC.bin} size={24} /></div>
-                  <div className="mv-empty__t">{dq ? 'No items match your search' : 'The recycle bin is empty'}</div>
-                  <div className="mv-empty__s">{dq ? 'Try a credential name, ID, owner or category.' : `Credentials you move to the bin will appear here for ${days} days.`}</div>
-                </div></td></tr>
-              ) : rows.map((r, i) => {
-                const url = r.url ?? '';
-                return (
-                  <tr key={r.id} className={sel.has(r.id) ? 'is-sel' : undefined}>
-                    <td><span className="rb-srh"><span className={`ir-ck${sel.has(r.id) ? ' is-on' : ''}`} role="checkbox" aria-checked={sel.has(r.id)} aria-label={`Select ${r.name}`} onClick={() => toggle(r.id)}><Svg d={I_CHECK} size={10} /></span><span className="whm-sr">{start + i + 1}</span></span></td>
-                    <td><div className="whm-idcell"><span className="whm-idpill">{r.code}</span><span className="whm-iddate">{r.type_label}</span></div></td>
-                    <td>
-                      <div className="whm-namecell">
-                        <span className="whm-namecell__ico rb-ico"><Svg icon={typeOf(r.type)?.icon ?? 'lock'} size={15} /></span>
-                        <div className="whm-namecell__t">
-                          <b>{r.name}</b>
-                          {url && <span className="whm-namecell__loc"><Svg icon={/^https?:|\.[a-z]{2,}/i.test(url) ? 'globe' : 'tag'} size={11} />{url}</span>}
-                        </div>
-                      </div>
-                    </td>
-                    <td><div className="znm-whcell mv-catc"><b>{r.category_group || ''}</b></div></td>
-                    <td>
-                      <div className="mv-ownc">
-                        <span className="mv-ownc__av">{initials(r.owner.name)}</span>
-                        <div><b>{r.owner.is_me ? 'You' : (r.owner.name ?? '—')}</b>{r.scope === 'team' ? <em className="mv-team">Team</em> : <em className="mv-pers">Personal</em>}</div>
-                      </div>
-                    </td>
-                    <td><div className="znm-flagcell"><span className={`znm-flag mv-rk mv-rk--${r.risk}`}><i />{cap(r.risk)}</span></div></td>
-                    <td><div className="mv-ownc rb-by"><span className="mv-ownc__av">{initials(r.deleted_by.name)}</span><div><b>{r.deleted_by.name ?? '—'}</b></div></div></td>
-                    <td><div className="whm-idcell"><b className="mv-upd-d">{fmtDay(r.deleted_at)}</b><span className="whm-iddate">{fmtTime(r.deleted_at)}</span></div></td>
-                    <td>
-                      <div className={`rb-left rb-left--${r.urgency}`}>
-                        <b>{r.days_left}{r.days_left === 1 ? ' day' : ' days'}</b>
-                        <span className="rb-left__bar"><i style={{ width: `${Math.max(2, r.left_pct)}%` }} /></span>
-                        <small>on {fmtDay(r.purges_at).replace(/ \d{4}$/, '')}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="rb-acts">
-                        <button type="button" data-h40="skip" className="rb-btn rb-btn--ok" disabled={restoring.has(r.id) || busy} onClick={() => restore(r)}><Svg d={IC.restore} size={13} />{restoring.has(r.id) ? 'Restoring…' : 'Restore'}</button>
-                        {r.can_purge && (
-                          <button type="button" data-h40="skip" className="rb-btn rb-btn--del" title="Delete permanently" aria-label="Delete permanently" onClick={() => setAsk({ kind: 'purge', row: r })}>
-                            <Svg d={IC.bin} size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {meta && !error && <CvPager page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={meta.per_page} noun="items" onPage={setPage} />}
-        </div>
-      </CvCard>
+      <DataTable<BinRow> data={rows} columns={columns} toolbarFilters={bulk}
+        rowClassName={r => (sel.has(r.id) ? 'table-active' : undefined)}
+        {...cvTableProps({
+          tabs: TABS.map(t => ({ ...t, count: tabs[t.key] ?? undefined })),
+          activeTab: tab, onTabChange: setTab, search: q, onSearch: setQ,
+          placeholder: 'Search by credential ID, name, category or owner...',
+          loading: loading && !rows.length,
+          empty: emptyState(error ? `Could not load the recycle bin — ${error}`
+            : dq ? 'No items match your search' : `The recycle bin is empty. Credentials you move to the bin stay here for ${days} days.`, 'ri-delete-bin-line'),
+          paging: { meta, page, setPage, setPerPage },
+        })} />
 
       {ask && (
         <ConfirmModal
@@ -310,7 +285,6 @@ export default function RecycleBin() {
   );
 }
 
-/** The prototype's rbRetention dialog — saved through the Policies endpoint. */
 function RetentionModal({ current, options, onClose, onSaved }: { current: number; options: number[]; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [d, setD] = useState(current);
