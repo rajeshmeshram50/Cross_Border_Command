@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { OrderRow } from '../po-list/Order';
 import { FitTip } from '../create-po/form-fields';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../contexts/ToastContext';
 
 import { CCY_SYMBOL, ccySymbol, moneyIn } from '../../../../../utils/currency';
@@ -125,17 +126,20 @@ export function Chip({ label, value, meta, mod, extra }: {
 }
 
 export function HeroRefChips({ row }: { row: OrderRow }) {
-  const spi = row.invoices[0];
+  const spis = row.invoices.length
+    ? row.invoices.map(l => ({ code: l.spi, date: l.spiDate }))
+    : row.spis ?? [];
+  const spi = spis[0];
   return (
     <div className="mpr-hero__chips">
       <Chip label="Supplier" value={row.supplier} meta={row.supplierCode ?? supplierCode(row.supplier)} mod="mpr-hero__chip--sup" />
       <Chip label="PO Number" value={row.po} meta={fmtDate(row.poDate)} />
       <Chip
-        label={row.invoices.length > 1 ? 'SPI Numbers' : 'SPI Number'}
-        value={spi ? spi.spi : 'NA'}
-        meta={spi ? fmtDate(spi.spiDate) : undefined}
-        extra={row.invoices.length > 1
-          ? <span className="mpr-hero__chip-meta">+{row.invoices.length - 1}</span>
+        label={spis.length > 1 ? 'SPI Numbers' : 'SPI Number'}
+        value={spi ? spi.code : 'NA'}
+        meta={spi?.date ? fmtDate(spi.date) : undefined}
+        extra={spis.length > 1
+          ? <Tooltip label={spis.slice(1).map(s => s.code).join(', ')}><span className="mpr-hero__chip-meta">+{spis.length - 1}</span></Tooltip>
           : undefined}
       />
       <Chip label="Shipment ID" value={row.shipment || 'NA'} meta={row.shipment ? fmtDate(row.shipmentDate) : undefined} />

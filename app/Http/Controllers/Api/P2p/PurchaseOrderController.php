@@ -1505,6 +1505,12 @@ class PurchaseOrderController extends Controller
         $piIds   = $pos->pluck('proforma_invoice_id')->filter()->unique()->values()->all();
         $ships = $shipIds ? DB::table('shipment_orders')->whereIn('id', $shipIds)->get(['id', 'shipment_code', 'created_at'])->keyBy('id') : collect();
         $pis   = $piIds ? DB::table('proforma_invoices')->whereIn('id', $piIds)->get(['id', 'code', 'customer_name', 'opp_code', 'created_at'])->keyBy('id') : collect();
+        // The SPIs mapped to each order, oldest first, for the SPI Number chip.
+        $poIds = $pos->pluck('id')->all();
+        $spis  = $poIds ? DB::table('p2p_supplier_invoices')->whereIn('purchase_order_id', $poIds)
+            ->whereNull('deleted_at')->where('status', '!=', SupplierInvoice::STATUS_CANCELLED)
+            ->orderBy('id')->get(['purchase_order_id', 'code', 'invoice_date', 'created_at'])
+            ->groupBy('purchase_order_id') : collect();
         $out = [];
         foreach ($pos as $po) {
             $sh = $ships->get($po->shipment_order_id);
@@ -1516,6 +1522,10 @@ class PurchaseOrderController extends Controller
                 'customer_name'    => $pi->customer_name ?? null,
                 'opportunity_code' => $pi->opp_code ?? null,
                 'pi_date'          => isset($pi->created_at) ? substr((string) $pi->created_at, 0, 10) : null,
+                'spis'             => ($spis->get($po->id) ?? collect())->map(fn ($s) => [
+                    'code' => $s->code,
+                    'date' => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
+                ])->values()->all(),
             ];
         }
         return $out;
