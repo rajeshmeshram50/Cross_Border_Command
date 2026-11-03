@@ -1,10 +1,12 @@
 # CredVault — Normal Vault & Critical Vault: Backend API Sheet
 
 **Scope:** backend only — the APIs of My Vault (Normal Vault) and the Critical Vault, and the Postman collection for them.
-**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 15 folders, 266 requests. Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single. Plus **Share with email** to a person or a team.
+**Postman:** [CredVault_Vaults.postman_collection.json](CredVault_Vaults.postman_collection.json) — 15 folders, 290 requests. Each vault has its own folders: **Add · Edit · Get list · Get single · Delete**, with all 25 types in Add, Edit and Get single. Plus **Share with email** to a person or a team.
 **Last checked:** 03/11/2026:
-- **Collection:** 263 / 263 passed (the 3 logins are skipped because the runner uses ready-made tokens).
+- **Collection:** 287 / 287 passed (the 3 logins are skipped because the runner uses ready-made tokens).
 - **Share email:** 19 / 19 checks, plus the Bcc check (§2, Share).
+- **Shared By Me** (filters and rows) and the php@inhpl.com copy: 34 / 34.
+- **⚠ Real SMTP is failing:** Gmail rejects the `.env` login for dev@inhpl.com ("535 Username and Password not accepted"), so **no email leaves the app** until `MAIL_PASSWORD` is replaced with a valid Google app password (§6).
 - **API read-back:** 513 / 513 checks on every credential, list and single.
 - **Database:** every saved field checked against the request.
 
@@ -80,6 +82,37 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 `meets_policy: false` means the password is below the policy's minimum strength, so a create with it would be refused.
 
+### Get single — every stored value, in plain text
+
+`GET /credvault/credentials/{id}` (either vault) returns **everything the credential stores, in plain text**: every field of the type (passwords, PINs, CVV, account numbers, keys, seeds — nothing masked), the recovery details including the **recovery key**, the notes and the files. `all_values` repeats every value in one flat map.
+
+```json
+"fields": [
+  { "key": "acno",   "label": "Account Number",       "kind": "secret",   "value": "001234567890",         "secret": true, "masked": false, "has_value": true },
+  { "key": "nbpass", "label": "Net-banking Password", "kind": "password", "value": "Ic!ciNet-2026#Strong", "secret": true, "masked": false, "has_value": true },
+  …
+],
+"recovery": { "reg_email": "accounts@inhpl.com", "reg_phone": "+91 98200 11223", "has_recovery_key": true, "recovery_key": "RECOVERY-7Q2K-9XZM" },
+"notes": "Treasury account — PIN with Accounts",
+"all_values": { "bank": "ICICI Bank", "holder": "INHPL", "acno": "001234567890", "ifsc": "ICIC0001234", "nbuser": "inhpl.corp",
+                "nbpass": "Ic!ciNet-2026#Strong", "reg_email": "accounts@inhpl.com", "reg_phone": "+91 98200 11223",
+                "recovery_key": "RECOVERY-7Q2K-9XZM", "notes": "Treasury account — PIN with Accounts" }
+```
+
+**Who gets the values:**
+
+| Caller / state | What the single GET returns |
+|---|---|
+| Owner, Vault Admin, HOD, or a **View / Copy / Full** share | Everything, in plain text, plus `all_values` |
+| A **Use Only** share | The fields without their secret values, no `all_values`, no notes — "sign in without seeing the password" |
+| A **Critical Vault** credential **while locked** | The summary and the unlock plan only: no fields, no values |
+| The same credential **after its unlock** (approvals + 2-step) | Everything, in plain text, until the window closes |
+
+**Notes:**
+- **Audit:** each read that returns the values is written to the audit log as a **reveal** ("All stored values returned by the detail API", with the field list).
+- **Not returned:** the credential's own 2-step secret (the Google Authenticator key that guards the unlock) is never returned. It is the lock, not the credential's data.
+- **Create and edit responses** still don't echo secrets back; read them with the single GET.
+
 ### Strength in the responses
 
 The list rows (`GET …/credentials`) and the single credential (`GET /credentials/{id}`) return strength as a **name**: `"strength": "Strong"`. The names are `Weak`, `Fair`, `Good`, `Strong`, or `null` when the type has no password (e.g. Passkey, ID documents). There is **no percentage** (`strength_pct` was removed). `strength_level` (0–4) is there for sorting.
@@ -111,6 +144,7 @@ The list rows (`GET …/credentials`) and the single credential (`GET /credentia
 |---|---|
 | A person | One email, to that person, greeting them by name |
 | A team | Every active login in that department (by the user's department, or their HR record's) **except the sharer**. One email in **Bcc**, in batches of 50, so members don't see each other's addresses. Members also get the bell notification. |
+| Always | A **copy (Cc) to php@inhpl.com** on every share email: on the person's email, and once on a team email. Set by `CREDVAULT_SHARE_COPY_EMAIL` in `.env` (default php@inhpl.com; empty = no copy). |
 
 **What the email shows** (the popup's details, never a secret):
 - **Subject:** "{sharer} shared “{credential}” ({code}) with you" (or "with your team {team}"), with a "Share updated:" prefix on a renewal.
@@ -125,7 +159,7 @@ The list rows (`GET …/credentials`) and the single credential (`GET /credentia
 **The response** adds `data.mail`:
 
 ```json
-"mail": { "status": "sent", "recipients": 6, "sent": 6, "failed": 0 }
+"mail": { "status": "sent", "recipients": 6, "sent": 6, "failed": 0, "copy_to": "php@inhpl.com" }
 ```
 
 | `status` | Meaning |
@@ -139,8 +173,61 @@ The message adds "Email sent to N people.", and the audit log gets "Share email 
 
 Related endpoints:
 - `GET /credvault/share-recipients?q=` — who it can be shared with.
-- `GET /credvault/shares?tab=all|active|soon|expired|revoked` — Shared By Me.
+- `GET /credvault/shares` — Shared By Me (below).
+- `GET /normal-vault/credentials?tab=shared` — Shared With Me.
 - `DELETE /credvault/shares/{id}` — revoke; again → 409.
+
+### Shared By Me — `GET /credvault/shares`
+
+Every share on a credential you own, or that you made. The tab counts (`tabs`) ignore the search and the filters.
+
+| Query | Values |
+|---|---|
+| `tab` | `all` \| `active` \| `soon` (expiring within 3 days) \| `expired` \| `revoked` |
+| `q` | credential ID / name / group / type, a person, a team, the reason, a permission label |
+| `credential_id` | one credential |
+| `permission` | `use` \| `view` \| `copy` \| `full`, or several: `view,copy` |
+| `recipient_type` + `recipient_id` | `user` or `team`, and optionally one person or team (`recipient_id` needs `recipient_type`) |
+| `vault` · `risk` · `type` · `group` | the credential's vault, risk, type key, group |
+| `shared_from` · `shared_to` | the share date, `Y-m-d`, in `tz` |
+| `expires_from` · `expires_to` | the expiry date, `Y-m-d`, in `tz` |
+| `sort` · `dir` | `status` (default: expiring soon first, then active, expired, revoked) \| `shared_at` \| `expires_at` \| `name`; `asc` \| `desc` |
+| `tz` | the viewer's timezone for the dates shown and the date filters |
+| `page` · `per_page` | paging, 10 a page by default |
+
+**Refusals (422):**
+- an unknown permission;
+- `recipient_id` without `recipient_type`;
+- a `…_to` date before its `…_from` date;
+- a bad date or timezone.
+
+**Response:**
+- `{ data: [rows], tabs: {all, active, soon, expired, revoked, live}, filters: {the ones applied}, meta: {current_page, per_page, total, last_page} }`;
+- `live` = active + soon, for the "Shared By Me" badge.
+
+Each row is the table's line, ready to show:
+
+```json
+{
+  "sr_no": 1,
+  "id": 41,
+  "credential": { "id": 5, "code": "CRD-0005", "vault": "normal", "name": "GST Portal", "type": "login", "type_label": "Login",
+                  "category_group": "Logins & Access", "risk": "high", "url": "https://gst.gov.in", "username": "inhpl", "created_on": "29/10/2026" },
+  "recipient": { "type": "user", "id": 35, "name": "Neha Patel", "initials": "NP", "sub": "Finance Controller" },
+  "permission": "copy", "permission_label": "Copy",
+  "shared_at": "2026-10-28T05:39:00+00:00", "shared_on": { "date": "28/10/2026", "time": "11:09" },
+  "expires_at": "2026-11-04T05:39:00+00:00", "expires": { "date": "04/11/2026", "left": "19h left" },
+  "reason": "GST return filing for October",
+  "state": "soon", "status_label": "Expiring soon",
+  "can": { "view": true, "share": true, "revoke": true }
+}
+```
+
+**The cells:**
+- **Team row:** `recipient` is `{ "type": "team", "name": "IT Operations", "initials": "IO", "members": 8, "sub": "Team · 8 members" }`.
+- **`expires.left`:** `"19h left"` under a day, `"7 days left"`, `"No expiry"`, `"Expired"`, or `"Revoked"`.
+- **`status_label`:** Active · Expiring soon · Expired · Revoked.
+- **`can`** drives the row's View / Share / Revoke buttons. Revoke is only possible on a live share.
 
 ### Shared by both vaults
 
@@ -339,14 +426,14 @@ attachments[0]=<file: access-approval.pdf>
 | 02 | **Add Normal Vault** | 28 | Next CRD- code; **Add 01 … Add 25**, one per type, form-data with files; risk critical → 422; missing field → 422 |
 | 03 | **Edit Normal Vault** | 30 | **Edit 01 … Edit 25**: every field with a new value plus new files (form-data POST); add an attachment, download it, remove it; a JSON-only PUT; risk critical → 422 |
 | 04 | **Get Normal Vault (list)** | 11 | Tabs all / mine / team / shared / others; search; filter by type, group and risk; paging; the shared list with `?vault=normal`. Every row is checked: vault, strength name, no percentage |
-| 05 | **Get single Normal Vault** | 27 | **Get single 01 … 25**, one per type. Each is checked: open, every field of the type returned, secrets masked, strength name. Plus reveal and activity |
+| 05 | **Get single Normal Vault** | 27 | **Get single 01 … 25**, one per type. Each is checked: open, every field of the type returned **in plain text** (none masked) with `all_values`, strength name. Plus reveal and activity |
 | 06 | Delete Normal Vault | 2 | To the Recycle Bin; get single afterwards → 404 |
 | 07 | **Add Critical Vault** | 33 | Next CCRD- code; approvers; Google new secret and check; **Add 01 … Add 25** with approvals, Google 2-step and files; refusals: risk high, no method, all steps off, wrong code |
 | 08 | **Edit Critical Vault** | 30 | **Edit 01 … Edit 25**: every field plus new files, the lock kept, no new code; rename only; manager step off; risk high → 422; cross-vault ids → 404 both ways |
 | 09 | **Get Critical Vault (list)** | 9 | Tabs all / mine / others; search; filters; paging; `?vault=critical` |
-| 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields, strength name. Plus reveal while locked → 423 |
+| 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields and no values, strength name. Plus reveal while locked → 423 |
 | 11 | Delete Critical Vault | 2 | To the Recycle Bin (owner / Vault Admin); get single afterwards → 404 |
-| 12 | **Share — person or team, with email** | 14 | Recipients and search; Individual View 7 days (email to 1); renew as Copy 30 days ("Share updated" email); **Team Use Only 30 days (email to every member)**; Full Access with an `expires_at` date; Critical View 1 day; refusals: Full on critical, no reason, beyond the policy maximum; Shared By Me; revoke, revoke again → 409 |
+| 12 | **Share — person or team, with email** | 38 | Recipients and search; Individual View 7 days (email to 1); renew as Copy 30 days ("Share updated" email); **Team Use Only 30 days (email to every member)**; Full Access with an `expires_at` date; Critical View 1 day; refusals: Full on critical, no reason, beyond the policy maximum; **Shared By Me: all 5 tabs, search, credential, permission (one / several), teams, one person, one team, vault, risk, type, group, shared-on and expires ranges, combined filters, 3 sorts, paging, 2 refusals**; Shared With Me; revoke, revoke again → 409 |
 | 13 | Email 2-step | 7 | Send, verify, add with email; the same token again → 422; switch an existing credential to email |
 | 14 | Unlock | 24 | The full Google unlock and the full email unlock (request → admin → manager → code → reveal → lock), reject, cancel, lists |
 
@@ -365,10 +452,13 @@ attachments[0]=<file: access-approval.pdf>
 
 | Check | Result |
 |---|---|
-| The collection, top to bottom | **263 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
+| The collection, top to bottom | **287 passed, 0 failed** (3 logins skipped: the runner uses ready-made tokens) |
 | Share emails, read back from the mail log | **19 / 19**: one email to the person; subject with sharer, credential and code; View with its description; the six can-do ticks match the permission; the end date; reason, risk, username and greeting; the open link; **no password**; renewal sends "Share updated" with Copy; a team share sends one email for all 6 members with "your team Export-Import (7 members)"; Use Only shows only sign in; bell notifications for all recipients; each email in the audit log; a critical share notes the unlock approvals and hides the account number; a refused share sends nothing |
 | Team Bcc, in-process (`Mail::fake`) | Bcc = exactly the 6 team members, the sharer excluded; `mail.sent = 6` |
-| Every credential read back through the API, both lists and all 50 singles | **513 / 513**: right vault and prefix; strength a name (never a percentage) and equal to the stored level; every field of each Normal credential returned with its edited value; secrets masked; files present; Critical ones locked with an unlock plan and no fields |
+| Shared By Me + the copy | **34 / 34**: `copy_to` php@inhpl.com, and Cc php@inhpl.com on all 5 share emails (person and team); the row cells (sr_no, code, url, created_on, vault, recipient name / initials / designation / team members, permission label, shared_on date and time, `expires.left` "24h left" / "7 days left", status labels, `can`, revoked rows can't be revoked); expiring soon first; tab counts; every filter (permission one and several, team, one person, vault, risk, type, group, 3 tabs, shared-on and expires ranges, search, combined); sort by expiry and by name; paging; echoed filters; 3 refusals |
+| Get single in plain text | **14 / 14**: the owner gets every value (password, account number, recovery key, registered email and phone, notes) and an exact `all_values`; secret fields come back with `secret: true, masked: false`; the read is in the audit log as a reveal; create and edit responses carry no secret; a View share sees everything; a Use Only share sees no secret, no `all_values`, no notes; a locked critical credential shows no fields and no values, and after the unlock the password in plain text; the 2-step secret is never returned |
+| Real SMTP (one email to php@inhpl.com) | **Failed: Gmail refused the login** — see §6 |
+| Every credential read back through the API, both lists and all 50 singles | **590 / 590**: right vault and prefix; every field of each Normal credential in plain text and equal to `all_values`; strength a name (never a percentage) and equal to the stored level; every field of each Normal credential returned with its edited value; secrets masked; files present; Critical ones locked with an unlock plan and no fields |
 | Every saved field compared in the database (decrypted) with its Edit request | All match on the 45 that keep their edited values. The other 5 are changed again by later requests on purpose (a password-only edit and an attachment note, the Critical note's Manager step turned off, and the 2 deleted) |
 | Files | 4 attachments on each Attachments-box type (2 from the add, 2 from the edit); the file replaced on each file-field type |
 
@@ -378,31 +468,31 @@ The 50 live credentials that the run left, read from `GET /normal-vault/credenti
 
 | # | Vault | ID | Name | Category | Group | Username | Risk | Strength | 2FA | Files | Lock steps | 2-step |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Normal | CRD-0001 | Generated login | Login | Logins & Access | ops | Medium | Strong | Not enabled | — | — | — |
-| 2 | Normal | CRD-0002 | Login · My Vault (edited) | Login | Logins & Access | finance@inhpl.com | High | Strong | Enabled | 4 (attachments) | — | — |
-| 3 | Normal | CRD-0003 | Password · My Vault (edited) | Password | Logins & Access | wiki.owner | High | Strong | Enabled | 4 (attachments) | — | — |
-| 4 | Normal | CRD-0004 | Email · My Vault (edited) | Email | Logins & Access | md@inhpl.com | High | Strong | Enabled | 4 (attachments) | — | — |
-| 5 | Normal | CRD-0005 | Passkey · My Vault (edited) | Passkey | Logins & Access | inhpl-ops | High | — | Enabled | 4 (attachments) | — | — |
-| 6 | Normal | CRD-0006 | TOTP / 2FA Seed · My Vault (edited) | TOTP / 2FA Seed | Logins & Access | admin@inhpl.onmicrosoft.com | High | — | — | 4 (attachments) | — | — |
-| 7 | Normal | CRD-0007 | Credit Card · My Vault (edited) | Credit Card | Finance & Banking | INHPL Treasury | High | — | — | 4 (attachments) | — | — |
-| 8 | Normal | CRD-0008 | Bank Account · My Vault (edited) | Bank Account | Finance & Banking | •••• 5678 | High | Strong | Enabled | 4 (attachments) | — | — |
-| 9 | Normal | CRD-0009 | Crypto Wallet · My Vault (edited) | Crypto Wallet | Finance & Banking | Treasury Ledger (cold) | High | — | Enabled | 4 (attachments) | — | — |
-| 10 | Normal | CRD-0010 | Rewards · My Vault (edited) | Rewards | Finance & Banking | MB87654321 | Medium | Strong | — | 4 (attachments) | — | — |
-| 11 | Normal | CRD-0011 | API Credentials · My Vault (edited) | API Credentials | Development & IT | Razorpay API | High | — | — | 4 (attachments) | — | — |
-| 12 | Normal | CRD-0012 | SSH Key · My Vault (edited) | SSH Key | Development & IT | prod-02.inhpl.com | High | — | — | 4 (attachments) | — | — |
-| 13 | Normal | CRD-0013 | Database · My Vault (edited) | Database | Development & IT | erp_ro | High | Strong | — | 4 (attachments) | — | — |
-| 14 | Normal | CRD-0014 | Server · My Vault (edited) | Server | Development & IT | Administrator | High | Strong | — | 4 (attachments) | — | — |
-| 15 | Normal | CRD-0015 | Certificate · My Vault (edited) | Certificate | Development & IT | portal.inhpl.com | High | Strong | — | 1 (file field) | — | — |
-| 16 | Normal | CRD-0016 | Software License · My Vault (edited) | Software License | Development & IT | Adobe Acrobat Pro | High | — | — | 4 (attachments) | — | — |
-| 17 | Normal | CRD-0017 | Wireless Router · My Vault (edited) | Wireless Router | Development & IT | INHPL-Guest | High | Strong | — | 4 (attachments) | — | — |
-| 18 | Normal | CRD-0018 | Identity · My Vault (edited) | Identity | Identity & Documents | Sai Anand Pawar | High | — | — | 4 (attachments) | — | — |
-| 19 | Normal | CRD-0019 | Passport · My Vault (edited) | Passport | Identity & Documents | •••• 4321 | High | — | — | 1 (file field) | — | — |
-| 20 | Normal | CRD-0020 | Driver License · My Vault (edited) | Driver License | Identity & Documents | •••• 4321 | High | — | — | 1 (file field) | — | — |
-| 21 | Normal | CRD-0021 | SSN / Aadhaar / PAN · My Vault (edited) | SSN / Aadhaar / PAN | Identity & Documents | Sai Anand Pawar | High | — | — | 1 (file field) | — | — |
-| 22 | Normal | CRD-0022 | Document · My Vault (edited) | Document | Identity & Documents | AGR-2027-002 | High | — | — | 1 (file field) | — | — |
-| 23 | Normal | CRD-0024 | Membership · My Vault (edited) | Membership | Personal & Lifestyle | RW-1102 | Medium | Strong | — | 4 (attachments) | — | — |
-| 24 | Normal | CRD-0025 | Medical Record · My Vault (edited) | Medical Record | Personal & Lifestyle | Sai Anand Pawar | High | — | — | 1 (file field) | — | — |
-| 25 | Normal | CRD-0026 | Outdoor License · My Vault (edited) | Outdoor License | Personal & Lifestyle | •••• -118 | Medium | — | — | 4 (attachments) | — | — |
+| 1 | Normal | CRD-0028 | Generated login | Login | Logins & Access | ops | Medium | Strong | Not enabled | — | — | — |
+| 2 | Normal | CRD-0029 | Login · My Vault (edited) | Login | Logins & Access | finance@inhpl.com | High | Strong | Enabled | 4 (attachments) | — | — |
+| 3 | Normal | CRD-0030 | Password · My Vault (edited) | Password | Logins & Access | wiki.owner | High | Strong | Enabled | 4 (attachments) | — | — |
+| 4 | Normal | CRD-0031 | Email · My Vault (edited) | Email | Logins & Access | md@inhpl.com | High | Strong | Enabled | 4 (attachments) | — | — |
+| 5 | Normal | CRD-0032 | Passkey · My Vault (edited) | Passkey | Logins & Access | inhpl-ops | High | — | Enabled | 4 (attachments) | — | — |
+| 6 | Normal | CRD-0033 | TOTP / 2FA Seed · My Vault (edited) | TOTP / 2FA Seed | Logins & Access | admin@inhpl.onmicrosoft.com | High | — | — | 4 (attachments) | — | — |
+| 7 | Normal | CRD-0034 | Credit Card · My Vault (edited) | Credit Card | Finance & Banking | INHPL Treasury | High | — | — | 4 (attachments) | — | — |
+| 8 | Normal | CRD-0035 | Bank Account · My Vault (edited) | Bank Account | Finance & Banking | •••• 5678 | High | Strong | Enabled | 4 (attachments) | — | — |
+| 9 | Normal | CRD-0036 | Crypto Wallet · My Vault (edited) | Crypto Wallet | Finance & Banking | Treasury Ledger (cold) | High | — | Enabled | 4 (attachments) | — | — |
+| 10 | Normal | CRD-0037 | Rewards · My Vault (edited) | Rewards | Finance & Banking | MB87654321 | Medium | Strong | — | 4 (attachments) | — | — |
+| 11 | Normal | CRD-0038 | API Credentials · My Vault (edited) | API Credentials | Development & IT | Razorpay API | High | — | — | 4 (attachments) | — | — |
+| 12 | Normal | CRD-0039 | SSH Key · My Vault (edited) | SSH Key | Development & IT | prod-02.inhpl.com | High | — | — | 4 (attachments) | — | — |
+| 13 | Normal | CRD-0040 | Database · My Vault (edited) | Database | Development & IT | erp_ro | High | Strong | — | 4 (attachments) | — | — |
+| 14 | Normal | CRD-0041 | Server · My Vault (edited) | Server | Development & IT | Administrator | High | Strong | — | 4 (attachments) | — | — |
+| 15 | Normal | CRD-0042 | Certificate · My Vault (edited) | Certificate | Development & IT | portal.inhpl.com | High | Strong | — | 1 (file field) | — | — |
+| 16 | Normal | CRD-0043 | Software License · My Vault (edited) | Software License | Development & IT | Adobe Acrobat Pro | High | — | — | 4 (attachments) | — | — |
+| 17 | Normal | CRD-0044 | Wireless Router · My Vault (edited) | Wireless Router | Development & IT | INHPL-Guest | High | Strong | — | 4 (attachments) | — | — |
+| 18 | Normal | CRD-0045 | Identity · My Vault (edited) | Identity | Identity & Documents | Sai Anand Pawar | High | — | — | 4 (attachments) | — | — |
+| 19 | Normal | CRD-0046 | Passport · My Vault (edited) | Passport | Identity & Documents | •••• 4321 | High | — | — | 1 (file field) | — | — |
+| 20 | Normal | CRD-0047 | Driver License · My Vault (edited) | Driver License | Identity & Documents | •••• 4321 | High | — | — | 1 (file field) | — | — |
+| 21 | Normal | CRD-0048 | SSN / Aadhaar / PAN · My Vault (edited) | SSN / Aadhaar / PAN | Identity & Documents | Sai Anand Pawar | High | — | — | 1 (file field) | — | — |
+| 22 | Normal | CRD-0049 | Document · My Vault (edited) | Document | Identity & Documents | AGR-2027-002 | High | — | — | 1 (file field) | — | — |
+| 23 | Normal | CRD-0051 | Membership · My Vault (edited) | Membership | Personal & Lifestyle | RW-1102 | Medium | Strong | — | 4 (attachments) | — | — |
+| 24 | Normal | CRD-0052 | Medical Record · My Vault (edited) | Medical Record | Personal & Lifestyle | Sai Anand Pawar | High | — | — | 1 (file field) | — | — |
+| 25 | Normal | CRD-0053 | Outdoor License · My Vault (edited) | Outdoor License | Personal & Lifestyle | •••• -118 | Medium | — | — | 4 (attachments) | — | — |
 | 26 | Critical | CCRD-0001 | Login · Critical (edited) | Login | Logins & Access | finance@inhpl.com | Critical | Strong | Enabled | 4 (attachments) | admin, manager, otp | Authenticator (linked) |
 | 27 | Critical | CCRD-0002 | Password · Critical (edited) | Password | Logins & Access | wiki.owner | Critical | Strong | Enabled | 4 (attachments) | admin, manager, otp | Authenticator (linked) |
 | 28 | Critical | CCRD-0003 | Email · Critical (edited) | Email | Logins & Access | md@inhpl.com | Critical | Strong | Enabled | 4 (attachments) | admin, manager, otp | Authenticator (linked) |
@@ -430,6 +520,13 @@ The 50 live credentials that the run left, read from `GET /normal-vault/credenti
 | 50 | Critical | CCRD-0026 | Treasury server · email | Server | Development & IT | root | Critical | Strong | Enabled | — | admin, manager, otp | Email code (linked) |
 
 ## 6. Notes
+
+- **Email is not going out — fix the SMTP password.** A real send through the app's mailer (`MAIL_MAILER=smtp`, host smtp.gmail.com, user dev@inhpl.com) failed on 03/11/2026: *"535-5.7.8 Username and Password not accepted"*. Every email the app sends — share emails, 2-step codes, password-reset codes — fails the same way until `MAIL_PASSWORD` in `.env` is replaced:
+  1. Create a new Google **app password** for dev@inhpl.com (the account needs 2-Step Verification on).
+  2. Put it in `.env` as `MAIL_PASSWORD`.
+  3. Run `php artisan config:clear`.
+
+  The Gmail module's email history marks a mail "sent" when it is handed to the mailer, so that list can look fine while the SMTP login fails.
 
 - The CredVault screens are unchanged and still call the earlier paths (`POST /credentials`, `/authenticator/new`, `/approvers`, `/access-requests`). Those now live under `normal-vault/` and `critical-vault/`, so the screens' add, edit, delete and unlock need the new paths before they work again.
 - The server accepts `attachments[]` on any type. The Add form only offers the Attachments box on the 19 types without a file field of their own.
