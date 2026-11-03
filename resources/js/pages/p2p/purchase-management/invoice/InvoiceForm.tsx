@@ -274,7 +274,7 @@ export default function InvoiceForm({
             }
             if (existing.items.length) {
               const pi = existing.shipment_order_id
-                ? await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => [])
+                ? await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => [])
                 : [];
               const master = existing.shipment_order_id
                 ? []
@@ -309,7 +309,7 @@ export default function InvoiceForm({
               const fromPi = rowsFromPi(pi);
               setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
             } else if (existing.shipment_order_id) {
-              const pi = await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => []);
+              const pi = await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => []);
               if (!live) return;
               setLines(rowsFromPi(pi));
               setRemovedLines([]);
@@ -583,6 +583,7 @@ export default function InvoiceForm({
         const shipmentOrderId = directLinks.current.shipment_order_id;
         if (shipmentOrderId && lines.length === 0) {
           const pi = await poApi.piLines(shipmentOrderId);
+          set({ piDate: pi.pi_date ?? '' });
           setLines(rowsFromPi(pi.lines));
           setRemovedLines([]);
         }
@@ -660,11 +661,13 @@ export default function InvoiceForm({
           ? 'Cannot be a future date'
         : !isDirect && draft.poDate && draft.invoiceDate < draft.poDate
           ? `Cannot be before the PO date (${formatDmy(draft.poDate)})`
+        : isDirect && draft.piDate && draft.invoiceDate < draft.piDate
+          ? `Cannot be before the PI date (${formatDmy(draft.piDate)})`
           : undefined,
       invoiceFile: files.invoice_file || uploaded.invoice ? undefined : 'Attach the purchase invoice',
       rows,
     };
-  }, [isDirect, lines, packedOf, draft.invoiceNumber, draft.invoiceDate, draft.poDate, files.invoice_file, uploaded.invoice]);
+  }, [isDirect, lines, packedOf, draft.invoiceNumber, draft.invoiceDate, draft.poDate, draft.piDate, files.invoice_file, uploaded.invoice]);
   /* Turns the red on and sends the user to the first gap. Bumped on every
      refusal, not set once, so a second click goes back to the field again. */
   const flagStage2 = () => setStage2Check(n => n + 1);
@@ -692,6 +695,12 @@ export default function InvoiceForm({
       flagStage2();
       toast.warning('Invoice date is before the PO date',
         `The purchase invoice date cannot be earlier than the PO date (${formatDmy(draft.poDate)}).`);
+      return;
+    }
+    if (isDirect && draft.piDate && draft.invoiceDate < draft.piDate) {
+      flagStage2();
+      toast.warning('Invoice date is before the PI date',
+        `The purchase invoice date cannot be earlier than the PI date (${formatDmy(draft.piDate)}).`);
       return;
     }
     if (isDirect) {

@@ -1580,10 +1580,15 @@ class SupplierInvoiceController extends Controller
     private function validateInvoiceDetails(Request $request, $user, SupplierInvoice $spi): array
     {
         /* The supplier cannot bill before the order was placed. A Direct SPI
-           has no purchase order, so there is nothing to hold it to. */
+           has no purchase order; when it bills a shipment's PI, it cannot be
+           dated before that PI. */
         $poDate = $spi->purchase_order_id
             ? optional($spi->purchaseOrder)->po_date?->toDateString()
             : null;
+        $piDate = !$spi->purchase_order_id && $spi->shipmentOrder
+            ? $this->poSvc->piDate($this->poSvc->piIdForShipment($spi->shipmentOrder))
+            : null;
+        $minDate = $poDate ?? $piDate;
 
         return $request->validate([
             'invoice_no' => [
@@ -1596,7 +1601,7 @@ class SupplierInvoiceController extends Controller
             ],
             'invoice_date'  => array_values(array_filter([
                 'required', 'date', 'before_or_equal:today',
-                $poDate ? "after_or_equal:$poDate" : null,
+                $minDate ? "after_or_equal:$minDate" : null,
             ])),
             'eway_no'       => ['nullable', 'string', 'max:40'],
             'currency_code' => ['nullable', 'string', 'size:3', 'required_if:document_type,international'],
@@ -1604,8 +1609,8 @@ class SupplierInvoiceController extends Controller
         ], [
             'invoice_no.unique' => 'This supplier has already billed that invoice number.',
             'invoice_date.before_or_equal' => 'The purchase invoice date cannot be a future date.',
-            'invoice_date.after_or_equal' => $poDate
-                ? 'The purchase invoice date cannot be earlier than the PO date (' . date('d-M-Y', strtotime($poDate)) . ').'
+            'invoice_date.after_or_equal' => $minDate
+                ? 'The purchase invoice date cannot be earlier than the ' . ($poDate ? 'PO' : 'PI') . ' date (' . date('d-M-Y', strtotime($minDate)) . ').'
                 : 'The purchase invoice date cannot be earlier than the PO date.',
         ]);
     }

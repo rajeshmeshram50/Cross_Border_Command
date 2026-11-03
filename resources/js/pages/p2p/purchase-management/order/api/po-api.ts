@@ -315,7 +315,7 @@ export const poApi = {
 
   piLines: (shipmentId: number, excludePo?: number) =>
     call('PO PI lines', () => api.get(`/p2p/orders/shipments/${shipmentId}/pi-lines`, { params: excludePo ? { exclude_po: excludePo } : {} }),
-      dataOf<{ proforma_invoice_id: number | null; lines: PiLine[]; held_by?: PiHolder[] }>),
+      dataOf<{ proforma_invoice_id: number | null; pi_date?: string | null; lines: PiLine[]; held_by?: PiHolder[] }>),
 };
 
 export type PiHolder = {

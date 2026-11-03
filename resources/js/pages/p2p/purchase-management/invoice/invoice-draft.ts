@@ -9,6 +9,8 @@ export interface InvoiceDraft {
   docType: string;
   transport: string;
   poDate: string;
+  /** Date of the shipment's PI a Direct SPI bills — its invoice cannot be older. */
+  piDate: string;
   deliveryDate: string;
   deliveryLocation: string;
   paymentType: string;
@@ -176,6 +178,7 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmen
     docType: '',
     transport: '',
     poDate: '',
+    piDate: '',
     deliveryDate: '',
     deliveryLocation: '',
     paymentType: '',

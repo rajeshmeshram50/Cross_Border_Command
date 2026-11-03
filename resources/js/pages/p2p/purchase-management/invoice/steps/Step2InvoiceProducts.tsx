@@ -206,11 +206,11 @@ export default function Step2InvoiceProducts({
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
             <Field label="PURCHASE INVOICE DATE" req error={issues?.invoiceDate}>
-              {/* The supplier cannot bill before the order was placed. A Direct
-                  SPI has no purchase order, so nothing to hold it to. */}
+              {/* The supplier cannot bill before the order was placed; a Direct
+                  SPI billing a shipment's PI cannot be dated before that PI. */}
               <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly}
                 invalid={!!issues?.invoiceDate}
-                minDate={!direct && draft.poDate ? draft.poDate : undefined} maxDate={today()} />
+                minDate={(direct ? draft.piDate : draft.poDate) || undefined} maxDate={today()} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req error={issues?.invoiceFile}>
               <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly}

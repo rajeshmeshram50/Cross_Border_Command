@@ -107,6 +107,7 @@ class PurchaseOrderController extends Controller
 
             $body = [
                 'proforma_invoice_id' => $piId,
+                'pi_date'             => $this->svc->piDate($piId),
                 'lines'               => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude, $excludeSpi),
                 'held_by'             => $this->piHolders($piId, (int) $user->client_id, $exclude, $excludeSpi),
             ];

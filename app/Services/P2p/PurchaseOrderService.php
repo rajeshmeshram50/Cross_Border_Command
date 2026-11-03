@@ -345,6 +345,13 @@ class PurchaseOrderService
     }
 
     /** The PI behind a shipment: its direct link, else the PI on the same opportunity. */
+    /** The PI's own date - the day it was raised. */
+    public function piDate(?int $piId): ?string
+    {
+        $at = $piId ? DB::table('proforma_invoices')->where('id', $piId)->value('created_at') : null;
+        return $at ? substr((string) $at, 0, 10) : null;
+    }
+
     public function piIdForShipment(object $shipment): ?int
     {
         if (!empty($shipment->proforma_invoice_id)) return (int) $shipment->proforma_invoice_id;
