@@ -72,7 +72,7 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
     const b = body.current;
     if (!b) return;
     if (b.scrollTop < 8) { setNav('all'); return; }
-    const vis = Array.from(b.querySelectorAll<HTMLElement>('.crd-grp:not([hidden])'));
+    const vis = Array.from(b.querySelectorAll<HTMLElement>('.mapsup-section:not([hidden])'));
     let cur: string | null = null;
     vis.forEach(g => { if (g.offsetTop - b.offsetTop - 40 <= b.scrollTop) cur = g.id; });
     if (b.scrollTop + b.clientHeight >= b.scrollHeight - 4 && vis.length) cur = vis[vis.length - 1].id;
@@ -81,17 +81,17 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
 
   return (
     <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="mapsup-box crd-box crd-box--pick" role="dialog" aria-modal="true" aria-label="What would you like to add?">
-        <div className="mapsup-header crd-phd">
+      <div className="mapsup-box crd-box crd-pickbox" role="dialog" aria-modal="true" aria-label="What would you like to add?">
+        <div className="mapsup-header">
           <div className="mapsup-hrow">
             <div className="mapsup-title-wrap">
-              <div className="mapsup-hicon crd-phd__ico"><Svg icon="plus" size={22} sw={2.6} /></div>
+              <div className="mapsup-hicon crd-hicon" style={{ '--tc': '#0891b2' } as CSSProperties}><Svg icon="plus" size={20} sw={2.6} /></div>
               <div className="mapsup-title-block">
                 <h3 className="mapsup-title">What would you like to add?</h3>
                 <p className="mapsup-sub">Choose a credential type — every type is stored under one policy engine and audit trail</p>
               </div>
             </div>
-            <div className="crd-phd__r">
+            <div className="crd-hbtns">
               <div className="crd-search">
                 <Svg icon="search" size={16} />
                 <input ref={search} type="text" value={q} onChange={e => setQ(e.target.value)}
@@ -127,14 +127,17 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
           </aside>
           <div className="crd-pickbody" ref={body} onScroll={spy}>
             {shown.map(g => (
-              <section key={g.name} className="crd-grp" id={gid(g.name)} hidden={!g.hits.length}>
-                <div className="crd-grp__t">
-                  <span className="crd-grp__i"><Svg icon={g.icon || 'folder'} size={15} /></span>
-                  <span className="crd-grp__txt"><b>{g.name}</b><small>{g.description}</small></span>
-                  <span className="crd-grp__c">{term ? `${g.hits.length} of ${g.items.length}` : g.items.length} type{g.items.length === 1 ? '' : 's'}</span>
-                </div>
-                <div className="crd-tiles">
-                  {g.hits.map(t => <Tile key={t.key} t={t} group={g.name} onPick={onPick} />)}
+              <section key={g.name} className="mapsup-section" id={gid(g.name)} hidden={!g.hits.length}>
+                <div className="mapsup-seccard">
+                  <div className="mapsup-sechead">
+                    <span className="mapsup-sechead__ico"><Svg icon={g.icon || 'folder'} size={14} /></span>
+                    <div className="mapsup-sechead__txt"><span className="mapsup-sechead__title">{g.name}</span><span className="mapsup-sechead__sub">{g.description}</span></div>
+                    <span className="mapsup-sechead__line" />
+                    <span className="crd-opt">{term ? `${g.hits.length} of ${g.items.length}` : g.items.length} type{g.items.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="crd-tiles">
+                    {g.hits.map(t => <Tile key={t.key} t={t} group={g.name} onPick={onPick} />)}
+                  </div>
                 </div>
               </section>
             ))}
@@ -150,7 +153,7 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
             <Svg d='<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 16v-4M12 8h.01"/>' size={13} /> Pick a type to open its form — only the fields that type needs are shown
           </div>
           <div className="mapsup-footer__actions">
-            <button type="button" className="crd-cancel" onClick={onClose}><Svg icon="x" size={13} sw={2.6} />Cancel</button>
+            <button type="button" data-h40="skip" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={onClose}><Svg icon="x" size={13} sw={2.6} />Cancel</button>
           </div>
         </div>
       </div>

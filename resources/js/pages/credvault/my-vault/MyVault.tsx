@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
-import DataTable, { ActionCell, IdCell, PillCell, TruncCell, type DataTableColumn, type DataTableTab } from '../../../components/ui/DataTable';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { cvApi, CvApiError, type CredentialRow, type PageMeta, type ShareRow } from '../cvApi';
-import { credentialColumns, cvTableProps, emptyState, PERM_TONE, TwoLine, type Tone } from '../shared';
 import UnlockModal from '../critical/UnlockModal';
 import CredentialFormModal from '../form/CredentialFormModal';
 import {
-  ConfirmModal, copyText, CvBrief, CvPage, CvStrip, errMsg, fmtDate, fmtDay, fmtTime,
-  IC, StripBtn, useCvMeta, useDebounced,
+  ActBtn, ConfirmModal, copyText, CvBrief, CvCard, CvPage, CvStrip, CvTabsRow, EmptyRow, errMsg, fmtDay,
+  IC, IdCell, NameCell, ShimRows, StripBtn, UpdatedCell, useCvMeta, useDebounced,
 } from '../shared';
+import CredentialTable from './CredentialTable';
 import BinConfirm from './BinConfirm';
 import GeneratorModal from './GeneratorModal';
 import ShareModal from './ShareModal';
@@ -38,7 +38,8 @@ const STEPS = [
 const BAN = '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>';
 
 const STATE_LABEL: Record<ShareRow['state'], string> = { active: 'Active', soon: 'Expiring soon', expired: 'Expired', revoked: 'Revoked' };
-const STATE_TONE: Record<ShareRow['state'], Tone> = { active: 'success', soon: 'warning', expired: 'neutral', revoked: 'danger' };
+const STATE_FLAG: Record<ShareRow['state'], string> = { active: 'mv-rk mv-rk--low', soon: 'mv-rk mv-rk--medium', expired: 'znm-flag--no', revoked: 'mv-rk mv-rk--critical' };
+const SB_COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Shared With', 'Permission', 'Shared On', 'Expires', 'Reason', 'Status', 'Action'];
 
 function expiresLeft(s: ShareRow): string {
   if (s.state === 'revoked') return '—';
@@ -153,97 +154,18 @@ export default function MyVault() {
     }
   };
 
-  const credCols = useMemo<DataTableColumn<CredentialRow>[]>(() => [
-    ...credentialColumns(),
-    {
-      header: 'Action', id: 'actions', meta: { width: '11%', align: 'center' },
-      cell: ({ row: { original: r } }) => {
-        const can = r.can;
-        return (
-          <div className="d-flex justify-content-center gap-1">
-            <ActionCell title="Edit" icon="edit-svg" onClick={() => setForm({ credentialId: r.id })} disabled={!can?.edit} />
-            <ActionCell title="Share" icon="ri-share-line" tone="info" onClick={() => setShareId(r.id)} disabled={!can?.share} />
-            <ActionCell title="View" icon="ri-eye-line" tone="info" onClick={() => setViewId(r.id)} />
-            <ActionCell title="Copy Password" icon="ri-file-copy-line" tone="success" onClick={() => copyPw(r)} disabled={!can?.copy} />
-            <ActionCell title={can?.remove ? 'Remove from your vault' : 'Move to Bin'} icon="trash-svg" tone="danger"
-              onClick={() => setBinRow(r)} disabled={!(can?.delete || can?.remove)} />
-          </div>
-        );
-      },
-    },
-  ], [copyPw]);
-
-  const shareCols = useMemo<DataTableColumn<ShareRow>[]>(() => [
-    {
-      header: 'Credential ID', id: 'code', meta: { width: '9%' },
-      cell: ({ row: { original: s } }) => <TwoLine top={<IdCell value={s.credential?.code} />} sub={fmtDate(s.credential?.updated_at)} />,
-    },
-    {
-      header: 'Credential Name', id: 'name', meta: { width: '15%' },
-      cell: ({ row: { original: s } }) => <TwoLine top={<b><TruncCell value={s.credential?.name ?? 'Deleted credential'} caseSensitive max={40} /></b>} sub={s.credential?.url ?? undefined} />,
-    },
-    {
-      header: 'Shared With', id: 'to', meta: { width: '14%' },
-      cell: ({ row: { original: s } }) => <TwoLine top={s.recipient.name ?? '—'} sub={s.recipient.sub} />,
-    },
-    {
-      header: 'Permission', id: 'perm', meta: { width: '9%', align: 'center' },
-      cell: ({ row: { original: s } }) => <PillCell value={s.permission_label} tone={PERM_TONE[s.permission]} />,
-    },
-    {
-      header: 'Shared On', id: 'on', meta: { width: '9%' },
-      cell: ({ row: { original: s } }) => <TwoLine top={fmtDay(s.shared_at)} sub={fmtTime(s.shared_at)} />,
-    },
-    {
-      header: 'Expires', id: 'exp', meta: { width: '10%' },
-      cell: ({ row: { original: s } }) => (s.expires_at
-        ? <TwoLine top={fmtDay(s.expires_at)} sub={expiresLeft(s)} />
-        : <TwoLine top="No expiry" sub="Until revoked" />),
-    },
-    {
-      header: 'Reason', id: 'reason', meta: { width: '12%' },
-      cell: ({ row: { original: s } }) => <TruncCell value={s.reason} caseSensitive max={40} />,
-    },
-    {
-      header: 'Status', id: 'state', meta: { width: '9%', align: 'center' },
-      cell: ({ row: { original: s } }) => <PillCell value={STATE_LABEL[s.state]} tone={STATE_TONE[s.state]} />,
-    },
-    {
-      header: 'Action', id: 'actions', meta: { width: '9%', align: 'center' },
-      cell: ({ row: { original: s } }) => {
-        const c = s.credential;
-        const dead = s.state === 'revoked' || s.state === 'expired';
-        return (
-          <div className="d-flex justify-content-center gap-1">
-            <ActionCell title="View credential" icon="ri-eye-line" tone="info" disabled={!c} onClick={() => c && setViewId(c.id)} />
-            <ActionCell title="Share again" icon="ri-share-line" tone="info" disabled={!c} onClick={() => c && setShareId(c.id)} />
-            <ActionCell title={dead ? STATE_LABEL[s.state] : 'Revoke access'} icon="ri-forbid-line" tone="danger" disabled={dead} onClick={() => setRevoke(s)} />
-          </div>
-        );
-      },
-    },
-  ], []);
-
-  const tabs: DataTableTab[] = TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: counts ? counts[t.k] ?? 0 : undefined }));
   const tabLabel = TABS.find(t => t.k === tab)?.l ?? 'My Vault';
   const onTab = (k: string) => { setTab(k as TabKey); setPage(1); setShareCred(null); };
+  const start = pm ? (pm.current_page - 1) * pm.per_page : 0;
 
-  const emptyMessage = tab === 'sharedby'
-    ? (failed ? `Could not load your shares — ${failed}` : dq ? 'No shares match your search' : 'You haven’t shared any credentials yet')
-    : failed ? `Could not load credentials — ${failed}`
-      : dq ? 'No credentials match your search'
-        : tab === 'shared' ? 'Credentials that colleagues share with you will appear here.'
-          : `Credentials you add to ${tab === 'all' ? 'My Vault' : tabLabel} will appear here.`;
-
-  const common = cvTableProps({
-    tabs, activeTab: tab, onTabChange: onTab, search: q, onSearch: setQ,
-    placeholder: tab === 'sharedby' ? 'Search by credential ID, name, person, team or reason...' : 'Search by credential ID, name, category, username or owner...',
-    loading, empty: emptyState(emptyMessage),
-    paging: { meta: pm, page, setPage, setPerPage },
-  });
+  const emptyTitle = failed ? 'Could not load credentials' : dq ? 'No credentials match your search' : 'No credentials yet';
+  const emptySub = failed ? failed
+    : dq ? 'Try a different credential ID, name, category, username, or owner.'
+      : tab === 'shared' ? 'Credentials that colleagues share with you will appear here.'
+        : `Credentials you add to ${tab === 'all' ? 'My Vault' : tabLabel} will appear here.`;
 
   return (
-    <CvPage className="mv-page">
+    <CvPage className="mv-page tv-page">
       <CvStrip icon={IC.lock} title="My Vault"
         sub="Store and manage your personal logins, secure notes, and secrets — encrypted and visible only to you."
         actions={(
@@ -257,10 +179,74 @@ export default function MyVault() {
         sub="Saving your personal credentials securely, keeping them organised and strong, and sharing them only when needed."
         steps={STEPS} />
 
-      {tab === 'sharedby'
-        ? <DataTable<ShareRow> key="sharedby" data={shares} columns={shareCols} {...common}
-            rowClassName={s => (s.state === 'revoked' || s.state === 'expired' ? 'opacity-50' : undefined)} />
-        : <DataTable<CredentialRow> key="creds" data={rows} columns={credCols} {...common} />}
+      <CvCard pane>
+        <CvTabsRow tabs={TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: counts ? counts[t.k] ?? 0 : null }))}
+          active={tab} onTab={onTab} search={q} onSearch={setQ}
+          placeholder={tab === 'sharedby' ? 'Search by credential ID, name, person, team or reason...' : 'Search by credential ID, name, category, username or owner...'} />
+
+        <div className="tvc-list">
+        {tab === 'sharedby' ? (
+          <div className="whm-tblwrap">
+            <table className="whm-tbl mv-tbl">
+              <thead><tr>{SB_COLS.map(c => <th key={c}>{c}</th>)}</tr></thead>
+              <tbody>
+                {loading ? <ShimRows cols={SB_COLS.length} rows={6} />
+                  : !shares.length ? (
+                    <EmptyRow cols={SB_COLS.length}
+                      title={failed ? 'Could not load your shares' : dq ? 'No shares match your search' : 'You haven’t shared any credentials yet'}
+                      sub={failed ?? (dq ? 'Try a credential name, ID, person or team.' : 'Use Share on any of your credentials and it will be tracked here.')} />
+                  ) : shares.map((s, i) => {
+                    const c = s.credential;
+                    const dead = s.state === 'revoked' || s.state === 'expired';
+                    return (
+                      <tr key={s.id} style={dead ? { opacity: .6 } : undefined}>
+                        <td><span className="whm-sr">{start + i + 1}</span></td>
+                        <td><IdCell code={c?.code ?? '—'} date={c?.updated_at} /></td>
+                        <td>{c ? <NameCell row={{ name: c.name, url: c.url, access: undefined } as unknown as CredentialRow} typeIcon={typeOf(c.type)?.icon} /> : <b>Deleted credential</b>}</td>
+                        <td>
+                          <div className="mv-ownc">
+                            <span className="mv-ownc__av">{s.recipient.type === 'team' ? 'T' : s.recipient.initials}</span>
+                            <div><b>{s.recipient.name ?? '—'}</b><em className={s.recipient.type === 'team' ? 'mv-team' : 'mv-pers'}>{s.recipient.sub}</em></div>
+                          </div>
+                        </td>
+                        <td><span className="whm-idpill">{s.permission_label}</span></td>
+                        <td><UpdatedCell iso={s.shared_at} /></td>
+                        <td>
+                          <div className="whm-idcell">
+                            {s.expires_at
+                              ? <><b className="mv-upd-d">{fmtDay(s.expires_at)}</b><span className="whm-iddate">{expiresLeft(s)}</span></>
+                              : <><b className="mv-upd-d">No expiry</b><span className="whm-iddate">Until revoked</span></>}
+                          </div>
+                        </td>
+                        <td><span className="mv-user" title={s.reason ?? undefined}>{s.reason ?? '—'}</span></td>
+                        <td><div className="znm-flagcell"><span className={`znm-flag ${STATE_FLAG[s.state]}`}><i />{STATE_LABEL[s.state]}</span></div></td>
+                        <td>
+                          <div className="whm-acts">
+                            <ActBtn icon={IC.view} title="View credential" disabled={!c} onClick={() => c && setViewId(c.id)} />
+                            <ActBtn icon={IC.share} title="Share again" disabled={!c} onClick={() => c && setShareId(c.id)} />
+                            <ActBtn icon={BAN} title={dead ? STATE_LABEL[s.state] : 'Revoke access'} tone="danger" disabled={dead} onClick={() => setRevoke(s)} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <CredentialTable rows={rows} startIndex={start} loading={loading} emptyTitle={emptyTitle} emptySub={emptySub}
+            onEdit={r => setForm({ credentialId: r.id })}
+            onShare={r => setShareId(r.id)}
+            onView={r => setViewId(r.id)}
+            onCopy={copyPw}
+            onDelete={r => setBinRow(r)} />
+        )}
+
+        <WorklistPager className="wl-teal" loading={loading}
+          total={pm?.total ?? 0} page={pm?.current_page ?? page} pageSize={perPage}
+          onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
+        </div>
+      </CvCard>
 
       {form && (
         <CredentialFormModal credentialId={form.credentialId} prefillPassword={form.prefillPassword}

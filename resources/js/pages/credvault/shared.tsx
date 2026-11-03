@@ -210,7 +210,7 @@ export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
   );
 }
 
-export function CvCard({ children }: { children: ReactNode }) {
+export function CvCard({ children, pane = false }: { children: ReactNode; pane?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -227,9 +227,17 @@ export function CvCard({ children }: { children: ReactNode }) {
     fit();
     window.addEventListener('resize', fit);
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : undefined;
-    for (let s = el.parentElement?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
+    const box = pane ? el : el.parentElement;
+    for (let s = box?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
     return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
-  }, []);
+  }, [pane]);
+  if (pane) {
+    return (
+      <section className="tv-pane tv-pane--r" ref={ref} style={{ height: 'auto' }}>
+        <div className="tv-pane__bd tvc-bd">{children}</div>
+      </section>
+    );
+  }
   return <div className="bst-wrap"><div className="bst-card" ref={ref}>{children}</div></div>;
 }
 
@@ -514,7 +522,7 @@ export function cvTableProps({ tabs, activeTab, onTabChange, search, onSearch, p
         active={activeTab ?? ''} onTab={k => onTabChange?.(k)} search={search} onSearch={onSearch} placeholder={placeholder} />
     ) : undefined,
     searchable: false,
-    className: 'hr-dt', serial: true, disableSorting: true, accent: 'teal' as const, minWidth,
+    className: 'hr-dt mv-tbl', serial: true, disableSorting: true, accent: 'teal' as const, minWidth,
     fitToViewport: true, autoFitRows: true, fillToFooter: true, loading, emptyMessage: empty,
     ...(paging ? {
       serverPagination: {
@@ -527,48 +535,25 @@ export function cvTableProps({ tabs, activeTab, onTabChange, search, onSearch, p
   };
 }
 
-export function credentialColumns({ critical = false }: { critical?: boolean } = {}): DataTableColumn<CredentialRow>[] {
+export function credentialColumns({ critical = false, typeOf }: { critical?: boolean; typeOf: (t?: string | null) => TypeDef | undefined }): DataTableColumn<CredentialRow>[] {
   return [
-    {
-      header: 'Credential ID', id: 'code', meta: { width: '9%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={<DtIdCell value={critical ? r.critical_code ?? r.code : r.code} />} sub={fmtDate(critical ? r.updated_at : r.created_at)} />,
-    },
-    {
-      header: 'Credential Name', id: 'name', meta: { width: '15%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={<b><TruncCell value={r.name} caseSensitive max={40} /></b>} sub={r.url ?? undefined} />,
-    },
-    {
-      header: 'Category', id: 'category', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={<PillCell value={r.type_label} tone="info" />} sub={r.category_group} />,
-    },
-    {
-      header: 'Username', id: 'username', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <TruncCell value={r.username} caseSensitive max={30} />,
-    },
-    {
-      header: 'Owner', id: 'owner', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => (
-        <TwoLine top={r.owner.is_me ? 'You' : r.owner.name ?? '—'}
-          sub={r.access?.via === 'share' ? 'Shared with you' : r.scope === 'team' ? 'Team' : 'Personal'} />
-      ),
-    },
-    {
-      header: 'Risk', id: 'risk', meta: { width: '7%', align: 'center' },
-      cell: ({ row: { original: r } }) => <PillCell value={cap(r.risk)} tone={RISK_TONE[r.risk]} />,
-    },
-    {
-      header: 'Strength', id: 'strength', meta: { width: '9%', align: 'center' },
-      cell: ({ row: { original: r } }) => (r.has_password
-        ? <PillCell value={`${r.strength_label} · ${r.strength * 25}`} tone={STRENGTH_TONE[r.strength] ?? 'neutral'} />
-        : <PillCell value="N/A" />),
-    },
-    {
-      header: '2FA', id: 'twofa', meta: { width: '7%', align: 'center' },
-      cell: ({ row: { original: r } }) => <PillCell value={r.twofa === 'yes' ? 'Enabled' : r.twofa === 'no' ? 'Not Enabled' : 'N/A'} tone={r.twofa === 'yes' ? 'success' : 'neutral'} />,
-    },
-    {
-      header: 'Last Updated', id: 'updated', meta: { width: '8%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={fmtDay(r.updated_at)} sub={fmtTime(r.updated_at)} />,
-    },
+    { header: 'Credential ID', id: 'code', meta: { width: '9%' },
+      cell: ({ row: { original: r } }) => <IdCell code={critical ? r.critical_code ?? r.code : r.code} date={critical ? r.updated_at : r.created_at} /> },
+    { header: 'Credential Name', id: 'name', meta: { width: '16%' },
+      cell: ({ row: { original: r } }) => <NameCell row={r} typeIcon={typeOf(r.type)?.icon} /> },
+    { header: 'Category', id: 'category', meta: { width: '10%', align: 'center' },
+      cell: ({ row: { original: r } }) => <CategoryCell label={r.type_label} group={r.category_group} /> },
+    { header: 'Username', id: 'username', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <span className="mv-user" title={r.username || undefined}>{r.username || <span className="mv-str--na">—</span>}</span> },
+    { header: 'Owner', id: 'owner', meta: { width: '10%' },
+      cell: ({ row: { original: r } }) => <OwnerCell row={r} /> },
+    { header: 'Risk', id: 'risk', meta: { width: '7%', align: 'center' },
+      cell: ({ row: { original: r } }) => <RiskFlag risk={r.risk} /> },
+    { header: 'Strength', id: 'strength', meta: { width: '10%', align: 'center' },
+      cell: ({ row: { original: r } }) => <StrengthCell row={r} /> },
+    { header: '2FA', id: 'twofa', meta: { width: '7%', align: 'center' },
+      cell: ({ row: { original: r } }) => <TwofaCell twofa={r.twofa} /> },
+    { header: 'Last Updated', id: 'updated', meta: { width: '8%' },
+      cell: ({ row: { original: r } }) => <UpdatedCell iso={r.updated_at} /> },
   ];
 }

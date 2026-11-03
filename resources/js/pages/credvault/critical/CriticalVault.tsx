@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import DataTable, { ActionCell, PillCell, type DataTableColumn } from '../../../components/ui/DataTable';
 import { cvApi, type CredentialRow, type PageMeta } from '../cvApi';
 import { credentialColumns, cvTableProps, emptyState, TwoLine } from '../shared';
-import { CvBrief, CvPage, CvStrip, IC, StripBtn, errMsg, mmss, useDebounced, useNow } from '../shared';
+import { CvBrief, CvPage, CvStrip, IC, StripBtn, errMsg, mmss, useCvMeta, useDebounced, useNow } from '../shared';
 import CredentialFormModal from '../form/CredentialFormModal';
 import ViewDrawer from '../my-vault/ViewDrawer';
 import ShareModal from '../my-vault/ShareModal';
@@ -57,6 +57,7 @@ function lockAction(row: CredentialRow): { icon: string; tone: 'info' | 'success
 }
 
 export default function CriticalVault() {
+  const { typeOf } = useCvMeta();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<TabKey>('all');
   const [q, setQ] = useState('');
@@ -135,7 +136,7 @@ export default function CriticalVault() {
         : tab === 'mine' ? 'Critical credentials you add will appear here.' : 'Critical credentials you add, or that your team owns, will appear here.';
 
   const columns = useMemo<DataTableColumn<CredentialRow>[]>(() => [
-    ...credentialColumns({ critical: true }),
+    ...credentialColumns({ critical: true, typeOf }),
     {
       header: 'Access Status', id: 'access', meta: { width: '10%' },
       cell: ({ row: { original: r } }) => <AccessCell row={r} left={leftOf(r)} />,
@@ -153,7 +154,7 @@ export default function CriticalVault() {
         );
       },
     },
-  ], [leftOf, openRow]);
+  ], [leftOf, openRow, typeOf]);
 
   return (
     <CvPage className="mv-page cv-page">
