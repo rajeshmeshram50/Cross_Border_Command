@@ -98,8 +98,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [regEmail, setRegEmail] = useState(detail?.recovery?.reg_email ?? '');
   const [regPhone, setRegPhone] = useState(detail?.recovery?.reg_phone ?? '');
   const [rkey, setRkey] = useState(detail?.all_values?.recovery_key ?? detail?.recovery?.recovery_key ?? '');
-  const [scope, setScope] = useState<'personal' | 'team'>(detail?.scope ?? init.scope ?? 'personal');
-  const [deptId, setDeptId] = useState(String(detail?.department?.id ?? init.departmentId ?? meta.me.department_id ?? ''));
+  const scope: 'personal' | 'team' = detail?.scope ?? init.scope ?? 'personal';
+  const deptId = String(detail?.department?.id ?? init.departmentId ?? meta.me.department_id ?? '');
   const [fieldFiles, setFieldFiles] = useState<Record<string, File>>({});
   const [attNew, setAttNew] = useState<{ file: File; url: string }[]>([]);
   const [attKeep, setAttKeep] = useState<Attachment[]>(detail?.attachments ?? []);
@@ -111,7 +111,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const savingRef = useRef(false);
   const [code, setCode] = useState(detail?.code ?? '');
   const [wide, setWide] = useState(() => window.innerWidth > 980);
-  const [depts, setDepts] = useState<CrdOption[] | null>(null);
   const [approvers, setApprovers] = useState<Loose | null>(null);
 
   const wasCritical = detail?.risk === 'critical';
@@ -157,15 +156,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (scope !== 'team' || depts || !canProtect) return;
-    let on = true;
-    cvApi.departments().then(d => {
-      if (on) setDepts(((d.departments ?? []) as Loose[]).map(x => ({ value: String(x.id), label: String(x.name) })));
-    }).catch(() => { if (on) setDepts([]); });
-    return () => { on = false; };
-  }, [scope, depts, canProtect]);
 
   useEffect(() => {
     if (!critical || !canProtect || approvers) return;
@@ -422,16 +412,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     frozen('Credential Category', 'folder', T.label),
     frozen('Owner', 'user', editing ? (detail!.owner.is_me ? meta.me.name : detail!.owner.name ?? '—') : meta.me.name),
   ];
-  if (canProtect) {
-    s1.push(selItem('scope', 'Vault', 'lock', true, scope,
-      [{ value: 'personal', label: 'My Vault — personal' }, { value: 'team', label: 'Team Vault — shared with the department' }],
-      v => setScope(v as 'personal' | 'team'), 2));
-    if (scope === 'team') {
-      s1.push(selItem('department_id', 'Team (Department)', 'user', true, deptId,
-        depts === null ? [{ value: deptId, label: 'Loading…' }] : [{ value: '', label: 'Select…' }, ...depts],
-        setDeptId, 2));
-    }
-  }
 
   const maxAtt = meta.file_types.max_attachments;
   const attCount = attKeep.length + attNew.length;
@@ -683,7 +663,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       const pw = vals[T.sec] ?? '';
       if (pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
     }
-    if (canProtect && scope === 'team' && !deptId) errs.department_id = 'Pick the team (department) this credential belongs to';
+    if (canProtect && scope === 'team' && !deptId) {
+      toast.warning('Pick a team in Team Vault first', 'A team credential needs a department — open that team in Team Vault and add it there.');
+      return;
+    }
 
     const firstOf = (e: Record<string, string>) => Object.keys(e)[0];
     if (Object.keys(errs).length) {
