@@ -212,7 +212,6 @@ export default function TeamVault() {
                 loading={loading}
                 emptyTitle={emptyTitle}
                 emptySub={emptySub}
-                onAdd={showChip || loadErr || dq ? undefined : () => open({ kind: 'form' })}
                 onEdit={r => open({ kind: 'form', id: r.id })}
                 onShare={r => open({ kind: 'share', id: r.id })}
                 onView={r => open({ kind: 'view', id: r.id })}
@@ -250,7 +249,10 @@ export default function TeamVault() {
         <UnlockModal credentialId={overlay.id} onClose={() => setOverlay(null)} onChanged={refresh}
           onFullDetails={id => setOverlay({ kind: 'view', id })} />
       )}
-      {overlay?.kind === 'export' && <ExportModal scope="team" onClose={() => setOverlay(null)} preview={TV_DUMMY} loadPreview={tvData.exportPreview} />}
+      {overlay?.kind === 'export' && (
+        <ExportModal selection={{ tab, department_id: tab === 'team' ? deptId : null, q: dq }} teamName={deptId ? dept?.name : undefined}
+          onClose={() => setOverlay(null)} preview={TV_DUMMY} loadPreview={tvData.exportPreview} />
+      )}
     </CvPage>
   );
 }

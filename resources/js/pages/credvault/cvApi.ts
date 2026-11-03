@@ -208,6 +208,9 @@ export interface AuditEvent {
   target: string; module: string | null; detail: string | null; ip: string | null;
 }
 
+/** What an export takes from the table: the tab and the table's filters. */
+export type ExportSelection = { tab: 'mine' | 'team'; department_id?: number | null; q?: string };
+
 export interface TransferRow {
   id: number; code: string; kind: 'import' | 'export' | 'backup'; scope: string | null; scope_label: string | null;
   format: string; format_label: string; file_name: string | null; source: string | null;
@@ -258,7 +261,7 @@ export const cvApi = {
 
   /* Credentials */
   list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', q),
-  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow>>(`${vaultPath(critical)}/credentials`, q),
+  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, q),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
   /** JSON, or FormData when files go with it (sent as POST — PHP reads no multipart PUT). */
@@ -317,7 +320,7 @@ export const cvApi = {
   imports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/imports', { page }),
   backup: (body: Loose) => download('post', '/backups', body),
   backups: (mine = false, page = 1) => get<{ data: TransferRow[]; meta: PageMeta; scopes: Loose[]; columns: Loose; lock_note: string }>('/backups', { mine: mine ? 1 : undefined, page }),
-  exportPreview: (scope: 'team' | 'personal') => get<{ data: Loose }>('/exports/preview', { scope }).then(r => r.data),
+  exportPreview: (sel: ExportSelection) => get<{ data: Loose }>('/exports/preview', sel).then(r => r.data),
   exportRun: (body: Loose) => download('post', '/exports', body),
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),
 

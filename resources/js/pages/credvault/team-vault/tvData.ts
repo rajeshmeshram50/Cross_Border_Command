@@ -1,10 +1,10 @@
-import { cvApi, type CredentialRow, type ListResponse, type Loose, type Risk, type Twofa, type Via } from '../cvApi';
+import { cvApi, type CredentialRow, type ExportSelection, type ListResponse, type Loose, type Risk, type Twofa, type Via } from '../cvApi';
 import { initials } from '../shared';
 import { LV_ORDER, type Level } from './tvShared';
 
 /**
  * Team Vault's data source: the live CredVault API (/credvault/team/*,
- * /credentials, /share-recipients, /exports/preview). The prototype's dummy
+ * /normal-vault/credentials, /share-recipients, /exports/preview). The prototype's dummy
  * organisation below answers the same calls in the same shapes; set TV_DUMMY
  * to true to design against it without a backend.
  */
@@ -197,9 +197,9 @@ const dummy = {
   organisation: () => later<Loose>({ members: allMembers(), stats: { departments: DEPTS.length, hods: DEPTS.length } }),
 
   /** The Export popup's categories: the dummy rows counted by category group. */
-  exportPreview: (scope: 'team' | 'personal') => {
+  exportPreview: (sel: ExportSelection) => {
     const counts = new Map<string, number>();
-    (scope === 'team' ? TEAM_ROWS : MINE_ROWS).forEach(r => counts.set(r.category_group, (counts.get(r.category_group) ?? 0) + 1));
+    (sel.tab === 'team' ? TEAM_ROWS : MINE_ROWS).forEach(r => counts.set(r.category_group, (counts.get(r.category_group) ?? 0) + 1));
     return later<Loose>({ groups: [...counts].map(([group, count]) => ({ group, count })) });
   },
 
@@ -239,8 +239,8 @@ const live = {
   department: (id: number) => cvApi.department(id),
   organisation: () => cvApi.organisation(),
   recipients: () => cvApi.recipients(),
-  exportPreview: (scope: 'team' | 'personal') => cvApi.exportPreview(scope),
-  list: (q: ListQuery) => cvApi.list(q),
+  exportPreview: (sel: ExportSelection) => cvApi.exportPreview(sel),
+  list: (q: ListQuery) => cvApi.vaultList(false, q),
 };
 
 export const tvData = TV_DUMMY ? dummy : live;

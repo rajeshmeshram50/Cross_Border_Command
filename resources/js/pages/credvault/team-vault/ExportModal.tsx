@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError } from '../cvApi';
+import { cvApi, CvApiError, type ExportSelection } from '../cvApi';
 import { CvPortal, errMsg, Svg } from '../shared';
 import { TV_IC } from './tvShared';
 
 /**
- * Team Vault · "Export Credentials" popup: categories to include (counts from
- * /exports/preview), CSV / JSON, notes and passwords. Readable passwords take
+ * Team Vault · "Export Credentials" popup: exports what the table lists (its tab,
+ * department and search), narrowed to the ticked categories (counts from
+ * /exports/preview), as CSV / JSON, with or without notes and passwords. Readable passwords take
  * the risk acknowledgement and the account password; the server builds the
  * file and logs the export.
  */
@@ -62,13 +63,18 @@ function Toggle({ on, set, label, sub }: { on: boolean; set: (v: boolean) => voi
   );
 }
 
-export default function ExportModal({ scope = 'team', onClose, preview = false, loadPreview = cvApi.exportPreview }: {
-  scope?: 'team' | 'personal'; onClose: () => void;
+export default function ExportModal({ selection, teamName, onClose, preview = false, loadPreview = cvApi.exportPreview }: {
+  /** The table's tab and filters: the export holds exactly what the table lists. */
+  selection: ExportSelection;
+  /** The open department, for the subtitle. */
+  teamName?: string;
+  onClose: () => void;
   /** Design preview (dummy data): the popup works, Export downloads nothing. */
   preview?: boolean;
   /** Where the category counts come from (Team Vault passes its tvData). */
-  loadPreview?: (scope: 'team' | 'personal') => Promise<{ groups?: Group[] }>;
+  loadPreview?: (sel: ExportSelection) => Promise<{ groups?: Group[] }>;
 }) {
+  const { tab, department_id, q } = selection;
   const toast = useToast();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -83,7 +89,7 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
 
   useEffect(() => {
     let on = true;
-    loadPreview(scope).then(d => {
+    loadPreview({ tab, department_id, q }).then(d => {
       if (!on) return;
       const g: Group[] = (d.groups ?? []).filter((x: Group) => x.count > 0);
       setGroups(g);
@@ -92,7 +98,7 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
     return () => { on = false; };
   // loadPreview is fixed for the popup's life.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope]);
+  }, [tab, department_id, q]);
 
   const all = useMemo(() => (groups ?? []).reduce((a, g) => a + g.count, 0), [groups]);
   const sel = useMemo(() => (groups ?? []).reduce((a, g) => a + (cats[g.group] ? g.count : 0), 0), [groups, cats]);
@@ -112,7 +118,9 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
     setBusy(true); setErr(null);
     try {
       const f = await cvApi.exportRun({
-        scope,
+        tab,
+        ...(department_id ? { department_id } : {}),
+        ...(q ? { q } : {}),
         groups: (groups ?? []).filter(g => cats[g.group]).map(g => g.group),
         format: fmt,
         include_notes: notes,
@@ -134,7 +142,7 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
   };
 
   const fieldErr = (k: string) => err?.field(k);
-  const otherErr = err && err.status === 422 ? (fieldErr('groups') || fieldErr('format') || fieldErr('scope')) : undefined;
+  const otherErr = err && err.status === 422 ? (fieldErr('groups') || fieldErr('format') || fieldErr('tab')) : undefined;
 
 
   return (
@@ -148,7 +156,9 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
                   <div className="mapsup-hicon crd-hicon"><Svg d={TV_IC.download} size={22} sw={2.1} /></div>
                   <div className="mapsup-title-block">
                     <h3 className="mapsup-title">Export Credentials</h3>
-                    <p className="mapsup-sub">Download {scope === 'team' ? 'Team Vault' : 'your'} credentials as a file.</p>
+                    <p className="mapsup-sub">
+                      Download {tab === 'mine' ? 'your credentials' : `${teamName ? `${teamName} ` : ''}team credentials`}{q ? ` matching “${q}”` : ''} as a file.
+                    </p>
                   </div>
                 </div>
                 <div className="crd-hbtns">
@@ -173,7 +183,7 @@ export default function ExportModal({ scope = 'team', onClose, preview = false, 
                 {loadErr || !groups ? (
                   <div className="ex-sum"><Svg d={WARN} size={14} sw={2.1} /><span>{loadErr}</span></div>
                 ) : groups.length === 0 ? (
-                  <div className="ex-sum"><Svg d={SUM} size={14} sw={2.1} /><span>There are no {scope === 'team' ? 'Team Vault' : ''} credentials to export yet.</span></div>
+                  <div className="ex-sum"><Svg d={SUM} size={14} sw={2.1} /><span>{q ? `No credentials match “${q}”.` : tab === 'mine' ? 'You have no credentials to export yet.' : 'There are no team credentials to export yet.'}</span></div>
                 ) : (
                   <>
                     <div className="ex-cats">
