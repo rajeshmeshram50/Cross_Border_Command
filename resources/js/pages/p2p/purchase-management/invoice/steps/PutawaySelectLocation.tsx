@@ -85,8 +85,12 @@ const basisWords = (z: { used_basis?: 'volume' | 'floor' | null }) =>
     : z.used_basis === 'floor' ? { free: 'Floor Free', used: 'floor covered', Used: 'Floor covered' }
     : { free: 'Free', used: 'used', Used: 'Used' };
 
-const pct = (n: number | null | undefined) =>
-  n == null || !Number.isFinite(n) ? 'Not measured' : `${Number.isInteger(n) ? n : Number(n.toFixed(1))}%`;
+const pct = (n: number | null | undefined) => {
+  // Coverage can't read above 100% — a full/over zone shows 100%, not 2099%. (CS-955)
+  if (n == null || !Number.isFinite(n)) return 'Not measured';
+  const c = Math.min(100, Math.max(0, n));
+  return `${Number.isInteger(c) ? c : Number(c.toFixed(1))}%`;
+};
 const freeOf = (used: number | null | undefined) => (used == null ? null : Math.max(0, 100 - used));
 const m2 = (cm2: number | null | undefined) => {
   const v = Number(cm2 ?? 0) / 10_000;

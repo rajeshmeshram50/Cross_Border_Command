@@ -373,6 +373,13 @@ class LocationFinderService
             }
 
             $why = $this->engine->refuseZone($need, $z, $freeM3, $hold, $userId);
+            // A floor-only zone states no volume, so refuseZone (volume-based)
+            // can't catch a full floor — reject here when this box would push
+            // coverage past 100%, so a full zone is never recommended. (CS-955)
+            if ($why === null && $basis === 'floor' && (float) ($need['footprint_cm2'] ?? 0) > 0
+                && $usedPctAfter !== null && $usedPctAfter > 100.0) {
+                $why = $usedCm2 >= $floorCm2 ? 'full' : 'over_capacity';
+            }
             if ($why === null) $eligible++;
 
             $row = [
