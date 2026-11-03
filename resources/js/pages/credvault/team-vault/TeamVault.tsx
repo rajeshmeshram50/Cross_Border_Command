@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialRow, type PageMeta } from '../cvApi';
-import { copyText, CvBrief, CvPage, CvStrip, CvTabsRow, errMsg, StripBtn, Svg, useDebounced } from '../shared';
+import { copyText, CvBrief, CvPage, CvStrip, CvTabsRow, errMsg, StripBtn, Svg, useDebounced, useFillToFoot } from '../shared';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import CredentialTable from '../my-vault/CredentialTable';
 import ViewDrawer from '../my-vault/ViewDrawer';
@@ -58,6 +58,9 @@ export default function TeamVault() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const seq = useRef(0);
   const bdRef = useRef<HTMLDivElement | null>(null);
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  // Both panes reach the footer, so only the panes scroll, never the page as well.
+  useFillToFoot(splitRef, (el, px) => el.style.setProperty('--tv-h', `${px}px`), 460);
 
   const deptId = dept && dept.key !== 'admin' ? dept.key : null;
   // The admin node sees everything, as in the prototype — no member filter for it.
@@ -166,7 +169,7 @@ export default function TeamVault() {
         ]}
       />
 
-      <div className={`tv-split${leftOff ? ' is-l-off' : ''}`}>
+      <div className={`tv-split${leftOff ? ' is-l-off' : ''}`} ref={splitRef}>
         <section className="tv-pane tv-pane--l">
           <div className="tv-pane__hd">
             <span className="tv-pane__ico"><Svg d={TV_IC.team} size={14} sw={2.1} /></span>

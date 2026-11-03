@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../../../contexts/AuthContext';
 import type { Loose } from '../cvApi';
 import { errMsg, initials, Svg } from '../shared';
-import { tvData } from './tvData';
-import { buildHierarchy, deptIcon, LV_ORDER, LV_SHORT, toCounts, TV_IC, type Hierarchy, type LevelCounts, type TreeNode } from './tvShared';
+import { TV_DUMMY, tvData } from './tvData';
+import {
+  buildBranch, buildHierarchy, deptIcon, levelsOf, LV_ORDER, LV_SHORT, ownBranch, seesEveryone, toCounts, TV_IC,
+  type Hierarchy, type LevelCounts, type TreeNode,
+} from './tvShared';
 
 /**
  * Team Vault · left pane "Team Details": the department cards (with the
  * admin card on top) and, once one is opened, its hero, level counts and the
  * expandable team hierarchy. Picking a person narrows the credential list.
+ *
+ * The client admin and branch users see the whole organisation. Anyone else
+ * sees only themselves and the people reporting to them, down the chain: the
+ * cards, counts and tree are cut to that branch here, on the screen.
  */
 
 export interface OpenDept { key: 'admin' | number; name: string }
@@ -66,19 +74,43 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [exp, setExp] = useState<'exp' | 'col'>('exp');
   const bdRef = useRef<HTMLDivElement | null>(null);
+  const { user } = useAuth();
+  const scoped = !TV_DUMMY && !seesEveryone(user?.user_type);
+  /** Scoped viewers: themselves and everyone under them, from the organisation. */
+  const [branch, setBranch] = useState<Loose[] | null>(null);
 
   const loadList = () => {
     setListErr(null);
-    tvData.departments().then(setList).catch(e => setListErr(errMsg(e)));
+    const own = scoped && user ? tvData.organisation().then(d => setBranch(ownBranch(d.members ?? [], Number(user.id)))) : Promise.resolve();
+    Promise.all([tvData.departments(), own]).then(([l]) => setList(l)).catch(e => setListErr(errMsg(e)));
   };
+  // The viewer is fixed for the page's life.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(loadList, []);
 
-  const admins: Loose[] = list?.admin?.admins ?? [];
+  // A branch user is their branch's admin: the card and the tree's top show them, not the client admin.
+  const branchAdmin = !TV_DUMMY && user?.user_type === 'branch_user';
+  const admins: Loose[] = branchAdmin ? [{ id: user?.id, name: user?.name }] : list?.admin?.admins ?? [];
   const adminName = admins[0]?.name || 'Vault Administrator';
-  const departments: Loose[] = list?.departments ?? [];
+  const departments: Loose[] = useMemo(() => {
+    const all: Loose[] = list?.departments ?? [];
+    if (!scoped) return all;
+    return all.flatMap(d => {
+      const mine = (branch ?? []).filter(m => m.department?.id === d.id);
+      return mine.length ? [{ ...d, members: mine.length, levels: levelsOf(mine) }] : [];
+    });
+  }, [list, branch, scoped]);
+  const meEmployeeId: number | null = scoped ? (branch?.[0]?.employee_id ?? null) : null;
 
   useEffect(() => {
     if (!dept) { setTree(null); setStats(null); setTreeErr(null); return; }
+    if (scoped) {
+      // Their own branch within this department, with themselves on top (already loaded with the cards).
+      const mine = (branch ?? []).filter(m => m.employee_id === meEmployeeId || m.department?.id === dept.key);
+      setTree(meEmployeeId ? buildBranch(mine, meEmployeeId) : null); setStats(null); setTreeErr(null);
+      setOpen({}); setExp('exp');
+      return;
+    }
     let on = true;
     setTreeLoading(true); setTreeErr(null); setTree(null);
     const req = dept.key === 'admin' ? tvData.organisation() : tvData.department(dept.key);
@@ -135,11 +167,14 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
       );
     }
     const t = q.trim().toLowerCase();
-    const showAdm = !t || 'admin administrator'.includes(t) || adminName.toLowerCase().includes(t);
+    const showAdm = !scoped && (!t || 'admin administrator'.includes(t) || adminName.toLowerCase().includes(t));
     const adm = list.admin ?? {};
+    if (scoped && !branch?.length) {
+      return <div className="tvo-none">You are not in the team hierarchy yet. Your department and reporting manager come from HR.</div>;
+    }
     return (
       <>
-        <div className="tvo-meta"><span>{filtered.length} Departments</span><span>{adm.members ?? 0} Members</span></div>
+        <div className="tvo-meta"><span>{filtered.length} Departments</span><span>{scoped ? branch?.length ?? 0 : adm.members ?? 0} Members</span></div>
         <div className="tvo-depts">
           {showAdm && (
             <button type="button" data-h40="skip" className="tvx-adm" onClick={() => onOpenDept({ key: 'admin', name: 'Administration' })}>
@@ -163,9 +198,9 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
                 <span className="tvx-dc__t">
                   <b>{d.name}</b>
                   <small>
-                    {d.hod?.name
+                    {d.hod?.name && (!scoped || (d.hod.id != null && branch?.some(m => Number(m.user_id) === Number(d.hod.id))))
                       ? <><span className="tvx-mini">{initials(d.hod.name)}</span>{d.hod.name} · HOD</>
-                      : <>No HOD assigned</>}
+                      : <>{scoped ? 'Your team' : 'No HOD assigned'}</>}
                   </small>
                 </span>
                 <span className="tvx-dc__n"><b>{d.members ?? 0}</b><small>Members</small></span>
@@ -231,7 +266,7 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
           ) : tree ? (
             <>
               <Node x={tree.root} open={open} sel={selected?.id ?? null} onTog={tog} onSel={x => onSelect(selected?.id === x.id ? null : x)} />
-              {!tree.root.kids.length && <div className="tvo-none">No active members in this department yet.</div>}
+              {!tree.root.kids.length && <div className="tvo-none">{scoped ? 'Nobody reports to you in this department yet.' : 'No active members in this department yet.'}</div>}
             </>
           ) : null}
         </div>

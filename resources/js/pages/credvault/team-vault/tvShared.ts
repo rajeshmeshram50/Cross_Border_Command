@@ -110,10 +110,53 @@ export function buildHierarchy(members: Loose[], admin: { name: string; desig: s
   const sortDeep = (list: TreeNode[]) => { list.sort(order); list.forEach(k => sortDeep(k.kids)); };
   sortDeep(roots);
 
-  const root: TreeNode = { id: 'adm', employeeId: null, name: admin.name, initials: initials(admin.name), desig: admin.desig, lv: 'admin', kids: roots };
+  return rootedAt({ id: 'adm', employeeId: null, name: admin.name, initials: initials(admin.name), desig: admin.desig, lv: 'admin', kids: roots });
+}
+
+function rootedAt(root: TreeNode): Hierarchy {
   const all: TreeNode[] = [];
   const cnt: LevelCounts = {};
   const walk = (x: TreeNode) => { cnt[x.lv] = (cnt[x.lv] ?? 0) + 1; all.push(x); x.kids.forEach(walk); };
   walk(root);
   return { root, all, cnt, total: all.length };
 }
+
+/** Whether this login sees the whole organisation: the client admin and branch users. Everyone else sees their own branch of it. */
+export const seesEveryone = (userType?: string | null) => ['super_admin', 'client_admin', 'branch_user'].includes(String(userType ?? ''));
+
+/** The viewer's member row and everyone reporting to them, down the chain; empty when the viewer is not in the members. */
+export function ownBranch(members: Loose[], userId: number): Loose[] {
+  const me = members.find(m => Number(m.user_id) === userId);
+  if (!me) return [];
+  const reports = new Map<number, Loose[]>();
+  members.forEach(m => {
+    if (m.manager_employee_id == null) return;
+    if (!reports.has(m.manager_employee_id)) reports.set(m.manager_employee_id, []);
+    reports.get(m.manager_employee_id)!.push(m);
+  });
+  const out: Loose[] = [];
+  const seen = new Set<number>();
+  const walk = (m: Loose) => {
+    if (seen.has(m.employee_id)) return;
+    seen.add(m.employee_id); out.push(m);
+    (reports.get(m.employee_id) ?? []).forEach(walk);
+  };
+  walk(me);
+  return out;
+}
+
+/** The tree of ownBranch() members with the viewer on top; anyone whose manager was left out hangs from the viewer. */
+export function buildBranch(members: Loose[], meEmployeeId: number): Hierarchy | null {
+  const { root } = buildHierarchy(members, { name: '', desig: '' });
+  const me = root.kids.find(k => k.employeeId === meEmployeeId);
+  if (!me) return null;
+  me.kids.push(...root.kids.filter(k => k !== me));
+  return rootedAt(me);
+}
+
+/** levels[] ({level,count}) for a set of members, as the department cards take it. */
+export const levelsOf = (members: Loose[]): Loose[] => {
+  const c: LevelCounts = {};
+  members.forEach(m => { const l = (LV_ORDER.includes(m.level) ? m.level : 'emp') as Level; c[l] = (c[l] ?? 0) + 1; });
+  return LV_ORDER.filter(l => c[l]).map(l => ({ level: l, count: c[l] }));
+};

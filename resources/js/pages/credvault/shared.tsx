@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { IdCell as DtIdCell, PillCell, TruncCell, type DataTableColumn, type DataTableTab } from '../../components/ui/DataTable';
@@ -210,8 +210,12 @@ export function CvBrief({ icon, label, sub, steps, defaultOpen = false }: {
   );
 }
 
-export function CvCard({ children, pane = false }: { children: ReactNode; pane?: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
+/**
+ * Sizes ref's element to reach the page footer: apply(px) gets the room left
+ * below its top (at least `min`), again on resize and whenever a block above it
+ * (box's previous siblings, e.g. a folding brief) changes height.
+ */
+export function useFillToFoot(ref: RefObject<HTMLElement | null>, apply: (el: HTMLElement, px: number) => void, min = 240, box?: () => Element | null) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -222,15 +226,22 @@ export function CvCard({ children, pane = false }: { children: ReactNode; pane?:
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const space = scroller ? scroller.clientHeight : window.innerHeight;
       const foot = (document.querySelector('footer.footer') as HTMLElement | null)?.offsetHeight ?? 0;
-      el.style.minHeight = `${Math.max(240, space - top - (foot > 0 ? foot + 8 : 15))}px`;
+      apply(el, Math.max(min, space - top - (foot > 0 ? foot + 8 : 15)));
     };
     fit();
     window.addEventListener('resize', fit);
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : undefined;
-    const box = pane ? el : el.parentElement;
-    for (let s = box?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
+    const from = box ? box() : el;
+    for (let s = from?.previousElementSibling; s; s = s.previousElementSibling) ro?.observe(s);
     return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
-  }, [pane]);
+  // apply and box are fixed per call site.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [min]);
+}
+
+export function CvCard({ children, pane = false }: { children: ReactNode; pane?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFillToFoot(ref, (el, px) => { el.style.minHeight = `${px}px`; }, 240, () => (pane ? ref.current : ref.current?.parentElement ?? null));
   if (pane) {
     return (
       <section className="tv-pane tv-pane--r" ref={ref} style={{ height: 'auto' }}>
