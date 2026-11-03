@@ -106,7 +106,7 @@ export default function MyVault() {
         if (tab === 'sharedby') {
           const [r, c] = await Promise.all([
             cvApi.sharedByMe({ q: dq, page, per_page: perPage, ...(shareCred ? { credential_id: shareCred } : {}) }),
-            cvApi.list({ tab: 'all', page: 1, per_page: 1 }),
+            cvApi.vaultList(false, { tab: 'all', page: 1, per_page: 1 }),
           ]);
           if (n !== seq.current) return;
           if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }

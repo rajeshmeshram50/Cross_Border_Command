@@ -77,24 +77,19 @@ const EMAIL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9_%+-])?@[A-Za-z0-9](
 export const PHONE_RE = /^\+?[\d\s()-]{10,16}$/;
 export const PHONE_CHARS = (v: string) => v.replace(/[^\d+\s()-]/g, '').replace(/(?!^)\+/g, '');
 
+const PHONE_MSG = 'Enter a valid phone number, e.g. +91 98200 11223';
+const EMAIL_MSG = 'Enter a valid email address';
+
 export function phoneError(v: string): string | null {
   const t = v.trim();
-  if (!/^\+?[\d\s()-]+$/.test(t)) return 'Use digits only, with an optional + at the start';
+  if (!/^\+?[\d\s()-]+$/.test(t) || t.length > 16) return PHONE_MSG;
   const digits = t.replace(/\D/g, '').length;
-  if (digits < 10) return 'Phone number is too short — enter at least 10 digits';
-  if (digits > 15) return 'Phone number is too long — at most 15 digits';
-  if (t.length > 16) return 'Too many spaces or symbols — keep it to 16 characters, e.g. +91 98200 11223';
-  return null;
+  return digits < 10 || digits > 15 ? PHONE_MSG : null;
 }
 
 export function emailError(v: string): string | null {
   const t = v.trim();
-  if (t.length > 191) return 'Email address is too long';
-  if (/\s/.test(t)) return 'Email address cannot contain spaces';
-  if (!t.includes('@')) return 'Email address needs an @, e.g. name@company.com';
-  if (t.includes('..')) return 'Email address cannot contain two dots in a row';
-  if (!EMAIL_RE.test(t)) return 'Enter a valid email address, e.g. name@company.com';
-  return null;
+  return t.length > 191 || t.includes('..') || !EMAIL_RE.test(t) ? EMAIL_MSG : null;
 }
 
 /** crdSave's per-field check — the server repeats these and more. */

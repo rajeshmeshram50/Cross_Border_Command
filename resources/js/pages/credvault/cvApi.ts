@@ -46,9 +46,10 @@ async function get<T>(path: string, params?: Q): Promise<T> {
 }
 async function send<T>(method: 'post' | 'put' | 'delete', path: string, body?: unknown): Promise<T> {
   try {
+    const cfg = body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined;
     const r = method === 'delete'
       ? await api.delete(`/credvault${path}`, { data: body })
-      : await api[method](`/credvault${path}`, body);
+      : await api[method](`/credvault${path}`, body, cfg);
     return r.data as T;
   } catch (e) { throw toError(e); }
 }

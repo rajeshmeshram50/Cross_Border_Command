@@ -278,6 +278,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                   if (file && file.size > meta.file_types.max_mb * 1048576) {
                     e.target.value = '';
                     setErrors(x => ({ ...x, [k]: `File must be ${meta.file_types.max_mb} MB or smaller` }));
+                    toast.warning(`File must be ${meta.file_types.max_mb} MB or smaller`);
                     return;
                   }
                   setFieldFiles(s => { const n = { ...s }; if (file) n[f.key] = file; else delete n[f.key]; return n; });
@@ -443,7 +444,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       count++;
     });
     if (next.length) setAttNew(a => [...a, ...next]);
-    if (err) setErrors(e => ({ ...e, attachments: err }));
+    if (err) { setErrors(e => ({ ...e, attachments: err })); toast.warning(err); }
   };
   const xtItems: { span: number; render: (s: CSSProperties | undefined) => ReactNode }[] = [];
   const xtInp = (k: string, lbl: string, type: string, ph: string, ico: string, span: number, hint: string, value: string, set: (v: string) => void) => ({
@@ -704,7 +705,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
     const lockAdmin = prot.admin;
     const lockManager = prot.manager;
-    const lockOtp = twofaLocks ? twofaOn : prot.otp;
+    const lockOtp = twofaLocks ? twofaOn : prot.otp && pol.cp_otp;
     if (critical && canProtect && !lockAdmin && !lockManager && !lockOtp) {
       toast.warning('Turn on at least one protection step for a critical credential');
       bodyRef.current?.querySelector('#cpSec')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -789,7 +790,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         const first = firstOf(mapped);
         if (first === 'totp_code') bodyRef.current?.querySelector('.cp-auth')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         else jump(first);
-        toast.error(editing ? 'Could not update the credential' : 'Could not save the credential', e.message);
+        toast.warning('Please complete the highlighted fields', e.message);
       } else {
         toast.error(editing ? 'Could not update the credential' : 'Could not save the credential', errMsg(e));
       }
@@ -806,7 +807,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
   return (
     <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) askClose(); }}>
-      <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}>
+      <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}
+        style={{ position: 'relative' }}>
+        {saving && (
+          <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>
+            <div className="mapsup-seccard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
+              <span className="cp-spin" />
+              <b className="mapsup-sechead__title">{editing ? 'Updating credential…' : 'Saving credential…'}</b>
+            </div>
+          </div>
+        )}
         <div className="mapsup-header">
           <div className="mapsup-hrow">
             <div className="mapsup-title-wrap">
@@ -828,6 +838,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         </div>
 
         <div className="mapsup-body" ref={bodyRef}>
+          <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: 'contents' }}>
           {locked && (
             <div className="cv-form-note">
               <Svg d={CP_I.lock} size={14} />
@@ -852,6 +863,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                 }]} />
             </div>
           )}
+          </fieldset>
         </div>
 
         <div className="mapsup-footer">
@@ -862,11 +874,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           </div>
           <div className="mapsup-footer__actions">
             {!editing && onChangeType && (
-              <button type="button" data-h40="skip" className="mapsup-footer__btn mapsup-footer__btn--ghost crd-change-ft" onClick={onChangeType}>
+              <button type="button" data-h40="skip" className="mapsup-footer__btn mapsup-footer__btn--ghost crd-change-ft" onClick={onChangeType} disabled={saving}>
                 <Svg icon="swap" size={13} />Change type
               </button>
             )}
-            <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={askClose}>Close</button>
+            <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={askClose} disabled={saving}>Close</button>
             <button type="button" className={`mapsup-footer__btn mapsup-footer__btn--primary${editing && !changedCount ? ' is-dim' : ''}`}
               onClick={save} disabled={saving}>
               <Svg icon="check" size={13} sw={2.6} />{saving ? (editing ? 'Updating…' : 'Saving…') : editing ? 'Update Credential' : 'Save Credential'}

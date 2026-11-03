@@ -177,7 +177,15 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
     <CvPortal onClose={onClose}>
       <div id="crd-host">
         <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-          <div className="mapsup-box crd-box gp-box sh-box" role="dialog" aria-modal="true" aria-label="Share Credential">
+          <div className="mapsup-box crd-box gp-box sh-box" role="dialog" aria-modal="true" aria-busy={busy} aria-label="Share Credential" style={{ position: 'relative' }}>
+            {busy && (
+              <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>
+                <div className="mapsup-seccard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
+                  <span className="cp-spin" />
+                  <b className="mapsup-sechead__title">Sharing credential…</b>
+                </div>
+              </div>
+            )}
             <div className="mapsup-header">
               <div className="mapsup-hrow">
                 <div className="mapsup-title-wrap">
