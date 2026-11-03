@@ -14,13 +14,6 @@ import GeneratorModal from './GeneratorModal';
 import ShareModal from './ShareModal';
 import ViewDrawer from './ViewDrawer';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault · My Vault — the prototype's myVaultBody(): header strip with
- * Generate Password / Add Credential, the "What We Are Doing Here" box, and
- * the tabbed list (All / Mine / Team / Shared With Me / Shared By Me) with a
- * server-side search and pager. Every count and row comes from the API.
- * ───────────────────────────────────────────────────────────────────────── */
-
 type TabKey = 'all' | 'mine' | 'team' | 'shared' | 'sharedby';
 const PER_PAGE = 10;
 
@@ -50,7 +43,6 @@ const PERM_ICO: Record<Perm, string> = {
 const STATE_LABEL: Record<ShareRow['state'], string> = { active: 'Active', soon: 'Expiring soon', expired: 'Expired', revoked: 'Revoked' };
 const SB_COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Shared With', 'Permission', 'Shared On', 'Expires', 'Reason', 'Status', 'Action'];
 
-/** The Expires cell's second line, as the prototype's sbLeft(). */
 function expiresLeft(s: ShareRow): string {
   if (s.state === 'revoked') return '—';
   const ms = new Date(s.expires_at!).getTime() - Date.now();
@@ -88,10 +80,8 @@ export default function MyVault() {
   const [revoke, setRevoke] = useState<ShareRow | null>(null);
   const [revoking, setRevoking] = useState(false);
 
-  // Shares of one credential only — set by Password Health's over-shared "Fix" link.
   const [shareCred, setShareCred] = useState<number | null>(null);
 
-  // ?action=add|generate (quick actions) and ?tab=…&credential_id= (Password Health) — apply once, then drop them.
   useEffect(() => {
     const a = params.get('action');
     const t = params.get('tab');
@@ -115,7 +105,6 @@ export default function MyVault() {
     (async () => {
       try {
         if (tab === 'sharedby') {
-          // The tab badges come from the credentials list; refresh them alongside.
           const [r, c] = await Promise.all([
             cvApi.sharedByMe({ q: dq, page, per_page: PER_PAGE, ...(shareCred ? { credential_id: shareCred } : {}) }),
             cvApi.list({ tab: 'all', page: 1, per_page: 1 }),

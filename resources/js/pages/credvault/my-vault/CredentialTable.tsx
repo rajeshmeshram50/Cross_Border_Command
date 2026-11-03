@@ -4,18 +4,13 @@ import {
   UpdatedCell, useCvMeta,
 } from '../shared';
 
-/**
- * CredVault · the credential list table (My Vault, Team Vault right pane):
- * Sr. No · Credential ID · Name · Category · Username · Owner · Risk ·
- * Strength · 2FA · Last Updated · Action. Row buttons follow row.can.
- */
 export interface CredentialTableProps {
   rows: CredentialRow[];
-  startIndex: number;          // Sr. No of the first row minus one
+  startIndex: number;          
   loading: boolean;
   emptyTitle: string;
   emptySub: string;
-  onAdd?: () => void;          // the empty state's "Add Credential"
+  onAdd?: () => void;          
   onEdit: (row: CredentialRow) => void;
   onShare: (row: CredentialRow) => void;
   onView: (row: CredentialRow) => void;
@@ -23,7 +18,6 @@ export interface CredentialTableProps {
   onDelete: (row: CredentialRow) => void;
 }
 
-// Usernames past 12 characters are cut with an ellipsis; the full value is the cell's tooltip.
 const USER_SHOWN = 12;
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
@@ -46,7 +40,6 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
             ) : rows.map((r, i) => {
               const can = r.can;
               const binTitle = can?.remove ? 'Remove from your vault' : 'Move to Bin';
-              // Copying goes through /reveal with action=copy, which needs Copy rank.
               const canCopy = !!can?.copy;
               return (
                 <tr key={r.id}>

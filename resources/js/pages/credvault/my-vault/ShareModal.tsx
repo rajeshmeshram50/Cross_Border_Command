@@ -3,7 +3,6 @@ import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type CredentialDetail, type Loose, type Perm } from '../cvApi';
 import { cap, CvPortal, errMsg, Svg, useCvMeta } from '../shared';
 
-/** CredVault · Share Credential popup — recipient, permission, duration, reason. */
 export interface ShareModalProps {
   credentialId: number;
   onClose: () => void;
@@ -29,7 +28,6 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const isoDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const longDay = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-/** Duration state: a preset's days ("7"), "0" for no expiry, or "date:YYYY-MM-DD". */
 function endOf(dur: string): Date | null {
   if (dur === '0') return null;
   if (dur.startsWith('date:')) return new Date(`${dur.slice(5)}T23:59:00`);
@@ -54,7 +52,6 @@ export default function ShareModal({ credentialId, onClose, onShared }: ShareMod
   const calRef = useRef<HTMLDivElement>(null);
 
   const crit = cred?.risk === 'critical';
-  // The parent may pass a fresh onClose each render; the load effects must not re-run for it.
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -66,7 +63,6 @@ export default function ShareModal({ credentialId, onClose, onShared }: ShareMod
     return () => { on = false; };
   }, [credentialId, toast]);
 
-  // Once the credential and policy are known: refuse critical sharing if policy forbids it, and pick defaults.
   const ready = !!cred && !!meta;
   useEffect(() => {
     if (!cred || !meta) return;

@@ -5,15 +5,11 @@ import UnlockModal from '../critical/UnlockModal';
 import { bytes, cap, copyText, CvPortal, errMsg, fmtDay, fmtTime, Svg, useCvMeta } from '../shared';
 import BinConfirm from './BinConfirm';
 
-/**
- * CredVault · View Credential right drawer — Overview / Details / Access /
- * Activity, header actions (Launch, Reveal, Copy, Share, Bin). A locked
- * (protected) credential opens the unlock modal instead.
- */
+
 export interface ViewDrawerProps {
   credentialId: number;
   onClose: () => void;
-  onChanged?: () => void;                 // something changed — refresh the list
+  onChanged?: () => void;                
   onEdit?: (id: number) => void;
   onShare?: (id: number) => void;
 }
