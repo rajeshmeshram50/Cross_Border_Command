@@ -1,8 +1,8 @@
 {
     "info": {
         "_postman_id": "46d0d44d-fbb6-412c-9461-b882eb527eee",
-        "name": "P2P · Supplier Purchase Invoice (SPI)",
-        "description": "The SPI flow end to end: Stage 01 supplier and PO, Stage 02 items (3-way match), Stage 03 box packaging, Stage 04 put-away (office allocation AND the Zebra handheld), close, Zoho Books, payments and the evidence vault.\n\nSETUP\n  1. Set {{base_url}} and {{sticker_url}}.\n  2. Run 00 · Auth → Login. It stores {{token}}.\n  3. For folder 07 you also need {{device_token}} — add a device in folder 09, or copy the credential from Inventory → Scan Devices.\n\nIDS FILL THEMSELVES. Test scripts store spi_id, box_id, putaway_id, task_id, warehouse_id, zone_id, rack_id and shelf_id as you go.\n\nSTAGE 04 ORDER\n  Set storage type → Board → Locations (counts) → Locations (tree) → Assign\n  then EITHER  Confirm manually (06)\n  or           Send for Zebra verification (06) → scan it in 07\n  and finally  Submit (10), which refuses while any box is unplaced.\n\nTWO KINDS OF AUTH\n  Folders 00–06, 08–13 use the user bearer {{token}}.\n  Folder 07 uses X-Scan-Device: {{device_token}} and NO user token — the tenant comes off the device row.",
+        "name": "P2P · Supplier Purchase Invoice (SPI) — unified",
+        "description": "The SPI flow end to end: Stage 01 supplier and PO, Stage 02 items (3-way match), Stage 03 box packaging, Stage 04 put-away (office allocation AND the Zebra handheld), close, Zoho Books, payments and the evidence vault.\n\nSETUP\n  1. Set {{base_url}} and {{sticker_url}}.\n  2. Run 00 · Auth → Login. It stores {{token}}.\n  3. For folder 07 you also need {{device_token}} — add a device in folder 09, or copy the credential from Inventory → Scan Devices.\n\nIDS FILL THEMSELVES. Test scripts store spi_id, box_id, putaway_id, task_id, warehouse_id, zone_id, rack_id and shelf_id as you go.\n\nSTAGE 04 ORDER\n  Set storage type → Board → Locations (counts) → Locations (tree) → Assign\n  then EITHER  Confirm manually (06)\n  or           Send for Zebra verification (06) → scan it in 07\n  and finally  Submit (10), which refuses while any box is unplaced.\n\nTWO KINDS OF AUTH\n  Folders 00–06, 08–13 use the user bearer {{token}}.\n  Folder 07 uses X-Scan-Device: {{device_token}} and NO user token — the tenant comes off the device row.\n\nUNIFIED COLLECTION — covers BOTH a PO-backed SPI and a Direct SPI (purchase_order_id IS NULL) in one place, plus GST approval, TDS, edit/delete payment, warehouse eligibility, Stage-03 complete, in-SPI scan/confirm and the box scan log. A Direct SPI is identified by the null PO alone — there is no type flag. Direct-only calls are labelled \"(Direct SPI ...)\".",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "item": [
@@ -524,6 +524,87 @@
                         "description": "Draft or mapped only. Changing purchase_order_id after items exist is refused — it would orphan every mapped line."
                     },
                     "response": []
+                },
+                {
+                    "name": "Request GST approval (Direct SPI only)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/gst-approval/request",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "gst-approval",
+                                "request"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"requested_to\": {{approver_user_id}},\n  \"note\": \"Please review the GST on this direct invoice.\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Send a DIRECT SPI (purchase_order_id IS NULL) to a senior for GST approval. A PO-backed invoice is refused here — send its order instead. Once raised, the supplier and document type are frozen on Stage 01.\n\nrequested_to is required unless you are the approver yourself; note is optional (max 1000)."
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data && r.data.id) {",
+                                    "    pm.collectionVariables.set('gst_approval_id', r.data.id);",
+                                    "    console.log('gst_approval_id =', r.data.id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "GST approvals (this invoice, newest first)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/gst-approvals",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "gst-approvals"
+                            ]
+                        },
+                        "description": "Every GST approval raised against THIS invoice, newest first — status pending | approved | rejected and who it is with."
+                    },
+                    "response": []
                 }
             ]
         },
@@ -917,6 +998,74 @@
                         "description": "Every packed box with its contents RESOLVED: the product named, the flags read from the master, the put-away location once it has one, the sticker and the attachments.\n\nThis is the READ Stage 04 Step 01 is built on."
                     },
                     "response": []
+                },
+                {
+                    "name": "Delete a box attachment",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/attachments/{{attachment_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "boxes",
+                                "{{box_id}}",
+                                "attachments",
+                                "{{attachment_id}}"
+                            ]
+                        },
+                        "description": "Remove one photo/attachment from a box. attachment_id comes from the box detail payload."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Complete Stage 03 (box packaging done)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/stage-3",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "stage-3"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "The call the wizard's Next makes to close Stage 03 and move into put-away. The box saves already moved the column; this exists so Next has something to await and be refused by.\n\n422 warehouse_incompatible: the warehouse chosen on Stage 01 has no cold-chain / hazardous zone (or no zone covering a box temperature range) that the packed boxes need. Body then carries { warehouse_incompatible: true, missing: [...] } and the warehouse must be changed first. Third Party (no warehouse) is never checked."
+                    },
+                    "response": []
                 }
             ]
         },
@@ -959,6 +1108,142 @@
                             }
                         },
                         "description": "Only warehouse_id is stored. putaway_mode in the response is derived from the warehouse master: 'full' for our own warehouse (rack → shelf), 'summary' for a 3PL."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Warehouse eligibility (cold-chain / hazardous / temp range)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/warehouse-eligibility",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "warehouse-eligibility"
+                            ]
+                        },
+                        "description": "What the packed boxes REQUIRE (cold_chain, hazardous, temp_ranges) vs what the current warehouse HAS, and the list of warehouses with why each is or is not compatible. Drives the blocker dropdown on the Stage 3->4 move."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Put-away scan (in-SPI, office)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "putaway",
+                                "scan"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scan_type\": \"box\",\n  \"scanned_value\": \"{{box_code}}\",\n  \"box_code\": \"{{box_code}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "A scan made from the SPI screen itself (not the Zebra device). scan_type is one of box | zone | rack | shelf; scanned_value is the code scanned. Stamps <scan_type>_scanned_at on the put-away row."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Confirm a put-away row",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/{{putaway_id}}/confirm",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "putaway",
+                                "{{putaway_id}}",
+                                "confirm"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"condition_at_putaway\": \"good\",\n  \"note\": \"\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Confirm a put-away row once every required leg has been scanned. Refused (422) while any leg is still unscanned. condition_at_putaway is optional (one of the SpiPutaway conditions); note optional."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Box scan log (handheld + manual)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/boxes/{{box_id}}/activity",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "putaway",
+                                "boxes",
+                                "{{box_id}}",
+                                "activity"
+                            ]
+                        },
+                        "description": "One box's frozen scan log — every scan and manual put-away, the method and the user, read-only."
                     },
                     "response": []
                 },
@@ -2236,6 +2521,133 @@
                         }
                     },
                     "response": []
+                },
+                {
+                    "name": "Set TDS (Direct SPI only)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/tds",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "tds"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tds_percentage\": 2\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "TDS on a DIRECT invoice — a PO-backed one is refused and sent to its order. Send tds_percentage OR tds_amount (one is required without the other). Every payment request is gated on tds_updated_at, so this must be set before raising one. Refused once a payment exists."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Edit a payment (Direct SPI, multipart proof)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/payment-requests/{{payment_request_id}}/payments/{{payment_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "payment-requests",
+                                "{{payment_request_id}}",
+                                "payments",
+                                "{{payment_id}}"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "amount",
+                                    "value": "10000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "bank_name",
+                                    "value": "HDFC",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "utr_cheque_number",
+                                    "value": "UTR123456",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "utr_cheque_date",
+                                    "value": "2026-11-01",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "proof",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "description": "Edit a Direct-SPI payment, optionally replacing the proof. POST (not PUT) because PHP does not populate $_FILES on a PUT. A PO-backed payment is refused — edit it on the order instead."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete a payment (Direct SPI)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/payment-requests/{{payment_request_id}}/payments/{{payment_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "payment-requests",
+                                "{{payment_request_id}}",
+                                "payments",
+                                "{{payment_id}}"
+                            ]
+                        },
+                        "description": "Delete a Direct-SPI payment. A PO-backed payment is refused — delete it on the order."
+                    },
+                    "response": []
                 }
             ]
         },
@@ -2387,6 +2799,26 @@
         {
             "key": "payment_request_id",
             "value": ""
+        },
+        {
+            "key": "attachment_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "payment_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "gst_approval_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "approver_user_id",
+            "value": "",
+            "type": "string"
         }
     ]
 }

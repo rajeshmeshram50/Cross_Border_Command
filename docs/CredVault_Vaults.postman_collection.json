@@ -7382,7 +7382,7 @@
         },
         {
             "name": "05 · Get single Normal Vault — 25 types",
-            "description": "GET /credentials/{id} — one credential with every field (secrets masked: value null, has_value true), recovery, notes, attachments, shares and protection. Reveal a secret with POST …/reveal.",
+            "description": "GET /credentials/{id} — one credential with everything stored, in plain text: every field (passwords and secret fields included), recovery { reg_email, reg_phone, recovery_key }, notes, attachments, shares and protection — plus all_values, the same values in one flat map. Each such read is audit-logged as a reveal. Use Only gets no secrets.",
             "item": [
                 {
                     "name": "Get single 01 · Login",
@@ -7415,7 +7415,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('login in the normal vault', () => { pm.expect(b.data.type).to.eql('login'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 3 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); });"
+                                    "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7452,7 +7452,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('password in the normal vault', () => { pm.expect(b.data.type).to.eql('password'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 3 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); });"
+                                    "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7489,7 +7489,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('email in the normal vault', () => { pm.expect(b.data.type).to.eql('email'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7526,7 +7526,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passkey in the normal vault', () => { pm.expect(b.data.type).to.eql('passkey'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7563,7 +7563,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('totp in the normal vault', () => { pm.expect(b.data.type).to.eql('totp'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 6 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); });"
+                                    "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7600,7 +7600,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('card in the normal vault', () => { pm.expect(b.data.type).to.eql('card'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 6 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); });"
+                                    "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7637,7 +7637,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('bank in the normal vault', () => { pm.expect(b.data.type).to.eql('bank'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 6 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); });"
+                                    "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7674,7 +7674,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('crypto in the normal vault', () => { pm.expect(b.data.type).to.eql('crypto'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7711,7 +7711,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('rewards in the normal vault', () => { pm.expect(b.data.type).to.eql('rewards'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 3 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); });"
+                                    "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7748,7 +7748,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('api in the normal vault', () => { pm.expect(b.data.type).to.eql('api'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7785,7 +7785,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('ssh in the normal vault', () => { pm.expect(b.data.type).to.eql('ssh'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7822,7 +7822,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('database in the normal vault', () => { pm.expect(b.data.type).to.eql('database'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 6 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); });"
+                                    "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7859,7 +7859,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('server in the normal vault', () => { pm.expect(b.data.type).to.eql('server'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7896,7 +7896,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('cert in the normal vault', () => { pm.expect(b.data.type).to.eql('cert'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7933,7 +7933,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('license in the normal vault', () => { pm.expect(b.data.type).to.eql('license'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -7970,7 +7970,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('wifi in the normal vault', () => { pm.expect(b.data.type).to.eql('wifi'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8007,7 +8007,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('identity in the normal vault', () => { pm.expect(b.data.type).to.eql('identity'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8044,7 +8044,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passport in the normal vault', () => { pm.expect(b.data.type).to.eql('passport'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 6 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); });"
+                                    "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8081,7 +8081,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('driver in the normal vault', () => { pm.expect(b.data.type).to.eql('driver'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 5 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); });"
+                                    "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8118,7 +8118,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('govid in the normal vault', () => { pm.expect(b.data.type).to.eql('govid'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8155,7 +8155,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('document in the normal vault', () => { pm.expect(b.data.type).to.eql('document'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8192,7 +8192,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('note in the normal vault', () => { pm.expect(b.data.type).to.eql('note'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 1 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(1); });"
+                                    "pm.test('open: all 1 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(1); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8229,7 +8229,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('membership in the normal vault', () => { pm.expect(b.data.type).to.eql('membership'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8266,7 +8266,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('medical in the normal vault', () => { pm.expect(b.data.type).to.eql('medical'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -8303,7 +8303,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('outdoor in the normal vault', () => { pm.expect(b.data.type).to.eql('outdoor'); pm.expect(b.data.vault).to.eql('normal'); });",
-                                    "pm.test('open: all 4 fields', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); });"
+                                    "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
                                 ]
                             }
                         }
@@ -16400,7 +16400,7 @@
         },
         {
             "name": "10 · Get single Critical Vault — 25 types",
-            "description": "GET /credentials/{id} — while locked: the summary, the unlock plan (steps, approvers, 2-step method) and the last request, but no fields. After the unlock (folder 13) the same call returns every field.",
+            "description": "GET /credentials/{id} — while locked: the summary, the unlock plan (steps, approvers, 2-step method) and the last request, but no fields and no values. After the unlock (folder 14) the same call returns every stored value in plain text, with all_values.",
             "item": [
                 {
                     "name": "Get single 01 · Login",
@@ -16433,7 +16433,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('login in the critical vault', () => { pm.expect(b.data.type).to.eql('login'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16470,7 +16470,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('password in the critical vault', () => { pm.expect(b.data.type).to.eql('password'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16507,7 +16507,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('email in the critical vault', () => { pm.expect(b.data.type).to.eql('email'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16544,7 +16544,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passkey in the critical vault', () => { pm.expect(b.data.type).to.eql('passkey'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16581,7 +16581,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('totp in the critical vault', () => { pm.expect(b.data.type).to.eql('totp'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16618,7 +16618,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('card in the critical vault', () => { pm.expect(b.data.type).to.eql('card'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16655,7 +16655,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('bank in the critical vault', () => { pm.expect(b.data.type).to.eql('bank'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16692,7 +16692,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('crypto in the critical vault', () => { pm.expect(b.data.type).to.eql('crypto'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16729,7 +16729,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('rewards in the critical vault', () => { pm.expect(b.data.type).to.eql('rewards'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16766,7 +16766,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('api in the critical vault', () => { pm.expect(b.data.type).to.eql('api'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16803,7 +16803,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('ssh in the critical vault', () => { pm.expect(b.data.type).to.eql('ssh'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16840,7 +16840,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('database in the critical vault', () => { pm.expect(b.data.type).to.eql('database'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16877,7 +16877,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('server in the critical vault', () => { pm.expect(b.data.type).to.eql('server'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16914,7 +16914,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('cert in the critical vault', () => { pm.expect(b.data.type).to.eql('cert'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16951,7 +16951,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('license in the critical vault', () => { pm.expect(b.data.type).to.eql('license'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -16988,7 +16988,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('wifi in the critical vault', () => { pm.expect(b.data.type).to.eql('wifi'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17025,7 +17025,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('identity in the critical vault', () => { pm.expect(b.data.type).to.eql('identity'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17062,7 +17062,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passport in the critical vault', () => { pm.expect(b.data.type).to.eql('passport'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17099,7 +17099,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('driver in the critical vault', () => { pm.expect(b.data.type).to.eql('driver'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17136,7 +17136,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('govid in the critical vault', () => { pm.expect(b.data.type).to.eql('govid'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17173,7 +17173,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('document in the critical vault', () => { pm.expect(b.data.type).to.eql('document'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17210,7 +17210,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('note in the critical vault', () => { pm.expect(b.data.type).to.eql('note'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17247,7 +17247,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('membership in the critical vault', () => { pm.expect(b.data.type).to.eql('membership'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17284,7 +17284,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('medical in the critical vault', () => { pm.expect(b.data.type).to.eql('medical'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17321,7 +17321,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('outdoor in the critical vault', () => { pm.expect(b.data.type).to.eql('outdoor'); pm.expect(b.data.vault).to.eql('critical'); });",
-                                    "pm.test('locked: unlock plan, no fields', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
+                                    "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
                                 ]
                             }
                         }
@@ -17454,7 +17454,7 @@
         },
         {
             "name": "12 · Share — person or team, with email",
-            "description": "POST /credentials/{id}/shares — the Share Credential popup. After the share is saved, an email goes out with the popup's details: the credential (name, ID, type, username, risk), the permission and what it allows, access until, the reason, and who shared it. Never a secret.\n\n• Individual (recipient_type user): one email to that person.\n• Team (recipient_type team, a department): one email to every active member of the team except the sharer, in Bcc (batches of 50).\n\nThe response's data.mail says what happened: status sent | partly_sent | failed | mail_off | no_recipients, with recipients, sent and failed. A mail failure never undoes the share. The bell notification goes to the same people.",
+            "description": "POST /credentials/{id}/shares — the Share Credential popup. After the share is saved, an email goes out with the popup's details: the credential (name, ID, type, username, risk), the permission and what it allows, access until, the reason, and who shared it. Never a secret.\n\n• Individual (recipient_type user): one email to that person.\n• Team (recipient_type team, a department): one email to every active member of the team except the sharer, in Bcc (batches of 50).\n\nEvery share email is also copied (Cc) to php@inhpl.com (CREDVAULT_SHARE_COPY_EMAIL). The response's data.mail says what happened: status sent | partly_sent | failed | mail_off | no_recipients, with recipients, sent, failed and copy_to.\n\nShared By Me (GET /shares) returns the table's rows — sr_no, credential (code, created_on, name, url), recipient (name, initials, designation / team members), permission_label, shared_on {date, time}, expires {date, left}, reason, status_label, can {view, share, revoke} — with tabs, search, filters, sort and paging. A mail failure never undoes the share. The bell notification goes to the same people.",
             "item": [
                 {
                     "name": "Share recipients — people and teams",
@@ -17577,7 +17577,8 @@
                                     "const b = pm.response.json();",
                                     "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('shareId', String(v)); } catch (e) {}",
                                     "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });",
-                                    "pm.test('one recipient', () => pm.expect(b.data.mail.recipients).to.eql(1));"
+                                    "pm.test('one recipient', () => pm.expect(b.data.mail.recipients).to.eql(1));",
+                                    "pm.test('copy to php@inhpl.com', () => pm.expect(b.data.mail.copy_to).to.eql('php@inhpl.com'));"
                                 ]
                             }
                         }
@@ -17926,7 +17927,7 @@
                     ]
                 },
                 {
-                    "name": "Shared By Me — all",
+                    "name": "Shared By Me — all (table rows)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -17936,7 +17937,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?tab=all",
+                            "raw": "{{baseUrl}}/credvault/shares?tab=all&page=1&per_page=10&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -17948,6 +17949,214 @@
                                 {
                                     "key": "tab",
                                     "value": "all"
+                                },
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('table cells', () => b.data.forEach(r => { pm.expect(r).to.include.keys('sr_no', 'credential', 'recipient', 'permission_label', 'shared_on', 'expires', 'reason', 'status_label', 'can'); }));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — tab active",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=active",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "active"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — tab expiring soon",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=soon",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "soon"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — tab expired",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=expired",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "expired"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — tab revoked",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=revoked",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "revoked"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — search (credential, person, team, reason)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?q=GST",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "GST"
                                 }
                             ]
                         }
@@ -17990,6 +18199,801 @@
                                 }
                             ]
                         }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — permission (one)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?permission=view",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "permission",
+                                    "value": "view"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — permission (several)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?permission=view%2Ccopy",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "permission",
+                                    "value": "view,copy"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — teams only",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?recipient_type=team",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "recipient_type",
+                                    "value": "team"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — one person",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?recipient_type=user&recipient_id={{shareUserId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "recipient_type",
+                                    "value": "user"
+                                },
+                                {
+                                    "key": "recipient_id",
+                                    "value": "{{shareUserId}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — one team",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?recipient_type=team&recipient_id={{shareTeamId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "recipient_type",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "recipient_id",
+                                    "value": "{{shareTeamId}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — Critical Vault only",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?vault=critical",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — risk",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?risk=high",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "risk",
+                                    "value": "high"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — type",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?type=login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "type",
+                                    "value": "login"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — group",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?group=Logins%20%26%20Access",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "group",
+                                    "value": "Logins & Access"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — shared on (date range)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-04&shared_to=2026-11-03&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "shared_from",
+                                    "value": "2026-10-04"
+                                },
+                                {
+                                    "key": "shared_to",
+                                    "value": "2026-11-03"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — expires (date range)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-03&expires_to=2026-12-03&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "expires_from",
+                                    "value": "2026-11-03"
+                                },
+                                {
+                                    "key": "expires_to",
+                                    "value": "2026-12-03"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — filters combined",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?tab=active&permission=view%2Ccopy&vault=normal&q=Login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "active"
+                                },
+                                {
+                                    "key": "permission",
+                                    "value": "view,copy"
+                                },
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "Login"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — sort by expiry, soonest first",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?sort=expires_at&dir=asc",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "sort",
+                                    "value": "expires_at"
+                                },
+                                {
+                                    "key": "dir",
+                                    "value": "asc"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — sort by shared date, newest first",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?sort=shared_at&dir=desc",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "sort",
+                                    "value": "shared_at"
+                                },
+                                {
+                                    "key": "dir",
+                                    "value": "desc"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — sort by credential name",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?sort=name&dir=asc",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "sort",
+                                    "value": "name"
+                                },
+                                {
+                                    "key": "dir",
+                                    "value": "asc"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — page 2, 5 a page",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?page=2&per_page=5",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "2"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "5"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — bad permission (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?permission=owner",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "permission",
+                                    "value": "owner"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared By Me — recipient_id without recipient_type (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/shares?recipient_id={{shareUserId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "shares"
+                            ],
+                            "query": [
+                                {
+                                    "key": "recipient_id",
+                                    "value": "{{shareUserId}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Shared With Me — as the recipient (Normal Vault, tab shared)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials?tab=shared",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "shared"
+                                }
+                            ]
+                        },
+                        "description": "Run as the person a credential was shared with: set its token in Authorization, or log in as that user in 00 · Setup."
                     },
                     "event": [
                         {

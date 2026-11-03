@@ -88,6 +88,8 @@ return [
     // CredVault Critical Vault — the inbox email 2-step codes go to unless the owner picks another.
     'credvault' => [
         'otp_email' => env('CREDVAULT_OTP_EMAIL', 'php@inhpl.com'),
+        // Every share email is also copied here (CC); empty = no copy.
+        'share_copy_email' => env('CREDVAULT_SHARE_COPY_EMAIL', 'php@inhpl.com'),
     ],
 
 ];

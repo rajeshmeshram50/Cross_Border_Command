@@ -47,9 +47,9 @@
   overflow: hidden;
 }
 .rec-page-kpis .rec-kpi-card:hover {
-  /* No transform. The card answers the pointer with its border and
-     shadow and stays where it is — a row that lifts under the cursor
-     jumps as the pointer crosses it. */
+  /* Cancel the global .rec-kpi-card lift — left to lift, the card slid off
+     the cursor at its edge and flickered on/off, worst on small screens. */
+  transform: none;
   box-shadow:
     0 16px 32px -8px rgba(15, 23, 42, 0.18),
     0 4px 10px rgba(124, 92, 252, 0.10);
@@ -8590,13 +8590,13 @@
   margin: 0;
   border: 1px solid var(--vz-border-color);
   border-bottom: 0;
-  /* Square corners — the profile wants this table plain, no rounded frame. */
-  border-radius: 0;
+  /* Rounded top to match the Logs & Requests table above (#211). */
+  border-radius: 12px 12px 0 0;
 }
 
 .att-tablebox--solo {
   border-bottom: 1px solid var(--vz-border-color);
-  border-radius: 0;
+  border-radius: 12px 12px 0 0;
 }
 
 /* Tiny group label for the permission matrix's Manage Permission sections. */
@@ -8633,6 +8633,21 @@
 [data-bs-theme="dark"] .pm-qa-count i,
 [data-bs-theme="dark"] .pm-qa-count strong { color: #c4b5fd; }
 [data-bs-theme="dark"] .pm-qa-ico { color: #c4b5fd; background: rgba(124, 58, 237, .2); border-color: rgba(124, 58, 237, .4); }
+
+/* Manage Permission bar. Single flowing line whenever it fits; only when the
+   width can't hold one line does it fall back to three columns with the actions
+   stacked into two rows, so it never breaks mid-row. (#219) */
+.pm-qa-bar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+.pm-qa-identity { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.pm-qa-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.pm-qa-actions-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.pm-qa-count--col { flex-shrink: 0; margin-left: auto; align-self: center; }
+
+/* Wide enough for one line → the two action rows flow back inline as a single
+   row (count stays pushed to the right). */
+@media (min-width: 1650px) {
+  .pm-qa-actions, .pm-qa-actions-row { display: contents; }
+}
 
 /* Module-row icon chip in the permission matrix — themed so it isn't a pale
    low-contrast box in dark mode. */
@@ -11417,7 +11432,8 @@
 
 .cand-form-clientstyle .rec-form-label,
 .cand-form-clientstyle .cand-import-label {
-  font-size: 12px;
+  /* 10.5px to match the module's standard label (#212). */
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;

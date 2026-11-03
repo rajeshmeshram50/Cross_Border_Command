@@ -628,10 +628,13 @@ export default function PermissionMatrix({
           matching the hero gap above it. */}
       <Card className="shadow-sm mb-2">
       <CardBody style={{ background: 'var(--vz-secondary-bg)', padding: '10px 18px', borderRadius: 'inherit' }}>
-        <div className="d-flex align-items-center gap-3 flex-wrap">
-          {/* Left — section identity, like the module's other section headers:
-              an icon chip, a title and a one-line subtitle. */}
-          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+        {/* Three columns so the bar never breaks when it runs out of width:
+            identity (left), the actions stacked in two rows (centre), the
+            enabled count (right). The centre wraps within itself instead of
+            spilling the count onto its own line. */}
+        <div className="pm-qa-bar">
+          {/* Col 1 — section identity: icon chip, title, one-line subtitle. */}
+          <div className="pm-qa-identity">
             <span className="pm-qa-ico"><i className="ri-shield-keyhole-line"></i></span>
             <div>
               <div className="pm-qa-title">Manage Permission</div>
@@ -639,42 +642,40 @@ export default function PermissionMatrix({
             </div>
           </div>
 
-          {/* Quick actions flow inline after the title; the enabled count is
-              pushed right with ms-auto. No centering wrapper — that forced the
-              count onto its own line when the bar got narrow. */}
-          <div className="d-inline-flex align-items-center gap-2">
-            <span className="pm-qa-label">Selection</span>
-              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
-                <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
-              </Button>
-              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
-                <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
-              </Button>
+          {/* Col 2 — two rows: Selection + View on top, Permissions below. */}
+          <div className="pm-qa-actions">
+            <div className="pm-qa-actions-row">
+              <div className="d-inline-flex align-items-center gap-2">
+                <span className="pm-qa-label">Selection</span>
+                <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
+                  <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
+                </Button>
+                <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
+                  <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
+                </Button>
+              </div>
+
+              <span className="vr mx-1 opacity-50"></span>
+
+              <div className="d-inline-flex align-items-center gap-2">
+                <span className="pm-qa-label">View</span>
+                <Button
+                  color="light" size="sm" className="rounded-pill px-3 border"
+                  onClick={() => {
+                    const next: Record<number, boolean> = {};
+                    modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
+                    setExpanded(next);
+                  }}
+                >
+                  <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
+                </Button>
+                <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
+                  <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
+                </Button>
+              </div>
             </div>
 
-            <span className="vr mx-1 opacity-50"></span>
-
-            <div className="d-inline-flex align-items-center gap-2">
-              <span className="pm-qa-label">View</span>
-              <Button
-                color="light" size="sm" className="rounded-pill px-3 border"
-                onClick={() => {
-                  const next: Record<number, boolean> = {};
-                  modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
-                  setExpanded(next);
-                }}
-              >
-                <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
-              </Button>
-              <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
-                <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
-              </Button>
-            </div>
-
-            <span className="vr mx-1 opacity-50"></span>
-
-            {/* Per-permission column toggles — all light, icon carries the colour */}
-            <div className="d-inline-flex align-items-center gap-2 flex-wrap">
+            <div className="pm-qa-actions-row">
               <span className="pm-qa-label">Permissions</span>
               {PERMS.map(p => (
                 <Button
@@ -689,9 +690,10 @@ export default function PermissionMatrix({
                 </Button>
               ))}
             </div>
+          </div>
 
-          {/* Right — enabled count, pushed right. */}
-          <span className="pm-qa-count flex-shrink-0 ms-auto">
+          {/* Col 3 — enabled count. */}
+          <span className="pm-qa-count pm-qa-count--col">
             <i className="ri-shield-check-line"></i>
             <strong>{totalChecks}</strong>{' / '}{maxChecks}
             <span className="pm-qa-count-label">enabled</span>

@@ -2840,19 +2840,26 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
     eOvertimeApplicable, eOvertime]);
 
-  /* Seed the salary effective date from the joining date — do not lock it.
-     It becomes salary_structures.effective_from, and a REVISION has to be
-     able to start later than the day the employee joined. Locked, this form
-     could only ever ask for a date the server had already moved past, since
-     SalaryStructureController refuses anything before the newest version.
-     Only fills a date that is missing, or one left behind a joining date
-     that has since moved forward. */
+  /* Earliest a new revision may start: later of joining date and the newest
+     version on file — seeding from DOJ alone 422'd re-enabling payroll. (#59) */
+  const salaryFromFloor = useMemo(() => {
+    const ver = eSalaryVersion?.from ? eSalaryVersion.from.slice(0, 10) : '';
+    return (ver && (!eJoinDate || ver > eJoinDate)) ? ver : (eJoinDate || '');
+  }, [eJoinDate, eSalaryVersion]);
+
+  // Pin the first salary to the DOJ — never later. Only a real later version
+  // lifts the floor above it; above that floor a revision date stays the pick.
   useEffect(() => {
-    if (!eJoinDate) return;
-    setESalaryFrom(prev => (!prev || prev < eJoinDate) ? eJoinDate : prev);
+    if (!salaryFromFloor) return;
+    const versioned = !!eJoinDate && salaryFromFloor > eJoinDate;
+    setESalaryFrom(prev => {
+      if (!prev || prev < salaryFromFloor) return salaryFromFloor;
+      if (!versioned && prev > eJoinDate) return eJoinDate;
+      return prev;
+    });
     clearEErr('salary_effective_from');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eJoinDate]);
+  }, [salaryFromFloor, eSalaryFrom]);
 
   /* `salaryEffectiveCap` (joining + 6 months) is gone with the free date
      picker it bounded — the effective date is now the joining date itself, so
@@ -2900,6 +2907,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     } else if (eSalaryFrom < eJoinDate) {
       /* A salary cannot start before the person does. Later is a revision. */
       e.salary_effective_from = 'Salary effective date cannot be before the joining date';
+    } else if (salaryFromFloor && eSalaryFrom < salaryFromFloor) {
+      // A later version exists; a revision can't predate it. Caught here so it
+      // reads as a field error, not a server 422 on save. (#59)
+      const [y, m, d] = salaryFromFloor.split('-');
+      e.salary_effective_from = `This employee already has a salary version effective ${d}-${m}-${y} — choose that date or later`;
     }
     if (eDetailedBreakup) {
       const hasRowErrors = Object.keys(breakupErrors.earnings).length > 0
@@ -2911,7 +2923,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       }
     }
     return e;
-  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, eDetailedBreakup, breakupErrors]);
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryFromFloor, eDetailedBreakup, breakupErrors]);
 
   const firstStepWithErrors = (errs: Record<string, string>): 1 | 2 | 3 | 4 | null => {
     if (Object.keys(errs).length === 0) return null;
@@ -5813,7 +5825,7 @@ const STEP_SAFE_FIELDS = new Set([
                           placeholder="dd-mm-yyyy"
                           value={eSalaryFrom}
                           invalid={!!eErrors.salary_effective_from}
-                          minDate={eJoinDate || undefined}
+                          minDate={salaryFromFloor || undefined}
                           disabled={!eJoinDate}
                           onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
                         />

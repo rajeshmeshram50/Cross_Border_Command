@@ -298,8 +298,13 @@ class CredVaultController extends Controller
         $u = $this->tenantUser($request);
         $this->sweepUnlocks($u->client_id);
         [$c, $acc] = $this->findCredential($u, $id);
+        $d = $this->detail($c, $u, $acc, true);
+        // Plain-text values were returned: logged like a reveal, so the trail stays complete.
+        if (!empty($d['all_values'])) {
+            $this->audit($u, 'reveal', $c, 'All stored values returned by the detail API', ['fields' => array_keys($d['all_values'])]);
+        }
 
-        return response()->json(['status' => true, 'data' => $this->detail($c, $u, $acc)], 200);
+        return response()->json(['status' => true, 'data' => $d], 200);
     }
 
     /**
@@ -710,7 +715,10 @@ class CredVaultController extends Controller
     protected function mailShare(Request $request, User $u, Credential $c, CredentialShare $s, Collection $members, bool $renewed, string $toName, ?int $teamSize = null): array
     {
         $to = $members->filter(fn ($m) => filter_var($m->email, FILTER_VALIDATE_EMAIL))->values();
-        $out = ['status' => 'sent', 'recipients' => $to->count(), 'sent' => 0, 'failed' => 0];
+        // A copy of every share email (CC) — php@inhpl.com unless CREDVAULT_SHARE_COPY_EMAIL says otherwise.
+        $copy = filter_var((string) config('services.credvault.share_copy_email'), FILTER_VALIDATE_EMAIL) ?: null;
+        if ($copy && $to->contains(fn ($m) => strcasecmp($m->email, $copy) === 0)) $copy = null;
+        $out = ['status' => 'sent', 'recipients' => $to->count(), 'sent' => 0, 'failed' => 0, 'copy_to' => $copy];
         if (!$to->count()) return ['status' => 'no_recipients'] + $out;
         if (!Settings::shouldSendMail()) return ['status' => 'mail_off'] + $out;
 
@@ -741,34 +749,59 @@ class CredVaultController extends Controller
         };
         if (!$team) {
             $m = $to->first();
-            $send(fn () => Mail::to($m->email, $m->name)->send(new CredVaultShareMail($data, $m->name, $brand)), 1);
+            $send(fn () => Mail::to($m->email, $m->name)->cc($copy ? [$copy] : [])->send(new CredVaultShareMail($data, $m->name, $brand)), 1);
         } else {
-            foreach ($to->chunk(50) as $batch) {
+            foreach ($to->chunk(50)->values() as $i => $batch) {
                 $send(fn () => Mail::to((string) config('mail.from.address'), "{$toName} team")
+                    ->cc($copy && $i === 0 ? [$copy] : [])   // the copy once, on the first batch
                     ->bcc($batch->map(fn ($m) => ['email' => $m->email, 'name' => $m->name])->values()->all())
                     ->send(new CredVaultShareMail($data, null, $brand)), $batch->count());
             }
         }
         if ($out['failed']) $out['status'] = $out['sent'] ? 'partly_sent' : 'failed';
-        $this->audit($u, 'share', $c, "Share email to {$toName}: {$out['sent']} sent" . ($out['failed'] ? ", {$out['failed']} failed" : ''),
+        $this->audit($u, 'share', $c, "Share email to {$toName}: {$out['sent']} sent" . ($out['failed'] ? ", {$out['failed']} failed" : '') . ($copy ? ", copy to {$copy}" : ''),
             ['share_id' => $s->id, 'mail' => $out]);
 
         return $out;
     }
 
     /**
-     * GET /credvault/shares?tab=all|active|soon|expired|revoked&q=&credential_id=
+     * GET /credvault/shares — Shared By Me, one row per share, on credentials I own or shares I made.
      *
-     * Shared By Me — one row per share, on credentials I own or shares I made.
-     * credential_id is the exact filter Password Health's "Fix" for an
-     * over-shared credential opens. Tab counts ignore the search box.
+     *   tab            all | active | soon | expired | revoked    (counts in `tabs` ignore the search and filters)
+     *   q              credential ID / name / group / type, person, team, reason, permission label
+     *   credential_id  one credential (Password Health's "Fix" for an over-shared one)
+     *   permission     use | view | copy | full   — one, or several comma-separated
+     *   recipient_type user | team;  recipient_id  one person or one team (needs recipient_type)
+     *   vault          normal | critical;  risk  low | medium | high | critical;  type;  group
+     *   shared_from / shared_to    shared on, Y-m-d (in tz)
+     *   expires_from / expires_to  expiry date, Y-m-d (in tz)
+     *   sort           status (default: expiring soon first) | shared_at | expires_at | name;  dir  asc | desc
+     *   tz             the viewer's timezone for the dates shown and the date filters
+     *   page, per_page
      */
     public function sharedByMe(Request $request)
     {
         $u = $this->tenantUser($request);
         $f = $request->validate($this->listRules(['all', 'active', 'soon', 'expired', 'revoked']) + [
-            'credential_id' => ['nullable', 'integer', 'min:1'],
-        ]);
+            'credential_id'  => ['nullable', 'integer', 'min:1'],
+            'permission'     => ['nullable', 'string', 'regex:/^(use|view|copy|full)(,(use|view|copy|full))*$/'],
+            'recipient_type' => ['nullable', Rule::in(CredentialShare::RECIPIENTS)],
+            'recipient_id'   => ['nullable', 'integer', 'min:1'],
+            'vault'          => ['nullable', Rule::in(Credential::VAULTS)],
+            'risk'           => ['nullable', Rule::in(Credential::RISKS)],
+            'type'           => ['nullable', Rule::in(array_keys(Credential::TYPES))],
+            'group'          => ['nullable', Rule::in(Credential::GROUPS)],
+            'shared_from'    => ['nullable', 'date_format:Y-m-d'],
+            'shared_to'      => ['nullable', 'date_format:Y-m-d', 'after_or_equal:shared_from'],
+            'expires_from'   => ['nullable', 'date_format:Y-m-d'],
+            'expires_to'     => ['nullable', 'date_format:Y-m-d', 'after_or_equal:expires_from'],
+            'sort'           => ['nullable', Rule::in(['status', 'shared_at', 'expires_at', 'name'])],
+            'dir'            => ['nullable', Rule::in(['asc', 'desc'])],
+            'tz'             => ['nullable', 'timezone:all_with_bc'],
+        ], ['permission.regex' => 'Permission is use, view, copy or full (comma-separated for several).']);
+        if (!empty($f['recipient_id']) && empty($f['recipient_type'])) $this->reject('Say whether recipient_id is a user or a team (recipient_type).', 'recipient_type');
+        $tz = $f['tz'] ?? config('app.timezone');
 
         $mine = Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id');
         $base = CredentialShare::where('client_id', $u->client_id)
@@ -806,16 +839,40 @@ class CredVaultController extends Controller
         }
         if (($tab = $f['tab'] ?? 'all') !== 'all') $states[$tab]($base);
 
-        $page = $base->with(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name'])
-            ->orderByRaw('case when revoked_at is not null then 3 when expires_at is not null and expires_at <= ? then 2 when expires_at is not null and expires_at < ? then 0 else 1 end', [now(), $soon])
-            ->orderByDesc('created_at')
+        // The filters.
+        if (!empty($f['permission'])) $base->whereIn('permission', array_unique(explode(',', $f['permission'])));
+        if (!empty($f['recipient_type'])) {
+            $base->where('recipient_type', $f['recipient_type']);
+            if (!empty($f['recipient_id'])) $base->where($f['recipient_type'] === 'user' ? 'recipient_user_id' : 'recipient_department_id', $f['recipient_id']);
+        }
+        $credFilter = array_filter(['vault' => $f['vault'] ?? null, 'risk' => $f['risk'] ?? null, 'type' => $f['type'] ?? null, 'category_group' => $f['group'] ?? null]);
+        if ($credFilter) $base->whereIn('credential_id', Credential::where('client_id', $u->client_id)->where($credFilter)->select('id'));
+        $day = fn (string $d, bool $end) => Carbon::createFromFormat('Y-m-d', $d, $tz)->{$end ? 'endOfDay' : 'startOfDay'}()->utc();
+        if (!empty($f['shared_from']))  $base->where('created_at', '>=', $day($f['shared_from'], false));
+        if (!empty($f['shared_to']))    $base->where('created_at', '<=', $day($f['shared_to'], true));
+        if (!empty($f['expires_from'])) $base->where('expires_at', '>=', $day($f['expires_from'], false));
+        if (!empty($f['expires_to']))   $base->where('expires_at', '<=', $day($f['expires_to'], true));
+
+        $dir = $f['dir'] ?? null;
+        match ($f['sort'] ?? 'status') {
+            'shared_at'  => $base->orderBy('created_at', $dir ?? 'desc'),
+            'expires_at' => $base->orderByRaw('expires_at is null')->orderBy('expires_at', $dir ?? 'asc'),
+            'name'       => $base->orderBy(Credential::select('name')->whereColumn('credvault_credentials.id', 'credvault_shares.credential_id')->limit(1), $dir ?? 'asc'),
+            default      => $base->orderByRaw('case when revoked_at is not null then 3 when expires_at is not null and expires_at <= ? then 2 when expires_at is not null and expires_at < ? then 0 else 1 end', [now(), $soon]),
+        };
+        $base->orderByDesc('created_at')->orderByDesc('id');
+
+        $page = $base->with(['credential:id,code,vault,name,type,risk,url,username,category_group,created_at,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name'])
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
+        $from = ($page->currentPage() - 1) * $page->perPage();
 
         return response()->json([
-            'status' => true,
-            'data'   => collect($page->items())->map(fn ($s) => $this->shareRow($s, $u->client_id))->values(),
-            'tabs'   => $tabs,
-            'meta'   => $this->pageMeta($page),
+            'status'  => true,
+            'data'    => collect($page->items())->values()->map(fn ($s, $i) => ['sr_no' => $from + $i + 1] + $this->shareRow($s, $u->client_id, $tz, $u))->values(),
+            'tabs'    => $tabs,
+            'filters' => array_filter(array_intersect_key($f, array_flip(['tab', 'q', 'credential_id', 'permission', 'recipient_type', 'recipient_id', 'vault', 'risk', 'type', 'group',
+                'shared_from', 'shared_to', 'expires_from', 'expires_to', 'sort', 'dir'])), fn ($v) => $v !== null && $v !== ''),
+            'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
@@ -3301,7 +3358,13 @@ class CredVaultController extends Controller
      * summary and its unlock plan — the steps, who answers each, and the last
      * decision — but none of its fields.
      */
-    protected function detail(Credential $c, User $u, array $acc): array
+    /**
+     * The View drawer. $plain (the single GET only): every stored value in plain text — passwords
+     * and secret fields, recovery key, registered email / phone, notes — for anyone allowed to
+     * reveal (View or higher), and only while the credential is open: a locked Critical Vault
+     * credential still shows nothing until its unlock, and Use Only never sees a secret.
+     */
+    protected function detail(Credential $c, User $u, array $acc, bool $plain = false): array
     {
         $pol   = Policy::for($u->client_id);
         $def   = Credential::typeDef($c->type);
@@ -3325,7 +3388,8 @@ class CredVaultController extends Controller
         if ($open) {
             $stored = $c->fields ?? [];
             $files  = collect($c->attachments ?? [])->keyBy('key');
-            $out['fields'] = collect($def['fields'])->filter(fn ($f) => $f['kind'] !== 'toggle')->map(function ($f) use ($stored, $files) {
+            $plain = $plain && $acc[0] >= self::RANK_VIEW;
+            $out['fields'] = collect($def['fields'])->filter(fn ($f) => $f['kind'] !== 'toggle')->map(function ($f) use ($stored, $files, $plain) {
                 if ($f['kind'] === 'file') {
                     $file = $files->get($f['key']);
                     return ['key' => $f['key'], 'label' => $f['label'], 'kind' => 'file', 'value' => $file['name'] ?? null,
@@ -3333,20 +3397,32 @@ class CredVaultController extends Controller
                 }
                 return [
                     'key' => $f['key'], 'label' => $f['label'], 'kind' => $f['kind'],
-                    'value' => $f['secret'] ? null : ($stored[$f['key']] ?? null),
-                    'masked' => $f['secret'], 'has_value' => filled($stored[$f['key']] ?? null),
+                    'value' => $f['secret'] && !$plain ? null : ($stored[$f['key']] ?? null),
+                    'masked' => $f['secret'] && !$plain, 'secret' => $f['secret'], 'has_value' => filled($stored[$f['key']] ?? null),
                 ];
             })->values();
             $out['recovery'] = [
                 'reg_email' => $stored['_reg_email'] ?? null,
                 'reg_phone' => $stored['_reg_phone'] ?? null,
                 'has_recovery_key' => filled($stored['_recovery_key'] ?? null),
-            ];
+            ] + ($plain ? ['recovery_key' => $stored['_recovery_key'] ?? null] : []);
             // Notes are encrypted like a secret: Use Only ("never see it") gets none.
             $out['notes'] = $acc[0] >= self::RANK_VIEW ? $c->notes : null;
             $out['has_notes'] = filled($c->notes);
             $out['attachments'] = $files->reject(fn ($a, $k) => collect($def['fields'])->contains('key', $k))
                 ->map(fn ($a) => collect($a)->except('path')->all())->values();
+            if ($plain) {
+                // Everything stored, in one flat map: every type field, the recovery details and the notes.
+                $vals = [];
+                foreach ($def['fields'] as $f) {
+                    $vals[$f['key']] = $f['kind'] === 'file' ? ($files->get($f['key'])['name'] ?? null)
+                        : ($f['kind'] === 'toggle' ? $c->twofa : ($stored[$f['key']] ?? null));
+                }
+                $out['all_values'] = $vals + [
+                    'reg_email' => $stored['_reg_email'] ?? null, 'reg_phone' => $stored['_reg_phone'] ?? null,
+                    'recovery_key' => $stored['_recovery_key'] ?? null, 'notes' => $c->notes,
+                ];
+            }
         }
 
         if ($acc[0] >= self::RANK_FULL) {
@@ -3526,29 +3602,56 @@ class CredVaultController extends Controller
         ];
     }
 
-    protected function shareRow(CredentialShare $s, ?int $clientId = null): array
+    protected const SHARE_STATE_LABELS = ['active' => 'Active', 'soon' => 'Expiring soon', 'expired' => 'Expired', 'revoked' => 'Revoked'];
+
+    /**
+     * One share, for every list and response that shows one. Beside the raw ISO times it carries the
+     * Shared By Me table's cells, ready to show: shared_on {date, time}, expires {date, left}, status_label.
+     */
+    protected function shareRow(CredentialShare $s, ?int $clientId = null, ?string $tz = null, ?User $viewer = null): array
     {
         $c = $s->credential;
+        $tz ??= config('app.timezone');
         $members = $s->recipient_type === 'team' && $clientId ? ($this->memberCounts($clientId)[$s->recipient_department_id] ?? 0) : null;
+        $state = $s->state();
+        $left = match (true) {
+            $state === 'revoked'      => 'Revoked',
+            !$s->expires_at           => 'No expiry',
+            $s->expires_at->isPast()  => 'Expired',
+            now()->diffInHours($s->expires_at) < 24 => max(1, (int) ceil(now()->diffInMinutes($s->expires_at) / 60)) . 'h left',
+            default                   => ($d = (int) ceil(now()->diffInHours($s->expires_at) / 24)) . ' ' . Str::plural('day', $d) . ' left',
+        };
+        $mine = $viewer && ($s->shared_by === $viewer->id || $c?->owner_id === $viewer->id);
 
         return [
             'id'         => $s->id,
-            'credential' => $c ? ['id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type,
+            'credential' => $c ? ['id' => $c->id, 'code' => $c->code, 'vault' => $c->vault ?? null, 'name' => $c->name, 'type' => $c->type,
                                   'type_label' => Credential::typeDef($c->type)['label'] ?? $c->type, 'category_group' => $c->category_group ?? null,
-                                  'risk' => $c->risk, 'url' => $c->url ?? null, 'updated_at' => $c->updated_at?->toIso8601String()] : null,
+                                  'risk' => $c->risk, 'url' => $c->url ?? null, 'username' => $c->username ?? null,
+                                  'created_on' => $c->created_at?->copy()->setTimezone($tz)->format('d/m/Y'),
+                                  'updated_at' => $c->updated_at?->toIso8601String()] : null,
             'recipient'  => $s->recipient_type === 'user'
                 ? ['type' => 'user', 'id' => $s->recipient_user_id, 'name' => $s->recipientUser?->name,
                    'initials' => $this->initials($s->recipientUser?->name), 'sub' => $s->recipientUser?->designation ?: 'Individual']
                 : ['type' => 'team', 'id' => $s->recipient_department_id, 'name' => $s->recipientDepartment?->name,
+                   'initials' => $this->initials($s->recipientDepartment?->name),
                    'members' => $members, 'sub' => 'Team' . ($members !== null ? " · {$members} members" : '')],
             'permission' => $s->permission,
             'permission_label' => ['use' => 'Use Only', 'view' => 'View', 'copy' => 'Copy', 'full' => 'Full Access'][$s->permission] ?? $s->permission,
             'reason'     => $s->reason,
             'shared_at'  => $s->created_at?->toIso8601String(),
+            'shared_on'  => $s->created_at ? ['date' => $s->created_at->copy()->setTimezone($tz)->format('d/m/Y'), 'time' => $s->created_at->copy()->setTimezone($tz)->format('H:i')] : null,
             'updated_at' => $s->updated_at?->toIso8601String(),
             'expires_at' => $s->expires_at?->toIso8601String(),
+            'expires'    => ['date' => $s->expires_at?->copy()->setTimezone($tz)->format('d/m/Y'), 'left' => $left],
             'revoked_at' => $s->revoked_at?->toIso8601String(),
-            'state'      => $s->state(),
+            'state'      => $state,
+            'status_label' => self::SHARE_STATE_LABELS[$state] ?? ucfirst($state),
+            'can'        => $viewer ? [
+                'view'   => (bool) $c,
+                'share'  => (bool) $c && $mine && $state !== 'revoked',
+                'revoke' => $mine && in_array($state, ['active', 'soon'], true),
+            ] : null,
         ];
     }
 
