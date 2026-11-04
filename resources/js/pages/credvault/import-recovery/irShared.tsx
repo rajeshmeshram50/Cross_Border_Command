@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PageMeta, TransferRow } from '../cvApi';
-import WorklistPager from '../../../../components/ui/WorklistPager';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { Svg, bytes, fmtDay, fmtTime, initials } from '../shared';
 
 /* Import & Recovery — the prototype's IR_I icons, irCard and irHistHtml. */
