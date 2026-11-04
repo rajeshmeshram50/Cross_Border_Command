@@ -1575,7 +1575,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      folded into these. */
   useEffect(() => {
     if (!fnfDues) return;
-    const earned = Number(fnfDues.payroll?.amount ?? 0);
+    /* Earn = the SAME gross − deductions the breakdown table shows (advance is
+       recovered on its own line, so it's excluded), not the engine's net_pay —
+       the two round independently and drifted by a paisa, which is the ₹0.01
+       the salary field and Net FnF disagreed by. Falls back to the engine net
+       when there's no breakdown, or when the two differ by more than rounding
+       (a floored / early-exit cycle keeps the authoritative figure). (#17) */
+    const bd: any = fnfDues.payroll?.breakdown;
+    const sumAmt = (arr: any, keep?: (r: any) => boolean) =>
+      (Array.isArray(arr) ? arr : []).reduce((s: number, r: any) =>
+        s + ((!keep || keep(r)) ? Number(r?.amount || 0) : 0), 0);
+    const netAmount = Number(fnfDues.payroll?.amount ?? 0);
+    const dispEarned = bd
+      ? Math.round((sumAmt(bd.earnings) - sumAmt(bd.deductions, (r: any) => r?.code !== 'advance')) * 100) / 100
+      : null;
+    const earned = (dispEarned !== null && dispEarned >= 0 && Math.abs(dispEarned - netAmount) <= 0.05)
+      ? dispEarned
+      : netAmount;
     /* An EARLY EXIT (left within the early-exit window of joining) is not put
        through payroll at all, so its zero is a definite answer rather than a
        missing figure — it prefills as an explicit 0.00 instead of the blank

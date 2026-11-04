@@ -1856,7 +1856,7 @@ function CalendarMonthGrid({
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion; holidayName?: string };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion; holidayName?: string; lateMinutes?: number };
   /* Which holiday it is, for the cell tooltip. Read from the log first so a
      past day keeps the name the server resolved for it, then from the
      forward-looking map for days the log does not reach (#93). */
@@ -1867,18 +1867,18 @@ function CalendarMonthGrid({
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, lateMinutes: logByIso.get(iso)?.lateMinutes, holidayName: holidayNameFor(iso) });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, lateMinutes: logByIso.get(iso)?.lateMinutes, holidayName: holidayNameFor(iso) });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, lateMinutes: logByIso.get(iso)?.lateMinutes, holidayName: holidayNameFor(iso) });
     if (cells.length >= 42) break;
   }
 
@@ -1958,6 +1958,20 @@ function CalendarMonthGrid({
                 <span className="att-cal-status att-tone-pill" data-status={c.status} style={{ color: tone.fg, background: tone.bg }}>
                   <span className="att-cal-status-dot" style={{ background: tone.dot }} />
                   {cellLabel}
+                </span>
+              )}
+              {/* A late arrival on a day whose main pill is something else (a
+                  missing punch, most often) would otherwise hide the late mark —
+                  show it as its own chip so both read on the cell. (#25) */}
+              {(c.lateMinutes ?? 0) > LATE_GRACE_MINUTES && c.status && c.status !== 'Late' && (
+                <span
+                  className="att-cal-status att-tone-pill"
+                  data-status="Late"
+                  title={`Late — ${fmtLateDuration(c.lateMinutes ?? 0)}`}
+                  style={{ marginTop: 2, color: STATUS_TONE['Late'].fg, background: STATUS_TONE['Late'].bg }}
+                >
+                  <span className="att-cal-status-dot" style={{ background: STATUS_TONE['Late'].dot }} />
+                  Late
                 </span>
               )}
               {halfLeave && !leaveLike && (
