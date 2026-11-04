@@ -4,7 +4,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import {
-  Box, PoSummaryCards, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
+  Box, PoSummaryCards, Stat, STAT_ICONS, ICON_X, money, initials, shortDate, TdsChips,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { PoApiError, poPaymentApi, type PoPayRequest, type PoPaymentsPayload } from '../order/api/po-api';
@@ -365,6 +365,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <span className="inv-mpr-skel inv-mpr-skel--tds" aria-hidden />
                 ) : tdsCtl ? (
                   <div className="mpr-tds" onClick={e => e.stopPropagation()}>
+                    {/* CS-935: the same TDS Deducted / Net Payable chips the PO shows once TDS is withheld. */}
+                    <TdsChips tds={tdsCtl.amount} total={tdsCtl.total} supplier={row.supplierName}
+                      ccy={po?.currency_code} docLabel={tdsCtl.docLabel} />
                     <button
                       type="button"
                       className={`mpr-tdsbtn${tdsCtl.saved ? ' mpr-tdsbtn--edit' : ''}`}

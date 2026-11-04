@@ -6547,10 +6547,15 @@
 @media (min-width: 1281px) {
   .cpf-form .cpf-stepwrap > .s4-root:not(.is-fullview) { flex: 0 0 auto; min-height: 0; }
   .s4-root:not(.is-fullview) > .s4b-wrap { flex: 0 0 auto; min-height: 0; height: auto; }
-  .s4-root:not(.is-fullview) .s4-panels { flex: 0 0 auto; min-height: 560px; }
-  .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) { overflow: clip; }
-  .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) > .s4-panel__body {
-    flex: 1 0 auto; overflow: clip; overscroll-behavior-y: auto;
+  /* CS-955: the panels are now as tall as the room left below them in the
+     SPI body (--s4-fit, measured in Step4PutawayAllocation, 520px floor), so
+     the page has nothing left to scroll and each panel has its own scrollbar:
+     still one scroller under the pointer, never a pane inside a moving page. */
+  .s4-root:not(.is-fullview) .s4-panels { flex: 0 0 auto; height: var(--s4-fit, 560px); min-height: 0; }
+  .s4-root:not(.is-fullview) :is(.s4-panel--left, .s4-panel--right) { overflow: clip; min-height: 0; }
+  .s4-root:not(.is-fullview) .s4-panel--right:not(.is-collapsed) > .s4-panel__body {
+    flex: 1 1 0; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: none;
   }
   /* ...except the box list. Grown to its content, twelve boxes made the left
      column far taller than the allocation pane, and the row stretched the

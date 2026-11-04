@@ -5324,6 +5324,68 @@
   gap: 8px;
 }
 
+/* The section cards keep their height: on a short screen the body scrolls instead of clipping the summary and the password field */
+.cvx #crd-host .ex-body > * {
+  flex-shrink: 0;
+}
+
+/* Short screens: a tighter header, cards and footer so more of the form fits before it scrolls */
+@media (max-height: 860px) {
+  .cvx #crd-host .ex-box > .mapsup-header .mapsup-hrow {
+    padding: 12px 20px !important;
+  }
+
+  .cvx #crd-host .ex-box .crd-hicon {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .cvx #crd-host .ex-box .mapsup-close {
+    width: 38px;
+    height: 38px;
+  }
+
+  .cvx #crd-host .ex-box .mapsup-body {
+    padding: 10px 16px !important;
+  }
+
+  .cvx #crd-host .ex-box .mapsup-seccard {
+    padding: 10px 14px 12px 18px !important;
+  }
+
+  .cvx #crd-host .ex-box > .mapsup-footer {
+    padding: 10px 16px 12px !important;
+  }
+}
+
+/* Narrow screens: options one per row, and the footer stacks, its note above full-width buttons */
+@media (max-width: 640px) {
+  .cvx #crd-host .ex-box .gp-opts,
+  .cvx #crd-host .ex-box .gp-modes {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cvx #crd-host .ex-box .ex-cats {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cvx #crd-host .crd-box.ex-box .mapsup-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px;
+  }
+
+  .cvx #crd-host .ex-box .mapsup-footer__actions {
+    width: 100% !important;
+  }
+
+  .cvx #crd-host .ex-box .mapsup-footer__btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
 .cvx #crd-host .ex-box .mapsup-sechead {
   position: relative;
 }
@@ -17177,6 +17239,34 @@
   min-height: 58px;
   box-sizing: border-box;
   border-radius: 11px;
+}
+
+/* Team Vault: the tabs + search row is 48px (40px tabs: 48 less the 1px border and 3px padding each side; 48px search); only heights and padding change */
+.cvx .tv-split .tvc-top .smt-proctype-tabs {
+  height: 48px;
+  padding: 3px !important;
+  box-sizing: border-box;
+}
+
+.cvx .tv-split .tvc-top .smt-proctype-tab {
+  height: 100%;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  box-sizing: border-box;
+}
+
+.cvx .tv-split .tvc-top .smt-proctype-tab > :first-child {
+  max-height: 30px;
+  max-width: 30px;
+}
+
+.cvx .tv-split .tvc-top .bst-search.whm-main-search {
+  height: 48px;
+  min-height: 48px;
+}
+
+.cvx .tv-split .tvc-top .bst-search.whm-main-search input {
+  height: 100%;
 }
 
 .cvx .tv-split .tv-pane__bd {

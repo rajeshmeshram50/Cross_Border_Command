@@ -1231,6 +1231,28 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [rightOpen, setRightOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
   const panelsRef = useRef<HTMLDivElement>(null);
+  /* CS-955: the panels take the height left in the SPI body below them
+     (--s4-fit, 520px floor), so on desktop the page stays still and each
+     panel scrolls on its own. Re-measured on resize and whenever anything
+     above them (the brief, the stage cards) changes height. */
+  useEffect(() => {
+    const el = panelsRef.current;
+    const body = el?.closest('.spi-dt-body') as HTMLElement | null;
+    if (!el || !body) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+      const pad = parseFloat(getComputedStyle(body).paddingBottom) || 0;
+      el.style.setProperty('--s4-fit', `${Math.max(520, Math.floor(body.clientHeight - top - pad))}px`);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(body);
+    for (let n: Element | null = el; n && n !== body; n = n.parentElement) {
+      for (let s = n.previousElementSibling; s; s = s.previousElementSibling) ro.observe(s);
+    }
+    window.addEventListener('resize', fit);
+    return () => { ro.disconnect(); window.removeEventListener('resize', fit); };
+  }, []);
   const [fs, setFs] = useState(false);
   const toggleFs = () => setFs(v => !v);
   useEffect(() => {

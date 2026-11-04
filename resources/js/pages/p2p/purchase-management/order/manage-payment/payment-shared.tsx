@@ -250,6 +250,32 @@ const ICON_WALLET = (
   </svg>
 );
 
+/** TDS Deducted + Net Payable chips, shown beside the TDS button once TDS is withheld (PO and SPI alike). */
+export function TdsChips({ tds, total, supplier, ccy, docLabel = 'PO' }: {
+  tds: number; total: number; supplier: string; ccy?: string | null; docLabel?: string;
+}) {
+  const money = moneyIn(ccy);
+  if (!(tds > 0)) return null;
+  return (
+    <>
+      <span className="mpr-chip mpr-chip--cut" title={`Tax withheld at source on this ${docLabel} · counted towards paid`}>
+        <span className="mpr-chip__ico">{ICON_TDS}</span>
+        <span className="mpr-chip__txt">
+          <span className="mpr-chip__k">TDS Deducted</span>
+          <b className="mpr-chip__v">{money(tds)}</b>
+        </span>
+      </span>
+      <span className="mpr-chip mpr-chip--net" title={`Payable to ${supplier} after TDS · ${money(total)} less ${money(tds)}`}>
+        <span className="mpr-chip__ico">{ICON_WALLET}</span>
+        <span className="mpr-chip__txt">
+          <span className="mpr-chip__k">Net Payable</span>
+          <b className="mpr-chip__v">{money(Math.max(0, total - tds))}</b>
+        </span>
+      </span>
+    </>
+  );
+}
+
 export function TdsStrip({ tds, total, supplier, onOpen, locked = false, ccy, international = false }: {
   tds: number; total: number; supplier: string; onOpen: () => void;
   /** A payment is recorded: the button only views the TDS. */
@@ -263,24 +289,7 @@ export function TdsStrip({ tds, total, supplier, onOpen, locked = false, ccy, in
   const toast = useToast();
   return (
     <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
-      {tds > 0 && (
-        <>
-          <span className="mpr-chip mpr-chip--cut" title="Tax withheld at source on this PO · counted towards paid">
-            <span className="mpr-chip__ico">{ICON_TDS}</span>
-            <span className="mpr-chip__txt">
-              <span className="mpr-chip__k">TDS Deducted</span>
-              <b className="mpr-chip__v">{money(tds)}</b>
-            </span>
-          </span>
-          <span className="mpr-chip mpr-chip--net" title={`Payable to ${supplier} after TDS · ${money(total)} less ${money(tds)}`}>
-            <span className="mpr-chip__ico">{ICON_WALLET}</span>
-            <span className="mpr-chip__txt">
-              <span className="mpr-chip__k">Net Payable</span>
-              <b className="mpr-chip__v">{money(Math.max(0, total - tds))}</b>
-            </span>
-          </span>
-        </>
-      )}
+      <TdsChips tds={tds} total={total} supplier={supplier} ccy={ccy} />
       {/* Frozen rather than disabled: a click on it has to say why, not go unanswered. */}
       <button
         type="button"
