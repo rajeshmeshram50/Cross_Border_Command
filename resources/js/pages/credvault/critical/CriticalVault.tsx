@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import DataTable, { ActionCell, PillCell, type DataTableColumn } from '../../../components/ui/DataTable';
-import { cvApi, type CredentialRow, type PageMeta } from '../cvApi';
-import { credentialColumns, cvTableProps, emptyState, TwoLine } from '../shared';
-import { CvBrief, CvPage, CvStrip, IC, StripBtn, errMsg, mmss, useCvMeta, useDebounced, useNow } from '../shared';
+import WorklistPager from '../../../components/ui/WorklistPager';
+import type { CredentialRow, LockStep, PageMeta } from '../cvApi';
+import { ActBtn, CvBrief, CvCard, CvPage, CvStrip, CvTabsRow, IC, StripBtn, Svg, errMsg, mmss, useDebounced, useNow } from '../shared';
+import CredentialTable from '../my-vault/CredentialTable';
 import CredentialFormModal from '../form/CredentialFormModal';
 import ViewDrawer from '../my-vault/ViewDrawer';
 import ShareModal from '../my-vault/ShareModal';
 import BinConfirm from '../my-vault/BinConfirm';
 import UnlockModal from './UnlockModal';
+import { cvData } from './cvData';
 
 const SHIELD = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
 const BRIEF_IC = {
@@ -17,12 +18,12 @@ const BRIEF_IC = {
   timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/>',
 };
 
-const TABS = [
+type TabKey = 'all' | 'mine' | 'team';
+const TABS: { key: TabKey; api: string; label: string; icon: string }[] = [
   { key: 'all', api: 'all', label: 'All Critical Credentials', icon: SHIELD },
   { key: 'mine', api: 'mine', label: 'My Critical Credentials', icon: IC.user },
   { key: 'team', api: 'others', label: 'Teams Critical Credentials', icon: IC.users },
-] as const;
-type TabKey = typeof TABS[number]['key'];
+];
 
 type Overlay =
   | { kind: 'add' }
@@ -33,31 +34,53 @@ type Overlay =
   | { kind: 'bin'; row: CredentialRow }
   | null;
 
+const STAGE: Record<LockStep, string> = { admin: 'Vault Admin', manager: 'Manager', otp: 'Authenticator' };
+
+/** Access Status, as the prototype draws it (cv-acc): Locked, Pending, In progress, or Unlocked with its countdown. */
 function AccessCell({ row, left }: { row: CredentialRow; left: number | null }) {
   const a = row.unlock;
-  if (!a) return <TwoLine top={<PillCell value="Open" />} sub="No unlock steps" />;
+  if (!a) return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b">Open</span><span className="cv-acc__t">No unlock steps</span></div>;
   if (a.state === 'open') {
     const l = Math.max(0, left ?? 0);
-    return <TwoLine top={<PillCell value="Unlocked" tone={l < 60 ? 'warning' : 'success'} />} sub={<><b>{mmss(l)}</b> left</>} />;
+    const pct = a.total_seconds ? Math.min(100, (l / a.total_seconds) * 100) : 0;
+    return (
+      <div className={`cv-acc cv-acc--open${l < 60 ? ' is-low' : ''}`}>
+        <span className="cv-acc__b"><Svg d={IC.unlock} size={12} />Unlocked</span>
+        <span className="cv-acc__t"><b>{mmss(l)}</b> left</span>
+        <span className="cv-acc__bar"><i style={{ width: `${pct}%` }} /></span>
+      </div>
+    );
   }
   if (a.state === 'pending') {
-    return <TwoLine top={<PillCell value="Pending" tone="warning" />} sub={a.waiting_for ? `${a.waiting_for.role} · ${a.waiting_for.name}` : a.label} />;
+    return (
+      <div className="cv-acc cv-acc--wait">
+        <span className="cv-acc__b"><span className="cp-spin cp-spin--sm" />Pending</span>
+        <span className="cv-acc__t">{a.waiting_for ? `${a.waiting_for.role} · ${a.waiting_for.name}` : a.label}</span>
+      </div>
+    );
   }
-  if (a.state === 'progress') return <TwoLine top={<PillCell value="In progress" tone="info" />} sub={a.label} />;
-  return <TwoLine top={<PillCell value="Locked" tone="danger" />} sub="Approval needed" />;
+  if (a.state === 'progress') {
+    return (
+      <div className="cv-acc cv-acc--prog">
+        <span className="cv-acc__b"><Svg d={IC.clock} size={12} />In progress</span>
+        <span className="cv-acc__t">{a.step ? `Step ${a.step.number} of ${a.step.of}` : a.label}{a.stage ? ` · ${STAGE[a.stage]}` : ''}</span>
+      </div>
+    );
+  }
+  return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b"><Svg d={IC.lock} size={12} />Locked</span><span className="cv-acc__t">Approval needed</span></div>;
 }
 
-function lockAction(row: CredentialRow): { icon: string; tone: 'info' | 'success' | 'warning' | 'danger'; title: string } {
+/** The row's unlock button: its icon, title and colour follow the access state (cv-lk). */
+function lockAction(row: CredentialRow): { icon: string; cls: string; title: string } {
   const s = row.unlock?.state;
-  if (!row.unlock) return { icon: 'ri-eye-line', tone: 'info', title: 'View credential' };
-  if (s === 'open') return { icon: 'ri-lock-unlock-line', tone: 'success', title: 'Unlocked — view credential' };
-  if (s === 'pending') return { icon: 'ri-time-line', tone: 'warning', title: 'Waiting for approval — view request' };
-  if (s === 'progress') return { icon: 'ri-time-line', tone: 'warning', title: 'Continue unlocking' };
-  return { icon: 'ri-lock-line', tone: 'danger', title: 'Unlock credential' };
+  if (!row.unlock) return { icon: IC.view, cls: '', title: 'View credential' };
+  if (s === 'open') return { icon: IC.unlock, cls: 'cv-lk cv-lk--open', title: 'Unlocked — view credential' };
+  if (s === 'pending') return { icon: IC.clock, cls: 'cv-lk cv-lk--wait', title: 'Waiting for approval — view request' };
+  if (s === 'progress') return { icon: IC.clock, cls: 'cv-lk cv-lk--wait', title: 'Continue unlocking' };
+  return { icon: IC.lock, cls: 'cv-lk cv-lk--locked', title: 'Unlock credential' };
 }
 
 export default function CriticalVault() {
-  const { typeOf } = useCvMeta();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<TabKey>('all');
   const [q, setQ] = useState('');
@@ -87,7 +110,7 @@ export default function CriticalVault() {
     const my = ++seq.current;
     if (!silent) setLoading(true);
     try {
-      const r = await cvApi.list({ risk: 'critical', tab: apiTab, q: dq.trim() || undefined, page, per_page: perPage });
+      const r = await cvData.list({ risk: 'critical', tab: apiTab, q: dq.trim() || undefined, page, per_page: perPage });
       if (my !== seq.current) return;
       if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
       setRows(r.data);
@@ -128,36 +151,15 @@ export default function CriticalVault() {
 
   const refresh = useCallback(() => { load(true); }, [load]);
   const close = useCallback(() => setOverlay(null), []);
-
   const openRow = useCallback((r: CredentialRow) => setOverlay(r.unlock ? { kind: 'unlock', id: r.id } : { kind: 'view', id: r.id }), []);
-  const emptyText = error ? `Could not load critical credentials — ${error}`
-    : dq ? 'No credentials match your search'
-      : tab === 'team' ? 'Critical credentials owned by your team will appear here.'
-        : tab === 'mine' ? 'Critical credentials you add will appear here.' : 'Critical credentials you add, or that your team owns, will appear here.';
 
-  const columns = useMemo<DataTableColumn<CredentialRow>[]>(() => [
-    ...credentialColumns({ critical: true, typeOf }),
-    {
-      header: 'Access Status', id: 'access', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <AccessCell row={r} left={leftOf(r)} />,
-    },
-    {
-      header: 'Action', id: 'actions', meta: { width: '8%', align: 'center' },
-      cell: ({ row: { original: r } }) => {
-        const lk = lockAction(r);
-        return (
-          <div className="d-flex justify-content-center gap-1">
-            <ActionCell title="Edit" icon="edit-svg" disabled={!r.can?.edit} onClick={() => setOverlay({ kind: 'edit', id: r.id })} />
-            <ActionCell title={lk.title} icon={lk.icon} tone={lk.tone} onClick={() => openRow(r)} />
-            <ActionCell title="Move to Bin" icon="trash-svg" tone="danger" disabled={!r.can?.delete} onClick={() => setOverlay({ kind: 'bin', row: r })} />
-          </div>
-        );
-      },
-    },
-  ], [leftOf, openRow, typeOf]);
+  const emptyTitle = error ? 'Could not load critical credentials' : dq ? 'No credentials match your search' : 'No critical credentials yet';
+  const emptySub = error ?? (dq ? 'Try a different credential ID, name, category, username or owner.'
+    : tab === 'team' ? 'Critical credentials owned by your team will appear here.'
+      : tab === 'mine' ? 'Critical credentials you add will appear here.' : 'Critical credentials you add, or that your team owns, will appear here.');
 
   return (
-    <CvPage className="mv-page cv-page">
+    <CvPage className="mv-page tv-page cv-page">
       <CvStrip
         icon={SHIELD}
         title="Critical Vault"
@@ -177,14 +179,32 @@ export default function CriticalVault() {
         ]}
       />
 
-      <DataTable<CredentialRow> data={rows} columns={columns}
-        {...cvTableProps({
-          tabs: TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs ? tabs[t.api] ?? 0 : undefined })),
-          activeTab: tab, onTabChange: k => setTab(k as TabKey), search: q, onSearch: setQ,
-          placeholder: 'Search by credential ID, name, category, username or owner...',
-          loading, empty: emptyState(emptyText, 'ri-shield-keyhole-line'), minWidth: 1200,
-          paging: { meta, page, setPage, setPerPage },
-        })} />
+      <CvCard pane>
+        <CvTabsRow tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs ? tabs[t.api] ?? 0 : null }))}
+          active={tab} onTab={k => setTab(k as TabKey)} search={q} onSearch={setQ}
+          placeholder="Search by credential ID, name, category, username or owner..." />
+
+        <div className="tvc-list">
+          <CredentialTable critical rows={rows} startIndex={(page - 1) * perPage} loading={loading}
+            emptyTitle={emptyTitle} emptySub={emptySub}
+            onAdd={tab !== 'team' && !dq && !error ? () => setOverlay({ kind: 'add' }) : undefined}
+            extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} /> }}
+            actions={r => {
+              const lk = lockAction(r);
+              return (
+                <>
+                  <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!r.can?.edit} onClick={() => setOverlay({ kind: 'edit', id: r.id })} />
+                  <ActBtn icon={lk.icon} title={lk.title} className={lk.cls} onClick={() => openRow(r)} />
+                  <ActBtn icon={IC.del} title="Move to Bin" tone="danger" disabled={!r.can?.delete} onClick={() => setOverlay({ kind: 'bin', row: r })} />
+                </>
+              );
+            }} />
+
+          <WorklistPager className="wl-teal" loading={loading}
+            total={meta?.total ?? 0} page={meta?.current_page ?? page} pageSize={perPage}
+            onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
+        </div>
+      </CvCard>
 
       {overlay?.kind === 'add' && (
         <CredentialFormModal critical onClose={close}

@@ -16933,6 +16933,37 @@
   height: 100%;
 }
 
+/* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
+.cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
+.cvx .cv-acc__b { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 10.5px; font-weight: 800; border: 1px solid; }
+.cvx .cv-acc__t { max-width: 128px; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; font-weight: 600; color: #6a869c; white-space: nowrap; }
+.cvx .cv-acc--locked .cv-acc__b { color: #475569; background: #f1f5f9; border-color: #dbe3ea; }
+.cvx .cv-acc--wait .cv-acc__b { color: #b45309; background: #fffbeb; border-color: #fcd9a0; }
+.cvx .cv-acc--prog .cv-acc__b { color: #0369a1; background: #f0f9ff; border-color: #bae6fd; }
+.cvx .cv-acc--open .cv-acc__b { color: #047857; background: linear-gradient(180deg, #f0fdf8, #dcfce9); border-color: #a7f3d0; }
+.cvx .cv-acc--open .cv-acc__t b { font-size: 12.5px; font-weight: 800; color: #047857; font-variant-numeric: tabular-nums; }
+.cvx .cv-acc__bar { width: 96px; height: 4px; border-radius: 999px; background: #e2f3ec; overflow: hidden; }
+.cvx .cv-acc__bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #34d399, #059669); transition: width 1s linear; }
+.cvx .cv-acc--open.is-low .cv-acc__t b { color: #be123c; }
+.cvx .cv-acc--open.is-low .cv-acc__bar i { background: linear-gradient(90deg, #fb7185, #e11d48); }
+.cvx .cv-acc .cp-spin.cp-spin--sm { width: 10px; height: 10px; border-width: 2px; border-color: #fde68a; border-top-color: #d97706; }
+
+/* button.whm-act sets colour, background and border with !important, so the states need it too */
+.cvx button.whm-act.cv-lk--locked { color: #475569 !important; }
+.cvx button.whm-act.cv-lk--wait { color: #b45309 !important; background: #fffbeb !important; border-color: #fcd9a0 !important; }
+.cvx button.whm-act.cv-lk--open { color: #fff !important; background: linear-gradient(135deg, #34d399, #059669) !important; border-color: transparent !important; box-shadow: 0 6px 14px -6px rgba(5, 150, 105, .6); }
+.cvx button.whm-act.cv-lk--locked:hover,
+.cvx button.whm-act.cv-lk--wait:hover { color: #fff !important; }
+.cvx button.whm-act.cv-lk--wait:hover { background: linear-gradient(135deg, #fbbf24, #d97706) !important; border-color: transparent !important; }
+.cvx button.whm-act.cv-lk--open:hover { filter: brightness(1.06); }
+
+/* Above phone width the rail is a fixed 48px; on a phone the tabs wrap, so it grows with them */
+@media (min-width: 761px) {
+  .cvx .tvc-top .smt-proctype-tabs {
+    height: 48px;
+  }
+}
+
 .cvx .tv-split .tv-pane__bd {
   padding: 8px;
 }

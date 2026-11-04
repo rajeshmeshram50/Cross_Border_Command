@@ -491,11 +491,11 @@ export function UpdatedCell({ iso }: { iso?: string | null }) {
   return <div className="whm-idcell"><b className="mv-upd-d">{fmtDay(iso)}</b><span className="whm-iddate">{fmtTime(iso)}</span></div>;
 }
 
-export function ActBtn({ icon, title, onClick, tone, disabled }: {
-  icon: string; title: string; onClick: () => void; tone?: 'edit' | 'danger'; disabled?: boolean;
+export function ActBtn({ icon, title, onClick, tone, disabled, className }: {
+  icon: string; title: string; onClick: () => void; tone?: 'edit' | 'danger'; disabled?: boolean; className?: string;
 }) {
   return (
-    <button type="button" className={`whm-act${tone ? ` whm-act--${tone}` : ''}`} title={title} aria-label={title}
+    <button type="button" className={`whm-act${tone ? ` whm-act--${tone}` : ''}${className ? ` ${className}` : ''}`} title={title} aria-label={title}
       onClick={onClick} disabled={disabled} style={disabled ? { opacity: .35, cursor: 'not-allowed' } : undefined}>
       <Svg d={icon} size={14} />
     </button>

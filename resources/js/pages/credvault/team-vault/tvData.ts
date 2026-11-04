@@ -12,7 +12,7 @@ export const TV_DUMMY = false;
 
 /* ── Organisation ─────────────────────────────────────────────────────────── */
 
-const ADMIN = 'Rajesh Healthcare';
+export const ADMIN = 'Rajesh Healthcare';
 
 /** Level counts per department, in LV_ORDER: admin, hod, tl, exec, emp, intern. */
 const DEPTS: { id: number; name: string; hod: string; lv: number[] }[] = [
@@ -92,7 +92,7 @@ const STRENGTH = ['', 'Weak', 'Fair', 'Good', 'Strong'];
  * [type, name, sub line, username, owner, department id, risk, strength 0-4
  *  (0 = no password), 2FA, shared with you, hours since last update]
  */
-type Seed = [string, string, string, string, string, number, Risk, number, Twofa, boolean, number];
+export type Seed = [string, string, string, string, string, number, Risk, number, Twofa, boolean, number];
 
 const TEAM: Seed[] = [
   ['login', 'Tally Prime Cloud', 'https://tallyprime.cloud', 'accounts@inorbvict.com', 'Ruchi Gupta', 7, 'high', 3, 'yes', false, 5],
@@ -145,7 +145,8 @@ const MINE: Seed[] = [
 const NOW = Date.UTC(2026, 10, 1, 6, 36);
 const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOString();
 
-function toRow([type, name, sub, username, owner, deptId, risk, strength, twofa, shared, hours]: Seed, i: number, scope: 'team' | 'personal'): CredentialRow {
+/** A dummy row in the API's shape; Critical Vault's dummy data builds on it too (critical/cvData.ts). */
+export function toRow([type, name, sub, username, owner, deptId, risk, strength, twofa, shared, hours]: Seed, i: number, scope: 'team' | 'personal'): CredentialRow {
   const [type_label, category_group] = TYPES[type];
   const dept = DEPTS.find(d => d.id === deptId);
   const via: Via = scope === 'personal' ? 'owner' : shared ? 'share' : 'team';
@@ -174,7 +175,7 @@ type ListQuery = Parameters<typeof cvApi.list>[0];
 type ListResult = ListResponse<CredentialRow> & { member: Loose | null };
 
 /** A short pause, so loading states still show in the design build. */
-const later = <T>(value: T) => new Promise<T>(r => setTimeout(() => r(value), 250));
+export const later = <T>(value: T) => new Promise<T>(r => setTimeout(() => r(value), 250));
 
 const dummy = {
   departments: () => later<Loose>({

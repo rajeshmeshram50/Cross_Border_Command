@@ -81,7 +81,12 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
 
   const loadList = () => {
     setListErr(null);
-    const own = scoped && user ? tvData.organisation().then(d => setBranch(ownBranch(d.members ?? [], Number(user.id)))) : Promise.resolve();
+    // Only the viewer's own department: HR can file a report from another department under them, but that department is not theirs to see.
+    const own = scoped && user ? tvData.organisation().then(d => {
+      const b = ownBranch(d.members ?? [], Number(user.id));
+      const dep = b[0]?.department?.id;
+      setBranch(dep ? b.filter(m => m.department?.id === dep) : b);
+    }) : Promise.resolve();
     Promise.all([tvData.departments(), own]).then(([l]) => setList(l)).catch(e => setListErr(errMsg(e)));
   };
   // The viewer is fixed for the page's life.
