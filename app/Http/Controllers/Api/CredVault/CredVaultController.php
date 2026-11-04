@@ -3867,12 +3867,11 @@ class CredVaultController extends Controller
     /** Every credential the user can reach by any route — the base of each list. */
     protected function visibleQuery(User $u): Builder
     {
-        $dept  = $this->deptOf($u);
-        $heads = $this->headedDepts($u);
-        $admin = $this->isAdmin($u);
-        $teams = array_values(array_unique(array_filter(array_merge([$dept], $heads))));
+        $heads   = $this->headedDepts($u);
+        $admin   = $this->isAdmin($u);
+        $subtree = $this->reportsSubtree($u);
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $teams, $admin) {
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $subtree, $admin) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($admin) {
                 $w->orWhere('scope', 'team');
@@ -3880,8 +3879,13 @@ class CredVaultController extends Controller
                 // The branch admin sits at the top of the Team Vault hierarchy —
                 // every team credential in their branch is theirs to see.
                 $w->orWhere(fn ($t) => $t->where('scope', 'team')->where('branch_id', $u->branch_id));
-            } elseif ($teams) {
-                $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('department_id', $teams));
+            } elseif ($heads || $subtree) {
+                // Reporting line: a HOD sees their department, anyone else sees the
+                // team credentials owned by the people under them (reports, recursively).
+                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where(function ($x) use ($heads, $subtree) {
+                    if ($heads)   $x->orWhereIn('department_id', $heads);
+                    if ($subtree) $x->orWhereIn('owner_id', $subtree);
+                }));
             }
         });
     }
@@ -3902,9 +3906,10 @@ class CredVaultController extends Controller
     {
         if ($creds->isEmpty()) return [];
 
-        $dept  = $this->deptOf($u);
-        $heads = $this->headedDepts($u);
-        $admin = $this->isAdmin($u);
+        $dept    = $this->deptOf($u);
+        $heads   = $this->headedDepts($u);
+        $admin   = $this->isAdmin($u);
+        $subtree = $this->reportsSubtree($u);
         $shareRank = [];
         CredentialShare::live()->whereIn('credential_id', $creds->pluck('id')->all())
             ->where(function ($w) use ($u, $dept) {
@@ -3924,7 +3929,8 @@ class CredVaultController extends Controller
                 // The branch admin manages every team credential in their branch.
                 elseif ($u->user_type === 'branch_user' && $u->branch_id && (int) $c->branch_id === (int) $u->branch_id) $best = [self::RANK_FULL, 'admin'];
                 elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = [self::RANK_FULL, 'hod'];
-                elseif ($c->department_id && $c->department_id === $dept) $best = [self::RANK_COPY, 'team'];
+                // A manager manages the team credentials of everyone under them — view, edit, share, delete.
+                elseif (in_array((int) $c->owner_id, $subtree, true)) $best = [self::RANK_FULL, 'team'];
             }
             if (isset($shareRank[$c->id]) && (!$best || $shareRank[$c->id] > $best[0])) $best = [$shareRank[$c->id], 'share'];
             if ($best) $out[$c->id] = $best;
@@ -4006,6 +4012,43 @@ class CredVaultController extends Controller
             ->where(fn ($w) => $w->where('user_id', $u->id)->when($u->employee_code, fn ($x) => $x->orWhere('emp_code', $u->employee_code)))
             ->orderByRaw('case when user_id = ? then 0 else 1 end', [$u->id])
             ->first(['id', 'user_id', 'emp_code', 'client_id', 'department_id', 'reporting_manager_id', 'reporting_manager_user_id']));
+    }
+
+    /**
+     * Every login below this user in the reporting tree — direct reports, their
+     * reports, and so on down (TL → executive → intern). A report points up by
+     * employee id (reporting_manager_id) or, for a branch/login manager, by login
+     * id (reporting_manager_user_id). Self is not included (handled as owner).
+     */
+    protected function reportsSubtree(User $u): array
+    {
+        return $this->memo("subtree:{$u->id}", function () use ($u) {
+            $emp          = $this->employeeOf($u);
+            $frontierEmp  = $emp ? [$emp->id] : [];
+            $frontierUser = [$u->id];
+            $seenEmp      = [];
+            $userIds      = [];
+
+            for ($depth = 0; ($frontierEmp || $frontierUser) && $depth < 50; $depth++) {
+                $children = Employee::where('client_id', $u->client_id)
+                    ->where(function ($w) use ($frontierEmp, $frontierUser) {
+                        if ($frontierEmp)  $w->orWhereIn('reporting_manager_id', $frontierEmp);
+                        if ($frontierUser) $w->orWhereIn('reporting_manager_user_id', $frontierUser);
+                    })
+                    ->when($seenEmp, fn ($q) => $q->whereNotIn('id', $seenEmp))
+                    ->get(['id', 'user_id']);
+                if ($children->isEmpty()) break;
+
+                $frontierEmp = $frontierUser = [];
+                foreach ($children as $ch) {
+                    $seenEmp[]     = $ch->id;
+                    $frontierEmp[] = $ch->id;
+                    if ($ch->user_id) { $frontierUser[] = (int) $ch->user_id; $userIds[] = (int) $ch->user_id; }
+                }
+            }
+
+            return array_values(array_unique($userIds));
+        });
     }
 
     protected function deptOf(User $u): ?int
