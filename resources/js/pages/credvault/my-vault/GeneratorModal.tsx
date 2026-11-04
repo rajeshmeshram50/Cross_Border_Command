@@ -19,6 +19,8 @@ type BoolKey = 'upper' | 'lower' | 'num' | 'sym' | 'amb' | 'cap';
 
 const SLIDERS = 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6';
 const SEPS: [Opts['sep'], string][] = [['-', 'Hyphen'], ['.', 'Dot'], ['_', 'Underscore'], [' ', 'Space']];
+const STR_NAME = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+const CLIPBOARD_CLEAR_SECONDS = 30;
 
 /** The meter class and fill for the API's level, as the prototype's gpLevel(). */
 function levelOf(level: string): [string, number] {
@@ -48,7 +50,7 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
   const toast = useToast();
   const { meta } = useCvMeta();
   const [o, setO] = useState<Opts>({ mode: 'chars', len: 20, words: 8, upper: true, lower: true, num: true, sym: true, amb: true, sep: '-', cap: true });
-  const [res, setRes] = useState<{ password: string; bits: number; level: string } | null>(null);
+  const [res, setRes] = useState<{ password: string; bits: number; level: string; strength: number; meets_policy: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
   const seeded = useRef(false);
@@ -98,7 +100,10 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
 
   const copy = async () => {
     if (!res?.password) return;
-    try { await copyText(res.password); toast.success('Password copied to clipboard'); } catch { toast.error('Could not copy', 'Your browser blocked clipboard access.'); }
+    try {
+      await copyText(res.password, CLIPBOARD_CLEAR_SECONDS);
+      toast.success('Password copied to clipboard', `The clipboard clears in ${CLIPBOARD_CLEAR_SECONDS} seconds.`);
+    } catch { toast.error('Could not copy', 'Your browser blocked clipboard access.'); }
   };
 
   const tg = (k: BoolKey, lbl: string, sub: string) => (
@@ -142,6 +147,11 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
                 <span className="gp-meter__lbl">{res?.level ?? ''}</span>
                 <span className="gp-meter__bits">{res ? `~${res.bits} bits` : ''}</span>
               </div>
+              {res && !res.meets_policy && (
+                <span className="crd-err cv-ferr" role="alert">
+                  Below your company&apos;s minimum strength ({STR_NAME[meta?.policy.min_strength ?? 0] || 'policy'}) — a credential can&apos;t be saved with it. Use a longer password or turn on more character sets.
+                </span>
+              )}
 
               <div className="gp-grid">
                 <div className="mapsup-seccard gp-card">
@@ -205,7 +215,9 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={() => generate(o)}><Svg icon="gen" size={13} />Regenerate</button>
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={copy} disabled={!res}><Svg icon="copy" size={13} />Copy</button>
                 {onUse && (
-                  <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" disabled={!res} onClick={() => res && onUse(res.password)}>
+                  <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" disabled={!res || !res.meets_policy}
+                    title={res && !res.meets_policy ? 'This password is below the policy minimum strength' : undefined}
+                    onClick={() => res && res.meets_policy && onUse(res.password)}>
                     <Svg icon="plus" size={13} sw={2.6} />Use in New Credential
                   </button>
                 )}
