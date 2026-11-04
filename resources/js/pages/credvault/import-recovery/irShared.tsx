@@ -37,19 +37,18 @@ export function fmtIcon(f?: string | null): string {
   return IR_I.file;
 }
 
-/** The prototype's irCard: a titled panel. */
 export function IrCard({ icon, title, sub, extra, className, children }: {
   icon: string; title: ReactNode; sub: ReactNode; extra?: ReactNode; className?: string; children: ReactNode;
 }) {
   return (
-    <div className={`irc${className ? ` ${className}` : ''}`}>
-      <div className="irc-hd">
-        <span className="irc-hd__ico"><Svg d={icon} size={17} /></span>
-        <div><b>{title}</b><small>{sub}</small></div>
+    <section className={`tv-pane tv-pane--r${className ? ` ${className}` : ''}`} style={{ minHeight: 0 }}>
+      <div className="tv-pane__hd">
+        <span className="tv-pane__ico"><Svg d={icon} size={14} sw={2.1} /></span>
+        <div className="tv-pane__t"><b>{title}</b><small>{sub}</small></div>
         {extra}
       </div>
-      <div className="irc-bd">{children}</div>
-    </div>
+      <div className="tv-pane__bd tvc-bd">{children}</div>
+    </section>
   );
 }
 
@@ -131,24 +130,21 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage }: {
   }
 
   return (
-    <div className="irc ir-hist">
-      <div className="irc-hd">
-        <span className="irc-hd__ico"><Svg d={IR_I.hist} size={17} /></span>
-        <div>
-          <b>{kind === 'import' ? 'Imported Credentials History' : 'Downloaded Backup History'}</b>
-          <small>{kind === 'import' ? 'Every import into My Vault — who ran it, which file and what was checked' : 'Every backup download — format, scope and whether it was password-locked'}</small>
+    <IrCard icon={IR_I.hist} className="ir-hist"
+      title={kind === 'import' ? 'Imported Credentials History' : 'Downloaded Backup History'}
+      sub={kind === 'import' ? 'Every import into My Vault — who ran it, which file and what was checked' : 'Every backup download — format, scope and whether it was password-locked'}
+      extra={<span className="znm-flag mv-2on">{meta?.total ?? 0} records</span>}>
+      <div className="tvc-list">
+        <div className="whm-tblwrap">
+          <table className="whm-tbl mv-tbl">
+            <colgroup>{head.map(c => <col key={c[0]} style={{ width: c[2] }} />)}</colgroup>
+            <thead><tr>{head.map(c => <th key={c[0]} className={`ir-a${c[1]}`}>{c[0]}</th>)}</tr></thead>
+            <tbody>{body}</tbody>
+          </table>
         </div>
-        <span className="irc-tag">{meta?.total ?? 0} records</span>
+        <WorklistPager className="wl-teal" loading={loading} total={error ? 0 : meta?.total ?? 0}
+          page={meta?.current_page ?? 1} pageSize={meta?.per_page ?? 10} onPage={onPage} />
       </div>
-      <div className="whm-tblwrap">
-        <table className="whm-tbl mv-tbl">
-          <colgroup>{head.map(c => <col key={c[0]} style={{ width: c[2] }} />)}</colgroup>
-          <thead><tr>{head.map(c => <th key={c[0]} className={`ir-a${c[1]}`}>{c[0]}</th>)}</tr></thead>
-          <tbody>{body}</tbody>
-        </table>
-      </div>
-      <WorklistPager className="wl-teal" loading={loading} total={error ? 0 : meta?.total ?? 0}
-        page={meta?.current_page ?? 1} pageSize={meta?.per_page ?? 10} onPage={onPage} />
-    </div>
+    </IrCard>
   );
 }

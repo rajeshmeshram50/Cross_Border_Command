@@ -10435,79 +10435,6 @@
   gap: 14px;
 }
 
-.cvx .irc {
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border: 1px solid #d7eef4;
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 14px 30px -26px rgba(8, 79, 99, .85);
-}
-
-.cvx .irc-hd {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(100deg, #f0fdff, #e3f8fc 60%, #d3f4fa);
-  border-bottom: 1px solid #d7eef4;
-}
-
-.cvx .irc-hd__ico {
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, #0b4f63, #0891b2 60%, #22d3ee);
-  box-shadow: 0 6px 14px -6px rgba(8, 145, 178, .7);
-}
-
-.cvx .irc-hd>div {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-}
-
-.cvx .irc-hd b {
-  font-size: 14.5px;
-  font-weight: 800;
-  color: #0c2c3a;
-}
-
-.cvx .irc-hd small {
-  font-size: 11.5px;
-  color: #5f7d8b;
-}
-
-.cvx .irc-tag {
-  flex-shrink: 0;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 800;
-  color: #0e7490;
-  background: #fff;
-  border: 1px solid #bdeef6;
-}
-
-.cvx .irc-bd {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px 18px;
-}
-
 .cvx .ir-seg button {
   height: 34px;
   padding: 0 13px;
@@ -10654,12 +10581,6 @@
 
 .cvx .ir-err.is-info {
   color: #0e7490;
-}
-
-.cvx .ir-hist .whm-tblwrap {
-  margin: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
 }
 
 .cvx .ir-src {
@@ -13330,11 +13251,11 @@
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
 }
 
-.cvx .ix-grid>.irc {
+.cvx .ix-grid>.tv-pane {
   margin: 0;
 }
 
-.cvx .ix-grid .irc-bd {
+.cvx .ix-grid .tv-pane__bd {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -14172,10 +14093,6 @@
 
 .cvx .ix-note.is-warn svg {
   color: #d97706;
-}
-
-.cvx .ix-sum .irc-bd {
-  background: linear-gradient(180deg, #fbfeff, #fff);
 }
 
 .cvx .ix-file {
@@ -17998,14 +17915,24 @@
   background: rgba(255, 255, 255, .1);
 }
 [data-bs-theme="dark"] .cvx .mv-rk--low,
-[data-bs-theme="dark"] .cvx .vd .vd-b--low {
+[data-bs-theme="dark"] .cvx .vd .vd-b--low,
+[data-bs-theme="dark"] .cvx .ir-flag--ok,
+[data-bs-theme="dark"] .cvx .ir-cnt,
+[data-bs-theme="dark"] .cvx .ir-st--ok {
   color: #6ee7b7;
   background: rgba(16, 185, 129, .12);
   border-color: rgba(16, 185, 129, .32);
 }
 
 [data-bs-theme="dark"] .cvx .mv-rk--medium,
-[data-bs-theme="dark"] .cvx .vd .vd-b--medium {
+[data-bs-theme="dark"] .cvx .vd .vd-b--medium,
+[data-bs-theme="dark"] .cvx .ir-flag--warn,
+[data-bs-theme="dark"] .cvx .ir-cnt.is-warn,
+[data-bs-theme="dark"] .cvx .ir-st--warn,
+[data-bs-theme="dark"] .cvx .ix-lk,
+[data-bs-theme="dark"] .cvx .ix-prot.is-warn,
+[data-bs-theme="dark"] .cvx .ix-note.is-warn,
+[data-bs-theme="dark"] .cvx .ix-colsl span.is-pw {
   color: #fcd34d;
   background: rgba(245, 158, 11, .12);
   border-color: rgba(245, 158, 11, .32);
@@ -18019,7 +17946,12 @@
 }
 
 [data-bs-theme="dark"] .cvx .mv-rk--critical,
-[data-bs-theme="dark"] .cvx .vd .vd-b--critical {
+[data-bs-theme="dark"] .cvx .vd .vd-b--critical,
+[data-bs-theme="dark"] .cvx .ir-flag--bad,
+[data-bs-theme="dark"] .cvx .ir-cnt.is-bad,
+[data-bs-theme="dark"] .cvx .ir-st--bad,
+[data-bs-theme="dark"] .cvx .ix-prot.is-bad,
+[data-bs-theme="dark"] .cvx .ix-empty.is-err .ix-empty__art span {
   color: #fda4af;
   background: rgba(244, 63, 94, .12);
   border-color: rgba(244, 63, 94, .32);
@@ -18082,7 +18014,14 @@
 }
 
 [data-bs-theme="dark"] .cvx .mv-2on,
-[data-bs-theme="dark"] .cvx .vd .vd-b--ok {
+[data-bs-theme="dark"] .cvx .vd .vd-b--ok,
+[data-bs-theme="dark"] .cvx .ir-fmt,
+[data-bs-theme="dark"] .cvx .ix-lk.is-on,
+[data-bs-theme="dark"] .cvx .ix-prot.is-on,
+[data-bs-theme="dark"] .cvx .ix-fmts span,
+[data-bs-theme="dark"] .cvx .ix-fmtc__ico,
+[data-bs-theme="dark"] .cvx .ix-empty__art span,
+[data-bs-theme="dark"] .cvx .ix-empty .ix-smp button {
   color: #67e8f9;
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .32);
@@ -18385,4 +18324,101 @@
 [data-bs-theme="dark"] .cvx .cv-saving .cp-spin {
   border-color: rgba(34, 211, 238, .2);
   border-top-color: #22d3ee;
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-st,
+:where([data-bs-theme="dark"]) .cvx .ix-sumg>div,
+:where([data-bs-theme="dark"]) .cvx .ix-rec__i,
+:where([data-bs-theme="dark"]) .cvx .ix-in,
+:where([data-bs-theme="dark"]) .cvx .ix-x,
+:where([data-bs-theme="dark"]) .cvx .ir-ck {
+  background: var(--tvd-card);
+  border-color: var(--tvd-line);
+  box-shadow: none;
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-st {
+  border-top-color: var(--c);
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-also,
+:where([data-bs-theme="dark"]) .cvx .ix-note,
+:where([data-bs-theme="dark"]) .cvx .ix-fmtc button,
+:where([data-bs-theme="dark"]) .cvx .ix-scope button,
+:where([data-bs-theme="dark"]) .cvx .ix-sw,
+:where([data-bs-theme="dark"]) .cvx .ix-colsl span,
+:where([data-bs-theme="dark"]) .cvx .ir-seg,
+:where([data-bs-theme="dark"]) .cvx .ix-drop {
+  background: var(--tvd-raise);
+  border-color: var(--tvd-line2);
+  color: var(--tvd-mu);
+}
+
+[data-bs-theme="dark"] .cvx .ix-drop:hover,
+[data-bs-theme="dark"] .cvx .ix-drop.is-over,
+[data-bs-theme="dark"] .cvx .ix-fmtc button.is-on,
+[data-bs-theme="dark"] .cvx .ix-scope button.is-on,
+[data-bs-theme="dark"] .cvx .ix-sw.is-on,
+[data-bs-theme="dark"] .cvx .ix-try:hover,
+[data-bs-theme="dark"] .cvx .ix-in button:hover {
+  background: rgba(34, 211, 238, .1);
+  border-color: #22d3ee;
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-drop>b,
+:where([data-bs-theme="dark"]) .cvx .ix-also b,
+:where([data-bs-theme="dark"]) .cvx .ix-empty>b,
+:where([data-bs-theme="dark"]) .cvx .ix-cr b,
+:where([data-bs-theme="dark"]) .cvx .ix-fc b,
+:where([data-bs-theme="dark"]) .cvx .ix-sec b,
+:where([data-bs-theme="dark"]) .cvx .ix-fmtc b,
+:where([data-bs-theme="dark"]) .cvx .ix-scope b,
+:where([data-bs-theme="dark"]) .cvx .ix-sw b,
+:where([data-bs-theme="dark"]) .cvx .ix-sumg b,
+:where([data-bs-theme="dark"]) .cvx .ix-rec__i b,
+:where([data-bs-theme="dark"]) .cvx .ir-n,
+:where([data-bs-theme="dark"]) .cvx .ix-in input {
+  color: var(--tvd-tx);
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-drop>small,
+:where([data-bs-theme="dark"]) .cvx .ix-fmts em,
+:where([data-bs-theme="dark"]) .cvx .ix-empty>small,
+:where([data-bs-theme="dark"]) .cvx .ix-st small,
+:where([data-bs-theme="dark"]) .cvx .ix-cr small,
+:where([data-bs-theme="dark"]) .cvx .ix-dup small,
+:where([data-bs-theme="dark"]) .cvx .ix-fc small,
+:where([data-bs-theme="dark"]) .cvx .ix-sec small,
+:where([data-bs-theme="dark"]) .cvx .ix-fmtc small,
+:where([data-bs-theme="dark"]) .cvx .ix-scope small,
+:where([data-bs-theme="dark"]) .cvx .ix-sw small,
+:where([data-bs-theme="dark"]) .cvx .ix-meter span,
+:where([data-bs-theme="dark"]) .cvx .ix-sumg small,
+:where([data-bs-theme="dark"]) .cvx .ix-colsl>small,
+:where([data-bs-theme="dark"]) .cvx .ix-rec>small,
+:where([data-bs-theme="dark"]) .cvx .ix-rec>em,
+:where([data-bs-theme="dark"]) .cvx .ix-rec__i small,
+:where([data-bs-theme="dark"]) .cvx .ir-src,
+:where([data-bs-theme="dark"]) .cvx .ix-f>label,
+:where([data-bs-theme="dark"]) .cvx .ir-seg button,
+:where([data-bs-theme="dark"]) .cvx .ix-in button,
+:where([data-bs-theme="dark"]) .cvx .ir-n.is-mute {
+  color: var(--tvd-mu);
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-pw>div,
+:where([data-bs-theme="dark"]) .cvx .ix-meter i,
+:where([data-bs-theme="dark"]) .cvx .ix-sw__t {
+  background: var(--tvd-line);
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-sec:not(:first-child),
+:where([data-bs-theme="dark"]) .cvx .ix-try {
+  border-color: var(--tvd-line2);
+}
+
+:where([data-bs-theme="dark"]) .cvx .ix-drop>small u,
+:where([data-bs-theme="dark"]) .cvx .ix-try,
+:where([data-bs-theme="dark"]) .cvx .ix-fmtc em {
+  color: #67e8f9;
 }
