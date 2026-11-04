@@ -7921,6 +7921,14 @@
   padding: 10px 6px !important;
 }
 
+.cvx.rb-page .whm-tbl.mv-tbl thead th:nth-child(3),
+.cvx.rb-page .whm-tbl.mv-tbl thead th:nth-child(5),
+.cvx.rb-page .whm-tbl.mv-tbl thead th:nth-child(6),
+.cvx.rb-page .whm-tbl.mv-tbl thead th:nth-child(7),
+.cvx.rb-page .whm-tbl.mv-tbl tbody td:nth-child(7) {
+  text-align: left !important;
+}
+
 .cvx .rb-ret {
   max-width: 430px;
 }
