@@ -21,9 +21,9 @@ const TABS: { key: string; label: string; icon: string }[] = [
   { key: 'soon', label: 'Expiring Soon', icon: I_SOON },
 ];
 const URGENCY_FLAG = { bad: 'critical', warn: 'medium', ok: 'low' } as const;
-const COLS = ['', 'Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Owner', 'Risk', 'Deleted By', 'Deleted On', 'Auto-delete In', 'Action'];
+const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Owner', 'Risk', 'Deleted By', 'Deleted On', 'Auto-delete In', 'Action'];
 
-type Ask = { kind: 'purge'; row: BinRow } | { kind: 'bulk'; ids: number[] } | { kind: 'empty' } | null;
+type Ask = { kind: 'purge'; row: BinRow } | { kind: 'empty' } | null;
 
 export default function RecycleBin() {
   const toast = useToast();
@@ -39,7 +39,6 @@ export default function RecycleBin() {
   const [summary, setSummary] = useState<Loose | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sel, setSel] = useState<Set<number>>(new Set());
   const [ask, setAsk] = useState<Ask>(null);
   const [busy, setBusy] = useState(false);
   const [retention, setRetention] = useState(false);
@@ -62,7 +61,6 @@ export default function RecycleBin() {
     cvApi.bin({ tab, q: dq, page, per_page: perPage }).then(r => {
       if (!on) return;
       setRows(r.data); setMeta(r.meta); setTabs(r.tabs); setSummary(r.summary); setError('');
-      setSel(s => new Set([...s].filter(id => r.data.some(x => x.id === id))));
       if (r.purged > 0) toast.warning(`${r.purged} item${r.purged > 1 ? 's' : ''} permanently deleted after ${r.summary?.retention_days ?? ''} days`);
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
     }).catch(e => { if (on) setError(errMsg(e)); }).finally(() => { if (on) setLoading(false); });
@@ -82,18 +80,6 @@ export default function RecycleBin() {
     finally { setRestoring(s => { const n = new Set(s); n.delete(row.id); return n; }); }
   };
 
-  const restoreMany = async (ids: number[]) => {
-    setBusy(true);
-    const res = await Promise.allSettled(ids.map(id => cvApi.restore(id)));
-    setBusy(false);
-    const ok = res.filter(r => r.status === 'fulfilled').length;
-    const bad = res.length - ok;
-    if (ok) toast.success(`${ok} item${ok > 1 ? 's' : ''} restored`);
-    if (bad) toast.error(`${bad} item${bad > 1 ? 's' : ''} could not be restored`, errMsg((res.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined)?.reason));
-    setSel(new Set());
-    refresh();
-  };
-
   const confirmAsk = async () => {
     if (!ask) return;
     setBusy(true);
@@ -101,27 +87,16 @@ export default function RecycleBin() {
       if (ask.kind === 'purge') {
         const r = await cvApi.purge(ask.row.id);
         toast.warning(r.message);
-      } else if (ask.kind === 'empty') {
+      } else {
         const r = await cvApi.emptyBin();
         toast.warning(r.message);
-      } else {
-        const res = await Promise.allSettled(ask.ids.map(id => cvApi.purge(id)));
-        const ok = res.filter(r => r.status === 'fulfilled').length;
-        const bad = res.length - ok;
-        if (ok) toast.warning(`${ok} item${ok > 1 ? 's' : ''} permanently deleted`);
-        if (bad) toast.error(`${bad} item${bad > 1 ? 's' : ''} could not be deleted`, errMsg((res.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined)?.reason));
       }
-      setSel(new Set());
       setAsk(null);
       refresh();
     } catch (e) {
       toast.error('Could not delete', errMsg(e));
     } finally { setBusy(false); }
   };
-
-  const allOnPage = rows.length > 0 && rows.every(r => sel.has(r.id));
-  const toggle = (id: number) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleAll = () => setSel(allOnPage ? new Set() : new Set(rows.map(r => r.id)));
 
   const next = summary?.next_deletion as { name: string; at: string; days: number } | null | undefined;
   const card = (cls: string, ico: string, n: ReactNode, l: string, sub: string) => (
@@ -134,20 +109,6 @@ export default function RecycleBin() {
   );
 
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
-  const bulk = sel.size > 0 ? (
-    <div className="d-flex align-items-center gap-2 flex-wrap">
-      <span className="text-muted small"><b>{sel.size}</b> selected</span>
-      <button type="button" className="btn btn-sm btn-soft-success" disabled={busy} onClick={() => restoreMany([...sel])}>
-        <i className="ri-arrow-go-back-line me-1" />Restore
-      </button>
-      {purgeAllowed && (
-        <button type="button" className="btn btn-sm btn-soft-danger" disabled={busy} onClick={() => setAsk({ kind: 'bulk', ids: [...sel] })}>
-          <i className="ri-delete-bin-line me-1" />Delete permanently
-        </button>
-      )}
-      <button type="button" className="btn btn-sm btn-link text-muted" onClick={() => setSel(new Set())}>Clear</button>
-    </div>
-  ) : undefined;
 
   const askRow = ask?.kind === 'purge' ? ask.row : null;
   const empty = (summary?.items ?? 0) === 0;
@@ -192,14 +153,12 @@ export default function RecycleBin() {
       <CvCard pane fit>
         <CvTabsRow tabs={TABS.map(t => ({ ...t, count: tabs[t.key] ?? null }))} active={tab} onTab={setTab}
           search={q} onSearch={setQ} placeholder="Search by credential ID, name, category or owner..." />
-        {bulk}
         <div className="tvc-list">
           <div className="whm-tblwrap">
             <table className="whm-tbl mv-tbl">
               <thead>
                 <tr>
-                  <th><input type="checkbox" className="form-check-input" checked={allOnPage} onChange={toggleAll} aria-label="Select all on this page" /></th>
-                  {COLS.slice(1).map(c => <th key={c}>{c}</th>)}
+                  {COLS.map(c => <th key={c}>{c}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -210,7 +169,6 @@ export default function RecycleBin() {
                       sub={dq ? 'Try a credential name, ID, owner or category.' : `Credentials you move to the bin stay here for ${days} days.`} />
                       : rows.map((r, i) => (
                         <tr key={r.id}>
-                          <td><input type="checkbox" className="form-check-input" checked={sel.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Select ${r.name}`} /></td>
                           <td><span className="whm-sr">{start + i + 1}</span></td>
                           <td><div className="whm-idcell"><span className="whm-idpill">{r.code}</span><span className="whm-iddate">{r.type_label}</span></div></td>
                           <td><NameCell row={{ name: r.name, url: r.url, access: undefined } as unknown as CredentialRow} typeIcon={typeOf(r.type)?.icon} /></td>
@@ -237,7 +195,9 @@ export default function RecycleBin() {
                           </td>
                           <td>
                             <div className="whm-acts">
-                              <ActBtn icon={IC.restore} title={restoring.has(r.id) ? 'Restoring…' : 'Restore'} disabled={restoring.has(r.id) || busy} onClick={() => restore(r)} />
+                              <button type="button" data-h40="skip" className="mapsup-footer__btn mapsup-footer__btn--primary" disabled={restoring.has(r.id) || busy} onClick={() => restore(r)}>
+                                <Svg d={IC.restore} size={13} />{restoring.has(r.id) ? 'Restoring…' : 'Restore'}
+                              </button>
                               {r.can_purge && <ActBtn icon={IC.del} title="Delete permanently" tone="danger" onClick={() => setAsk({ kind: 'purge', row: r })} />}
                             </div>
                           </td>
@@ -261,9 +221,7 @@ export default function RecycleBin() {
           points={[
             ask.kind === 'purge'
               ? { icon: IC.del, title: 'All saved data is erased', text: <><b>{askRow?.name}</b> and all its saved data will be erased.</> }
-              : ask.kind === 'bulk'
-                ? { icon: IC.del, title: `${ask.ids.length} item${ask.ids.length > 1 ? 's' : ''} will be erased`, text: 'The selected credentials and all their saved data will be permanently deleted.' }
-                : { icon: IC.del, title: `All ${summary?.items ?? 0} items will be erased`, text: 'Every item in the bin will be permanently deleted.' },
+              : { icon: IC.del, title: `All ${summary?.items ?? 0} items will be erased`, text: 'Every item in the bin will be permanently deleted.' },
             { icon: IC.restore, title: 'No way back', text: 'Deleted items cannot be restored from the bin or anywhere else.' },
           ]}
           ackLabel={ask.kind === 'purge' ? 'I understand this credential cannot be restored.' : 'I understand none of these credentials can be restored.'}
