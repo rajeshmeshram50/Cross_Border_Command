@@ -180,7 +180,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   return (
     <CvPortal onClose={onClose}>
       <div id="crd-host">
-        <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box sh-box" role="dialog" aria-modal="true" aria-busy={busy} aria-label="Share Credential" style={{ position: 'relative' }}>
             {busy && (
               <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>

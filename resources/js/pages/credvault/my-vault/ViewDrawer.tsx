@@ -113,7 +113,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     return (
       <CvPortal onClose={onClose}>
         <div className="vd-ov is-open">
-          <div className="vd-scrim" onClick={onClose} />
+          <div className="vd-scrim" />
           <aside className="vd" role="dialog" aria-label="Credential">
             <div className="vd-body"><div className="vd-pane">
               <div className="vd-empty"><Svg icon="lock" size={20} /><b>Could not open this credential</b><span>{failed}</span>
@@ -128,7 +128,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     return (
       <CvPortal onClose={onClose}>
         <div className="vd-ov is-open">
-          <div className="vd-scrim" onClick={onClose} />
+          <div className="vd-scrim" />
           <aside className="vd" role="dialog" aria-label="Loading credential">
             <div className="vd-body"><div className="vd-pane"><table style={{ width: '100%' }}><tbody>
               {Array.from({ length: 8 }, (_, i) => <tr key={i} className="cv-shimrow"><td><i style={{ width: `${50 + (i * 11) % 45}%` }} /></td></tr>)}
@@ -450,7 +450,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     <>
       <CvPortal onClose={binAsk ? undefined : close}>
         <div className={`vd-ov${open ? ' is-open' : ''}`}>
-          <div className="vd-scrim" onClick={close} />
+          <div className="vd-scrim" />
           <aside className="vd" role="dialog" aria-label={d.name}>
             <>
               {hdr}

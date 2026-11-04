@@ -650,7 +650,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   return (
     <CvPortal onClose={onClose}>
       <div className={`cp-ov${shown ? ' is-open' : ''}`}>
-        <div className="cp-scrim" onClick={onClose} />
+        <div className="cp-scrim" />
         <div className={`cp-box rv-box${open ? ' is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Unlock critical credential" id="cpBox">
           {header()}
           {body}

@@ -307,7 +307,7 @@ function RetentionModal({ current, options, onClose, onSaved }: { current: numbe
 
   return (
     <CvPortal onClose={onClose}>
-      <div className="dl-ov" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="dl-ov">
         <div className="dl-modal rb-ret" role="dialog" aria-modal="true" aria-label="Retention period">
           <div className="dl-ico rb-ret__ico"><Svg icon="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2" size={30} sw={2.1} /></div>
           <div className="dl-title">Retention period</div>

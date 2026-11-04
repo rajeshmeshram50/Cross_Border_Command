@@ -41,7 +41,7 @@ function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
 
 function Wait({ title, text, onClose, error, onRetry }: { title: string; text: string; onClose: () => void; error?: boolean; onRetry?: () => void }) {
   return (
-    <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="mapsup-overlay">
       <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-label={title}>
         <div className="mapsup-header">
           <div className="mapsup-hrow">

@@ -336,14 +336,8 @@ export function EmptyRow({ cols, title, sub, action }: { cols: number; title: st
   );
 }
 
-export function CvPortal({ onClose, children }: { onClose?: () => void; children: ReactNode }) {
+export function CvPortal({ children }: { onClose?: () => void; children: ReactNode }) {
   useScrollLock(true);
-  useEffect(() => {
-    if (!onClose) return;
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', k);
-    return () => document.removeEventListener('keydown', k);
-  }, [onClose]);
   return createPortal(<div className="cvx cv-portal">{children}</div>, document.body);
 }
 
@@ -357,7 +351,7 @@ export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirm
   const [ack, setAck] = useState(!ackLabel);
   return (
     <CvPortal onClose={onClose}>
-      <div className="dl-ov" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="dl-ov">
         <div className="dl-modal mb" role="dialog" aria-modal="true" aria-label={title}>
           <div className="mb-hd">
             <span className="mb-hd__ico"><Svg d={icon} size={24} sw={2.1} /></span>

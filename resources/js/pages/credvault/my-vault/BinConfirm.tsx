@@ -42,7 +42,7 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
   if (shared) {
     return (
       <CvPortal onClose={onClose}>
-        <div className="dl-ov" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="dl-ov">
           <div className="dl-modal" role="dialog" aria-modal="true" aria-label="Remove from your vault?">
             <div className="dl-ico"><Svg d={BIN} size={30} sw={2.1} /></div>
             <div className="dl-title">Remove from your vault?</div>

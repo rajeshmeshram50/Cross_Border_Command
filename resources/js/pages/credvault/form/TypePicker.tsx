@@ -80,7 +80,7 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
   };
 
   return (
-    <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="mapsup-overlay">
       <div className="mapsup-box crd-box crd-pickbox" role="dialog" aria-modal="true" aria-label="What would you like to add?">
         <div className="mapsup-header">
           <div className="mapsup-hrow">

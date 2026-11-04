@@ -631,6 +631,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     try { await submit(); } finally { savingRef.current = false; }
   };
   const submit = async () => {
+    if (editing && !changedCount && !attNew.length && !attRemoved.length) { toast.info('No changes to update'); return; }
     const errs: Record<string, string> = {};
     const check = (k: string) => !editing || changed(k);
     if (!name.trim()) errs.name = 'Enter a name for this credential';
@@ -801,7 +802,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     : '—';
 
   return (
-    <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) askClose(); }}>
+    <div className="mapsup-overlay">
       <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}
         style={{ position: 'relative' }}>
         {saving && (
@@ -875,7 +876,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             )}
             <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={askClose} disabled={saving}>Close</button>
             <button type="button" className={`mapsup-footer__btn mapsup-footer__btn--primary${editing && !changedCount ? ' is-dim' : ''}`}
-              onClick={save} disabled={saving}>
+              onClick={save} disabled={saving || (editing && !changedCount && !attNew.length && !attRemoved.length)}
+              title={editing && !changedCount && !attNew.length && !attRemoved.length ? 'Change a field to update this credential' : undefined}>
               <Svg icon="check" size={13} sw={2.6} />{saving ? (editing ? 'Updating…' : 'Saving…') : editing ? 'Update Credential' : 'Save Credential'}
             </button>
           </div>

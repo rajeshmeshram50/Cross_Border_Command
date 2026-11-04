@@ -18087,7 +18087,8 @@
   color: var(--tvd-mu);
 }
 
-[data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tab:not(.is-active):hover {
+[data-bs-theme="dark"] .cvx .tvc-top .smt-proctype-tab:not(.is-active):hover,
+[data-bs-theme="dark"] .cvx .vd .vd-ptabs .smt-proctype-tab:not(.is-active):hover {
   color: var(--tvd-tx);
   background: rgba(34, 211, 238, .1);
 }

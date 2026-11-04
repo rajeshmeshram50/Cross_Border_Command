@@ -117,7 +117,7 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
   return (
     <CvPortal onClose={onClose}>
       <div id="crd-host">
-        <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box" role="dialog" aria-modal="true" aria-label="Generate Password">
             <div className="mapsup-header gp-hd">
               <div className="mapsup-hrow">
