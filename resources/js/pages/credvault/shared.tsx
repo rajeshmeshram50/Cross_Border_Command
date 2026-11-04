@@ -339,7 +339,7 @@ export function EmptyRow({ cols, title, sub, action }: { cols: number; title: st
 }
 
 export function CvPortal({ children }: { onClose?: () => void; children: ReactNode }) {
-  useScrollLock(true);
+  useScrollLock(true, '.cv-portal');
   return createPortal(<div className="cvx cv-portal">{children}</div>, document.body);
 }
 

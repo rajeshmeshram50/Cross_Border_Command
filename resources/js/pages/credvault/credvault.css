@@ -3801,7 +3801,8 @@
   font-size: 10px;
 }
 
-.cvx #crd-host .sh-body>* {
+.cvx #crd-host .sh-body>*,
+.cvx #crd-host .gp-body>* {
   flex-shrink: 0;
 }
 
