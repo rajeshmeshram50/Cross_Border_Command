@@ -61,10 +61,10 @@ class NormalVaultController extends CredVaultController
         [$c, $acc] = $this->findInVault($u, $id, self::VAULT, self::RANK_FULL,
             'Only the owner, a Vault Admin or someone with Full Access can edit this credential.');
 
-        if (!in_array($acc[1], ['owner', 'admin'], true)) {
-            if ($request->has('scope') && $request->input('scope') !== $c->scope) $this->reject('Only the owner or a Vault Admin can change the vault.', null, 403);
+        if (!in_array($acc[1], ['owner', 'admin', 'branch'], true)) {
+            if ($request->has('scope') && $request->input('scope') !== $c->scope) $this->reject('Only the owner, a Vault Admin or the Branch Admin can change the vault.', null, 403);
             if ($request->has('department_id') && (int) $request->input('department_id') !== (int) $c->department_id) {
-                $this->reject('Only the owner or a Vault Admin can change the team.', null, 403);
+                $this->reject('Only the owner, a Vault Admin or the Branch Admin can change the team.', null, 403);
             }
         }
 
