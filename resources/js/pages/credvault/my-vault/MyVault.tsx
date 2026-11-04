@@ -206,7 +206,7 @@ export default function MyVault() {
                         <td>
                           <div className="mv-ownc">
                             <span className="mv-ownc__av">{s.recipient.type === 'team' ? 'T' : s.recipient.initials}</span>
-                            <div><b>{s.recipient.name ?? '—'}</b><em className={s.recipient.type === 'team' ? 'mv-team' : 'mv-pers'}>{s.recipient.sub}</em></div>
+                            <div><b title={s.recipient.name ?? undefined}>{s.recipient.name ?? '—'}</b><em className={s.recipient.type === 'team' ? 'mv-team' : 'mv-pers'}>{s.recipient.sub}</em></div>
                           </div>
                         </td>
                         <td><span className="whm-idpill">{s.permission_label}</span></td>
