@@ -239,7 +239,7 @@ export default function PasswordHealth() {
         ]}
       />
       <div id="phSum"><Summary s={summary} /></div>
-      <CvCard pane>
+      <CvCard pane fit>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
           search={q} onSearch={setQ} placeholder="Search by credential, owner or issue..." />
         <div id="phListWrap" className="tvc-list">

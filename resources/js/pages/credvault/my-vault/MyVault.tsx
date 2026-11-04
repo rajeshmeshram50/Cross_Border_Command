@@ -179,7 +179,7 @@ export default function MyVault() {
         sub="Saving your personal credentials securely, keeping them organised and strong, and sharing them only when needed."
         steps={STEPS} />
 
-      <CvCard pane>
+      <CvCard pane fit>
         <CvTabsRow tabs={TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: counts ? counts[t.k] ?? 0 : null }))}
           active={tab} onTab={onTab} search={q} onSearch={setQ}
           placeholder={tab === 'sharedby' ? 'Search by credential ID, name, person, team or reason...' : 'Search by credential ID, name, category, username or owner...'} />

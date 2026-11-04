@@ -239,12 +239,14 @@ export function useFillToFoot(ref: RefObject<HTMLElement | null>, apply: (el: HT
   }, [min]);
 }
 
-export function CvCard({ children, pane = false }: { children: ReactNode; pane?: boolean }) {
+export function CvCard({ children, pane = false, fit = false }: { children: ReactNode; pane?: boolean; fit?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  useFillToFoot(ref, (el, px) => { el.style.minHeight = `${px}px`; }, 240, () => (pane ? ref.current : ref.current?.parentElement ?? null));
+  useFillToFoot(ref, (el, px) => {
+    if (fit) { el.style.height = `${px}px`; el.style.minHeight = '0'; } else el.style.minHeight = `${px}px`;
+  }, fit ? 400 : 240, () => (pane ? ref.current : ref.current?.parentElement ?? null));
   if (pane) {
     return (
-      <section className="tv-pane tv-pane--r" ref={ref} style={{ height: 'auto' }}>
+      <section className={`tv-pane tv-pane--r${fit ? ' tv-pane--fit' : ''}`} ref={ref} style={fit ? undefined : { height: 'auto' }}>
         <div className="tv-pane__bd tvc-bd">{children}</div>
       </section>
     );

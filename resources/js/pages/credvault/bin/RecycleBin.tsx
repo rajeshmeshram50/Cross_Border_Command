@@ -189,7 +189,7 @@ export default function RecycleBin() {
         {card('green', I_CLOCK, next ? `${next.days} ${next.days === 1 ? 'day' : 'days'}` : '—', 'Next deletion', next ? `Deletes ${next.name}` : 'Bin is empty')}
       </div>
 
-      <CvCard pane>
+      <CvCard pane fit>
         <CvTabsRow tabs={TABS.map(t => ({ ...t, count: tabs[t.key] ?? null }))} active={tab} onTab={setTab}
           search={q} onSearch={setQ} placeholder="Search by credential ID, name, category or owner..." />
         {bulk}
