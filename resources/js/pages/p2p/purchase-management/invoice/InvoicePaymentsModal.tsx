@@ -212,6 +212,10 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
   const spi = summary?.spi;
   const po = poData?.po ?? null;
+  /* The PO the labels speak of. While loading the PO payload is not in yet, but
+     the row already knows its PO, so the shimmer says PO from the first frame
+     instead of SPI and then flipping. */
+  const poCode = po?.code ?? (state === 'loading' ? row.poNo || null : null);
   const total = spi?.grand_total ?? 0;
   const base = spi?.base_amount ?? 0;
   const gst = spi?.gst_amount ?? 0;
@@ -272,7 +276,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   const whyNoRequest = state !== 'ready' ? 'Loading…'
       : direct && needsTds ? 'Deduct the TDS on this invoice first (even as 0) — then a payment request can be raised.'
       : balance <= 0 ? 'This SPI is paid in full — nothing is left to request.'
-        : available <= 0 ? 'Nothing left to request — the balance is already covered by open requests.'
+        // Requests are whole rupees (at least ₹1): a paise remainder cannot be requested.
+        : available < 1 ? 'Nothing left to request — the balance is already covered by open requests.'
           : undefined;
 
   const openRaise = () => {
@@ -337,7 +342,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
             </div>
             <div className="mpr-hero__sub">{state === 'loading'
               ? <span className="inv-mpr-skel inv-mpr-skel--sub" aria-hidden />
-              : po ? `All requests on ${po.code} and its SPIs` : 'All requests raised on this SPI'}</div>
+              : poCode ? `All requests on ${poCode} and its SPIs` : 'All requests raised on this SPI'}</div>
           </div>
 
           <InvoiceHeroChips row={row} />
@@ -358,8 +363,8 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           ) : (
             <>
               <Box
-                label="Summary" title={po ? 'PO Payment Details Summary' : 'SPI Payment Details Summary'}
-                sub={po ? `How ${po.code}'s value is made up and where it stands today · read-only`
+                label="Summary" title={poCode ? 'PO Payment Details Summary' : 'SPI Payment Details Summary'}
+                sub={poCode ? `How ${poCode}'s value is made up and where it stands today · read-only`
                   : "How this SPI's value is made up and where it stands today · read-only"}
                 headerExtra={state === 'loading' ? (
                   <span className="inv-mpr-skel inv-mpr-skel--tds" aria-hidden />
@@ -397,13 +402,13 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                     ccy={po.currency_code} />
                 ) : (
                 <div className="mpr-stats">
-                  <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
+                  <Stat icon={STAT_ICONS.base} label={poCode ? 'PO Base Amount (Without GST)' : 'SPI Base Amount (Without GST)'}
                     value={money(base)} sub="Pre-tax invoice value" />
                   <Stat mod="mpr-stat--base" icon={STAT_ICONS.trend} label="GST Amount"
                     value={money(gst)} sub={base > 0 ? `${Math.round((gst / base) * 1000) / 10}% on the base amount` : 'No GST'} />
                   <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
                     value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
-                  <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
+                  <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label={poCode ? 'Total PO Amount (Grand Total)' : 'Total SPI Amount (Grand Total)'}
                     value={money(total)} sub={tdsAmount > 0 ? `${money(tdsAmount)} TDS · net ${money(netPayable)}` : 'No TDS withheld'} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                     value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
@@ -415,7 +420,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
               <Box
                 label="Summary" title="All Request Details Summary"
-                sub={po ? `Running totals as on today, across every request on ${po.code} and its SPIs`
+                sub={poCode ? `Running totals as on today, across every request on ${poCode} and its SPIs`
                   : 'Running totals as on today, across every request raised on this SPI'}
               >
                 <div className="mpr-stats">
@@ -430,7 +435,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount"
                     value={money(approvedAmt)} sub={`${money(readyToPay)} awaiting release`} />
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
-                    value={money(listPaid)} sub={po ? `Released across ${po.code} and its SPIs` : `${pctPaid}% of the SPI released`} />
+                    value={money(listPaid)} sub={poCode ? `Released across ${poCode} and its SPIs` : `${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Open To Request"
                     value={money(available)} sub={available > 0 ? 'Can still be requested' : 'Nothing left to request'} />
                 </div>

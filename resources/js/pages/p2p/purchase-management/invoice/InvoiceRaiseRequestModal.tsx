@@ -142,8 +142,9 @@ export default function InvoiceRaiseRequestModal({ row, po = null, figures, tota
 
   const requestStats = useMemo(() => (
     <div className="mpr-stats">
-      <Stat icon={STAT_ICONS.doc} label="Total SPI Amount" value={money(total)}
-        sub={`${money(balance)} still to be released`} />
+      {/* An SPI on a PO is paid against the PO, so the first figure is the PO's total (CS-933). */}
+      <Stat icon={STAT_ICONS.doc} label={po ? 'Total PO Amount' : 'Total SPI Amount'} value={money(po ? po.grand_total : total)}
+        sub={`${money(po ? po.balance : balance)} still to be released`} />
       <Stat mod="mpr-stat--base" icon={STAT_ICONS.send} label="Total Requested Amount" value={money(requested)}
         sub={`${requestCount} request${requestCount === 1 ? '' : 's'} raised to date`} />
       <Stat mod="mpr-stat--bal" icon={STAT_ICONS.clock} label="Awaiting For Approval" value={money(pendingAmt)}
@@ -155,7 +156,7 @@ export default function InvoiceRaiseRequestModal({ row, po = null, figures, tota
       <Stat mod="mpr-stat--tds" icon={STAT_ICONS.trend} label="Balance Amount" value={money(available)}
         sub={complete ? 'Fully settled' : 'Open to request'} />
     </div>
-  ), [total, balance, paid, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
+  ), [po, total, balance, paid, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
 
   return createPortal(
     <div className="spi-mdl-backdrop">

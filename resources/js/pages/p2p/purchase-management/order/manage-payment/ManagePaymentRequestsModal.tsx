@@ -319,15 +319,16 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   const canPay = f.approvedUnpaid > 0 && !row.cancelled;
   /* Nothing left to ask for: the PO is cancelled, it is paid in full, or every
      rupee of it is already sitting in a request. The balance being 0 is the
-     same thing said in the cards above. */
-  const canRequest = !!po && f.openToRequest > 0 && !row.cancelled && !f.complete;
+     same thing said in the cards above. A request is whole rupees, at least ₹1,
+     so a paise remainder (shown as ₹0) is nothing left to request too (CS-933). */
+  const canRequest = !!po && f.openToRequest >= 1 && !row.cancelled && !f.complete;
   /* The button stays on the footer either way and says why it cannot be used —
      it used to disappear, which read as a missing feature rather than as
      "there is nothing left to request" (CS-563). */
   const whyNoRequest = !po ? 'Loading this PO…'
     : row.cancelled ? 'This PO is cancelled — no further payment requests can be raised.'
       : f.complete ? 'This PO is paid in full — nothing is left to request.'
-        : f.openToRequest <= 0 ? 'Nothing is open to request — the whole balance is already requested, approved or paid.'
+        : f.openToRequest < 1 ? 'Nothing is open to request — the whole balance is already requested, approved or paid.'
           : undefined;
 
   // TDS: one per PO, fixed once the first payment is recorded.
