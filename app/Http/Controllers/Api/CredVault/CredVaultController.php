@@ -98,7 +98,7 @@ class CredVaultController extends Controller
 
     /** The non-secret columns every list, count and health pass needs. */
     protected const LIGHT_COLUMNS = [
-        'id', 'client_id', 'code', 'vault', 'type', 'category_group', 'name', 'scope', 'owner_id', 'department_id',
+        'id', 'client_id', 'branch_id', 'code', 'vault', 'type', 'category_group', 'name', 'scope', 'owner_id', 'department_id',
         'url', 'username', 'risk', 'strength', 'has_password', 'twofa', 'twofa_method', 'twofa_email', 'rotation_days',
         'password_changed_at', 'secret_hash', 'lock_admin', 'lock_manager', 'lock_otp',
         'totp_linked_at', 'twofa_linked_at', 'created_at', 'updated_at',
