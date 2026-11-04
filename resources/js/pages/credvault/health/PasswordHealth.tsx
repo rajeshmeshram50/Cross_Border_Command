@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { cvApi, CV_ROUTES, type CredentialDetail, type HealthIssue, type Loose, type PageMeta } from '../cvApi';
 import {
-  ActBtn, CvBrief, CvCard, CvPage, CvPager, CvStrip, CvTabsRow, EmptyRow, IC, ShimRows, StrengthCell, StripBtn, Svg,
+  ActBtn, CvBrief, CvCard, CvPage, CvStrip, CvTabsRow, EmptyRow, IC, ShimRows, StrengthCell, StripBtn, Svg,
   cap, errMsg, fmtDay, fmtTime, initials, useCvMeta, useDebounced, type CvTab,
 } from '../shared';
 import CredentialFormModal from '../form/CredentialFormModal';
@@ -144,6 +145,7 @@ export default function PasswordHealth() {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PER_PAGE);
   const [rows, setRows] = useState<HealthIssue[]>([]);
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [summary, setSummary] = useState<Loose | null>(null);
@@ -161,7 +163,7 @@ export default function PasswordHealth() {
     const my = ++seq.current;
     if (!silent) setLoading(true);
     try {
-      const r = await cvApi.health({ tab, q: dq, page, per_page: PER_PAGE });
+      const r = await cvApi.health({ tab, q: dq, page, per_page: perPage });
       if (my !== seq.current) return null;
       setRows(r.data); setTabs(r.tabs); setSummary(r.summary); setMeta(r.meta); setError(null);
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
@@ -173,7 +175,7 @@ export default function PasswordHealth() {
     } finally {
       if (my === seq.current) setLoading(false);
     }
-  }, [tab, dq, page]);
+  }, [tab, dq, page, perPage]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [dq]);
@@ -215,7 +217,7 @@ export default function PasswordHealth() {
   const tabLabel = TABS.find(t => t[0] === tab)?.[1] ?? '';
 
   return (
-    <CvPage className="mv-page ph-page">
+    <CvPage className="mv-page ph-page tv-page">
       <CvStrip
         icon={ICO.pulse}
         title="Password Health"
@@ -237,17 +239,17 @@ export default function PasswordHealth() {
         ]}
       />
       <div id="phSum"><Summary s={summary} /></div>
-      <CvCard>
+      <CvCard pane>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
           search={q} onSearch={setQ} placeholder="Search by credential, owner or issue..." />
-        <div id="phListWrap">
+        <div id="phListWrap" className="tvc-list">
           <div className="whm-tblwrap">
-            <table className="whm-tbl mv-tbl ph-tbl">
+            <table className="whm-tbl mv-tbl">
               <thead><tr>{cols.map((c, i) => <th key={c} className={`ph-th-${i}`}>{c}</th>)}</tr></thead>
               <tbody>
                 {loading ? <ShimRows cols={cols.length} /> : error ? (
                   <EmptyRow cols={cols.length} title="Could not run the health check" sub={error}
-                    action={<button type="button" className="ph-fix" style={{ marginTop: 10 }} onClick={() => load()}>Try again</button>} />
+                    action={<button type="button" className="mv-empty__btn" onClick={() => load()}><Svg d={IC.restore} size={13} />Try again</button>} />
                 ) : !rows.length ? (
                   <tr>
                     <td colSpan={cols.length} className="mv-empty">
@@ -291,15 +293,13 @@ export default function PasswordHealth() {
                         ) : <span className="ph-act">{x.action}</span>}
                       </td>
                       <td>
-                        <div className="ph-acts">
+                        <div className="whm-acts">
                           {fixed ? (
-                            <span className="ph-done"><Svg d={IC.check} size={12} />Fixed</span>
+                            <span className="znm-flag mv-2on"><Svg d={IC.check} size={11} />Fixed</span>
                           ) : (
-                            <button type="button" data-h40="skip" className="ph-fix" disabled={!x.can_fix}
-                              title={x.can_fix ? FIX_LBL[x.type] : 'You can only use this credential — ask its owner to fix it'}
-                              onClick={() => fix(x)}>
-                              <Svg d={ICO.tool} size={13} />Fix
-                            </button>
+                            <ActBtn icon={ICO.tool} tone="edit" disabled={!x.can_fix}
+                              title={x.can_fix ? `Fix — ${FIX_LBL[x.type]}` : 'You can only use this credential — ask its owner to fix it'}
+                              onClick={() => fix(x)} />
                           )}
                           {c.id ? <ActBtn icon={IC.view} title="View credential" onClick={() => setViewId(c.id)} /> : null}
                         </div>
@@ -310,10 +310,9 @@ export default function PasswordHealth() {
               </tbody>
             </table>
           </div>
-          {!loading && !error && (
-            <CvPager page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={meta.per_page}
-              noun={fixed ? 'resolved issues' : 'issues'} onPage={setPage} />
-          )}
+          <WorklistPager className="wl-teal" loading={loading}
+            total={error ? 0 : meta.total} page={meta.current_page} pageSize={perPage}
+            onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
         </div>
       </CvCard>
 
