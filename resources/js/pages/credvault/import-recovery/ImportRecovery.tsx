@@ -61,12 +61,12 @@ export default function ImportRecovery() {
   };
 
   return (
-    <CvPage className="mv-page ir-page">
+    <CvPage className="mv-page ir-page tv-page">
       <CvStrip icon={IR_I.db} title="Import & Recovery"
         sub="Bring credentials into My Vault in bulk, and download password-locked backups whenever you need them."
         actions={<StripBtn icon={IR_I.down} ghost onClick={sample}>Sample File</StripBtn>} />
 
-      <CvCard>
+      <CvCard pane>
         <CvTabsRow active={tab} onTab={k => setTab(k as Tab)} tabs={[
           { key: 'import', label: 'Import Bulk Credentials', icon: IR_I.up, count: imp.meta?.total ?? null },
           { key: 'backup', label: 'Download Credentials Backup', icon: IR_I.down, count: bk.meta?.total ?? null },

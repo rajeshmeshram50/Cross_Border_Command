@@ -136,8 +136,8 @@ export default function ImportTab({ onImported }: { onImported: () => void }) {
           {st(data.stats.weak, 'Weak', 'is-bad')}
           {st(data.stats.cannot, 'Can’t import', 'is-mute')}
         </div>
-        <div className="ix-tblw">
-          <table className="ix-tbl">
+        <div className="whm-tblwrap">
+          <table className="whm-tbl mv-tbl">
             <thead>
               <tr>
                 <th><span className={`ir-ck${allOn ? ' is-on' : ''}`} role="checkbox" aria-checked={allOn} aria-label="Select all" onClick={toggleAll}><Svg d={IR_I.tick} size={10} /></span></th>

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { PageMeta, TransferRow } from '../cvApi';
-import { CvPager, Svg, bytes, fmtDay, fmtTime, initials } from '../shared';
+import WorklistPager from '../../../../components/ui/WorklistPager';
+import { Svg, bytes, fmtDay, fmtTime, initials } from '../shared';
 
 /* Import & Recovery — the prototype's IR_I icons, irCard and irHistHtml. */
 
@@ -139,16 +140,15 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage }: {
         </div>
         <span className="irc-tag">{meta?.total ?? 0} records</span>
       </div>
-      <div className="whm-tblwrap ir-htbl">
-        <table className="whm-tbl ir-tbl">
+      <div className="whm-tblwrap">
+        <table className="whm-tbl mv-tbl">
           <colgroup>{head.map(c => <col key={c[0]} style={{ width: c[2] }} />)}</colgroup>
           <thead><tr>{head.map(c => <th key={c[0]} className={`ir-a${c[1]}`}>{c[0]}</th>)}</tr></thead>
           <tbody>{body}</tbody>
         </table>
       </div>
-      {meta && !error && meta.last_page > 1 && (
-        <CvPager page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={meta.per_page} noun="records" onPage={onPage} />
-      )}
+      <WorklistPager className="wl-teal" loading={loading} total={error ? 0 : meta?.total ?? 0}
+        page={meta?.current_page ?? 1} pageSize={meta?.per_page ?? 10} onPage={onPage} />
     </div>
   );
 }
