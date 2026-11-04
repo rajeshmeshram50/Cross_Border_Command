@@ -238,7 +238,7 @@ The suite ran over real HTTP, starting from an empty vault, with four real users
 - **Linking:** link-before-save (no app, wrong code, linked).
 - **Masked IDs:** `•••• 7890`.
 - **List behaviour:**
-  - tab counts ignore search;
+  - tab counts follow the search (each tab counts its matches);
   - search by category label and owner;
   - per-row `can` flags.
 - **Unlock flow:**
@@ -475,7 +475,7 @@ The four reviewers compared every column, card, filter, tab, form field, option 
 - **List:**
   - Every row carries `can` flags: reveal, copy, edit, share, delete, remove, edit_protection.
   - Every row carries `active_shares`, owner initials and `critical_code` (CCRD-…).
-- **Tab counts ignore the search box**, as in the prototype; `tabs.sharedby` gives the Shared By Me badge.
+- **Tab counts follow the search box**: with `q`, every badge (`all`, `mine`, `team`, `shared`, `others`) counts the rows that tab would list for that search; `tabs.sharedby` gives the Shared By Me badge, searched as the Shared By Me list searches (so it equals that list's total for the same `q`).
 - **Search covers** ID, name, username, url, category (the type *label*), group and **owner name**.
 - **Team tab** excludes credentials that are only shared with you.
 - **Drawer:**

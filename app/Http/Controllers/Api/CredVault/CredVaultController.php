@@ -186,9 +186,10 @@ class CredVaultController extends Controller
      * "credentials accessible to <person>" filter. It narrows what the caller
      * can already see, so it reveals nothing new and anyone may use it.
      *
-     * Tab counts ignore the search box, as the prototype's do. The department
-     * and member filters belong to the Team side: the "mine" tab ignores both.
-     * tabs.sharedby is the Shared By Me count (active + expiring soon).
+     * Tab counts follow the search box: with q, each tab counts its matches.
+     * The department and member filters belong to the Team side: the "mine"
+     * tab ignores both. tabs.sharedby is the Shared By Me count (active +
+     * expiring soon), searched as the Shared By Me list searches.
      */
     public function index(Request $request)
     {
@@ -216,6 +217,7 @@ class CredVaultController extends Controller
         if (!empty($f['risk']))  $base->where('risk', $f['risk']);
         if (!empty($f['type']))  $base->where('type', $f['type']);
         if (!empty($f['group'])) $base->where('category_group', $f['group']);
+        $this->credentialSearch($base, $u, $f['q'] ?? null);
 
         // The Team-side filters: everything but "mine".
         $teamSide = clone $base;
@@ -232,11 +234,12 @@ class CredVaultController extends Controller
             'others' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id),
         ];
         $tabs = array_map(fn ($v) => $v()->count(), $views);
-        $tabs['sharedby'] = CredentialShare::live()->where('client_id', $u->client_id)
-            ->whereIn('credential_id', Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'))->count();
+        $sharedBy = CredentialShare::live()->where('client_id', $u->client_id)
+            ->whereIn('credential_id', Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'));
+        $this->shareSearch($sharedBy, $u, $f['q'] ?? null);
+        $tabs['sharedby'] = $sharedBy->count();
 
         $q = $views[$tab]();
-        $this->credentialSearch($q, $u, $f['q'] ?? null);
 
         $page = $q->select(self::LIGHT_COLUMNS)
             ->with(['owner:id,name', 'department:id,name'])
@@ -820,23 +823,7 @@ class CredVaultController extends Controller
         foreach ($states as $k => $fn) $tabs[$k] = $fn(clone $base)->count();
         $tabs['live'] = $tabs['active'] + $tabs['soon'];   // the My Vault "Shared By Me" tab badge
 
-        if ($term = $f['q'] ?? null) {
-            $like  = $this->likeTerm($term);
-            $t     = mb_strtolower(trim($term));
-            $perms = collect(['use' => 'use only', 'view' => 'view', 'copy' => 'copy', 'full' => 'full access'])->filter(fn ($l) => str_contains($l, $t))->keys()->all();
-            $types = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), $t))->keys()->all();
-            $base->where(function ($w) use ($like, $u, $perms, $types) {
-                $w->whereRaw('lower(coalesce(reason, \'\')) like ?', [$like])
-                  ->orWhereIn('credential_id', Credential::where('client_id', $u->client_id)->where(function ($x) use ($like, $types) {
-                      $x->whereRaw('lower(name) like ?', [$like])->orWhereRaw('lower(code) like ?', [$like])
-                        ->orWhereRaw('lower(category_group) like ?', [$like]);
-                      if ($types) $x->orWhereIn('type', $types);
-                  })->select('id'))
-                  ->orWhereIn('recipient_user_id', User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id'))
-                  ->orWhereIn('recipient_department_id', Departments::whereRaw('lower(name) like ?', [$like])->select('id'));
-                if ($perms) $w->orWhereIn('permission', $perms);
-            });
-        }
+        $this->shareSearch($base, $u, $f['q'] ?? null);
         if (($tab = $f['tab'] ?? 'all') !== 'all') $states[$tab]($base);
 
         // The filters.
@@ -874,6 +861,27 @@ class CredVaultController extends Controller
                 'shared_from', 'shared_to', 'expires_from', 'expires_to', 'sort', 'dir'])), fn ($v) => $v !== null && $v !== ''),
             'meta'    => $this->pageMeta($page),
         ], 200);
+    }
+
+    /** The Shared By Me search: credential ID / name / group / type, person, team, reason, permission label. */
+    protected function shareSearch(Builder $base, User $u, ?string $term): void
+    {
+        if ($term === null || trim($term) === '') return;
+        $like  = $this->likeTerm($term);
+        $t     = mb_strtolower(trim($term));
+        $perms = collect(['use' => 'use only', 'view' => 'view', 'copy' => 'copy', 'full' => 'full access'])->filter(fn ($l) => str_contains($l, $t))->keys()->all();
+        $types = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), $t))->keys()->all();
+        $base->where(function ($w) use ($like, $u, $perms, $types) {
+            $w->whereRaw('lower(coalesce(reason, \'\')) like ?', [$like])
+              ->orWhereIn('credential_id', Credential::where('client_id', $u->client_id)->where(function ($x) use ($like, $types) {
+                  $x->whereRaw('lower(name) like ?', [$like])->orWhereRaw('lower(code) like ?', [$like])
+                    ->orWhereRaw('lower(category_group) like ?', [$like]);
+                  if ($types) $x->orWhereIn('type', $types);
+              })->select('id'))
+              ->orWhereIn('recipient_user_id', User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id'))
+              ->orWhereIn('recipient_department_id', Departments::whereRaw('lower(name) like ?', [$like])->select('id'));
+            if ($perms) $w->orWhereIn('permission', $perms);
+        });
     }
 
     /** DELETE /credvault/shares/{id} — revoke. The row stays as the record of who had access. */
