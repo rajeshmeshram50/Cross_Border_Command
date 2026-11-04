@@ -18004,6 +18004,62 @@
   border-color: rgba(244, 63, 94, .32);
 }
 
+/* Critical Vault · Access Status pills and the row's unlock button: translucent tints, as the risk pills */
+[data-bs-theme="dark"] .cvx .cv-acc__t {
+  color: #8fb0c2;
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--locked .cv-acc__b {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .12);
+  border-color: rgba(148, 163, 184, .3);
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--wait .cv-acc__b {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(245, 158, 11, .34);
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--prog .cv-acc__b {
+  color: #7dd3fc;
+  background: rgba(14, 165, 233, .12);
+  border-color: rgba(14, 165, 233, .34);
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--open .cv-acc__b {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .12);
+  border-color: rgba(16, 185, 129, .34);
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--open .cv-acc__t b {
+  color: #6ee7b7;
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc--open.is-low .cv-acc__t b {
+  color: #fda4af;
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc__bar {
+  background: rgba(148, 163, 184, .18);
+}
+
+[data-bs-theme="dark"] .cvx .cv-acc .cp-spin.cp-spin--sm {
+  border-color: rgba(245, 158, 11, .3);
+  border-top-color: #fbbf24;
+}
+
+[data-bs-theme="dark"] .cvx button.whm-act.cv-lk--locked {
+  color: #cbd5e1 !important;
+}
+
+[data-bs-theme="dark"] .cvx button.whm-act.cv-lk--wait {
+  color: #fcd34d !important;
+  background: rgba(245, 158, 11, .12) !important;
+  border-color: rgba(245, 158, 11, .34) !important;
+}
+
 [data-bs-theme="dark"] .cvx .mv-2on,
 [data-bs-theme="dark"] .cvx .vd .vd-b--ok {
   color: #67e8f9;
