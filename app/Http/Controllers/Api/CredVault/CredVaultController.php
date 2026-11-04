@@ -3876,6 +3876,10 @@ class CredVaultController extends Controller
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($admin) {
                 $w->orWhere('scope', 'team');
+            } elseif ($u->user_type === 'branch_user' && $u->branch_id) {
+                // The branch admin sits at the top of the Team Vault hierarchy —
+                // every team credential in their branch is theirs to see.
+                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where('branch_id', $u->branch_id));
             } elseif ($teams) {
                 $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('department_id', $teams));
             }
@@ -3917,6 +3921,8 @@ class CredVaultController extends Controller
             $best = null;
             if ($c->scope === 'team') {
                 if ($admin) $best = [self::RANK_FULL, 'admin'];
+                // The branch admin manages every team credential in their branch.
+                elseif ($u->user_type === 'branch_user' && $u->branch_id && (int) $c->branch_id === (int) $u->branch_id) $best = [self::RANK_FULL, 'admin'];
                 elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = [self::RANK_FULL, 'hod'];
                 elseif ($c->department_id && $c->department_id === $dept) $best = [self::RANK_COPY, 'team'];
             }
