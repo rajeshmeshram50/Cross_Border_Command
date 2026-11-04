@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import DataTable, { ActionCell, PillCell, TruncCell, IdCell as DtIdCell, type DataTableColumn } from '../../../components/ui/DataTable';
-import { cvApi, type BinRow, type Loose, type PageMeta } from '../cvApi';
+import WorklistPager from '../../../components/ui/WorklistPager';
+import { cvApi, type BinRow, type CredentialRow, type Loose, type PageMeta } from '../cvApi';
 import {
-  ConfirmModal, CvBrief, CvPage, CvPortal, CvStrip, StripBtn, Svg, IC, RISK_TONE, TwoLine,
-  cap, cvTableProps, emptyState, errMsg, fmtDay, fmtTime, useCvMeta, useDebounced,
+  ActBtn, CategoryCell, ConfirmModal, CvBrief, CvCard, CvPage, CvPortal, CvStrip, CvTabsRow, EmptyRow, NameCell, RiskFlag, ShimRows, StripBtn,
+  Svg, IC, UpdatedCell, errMsg, fmtDay, initials, useCvMeta, useDebounced,
 } from '../shared';
-import './recycleBin.css';
 
 const I_ALL = '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><line x1="10" y1="12" x2="14" y2="12"/>';
 const I_SOON = '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/>';
@@ -21,7 +20,8 @@ const TABS: { key: string; label: string; icon: string }[] = [
   { key: 'team', label: 'Team Credentials', icon: IC.users },
   { key: 'soon', label: 'Expiring Soon', icon: I_SOON },
 ];
-const URGENCY_TONE = { bad: 'danger', warn: 'warning', ok: 'success' } as const;
+const URGENCY_FLAG = { bad: 'critical', warn: 'medium', ok: 'low' } as const;
+const COLS = ['', 'Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Owner', 'Risk', 'Deleted By', 'Deleted On', 'Auto-delete In', 'Action'];
 
 type Ask = { kind: 'purge'; row: BinRow } | { kind: 'bulk'; ids: number[] } | { kind: 'empty' } | null;
 
@@ -133,61 +133,9 @@ export default function RecycleBin() {
     </div>
   );
 
-  const columns = useMemo<DataTableColumn<BinRow>[]>(() => [
-    {
-      id: 'sel', meta: { width: '4%', align: 'center' },
-      header: () => <input type="checkbox" className="form-check-input" checked={allOnPage} onChange={toggleAll} aria-label="Select all on this page" />,
-      cell: ({ row: { original: r } }) => <input type="checkbox" className="form-check-input" checked={sel.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Select ${r.name}`} />,
-    },
-    {
-      header: 'Credential ID', id: 'code', meta: { width: '9%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={<DtIdCell value={r.code} />} sub={r.type_label} />,
-    },
-    {
-      header: 'Credential Name', id: 'name', meta: { width: '15%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={<b><TruncCell value={r.name} caseSensitive max={40} /></b>} sub={r.url ?? undefined} />,
-    },
-    {
-      header: 'Category', id: 'category', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <TruncCell value={r.category_group} caseSensitive />,
-    },
-    {
-      header: 'Owner', id: 'owner', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={r.owner.is_me ? 'You' : r.owner.name ?? '—'} sub={r.scope === 'team' ? 'Team' : 'Personal'} />,
-    },
-    {
-      header: 'Risk', id: 'risk', meta: { width: '7%', align: 'center' },
-      cell: ({ row: { original: r } }) => <PillCell value={cap(r.risk)} tone={RISK_TONE[r.risk]} />,
-    },
-    {
-      header: 'Deleted By', id: 'by', meta: { width: '10%' },
-      cell: ({ row: { original: r } }) => <TruncCell value={r.deleted_by.name} caseSensitive />,
-    },
-    {
-      header: 'Deleted On', id: 'on', meta: { width: '9%' },
-      cell: ({ row: { original: r } }) => <TwoLine top={fmtDay(r.deleted_at)} sub={fmtTime(r.deleted_at)} />,
-    },
-    {
-      header: 'Auto-delete In', id: 'left', meta: { width: '10%', align: 'center' },
-      cell: ({ row: { original: r } }) => (
-        <TwoLine top={<PillCell value={`${r.days_left} ${r.days_left === 1 ? 'day' : 'days'}`} tone={URGENCY_TONE[r.urgency]} />}
-          sub={`on ${fmtDay(r.purges_at).replace(/ \d{4}$/, '')}`} />
-      ),
-    },
-    {
-      header: 'Action', id: 'actions', meta: { width: '8%', align: 'center' },
-      cell: ({ row: { original: r } }) => (
-        <div className="d-flex justify-content-center gap-1">
-          <ActionCell title={restoring.has(r.id) ? 'Restoring…' : 'Restore'} icon="ri-arrow-go-back-line" tone="success"
-            disabled={restoring.has(r.id) || busy} onClick={() => restore(r)} />
-          {r.can_purge && <ActionCell title="Delete permanently" icon="trash-svg" tone="danger" onClick={() => setAsk({ kind: 'purge', row: r })} />}
-        </div>
-      ),
-    },
-  ], [sel, allOnPage, restoring, busy]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
   const bulk = sel.size > 0 ? (
-    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+    <div className="d-flex align-items-center gap-2 flex-wrap">
       <span className="text-muted small"><b>{sel.size}</b> selected</span>
       <button type="button" className="btn btn-sm btn-soft-success" disabled={busy} onClick={() => restoreMany([...sel])}>
         <i className="ri-arrow-go-back-line me-1" />Restore
@@ -205,7 +153,7 @@ export default function RecycleBin() {
   const empty = (summary?.items ?? 0) === 0;
 
   return (
-    <CvPage className="mv-page rb-page">
+    <CvPage className="mv-page rb-page tv-page">
       <CvStrip icon={IC.bin} title="Recycle Bin"
         sub={`Credentials moved to the bin stay here for ${days} days — restore them anytime, or delete them permanently.`}
         actions={
@@ -241,17 +189,68 @@ export default function RecycleBin() {
         {card('green', I_CLOCK, next ? `${next.days} ${next.days === 1 ? 'day' : 'days'}` : '—', 'Next deletion', next ? `Deletes ${next.name}` : 'Bin is empty')}
       </div>
 
-      <DataTable<BinRow> data={rows} columns={columns} toolbarFilters={bulk}
-        rowClassName={r => (sel.has(r.id) ? 'table-active' : undefined)}
-        {...cvTableProps({
-          tabs: TABS.map(t => ({ ...t, count: tabs[t.key] ?? undefined })),
-          activeTab: tab, onTabChange: setTab, search: q, onSearch: setQ,
-          placeholder: 'Search by credential ID, name, category or owner...',
-          loading: loading && !rows.length,
-          empty: emptyState(error ? `Could not load the recycle bin — ${error}`
-            : dq ? 'No items match your search' : `The recycle bin is empty. Credentials you move to the bin stay here for ${days} days.`, 'ri-delete-bin-line'),
-          paging: { meta, page, setPage, setPerPage },
-        })} />
+      <CvCard pane>
+        <CvTabsRow tabs={TABS.map(t => ({ ...t, count: tabs[t.key] ?? null }))} active={tab} onTab={setTab}
+          search={q} onSearch={setQ} placeholder="Search by credential ID, name, category or owner..." />
+        {bulk}
+        <div className="tvc-list">
+          <div className="whm-tblwrap">
+            <table className="whm-tbl mv-tbl">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" className="form-check-input" checked={allOnPage} onChange={toggleAll} aria-label="Select all on this page" /></th>
+                  {COLS.slice(1).map(c => <th key={c}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {loading && !rows.length ? <ShimRows cols={COLS.length} />
+                  : error ? <EmptyRow cols={COLS.length} title="Could not load the recycle bin" sub={error}
+                    action={<button type="button" className="mv-empty__btn" onClick={refresh}><Svg d={IC.restore} size={13} />Try again</button>} />
+                    : !rows.length ? <EmptyRow cols={COLS.length} title={dq ? 'No items match your search' : 'The recycle bin is empty'}
+                      sub={dq ? 'Try a credential name, ID, owner or category.' : `Credentials you move to the bin stay here for ${days} days.`} />
+                      : rows.map((r, i) => (
+                        <tr key={r.id}>
+                          <td><input type="checkbox" className="form-check-input" checked={sel.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Select ${r.name}`} /></td>
+                          <td><span className="whm-sr">{start + i + 1}</span></td>
+                          <td><div className="whm-idcell"><span className="whm-idpill">{r.code}</span><span className="whm-iddate">{r.type_label}</span></div></td>
+                          <td><NameCell row={{ name: r.name, url: r.url, access: undefined } as unknown as CredentialRow} typeIcon={typeOf(r.type)?.icon} /></td>
+                          <td><CategoryCell label={r.type_label} group={r.category_group} /></td>
+                          <td>
+                            <div className="mv-ownc">
+                              <span className="mv-ownc__av">{initials(r.owner.name)}</span>
+                              <div><b>{r.owner.is_me ? 'You' : (r.owner.name ?? '—')}</b>{r.scope === 'team' ? <em className="mv-team">Team</em> : <em className="mv-pers">Personal</em>}</div>
+                            </div>
+                          </td>
+                          <td><RiskFlag risk={r.risk} /></td>
+                          <td>
+                            <div className="mv-ownc">
+                              <span className="mv-ownc__av">{initials(r.deleted_by.name)}</span>
+                              <div><b>{r.deleted_by.name ?? '—'}</b></div>
+                            </div>
+                          </td>
+                          <td><UpdatedCell iso={r.deleted_at} /></td>
+                          <td>
+                            <div className="whm-idcell">
+                              <span className={`znm-flag mv-rk mv-rk--${URGENCY_FLAG[r.urgency]}`}><i />{r.days_left} {r.days_left === 1 ? 'day' : 'days'}</span>
+                              <span className="whm-iddate">on {fmtDay(r.purges_at).replace(/ \d{4}$/, '')}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="whm-acts">
+                              <ActBtn icon={IC.restore} title={restoring.has(r.id) ? 'Restoring…' : 'Restore'} disabled={restoring.has(r.id) || busy} onClick={() => restore(r)} />
+                              {r.can_purge && <ActBtn icon={IC.del} title="Delete permanently" tone="danger" onClick={() => setAsk({ kind: 'purge', row: r })} />}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+              </tbody>
+            </table>
+          </div>
+          <WorklistPager className="wl-teal" loading={loading}
+            total={error ? 0 : meta?.total ?? 0} page={meta?.current_page ?? page} pageSize={perPage}
+            onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
+        </div>
+      </CvCard>
 
       {ask && (
         <ConfirmModal
