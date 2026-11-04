@@ -16905,37 +16905,31 @@
   display: none
 }
 .cvx .tvc-top .bst-search.whm-main-search {
-  height: 58px;
-  min-height: 58px;
+  height: 48px;
+  min-height: 48px;
   box-sizing: border-box;
   border-radius: 11px;
 }
 
-/* Team Vault: the tabs + search row is 48px (40px tabs: 48 less the 1px border and 3px padding each side; 48px search); only heights and padding change */
-.cvx .tv-split .tvc-top .smt-proctype-tabs {
+.cvx .tvc-top .smt-proctype-tabs {
   height: 48px;
   padding: 3px !important;
   box-sizing: border-box;
 }
 
-.cvx .tv-split .tvc-top .smt-proctype-tab {
+.cvx .tvc-top .smt-proctype-tab {
   height: 100%;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   box-sizing: border-box;
 }
 
-.cvx .tv-split .tvc-top .smt-proctype-tab > :first-child {
+.cvx .tvc-top .smt-proctype-tab > :first-child {
   max-height: 30px;
   max-width: 30px;
 }
 
-.cvx .tv-split .tvc-top .bst-search.whm-main-search {
-  height: 48px;
-  min-height: 48px;
-}
-
-.cvx .tv-split .tvc-top .bst-search.whm-main-search input {
+.cvx .tvc-top .bst-search.whm-main-search input {
   height: 100%;
 }
 
