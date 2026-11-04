@@ -18181,3 +18181,17 @@
   min-height: 0;
   overflow: auto;
 }
+
+.cvx #crd-host .crd-box .mapsup-seccard.cv-saving::before {
+  display: none;
+}
+
+.cvx .cv-saving .cp-spin {
+  border-color: #cffafe;
+  border-top-color: #0891b2;
+}
+
+[data-bs-theme="dark"] .cvx .cv-saving .cp-spin {
+  border-color: rgba(34, 211, 238, .2);
+  border-top-color: #22d3ee;
+}

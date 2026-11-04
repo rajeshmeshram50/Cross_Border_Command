@@ -807,7 +807,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         style={{ position: 'relative' }}>
         {saving && (
           <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>
-            <div className="mapsup-seccard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
+            <div className="mapsup-seccard cv-saving" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
               <span className="cp-spin" />
               <b className="mapsup-sechead__title">{editing ? 'Updating credential…' : 'Saving credential…'}</b>
             </div>
