@@ -34,7 +34,7 @@ class EmailOtp
 
     public static function defaultInbox(): string
     {
-        return (string) config('services.credvault.otp_email', 'php@inhpl.com');
+        return (string) config('services.credvault.otp_email', 'react_dev@inhpl.com');
     }
 
     /** @return array{token:string, sent_to:string, expires_in:int, resend_in:int} */
@@ -46,8 +46,12 @@ class EmailOtp
         $code  = self::code();
         $token = Str::random(40);
         Cache::put(self::setupKey($token), [
-            'user_id' => $u->id, 'client_id' => $u->client_id, 'email' => $email,
-            'hash' => self::hash($code), 'tries' => 0, 'verified' => false,
+            'user_id' => $u->id,
+            'client_id' => $u->client_id,
+            'email' => $email,
+            'hash' => self::hash($code),
+            'tries' => 0,
+            'verified' => false,
         ], now()->addMinutes(self::TTL_MINUTES));
 
         self::mail($email, new CredVaultOtpMail($code, 'setup', $u->name, $credentialName, self::TTL_MINUTES, BrandingResolver::forUser($u)));
@@ -176,6 +180,6 @@ class EmailOtp
             'status'  => false,
             'message' => $message,
             'errors'  => $field ? [$field => [$message]] : null,
-        ], fn ($v) => $v !== null), $status));
+        ], fn($v) => $v !== null), $status));
     }
 }
