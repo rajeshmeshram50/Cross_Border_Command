@@ -216,7 +216,6 @@ export default function TeamVault() {
                 emptyTitle={emptyTitle}
                 emptySub={emptySub}
                 onEdit={r => open({ kind: 'form', id: r.id })}
-                onShare={r => open({ kind: 'share', id: r.id })}
                 onView={r => open({ kind: 'view', id: r.id })}
                 onCopy={onCopy}
                 onDelete={r => open({ kind: 'bin', row: r })}

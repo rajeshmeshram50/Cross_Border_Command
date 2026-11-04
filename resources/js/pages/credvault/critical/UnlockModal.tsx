@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import QRCode from 'qrcode';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError, type AccessRequestRow, type CredentialDetail, type LockStep, type UnlockState } from '../cvApi';
+import { CvApiError, type AccessRequestRow, type CredentialDetail, type LockStep, type UnlockState } from '../cvApi';
 import { CvPortal, IC, Svg, copyText, errMsg, fmtTime, initials, mmss, useCvMeta, useNow } from '../shared';
 import OtpDigits from './OtpDigits';
+import { cvData, type OtpSetup } from './cvData';
 
 /**
  * CredVault · Critical Access Protection unlock modal — the stepper
@@ -79,7 +81,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const load = useCallback(async (silent = false) => {
     const seq = ++loadSeq.current;
     try {
-      const x = await cvApi.show(credentialId);
+      const x = await cvData.show(credentialId);
       if (seq !== loadSeq.current) return;   // a newer load (or poll) owns the state
       setD(x);
       setFetchedAt(Date.now());
@@ -108,6 +110,22 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const cur: Stage = open ? 'done'
     : (live?.stage ?? unlock.stage ?? steps[0] ?? 'done');
   const ci = order.indexOf(cur);
+
+  /* ── the one-time authenticator setup (QR + key), shown beside the code until the app is linked ── */
+  const [setup, setSetup] = useState<OtpSetup | null>(null);
+  const [qrSvg, setQrSvg] = useState('');
+  useEffect(() => {
+    if (cur !== 'otp') return;
+    let on = true;
+    cvData.otpSetup(credentialId).then(s => { if (on) setSetup(s); }).catch(() => { if (on) setSetup(null); });
+    return () => { on = false; };
+  }, [cur, credentialId]);
+  useEffect(() => {
+    let on = true;
+    if (!setup) { setQrSvg(''); return; }
+    QRCode.toString(setup.otpauth_uri, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }).then(s => { if (on) setQrSvg(s); }).catch(() => { if (on) setQrSvg(''); });
+    return () => { on = false; };
+  }, [setup]);
   // Leaving a stage behind returns the view to where the request now stands.
   useEffect(() => { setViewSel(null); }, [cur]);
   const view: Stage = viewSel && order.indexOf(viewSel) >= 0 && order.indexOf(viewSel) <= ci ? viewSel : cur;
@@ -181,7 +199,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     setBusy(true);
     try {
       const body = plan?.asks_reason ? { reason: reason.trim(), duration_minutes: dur ?? undefined } : {};
-      await cvApi.requestAccess(d.id, body);
+      await cvData.requestAccess(d.id, body);
       toast.success(`Request sent to ${approverName(k)}`);
       await load(true);
     } catch (e) {
@@ -192,11 +210,22 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     } finally { setBusy(false); }
   }
 
+  /** Dummy data only: the prototype's "act as" stands in for the waiting approver. */
+  async function actAs(approve: boolean, who: string) {
+    if (!live || busy || !cvData.decide) return;
+    setBusy(true);
+    try {
+      await cvData.decide(live.id, approve);
+      if (approve) toast.success(`${who} approved your request`); else toast.warning(`${who} rejected your request`);
+      await load(true);
+    } finally { setBusy(false); }
+  }
+
   async function cancelReq() {
     if (!live || busy) return;
     setBusy(true);
     try {
-      await cvApi.cancel(live.id);
+      await cvData.cancel(live.id);
       toast.info('Request cancelled');
       await load(true);
     } catch (e) { toast.error('Could not cancel', errMsg(e)); } finally { setBusy(false); }
@@ -211,8 +240,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     try {
       // An authenticator-only lock has no approval step: the request is raised here, already approved.
       let reqId = live?.id;
-      if (!reqId) reqId = (await cvApi.requestAccess(d.id, {})).data.id;
-      const r = await cvApi.verifyOtp(reqId, code);
+      if (!reqId) reqId = (await cvData.requestAccess(d.id, {})).data.id;
+      const r = await cvData.verifyOtp(reqId, code);
       toast.success(`${d.name} unlocked for ${r.data.duration_minutes} min`);
       relocked.current = false;
       setDigits(blank());
@@ -237,7 +266,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     if (!live || busy) return;
     setBusy(true);
     try {
-      await cvApi.lock(live.id);
+      await cvData.lock(live.id);
       relocked.current = true;
       toast.warning(`${d?.name ?? 'Credential'} is locked again`);
       onChanged?.();
@@ -260,7 +289,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
       return;
     }
     try {
-      const r = await cvApi.reveal(d.id, 'reveal', key);
+      const r = await cvData.reveal(d.id, 'reveal', key);
       setRevealed(x => ({ ...x, [key]: r.value }));
       clearTimeout(hideTimers.current[key]);
       hideTimers.current[key] = window.setTimeout(() => setRevealed(x => { const n = { ...x }; delete n[key]; return n; }), r.hide_after_seconds * 1000);
@@ -274,11 +303,11 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     if (!d) return;
     try {
       if (secret) {
-        const r = await cvApi.reveal(d.id, 'copy', key);
+        const r = await cvData.reveal(d.id, 'copy', key);
         await copyText(r.value, r.clear_clipboard_after);
       } else {
         await copyText(value ?? '');
-        cvApi.event(d.id, 'copy', key).catch(() => {});
+        cvData.event(d.id, 'copy', key).catch(() => {});
       }
       toast.success('Copied to clipboard');
     } catch (e) {
@@ -483,6 +512,16 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
           <div><b>Request {live?.code ?? ''} sent at {fmtTime(live?.created_at)}</b><em>{role} has been notified</em></div>
           <button type="button" className="rv-link" onClick={cancelReq} disabled={busy}>Cancel request</button>
         </div>
+        {cvData.decide && (
+          <div className="cp-sim">
+            <div className="cp-sim__t">Prototype · Act as {who}</div>
+            <p>In production the {role === 'Manager' ? 'manager' : 'vault admin'} approves from their own inbox. Use these buttons to simulate their decision.</p>
+            <div className="cp-act">
+              <button type="button" className="cp-btn cp-btn--bad" onClick={() => actAs(false, who)} disabled={busy}>Reject</button>
+              <button type="button" className="cp-btn cp-btn--ok" onClick={() => actAs(true, who)} disabled={busy}><Svg d={CP_I.check} size={13} /> Approve</button>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -494,10 +533,23 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
         <div className="rv-hd">
           <span className="rv-eyebrow">{eyebrow('otp', 'Authenticator')}</span>
           <h4>Verify with your authenticator app</h4>
-          <p>Open the authenticator app linked to this credential and enter the current code.</p>
+          <p>{setup
+            ? 'Link your authenticator app once; it will then be used every time you unlock a critical credential.'
+            : 'Open the authenticator app linked to this credential and enter the current code.'}</p>
         </div>
         {!live && previousNote()}
-        <div className="rv-otp is-one">
+        <div className={`rv-otp${setup ? '' : ' is-one'}`}>
+          {setup && (
+            <div className="rv-otp__box rv-setup">
+              <div className="cp-qrframe"><i /><i /><i /><i />
+                <div className="cp-qrframe__in" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+              </div>
+              <b>Set up your authenticator (one time)</b>
+              <span>Scan with Google or Microsoft Authenticator, then enter the code.</span>
+              <code className="rv-setup__key" title="Setup key">{setup.secret_display}</code>
+            </div>
+          )}
+          <div className={setup ? 'rv-otp__box rv-otp__code' : 'rv-otp__one'}>
           <div className="cp-vcard">
             <div className="cp-vcard__hd">
               <span className="cp-vcard__ico"><Svg d={CP_I.phone} size={16} /></span>
@@ -506,6 +558,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
             <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
             <div className="cp-err cp-err--c" id="cpFormErr">{otpErr}</div>
             <div className="cp-vcard__ft"><Svg d={CP_I.clock} size={11} />Codes refresh every 30 seconds{left3 !== undefined && left3 < 3 ? ` · ${left3} attempt${left3 === 1 ? '' : 's'} left` : ''}</div>
+          </div>
           </div>
         </div>
       </>

@@ -67,7 +67,7 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
                       {actions ? actions(r) : (
                         <>
                           <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!can?.edit} onClick={() => onEdit?.(r)} />
-                          <ActBtn icon={IC.share} title="Share" disabled={!can?.share} onClick={() => onShare?.(r)} />
+                          {onShare && <ActBtn icon={IC.share} title="Share" disabled={!can?.share} onClick={() => onShare(r)} />}
                           <ActBtn icon={IC.view} title="View" onClick={() => onView?.(r)} />
                           <ActBtn icon={IC.copy} title="Copy Password" disabled={!canCopy} onClick={() => onCopy?.(r)} />
                           <ActBtn icon={IC.del} title={binTitle} tone="danger" disabled={!(can?.delete || can?.remove)} onClick={() => onDelete?.(r)} />

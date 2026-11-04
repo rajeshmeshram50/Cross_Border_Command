@@ -16551,14 +16551,14 @@
 .cvx .rv-pane {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px 28px 28px
+  gap: 8px;
+  padding: 16px 28px
 }
 
 .cvx .rv-hd {
   display: flex;
   flex-direction: column;
-  gap: 6px
+  gap: 8px
 }
 
 .cvx .rv-eyebrow {
@@ -16641,8 +16641,8 @@
 .cvx .rv-card {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px;
+  gap: 8px;
+  padding: 16px;
   border: 1px solid #d8eaf0;
   border-radius: 18px;
   background: #fff;
@@ -16652,16 +16652,18 @@
 .cvx .rv-fld {
   display: flex;
   flex-direction: column;
-  gap: 9px
+  gap: 8px
 }
 
 .cvx .rv-lbl {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 800;
-  color: #26414c
+  color: #0e5c70;
+  text-transform: uppercase;
+  letter-spacing: .07em
 }
 
 .cvx .rv-lbl i {
@@ -16799,6 +16801,73 @@
 
 .cvx .rv-otp .cp-vcard {
   align-self: center
+}
+
+/* Unlock · Stage 3 with the one-time setup: QR card and OTP card side by side, same white bordered box */
+.cvx .rv-otp__box {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #d6ebf1
+}
+
+.cvx .rv-setup {
+  align-items: center;
+  gap: 8px;
+  text-align: center
+}
+
+.cvx .rv-setup .cp-qrframe {
+  width: 172px;
+  height: 172px;
+  margin-bottom: 4px
+}
+
+.cvx .rv-setup b {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0b3b4a
+}
+
+.cvx .rv-setup span {
+  font-size: 11.5px;
+  color: #64808c
+}
+
+.cvx .rv-setup__key {
+  margin-top: 4px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid #cdeaf2;
+  background: #f4fcfe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: #0e7490;
+  user-select: all
+}
+
+.cvx .rv-otp__code .cp-vcard {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: visible
+}
+
+.cvx .rv-otp__code .cp-vcard:before {
+  display: none
+}
+
+.cvx .rv-otp__code .cp-vcard__ft {
+  padding-top: 10px;
+  border-top: 1px dashed #d6ebf1
 }
 
 .cvx .rv-grant {
@@ -16956,6 +17025,20 @@
 .cvx button.whm-act.cv-lk--wait:hover { color: #fff !important; }
 .cvx button.whm-act.cv-lk--wait:hover { background: linear-gradient(135deg, #fbbf24, #d97706) !important; border-color: transparent !important; }
 .cvx button.whm-act.cv-lk--open:hover { filter: brightness(1.06); }
+
+/* Unlock popup · Previous / Next: greyed out when there is no stage to go to */
+.cvx .cp-nav { gap: 6px; padding-left: 12px; padding-right: 12px; }
+.cvx .cp-nav[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Unlock popup · the prototype's "act as" box (dummy data only): dashed, striped, Reject light and Approve solid */
+.cvx .cp-sim { border: 1.5px dashed #cbd5e1; border-radius: 16px; padding: 14px 16px; background: repeating-linear-gradient(135deg, #f8fafc, #f8fafc 10px, #f3f7fa 10px, #f3f7fa 20px); }
+.cvx .cp-sim__t { font-size: 10.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; }
+.cvx .cp-sim p { margin: 4px 0 0; font-size: 11.5px; color: #64748b; }
+.cvx .cp-sim .cp-act { margin-top: 12px; }
+.cvx .cp-sim .cp-act .cp-btn { height: 40px; padding: 0 18px; border-radius: 12px; font-weight: 800; }
+.cvx .cp-sim .cp-act .cp-btn--ok { color: #fff !important; background: linear-gradient(135deg, #0b4f63, #0e7490 35%, #0891b2 70%, #22d3ee) !important; border: 0 !important; box-shadow: 0 10px 22px -8px rgba(8, 145, 178, .65), inset 0 1px 0 rgba(255, 255, 255, .25) !important; }
+.cvx .cp-sim .cp-act .cp-btn--bad { color: #0e7490 !important; background: linear-gradient(180deg, #fff, #ecfeff) !important; border: 1.5px solid #a5e6f1 !important; box-shadow: none !important; }
+.cvx .cp-sim .cp-act .cp-btn--bad:hover { color: #fff !important; background: linear-gradient(135deg, #22d3ee, #0891b2) !important; border-color: transparent !important; }
 
 /* Above phone width the rail is a fixed 48px; on a phone the tabs wrap, so it grows with them */
 @media (min-width: 761px) {
