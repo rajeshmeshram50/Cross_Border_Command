@@ -1,13 +1,5 @@
 import type { FieldDef, Policy, TypeDef } from '../cvApi';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Add / Edit Credential — the prototype's form logic that is not markup:
- * the strength meter (mvStrength), the generator (crdPwGen), the client-side
- * checks (crdSave), the row filler (crdFillRows) and the authenticator code
- * check (cpVerify).
- * ───────────────────────────────────────────────────────────────────────── */
-
-/** Each type's tile colour (the prototype's CRD_TYPES[].c). Presentation only. */
 export const TYPE_COLOR: Record<string, string> = {
   login: '#0d9488', password: '#0891b2', note: '#d97706', document: '#64748b', card: '#db2777', bank: '#2563eb',
   crypto: '#ea580c', rewards: '#7c3aed', api: '#4f46e5', ssh: '#0f172a', database: '#0e7490', server: '#059669',
@@ -39,7 +31,7 @@ export function generatePassword(length = 16, symbols = true): string {
   const rnd = (n: number) => { const a = new Uint32Array(1); window.crypto.getRandomValues(a); return a[0] % n; };
   const out = sets.map(s => s[rnd(s.length)]);
   while (out.length < Math.max(length, 12)) out.push(all[rnd(all.length)]);
-  for (let i = out.length - 1; i > 0; i--) { const j = rnd(i + 1); [out[i], out[j]] = [out[j], out[i]]; }
+  for (let i = out.length - 1; i > 0; i--) { const j = rnd(i + 1);[out[i], out[j]] = [out[j], out[i]]; }
   return out.join('');
 }
 
@@ -144,11 +136,7 @@ async function totpAt(secret: string, counter: number): Promise<string> {
   return String(n % 1_000_000).padStart(6, '0');
 }
 
-/**
- * true / false when the browser can check the code (±1 step, as the server
- * does); null when it cannot (no SubtleCrypto outside a secure context) —
- * the server then checks it on save.
- */
+
 export async function verifyTotp(secret: string, code: string): Promise<boolean | null> {
   if (!/^\d{6}$/.test(code)) return false;
   if (!window.crypto?.subtle) return null;

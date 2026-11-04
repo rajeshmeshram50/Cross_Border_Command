@@ -3,11 +3,6 @@ import QRCode from 'qrcode';
 import { Svg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Critical Access Protection (the prototype's cpFormSection) and the
- * "Link your authenticator app" box (cpAuthHtml). Ported markup, class for
- * class; state lives in CredentialFormModal.
- * ───────────────────────────────────────────────────────────────────────── */
 
 export const CP_I = {
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',

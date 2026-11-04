@@ -6,19 +6,6 @@ import CredentialForm from './CredentialForm';
 import TypePicker from './TypePicker';
 import './form.css';
 
-/**
- * CredVault · Add / Edit Credential — the type picker (step 1) and the type's
- * form (step 2), with Recovery & Proof, Security and Critical Access
- * Protection. Shared contract: My Vault, Team Vault and Critical Vault open it.
- *
- *   credentialId    edit that credential (skips the picker)
- *   initialType     add: open straight on this type's form
- *   critical        add from the Critical Vault: risk critical, protection on
- *   prefillPassword add from Generate Password → "Use in New Credential"
- *   scope / departmentId  add into the Team Vault
- *   previewRow      design preview (Team Vault on dummy data): edit this row,
- *                   prefilled from the row itself; nothing is loaded or saved
- */
 export interface CredentialFormProps {
   credentialId?: number;
   initialType?: string;
@@ -31,14 +18,9 @@ export interface CredentialFormProps {
   onSaved: (c: CredentialDetail) => void;
 }
 
-/** A sample password per strength score (strengthOf), so the preview's meter
- *  reads what the row says: Weak, Fair, Good, Strong. */
 const SAMPLE_PW = ['', 'tally123', 'tallycloud2026', 'Tally@2026', 'Tq#9vL!m2Rx$8wPz'];
 
-/** A dummy row as the edit form reads a loaded credential, filled the way the
- *  design shows it: fields from the type, URL and username off the row, a
- *  sample secret at the row's strength (masked until shown), the rotation and
- *  the protected settings (risk, 2FA) open to change. */
+
 function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
   const loose = row as unknown as Record<string, unknown>;
   return {
@@ -57,7 +39,6 @@ function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
   };
 }
 
-/** The overlay shown while the types or the credential load, or when either fails. */
 function Wait({ title, text, onClose, error, onRetry }: { title: string; text: string; onClose: () => void; error?: boolean; onRetry?: () => void }) {
   return (
     <div className="mapsup-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
