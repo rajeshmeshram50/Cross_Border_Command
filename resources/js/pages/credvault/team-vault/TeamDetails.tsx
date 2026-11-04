@@ -81,11 +81,9 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
 
   const loadList = () => {
     setListErr(null);
-    // Only the viewer's own department: HR can file a report from another department under them, but that department is not theirs to see.
+    // The viewer and everyone under them, across every department they manage — not just their own.
     const own = scoped && user ? tvData.organisation().then(d => {
-      const b = ownBranch(d.members ?? [], Number(user.id));
-      const dep = b[0]?.department?.id;
-      setBranch(dep ? b.filter(m => m.department?.id === dep) : b);
+      setBranch(ownBranch(d.members ?? [], Number(user.id)));
     }) : Promise.resolve();
     Promise.all([tvData.departments(), own]).then(([l]) => setList(l)).catch(e => setListErr(errMsg(e)));
   };
@@ -97,6 +95,9 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
   const branchAdmin = !TV_DUMMY && user?.user_type === 'branch_user';
   const admins: Loose[] = branchAdmin ? [{ id: user?.id, name: user?.name }] : list?.admin?.admins ?? [];
   const adminName = admins[0]?.name || 'Vault Administrator';
+  // A scoped manager sits at the top of their own branch, like the admin does over the org.
+  const selfName = user?.name || 'You';
+  const scopedDeptCount = useMemo(() => new Set((branch ?? []).map(m => m.department?.id).filter(Boolean)).size, [branch]);
   const departments: Loose[] = useMemo(() => {
     const all: Loose[] = list?.departments ?? [];
     if (!scoped) return all;
@@ -110,10 +111,18 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
   useEffect(() => {
     if (!dept) { setTree(null); setStats(null); setTreeErr(null); return; }
     if (scoped) {
-      // Their own branch within this department, with themselves on top (already loaded with the cards).
-      const mine = (branch ?? []).filter(m => m.employee_id === meEmployeeId || m.department?.id === dept.key);
-      setTree(meEmployeeId ? buildBranch(mine, meEmployeeId) : null); setStats(null); setTreeErr(null);
-      setOpen({}); setExp('exp');
+      // 'admin' = the viewer's whole branch across departments; a department = that department's slice, with themselves on top.
+      const mine = dept.key === 'admin'
+        ? (branch ?? [])
+        : (branch ?? []).filter(m => m.employee_id === meEmployeeId || m.department?.id === dept.key);
+      const h = meEmployeeId ? buildBranch(mine, meEmployeeId) : null;
+      setTree(h); setStats(null); setTreeErr(null);
+      if (dept.key === 'admin' && h) {
+        // The whole-team view opens with each direct report folded, like the admin's organisation view.
+        const o: Record<string, boolean> = {};
+        h.root.kids.forEach(k => { o[k.id] = false; });
+        setOpen(o); setExp('col');
+      } else { setOpen({}); setExp('exp'); }
       return;
     }
     let on = true;
@@ -173,6 +182,7 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
     }
     const t = q.trim().toLowerCase();
     const showAdm = !scoped && (!t || 'admin administrator'.includes(t) || adminName.toLowerCase().includes(t));
+    const showSelf = scoped && (branch?.length ?? 0) > 0 && (!t || 'you my team your'.includes(t) || selfName.toLowerCase().includes(t));
     const adm = list.admin ?? {};
     if (scoped && !branch?.length) {
       return <div className="tvo-none">You are not in the team hierarchy yet. Your department and reporting manager come from HR.</div>;
@@ -181,6 +191,20 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
       <>
         <div className="tvo-meta"><span>{filtered.length} Departments</span><span>{scoped ? branch?.length ?? 0 : adm.members ?? 0} Members</span></div>
         <div className="tvo-depts">
+          {showSelf && (
+            <button type="button" data-h40="skip" className="tvx-adm" onClick={() => onOpenDept({ key: 'admin', name: selfName })}>
+              <span className="tvx-hero__dots" />
+              <span className="tvx-adm__top">
+                <span className="tvx-adm__av">{initials(selfName)}<i><Svg d={TV_IC.shieldPlain} size={9} sw={2.6} /></i></span>
+                <span className="tvx-adm__t"><small>You</small><b>{selfName}</b><span>Your team · everyone reporting to you</span></span>
+                <span className="tvx-adm__n"><b>{branch?.length ?? 0}</b><small>Members</small></span>
+              </span>
+              <span className="tvx-adm__bot">
+                <span className="tvx-adm__chip"><Svg d={TV_IC.grid} size={11} sw={2.4} />{scopedDeptCount} Departments</span>
+                <span className="tvx-dc__go">View all<Svg d={TV_IC.arrow} size={11} sw={2.6} /></span>
+              </span>
+            </button>
+          )}
           {showAdm && (
             <button type="button" data-h40="skip" className="tvx-adm" onClick={() => onOpenDept({ key: 'admin', name: 'Administration' })}>
               <span className="tvx-hero__dots" />
@@ -240,8 +264,8 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
             {isAdm ? (
               <>
                 <span><b>{tree?.total ?? '·'}</b>Members</span>
-                <span><b>{stats?.departments ?? list?.admin?.departments ?? '·'}</b>Departments</span>
-                <span><b>{list?.admin?.hods ?? stats?.hods ?? '·'}</b>HODs</span>
+                <span><b>{scoped ? scopedDeptCount : (stats?.departments ?? list?.admin?.departments ?? '·')}</b>Departments</span>
+                <span><b>{scoped ? (tree?.cnt?.hod ?? 0) : (list?.admin?.hods ?? stats?.hods ?? '·')}</b>HODs</span>
               </>
             ) : (
               <>
