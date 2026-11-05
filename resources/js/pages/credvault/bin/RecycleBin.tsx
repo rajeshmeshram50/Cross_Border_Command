@@ -40,6 +40,7 @@ export default function RecycleBin() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [rows, setRows] = useState<BinRow[]>([]);
+  const [rowsKey, setRowsKey] = useState('');
   const [meta, setMeta] = useState<PageMeta | null>(null);
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [summary, setSummary] = useState<Loose | null>(null);
@@ -67,7 +68,7 @@ export default function RecycleBin() {
     setLoading(true);
     cvApi.bin({ tab, vault, q: dq, page, per_page: perPage }).then(r => {
       if (!on) return;
-      setRows(r.data); setMeta(r.meta); setTabs(r.tabs); setCounts(r.counts ?? null); setSummary(r.summary); setError('');
+      setRows(r.data); setRowsKey(`${tab}|${vault}`); setMeta(r.meta); setTabs(r.tabs); setCounts(r.counts ?? null); setSummary(r.summary); setError('');
       if (r.purged > 0) toast.warning(`${r.purged} item${r.purged > 1 ? 's' : ''} permanently deleted after ${r.summary?.retention_days ?? ''} days`);
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
     }).catch(e => { if (on) { setError(errMsg(e)); setRows([]); } }).finally(() => { if (on) setLoading(false); });
@@ -116,6 +117,8 @@ export default function RecycleBin() {
   );
 
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
+
+  const shimmer = loading && (!rows.length || rowsKey !== `${tab}|${vault}`);
 
   const askRow = ask?.kind === 'purge' ? ask.row : null;
   const empty = (summary?.items ?? 0) === 0;
@@ -183,7 +186,7 @@ export default function RecycleBin() {
                 </tr>
               </thead>
               <tbody>
-                {loading && !rows.length ? <ShimRows cols={COLS.length} />
+                {shimmer ? <ShimRows cols={COLS.length} />
                   : error ? <EmptyRow cols={COLS.length} title="Could not load the recycle bin" sub={error}
                     action={<button type="button" className="mv-empty__btn" onClick={refresh}><Svg d={IC.restore} size={13} />Try again</button>} />
                     : !rows.length ? <EmptyRow cols={COLS.length} title={dq ? 'No items match your search' : 'The recycle bin is empty'}
