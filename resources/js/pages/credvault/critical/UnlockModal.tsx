@@ -34,7 +34,10 @@ const CP_I = {
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
   prev: '<polyline points="15 18 9 12 15 6"/>',
   next: '<polyline points="9 18 15 12 9 6"/>',
+  mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
 };
+/** Stage 3 when the credential's 2FA is Gmail: the code is emailed (send-otp), not read from an app. */
+const META_MAIL: [string, string, string] = ['Gmail', CP_I.mail, 'Enter code'];
 const META: Record<LockStep, [string, string, string]> = {
   admin: ['Vault Admin', CP_I.admin, 'Request access'],
   manager: ['Manager', CP_I.mgr, 'Request approval'],
@@ -177,6 +180,17 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     QRCode.toString(setup.otpauth_uri, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }).then(s => { if (on) setQrSvg(s); }).catch(() => { if (on) setQrSvg(''); });
     return () => { on = false; };
   }, [setup]);
+  /* ── Gmail 2FA: POST access-requests/{id}/send-otp mails the code; verify-otp checks it ── */
+  const isMail = (live?.otp?.method ?? plan?.otp_method) === 'email';
+  const metaOf = (k: LockStep) => (k === 'otp' && isMail ? META_MAIL : META[k]);
+  const [mail, setMail] = useState({ sending: false, sentTo: '', wait: 0, expiresIn: 0 });
+  const autoSent = useRef<number | null>(null);
+  useEffect(() => {
+    if (mail.wait <= 0) return;
+    const t = setTimeout(() => setMail(m => ({ ...m, wait: Math.max(0, m.wait - 1) })), 1000);
+    return () => clearTimeout(t);
+  }, [mail.wait]);
+
   // Leaving a stage behind returns the view to where the request now stands.
   useEffect(() => { setViewSel(null); }, [cur]);
   const view: Stage = viewSel && order.indexOf(viewSel) >= 0 && order.indexOf(viewSel) <= ci ? viewSel : cur;
@@ -261,6 +275,20 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     } finally { setBusy(false); }
   }
 
+  /** The requester forwards an admin-approved request to their reporting manager. */
+  async function forward() {
+    if (!live || busy || !cvData.raiseManager) return;
+    setBusy(true);
+    try {
+      await cvData.raiseManager(live.id);
+      toast.success(`Forwarded to ${approverName('manager')}`);
+      await load(true);
+    } catch (e) {
+      if (e instanceof CvApiError) { if (e.status === 409 && e.data) { await load(true); toast.info(e.message); } else setErr({ general: e.message }); }
+      else setErr({ general: errMsg(e) });
+    } finally { setBusy(false); }
+  }
+
   /** Dummy data only: the prototype's "act as" stands in for the waiting approver. */
   async function actAs(approve: boolean, who: string) {
     if (!live || busy || !cvData.decide) return;
@@ -282,10 +310,34 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     } catch (e) { toast.error('Could not cancel', errMsg(e)); } finally { setBusy(false); }
   }
 
+  async function sendMailCode() {
+    if (!d || mail.sending || mail.wait > 0) return;
+    setMail(m => ({ ...m, sending: true }));
+    setOtpErr('');
+    try {
+      // A Gmail-only lock has no approval step: the request is raised here, already approved.
+      let reqId = live?.id;
+      if (!reqId) { reqId = (await cvData.requestAccess(d.id, {})).data.id; await load(true); }
+      autoSent.current = reqId;
+      const r = await cvData.sendOtp(reqId);
+      setMail({ sending: false, sentTo: r.data.sent_to, wait: r.data.resend_in, expiresIn: r.data.expires_in });
+      toast.success(`Code sent to ${r.data.sent_to}`);
+    } catch (e) {
+      setMail(m => ({ ...m, sending: false }));
+      setOtpErr(errMsg(e, 'Could not send the code.'));
+    }
+  }
+  // Reaching the Gmail stage sends the first code once; Resend is there for another.
+  useEffect(() => {
+    if (cur !== 'otp' || !isMail || !live?.can.send_otp || autoSent.current === live.id) return;
+    sendMailCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur, isMail, live?.id, live?.can.send_otp]);
+
   async function verify() {
     if (!d || busy) return;
     const code = digits.join('');
-    if (code.length !== 6) { setOtpErr('Enter the 6-digit code from your authenticator app.'); return; }
+    if (code.length !== 6) { setOtpErr(isMail ? 'Enter the 6-digit code from the email.' : 'Enter the 6-digit code from your authenticator app.'); return; }
     setBusy(true);
     setOtpErr('');
     try {
@@ -405,15 +457,15 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
               let cls = st === 'done' ? 'is-done' : st === 'pend' ? 'is-pend' : st === 'bad' ? 'is-bad' : k === cur ? 'is-cur' : 'is-todo';
               const at = decidedAt(k);
               const sub = st === 'done' ? (k === 'otp' ? 'Verified' : `Approved · ${fmtTime(at)}`)
-                : st === 'pend' ? 'Awaiting approval' : st === 'bad' ? 'Rejected' : k === cur ? META[k][2] : 'Locked';
+                : st === 'pend' ? 'Awaiting approval' : st === 'bad' ? 'Rejected' : k === cur ? metaOf(k)[2] : 'Locked';
               if (k === view) cls += ' is-view';
               const click = st === 'done' && k !== view;
               return (
                 <div key={k} className={`rv-node ${cls}${click ? ' is-click' : ''}`}
                   onClick={click ? () => go(k) : undefined} title={click ? 'Go to this stage' : undefined} tabIndex={click ? 0 : undefined}
                   onKeyDown={click ? e => { if (e.key === 'Enter') go(k); } : undefined}>
-                  <span className="rv-node__ico">{st === 'done' ? <Svg d={CP_I.check} size={15} /> : <Svg d={META[k][1]} size={16} />}</span>
-                  <div className="rv-node__t"><em>Step {i + 1}</em><b>{META[k][0]}</b><span>{sub}</span></div>
+                  <span className="rv-node__ico">{st === 'done' ? <Svg d={CP_I.check} size={15} /> : <Svg d={metaOf(k)[1]} size={16} />}</span>
+                  <div className="rv-node__t"><em>Step {i + 1}</em><b>{metaOf(k)[0]}</b><span>{sub}</span></div>
                 </div>
               );
             })}
@@ -579,6 +631,41 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
 
   function otpPane() {
     const left3 = live?.otp?.attempts_left;
+    if (isMail) {
+      const to = mail.sentTo || live?.otp?.sent_to || plan?.otp_sent_to || 'the Gmail set for this credential';
+      const sendLbl = mail.sending ? 'Sending…' : mail.wait > 0 ? `Resend in ${mail.wait}s` : mail.sentTo ? 'Resend code' : 'Send code';
+      return (
+        <>
+          <div className="rv-hd">
+            <span className="rv-eyebrow">{eyebrow('otp', 'Gmail')}</span>
+            <h4>Verify with your Gmail</h4>
+            <p>Kryptone emails a 6-digit code to <b>{to}</b>. Open the email from Kryptone and enter the code here.</p>
+          </div>
+          {!live && previousNote()}
+          <div className="rv-otp is-one">
+            <div className="rv-otp__one">
+              <div className="cp-vcard">
+                <div className="cp-vcard__hd">
+                  <span className="cp-vcard__ico"><Svg d={CP_I.mail} size={16} /></span>
+                  <div><b>Enter the code</b><span>{mail.sentTo ? `Sent to ${mail.sentTo}` : 'Press Send code to get one'}</span></div>
+                </div>
+                <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
+                <div className="cp-err cp-err--c" id="cpFormErr">{otpErr}</div>
+                <button type="button" className="cp-btn cp-btn--ghost cp-btn--block" onClick={sendMailCode}
+                  disabled={mail.sending || mail.wait > 0 || busy}>
+                  <Svg d={CP_I.send} size={13} /> {sendLbl}
+                </button>
+                <div className="cp-vcard__ft">
+                  <Svg d={CP_I.clock} size={11} />
+                  {mail.expiresIn ? `The code works once and expires in ${Math.round(mail.expiresIn / 60)} min` : 'The code works once'}
+                  {left3 !== undefined && left3 < 3 ? ` · ${left3} attempt${left3 === 1 ? '' : 's'} left` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    }
     return (
       <>
         <div className="rv-hd">
@@ -705,6 +792,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     if (!past && cur !== 'done') {
       if (cur === 'otp') {
         prim = <button type="button" className="cp-btn cp-btn--pri" onClick={verify} disabled={busy}><Svg d={CP_I.lock} size={13} /> {busy ? 'Verifying…' : 'Verify & reveal'}</button>;
+      } else if (cur === 'manager' && unlock.needs_forward) {
+        prim = <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy}><Svg d={CP_I.send} size={13} /> {busy ? 'Sending…' : `Send to ${approverName('manager')}`}</button>;
       } else if (stageStatus(cur) === 'pend') {
         prim = <button type="button" className="cp-btn cp-btn--pri is-wait" disabled><span className="cp-spin cp-spin--sm" /> Waiting for {approverName(cur)}…</button>;
       } else {
@@ -717,7 +806,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
           <div className="rv-dots">
             {steps.map((k, i) => <i key={k} className={`${i < idx ? 'is-done' : i === idx ? 'is-cur' : ''}${i === vidx && past ? ' is-view' : ''}`} />)}
           </div>
-          <div className="rv-foot__t"><b>Stage {vidx + 1} of {n}</b><span>{vk ? FOOT_NAMES[vk] : ''}{past ? ' · completed' : ''}</span></div>
+          <div className="rv-foot__t"><b>Stage {vidx + 1} of {n}</b><span>{vk ? (vk === 'otp' && isMail ? 'Gmail code' : FOOT_NAMES[vk]) : ''}{past ? ' · completed' : ''}</span></div>
         </div>
         <div className="rv-foot__r">{nav()}{prim}</div>
       </>

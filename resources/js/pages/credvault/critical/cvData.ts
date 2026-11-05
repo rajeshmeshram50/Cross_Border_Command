@@ -12,7 +12,7 @@ import { ADMIN, later, toRow, type Seed } from '../team-vault/tvData';
  * approve / reject standing in for the approvers (decide()). Rows are built with Team Vault's
  * dummy row builder, so only the critical parts (CCRD code, lock steps, access, rights) are set here.
  */
-export const CV_DUMMY = true;
+export const CV_DUMMY = false;
 
 /* [type, name, sub line, username, owner, department id, risk, strength 0-4, 2FA, shared, hours since update]
    Department ids are Team Vault's: 1 IT, 3 HR, 5 Logistics, 7 Accounts; 0 = personal. */
@@ -231,6 +231,9 @@ const dummy = {
     return answer(credId, 'Request sent');
   },
 
+  /** The requester forwards an admin-approved request to the manager (dummy: open the manager stage). */
+  raiseManager: (reqId: number) => { const f = flowOf(reqId); if (f.phase === 'manager_ready') f.phase = 'manager'; return answer(reqId, 'Forwarded to the reporting manager.'); },
+
   /** The prototype's "act as": the waiting approver approves or rejects. */
   decide: (reqId: number, approve: boolean) => {
     const r = rowOf(reqId), f = flowOf(reqId);
@@ -274,9 +277,12 @@ const dummy = {
 };
 
 const live = {
-  list: (q: ListQuery) => cvApi.list(q),
+  // GET /critical-vault/credentials (Postman 09): the vault itself, with the all / mine / others counts.
+  list: (q: ListQuery) => { const { risk: _risk, ...rest } = (q ?? {}) as Record<string, unknown>; return cvApi.vaultList(true, rest as ListQuery); },
   show: (id: number) => cvApi.show(id),
   requestAccess: cvApi.requestAccess,
+  /** The requester forwards an admin-approved request to their reporting manager. */
+  raiseManager: cvApi.raiseManager,
   /** Only the dummy data has the prototype's "act as": real approvals come from Access Request Management. */
   decide: undefined as typeof dummy.decide | undefined,
   cancel: cvApi.cancel,

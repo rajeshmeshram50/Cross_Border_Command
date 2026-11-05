@@ -174,13 +174,16 @@ export type AttLeavePortion = 'full' | 'first_half' | 'second_half';
      · Leave      — leave DAYS: a full day is 1, each half-day leave is 0.5.
      · Half Day   — half-day leaves, plus any day whose own status is Half Day.
    Future days and days outside the month are excluded, as before. */
-const calTotals = (cells: { inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion }[]): Record<string, number> => {
+const calTotals = (cells: { inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion; lateMinutes?: number }[]): Record<string, number> => {
   const raw: Record<string, number> = {};
   let halfLeave = 0;
   let fullLeave = 0;
+  let lateDays = 0;
   for (const c of cells) {
     if (!c.inMonth || !c.status || c.future) continue;
     raw[c.status] = (raw[c.status] || 0) + 1;
+    // A late arrival counts even when the day's main status is something else (e.g. Missing Out) — same rule as the calendar's Late pill.
+    if (c.status === 'Late' || (c.lateMinutes ?? 0) > LATE_GRACE_MINUTES) lateDays += 1;
     if (c.leavePortion === 'first_half' || c.leavePortion === 'second_half') halfLeave += 1;
     else if (CAL_LEAVE_LIKE.includes(c.status)) fullLeave += 1;
   }
@@ -189,6 +192,7 @@ const calTotals = (cells: { inMonth: boolean; future: boolean; status: DayStatus
     Present:    CAL_PRESENT_LIKE.reduce((n, s) => n + (raw[s] || 0), 0),
     Leave:      fullLeave + halfLeave * 0.5,
     'Half Day': (raw['Half Day'] || 0) + halfLeave,
+    Late:       lateDays,
   };
 };
 /** 5 → "5", 4.5 → "4.5" — half-day leaves make the Leave total fractional. */

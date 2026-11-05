@@ -42,10 +42,17 @@ class AccessRequestController extends CredVaultController
         $f = $request->validate($this->listRules(['all', 'pending', 'approved', 'rejected', 'mine', 'to_me']));
         $this->sweepUnlocks($u->client_id);
 
-        $admin = $this->isAdmin($u);
-        $base  = AccessRequest::where('client_id', $u->client_id);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
+        $base   = AccessRequest::where('client_id', $u->client_id);
         if (!$admin) {
-            $base->where(fn ($w) => $w->where('requester_id', $u->id)->orWhere('admin_user_id', $u->id)->orWhere('manager_user_id', $u->id));
+            // The Branch Admin (Vault Admin) sees every request raised in their branch; everyone else only theirs and the ones on them.
+            $base->where(function ($w) use ($u, $branch) {
+                $w->where('requester_id', $u->id)->orWhere('admin_user_id', $u->id)->orWhere('manager_user_id', $u->id);
+                if ($branch) {
+                    $w->orWhereIn('requester_id', User::where('client_id', $u->client_id)->where('branch_id', $branch)->select('id'));
+                }
+            });
         }
         $search = clone $base;
         if ($term = $f['q'] ?? null) {
@@ -133,6 +140,9 @@ class AccessRequestController extends CredVaultController
         $this->sweepUnlocks($u->client_id);
         [$c] = $this->findInVault($u, $id, 'critical', self::RANK_VIEW,
             'Your access is Use Only — there is nothing for you to unlock on this credential.');
+        if ($this->opensDirectly($u, $c)) {
+            $this->reject('You are the Vault Admin for this branch — open this credential directly.', null, 409);
+        }
         $pol = Policy::for($u->client_id);
 
         $steps       = $c->lockSteps();
@@ -164,11 +174,11 @@ class AccessRequestController extends CredVaultController
 
         $adminId = null;
         if ($adminStep) {
-            // Nobody approves their own request: the requester is never in the pool.
-            $pool    = array_values(array_diff($this->adminIds($u->client_id), [$u->id]));
-            if (!$pool) $this->reject('There is no other Vault Admin who can approve this request.', null, 409);
-            $adminId = $c->lock_admin_user_id ?: $pol['cp_admin_user_id'];
-            if (!in_array((int) $adminId, $pool, true)) $adminId = null;   // null = any Vault Admin
+            // The Vault Admin is the requester's Branch Admin; nobody approves their own request.
+            $pool = array_values(array_diff($this->branchAdminIds($u->branch_id, $u->client_id), [$u->id]));
+            if (!$pool) $this->reject('Your branch has no Branch Admin (Vault Admin) to approve this. Ask your administrator to assign one.', null, 409);
+            $adminId = $c->lock_admin_user_id ?: ($pol['cp_admin_user_id'] ?: null);
+            if (!in_array((int) $adminId, $pool, true)) $adminId = $pool[0];   // pin to the branch admin
         }
         $managerId = null;
         if ($managerStep) {
@@ -241,6 +251,38 @@ class AccessRequestController extends CredVaultController
         $d = $request->validate(['note' => ['nullable', 'string', 'max:300']]);
 
         return $this->decide($u, $id, false, filled($d['note'] ?? null) ? trim($d['note']) : 'Not approved at this time');
+    }
+
+    /**
+     * POST /critical-vault/access-requests/{id}/raise-manager — the requester forwards an
+     * admin-approved request to their reporting manager. Only after this does the manager's
+     * approve button open; until then the request sits at "awaiting forward".
+     */
+    public function raiseManager(Request $request, int $id)
+    {
+        $u = $this->tenantUser($request);
+
+        $r = $this->inTransaction('forward to the reporting manager', function () use ($u, $id) {
+            $r = $this->findRequest($u, $id, true);
+            if ($r->requester_id !== $u->id)   $this->reject('Only the person who raised the request can forward it.', null, 403);
+            if ($r->status !== 'pending')       $this->reject('This request is no longer open.', null, 409);
+            if (!$r->manager_required)          $this->reject('This request has no reporting-manager step.', null, 409);
+            if ($r->admin_required && $r->admin_status !== 'approved') $this->reject('The Vault Admin has not approved this yet.', null, 409);
+            if ($r->manager_status === 'approved') $this->reject('The reporting manager has already approved this.', null, 409);
+            if ($r->manager_status === 'pending')  $this->reject('This request is already with the reporting manager.', null, 409);
+
+            $r->update(['manager_status' => 'pending']);
+            $this->audit($u, 'forward_mgr', $r->credential, "Request {$r->code} forwarded to the reporting manager", ['request_id' => $r->id], 'Access Requests');
+            $this->notifyStage($r, $r->requester?->name ?? 'A colleague');   // now notifies the manager — the stage is 'manager'
+
+            return $r;
+        });
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Forwarded to the reporting manager.',
+            'data'    => $this->requestRow($r->fresh(self::REQUEST_RELATIONS), $u),
+        ], 200);
     }
 
     /** POST /critical-vault/access-requests/{id}/cancel — the requester withdraws it. */

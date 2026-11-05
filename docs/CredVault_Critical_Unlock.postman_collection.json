@@ -1,0 +1,157 @@
+{
+  "info": {
+    "name": "CredVault — Critical Vault Unlock (Access Requests)",
+    "description": "Requester-driven critical-vault unlock flow, in run order.\n\nSequence: open the credential → raise to the Vault Admin → Vault Admin approves → the REQUESTER forwards to the Manager → Manager approves → requester passes 2-step (authenticator/email) → reveal.\n\nEach stage runs AS THE RIGHT PERSON (tokens captured in 00 · Setup). The server enforces: only a Vault Admin approves the admin stage, the manager stage opens ONLY after the requester forwards it (raise-manager), only the request's reporting manager approves it, the same person can't give both approvals, nobody decides their own request, and reject blocks.\n\nPre-filled with verified local test data (client 1). Run 00 · Setup once, then 01 top-to-bottom.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000/api" },
+    { "key": "credentialId", "value": "2189", "description": "Critical credential the requester can VIEW (CCRD-0001, google 2-step, admin+manager+otp locks)." },
+    { "key": "totpSecret", "value": "WEFUJU3DB2KWHMARKXYEHGMQOEAQEYQG", "description": "The credential's authenticator secret — used only to compute the code in the pre-request script." },
+    { "key": "reqEmail", "value": "sdfg@mailinator.com" },
+    { "key": "admEmail", "value": "igc@mailinator.com" },
+    { "key": "mgrEmail", "value": "dev12@mailinator.com" },
+    { "key": "pwd", "value": "Kryptone@2026" },
+    { "key": "reqToken", "value": "" },
+    { "key": "admToken", "value": "" },
+    { "key": "mgrToken", "value": "" },
+    { "key": "requestId", "value": "" },
+    { "key": "otpCode", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 · Setup — Logins (run first)",
+      "item": [
+        {
+          "name": "Login — Requester",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('reqToken', j.token || '');", "pm.test('requester token', () => pm.expect(j.token).to.be.a('string'));"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{reqEmail}}\",\n  \"password\": \"{{pwd}}\"\n}" }, "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] } }
+        },
+        {
+          "name": "Login — Vault Admin",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('admToken', j.token || '');", "pm.test('vault-admin token', () => pm.expect(j.token).to.be.a('string'));"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admEmail}}\",\n  \"password\": \"{{pwd}}\"\n}" }, "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] } }
+        },
+        {
+          "name": "Login — Manager",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('mgrToken', j.token || '');", "pm.test('manager token', () => pm.expect(j.token).to.be.a('string'));"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{mgrEmail}}\",\n  \"password\": \"{{pwd}}\"\n}" }, "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] } }
+        }
+      ]
+    },
+    {
+      "name": "01 · Critical Unlock — full flow (run in order)",
+      "item": [
+        {
+          "name": "1) Open unlock view (GET credential · stepper state)",
+          "description": "What the Critical Vault calls when you open a credential's 'Unlock' modal. `data.unlock` is the stepper state (state/stage/step/needs_forward/request_id); `data.unlock_plan` is the stage list.",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const d = pm.response.json().data || {};", "if (d.unlock && d.unlock.request_id) pm.collectionVariables.set('requestId', d.unlock.request_id);", "console.log('unlock =', JSON.stringify(d.unlock));"] } }],
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/credentials/{{credentialId}}", "host": ["{{baseUrl}}"], "path": ["credvault", "credentials", "{{credentialId}}"] } }
+        },
+        {
+          "name": "2) Raise access request (Requester → Vault Admin)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "if (j.data && j.data.id) pm.collectionVariables.set('requestId', j.data.id);", "pm.test('raised at admin stage', () => { pm.expect(j.data.status).to.eql('pending'); pm.expect(j.data.stage).to.eql('admin'); });", "console.log('requestId =', pm.collectionVariables.get('requestId'), '| code =', j.data && j.data.code);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Month-end payroll bank update needed\",\n  \"duration_minutes\": 15\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{credentialId}}/access-requests", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "credentials", "{{credentialId}}", "access-requests"] } }
+        },
+        {
+          "name": "3) Vault Admin — Approve",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('admin approved; awaits forward (manager after_admin)', () => { pm.expect(j.message).to.eql('Approved.'); pm.expect(j.data.manager.status).to.eql('after_admin'); });"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"Approved by Vault Admin\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "approve"] } }
+        },
+        {
+          "name": "4) Requester — Raise to Manager (forward)",
+          "description": "After the Vault Admin approves, the request sits at 'awaiting forward' (manager = after_admin). The REQUESTER forwards it; only then does the manager's Approve open. A manager who tries before this gets 409 'not forwarded yet'.",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('forwarded → manager pending', () => { pm.expect(j.message).to.eql('Forwarded to the reporting manager.'); pm.expect(j.data.manager.status).to.eql('pending'); });"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/raise-manager", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "raise-manager"] } }
+        },
+        {
+          "name": "5) Manager — Approve",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('manager approved → otp stage', () => { pm.expect(j.message).to.eql('Approved.'); pm.expect(j.data.status).to.eql('approved'); pm.expect(j.data.stage).to.eql('otp'); });"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{mgrToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"Approved by Manager\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "approve"] } }
+        },
+        {
+          "name": "6) Verify authenticator code (Requester)",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "// Compute the current TOTP from {{totpSecret}} (RFC 6238, same as the app).",
+              "const b32 = (pm.collectionVariables.get('totpSecret') || '').replace(/=+$/, '').toUpperCase();",
+              "const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+              "let bits = '';",
+              "for (const c of b32) { const v = A.indexOf(c); if (v < 0) continue; bits += v.toString(2).padStart(5, '0'); }",
+              "let hex = '';",
+              "for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+              "const counter = Math.floor(Math.floor(Date.now() / 1000) / 30);",
+              "const counterHex = counter.toString(16).padStart(16, '0');",
+              "const hmac = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counterHex), CryptoJS.enc.Hex.parse(hex)).toString(CryptoJS.enc.Hex);",
+              "const offset = parseInt(hmac.substr(hmac.length - 1), 16);",
+              "const bin = parseInt(hmac.substr(offset * 2, 8), 16) & 0x7fffffff;",
+              "const otp = (bin % 1000000).toString().padStart(6, '0');",
+              "pm.collectionVariables.set('otpCode', otp);",
+              "console.log('TOTP code =', otp);"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('unlocked', () => pm.expect(j.data.status).to.eql('unlocked'));", "console.log(j.message);"] } }
+          ],
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{otpCode}}\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/verify-otp", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "verify-otp"] } }
+        },
+        {
+          "name": "7) Reveal credential (Requester)",
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{baseUrl}}/credvault/credentials/{{credentialId}}/reveal", "host": ["{{baseUrl}}"], "path": ["credvault", "credentials", "{{credentialId}}", "reveal"] } }
+        }
+      ]
+    },
+    {
+      "name": "02 · Email-method OTP (if the credential uses email 2-step)",
+      "item": [
+        {
+          "name": "Send email code (Requester)",
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/send-otp", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "send-otp"] } }
+        },
+        {
+          "name": "Verify email code (Requester)",
+          "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"code\": \"000000\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/verify-otp", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "verify-otp"] } }
+        }
+      ]
+    },
+    {
+      "name": "03 · Access Request Management (list · tabs · filter)",
+      "description": "The index/list view. Run as Vault Admin ({{admToken}}) to see every request. Response: { data, tabs:{all,pending,approved,rejected,mine,to_me}, meta }.",
+      "item": [
+        { "name": "List — All (tab=all)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=all&page=1&per_page=10", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "all" }, { "key": "page", "value": "1" }, { "key": "per_page", "value": "10" }] } } },
+        { "name": "List — Pending (tab=pending)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=pending", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "pending" }] } } },
+        { "name": "List — Approved (tab=approved)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=approved", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "approved" }] } } },
+        { "name": "List — Rejected (tab=rejected)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=rejected", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "rejected" }] } } },
+        { "name": "List — My requests (tab=mine, Requester)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=mine", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "mine" }] } } },
+        { "name": "List — Awaiting my decision (tab=to_me, Manager)", "description": "A request appears here for the manager ONLY after the requester forwards it (manager_status=pending).", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{mgrToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=to_me", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "to_me" }] } } },
+        { "name": "List — Search (q)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests?tab=all&q=payroll", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests"], "query": [{ "key": "tab", "value": "all" }, { "key": "q", "value": "payroll" }] } } },
+        { "name": "Get single request (by id)", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}"] } } }
+      ]
+    },
+    {
+      "name": "04 · Reject & guards (negative tests)",
+      "item": [
+        { "name": "Vault Admin — Reject (blocks the request)", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('rejected', () => pm.expect(j.data.status).to.eql('rejected'));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"Not this time\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/reject", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "reject"] } } },
+        { "name": "Requester approves own request → 403", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 — cannot decide own', () => pm.expect(pm.response.code).to.eql(403));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"should fail\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "approve"] } } },
+        { "name": "Manager approves before forward → 409", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('409 — not forwarded yet', () => pm.expect(pm.response.code).to.eql(409));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{mgrToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"too early\"\n}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "approve"] } } },
+        { "name": "Lock now (cleanup — Requester or Vault Admin)", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/lock", "host": ["{{baseUrl}}"], "path": ["credvault", "critical-vault", "access-requests", "{{requestId}}", "lock"] } } }
+      ]
+    },
+    {
+      "name": "99 · Dev helper — live 2FA codes (LOCAL only)",
+      "description": "For developers with no authenticator app/email. Returns the current TOTP code for every critical google-2-step credential in your client. LOCAL-ONLY: returns 404 unless APP_ENV=local — it bypasses 2FA on purpose and must never be enabled elsewhere.",
+      "item": [
+        {
+          "name": "Get live 2FA codes (also sets {{otpCode}} for {{credentialId}})",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = (pm.response.json().data) || [];",
+            "pm.test('got codes', () => pm.expect(d).to.be.an('array'));",
+            "const cid = Number(pm.collectionVariables.get('credentialId'));",
+            "const m = d.find(x => Number(x.id) === cid);",
+            "if (m) { pm.collectionVariables.set('otpCode', m.totp); console.log('otpCode set to', m.totp, 'for', m.code); }",
+            "d.forEach(x => console.log(x.code, '=', x.totp));"
+          ] } }],
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{reqToken}}" }], "url": { "raw": "{{baseUrl}}/credvault/dev/totp", "host": ["{{baseUrl}}"], "path": ["credvault", "dev", "totp"] } }
+        }
+      ]
+    }
+  ]
+}

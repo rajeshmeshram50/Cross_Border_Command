@@ -6,10 +6,13 @@ import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
   PHONE_CHARS, STR_LBL, checkField, emailError, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
-  policyStrengthMsg, secretIsPassword, strengthOf, typeColor, verifyTotp,
+  policyStrengthMsg, secretIsPassword, strengthOf, typeColor,
 } from './formHelpers';
 import { quickPassword } from '../generator';
-import { AUTH_EMPTY, AuthBox, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
+import {
+  AUTH_EMPTY, AuthBox, CP_I, GMAIL_EMPTY, ProtectionBody, TwofaCard, authLinked,
+  type AuthState, type GmailState, type ProtectionValue,
+} from './ProtectionSection';
 
 export interface FormInit {
   critical?: boolean; prefillPassword?: string; scope?: 'personal' | 'team'; departmentId?: number | null;
@@ -54,7 +57,8 @@ function Section({ ico, title, sub, items, wide, after }: {
   );
 }
 
-const PROTECT_HINT = 'Only the owner or a Vault Admin can change this.';
+const GMAIL_RE = /^[a-z0-9._%+-]+@(gmail|googlemail)\.com$/i;
+const PROTECT_HINT ='Only the owner or a Vault Admin can change this.';
 const LOCKED_STYLE: CSSProperties = { opacity: .6, cursor: 'not-allowed' };
 
 const fileIco = (n: string) => {
@@ -132,6 +136,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const twofaLocks = critical && hasTwofaSwitch(T);
   const needAuth = critical && canProtect && (twofaLocks ? twofaOn : prot.otp && pol.cp_otp);
   const [auth, setAuth] = useState<AuthState>(() => ({ ...AUTH_EMPTY, linkedOnServer: !!(P?.otp && P?.otp_linked) }));
+  const [method, setMethod] = useState<'google' | 'email'>(P?.otp_method === 'email' ? 'email' : 'google');
+  const [gmail, setGmail] = useState(P?.otp_email ?? '');
+  const gmailOk = GMAIL_RE.test(gmail.trim());
+  const [gm, setGm] = useState<GmailState>(GMAIL_EMPTY);
+  const [verifying, setVerifying] = useState(false);
   const verifiedAt = useRef(0);
 
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -179,9 +188,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       .catch(e => setAuth(a => ({ ...a, loading: false, failed: errMsg(e, 'Could not prepare a setup key.') })));
   };
   useEffect(() => {
-    if (needAuth && !authLinked(auth) && !auth.secret && !auth.loading && !auth.failed) fetchSecret();
+    if (needAuth && method === 'google' && !authLinked(auth) && !auth.secret && !auth.loading && !auth.failed) fetchSecret();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needAuth, auth.linkedOnServer, auth.verified, auth.secret, auth.loading, auth.failed]);
+  }, [needAuth, method, auth.linkedOnServer, auth.verified, auth.secret, auth.loading, auth.failed]);
 
   const attUrls = useRef<{ url: string }[]>([]);
   attUrls.current = attNew;
@@ -193,7 +202,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       recovery_key: rkey, scope, department_id: scope === 'team' ? deptId : '',
       attachments: `${attNew.length}/${attRemoved.length}`,
       lock_admin: `${prot.admin}|${prot.adminUserId}`, lock_manager: `${prot.manager}|${prot.managerUserId}`, lock_otp: String(prot.otp),
-      totp_code: String(auth.verified),
+      totp_code: String(auth.verified), twofa_email: `${method}|${gmail.trim()}`,
     };
     T.fields.forEach(f => { s['fields.' + f.key] = f.kind === 'file' ? (fieldFiles[f.key]?.name ?? '') : (vals[f.key] ?? ''); });
     return s;
@@ -600,25 +609,77 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   secBits.push('remark');
   const secSub = secBits.slice(0, -1).join(', ').replace(/^./, c => c.toUpperCase()) + ' and ' + secBits[secBits.length - 1] + ' for this ' + T.label.toLowerCase();
 
+  // POST two-step/google/verify — the save sends the same code again as totp_code.
   const verifyCode = async (): Promise<boolean> => {
     const c6 = auth.code.replace(/\s/g, '');
     if (!auth.secret) return false;
     if (c6.length !== 6) { setAuth(a => ({ ...a, error: 'Enter the 6-digit code shown in your authenticator app.' })); return false; }
-    const ok = await verifyTotp(auth.secret, c6);
-    if (ok === false) { setAuth(a => ({ ...a, error: 'That code is incorrect or expired. Check your app and try again.' })); return false; }
+    setVerifying(true);
+    try {
+      await cvApi.verifyAuthenticator(auth.secret, c6);
+    } catch (e) {
+      setAuth(a => ({ ...a, error: errMsg(e, 'That code is incorrect or expired. Check your app and try again.') }));
+      return false;
+    } finally {
+      setVerifying(false);
+    }
     verifiedAt.current = Date.now();
     setAuth(a => ({ ...a, verified: true, error: '' }));
     clr('totp_code');
     return true;
   };
+  // POST two-step/email/send, then two-step/email/verify — the save sends the token as email_otp_token.
+  const sendGmailCode = async () => {
+    if (!gmailOk) { setErrors(e => ({ ...e, twofa_email: 'Enter a Gmail address, e.g. name@gmail.com' })); return; }
+    setGm(g => ({ ...g, sending: true, error: '' }));
+    try {
+      const d = await cvApi.emailSetupSend(gmail.trim().toLowerCase(), name.trim() || undefined);
+      setGm({ ...GMAIL_EMPTY, token: d.token, sentTo: d.sent_to, wait: d.resend_in });
+      toast.success(`Code sent to ${d.sent_to}`);
+    } catch (e) {
+      setGm(g => ({ ...g, sending: false }));
+      setErrors(x => ({ ...x, twofa_email: errMsg(e, 'Could not send the code.') }));
+    }
+  };
+  const verifyGmailCode = async () => {
+    const c6 = gm.code.replace(/\s/g, '');
+    if (!gm.token) return;
+    if (c6.length !== 6) { setGm(g => ({ ...g, error: 'Enter the 6-digit code from the email.' })); return; }
+    setGm(g => ({ ...g, verifying: true, error: '' }));
+    try {
+      const d = await cvApi.emailSetupVerify(gm.token, c6);
+      setGm(g => ({ ...g, verifying: false, verified: true, sentTo: d.sent_to }));
+      clr('email_otp_code');
+    } catch (e) {
+      setGm(g => ({ ...g, verifying: false, code: '', error: errMsg(e, 'Incorrect or expired code.') }));
+    }
+  };
+  useEffect(() => {
+    if (gm.wait <= 0) return;
+    const t = setTimeout(() => setGm(g => ({ ...g, wait: Math.max(0, g.wait - 1) })), 1000);
+    return () => clearTimeout(t);
+  }, [gm.wait]);
+
   const authBox = (
-    <AuthBox a={auth}
+    <AuthBox a={auth} verifying={verifying}
       onCode={c => setAuth(a => ({ ...a, code: c, error: '' }))}
       onVerify={() => { verifyCode().then(ok => { if (ok) toast.success('Authenticator app verified', 'It is linked to this credential when you save.'); }); }}
       onRelink={() => setAuth({ ...AUTH_EMPTY })}
       onRetry={fetchSecret}
       onCopyKey={() => { if (auth.secret) copyText(auth.secret).then(() => toast.success('Setup key copied')).catch(() => toast.error('Could not copy')); }} />
   );
+  // The 2FA card sits under the section that holds the type's 2FA switch.
+  const twofaReadOnly = editing && auth.linkedOnServer;
+  const twofaChip = method === 'email'
+    ? { ok: gm.verified, text: gm.verified ? 'Gmail verified' : gm.token ? 'Enter the code' : 'Gmail needed' }
+    : { ok: authLinked(auth), text: authLinked(auth) ? 'App linked' : 'Scan to link' };
+  const twofaCard = twofaLocks && canProtect && twofaOn
+    ? <TwofaCard method={method} readOnly={twofaReadOnly} authBox={authBox} chip={twofaChip}
+        onMethod={m => { setMethod(m); clr('twofa_email'); }}
+        gmail={gmail} gmailOk={gmailOk} gmailErr={errors.twofa_email}
+        onGmail={v => { setGmail(v); setGm(GMAIL_EMPTY); if (GMAIL_RE.test(v.trim())) clr('twofa_email'); }}
+        gm={gm} onSend={sendGmailCode} onGmCode={c => setGm(g => ({ ...g, code: c, error: '' }))} onGmVerify={verifyGmailCode} />
+    : null;
 
   const adminOptions: CrdOption[] = [{ value: '', label: 'Any Vault Admin' },
     ...((approvers?.admins ?? []) as Loose[]).map(a => ({ value: String(a.id), label: String(a.name) }))];
@@ -680,20 +741,42 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
 
     let sendTotp = false;
-    if (needAuth && !auth.linkedOnServer) {
+    let sendGmail = false;
+    const toGmail = () => setTimeout(() => {
+      const f = bodyRef.current?.querySelector<HTMLInputElement>('#k2Gmail');
+      f?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      f?.focus({ preventScroll: true });
+    }, 30);
+    if (needAuth && !auth.linkedOnServer && method === 'email') {
+      if (!gmailOk) {
+        setErrors({ twofa_email: 'Enter a Gmail address, e.g. name@gmail.com' });
+        toast.warning('Add the Gmail address the 2FA code goes to');
+        toGmail();
+        return;
+      }
+      if (!gm.verified || !gm.token) {
+        if (gm.token) setGm(g => ({ ...g, error: g.error || 'Enter the code from the email and press Verify.' }));
+        else setErrors({ twofa_email: 'Send a code to this Gmail and verify it, or turn 2FA off.' });
+        toast.warning('Verify the Gmail address to save');
+        toGmail();
+        return;
+      }
+      sendGmail = true;
+    } else if (needAuth && !auth.linkedOnServer) {
       let ok = auth.verified;
-      if (auth.secret && auth.code.replace(/\s/g, '').length === 6) ok = await verifyCode();
+      if (auth.secret && auth.code.replace(/\s/g, '').length === 6 && !ok) ok = await verifyCode();
       if (!ok) {
         if (!auth.error) setAuth(a => ({ ...a, error: 'Scan the QR code and verify a code to link your authenticator app, or turn 2FA off.' }));
         toast.warning('Link your authenticator app to save');
-        bodyRef.current?.querySelector('.cp-auth')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        bodyRef.current?.querySelector('.k2-code')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
+      // The save checks the code again; a code older than ~25 s may have rolled over.
       if (Date.now() - verifiedAt.current > 25000) {
         setAuth(a => ({ ...a, verified: false, code: '', error: 'That code has expired. Enter the current 6-digit code from your app, then save again.' }));
         toast.warning('Enter a fresh authenticator code to save');
         setTimeout(() => {
-          const box = bodyRef.current?.querySelector('.cp-auth');
+          const box = bodyRef.current?.querySelector('.k2-code');
           box?.scrollIntoView({ block: 'center', behavior: 'smooth' });
           box?.querySelector<HTMLInputElement>('input.cp-d')?.focus({ preventScroll: true });
         }, 30);
@@ -745,8 +828,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       }
     }
     if (sendTotp && auth.secret) {
+      // As the Postman add: the method is named, not left for the server to infer from the secret.
+      body.twofa_method = 'google';
       body.totp_secret = auth.secret;
       body.totp_code = auth.code.replace(/\s/g, '');
+    }
+    if (sendGmail) {
+      // As the Postman "Create server · email 2-step": method, inbox and the verified token.
+      body.twofa_method = 'email';
+      body.twofa_email = gmail.trim().toLowerCase();
+      body.email_otp_token = gm.token;
     }
     if (attRemoved.length) body.remove_attachments = attRemoved;
 
@@ -781,9 +872,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       if (e instanceof CvApiError && Object.keys(e.errors).length) {
         const mapped: Record<string, string> = {};
         Object.entries(e.errors).forEach(([k, m]) => { const n = normKey(k); if (!mapped[n]) mapped[n] = m[0]; });
-        if (mapped.totp_code) {
-          setAuth(a => ({ ...a, verified: false, error: mapped.totp_code }));
-        }
+        if (mapped.totp_code) setAuth(a => ({ ...a, verified: false, error: mapped.totp_code }));
+        // A used-up or expired email token: send a fresh code.
+        if (mapped.email_otp_code) setGm(g => ({ ...g, verified: false, code: '', error: mapped.email_otp_code }));
         setErrors(mapped);
         const first = firstOf(mapped);
         if (first === 'totp_code') bodyRef.current?.querySelector('.cp-auth')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -845,16 +936,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           )}
           <Section ico="lock" title="Credential Details" sub={`ID, name and category of this ${l} credential`} items={s1} wide={wide} />
           <Section ico={T.icon} title={`${T.label} Details`} sub={`${T.description || `Only the fields a ${l} needs`} — only what a ${l} needs`}
-            items={typeItems} wide={wide} />
+            items={typeItems} wide={wide} after={T.twofa ? undefined : twofaCard} />
           {xtItems.length > 0 && <Section ico={SHIELD_CHECK} title="Recovery & Proof" sub={xtSub} items={xtItems} wide={wide} />}
-          <Section ico="shield" title="Security Details" sub={secSub} items={s3} wide={wide} />
+          <Section ico="shield" title="Security Details" sub={secSub} items={s3} wide={wide} after={T.twofa ? twofaCard : undefined} />
           {critical && canProtect && (
             <div id="cpSec">
               <Section ico="lock" title="Critical Access Protection" sub="Locks this credential behind approvals and 2FA — applied every time it is revealed" wide={false}
                 items={[{
                   span: 4,
                   render: () => (
-                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={twofaLocks} twofaOn={twofaOn}
+                    <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={twofaLocks} twofaOn={twofaOn} mainChip={twofaChip}
                       set={p => { if ('adminUserId' in p || 'managerUserId' in p) protIdsTouched.current = true; setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
                       adminOptions={adminOptions} managerOptions={managerOptions} auth={auth} authBox={authBox} errors={errors} />
                   ),

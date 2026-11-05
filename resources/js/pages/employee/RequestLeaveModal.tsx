@@ -316,8 +316,8 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               <i className="ri-calendar-2-line" />
             </span>
             <div>
-              <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 16 }}>Request Leave</h5>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
+              <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 17 }}>Request Leave</h5>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
                 File a new leave application
               </div>
             </div>

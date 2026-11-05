@@ -119,6 +119,8 @@ export interface Meta {
   audit_actions: { key: string; label: string; severity: string; verb: string }[];
   file_types: { attachments: string[]; file_fields: string[]; max_mb: number; max_attachments: number };
   policy: Policy;
+  /** Recycle Bin retention per vault; the Critical Vault's is fixed. */
+  bin_days?: { normal: number; critical: number };
   me: { id: number; name: string; is_vault_admin: boolean; department_id: number | null; manager_user_id: number | null };
 }
 
@@ -126,6 +128,7 @@ export interface Can { reveal: boolean; copy: boolean; edit: boolean; share: boo
 export interface UnlockState {
   state: 'locked' | 'pending' | 'progress' | 'open';
   label: string; stage?: LockStep; request_id?: number; code?: string;
+  needs_forward?: boolean;
   waiting_for?: { name: string; role: string } | null;
   step?: { number: number; of: number };
   expires_at?: string; seconds_left?: number; total_seconds?: number;
@@ -151,7 +154,7 @@ export interface CredentialDetail extends CredentialRow {
   all_values?: Record<string, string | null>;
   notes?: string | null; attachments?: Attachment[];
   shares?: ShareRow[];
-  protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; policy: { admin: boolean; manager: boolean; otp: boolean } };
+  protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; otp_method?: 'google' | 'email' | null; otp_email?: string | null; policy: { admin: boolean; manager: boolean; otp: boolean } };
   unlock_plan?: { steps: PlanStep[]; of: number; durations: number[]; asks_reason: boolean; default_minutes: number; otp_method?: 'google' | 'email' | null; otp_sent_to?: string | null };
   last_request?: AccessRequestRow | null;
   health?: { resolved: { type: string; severity: string; issue: string }[]; still_open: { type: string; severity: string; issue: string }[] };
@@ -221,11 +224,30 @@ export interface TransferRow {
   by: string | null; by_id: number; by_me: boolean | null; by_role: string | null; at: string | null;
 }
 
+export type BinVault = 'normal' | 'critical';
+export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
+
+/** GET /recycle-bin/retention — the Change period popup's data, per vault. */
+export interface BinRetention {
+  normal: { days: number; options: number[]; can_change: boolean };
+  critical: { days: number; options: number[]; can_change: boolean; fixed: boolean };
+  note: string;
+  /** Only with ?days= — what that period would delete right away. */
+  preview?: RetentionImpact;
+}
+
+/** Bin items older than a new period: `total` company-wide, `items` (up to 10) from the user's own bin. */
+export interface RetentionImpact {
+  days: number; total: number; visible_total: number;
+  items: { id: number; code: string; name: string; type: string; risk: Risk; deleted_at: string; days_in_bin: number }[];
+}
+
 export interface BinRow {
-  id: number; code: string; name: string; type: string; type_label: string; category_group: string; url: string | null;
-  scope: string; risk: Risk; owner: { id: number; name: string | null; is_me: boolean };
-  deleted_by: { id: number | null; name: string | null }; deleted_at: string; purges_at: string;
-  days_left: number; left_pct: number; urgency: 'bad' | 'warn' | 'ok'; can_purge: boolean;
+  id: number; code: string; vault: BinVault; name: string; type: string; type_label: string; category_group: string; url: string | null;
+  scope: string; risk: Risk; owner: { id: number; name: string | null; initials?: string; is_me: boolean };
+  deleted_by: { id: number | null; name: string | null; initials?: string }; deleted_at: string; purges_at: string;
+  days_left: number; left_pct: number; urgency: 'bad' | 'warn' | 'ok';
+  can_restore: boolean; can_purge: boolean; locked_reason: string | null;
 }
 
 export interface ImportPreviewRow {
@@ -235,7 +257,7 @@ export interface ImportPreviewRow {
 }
 export interface ImportPreview {
   token: string; expires_in: number; file_name: string; format: string; format_label: string; source: string;
-  columns: Record<string, string>; demo: boolean;
+  columns: Record<string, string>;
   stats: { rows: number; ready: number; duplicates: number; weak: number; cannot: number; selected: number };
   rows: ImportPreviewRow[];
 }
@@ -258,6 +280,9 @@ export const cvApi = {
   },
   approvers: (q?: string) => get<{ data: Loose }>('/critical-vault/approvers', { q }).then(r => r.data),
   newAuthenticator: (label?: string) => send<{ data: { secret: string; secret_display: string; otpauth_uri: string; works_with: string } }>('post', '/critical-vault/two-step/google/new', { label }).then(r => r.data),
+  verifyAuthenticator: (secret: string, code: string) => send<{ message: string; data: { method: 'google'; verified: boolean } }>('post', '/critical-vault/two-step/google/verify', { secret, code }),
+  emailSetupSend: (email: string, label?: string) => send<{ message: string; data: { token: string; sent_to: string; expires_in: number; resend_in: number } }>('post', '/critical-vault/two-step/email/send', { email, label }).then(r => r.data),
+  emailSetupVerify: (token: string, code: string) => send<{ message: string; data: { token: string; email: string; sent_to: string } }>('post', '/critical-vault/two-step/email/verify', { token, code }).then(r => r.data),
   /** The server-side generator (Postman / integrations). The dialog and ↻ generate on the device — see generator.ts. */
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
@@ -294,6 +319,7 @@ export const cvApi = {
   requests: (q: Q) => get<ListResponse<AccessRequestRow>>('/critical-vault/access-requests', q),
   request: (id: number) => get<{ data: AccessRequestRow }>(`/critical-vault/access-requests/${id}`).then(r => r.data),
   approve: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/approve`, { note }),
+  raiseManager: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/raise-manager`, {}),
   reject: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/reject`, { note }),
   cancel: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/cancel`, {}),
   sendOtp: (id: number) => send<{ data: { sent_to: string; expires_in: number; resend_in: number }; message: string }>('post', `/critical-vault/access-requests/${id}/send-otp`, {}),
@@ -314,9 +340,8 @@ export const cvApi = {
   auditExport: (q: Q) => download('get', '/audit-logs/export', undefined, { ...q, tz: viewerTz() }),
 
   /* Import & Recovery */
-  importSample: (format: 'xlsx' | 'csv' | 'json') => download('get', '/imports/sample', undefined, { format }),
-  importPreview: (file: File | 'sample') => {
-    if (file === 'sample') return send<{ data: ImportPreview }>('post', '/imports/preview', { sample: true }).then(r => r.data);
+  importSample: (format: 'xlsx' | 'csv') => download('get', '/imports/sample', undefined, { format }),
+  importPreview: (file: File) => {
     const fd = new FormData(); fd.append('file', file);
     return send<{ data: ImportPreview }>('post', '/imports/preview', fd).then(r => r.data);
   },
@@ -329,10 +354,13 @@ export const cvApi = {
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),
 
   /* Recycle Bin */
-  bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number }>('/recycle-bin', q),
+  bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number; counts: Record<BinVault | 'total', BinCounts> }>('/recycle-bin', q),
   restore: (id: number) => send<{ message: string }>('post', `/recycle-bin/${id}/restore`, {}),
   purge: (id: number) => send<{ message: string }>('delete', `/recycle-bin/${id}`, { confirm: true }),
-  emptyBin: () => send<{ message: string }>('delete', '/recycle-bin', { confirm: true }),
+  binRetention: (days?: number) => get<{ data: BinRetention }>('/recycle-bin/retention', { days }).then(r => r.data),
+  saveBinRetention: (days: number, confirmPurge = false) => send<{ message: string; data: { vault: BinVault; days: number; purged: number } }>(
+    'put', '/recycle-bin/retention', { days, vault: 'normal', ...(confirmPurge ? { confirm_purge: true } : {}) }),
+  emptyBin: (vault: BinVault | 'all' = 'all') => send<{ message: string }>('delete', '/recycle-bin', { confirm: true, vault }),
 };
 
 /** Routes of the ten screens — the menu, the quick actions and cross-screen links use these. */

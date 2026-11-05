@@ -9,7 +9,7 @@ import { later } from '../team-vault/tvData';
  * mode Approve, Reject, Cancel and Lock move a request on in memory (Vault Admin → Reporting Manager →
  * approved), so the whole flow can be walked through; a reload starts again.
  */
-export const AR_DUMMY = true;
+export const AR_DUMMY = false;
 
 type Chip = { id: number; name: string; initials: string };
 const chip = (id: number, name: string): Chip => ({ id, name, initials: initials(name) });

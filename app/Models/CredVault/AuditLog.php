@@ -26,6 +26,7 @@ class AuditLog extends Model
         'share'        => ['Shared', 'warn'],
         'revoke'       => ['Access revoked', 'info'],
         'request'      => ['Access requested', 'warn'],
+        'forward_mgr'  => ['Forwarded to manager', 'info'],
         'approve'      => ['Access approved', 'info'],
         'reject'       => ['Access rejected', 'critical'],
         'cancel'       => ['Request cancelled', 'info'],
@@ -53,7 +54,7 @@ class AuditLog extends Model
     public const VERBS = [
         'view' => 'viewed', 'reveal' => 'revealed the password of', 'copy' => 'copied the password of',
         'launch' => 'launched the website of', 'create' => 'added', 'edit' => 'updated', 'share' => 'shared',
-        'revoke' => 'revoked access to', 'request' => 'requested access to', 'approve' => 'approved access to',
+        'revoke' => 'revoked access to', 'request' => 'requested access to', 'forward_mgr' => 'forwarded to the manager', 'approve' => 'approved access to',
         'reject' => 'rejected access to', 'cancel' => 'cancelled the access request for', 'unlock' => 'unlocked',
         'lock' => 'locked', 'otp_failed' => 'entered wrong 2-step codes for', 'otp_sent' => 'had an email code sent for', 'export' => 'exported',
         'bin' => 'moved to the recycle bin', 'restore' => 'restored', 'purge' => 'permanently deleted',

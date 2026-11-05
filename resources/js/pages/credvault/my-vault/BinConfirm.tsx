@@ -64,7 +64,9 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
     );
   }
 
-  const days = meta?.policy.bin_days ?? 30;
+  // Each vault keeps its own bin retention: the Normal Vault's from Policies, the Critical Vault's fixed.
+  const critical = row.risk === 'critical';
+  const days = (critical ? meta?.bin_days?.critical : meta?.bin_days?.normal) ?? meta?.policy.bin_days ?? 30;
   const until = new Date(Date.now() + days * 864e5).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const sh = row.active_shares;
 
@@ -77,10 +79,12 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
       points={[
         {
           icon: PT_GONE,
-          title: `Removed from ${row.scope === 'team' ? 'Team' : 'My'} Vault`,
+          title: `Removed from ${critical ? 'Critical' : row.scope === 'team' ? 'Team' : 'My'} Vault`,
           text: sh ? `Access for ${sh} shared ${sh === 1 ? 'person' : 'people'} is paused` : 'It will no longer appear in any list',
         },
-        { icon: PT_RESTORE, title: `Restorable for ${days} days`, text: 'From the Recycle Bin, with all its details' },
+        { icon: PT_RESTORE, title: `Restorable for ${days} days`, text: critical
+          ? 'From the Recycle Bin, by the Branch Admin only, with all its details'
+          : 'From the Recycle Bin, with all its details' },
         { icon: PT_CLOCK, title: `Permanently deleted on ${until}`, text: 'Unless you restore it before then' },
       ]}
       ackLabel={<>Yes, move <b>{row.name}</b> to the recycle bin</>}
