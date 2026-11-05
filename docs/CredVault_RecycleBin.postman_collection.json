@@ -2,7 +2,7 @@
     "info": {
         "name": "Recycle Bin",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-        "description": "The Recycle Bin screen: four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each with Normal Vault and Critical Vault sub-tabs and their counts; the retention period (Normal changeable, Critical fixed at 30 days); restore and delete (Critical Vault items: the Branch Admin only); Empty Bin for both vaults in one call.\n\nBEFORE YOU START\nFill baseUrl, email/password (an employee with Credentials Vault → View), branchEmail/branchPassword (the Branch Admin of that employee's branch) and adminEmail/adminPassword (a client admin). Run the folders in order: 00 → 05.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Recycle Bin."
+        "description": "The Recycle Bin screen: four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each with Normal Vault and Critical Vault sub-tabs and their counts; the retention period (one period for My Vault and Critical Vault, set per branch by its Branch Admin; the Vault Admin sets the company default); restore and delete (Critical Vault items: the Branch Admin only); Empty Bin for both vaults in one call.\n\nBEFORE YOU START\nFill baseUrl, email/password (an employee with Credentials Vault → View), branchEmail/branchPassword (the Branch Admin of that employee's branch) and adminEmail/adminPassword (a client admin). Run the folders in order: 00 → 05.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Recycle Bin."
     },
     "auth": {
         "type": "bearer",
@@ -676,7 +676,7 @@
         },
         {
             "name": "02 · GET /recycle-bin — list, 4 tabs × Normal / Critical, counts",
-            "description": "GET /recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=\n\nThe four tabs — All Items · Deleted by Me · Team Credentials · Expiring Soon — each with a Normal Vault and a Critical Vault sub-tab. vault (default normal) is the sub-tab.\n\nResponse:\n• tabs — the chosen vault's four counts;\n• counts — { normal: {all, mine, team, soon}, critical: {…}, total: {…} } — every badge at once; they follow the search box;\n• summary — the cards of the chosen vault: retention_days, retention_fixed (Critical: true), can_change_retention (Normal + Vault Admin only), retention_options, items, deleted_by_me, expiring_soon (within 7 days of deletion), critical, next_deletion {name, at, days}, can_empty;\n• data[] — sr_no, code, vault, name, type_label, category_group, url, scope / scope_label, risk, owner {name, initials}, deleted_by {name ('You'), initials}, deleted_at, purges_at, days_left, left_pct, urgency (ok · warn · bad), can_restore, can_purge, locked_reason;\n• purged — items removed because their period ended.",
+            "description": "GET /recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=\n\nThe four tabs — All Items · Deleted by Me · Team Credentials · Expiring Soon — each with a Normal Vault and a Critical Vault sub-tab. vault (default normal) is the sub-tab.\n\nResponse:\n• tabs — the chosen vault's four counts;\n• counts — { normal: {all, mine, team, soon}, critical: {…}, total: {…} } — every badge at once; they follow the search box;\n• summary — the cards of the chosen vault: retention_days (the viewer's branch period, the same for both vaults), retention_scope {branch, source: branch|company}, retention_fixed (false), can_change_retention (Vault Admin or Branch Admin), retention_options, items, deleted_by_me, expiring_soon (within 7 days of deletion), critical, next_deletion {name, at, days}, can_empty;\n• data[] — sr_no, code, vault, name, type_label, category_group, url, scope / scope_label, risk, owner {name, initials}, deleted_by {name ('You'), initials}, deleted_at, purges_at, days_left, left_pct, urgency (ok · warn · bad), can_restore, can_purge, locked_reason;\n• purged — items removed because their period ended.",
             "item": [
                 {
                     "name": "Normal · All Items",
@@ -920,7 +920,7 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "const b = pm.response.json();",
                                     "pm.test('counts: both vaults × 4 tabs + total', () => { ['normal', 'critical', 'total'].forEach(v => pm.expect(b.counts[v]).to.include.keys('all', 'mine', 'team', 'soon')); pm.expect(b.counts.total.all).to.eql(b.counts.normal.all + b.counts.critical.all); });",
-                                    "pm.test('Critical: fixed period, no change', () => { pm.expect(b.summary.retention_fixed).to.eql(true); pm.expect(b.summary.can_change_retention).to.eql(false); pm.expect(b.summary.retention_options).to.eql([]); });",
+                                    "pm.test('Critical: the same period as My Vault, not fixed; the employee cannot change it', () => { pm.expect(b.summary.retention_fixed).to.eql(false); pm.expect(b.summary.can_change_retention).to.eql(false); pm.expect(b.summary.retention_options).to.eql([7, 15, 30, 60, 90]); });",
                                     "pm.test('the employee cannot restore critical items', () => b.data.forEach(r => pm.expect(r.can_restore).to.eql(false)));"
                                 ]
                             }
@@ -1332,11 +1332,58 @@
             ]
         },
         {
-            "name": "03 · GET | PUT /recycle-bin/retention — Change period",
-            "description": "GET /recycle-bin/retention — the Change period popup: normal {days, options, can_change}, critical {days: 30, fixed: true, can_change: false}.\nPUT /recycle-bin/retention { days: 7|15|30|60|90, vault?: normal } — Vault Admins, Normal Vault only. A shorter period deletes the items already past it, right away (the popup's note). The Critical Vault keeps a fixed 30 days: a change is refused.",
+            "name": "03 · GET | PUT /recycle-bin/retention — Change period (per branch, both vaults)",
+            "description": "One retention period covers My Vault and Critical Vault, and it is set per branch.\n\nGET /recycle-bin/retention[?days=][&branch_id=] — the Change period popup: days (the viewer's period), applies_to: both, scope (branch | company), branch {id, name, source: branch | company}, company_days, options, can_change, normal / critical (the same days, fixed: false), branches[] (Vault Admin: each branch's period), preview (with days: what that period would delete now).\n\nPUT /recycle-bin/retention { days: 7|15|30|60|90, branch_id?, confirm_purge? }\n• Branch Admin — their own branch: every employee of the branch, both vaults. Another branch_id → 403.\n• Vault Admin — no branch_id: the company default (every branch without its own period); with branch_id: that branch.\n• Employee — 403.\nA shorter period deletes the items already past it, right away: when it would delete any, send confirm_purge: true (409 without it). vault is accepted and ignored.",
             "item": [
                 {
-                    "name": "Retention — both vaults",
+                    "name": "Retention — Branch Admin (their branch, both vaults)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('branch scope, one period for both vaults', () => { pm.expect(b.data.scope).to.eql('branch'); pm.expect(b.data.applies_to).to.eql('both'); pm.expect(b.data.critical.fixed).to.eql(false); pm.expect(b.data.critical.days).to.eql(b.data.normal.days); pm.expect(b.data.can_change).to.eql(true); });",
+                                    "pm.collectionVariables.set('binBranchId', b.data.branch.id);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Retention — employee (reads their branch, cannot change)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1365,23 +1412,19 @@
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "const b = pm.response.json();",
-                                    "pm.test('critical fixed at 30', () => { pm.expect(b.data.critical.fixed).to.eql(true); pm.expect(b.data.critical.days).to.eql(30); });"
+                                    "pm.test('read only', () => { pm.expect(b.data.can_change).to.eql(false); pm.expect(b.data.critical.days).to.eql(b.data.normal.days); });"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "Normal — set 60 days (Vault Admin)",
+                    "name": "Retention — Vault Admin (company default + every branch)",
                     "request": {
-                        "method": "PUT",
+                        "method": "GET",
                         "header": [
                             {
                                 "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
                                 "value": "application/json"
                             }
                         ],
@@ -1395,15 +1438,6 @@
                                 "recycle-bin",
                                 "retention"
                             ]
-                        },
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"days\": 60,\n    \"vault\": \"normal\"\n}",
-                            "options": {
-                                "raw": {
-                                    "language": "json"
-                                }
-                            }
                         },
                         "auth": {
                             "type": "bearer",
@@ -1424,14 +1458,66 @@
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "const b = pm.response.json();",
-                                    "pm.test('60 days', () => pm.expect(b.data.days).to.eql(60));"
+                                    "pm.test('company scope with branches[]', () => { pm.expect(b.data.scope).to.eql('company'); pm.expect(b.data.branches).to.be.an('array').that.is.not.empty; });"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "Normal — back to 30 days (Vault Admin)",
+                    "name": "Preview 7 days for the branch",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention?days=7",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "7"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('preview of the branch', () => { pm.expect(b.data.preview.days).to.eql(7); pm.expect(b.data.preview).to.include.keys('total', 'visible_total', 'items'); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Branch Admin — set 60 days for the branch",
                     "request": {
                         "method": "PUT",
                         "header": [
@@ -1457,7 +1543,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"days\": 30\n}",
+                            "raw": "{\n    \"days\": 60\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -1469,7 +1555,151 @@
                             "bearer": [
                                 {
                                     "key": "token",
-                                    "value": "{{adminToken}}",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('60 days, branch, both vaults', () => { pm.expect(b.data.days).to.eql(60); pm.expect(b.data.scope).to.eql('branch'); pm.expect(b.data.applies_to).to.eql('both'); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee now reads 60 (their branch)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('60 for both vaults', () => { pm.expect(b.data.days).to.eql(60); pm.expect(b.data.critical.days).to.eql(60); pm.expect(b.data.branch.source).to.eql('branch'); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical tab follows it (60)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=all&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('60 days, not fixed', () => { pm.expect(b.summary.retention_days).to.eql(60); pm.expect(b.summary.retention_fixed).to.eql(false); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Branch Admin — back to 30 days (vault is ignored)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 30,\n    \"vault\": \"critical\",\n    \"confirm_purge\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
                                     "type": "string"
                                 }
                             ]
@@ -1490,7 +1720,7 @@
                     ]
                 },
                 {
-                    "name": "Critical — change the period (422, fixed)",
+                    "name": "Branch Admin — another branch (403)",
                     "request": {
                         "method": "PUT",
                         "header": [
@@ -1516,7 +1746,64 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"days\": 15,\n    \"vault\": \"critical\"\n}",
+                            "raw": "{\n    \"days\": 15,\n    \"branch_id\": 999999\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Vault Admin — company default 30 days",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 30,\n    \"confirm_purge\": true\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -1540,7 +1827,125 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('company scope', () => { pm.expect(b.data.scope).to.eql('company'); pm.expect(b.data.days).to.eql(30); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Vault Admin — one branch (30 days)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 30,\n    \"branch_id\": \"{{binBranchId}}\",\n    \"confirm_purge\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('branch scope', () => pm.expect(b.data.scope).to.eql('branch'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Vault Admin — a branch of another company (404)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 30,\n    \"branch_id\": 999999\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
                                 ]
                             }
                         }
@@ -1810,7 +2215,7 @@
                     ]
                 },
                 {
-                    "name": "Employee deletes a Normal item for good",
+                    "name": "Employee deletes a Normal item for good (403: Vault Admin or Branch Admin only — the employee can restore)",
                     "request": {
                         "method": "DELETE",
                         "header": [
@@ -1850,7 +2255,7 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
                                 ]
                             }
                         }
@@ -1955,7 +2360,7 @@
             "description": "DELETE /recycle-bin { confirm: true, vault?: all|normal|critical } — vault all (default) empties both vaults at once: every Normal Vault item the caller sees in the bin, and — for the Branch Admin — every Critical Vault item of the branch. Critical items anyone else sees are left and counted in data.skipped.critical.\nResponse data: deleted {normal, critical, total}, skipped {critical, reason}.\n\n⚠ This deletes for good EVERYTHING the caller may delete in the bin — not only the test items. Run it on test data.",
             "item": [
                 {
-                    "name": "Employee empties all — Normal deleted, Critical left (skipped)",
+                    "name": "Employee empties the bin (403: Vault Admin or Branch Admin only)",
                     "request": {
                         "method": "DELETE",
                         "header": [
@@ -1994,9 +2399,7 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "const b = pm.response.json();",
-                                    "pm.test('normal deleted, critical skipped', () => { pm.expect(b.data.deleted.normal).to.be.at.least(1); pm.expect(b.data.deleted.critical).to.eql(0); pm.expect(b.data.skipped.critical).to.be.at.least(1); });"
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
                                 ]
                             }
                         }
@@ -2259,6 +2662,10 @@
         },
         {
             "key": "otpCode",
+            "value": ""
+        },
+        {
+            "key": "binBranchId",
             "value": ""
         },
         {

@@ -34,7 +34,9 @@
 | Endpoint sweep | every CredVault GET endpoint (33) answers without a server error for the Vault Admin, the Branch Admin and an employee | **99 / 99** |
 | Audit Logs | 10 events from 1 hour to 40 days old:<br>• ranges 24h 4 · 7 days 8 · 30 days 9 · All 10, plus custom dates;<br>• tabs, and who sees what (Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9);<br>• search, day groups, row fields, timezone, paging;<br>• CSV and Excel export | **42 / 42** |
 | Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked zip opening only with its password;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **62 / 62** |
-| Recycle Bin rules | • counts for both vaults × 4 tabs, search;<br>• each person's view;<br>• restore and delete per person (Critical: Branch Admin only);<br>• retention (Normal changeable, Critical fixed);<br>• Empty Bin | **42 / 42** |
+| Recycle Bin rules | • counts for both vaults × 4 tabs, search;<br>• each person's view;<br>• restore and delete per person (Critical: Branch Admin only);<br>• retention (one period for both vaults);<br>• Empty Bin | **43 / 43** |
+| Recycle Bin retention per branch | • a Branch Admin sets their branch's period for My Vault and Critical Vault;<br>• other branches unaffected; employees read their branch's;<br>• Vault Admin: company default and one branch;<br>• 403 / 404 rules, Policies saves keep it, audit | **38 / 38** |
+| Teams Critical Credentials (whole branch) | every role; View via `branch_team` with Request Access; Normal Vault unchanged | **41 / 41** |
 | Team access rights | Branch Admin, managers down the reporting line, no rights over people above or at the same level; edit, share and delete on the real APIs | **56 / 56** |
 | Generate Password (R&D spec) | • D34 strength examples;<br>• 10,000 passwords all correct;<br>• no bias over 10 million picks (largest deviation about 0.3%);<br>• EFF passphrases;<br>• the spec's messages | **49 / 49** |
 | Vault collection samples | every sample password still saves; the generator folder answers as its tests expect | **45 / 45** |
@@ -87,3 +89,4 @@
 - **Team Credentials** (Normal Vault) are the team credentials of the people **below** you in the reporting line. A colleague at the same level, or someone above, sees nothing of yours unless you share it.
 - **Teams Critical Credentials** (Critical Vault) list every employee's Critical Vault team credential in your branch. Colleagues outside your downline get View only (`via: branch_team`) and open the credential through Request Access. Tested by `cv_critical_branch.php`, 41/41.
 - **Critical Vault items in the Recycle Bin** can be restored or deleted by the **Branch Admin** only.
+- **Recycle Bin retention** is one period for My Vault and Critical Vault, set per branch by its Branch Admin. The Vault Admin sets the company default and can set any branch.

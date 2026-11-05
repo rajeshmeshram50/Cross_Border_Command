@@ -48,15 +48,13 @@ class Policy extends Model
     ];
 
     /**
-     * The Recycle Bin keeps Critical Vault items for a fixed period: `bin_days` (the
-     * "Change period" popup) applies to the Normal Vault only.
+     * How long a binned item stays before it is deleted for good. One period covers both
+     * vaults (My Vault and Critical Vault). It is set per branch: a branch's own period
+     * (`bin_branch_days`, set by its Branch Admin), else the company's `bin_days`.
      */
-    public const CRITICAL_BIN_DAYS = 30;
-
-    /** How long a binned item of $vault stays before it is deleted for good. */
-    public static function binDays(array $pol, string $vault): int
+    public static function binDays(array $pol, ?int $branchId = null): int
     {
-        return $vault === 'critical' ? self::CRITICAL_BIN_DAYS : (int) $pol['bin_days'];
+        return (int) ($branchId ? ($pol['bin_branch_days'][$branchId] ?? $pol['bin_days']) : $pol['bin_days']);
     }
 
     /** 2FA risk levels are kept in this order — the order the policy screen and its summary read them. */
@@ -103,7 +101,7 @@ class Policy extends Model
             ['Critical Vault'], 'switch', null],
         'cp_max_minutes' => ['critical', 'Maximum unlock window', 'The longest access window a requester can choose. The credential locks again after it.',
             ['Critical Vault'], 'seg', [[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']]],
-        'bin_days' => ['bin', 'Retention period', 'How long Normal Vault credentials stay in the Recycle Bin before they are permanently deleted. Critical Vault items are kept a fixed 30 days.',
+        'bin_days' => ['bin', 'Retention period', 'How long removed credentials (My Vault and Critical Vault) stay in the Recycle Bin before they are permanently deleted. The company default — a Branch Admin can set a period for their own branch in the Recycle Bin.',
             ['Recycle Bin', 'Move to Bin'], 'seg', [[7, '7 days'], [15, '15 days'], [30, '30 days'], [60, '60 days'], [90, '90 days']]],
         'bin_purge' => ['bin', 'Allow permanent delete', 'When off, items can only be restored or left to expire — no one can erase them early or empty the bin.',
             ['Recycle Bin'], 'switch', null],
@@ -154,7 +152,10 @@ class Policy extends Model
             $row = static::where('client_id', $clientId)->first();
             self::$memo[$clientId] = array_merge(
                 self::DEFAULTS,
-                array_intersect_key($row?->settings ?? [], self::DEFAULTS)
+                array_intersect_key($row?->settings ?? [], self::DEFAULTS),
+                // [branch id => days]: the branches with their own Recycle Bin period. Not a policy
+                // card of its own; kept in the same row and carried through every policy save.
+                ['bin_branch_days' => array_map('intval', $row?->settings['bin_branch_days'] ?? [])]
             );
         }
         return self::$memo[$clientId];

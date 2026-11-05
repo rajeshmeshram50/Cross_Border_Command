@@ -227,8 +227,11 @@ export interface TransferRow {
 export type BinVault = 'normal' | 'critical';
 export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
 
-/** GET /recycle-bin/retention — the Change period popup's data, per vault. */
+/** GET /recycle-bin/retention — the Change period popup's data: one period for both vaults, per branch. */
 export interface BinRetention {
+  days?: number;
+  scope?: 'branch' | 'company';
+  branch?: { id: number; name: string | null; source: 'branch' | 'company' } | null;
   normal: { days: number; options: number[]; can_change: boolean };
   critical: { days: number; options: number[]; can_change: boolean; fixed: boolean };
   note: string;

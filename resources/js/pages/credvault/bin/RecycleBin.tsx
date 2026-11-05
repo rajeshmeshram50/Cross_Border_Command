@@ -370,7 +370,9 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
         <div className="dl-modal rb-ret" role="dialog" aria-modal="true" aria-label="Retention period">
           <div className="dl-ico rb-ret__ico"><Svg icon="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2" size={30} sw={2.1} /></div>
           <div className="dl-title">Retention period</div>
-          <div className="dl-text">Choose how long credentials stay in the recycle bin before they are permanently deleted.</div>
+          <div className="dl-text">Choose how long credentials stay in the recycle bin before they are permanently deleted.
+            {ret && ` One period for My Vault and Critical Vault${ret.scope === 'branch' && ret.branch?.name
+              ? `, for everyone in ${ret.branch.name}.` : ' — the company default, for every branch without its own period.'}`}</div>
           <div className="rb-opts">
             {opts.map(o => (
               <button key={o} type="button" data-h40="skip" className={`rb-opt${o === d ? ' is-on' : ''}`} disabled={locked && o !== d}

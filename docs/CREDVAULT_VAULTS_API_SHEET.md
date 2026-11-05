@@ -429,11 +429,11 @@ Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CR
 
 ### Recycle Bin — 4 tabs × Normal / Critical
 
-The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 45 requests:
+The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 53 requests:
 - 00 Setup (3 logins);
 - 01 Prepare (moves 3 Normal and 2 Critical items to the bin);
 - 02 `GET /recycle-bin`;
-- 03 `GET | PUT /recycle-bin/retention`;
+- 03 `GET | PUT /recycle-bin/retention` (per branch, both vaults);
 - 04 restore / delete one item;
 - 05 Empty Bin.
 
@@ -445,8 +445,8 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 | `POST /credvault/recycle-bin/{id}/restore` | Back to its vault: My Vault, Team Vault or Critical Vault |
 | `DELETE /credvault/recycle-bin/{id}` `{ confirm: true }` | Delete one item for good |
 | `DELETE /credvault/recycle-bin` `{ confirm: true, vault?: all\|normal\|critical }` | **Empty Bin.** `all` (the default) empties **both vaults in one call** |
-| `GET /credvault/recycle-bin/retention` | The Change period popup: Normal's period and options, Critical's fixed period |
-| `PUT /credvault/recycle-bin/retention` `{ days: 7\|15\|30\|60\|90, vault?: normal }` | Change the **Normal Vault** period (Vault Admins) |
+| `GET /credvault/recycle-bin/retention[?days=][&branch_id=]` | The Change period popup: the viewer's period (**one for both vaults**), its branch and source, the options, `branches[]` for the Vault Admin, `preview` with `days` |
+| `PUT /credvault/recycle-bin/retention` `{ days: 7\|15\|30\|60\|90, branch_id?, confirm_purge? }` | Change the period **per branch, for My Vault and Critical Vault**: a Branch Admin sets their own branch; a Vault Admin sets the company default (no `branch_id`) or one branch |
 
 **Tabs.** There are four tabs: All Items, Deleted by Me, Team Credentials and Expiring Soon. Each has a Normal Vault and a Critical Vault sub-tab, and `vault` (default `normal`) picks the sub-tab. Expiring Soon means 7 days or less left. **Every badge comes back in one call, and the counts follow the search box:**
 
@@ -458,10 +458,11 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 ```
 
 **`summary`.** The cards, for the chosen vault:
-- `retention_days`;
-- `retention_fixed` (true for Critical);
-- `can_change_retention` (Normal and Vault Admin only);
-- `retention_options` (empty for Critical);
+- `retention_days`: the viewer's branch period, the same on both sub-tabs;
+- `retention_scope { branch { id, name }, source: branch | company, applies: both }`;
+- `retention_fixed`: always false (nothing is fixed any more);
+- `can_change_retention`: Vault Admin or Branch Admin;
+- `retention_options`: 7 · 15 · 30 · 60 · 90 on both sub-tabs;
 - `items`, `deleted_by_me`, `expiring_soon`, `critical`;
 - `next_deletion { name, at, days }`;
 - `purge_allowed`, `can_empty`.
@@ -469,17 +470,44 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 **Rows (`data[]`).** Each row has:
 - `sr_no`, `code`, `vault`, `name`, `type_label`, `category_group`, `url`, `scope` / `scope_label`, `risk`;
 - `owner { name, initials }`, `deleted_by { name ("You"), initials }`, `deleted_at`;
-- `purges_at`, `days_left`, `left_pct`, `urgency` (ok · warn · bad);
+- `retention_days` (the period of the item's own branch), `branch_id`, `purges_at`, `days_left`, `left_pct`, `urgency` (ok · warn · bad);
 - **`can_restore`**, **`can_purge`**, and `locked_reason` when the user may not act.
 
 **Rules**
 
 | Rule | Normal Vault | Critical Vault |
 |---|---|---|
-| Retention period | The Vault Admin chooses it with Change period: 7 · 15 · 30 · 60 · 90 days. A shorter period deletes the items already past it, right away. | **Fixed 30 days.** No Change period is offered; `PUT …/retention` with `vault: critical` → 422 "…its period cannot be changed." |
+| Retention period | **One period for both vaults, set per branch** (see below) | The same period as My Vault. **No fixed 30 days.** |
 | Who sees an item | Its owner, whoever binned it, the Vault Admin (team items), and the Branch Admin (the branch's team items) | The same, and the **Branch Admin sees every Critical item of the branch** |
 | Restore / delete | Whoever sees it | **The Branch Admin of the item's branch only.** Anyone else gets 403 "Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin." |
 | Empty Bin (`vault: all`) | Everything the caller sees | The Branch Admin's: every Critical item of the branch. For anyone else, critical items are left and counted in `skipped.critical`. |
+
+#### Retention period: per branch, both vaults
+
+| Who | What Change period sets |
+|---|---|
+| Branch Admin | **Their branch's period:** every employee of the branch, My Vault and Critical Vault. Another `branch_id` → 403. |
+| Vault Admin (client admin) | No `branch_id`: the **company default**, used by every branch without its own period. With `branch_id`: that branch's period. A branch of another company → 404. |
+| Employee | Reads their branch's period (`can_change: false`). A change → 403. |
+
+- **Which period an item follows:** the branch the credential is filed under, else its owner's branch. An item with no branch follows the company default.
+- **Shorter period:** items already past it are deleted right away, in both vaults, in that branch only. When any would go, the PUT needs `confirm_purge: true` (409 without it). `GET …/retention?days=7` previews them.
+- **Stored:** in the company's CredVault policy row (`bin_branch_days`, branch id → days). No migration is needed. A save in CredVault Policies keeps the branch periods.
+- **Audit:** "Retention period for <branch>: 30 days → 7 days", module Recycle Bin.
+- **`vault`** in the PUT is still accepted (the screen sends it), and ignored.
+
+```
+GET /recycle-bin/retention   (Branch Admin)
+{ "days": 7, "applies_to": "both", "scope": "branch",
+  "branch": { "id": 3, "name": "…", "source": "branch" }, "company_days": 30,
+  "options": [7, 15, 30, 60, 90], "can_change": true,
+  "normal":   { "days": 7, "options": [7, 15, 30, 60, 90], "can_change": true, "fixed": false },
+  "critical": { "days": 7, "options": [7, 15, 30, 60, 90], "can_change": true, "fixed": false } }
+
+PUT /recycle-bin/retention { "days": 7, "confirm_purge": true }   (Branch Admin)
+{ "message": "Retention set to 7 days for <branch>, for My Vault and Critical Vault · 2 items past the new period deleted.",
+  "data": { "days": 7, "applies_to": "both", "scope": "branch", "branch_id": 3, "purged": 2 } }
+```
 
 **Empty Bin response:**
 
@@ -494,8 +522,16 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 - Moving a credential to the bin returns its vault and its own period, and for a critical credential says "restorable by the Branch Admin".
 
 **Tested (05/11/2026):**
-- **Rules:** 42/42 checks. These covered the counts for both vaults, the Expiring Soon tab, the search, each person's view (employee, the Branch Admins of two branches, the Vault Admin), restore and delete per person, retention (a shorter Normal period deletes old Normal items but not a 25-day-old Critical one), and Empty Bin per person.
-- **Collection:** 42/42 requests (the 3 logins are done in-process), all inside a transaction that was rolled back, so no data changed.
+- **Rules:** 43/43 checks: the counts for both vaults, the Expiring Soon tab, the search, each person's view, restore and delete per person, retention (a shorter period now deletes old My Vault **and** Critical items), and Empty Bin per person.
+- **Retention per branch:** 38/38 checks (`cv_bin_branch.php`):
+  - a Branch Admin's 7 days delete only their branch's old items, in both vaults; the other branch stays on 30;
+  - employees read their branch's period;
+  - who may change what (403 / 404);
+  - rows and cards on each item's own branch period;
+  - the Vault Admin's company default and per-branch change;
+  - CredVault Policies saves keep the branch periods;
+  - the audit entries.
+- **Collection:** 50/50 requests (the 3 logins are done in-process), all inside a transaction that was rolled back, so no data changed.
 
 ---
 
