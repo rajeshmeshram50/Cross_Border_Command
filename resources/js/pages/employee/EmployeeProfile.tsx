@@ -3608,7 +3608,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-file-text-line" />
               </span>
               <div>
-                <h5 className="text-white fw-bold mb-0 ep-fs-14">
+                <h5 className="text-white fw-bold mb-0" style={{ fontSize: 17 }}>
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : advUsedFor === 'company' ? 'Advance Request — Company Expense' : 'Advance Request — Recoverable Payout'}
                 </h5>
                 <small className="ep-claim-hero-sub">
