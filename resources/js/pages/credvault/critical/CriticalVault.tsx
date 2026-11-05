@@ -42,6 +42,10 @@ function AccessCell({ row, left, owner }: { row: CredentialRow; left: number | n
   if (owner) return <div className="cv-acc cv-acc--owner"><span className="cv-acc__b"><Svg d={IC.view} size={12} />Owner</span><span className="cv-acc__t">Full access · no approval</span></div>;
   const a = row.unlock;
   if (!a) return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b">Open</span><span className="cv-acc__t">No unlock steps</span></div>;
+  // The window ran out: it is locked again, even while the API still reads 'open' until its sweep.
+  if (a.state === 'open' && (left ?? 0) <= 0) {
+    return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b"><Svg d={IC.lock} size={12} />Locked</span><span className="cv-acc__t">Window ended · request again</span></div>;
+  }
   if (a.state === 'open') {
     const l = Math.max(0, left ?? 0);
     const pct = a.total_seconds ? Math.min(100, (l / a.total_seconds) * 100) : 0;
@@ -73,9 +77,10 @@ function AccessCell({ row, left, owner }: { row: CredentialRow; left: number | n
 }
 
 /** The row's unlock button: its icon, title and colour follow the access state (cv-lk). */
-function lockAction(row: CredentialRow): { icon: string; cls: string; title: string } {
+function lockAction(row: CredentialRow, left: number | null = null): { icon: string; cls: string; title: string } {
   const s = row.unlock?.state;
   if (!row.unlock) return { icon: IC.view, cls: '', title: 'View credential' };
+  if (s === 'open' && left !== null && left <= 0) return { icon: IC.lock, cls: 'cv-lk cv-lk--locked', title: 'Unlock credential' };
   if (s === 'open') return { icon: IC.unlock, cls: 'cv-lk cv-lk--open', title: 'Unlocked — view credential' };
   if (s === 'pending') return { icon: IC.clock, cls: 'cv-lk cv-lk--wait', title: 'Waiting for approval — view request' };
   if (s === 'progress') return { icon: IC.clock, cls: 'cv-lk cv-lk--wait', title: 'Continue unlocking' };
@@ -135,8 +140,10 @@ export default function CriticalVault() {
   const anyOpen = rows.some(r => r.unlock?.state === 'open');
   const anyWaiting = rows.some(r => r.unlock?.state === 'pending' || r.unlock?.state === 'progress');
   const now = useNow(anyOpen);
+  // `now` can trail a fresh fetchedAt until the next tick: never count up past the server's figure,
+  // or an ended window reads above 0 again and the expiry reload loops (the rows blink).
   const leftOf = useCallback((r: CredentialRow) => (r.unlock?.state === 'open'
-    ? (r.unlock.seconds_left ?? 0) - (now - fetchedAt) / 1000 : null), [now, fetchedAt]);
+    ? (r.unlock.seconds_left ?? 0) - Math.max(0, now - fetchedAt) / 1000 : null), [now, fetchedAt]);
   const expired = useMemo(() => rows.some(r => { const l = leftOf(r); return l !== null && l <= 0; }), [rows, leftOf]);
   const expiredTries = useRef(0);
   useEffect(() => {
@@ -193,7 +200,7 @@ export default function CriticalVault() {
             extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} owner={tab === 'mine' && r.owner.is_me} /> }}
             actions={r => {
               const own = tab === 'mine' && r.owner.is_me;
-              const lk = own ? { icon: IC.view, title: 'View credential', cls: '' } : lockAction(r);
+              const lk = own ? { icon: IC.view, title: 'View credential', cls: '' } : lockAction(r, leftOf(r));
               return (
                 <>
                   <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!r.can?.edit} onClick={() => setOverlay({ kind: 'edit', id: r.id })} />

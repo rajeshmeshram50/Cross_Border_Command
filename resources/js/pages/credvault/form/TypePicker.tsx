@@ -7,7 +7,8 @@ import { typeColor } from './formHelpers';
 
 const gid = (g: string) => 'crdG_' + g.replace(/[^a-z]/gi, '');
 
-function Tile({ t, group, onPick }: { t: TypeDef; group: string; onPick: (k: string) => void }) {
+/** `critical`: the Critical Vault's picker, as the Figma — no 2FA chip, no hover arrow. */
+function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPick: (k: string) => void; critical: boolean }) {
   const n = t.fields.length;
   return (
     <button type="button" data-h40="skip" className="crd-tile crd-tile--c" title={t.fields.map(f => f.label).join(' · ')}
@@ -16,7 +17,7 @@ function Tile({ t, group, onPick }: { t: TypeDef; group: string; onPick: (k: str
       <span className="crd-tile__b">
         <span className="crd-tile__row">
           <span className="crd-tile__l">{t.label}</span>
-          {t.twofa && <span className="crd-tile__new" title="Supports a 2FA authenticator lock">2FA</span>}
+          {t.twofa && !critical && <span className="crd-tile__new" title="Supports a 2FA authenticator lock">2FA</span>}
           {t.is_new && <span className="crd-tile__new">New</span>}
         </span>
         <span className="crd-tile__d">{t.description}</span>
@@ -25,12 +26,12 @@ function Tile({ t, group, onPick }: { t: TypeDef; group: string; onPick: (k: str
           <span className="crd-tile__n">{n} field{n === 1 ? '' : 's'}</span>
         </span>
       </span>
-      <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>
+      {!critical && <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>}
     </button>
   );
 }
 
-export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPick: (k: string) => void; onClose: () => void }) {
+export default function TypePicker({ meta, critical = false, onPick, onClose }: { meta: Meta; critical?: boolean; onPick: (k: string) => void; onClose: () => void }) {
   const [q, setQ] = useState('');
   const [nav, setNav] = useState('all');
   const body = useRef<HTMLDivElement>(null);
@@ -81,7 +82,7 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
 
   return (
     <div className="mapsup-overlay">
-      <div className="mapsup-box crd-box crd-pickbox" role="dialog" aria-modal="true" aria-label="What would you like to add?">
+      <div className={`mapsup-box crd-box crd-pickbox${critical ? ' crd-pickbox--cv' : ''}`} role="dialog" aria-modal="true" aria-label="What would you like to add?">
         <div className="mapsup-header">
           <div className="mapsup-hrow">
             <div className="mapsup-title-wrap">
@@ -136,7 +137,7 @@ export default function TypePicker({ meta, onPick, onClose }: { meta: Meta; onPi
                     <span className="crd-opt">{term ? `${g.hits.length} of ${g.items.length}` : g.items.length} type{g.items.length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="crd-tiles">
-                    {g.hits.map(t => <Tile key={t.key} t={t} group={g.name} onPick={onPick} />)}
+                    {g.hits.map(t => <Tile key={t.key} t={t} group={g.name} onPick={onPick} critical={critical} />)}
                   </div>
                 </div>
               </section>

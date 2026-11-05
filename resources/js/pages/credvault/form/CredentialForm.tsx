@@ -174,7 +174,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       if (!on) return;
       setApprovers(a);
       if (!protIdsTouched.current) {
-        setProt(p => ({ ...p, adminUserId: String(a.defaults?.admin_user_id ?? ''), managerUserId: String(a.defaults?.manager_user_id ?? '') }));
+        // Pre-fill a named approver, never the person saving: the policy's default first,
+        // else the first Vault Admin; the manager is the logged-in person's reporting manager.
+        const me = meta.me.id;
+        const admins = (a.admins ?? []) as Loose[];
+        const others = (list: Loose[]) => list.filter(x => Number(x.id) !== me);
+        const admin = a.defaults?.admin_user_id ?? (others(admins)[0] ?? admins[0])?.id ?? '';
+        const reporting = meta.me.manager_user_id && meta.me.manager_user_id !== me ? meta.me.manager_user_id : null;
+        // No reporting manager on file: '' = "The requester's reporting manager", resolved by the API.
+        const manager = a.defaults?.manager_user_id ?? reporting ?? '';
+        setProt(p => ({ ...p, adminUserId: String(admin), managerUserId: String(manager) }));
       }
     }).catch(() => { if (on) setApprovers({ admins: [], managers: [], defaults: {} }); });
     return () => { on = false; };
@@ -681,9 +690,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         gm={gm} onSend={sendGmailCode} onGmCode={c => setGm(g => ({ ...g, code: c, error: '' }))} onGmVerify={verifyGmailCode} />
     : null;
 
-  const adminOptions: CrdOption[] = [{ value: '', label: 'Any Vault Admin' },
-    ...((approvers?.admins ?? []) as Loose[]).map(a => ({ value: String(a.id), label: String(a.name) }))];
-  const managerOptions: CrdOption[] = [{ value: '', label: 'The requester’s reporting manager' },
+  // The Vault Admin is the Branch Admin of the user's branch; the manager is the user's own reporting manager.
+  const hasAdmins = !!(approvers?.admins as Loose[] | undefined)?.length;
+  const hasManager = !!(approvers?.managers as Loose[] | undefined)?.length;
+  const adminOptions: CrdOption[] = [{ value: '', label: !approvers || hasAdmins ? 'Any Branch Admin' : 'No Branch Admin set for your branch' },
+    ...((approvers?.admins ?? []) as Loose[]).map(a => ({ value: String(a.id), label: `${a.name}${a.role ? ' · ' + a.role : ''}` }))];
+  const managerOptions: CrdOption[] = [{ value: '', label: !approvers || hasManager ? 'The requester’s reporting manager' : 'No reporting manager set for you' },
     ...((approvers?.managers ?? []) as Loose[]).map(a => ({ value: String(a.id), label: `${a.name}${a.role ? ' · ' + a.role : ''}` }))];
   if (prot.adminUserId && !adminOptions.some(o => o.value === prot.adminUserId)) adminOptions.push({ value: prot.adminUserId, label: P?.admin_user?.name ?? 'Loading…' });
   if (prot.managerUserId && !managerOptions.some(o => o.value === prot.managerUserId)) managerOptions.push({ value: prot.managerUserId, label: P?.manager_user?.name ?? 'Loading…' });
@@ -823,7 +835,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         put('lock_admin', lockAdmin);
         put('lock_manager', lockManager);
         put('lock_otp', lockOtp);
-        put('lock_admin_user_id', lockAdmin && prot.adminUserId ? Number(prot.adminUserId) : null, 'lock_admin');
+        // A Branch Admin from /approvers is sent as "any branch admin" (null): the save still accepts only
+        // company admins (CredVaultController:3048), while raising a request pins it to the branch admin anyway.
+        const branchAdmin = ((approvers?.admins ?? []) as Loose[]).some(a => String(a.id) === prot.adminUserId);
+        put('lock_admin_user_id', lockAdmin && prot.adminUserId && !branchAdmin ? Number(prot.adminUserId) : null, 'lock_admin');
         put('lock_manager_user_id', lockManager && prot.managerUserId ? Number(prot.managerUserId) : null, 'lock_manager');
       }
     }

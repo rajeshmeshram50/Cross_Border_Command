@@ -219,8 +219,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const decidedAt = (k: LockStep) => (k === 'admin' ? live?.admin?.decided_at : k === 'manager' ? live?.manager?.decided_at : live?.otp?.verified_at) ?? null;
   const approverName = (k: LockStep): string => {
     if (k === 'admin') {
-      if (live?.admin) return live.admin.user?.name ?? 'Any Vault Admin';
-      return plan?.steps.find(s => s.key === 'admin')?.approver?.name ?? 'Any Vault Admin';
+      if (live?.admin) return live.admin.user?.name ?? 'your Branch Admin';
+      return plan?.steps.find(s => s.key === 'admin')?.approver?.name ?? 'your Branch Admin';
     }
     if (live?.manager?.user) return live.manager.user.name;
     return plan?.steps.find(s => s.key === 'manager')?.approver?.name ?? 'your reporting manager';

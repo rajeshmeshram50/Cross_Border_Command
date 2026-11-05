@@ -113,7 +113,7 @@ export default function CredentialFormModal({ credentialId, initialType, critica
   }
   else if (credentialId && !detail) content = <Wait title={title} text="Loading the credential…" onClose={onClose} />;
   else if (credentialId && !T) content = <Wait title={title} text={`This credential's type (${typeKey}) is no longer offered.`} onClose={onClose} error />;
-  else if (!T) content = <TypePicker meta={meta} onPick={setTypeKey} onClose={onClose} />;
+  else if (!T) content = <TypePicker meta={meta} critical={!!critical} onPick={setTypeKey} onClose={onClose} />;
   else {
     content = (
       <CredentialForm key={`${T.key}:${detail?.id ?? 'new'}`} meta={meta} T={T} detail={detail} preview={!!previewRow}

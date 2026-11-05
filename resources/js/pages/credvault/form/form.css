@@ -67,6 +67,28 @@
     cursor: pointer;
 }
 
+/* Critical Vault type picker: the Figma's white search bar in the header.
+   The right side takes the free space (crd-phd__r) so the search can reach its 460px. */
+/* The Figma's popup size: 1320px wide (the shared 1440px crd-box width must not reach it), height to its content. */
+.cvx #crd-host .crd-box.crd-pickbox--cv { width: min(1320px, calc(100vw - 32px)) !important; height: auto !important; max-height: calc(100vh - 40px); }
+.cvx .crd-pickbox--cv .mapsup-hrow { gap: 18px; }
+.cvx .crd-pickbox--cv .mapsup-title-wrap { flex: 0 1 auto; }
+.cvx .crd-pickbox--cv .crd-hbtns { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.cvx .crd-pickbox--cv .crd-hbtns .mapsup-close { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; }
+.cvx .crd-pickbox--cv .crd-search {
+    flex: 0 1 460px; margin: 0; height: 44px;
+    color: #0891b2; background: rgba(255, 255, 255, .95); border: 1.5px solid rgba(255, 255, 255, .6);
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, .35);
+}
+.cvx .crd-pickbox--cv .crd-search:focus-within { background: #fff; border-color: rgba(255, 255, 255, .6); box-shadow: 0 0 0 4px rgba(255, 255, 255, .25), 0 8px 20px -10px rgba(0, 0, 0, .35); }
+.cvx .crd-pickbox--cv .crd-search input { color: #0c2c3a; }
+.cvx .crd-pickbox--cv .crd-search input::placeholder { color: #8aa6b3; }
+.cvx .crd-pickbox--cv .crd-search kbd { color: #0e7490; background: #ecfeff; border-color: #bfeef4; }
+@media (max-width: 980px) { .cvx .crd-pickbox--cv .crd-search { flex-basis: 260px; } }
+[data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search { background: rgba(15, 37, 48, .95); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search input { color: #e2f4f8; }
+[data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+
 /* "Two-factor authentication on Kryptone" card under the 2FA switch (prototype k2-*). */
 .cvx .cp-fcard--main { margin-top: 14px; }
 .cvx .cp-frow--main { grid-template-columns: 36px minmax(0, 1fr) auto; }

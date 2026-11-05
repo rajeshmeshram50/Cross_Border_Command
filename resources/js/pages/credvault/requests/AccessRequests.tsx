@@ -138,8 +138,9 @@ export default function AccessRequests() {
     setBusy(x.id, true);
     try {
       const res = await arData.approve(x.id);
-      const sentOn = x.stage === 'admin' && x.manager;
-      toast.success(`${x.code} ${sentOn ? 'approved · sent to Reporting Manager' : 'fully approved'}`, res.message);
+      // A Vault Admin approval waits for the requester to forward it to the manager (raise-manager).
+      const toMgr = x.stage === 'admin' && x.manager;
+      toast.success(`${x.code} ${toMgr ? 'approved · the requester forwards it to the Manager' : 'fully approved'}`, res.message);
       load(true);
     } catch (e) { toast.error('Could not approve', errMsg(e)); load(true); }
     finally { setBusy(x.id, false); }
@@ -175,7 +176,8 @@ export default function AccessRequests() {
 
   const statusCell = (x: AccessRequestRow) => {
     if (x.display_status === 'pending') {
-      return <><span className="ar-st ar-st--pending"><i />Pending</span><small className="ar-st__sub">{x.status_label}</small></>;
+      const fwd = x.stage === 'manager' && x.manager?.status === 'after_admin';
+      return <><span className="ar-st ar-st--pending"><i />Pending</span><small className="ar-st__sub">{fwd ? 'Vault Admin approved · awaiting forward' : x.status_label}</small></>;
     }
     if (x.display_status === 'approved') {
       const live = left(x);
@@ -246,7 +248,11 @@ export default function AccessRequests() {
                   const T = x.credential ? typeOf(x.credential.type) : undefined;
                   const asRole = x.stage === 'admin' ? 'Vault Admin' : 'Reporting Manager';
                   const busy = busyIds.has(x.id);
-                  const mgrWait = x.manager?.status === 'not_required' || x.admin?.status === 'rejected' ? 'Not required' : 'After Vault Admin';
+                  // The manager stage opens only once the requester forwards it (raise-manager); until then approve is refused (409).
+                  const awaitingForward = x.stage === 'manager' && x.manager?.status === 'after_admin';
+                  const canDecide = (ok: boolean) => ok && !awaitingForward;
+                  const mgrWait = x.manager?.status === 'not_required' || x.admin?.status === 'rejected' ? 'Not required'
+                    : awaitingForward ? 'Awaiting forward' : 'After Vault Admin';
                   return (
                     <tr key={x.id}>
                       <td><span className="whm-sr">{start + i + 1}</span></td>
@@ -265,17 +271,17 @@ export default function AccessRequests() {
                       </td>
                       <td><span className="ar-reason" title={x.reason ?? ''}>{x.reason || '—'}</span></td>
                       <td><span className="ar-win"><Svg d={I.clock} size={11} sw={2.1} />{x.duration_label}</span></td>
-                      <td><Approver st={x.admin} role="Vault Admin" waitTxt="Not required" anyName="Any Vault Admin" /></td>
+                      <td><Approver st={x.admin} role="Vault Admin" waitTxt="Not required" anyName="Any Branch Admin" /></td>
                       <td><Approver st={x.manager} role="Manager" waitTxt={x.manager ? mgrWait : 'Not required'} anyName="Reporting Manager" /></td>
                       <td><div className="ar-stc">{statusCell(x)}</div></td>
                       <td>
                         <div className="ar-acts">
-                          <button type="button" data-h40="skip" className="ar-btn ar-btn--ok" disabled={!x.can.approve || busy}
-                            title={x.can.approve ? `Approve as ${asRole}` : undefined} onClick={() => approve(x)}>
+                          <button type="button" data-h40="skip" className="ar-btn ar-btn--ok" disabled={!canDecide(x.can.approve) || busy}
+                            title={awaitingForward ? 'The requester has not forwarded this to the manager yet' : x.can.approve ? `Approve as ${asRole}` : undefined} onClick={() => approve(x)}>
                             <Svg d={I.ok} size={12} sw={2.1} />Approve
                           </button>
-                          <button type="button" data-h40="skip" className="ar-btn ar-btn--no" disabled={!x.can.reject || busy}
-                            title={x.can.reject ? `Reject as ${asRole}` : undefined} onClick={() => openDialog('reject', x)}>
+                          <button type="button" data-h40="skip" className="ar-btn ar-btn--no" disabled={!canDecide(x.can.reject) || busy}
+                            title={awaitingForward ? 'The requester has not forwarded this to the manager yet' : x.can.reject ? `Reject as ${asRole}` : undefined} onClick={() => openDialog('reject', x)}>
                             <Svg d={I.no} size={12} sw={2.1} />Reject
                           </button>
                           {x.can.lock && (
