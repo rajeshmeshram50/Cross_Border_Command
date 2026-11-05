@@ -64,7 +64,8 @@ export function fillRows(spans: number[]): number[] {
   return out;
 }
 
-const URL_RE = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}|^(https?:\/\/)?\d{1,3}(\.\d{1,3}){3}/i;
+// host: localhost, a dotted domain, or an IPv4 — each with an optional scheme and port.
+const URL_RE = /^(https?:\/\/)?(localhost|[\w.-]+\.[a-z]{2,}|\d{1,3}(\.\d{1,3}){3})(:\d+)?([/?#]|$)/i;
 const EMAIL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9_%+-])?@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 export const PHONE_RE = /^\+?[\d\s()-]{10,16}$/;
 export const PHONE_CHARS = (v: string) => v.replace(/[^\d+\s()-]/g, '').replace(/(?!^)\+/g, '');
