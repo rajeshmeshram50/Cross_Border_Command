@@ -6,12 +6,11 @@ import { IR_I, IrCard } from './irShared';
 
 /* Backup tab — the prototype's irBackupHtml / bkCreate; the file is built and locked (AES-256) on the API. */
 
-type Fmt = 'xlsx' | 'csv' | 'json';
+type Fmt = 'xlsx' | 'csv';
 type Scope = 'mine' | 'team' | 'all';
 const FMTS: [Fmt, string, string, string, string][] = [
   ['xlsx', 'Excel', '.xlsx', 'Opens in Excel & Google Sheets', IR_I.sheet],
   ['csv', 'CSV', '.csv', 'For other password managers', IR_I.file],
-  ['json', 'JSON', '.json', 'For developers & tools', IR_I.code],
 ];
 const SCOPES: [Scope, string, string, string][] = [
   ['mine', 'My Vault', 'Credentials you own', IR_I.user],

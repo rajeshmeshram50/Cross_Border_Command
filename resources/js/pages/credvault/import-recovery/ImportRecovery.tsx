@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, type PageMeta, type TransferRow } from '../cvApi';
-import { CvCard, CvPage, CvStrip, CvTabsRow, StripBtn, errMsg } from '../shared';
+import { CvCard, CvPage, CvStrip, CvTabsRow, errMsg } from '../shared';
 import BackupTab, { type BackupInfo } from './BackupTab';
 import ImportTab from './ImportTab';
 import { HistoryCard, IR_I } from './irShared';
@@ -14,7 +13,6 @@ interface Hist { rows: TransferRow[]; meta: PageMeta | null; loading: boolean; e
 const EMPTY: Hist = { rows: [], meta: null, loading: true, error: '', page: 1 };
 
 export default function ImportRecovery() {
-  const toast = useToast();
   const [params] = useSearchParams();
   const navKey = useLocation().key;
   // ?tab= picks the tab on mount and whenever it changes (header quick actions while already here); otherwise the tab lives in state.
@@ -53,18 +51,10 @@ export default function ImportRecovery() {
 
   useEffect(() => { loadImports(1); loadBackups(1); }, [loadImports, loadBackups]);
 
-  const sample = async () => {
-    try {
-      await cvApi.importSample('xlsx');
-      toast.success('Sample file downloaded', 'Fill it in and upload it here');
-    } catch (e) { toast.error('Could not download the sample', errMsg(e)); }
-  };
-
   return (
     <CvPage className="mv-page ir-page tv-page">
       <CvStrip icon={IR_I.db} title="Import & Recovery"
-        sub="Bring credentials into My Vault in bulk, and download password-locked backups whenever you need them."
-        actions={<StripBtn icon={IR_I.down} ghost onClick={sample}>Sample File</StripBtn>} />
+        sub="Bring credentials into My Vault in bulk, and download password-locked backups whenever you need them." />
 
       <CvCard pane>
         <CvTabsRow active={tab} onTab={k => setTab(k as Tab)} tabs={[
@@ -74,7 +64,7 @@ export default function ImportRecovery() {
         <div className="ir-body">
           {/* Both stay mounted so an open import review survives a tab switch. */}
           <div style={{ display: tab === 'import' ? 'contents' : 'none' }}>
-            <ImportTab onImported={() => loadImports(1)} />
+            <ImportTab />
             <HistoryCard kind="import" rows={imp.rows} meta={imp.meta} loading={imp.loading} error={imp.error} onPage={loadImports} />
           </div>
           <div style={{ display: tab === 'backup' ? 'contents' : 'none' }}>

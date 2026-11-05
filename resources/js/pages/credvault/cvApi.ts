@@ -257,7 +257,7 @@ export interface ImportPreviewRow {
 }
 export interface ImportPreview {
   token: string; expires_in: number; file_name: string; format: string; format_label: string; source: string;
-  columns: Record<string, string>; demo: boolean;
+  columns: Record<string, string>;
   stats: { rows: number; ready: number; duplicates: number; weak: number; cannot: number; selected: number };
   rows: ImportPreviewRow[];
 }
@@ -337,9 +337,8 @@ export const cvApi = {
   auditExport: (q: Q) => download('get', '/audit-logs/export', undefined, { ...q, tz: viewerTz() }),
 
   /* Import & Recovery */
-  importSample: (format: 'xlsx' | 'csv' | 'json') => download('get', '/imports/sample', undefined, { format }),
-  importPreview: (file: File | 'sample') => {
-    if (file === 'sample') return send<{ data: ImportPreview }>('post', '/imports/preview', { sample: true }).then(r => r.data);
+  importSample: (format: 'xlsx' | 'csv') => download('get', '/imports/sample', undefined, { format }),
+  importPreview: (file: File) => {
     const fd = new FormData(); fd.append('file', file);
     return send<{ data: ImportPreview }>('post', '/imports/preview', fd).then(r => r.data);
   },

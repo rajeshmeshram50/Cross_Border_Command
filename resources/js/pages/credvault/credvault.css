@@ -10642,7 +10642,7 @@
 }
 
 .cvx .ir-body {
-  padding: 14px 20px 16px;
+  padding: 14px 0 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -13464,6 +13464,10 @@
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
 }
 
+.cvx .ix-grid--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .cvx .ix-grid>.tv-pane {
   margin: 0;
 }
@@ -13587,29 +13591,6 @@
 
 .cvx .ix-also b {
   color: #0c2c3a;
-}
-
-.cvx .ix-try {
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  color: #0e7490;
-  background: transparent;
-  border: 1px dashed #9fd9e7;
-  cursor: pointer;
-  transition: all .15s;
-}
-
-.cvx .ix-try:hover {
-  background: #ecfeff;
-  border-style: solid;
 }
 
 .cvx .ix-x {
@@ -13933,7 +13914,7 @@
 
 .cvx .ix-fmtc {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -18599,7 +18580,6 @@
 [data-bs-theme="dark"] .cvx .ix-fmtc button.is-on,
 [data-bs-theme="dark"] .cvx .ix-scope button.is-on,
 [data-bs-theme="dark"] .cvx .ix-sw.is-on,
-[data-bs-theme="dark"] .cvx .ix-try:hover,
 [data-bs-theme="dark"] .cvx .ix-in button:hover {
   background: rgba(34, 211, 238, .1);
   border-color: #22d3ee;
@@ -18652,13 +18632,11 @@
   background: var(--tvd-line);
 }
 
-:where([data-bs-theme="dark"]) .cvx .ix-sec:not(:first-child),
-:where([data-bs-theme="dark"]) .cvx .ix-try {
+:where([data-bs-theme="dark"]) .cvx .ix-sec:not(:first-child) {
   border-color: var(--tvd-line2);
 }
 
 :where([data-bs-theme="dark"]) .cvx .ix-drop>small u,
-:where([data-bs-theme="dark"]) .cvx .ix-try,
 :where([data-bs-theme="dark"]) .cvx .ix-fmtc em {
   color: #67e8f9;
 }
