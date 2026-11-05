@@ -4,6 +4,14 @@
 .cvx .cvd-err{color:#be123c;}
 .cvx .cvd-err b{color:#9f1239;}
 .cvx .cvd-err .cvd-link{margin-top:6px;}
+/* Rings: the grey track is an SVG stroke attribute (vdKit / widgets), so it is overridden here, dashboard only. */
+[data-bs-theme="dark"] .cvd-page circle[stroke="#edf4f7"],
+[data-bs-theme="dark"] .cvd-page circle[stroke="#edf3f6"],
+[data-bs-theme="dark"] .cvd-page circle[stroke="#eef5f8"]{stroke:rgba(255,255,255,.09);}
+[data-bs-theme="dark"] .cvx .cvd-ag__ticks line{stroke:rgba(255,255,255,.14);}
+[data-bs-theme="dark"] .cvd-page .cvd-knob{fill:#0f2530;}
+/* The % in each stat card's ring: the lighter accent reads on dark, the darker one does not. */
+[data-bs-theme="dark"] .cvx .cvd-kpi__ring b{color:var(--c2);}
 [data-bs-theme="dark"] .cvx .cvd-err{color:#fda4af;}
 [data-bs-theme="dark"] .cvx .cvd-err b{color:#fecdd3;}
 
@@ -561,3 +569,61 @@
 [data-bs-theme="dark"] .cvx .cvd-tip b {
   color: #8fb3c2;
 }
+
+/* ── Dark mode · polish (hand-tuned, wins over the generated block above) ──────────────────
+   Crisp surfaces instead of colour smears: one dark card surface, a thin hairline, the card's
+   own accent as a soft corner glow; three clear text levels; no frosted blur. Dashboard only. */
+[data-bs-theme="dark"] .cvd-page {
+  --vd-surf: linear-gradient(180deg, #14232f 0%, #101c27 100%);
+  --vd-line: rgba(148, 197, 214, .14);
+  --vd-t1: #f3f9fb;   /* numbers, titles */
+  --vd-t2: #c4d6de;   /* labels */
+  --vd-t3: #8aa4b1;   /* captions */
+}
+
+/* Stat cards */
+[data-bs-theme="dark"] .cvx .cvd-kpi {
+  background:
+    radial-gradient(130% 90% at 100% 0%, color-mix(in srgb, var(--c2) 16%, transparent) 0%, transparent 55%),
+    var(--vd-surf) !important;
+  border: 1px solid var(--vd-line) !important;
+  box-shadow: 0 14px 34px -20px rgba(0, 0, 0, .75), inset 0 1px 0 rgba(255, 255, 255, .05) !important;
+}
+[data-bs-theme="dark"] .cvx .cvd-kpi:hover { border-color: color-mix(in srgb, var(--c2) 45%, transparent) !important; }
+[data-bs-theme="dark"] .cvx .cvd-kpi__shine { background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .06), transparent); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__l { color: var(--vd-t1); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__n { color: #fff; text-shadow: 0 0 22px color-mix(in srgb, var(--c2) 25%, transparent); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__cap { color: var(--vd-t3); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__st { border-top: 1px dashed var(--vd-line); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__st b { color: var(--vd-t1); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__st span,
+[data-bs-theme="dark"] .cvx .cvd-kpi__st small { color: var(--vd-t3); }
+[data-bs-theme="dark"] .cvx .cvd-kpi__go {
+  color: var(--c2); background: rgba(255, 255, 255, .05); border: 1px solid var(--vd-line);
+}
+[data-bs-theme="dark"] .cvx .cvd-kpi:hover .cvd-kpi__go { color: #fff; background: color-mix(in srgb, var(--c2) 30%, transparent); }
+
+/* Security score card: a deep, calm teal; soft glows; check rows without frosted blur */
+[data-bs-theme="dark"] .cvx .cvd-hero {
+  background: linear-gradient(145deg, #052530 0%, #083846 38%, #0b4f60 72%, #0e6a80 110%);
+  border: 1px solid rgba(103, 232, 249, .16);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+[data-bs-theme="dark"] .cvx .cvd-hero__glow,
+[data-bs-theme="dark"] .cvx .cvd-hero__glow2 { opacity: .35; }
+[data-bs-theme="dark"] .cvx .cvd-fac {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  backdrop-filter: none;
+}
+[data-bs-theme="dark"] .cvx .cvd-fac__bar { background: rgba(255, 255, 255, .1); }
+
+/* Section cards below */
+[data-bs-theme="dark"] .cvx .cvd-card {
+  background: var(--vd-surf) !important;
+  border: 1px solid var(--vd-line) !important;
+  box-shadow: 0 14px 34px -22px rgba(0, 0, 0, .75), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+[data-bs-theme="dark"] .cvx .cvd-card__hd { background: rgba(255, 255, 255, .02); border-bottom: 1px solid var(--vd-line); }
+[data-bs-theme="dark"] .cvx .cvd-card__hd b { color: var(--vd-t1); }
+[data-bs-theme="dark"] .cvx .cvd-card__hd small { color: var(--vd-t3); }
