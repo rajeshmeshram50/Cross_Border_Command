@@ -9,7 +9,7 @@ import ViewDrawer from '../my-vault/ViewDrawer';
 import ShareModal from '../my-vault/ShareModal';
 import BinConfirm from '../my-vault/BinConfirm';
 import UnlockModal from './UnlockModal';
-import { cvData } from './cvData';
+import { CV_DUMMY, cvData, viewSource } from './cvData';
 
 const SHIELD = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
 const BRIEF_IC = {
@@ -37,7 +37,9 @@ type Overlay =
 const STAGE: Record<LockStep, string> = { admin: 'Vault Admin', manager: 'Manager', otp: 'Authenticator' };
 
 /** Access Status, as the prototype draws it (cv-acc): Locked, Pending, In progress, or Unlocked with its countdown. */
-function AccessCell({ row, left }: { row: CredentialRow; left: number | null }) {
+function AccessCell({ row, left, owner }: { row: CredentialRow; left: number | null; owner?: boolean }) {
+  // My Critical Credentials: the owner opens their own credential directly — no unlock steps.
+  if (owner) return <div className="cv-acc cv-acc--owner"><span className="cv-acc__b"><Svg d={IC.view} size={12} />Owner</span><span className="cv-acc__t">Full access · no approval</span></div>;
   const a = row.unlock;
   if (!a) return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b">Open</span><span className="cv-acc__t">No unlock steps</span></div>;
   if (a.state === 'open') {
@@ -188,13 +190,14 @@ export default function CriticalVault() {
           <CredentialTable critical rows={rows} startIndex={(page - 1) * perPage} loading={loading}
             emptyTitle={emptyTitle} emptySub={emptySub}
             onAdd={tab !== 'team' && !dq && !error ? () => setOverlay({ kind: 'add' }) : undefined}
-            extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} /> }}
+            extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} owner={tab === 'mine' && r.owner.is_me} /> }}
             actions={r => {
-              const lk = lockAction(r);
+              const own = tab === 'mine' && r.owner.is_me;
+              const lk = own ? { icon: IC.view, title: 'View credential', cls: '' } : lockAction(r);
               return (
                 <>
                   <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!r.can?.edit} onClick={() => setOverlay({ kind: 'edit', id: r.id })} />
-                  <ActBtn icon={lk.icon} title={lk.title} className={lk.cls} onClick={() => openRow(r)} />
+                  <ActBtn icon={lk.icon} title={lk.title} className={lk.cls} onClick={() => (own ? setOverlay({ kind: 'view', id: r.id }) : openRow(r))} />
                   <ActBtn icon={IC.del} title="Move to Bin" tone="danger" disabled={!r.can?.delete} onClick={() => setOverlay({ kind: 'bin', row: r })} />
                 </>
               );
@@ -211,10 +214,11 @@ export default function CriticalVault() {
           onSaved={() => { close(); refresh(); }} />
       )}
       {overlay?.kind === 'edit' && (
-        <CredentialFormModal credentialId={overlay.id} critical onClose={close} onSaved={() => { close(); refresh(); }} />
+        <CredentialFormModal credentialId={overlay.id} critical onClose={close} onSaved={() => { close(); refresh(); }}
+          previewRow={CV_DUMMY ? rows.find(r => r.id === overlay.id) : undefined} />
       )}
       {overlay?.kind === 'view' && (
-        <ViewDrawer key={overlay.id} credentialId={overlay.id} onClose={close} onChanged={refresh}
+        <ViewDrawer key={overlay.id} credentialId={overlay.id} onClose={close} onChanged={refresh} source={viewSource}
           onEdit={id => setOverlay({ kind: 'edit', id })} onShare={id => setOverlay({ kind: 'share', id })} />
       )}
       {overlay?.kind === 'share' && (

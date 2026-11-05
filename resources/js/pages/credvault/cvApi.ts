@@ -152,7 +152,7 @@ export interface CredentialDetail extends CredentialRow {
   notes?: string | null; attachments?: Attachment[];
   shares?: ShareRow[];
   protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; policy: { admin: boolean; manager: boolean; otp: boolean } };
-  unlock_plan?: { steps: PlanStep[]; of: number; durations: number[]; asks_reason: boolean; default_minutes: number };
+  unlock_plan?: { steps: PlanStep[]; of: number; durations: number[]; asks_reason: boolean; default_minutes: number; otp_method?: 'google' | 'email' | null; otp_sent_to?: string | null };
   last_request?: AccessRequestRow | null;
   health?: { resolved: { type: string; severity: string; issue: string }[]; still_open: { type: string; severity: string; issue: string }[] };
 }
@@ -175,13 +175,13 @@ export interface AccessRequestRow {
   reason: string | null; duration_minutes: number; duration_label: string;
   admin: { user: Chip | null; any_admin: boolean; status: string | null; decided_at: string | null; decided_by: Chip | null; note: string | null } | null;
   manager: { user: Chip | null; status: string; decided_at: string | null; decided_by: Chip | null; note: string | null } | null;
-  otp: { verified_at: string | null; attempts_left: number } | null;
+  otp: { method?: 'google' | 'email' | null; label?: string; sent_to?: string | null; verified_at: string | null; attempts_left: number } | null;
   status: 'pending' | 'approved' | 'unlocked' | 'locked' | 'rejected' | 'cancelled';
   display_status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'reset';
   status_label: string; stage: LockStep | null; stage_label: string | null; steps: LockStep[];
   step: { number: number; of: number; label: string } | null;
   unlocked_at: string | null; expires_at: string | null; seconds_left: number; total_seconds: number; locked_reason: string | null;
-  can: { approve: boolean; reject: boolean; cancel: boolean; verify_otp: boolean; lock: boolean };
+  can: { approve: boolean; reject: boolean; cancel: boolean; verify_otp: boolean; send_otp?: boolean; lock: boolean };
   created_at: string | null;
 }
 
@@ -293,6 +293,7 @@ export const cvApi = {
   approve: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/approve`, { note }),
   reject: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/reject`, { note }),
   cancel: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/cancel`, {}),
+  sendOtp: (id: number) => send<{ data: { sent_to: string; expires_in: number; resend_in: number }; message: string }>('post', `/critical-vault/access-requests/${id}/send-otp`, {}),
   verifyOtp: (id: number, code: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/verify-otp`, { code }),
   lock: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/lock`, {}),
 

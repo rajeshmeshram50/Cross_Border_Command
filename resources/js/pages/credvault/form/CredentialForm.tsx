@@ -765,7 +765,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }
 
     if (preview) {
-      toast.info('Design preview', 'Team Vault is on dummy data - the changes were not saved.');
+      toast.info('Design preview', 'This page is on dummy data - the changes were not saved.');
       onClose();
       return;
     }
