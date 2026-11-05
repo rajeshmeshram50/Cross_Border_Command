@@ -3627,19 +3627,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </button>
             </div>
           </div>
-
-          {/* Flow hint — mode is already chosen by the outer Expense /
-              Advance module pill (which decides which form opens), so the
-              in-modal tab row was redundant and has been removed. */}
-          <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mt-2">
-            <small className="ep-claim-hero-hint">
-              {claimMode === 'expense'
-                ? <>Expense → <strong>Reimbursement</strong></>
-                : advUsedFor === 'company'
-                  ? <>Advance → <strong>Company Expense</strong></>
-                  : <>Advance → <strong>Payroll Recovery</strong></>}
-            </small>
-          </div>
         </div>
 
         {/* Body — frozen while the claim is being saved: `inert` blocks mouse,

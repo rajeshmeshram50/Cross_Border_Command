@@ -261,7 +261,9 @@ class AttendanceController extends Controller
             $firstIn = $row->check_in_at;
             if ($firstIn && strcasecmp($status, 'Present') === 0) {
                 $localIn = $firstIn->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                if ($this->minutesBetween($rowShiftStart, $localIn) > 10) $late++;
+                // Single source of truth for lateness (0 = any minute late), so
+                // this KPI matches the calendar day pills. (#22)
+                if ($this->minutesBetween($rowShiftStart, $localIn) > Attendance::LATE_GRACE_MINUTES) $late++;
             }
         }
 
@@ -1130,7 +1132,7 @@ class AttendanceController extends Controller
                 if ($r->check_in_at && $rowShiftStart) {
                     $localIn = $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
                     $late = $this->minutesBetween($rowShiftStart, $localIn);
-                    if ($late > 10 && $st === 'present') $lateMarks++;
+                    if ($late > Attendance::LATE_GRACE_MINUTES && $st === 'present') $lateMarks++;
                 }
             }
 
