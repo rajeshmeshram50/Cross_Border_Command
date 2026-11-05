@@ -232,7 +232,7 @@ class ImportTemplate
             $f['key'] === 'pin'      => '4 to 6 digits',
             $f['key'] === 'ifsc'     => 'e.g. HDFC0000123',
             $f['key'] === 'port'     => '1 to 65535',
-            $f['key'] === 'seed'     => $type === 'totp' ? 'The base32 setup key (A–Z, 2–7)' : '12 to 24 words',
+            $f['key'] === 'seed'     => $type === 'totp' ? 'The authenticator setup key' : '12 to 24 words',
             $f['kind'] === 'select'  => 'One of: ' . implode(', ', $f['options'] ?? []),
             $f['kind'] === 'toggle'  => 'Yes or No',
             $f['kind'] === 'date'    => 'YYYY-MM-DD (or DD/MM/YYYY)',

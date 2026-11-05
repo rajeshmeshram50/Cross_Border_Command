@@ -130,7 +130,7 @@ Sample row 1: Credential Name = GitHub Passkey · Website / App = https://books.
 | Credential Name | Yes | 2 to 150 characters, unique for this type in your vault |
 | Service | Yes | Text |
 | Account | Yes | Text |
-| Secret Key | Yes | The base32 setup key (A–Z, 2–7) |
+| Secret Key | Yes | The authenticator setup key |
 | Code Length | No | One of: 6 digits, 8 digits |
 | Refresh Period | No | One of: 30 seconds, 60 seconds |
 | Backup Codes | No | Text |
@@ -495,7 +495,7 @@ Sample row 1: Credential Name = Fishing Permit · License Type = Fishing · Lice
 | Expiry MM/YY, not past | Enter the expiry as MM/YY. · This card has expired. |
 | CVV: 3 or 4 digits · PIN: 4 to 6 digits | CVV is 3 or 4 digits. · PIN is 4 to 6 digits. |
 | IFSC | Enter a valid IFSC (e.g. ICIC0001234). |
-| Recovery phrase: 12 to 24 words · TOTP setup key: base32 | A seed phrase has 12 to 24 words. · Enter the base32 setup key from the QR setup. |
+| Recovery phrase: 12 to 24 words | A seed phrase has 12 to 24 words. |
 | Length (max per field) | &lt;label&gt; can be at most N characters. |
 | Risk: Low, Medium or High (Critical belongs in the Critical Vault) | Risk is Low, Medium or High. |
 | Rotation: 30, 60, 90 or 180 | Rotation is 30, 60, 90 or 180 days. |
