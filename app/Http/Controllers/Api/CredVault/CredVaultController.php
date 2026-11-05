@@ -109,8 +109,8 @@ class CredVaultController extends Controller
 
     /** What every access-request row needs, in one eager load. */
     protected const REQUEST_RELATIONS = [
-        'credential:id,client_id,code,vault,name,type,category_group,risk,url,owner_id,twofa_method,twofa_email,deleted_at',
-        'requester:id,name,designation,department_id,employee_code,client_id,user_type',
+        'credential:id,client_id,branch_id,code,vault,name,type,category_group,risk,url,owner_id,twofa_method,twofa_email,deleted_at',
+        'requester:id,name,designation,department_id,branch_id,employee_code,client_id,user_type',
         'adminUser:id,name,designation', 'managerUser:id,name,designation',
         'adminDecider:id,name,designation', 'managerDecider:id,name,designation',
     ];
@@ -3361,8 +3361,8 @@ class CredVaultController extends Controller
             $stage = $r->currentStage();
             if ($r->requester_id === $u->id) $this->reject('You cannot decide your own request.', null, 403);
             if ($stage === 'admin') {
-                if (!$this->isAdmin($u) || ($this->namedAdmin($r) && $this->namedAdmin($r) !== $u->id)) {
-                    $this->reject('This request is waiting for ' . ($r->adminUser?->name ?? 'a Vault Admin') . '.', null, 403);
+                if (!$this->canApproveAdmin($u, $r)) {
+                    $this->reject('This request is waiting for ' . ($r->adminUser?->name ?? 'the Branch Admin') . '.', null, 403);
                 }
             } elseif ($stage === 'manager') {
                 // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
@@ -3442,6 +3442,7 @@ class CredVaultController extends Controller
     protected function assertUnlocked(Credential $c, User $u): void
     {
         if (!$c->isProtected()) return;
+        if ($this->opensDirectly($u, $c)) return;
         if ($this->unlockedFor($c, $u)) return;
 
         abort(response()->json([
@@ -3463,7 +3464,8 @@ class CredVaultController extends Controller
         if ($lock) $q->lockForUpdate();
         $r = $q->find($id) ?? $this->reject('Access request not found.', null, 404);
 
-        $visible = $this->isAdmin($u) || in_array($u->id, [$r->requester_id, $r->admin_user_id, $r->manager_user_id], true);
+        $visible = $this->isAdmin($u) || in_array($u->id, [$r->requester_id, $r->admin_user_id, $r->manager_user_id], true)
+            || $this->canApproveAdmin($u, $r);
         if (!$visible) $this->reject('Access request not found.', null, 404);
 
         return $r;
@@ -4005,7 +4007,9 @@ class CredVaultController extends Controller
             'lock_steps'        => $steps,
             'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1]] : null,
             'can'               => $acc ? $this->canFlags($c, $acc) : null,
-            'unlock'            => $steps ? $this->unlockState($req, $steps) : null,
+            'unlock'            => $steps
+                ? ($this->opensDirectly($u, $c) ? ['state' => 'open', 'label' => 'Open — Vault Admin'] : $this->unlockState($req, $steps))
+                : null,
             'active_shares'     => $shareCount,
             'created_at'        => $c->created_at?->toIso8601String(),
             'updated_at'        => $c->updated_at?->toIso8601String(),
@@ -4044,7 +4048,7 @@ class CredVaultController extends Controller
         $def   = Credential::typeDef($c->type);
         $steps = $c->lockSteps();
         $req   = $steps ? ($this->openRequestsFor($u, [$c->id])[$c->id] ?? null) : null;
-        $open  = !$steps || ($req && $req->isLive());
+        $open  = !$steps || $this->opensDirectly($u, $c) || ($req && $req->isLive());
         $c->loadMissing(['owner:id,name', 'department:id,name']);
         $shares = $this->liveShareCounts([$c->id])[$c->id]['n'] ?? 0;
 
@@ -4198,7 +4202,7 @@ class CredVaultController extends Controller
         $info = $this->userInfo([$r->requester_id])[$r->requester_id] ?? [];
 
         $canDecide = $r->status === 'pending' && $r->requester_id !== $u->id && (
-            ($stage === 'admin' && $this->isAdmin($u) && (!$this->namedAdmin($r) || $this->namedAdmin($r) === $u->id))
+            ($stage === 'admin' && $this->canApproveAdmin($u, $r))
             || ($stage === 'manager' && $r->manager_user_id === $u->id && $r->admin_decided_by !== $u->id)
         );
         $display = match (true) {
@@ -4486,6 +4490,48 @@ class CredVaultController extends Controller
     }
 
     /**
+     * The Branch Admin (Vault Admin) opens every Critical credential in their branch
+     * directly — no approval, no OTP. Keyed on the branch, not on ownership.
+     */
+    protected function opensDirectly(User $u, Credential $c): bool
+    {
+        $branch = $this->adminBranchOf($u);
+        if ($branch === null) return false;
+        if ((int) $c->branch_id === $branch) return true;
+        $ob = $this->memo("ownerbranch:{$c->owner_id}", fn () => (int) (User::whereKey($c->owner_id)->value('branch_id') ?? 0));
+
+        return $ob === $branch;
+    }
+
+    /** The Branch Admins (branch users) that serve as the Vault Admin for one branch. */
+    protected function branchAdminIds(?int $branchId, int $clientId): array
+    {
+        if (!$branchId) return [];
+
+        return $this->memo("badmins:{$clientId}:{$branchId}", fn () => User::where('client_id', $clientId)
+            ->where('user_type', 'branch_user')->where('status', 'active')->where('branch_id', (int) $branchId)
+            ->orderBy('id')->pluck('id')->map(fn ($i) => (int) $i)->all());
+    }
+
+    /** The branch a request belongs to — the requester's, else the credential's. */
+    protected function requestBranch(AccessRequest $r): ?int
+    {
+        return ($r->requester?->branch_id ?: $r->credential?->branch_id) ? (int) ($r->requester?->branch_id ?: $r->credential->branch_id) : null;
+    }
+
+    /**
+     * May $u approve the Vault-Admin stage of request $r? The Branch Admin it names,
+     * or any Branch Admin of that branch when none is named — with a client admin as a
+     * safety net so a request never gets stuck if the branch admin is gone.
+     */
+    protected function canApproveAdmin(User $u, AccessRequest $r): bool
+    {
+        if ($r->admin_user_id) return (int) $r->admin_user_id === (int) $u->id || $this->isAdmin($u);
+
+        return in_array((int) $u->id, $this->branchAdminIds($this->requestBranch($r), $r->client_id), true) || $this->isAdmin($u);
+    }
+
+    /**
      * The Recycle Bin's Vault Admin: the client admin or a Branch Admin. Only they change the
      * retention period and delete permanently (an item, or Empty Bin); everyone else may only restore.
      */
@@ -4669,7 +4715,15 @@ class CredVaultController extends Controller
     /** $id when it is still an active Vault Admin of the client, else null (= any Vault Admin). */
     protected function liveAdmin(?int $id, int $clientId): ?int
     {
-        return $id && in_array((int) $id, $this->adminIds($clientId), true) ? (int) $id : null;
+        if (!$id) return null;
+        $id = (int) $id;
+
+        return $this->memo("liveadmin:{$clientId}:{$id}", function () use ($id, $clientId) {
+            if (in_array($id, $this->adminIds($clientId), true)) return $id;
+            // A Branch Admin pinned on a request stays the Vault Admin while still an active branch user.
+            return User::whereKey($id)->where('client_id', $clientId)
+                ->where('user_type', 'branch_user')->where('status', 'active')->exists() ? $id : null;
+        });
     }
 
     /** The admin a request names — dropped once that person stops being a Vault Admin, so the request never sticks. */

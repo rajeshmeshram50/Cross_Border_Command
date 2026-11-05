@@ -42,10 +42,17 @@ class AccessRequestController extends CredVaultController
         $f = $request->validate($this->listRules(['all', 'pending', 'approved', 'rejected', 'mine', 'to_me']));
         $this->sweepUnlocks($u->client_id);
 
-        $admin = $this->isAdmin($u);
-        $base  = AccessRequest::where('client_id', $u->client_id);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
+        $base   = AccessRequest::where('client_id', $u->client_id);
         if (!$admin) {
-            $base->where(fn ($w) => $w->where('requester_id', $u->id)->orWhere('admin_user_id', $u->id)->orWhere('manager_user_id', $u->id));
+            // The Branch Admin (Vault Admin) sees every request raised in their branch; everyone else only theirs and the ones on them.
+            $base->where(function ($w) use ($u, $branch) {
+                $w->where('requester_id', $u->id)->orWhere('admin_user_id', $u->id)->orWhere('manager_user_id', $u->id);
+                if ($branch) {
+                    $w->orWhereIn('requester_id', User::where('client_id', $u->client_id)->where('branch_id', $branch)->select('id'));
+                }
+            });
         }
         $search = clone $base;
         if ($term = $f['q'] ?? null) {
@@ -133,6 +140,9 @@ class AccessRequestController extends CredVaultController
         $this->sweepUnlocks($u->client_id);
         [$c] = $this->findInVault($u, $id, 'critical', self::RANK_VIEW,
             'Your access is Use Only — there is nothing for you to unlock on this credential.');
+        if ($this->opensDirectly($u, $c)) {
+            $this->reject('You are the Vault Admin for this branch — open this credential directly.', null, 409);
+        }
         $pol = Policy::for($u->client_id);
 
         $steps       = $c->lockSteps();
@@ -164,11 +174,11 @@ class AccessRequestController extends CredVaultController
 
         $adminId = null;
         if ($adminStep) {
-            // Nobody approves their own request: the requester is never in the pool.
-            $pool    = array_values(array_diff($this->adminIds($u->client_id), [$u->id]));
-            if (!$pool) $this->reject('There is no other Vault Admin who can approve this request.', null, 409);
-            $adminId = $c->lock_admin_user_id ?: $pol['cp_admin_user_id'];
-            if (!in_array((int) $adminId, $pool, true)) $adminId = null;   // null = any Vault Admin
+            // The Vault Admin is the requester's Branch Admin; nobody approves their own request.
+            $pool = array_values(array_diff($this->branchAdminIds($u->branch_id, $u->client_id), [$u->id]));
+            if (!$pool) $this->reject('Your branch has no Branch Admin (Vault Admin) to approve this. Ask your administrator to assign one.', null, 409);
+            $adminId = $c->lock_admin_user_id ?: ($pol['cp_admin_user_id'] ?: null);
+            if (!in_array((int) $adminId, $pool, true)) $adminId = $pool[0];   // pin to the branch admin
         }
         $managerId = null;
         if ($managerStep) {

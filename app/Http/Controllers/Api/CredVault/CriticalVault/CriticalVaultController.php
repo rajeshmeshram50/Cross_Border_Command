@@ -94,25 +94,29 @@ class CriticalVaultController extends CredVaultController
     public function approvers(Request $request)
     {
         $u = $this->tenantUser($request);
-        $d = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
+        $request->validate(['q' => ['nullable', 'string', 'max:100']]);   // accepted but unused — the lists are fixed now
         $pol = Policy::for($u->client_id);
-        $defAdmin = $this->liveAdmin($pol['cp_admin_user_id'], $u->client_id);
-
-        $admins = User::whereIn('id', $this->adminIds($u->client_id))->orderBy('name')->get(['id', 'name', 'designation', 'user_type']);
-        $managers = User::where('client_id', $u->client_id)->where('status', 'active')
-            ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'designation']))
-            ->orderBy('name')->limit(200)->get(['id', 'name', 'designation', 'user_type']);
-        $mine = $this->managerOf($u);
         $card = fn ($x) => ['id' => $x->id, 'name' => $x->name, 'designation' => $x->designation, 'initials' => $this->initials($x->name)];
+
+        // Vault Admin = the Branch Admin(s) of the user's branch. Manager = the user's own reporting manager only.
+        $branchAdminIds = $this->branchAdminIds($u->branch_id, $u->client_id);
+        $admins  = User::whereIn('id', $branchAdminIds)->orderBy('name')->get(['id', 'name', 'designation']);
+        $mine    = $this->managerOf($u);
+        $manager = $mine ? User::whereKey($mine)->first(['id', 'name', 'designation']) : null;
+
+        $defAdmin = $this->liveAdmin($pol['cp_admin_user_id'], $u->client_id);
+        if (!$defAdmin || !in_array((int) $defAdmin, $branchAdminIds, true)) {
+            $defAdmin = count($branchAdminIds) === 1 ? $branchAdminIds[0] : null;
+        }
 
         return response()->json(['status' => true, 'data' => [
             'admins'   => $admins->map(fn ($x) => $card($x) + ['role' => 'Vault Admin'])->values(),
-            'managers' => $managers->map(fn ($x) => $card($x) + ['role' => $x->id === $mine ? 'Your reporting manager' : ($x->designation ?: 'Manager')])->values(),
+            'managers' => $manager ? [$card($manager) + ['role' => 'Your reporting manager']] : [],
             'defaults' => [
                 'admin_user_id'   => $defAdmin,
-                'admin_label'     => $defAdmin ? User::whereKey($defAdmin)->value('name') : 'Any Vault Admin',
+                'admin_label'     => $defAdmin ? User::whereKey($defAdmin)->value('name') : ($admins->count() ? 'Any Branch Admin' : 'No Branch Admin set for your branch'),
                 'manager_user_id' => $mine,
-                'manager_label'   => $mine ? User::whereKey($mine)->value('name') : 'The requester’s reporting manager',
+                'manager_label'   => $manager?->name ?? 'The requester’s reporting manager',
             ],
         ]], 200);
     }
