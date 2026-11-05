@@ -4313,6 +4313,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -4428,6 +4429,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -4543,6 +4545,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -4658,6 +4661,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -4773,6 +4777,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -4888,6 +4893,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5018,6 +5024,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5128,6 +5135,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5238,6 +5246,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5348,6 +5357,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5443,6 +5453,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5553,6 +5564,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5658,6 +5670,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5762,6 +5775,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5872,6 +5886,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -5977,6 +5992,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6077,6 +6093,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6171,6 +6188,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6260,6 +6278,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6354,6 +6373,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6438,6 +6458,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6518,6 +6539,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6633,6 +6655,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6727,6 +6750,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -6822,6 +6846,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CRD-\\d{4}$/));"
                                 ]
@@ -7111,6 +7136,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7161,6 +7187,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7211,6 +7238,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7261,6 +7289,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7311,6 +7340,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7353,6 +7383,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7395,6 +7426,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7437,6 +7469,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7479,6 +7512,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7525,6 +7559,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7570,6 +7605,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only normal rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('normal')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -7612,6 +7648,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('login in the normal vault', () => { pm.expect(b.data.type).to.eql('login'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7649,6 +7686,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('password in the normal vault', () => { pm.expect(b.data.type).to.eql('password'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7686,6 +7724,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('email in the normal vault', () => { pm.expect(b.data.type).to.eql('email'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7723,6 +7762,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passkey in the normal vault', () => { pm.expect(b.data.type).to.eql('passkey'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7760,6 +7800,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('totp in the normal vault', () => { pm.expect(b.data.type).to.eql('totp'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7797,6 +7838,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('card in the normal vault', () => { pm.expect(b.data.type).to.eql('card'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7834,6 +7876,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('bank in the normal vault', () => { pm.expect(b.data.type).to.eql('bank'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7871,6 +7914,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('crypto in the normal vault', () => { pm.expect(b.data.type).to.eql('crypto'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7908,6 +7952,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('rewards in the normal vault', () => { pm.expect(b.data.type).to.eql('rewards'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 3 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(3); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7945,6 +7990,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('api in the normal vault', () => { pm.expect(b.data.type).to.eql('api'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -7982,6 +8028,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('ssh in the normal vault', () => { pm.expect(b.data.type).to.eql('ssh'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8019,6 +8066,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('database in the normal vault', () => { pm.expect(b.data.type).to.eql('database'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8056,6 +8104,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('server in the normal vault', () => { pm.expect(b.data.type).to.eql('server'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8093,6 +8142,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('cert in the normal vault', () => { pm.expect(b.data.type).to.eql('cert'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8130,6 +8180,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('license in the normal vault', () => { pm.expect(b.data.type).to.eql('license'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8167,6 +8218,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('wifi in the normal vault', () => { pm.expect(b.data.type).to.eql('wifi'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8204,6 +8256,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('identity in the normal vault', () => { pm.expect(b.data.type).to.eql('identity'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8241,6 +8294,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passport in the normal vault', () => { pm.expect(b.data.type).to.eql('passport'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 6 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(6); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8278,6 +8332,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('driver in the normal vault', () => { pm.expect(b.data.type).to.eql('driver'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 5 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(5); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8315,6 +8370,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('govid in the normal vault', () => { pm.expect(b.data.type).to.eql('govid'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8352,6 +8408,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('document in the normal vault', () => { pm.expect(b.data.type).to.eql('document'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8389,6 +8446,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('note in the normal vault', () => { pm.expect(b.data.type).to.eql('note'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 1 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(1); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8426,6 +8484,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('membership in the normal vault', () => { pm.expect(b.data.type).to.eql('membership'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8463,6 +8522,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('medical in the normal vault', () => { pm.expect(b.data.type).to.eql('medical'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -8500,6 +8560,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('outdoor in the normal vault', () => { pm.expect(b.data.type).to.eql('outdoor'); pm.expect(b.data.vault).to.eql('normal'); });",
                                     "pm.test('open: all 4 fields, every value in plain text (all_values)', () => { pm.expect(b.data.locked).to.eql(false); pm.expect(b.data.fields.length).to.eql(4); pm.expect(b.data.all_values).to.be.an('object'); b.data.fields.forEach(f => pm.expect(f.masked).to.eql(false)); });"
@@ -13067,6 +13128,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13193,6 +13255,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13319,6 +13382,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13445,6 +13509,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13576,6 +13641,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13707,6 +13773,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13848,6 +13915,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -13969,6 +14037,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14095,6 +14164,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14221,6 +14291,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14332,6 +14403,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14458,6 +14530,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14579,6 +14652,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14699,6 +14773,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14825,6 +14900,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -14946,6 +15022,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15062,6 +15139,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15172,6 +15250,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15277,6 +15356,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15387,6 +15467,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15487,6 +15568,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15583,6 +15665,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15714,6 +15797,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15824,6 +15908,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -15935,6 +16020,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('name changed', () => pm.expect(b.data.name).to.contain('(edited)'));",
                                     "pm.test('same vault and code', () => pm.expect(b.data.code).to.match(/^CCRD-\\d{4}$/));",
                                     "pm.test('still locked: 2-step kept', () => pm.expect(b.data.lock_steps).to.eql(['admin', 'manager', 'otp']));"
@@ -16232,6 +16318,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16282,6 +16369,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16332,6 +16420,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16374,6 +16463,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16416,6 +16506,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16458,6 +16549,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16500,6 +16592,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16546,6 +16639,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16591,6 +16685,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('only critical rows', () => b.data.forEach(r => pm.expect(r.vault).to.eql('critical')));",
                                     "pm.test('strength names, no percentage', () => b.data.forEach(r => { pm.expect(r.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(r).to.not.have.property('strength_pct'); }));"
                                 ]
@@ -16633,6 +16728,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('login in the critical vault', () => { pm.expect(b.data.type).to.eql('login'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16670,6 +16766,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('password in the critical vault', () => { pm.expect(b.data.type).to.eql('password'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16707,6 +16804,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('email in the critical vault', () => { pm.expect(b.data.type).to.eql('email'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16744,6 +16842,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passkey in the critical vault', () => { pm.expect(b.data.type).to.eql('passkey'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16781,6 +16880,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('totp in the critical vault', () => { pm.expect(b.data.type).to.eql('totp'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16818,6 +16918,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('card in the critical vault', () => { pm.expect(b.data.type).to.eql('card'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16855,6 +16956,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('bank in the critical vault', () => { pm.expect(b.data.type).to.eql('bank'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16892,6 +16994,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('crypto in the critical vault', () => { pm.expect(b.data.type).to.eql('crypto'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16929,6 +17032,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('rewards in the critical vault', () => { pm.expect(b.data.type).to.eql('rewards'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -16966,6 +17070,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('api in the critical vault', () => { pm.expect(b.data.type).to.eql('api'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17003,6 +17108,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('ssh in the critical vault', () => { pm.expect(b.data.type).to.eql('ssh'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17040,6 +17146,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('database in the critical vault', () => { pm.expect(b.data.type).to.eql('database'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17077,6 +17184,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('server in the critical vault', () => { pm.expect(b.data.type).to.eql('server'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17114,6 +17222,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('cert in the critical vault', () => { pm.expect(b.data.type).to.eql('cert'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17151,6 +17260,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('license in the critical vault', () => { pm.expect(b.data.type).to.eql('license'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17188,6 +17298,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('wifi in the critical vault', () => { pm.expect(b.data.type).to.eql('wifi'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17225,6 +17336,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('identity in the critical vault', () => { pm.expect(b.data.type).to.eql('identity'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17262,6 +17374,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('passport in the critical vault', () => { pm.expect(b.data.type).to.eql('passport'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17299,6 +17412,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('driver in the critical vault', () => { pm.expect(b.data.type).to.eql('driver'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17336,6 +17450,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('govid in the critical vault', () => { pm.expect(b.data.type).to.eql('govid'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17373,6 +17488,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('document in the critical vault', () => { pm.expect(b.data.type).to.eql('document'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17410,6 +17526,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('note in the critical vault', () => { pm.expect(b.data.type).to.eql('note'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17447,6 +17564,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('membership in the critical vault', () => { pm.expect(b.data.type).to.eql('membership'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17484,6 +17602,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('medical in the critical vault', () => { pm.expect(b.data.type).to.eql('medical'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17521,6 +17640,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('strength is a name, not a percentage', () => { pm.expect(b.data.strength).to.be.oneOf(['Weak', 'Fair', 'Good', 'Strong', null]); pm.expect(b.data).to.not.have.property('strength_pct'); });",
                                     "pm.test('outdoor in the critical vault', () => { pm.expect(b.data.type).to.eql('outdoor'); pm.expect(b.data.vault).to.eql('critical'); });",
                                     "pm.test('locked: unlock plan, no fields, no values', () => { pm.expect(b.data.locked).to.eql(true); pm.expect(b.data).to.not.have.property('fields'); pm.expect(b.data).to.not.have.property('all_values'); pm.expect(b.data.unlock_plan.steps.length).to.be.above(0); });"
@@ -17840,6 +17960,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('department nodes under the Admin', () => b.data.tree.children.forEach(c => pm.expect(c.type).to.eql('department')));"
                                 ]
                             }
@@ -17983,6 +18104,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('tab counts', () => pm.expect(b.tabs).to.include.keys('mine', 'team'));"
                                 ]
                             }
@@ -18130,7 +18252,7 @@
                     ]
                 },
                 {
-                    "name": "Add a team credential as a colleague (the manager)",
+                    "name": "Add a team credential (yours — your manager sees it under Team Credentials)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -18156,24 +18278,14 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation (colleague) {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation (team) {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
                         },
-                        "auth": {
-                            "type": "bearer",
-                            "bearer": [
-                                {
-                                    "key": "token",
-                                    "value": "{{managerToken}}",
-                                    "type": "string"
-                                }
-                            ]
-                        },
-                        "description": "Team Credentials are the credentials of your team that are not yours, so a colleague adds one here."
+                        "description": "Team Credentials are the team credentials of the people below you in the reporting line (HOD → TL → Employee → Intern). The employee adds one here; their reporting manager (managerToken) exports the Team tab below."
                     },
                     "event": [
                         {
@@ -18269,6 +18381,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('5 categories that add up', () => { pm.expect(b.data.groups.length).to.eql(5); pm.expect(b.data.groups.reduce((n, g) => n + g.count, 0)).to.eql(b.data.total); });"
                                 ]
                             }
@@ -18276,7 +18389,7 @@
                     ]
                 },
                 {
-                    "name": "Export popup — counts, Team Credentials (the selected team)",
+                    "name": "Export popup — counts, Team Credentials (as the manager)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -18305,6 +18418,16 @@
                                     "value": "{{myDepartmentId}}"
                                 }
                             ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -18314,6 +18437,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('both tab counts', () => pm.expect(b.data.tabs).to.include.keys('mine', 'team'));"
                                 ]
                             }
@@ -18355,6 +18479,16 @@
                                 }
                             ]
                         },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
                         "description": "Add more groups[] rows for more categories. data.selected is the \"20 of 41\" number."
                     },
                     "event": [
@@ -18370,7 +18504,7 @@
                     ]
                 },
                 {
-                    "name": "Export — Team Credentials, CSV, notes, no passwords",
+                    "name": "Export — Team Credentials, CSV, notes, no passwords (as the manager)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -18401,6 +18535,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         },
                         "description": "The response is the file. Headers: X-CredVault-Code (EX-…), X-CredVault-Count, X-CredVault-Withheld."
                     },
@@ -18448,6 +18592,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -18494,6 +18648,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         },
                         "description": "Nothing in the team matching → 422 \"No credentials match this selection\"."
                     },
@@ -18950,6 +19114,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
                                 ]
                             }
@@ -19035,7 +19200,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-24\",\n    \"reason\": \"Handover while I am on leave\"\n}",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-25\",\n    \"reason\": \"Handover while I am on leave\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -19050,6 +19215,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
                                     "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
                                 ]
                             }
@@ -19099,6 +19265,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
                                     "pm.test('email sent', () => { pm.expect(b.data.mail.status).to.eql('sent'); pm.expect(b.data.mail.sent).to.eql(b.data.mail.recipients); });"
                                 ]
                             }
@@ -19295,6 +19462,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('table cells', () => b.data.forEach(r => { pm.expect(r).to.include.keys('sr_no', 'credential', 'recipient', 'permission_label', 'shared_on', 'expires', 'reason', 'status_label', 'can'); }));"
                                 ]
                             }
@@ -19905,7 +20073,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-05&shared_to=2026-11-04&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-06&shared_to=2026-11-05&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -19916,11 +20084,11 @@
                             "query": [
                                 {
                                     "key": "shared_from",
-                                    "value": "2026-10-05"
+                                    "value": "2026-10-06"
                                 },
                                 {
                                     "key": "shared_to",
-                                    "value": "2026-11-04"
+                                    "value": "2026-11-05"
                                 },
                                 {
                                     "key": "tz",
@@ -19952,7 +20120,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-04&expires_to=2026-12-04&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-05&expires_to=2026-12-05&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -19963,11 +20131,11 @@
                             "query": [
                                 {
                                     "key": "expires_from",
-                                    "value": "2026-11-04"
+                                    "value": "2026-11-05"
                                 },
                                 {
                                     "key": "expires_to",
-                                    "value": "2026-12-04"
+                                    "value": "2026-12-05"
                                 },
                                 {
                                     "key": "tz",

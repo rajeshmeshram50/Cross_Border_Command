@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "CredVault — Password Manager API",
-        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Two vaults: normal-vault/* (CRD-0001…, 2-step only recorded) and critical-vault/* (CCRD-0001…, approvals + 2-step by Google Authenticator or email). Everything else is shared.\r\n3. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
+        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Two vaults: normal-vault/* (CRD-0001…, 2-step only recorded) and critical-vault/* (CCRD-0001…, approvals + 2-step by Google Authenticator or email). Everything else is shared.\n3. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -956,7 +956,7 @@
                                 {
                                     "key": "files[file]",
                                     "type": "file",
-                                    "src": []
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-sample.pdf"
                                 }
                             ]
                         },
@@ -1741,7 +1741,7 @@
                                 {
                                     "key": "attachments[]",
                                     "type": "file",
-                                    "src": []
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-sample.png"
                                 },
                                 {
                                     "key": "remove_attachments[]",
@@ -2542,7 +2542,7 @@
                     ]
                 },
                 {
-                    "name": "Export team vault — CSV, no passwords",
+                    "name": "Export team vault — CSV, no passwords (as the manager)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -2573,6 +2573,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -5922,7 +5932,7 @@
                                 {
                                     "key": "file",
                                     "type": "file",
-                                    "src": []
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-simple.csv"
                                 }
                             ]
                         },
