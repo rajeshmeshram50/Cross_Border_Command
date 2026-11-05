@@ -8033,6 +8033,54 @@
   box-shadow: 0 8px 18px -8px rgba(8, 145, 178, .7) !important;
 }
 
+/* Change period → shorter-period warning: the credentials the new period deletes right away. */
+.cvx .rb-impact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 210px;
+  overflow-y: auto;
+  margin: 2px 0 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff7f8;
+  border: 1px solid #fde2e6;
+}
+
+.cvx .rb-impact__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.cvx .rb-impact__row b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  color: #0c2c3a;
+}
+
+.cvx .rb-impact__row small {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #e11d48;
+  white-space: nowrap;
+}
+
+.cvx .rb-impact__more {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6a869c;
+}
+
+[data-bs-theme="dark"] .cvx .rb-impact { background: rgba(225, 29, 72, .08); border-color: rgba(251, 113, 133, .25); }
+[data-bs-theme="dark"] .cvx .rb-impact__row b { color: #e2e8f0; }
+[data-bs-theme="dark"] .cvx .rb-impact__row small { color: #fb7185; }
+[data-bs-theme="dark"] .cvx .rb-impact__more { color: #94a3b8; }
+
 /* Recycle Bin "Auto-delete In" cell: days left, a bar of the retention period still left, the purge date.
    Colour by urgency (backend): bad ≤ 3 days · warn ≤ 7 · ok. */
 .cvx .rb-left {

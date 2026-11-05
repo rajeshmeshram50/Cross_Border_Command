@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { cvApi, type BinCounts, type BinRow, type BinVault, type CredentialRow, type Loose, type PageMeta } from '../cvApi';
+import { cvApi, type BinCounts, type BinRetention, type RetentionImpact, type BinRow, type BinVault, type CredentialRow, type Loose, type PageMeta } from '../cvApi';
 import {
   ActBtn, CategoryCell, ConfirmModal, CvBrief, CvCard, CvPage, CvPortal, CvStrip, CvTabsRow, EmptyRow, NameCell, RiskFlag, ShimRows, StripBtn,
   Svg, IC, UpdatedCell, errMsg, fmtDay, initials, useCvMeta, useDebounced,
@@ -260,7 +260,7 @@ export default function RecycleBin() {
       )}
 
       {retention && summary && (
-        <RetentionModal current={days}
+        <RetentionModal vault={vault} current={days}
           options={(summary.retention_options as number[] | undefined)?.length ? summary.retention_options as number[] : [7, 15, 30, 60, 90]}
           fixed={!!summary.retention_fixed} canChange={!!summary.can_change_retention}
           onClose={() => setRetention(false)}
@@ -274,29 +274,103 @@ export default function RecycleBin() {
  * The Change period popup. Normal Vault: a Vault Admin picks 7–90 days. Everyone else sees the
  * period read-only, and the Critical Vault's period is fixed — same popup, Save switched off.
  */
-function RetentionModal({ current, options, fixed, canChange, onClose, onSaved }: {
-  current: number; options: number[]; fixed: boolean; canChange: boolean; onClose: () => void; onSaved: () => void;
+function RetentionModal({ vault, current: listDays, options, fixed: listFixed, canChange: listCanChange, onClose, onSaved }: {
+  vault: BinVault; current: number; options: number[]; fixed: boolean; canChange: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const toast = useToast();
-  const [d, setD] = useState(current);
+  // The list's summary paints the popup at once; GET /recycle-bin/retention then has the final say.
+  const [ret, setRet] = useState<BinRetention | null>(null);
+  const [loadErr, setLoadErr] = useState('');
+  const [d, setD] = useState(listDays);
   const [busy, setBusy] = useState(false);
-  const opts = useMemo(() => options, [options]);
+
+  useEffect(() => {
+    let on = true;
+    cvApi.binRetention().then(r => {
+      if (!on) return;
+      setRet(r);
+      setD(r[vault].days);
+    }).catch(e => { if (on) setLoadErr(errMsg(e)); });
+    return () => { on = false; };
+  }, [vault]);
+
+  const v = ret?.[vault];
+  const current = v?.days ?? listDays;
+  const fixed = ret ? vault === 'critical' && !!ret.critical.fixed : listFixed;
+  const canChange = v ? v.can_change : listCanChange;
+  const opts = useMemo(() => (v?.options.length ? v.options : options), [v, options]);
   // Locked for the Critical Vault's fixed period, and for anyone who is not a Vault Admin (client admin or Branch Admin).
   const locked = fixed || !canChange;
 
-  const save = async () => {
-    if (locked || d === current) { onClose(); return; }
+  // A shorter period that would delete bin items right away: the warning step, before anything is saved.
+  const [warn, setWarn] = useState<RetentionImpact | null>(null);
+
+  const commit = async (confirmPurge: boolean) => {
     setBusy(true);
     try {
-      const r = await cvApi.saveBinRetention(d);
-      const n = r.data.purged ?? 0;
-      toast.success(`Retention set to ${d} days${n ? ` · ${n} expired item${n > 1 ? 's' : ''} deleted` : ''}`);
-      onSaved();
+      const r = await cvApi.saveBinRetention(d, confirmPurge);
+      toast.success(r.message);
+      // The cached meta carries bin_days (Move to Bin popup, policies) — refresh it.
+      cvApi.meta(true).catch(() => undefined);
+      onSaved();   // the list reloads: purged items gone, the rest counted on the new period
     } catch (e) {
+      // 409: items became due since the check (someone else binned or time passed) — ask again.
+      if ((e as { status?: number })?.status === 409 && !confirmPurge) {
+        try { const p = (await cvApi.binRetention(d)).preview; if (p?.total) { setWarn(p); setBusy(false); return; } } catch { /* fall through */ }
+      }
       toast.error('Could not change the period', errMsg(e));
       setBusy(false);
     }
   };
+
+  const save = async () => {
+    if (locked || d === current) { onClose(); return; }
+    if (d > current) { await commit(false); return; }   // longer: nothing is deleted
+    setBusy(true);
+    try {
+      const p = (await cvApi.binRetention(d)).preview;
+      if (p && p.total > 0) { setWarn(p); setBusy(false); return; }
+    } catch (e) {
+      toast.error('Could not check the recycle bin', errMsg(e));
+      setBusy(false);
+      return;
+    }
+    await commit(false);
+  };
+
+  if (warn) {
+    const hidden = warn.total - warn.visible_total;
+    const more = warn.visible_total - warn.items.length;
+    return (
+      <ConfirmModal
+        icon={IC.bin}
+        title={`Change retention to ${warn.days} days?`}
+        sub={`${warn.total} ${warn.total === 1 ? 'credential' : 'credentials'} will be permanently deleted. This cannot be undone.`}
+        points={[
+          { icon: I_CLOCK, title: `Older than ${warn.days} days`, text: <>{warn.total === 1 ? 'This credential has' : 'These credentials have'} been in the bin longer than {warn.days} days, so the new period deletes {warn.total === 1 ? 'it' : 'them'} right away.</> },
+          { icon: IC.restore, title: 'Everything else stays', text: `Other items stay in the bin and are counted on the new ${warn.days}-day period.` },
+        ]}
+        ackLabel={`I understand ${warn.total === 1 ? 'this credential' : `these ${warn.total} credentials`} will be deleted permanently.`}
+        confirmLabel="Confirm & Delete"
+        confirmIcon={IC.bin}
+        busy={busy}
+        onConfirm={() => commit(true)}
+        onClose={() => { if (!busy) setWarn(null); }}
+      >
+        <div className="rb-impact">
+          {warn.items.map(it => (
+            <div key={it.id} className="rb-impact__row">
+              <span className="whm-idpill">{it.code}</span>
+              <b title={it.name}>{it.name}</b>
+              <small>{it.days_in_bin} {it.days_in_bin === 1 ? 'day' : 'days'} in bin</small>
+            </div>
+          ))}
+          {more > 0 && <div className="rb-impact__more">+ {more} more in your bin</div>}
+          {hidden > 0 && <div className="rb-impact__more">+ {hidden} from other users' bins in your company</div>}
+        </div>
+      </ConfirmModal>
+    );
+  }
 
   return (
     <CvPortal onClose={onClose}>
@@ -313,8 +387,9 @@ function RetentionModal({ current, options, fixed, canChange, onClose, onSaved }
           </div>
           <div className="rb-ret__note"><Svg d={I_INFO} size={12} />{fixed
             ? `The Critical Vault keeps binned items a fixed ${current} days. This period cannot be changed.`
-            : !canChange ? 'Only a Vault Admin (client admin or Branch Admin) can change the retention period.'
-              : 'Items already older than the new period are deleted right away.'}</div>
+            : loadErr ? loadErr
+              : !canChange ? 'Only a Vault Admin (client admin or Branch Admin) can change the retention period.'
+                : (ret?.note ?? 'Items already older than the new period are deleted right away.')}</div>
           <div className="dl-actions">
             <button type="button" data-h40="skip" className="dl-cancel" disabled={busy} onClick={onClose}>Cancel</button>
             <button type="button" data-h40="skip" className="dl-go rb-save" disabled={busy || locked} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>

@@ -164,6 +164,8 @@ class CredVaultController extends Controller
             'audit_actions'    => collect(AuditLog::ACTIONS)->map(fn ($v, $k) => ['key' => $k, 'label' => $v[0], 'severity' => $v[1], 'verb' => AuditLog::VERBS[$k] ?? $v[0]])->values(),
             'file_types'       => ['attachments' => explode(',', self::ATTACH_TYPES), 'file_fields' => explode(',', self::FIELD_FILE_TYPES), 'max_mb' => self::FILE_MAX_KB / 1024, 'max_attachments' => self::MAX_EXTRA_ATTACHMENTS],
             'policy'           => $pol,
+            // Recycle Bin retention per vault — the Critical Vault's is fixed (Policy::binDays).
+            'bin_days'         => ['normal' => Policy::binDays($pol, 'normal'), 'critical' => Policy::binDays($pol, 'critical')],
             'me'               => [
                 'id'              => $u->id,
                 'name'            => $u->name,
@@ -2514,41 +2516,79 @@ class CredVaultController extends Controller
     }
 
     /**
-     * GET /credvault/recycle-bin/retention — the Change period popup: the Normal Vault's period
-     * and its options; the Critical Vault's fixed period (no change offered).
+     * GET /credvault/recycle-bin/retention[?days=7] — the Change period popup: the Normal Vault's
+     * period and its options; the Critical Vault's fixed period (no change offered).
+     *
+     * With `days`, `preview` says what that period would delete right away: the bin items older
+     * than it, company-wide (`total`), and those the user can see in their own bin (`items`).
      */
     public function binRetention(Request $request)
     {
         $u   = $this->tenantUser($request);
+        $f   = $request->validate(['days' => ['nullable', 'integer', Rule::in(Policy::OPTIONS['bin_days'])]], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
         $pol = Policy::for($u->client_id);
 
-        return response()->json(['status' => true, 'data' => [
+        return response()->json(['status' => true, 'data' => array_filter([
             'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->binAdmin($u)],
             'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
             'note'     => 'Items already older than the new period are deleted right away.',
-        ]], 200);
+            'preview'  => isset($f['days']) ? $this->retentionImpact($u, (int) $f['days']) : null,
+        ], fn ($v) => $v !== null)], 200);
     }
 
     /**
-     * PUT /credvault/recycle-bin/retention { days, vault?: normal } — Change period, Normal Vault
-     * only, Vault Admins. A shorter period deletes the items already past it, right away.
+     * What a new Normal Vault period would delete at once — the same rule purgeExpired() applies
+     * (moved to the bin more than $days days ago). `items` is the user's own bin view, oldest first.
+     */
+    protected function retentionImpact(User $u, int $days): array
+    {
+        $cut   = now()->subDays($days);
+        $total = Credential::onlyTrashed()->where('client_id', $u->client_id)->where('vault', 'normal')->where('deleted_at', '<', $cut)->count();
+        $mine  = $this->binQuery($u, 'normal')->where('deleted_at', '<', $cut)->orderBy('deleted_at');
+        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'deleted_at']);
+
+        return [
+            'days'          => $days,
+            'total'         => $total,
+            'visible_total' => (clone $mine)->count(),
+            'items'         => $items->map(fn ($c) => [
+                'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk,
+                'deleted_at' => $c->deleted_at->toIso8601String(), 'days_in_bin' => (int) $c->deleted_at->diffInDays(now()),
+            ])->values(),
+        ];
+    }
+
+    /**
+     * PUT /credvault/recycle-bin/retention { days, vault?: normal, confirm_purge?: true } — Change
+     * period, Normal Vault only, Vault Admins. A shorter period deletes the items already past it,
+     * right away — so when it would delete any, the call needs confirm_purge (409 without it).
      */
     public function updateBinRetention(Request $request)
     {
         $u = $this->tenantUser($request);
         $d = $request->validate([
-            'days'  => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
-            'vault' => ['nullable', Rule::in(Credential::VAULTS)],
+            'days'          => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
+            'vault'         => ['nullable', Rule::in(Credential::VAULTS)],
+            'confirm_purge' => ['sometimes', 'boolean'],
         ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
         if (($d['vault'] ?? 'normal') === 'critical') {
             $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
         }
         if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can change the retention period.', null, 403);
 
+        $current = (int) Policy::for($u->client_id)['bin_days'];
+        if ($d['days'] < $current && empty($d['confirm_purge'])) {
+            $n = $this->retentionImpact($u, $d['days'])['total'];
+            if ($n > 0) {
+                $this->reject("{$n} " . Str::plural('credential', $n) . " in the Recycle Bin " . ($n === 1 ? 'is' : 'are')
+                    . " older than {$d['days']} days and will be deleted permanently. Confirm to continue.", 'confirm_purge', 409);
+            }
+        }
+
         $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
 
         return response()->json(['status' => true, 'message' => $res['data']['changed'] ? "Retention set to {$d['days']} days for the Normal Vault"
-                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} items past the new period deleted" : '') . '.' : 'Nothing changed.',
+                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} " . Str::plural('item', $res['data']['purged']) . ' past the new period deleted' : '') . '.' : 'Nothing changed.',
             'data' => ['vault' => 'normal', 'days' => (int) Policy::for($u->client_id)['bin_days'], 'purged' => $res['data']['purged'] ?? 0]], 200);
     }
 

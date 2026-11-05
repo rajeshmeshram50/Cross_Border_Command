@@ -119,6 +119,8 @@ export interface Meta {
   audit_actions: { key: string; label: string; severity: string; verb: string }[];
   file_types: { attachments: string[]; file_fields: string[]; max_mb: number; max_attachments: number };
   policy: Policy;
+  /** Recycle Bin retention per vault; the Critical Vault's is fixed. */
+  bin_days?: { normal: number; critical: number };
   me: { id: number; name: string; is_vault_admin: boolean; department_id: number | null; manager_user_id: number | null };
 }
 
@@ -224,6 +226,21 @@ export interface TransferRow {
 
 export type BinVault = 'normal' | 'critical';
 export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
+
+/** GET /recycle-bin/retention — the Change period popup's data, per vault. */
+export interface BinRetention {
+  normal: { days: number; options: number[]; can_change: boolean };
+  critical: { days: number; options: number[]; can_change: boolean; fixed: boolean };
+  note: string;
+  /** Only with ?days= — what that period would delete right away. */
+  preview?: RetentionImpact;
+}
+
+/** Bin items older than a new period: `total` company-wide, `items` (up to 10) from the user's own bin. */
+export interface RetentionImpact {
+  days: number; total: number; visible_total: number;
+  items: { id: number; code: string; name: string; type: string; risk: Risk; deleted_at: string; days_in_bin: number }[];
+}
 
 export interface BinRow {
   id: number; code: string; vault: BinVault; name: string; type: string; type_label: string; category_group: string; url: string | null;
@@ -338,7 +355,9 @@ export const cvApi = {
   bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number; counts: Record<BinVault | 'total', BinCounts> }>('/recycle-bin', q),
   restore: (id: number) => send<{ message: string }>('post', `/recycle-bin/${id}/restore`, {}),
   purge: (id: number) => send<{ message: string }>('delete', `/recycle-bin/${id}`, { confirm: true }),
-  saveBinRetention: (days: number) => send<{ message: string; data: { vault: BinVault; days: number; purged: number } }>('put', '/recycle-bin/retention', { days, vault: 'normal' }),
+  binRetention: (days?: number) => get<{ data: BinRetention }>('/recycle-bin/retention', { days }).then(r => r.data),
+  saveBinRetention: (days: number, confirmPurge = false) => send<{ message: string; data: { vault: BinVault; days: number; purged: number } }>(
+    'put', '/recycle-bin/retention', { days, vault: 'normal', ...(confirmPurge ? { confirm_purge: true } : {}) }),
   emptyBin: (vault: BinVault | 'all' = 'all') => send<{ message: string }>('delete', '/recycle-bin', { confirm: true, vault }),
 };
 
