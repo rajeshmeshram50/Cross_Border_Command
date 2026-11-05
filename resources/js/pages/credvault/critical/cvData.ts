@@ -1,4 +1,5 @@
-import { cvApi, type AccessRequestRow, type CredentialDetail, type CredentialRow, type DetailField, type ListResponse, type LockStep, type UnlockState } from '../cvApi';
+import { cvApi, type AccessRequestRow, type AuditEvent, type CredentialDetail, type CredentialRow, type DetailField, type ListResponse, type LockStep, type UnlockState } from '../cvApi';
+import type { ViewSource } from '../my-vault/ViewDrawer';
 import { initials } from '../shared';
 import { ADMIN, later, toRow, type Seed } from '../team-vault/tvData';
 
@@ -47,8 +48,9 @@ function critical(seed: Seed, mine: boolean): CredentialRow {
     owner: { ...base.owner, is_me: mine },
     protected: true, lock_steps: steps,
     access: mine ? { permission: 'full', via: 'owner' } : { permission: 'copy', via: 'team' },
-    // Locked rows reveal only through the unlock; only the owner edits or bins.
-    can: { reveal: false, copy: false, edit: mine, share: false, delete: mine, remove: false, edit_protection: mine },
+    // Locked rows reveal only through the unlock. Edit and bin are on for every row, as in the prototype
+    // (the Vault Admin's view); live data takes them from the API's rights.
+    can: { reveal: false, copy: false, edit: true, share: false, delete: true, remove: false, edit_protection: mine },
     unlock: null,
   };
 }
@@ -127,12 +129,14 @@ function requestOf(r: CredentialRow): AccessRequestRow | null {
     reason: f.reason || null, duration_minutes: f.minutes, duration_label: `${f.minutes} min`,
     admin: r.lock_steps.includes('admin') ? {
       user: ADMIN_BY, any_admin: false, decided_by: adminDone || f.rejected === 'admin' ? ADMIN_BY : null,
-      status: f.rejected === 'admin' ? 'rejected' : adminDone ? 'approved' : 'pending', decided_at: adminDone || f.rejected === 'admin' ? iso(f.adminAt) : null, note: null,
+      status: f.rejected === 'admin' ? 'rejected' : adminDone ? 'approved' : 'pending', decided_at: adminDone || f.rejected === 'admin' ? iso(f.adminAt) : null,
+      note: f.rejected === 'admin' ? 'Not approved at this time' : null,
     } : null,
     manager: r.lock_steps.includes('manager') ? {
       user: MANAGER_BY, decided_by: managerDone || f.rejected === 'manager' ? MANAGER_BY : null,
       status: f.rejected === 'manager' ? 'rejected' : managerDone ? 'approved' : f.phase === 'manager' ? 'pending' : 'waiting',
-      decided_at: managerDone || f.rejected === 'manager' ? iso(f.managerAt) : null, note: null,
+      decided_at: managerDone || f.rejected === 'manager' ? iso(f.managerAt) : null,
+      note: f.rejected === 'manager' ? 'Not approved at this time' : null,
     } : null,
     otp: r.lock_steps.includes('otp') ? { verified_at: open ? iso(f.openedAt) : null, attempts_left: 3 } : null,
     status: rejected ? 'rejected' : open ? 'unlocked' : managerDone ? 'approved' : 'pending',
@@ -163,9 +167,12 @@ const rowOf = (id: number) => {
 
 function detailOf(id: number): CredentialDetail {
   const r = rowOf(id);
+  // The owner opens their own credential directly (My Critical Credentials); anyone else after the unlock.
+  const free = MINE_IDS.has(r.id) || r.unlock.state === 'open';
   return {
     ...r,
-    locked: r.unlock.state !== 'open', updated_by: r.owner.name,
+    can: r.can ? { ...r.can, reveal: free, copy: free } : r.can,
+    locked: !free, updated_by: r.owner.name,
     fields: fieldsOf(r),
     unlock_plan: {
       steps: r.lock_steps.map((key, i) => ({
@@ -247,6 +254,8 @@ const dummy = {
     });
   },
 
+  sendOtp: (_reqId: number) => later({ data: { sent_to: 'in•••s@gmail.com', expires_in: 300, resend_in: 30 }, message: 'Code sent' }),
+
   /** Any 6 digits open it in dummy mode. */
   verifyOtp: (reqId: number, _code: string) => {
     appLinked = true;
@@ -273,6 +282,7 @@ const live = {
   cancel: cvApi.cancel,
   /** The API links the authenticator per credential (owner, in the form) — no per-user setup yet. */
   otpSetup: (_credId: number): Promise<OtpSetup | null> => Promise.resolve(null),
+  sendOtp: cvApi.sendOtp,
   verifyOtp: cvApi.verifyOtp,
   lock: cvApi.lock,
   reveal: cvApi.reveal,
@@ -280,3 +290,24 @@ const live = {
 };
 
 export const cvData = CV_DUMMY ? dummy : live;
+
+/** The View drawer's calls on the dummy rows: the details, a short activity timeline, reveal / copy. */
+function activityOf(id: number): AuditEvent[] {
+  const r = rowOf(id);
+  const ev = (n: number, action: string, label: string, verb: string, hours: number): AuditEvent => ({
+    id: r.id * 10 + n, event_id: `EVT-${r.id}${n}`, at: new Date(Date.now() - hours * 3_600_000).toISOString(),
+    actor: { id: 0, name: r.owner.name ?? ADMIN, full_name: r.owner.name ?? ADMIN, initials: initials(r.owner.name ?? ADMIN), role: 'Owner', is_me: r.owner.is_me },
+    action, label, verb, severity: 'info', severity_label: 'Info',
+    credential: { id: r.id, code: r.critical_code, name: r.name, risk: r.risk, type: r.type },
+    target: r.name, module: 'Critical Vault', detail: null, ip: '10.0.4.21',
+  });
+  return [ev(3, 'view', 'Viewed', 'viewed', 2), ev(2, 'update', 'Updated', 'updated', 30), ev(1, 'create', 'Created', 'created', 240)];
+}
+const viewDummy: ViewSource = {
+  show: dummy.show,
+  activity: (id: number) => later({ data: activityOf(id), meta: { current_page: 1, per_page: 20, total: 3, last_page: 1 } }),
+  reveal: dummy.reveal,
+  event: dummy.event,
+  attachment: () => later(undefined),
+} as unknown as ViewSource;
+export const viewSource: ViewSource = CV_DUMMY ? viewDummy : cvApi;

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ShimmerForm } from '../../../components/ui/Shimmer';
 import { cvApi, type CredentialDetail, type CredentialRow, type TypeDef } from '../cvApi';
-import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
+import { CvPortal, ShimCredForm, Svg, errMsg, useCvMeta } from '../shared';
 import CredentialForm from './CredentialForm';
 import TypePicker from './TypePicker';
 import './form.css';
@@ -36,6 +35,13 @@ function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
     }),
     recovery: { reg_email: null, reg_phone: null, has_recovery_key: false },
     notes: null, attachments: [],
+    // A dummy critical row: its protection switches follow its lock steps.
+    protection: row.risk === 'critical' ? {
+      admin: row.lock_steps.includes('admin'), admin_user: null,
+      manager: row.lock_steps.includes('manager'), manager_user: null,
+      otp: row.lock_steps.includes('otp'), otp_linked: row.lock_steps.includes('otp'),
+      policy: { admin: true, manager: true, otp: true },
+    } : undefined,
   };
 }
 
@@ -55,7 +61,7 @@ function Wait({ title, text, onClose, error, onRetry }: { title: string; text: s
         <div className="mapsup-body">
           {error
             ? <div className="cv-form-wait"><b>Could not open the form</b><span>{text}</span></div>
-            : <ShimmerForm sections={3} cols={4} fieldsPerSection={4} header={false} />}
+            : <ShimCredForm />}
         </div>
         <div className="mapsup-footer">
           <div className="mapsup-footer__info" />

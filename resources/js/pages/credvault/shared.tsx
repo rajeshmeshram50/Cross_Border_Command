@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { IdCell as DtIdCell, PillCell, TruncCell, type DataTableColumn, type DataTableTab } from '../../components/ui/DataTable';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { cvApi, CvApiError, type CredentialRow, type Meta, type PageMeta, type Perm, type Risk, type Twofa, type TypeDef } from './cvApi';
 import { CV_ICONS } from './cvIcons';
 import '../../components/ui/DataTable.css';
@@ -225,8 +226,12 @@ export function useFillToFoot(ref: RefObject<HTMLElement | null>, apply: (el: HT
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const space = scroller ? scroller.clientHeight : window.innerHeight;
-      const foot = (document.querySelector('footer.footer') as HTMLElement | null)?.offsetHeight ?? 0;
-      apply(el, Math.max(min, space - top - (foot > 0 ? foot + 8 : 15)));
+      // The footer is a sibling of .main-content (its own 40px slot below the scroller), so the
+      // scroller's height already leaves it out — only a footer inside the scroller takes room here.
+      // What is left below is .page-content's 8px bottom padding.
+      const footEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const foot = footEl && (!scroller || scroller.contains(footEl)) ? footEl.offsetHeight : 0;
+      apply(el, Math.max(min, Math.floor(space - top - (foot > 0 ? foot + 8 : scroller ? 8 : 15))));
     };
     fit();
     window.addEventListener('resize', fit);
@@ -318,6 +323,80 @@ export function ShimRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
     <>
       {Array.from({ length: rows }, (_, r) => (
         <tr key={r} className="cv-shimrow">{Array.from({ length: cols }, (_, c) => <td key={c}><i style={{ width: `${55 + ((r * 7 + c * 13) % 40)}%` }} /></td>)}</tr>
+      ))}
+    </>
+  );
+}
+
+/* ── Loading skeletons shaped like what they stand in for ── */
+
+const skCol = (center: boolean, gap = 6): CSSProperties =>
+  ({ display: 'flex', flexDirection: 'column', alignItems: center ? 'center' : 'flex-start', gap });
+const skRow = (gap = 10, center = false): CSSProperties =>
+  ({ display: 'flex', alignItems: 'center', justifyContent: center ? 'center' : 'flex-start', gap });
+
+/**
+ * The credential table's rows while loading (CredentialTable): each cell takes the shape
+ * of its column — Sr pill, ID pill + date, icon + name, category pill, owner avatar,
+ * risk pill, strength box, 2FA pill, date + time, the access pill (extra) and the actions.
+ */
+export function ShimCredRows({ rows = 8, extra = false }: { rows?: number; extra?: boolean }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, r) => {
+        const v = (base: number, spread: number) => base + ((r * 37) % spread);
+        return (
+          <tr key={r} className="cv-skrow">
+            <td><div style={skRow(0, true)}><Shimmer width={24} height={24} radius={7} /></div></td>
+            <td><div style={skCol(true)}><Shimmer width={76} height={22} radius={7} /><Shimmer width={58} height={9} /></div></td>
+            <td>
+              <div style={skRow(10)}>
+                <Shimmer width={32} height={32} radius={10} />
+                <div style={skCol(false)}><Shimmer width={v(110, 50)} height={12} /><Shimmer width={v(80, 40)} height={9} /></div>
+              </div>
+            </td>
+            <td><div style={skCol(true)}><Shimmer width={v(64, 24)} height={18} radius={999} /><Shimmer width={v(84, 30)} height={10} /></div></td>
+            <td><Shimmer width={v(70, 30)} height={11} /></td>
+            <td>
+              <div style={skRow(8)}>
+                <Shimmer width={28} height={28} radius={8} />
+                <div style={skCol(false)}><Shimmer width={v(70, 30)} height={11} /><Shimmer width={40} height={14} radius={999} /></div>
+              </div>
+            </td>
+            <td><div style={skRow(0, true)}><Shimmer width={66} height={22} radius={999} /></div></td>
+            <td><div style={skRow(0, true)}><Shimmer width={124} height={40} radius={12} /></div></td>
+            <td><div style={skRow(0, true)}><Shimmer width={70} height={22} radius={999} /></div></td>
+            <td><div style={skCol(true)}><Shimmer width={74} height={11} /><Shimmer width={36} height={9} /></div></td>
+            {extra && <td><div style={skCol(true)}><Shimmer width={78} height={22} radius={999} /><Shimmer width={96} height={9} /></div></td>}
+            <td><div style={skRow(6, true)}>{[0, 1, 2].map(i => <Shimmer key={i} width={30} height={30} radius={10} />)}</div></td>
+          </tr>
+        );
+      })}
+    </>
+  );
+}
+
+/** The add / edit form while the credential loads: the real section cards, each with label + input placeholders. */
+export function ShimCredForm({ sections = [4, 6, 3, 4] }: { sections?: number[] }) {
+  return (
+    <>
+      {sections.map((n, s) => (
+        <div className="mapsup-section" key={s}>
+          <div className="mapsup-seccard">
+            <div className="mapsup-sechead">
+              <Shimmer width={36} height={36} radius={10} />
+              <div style={skCol(false, 7)}><Shimmer width={150 + (s % 2) * 40} height={13} /><Shimmer width={240 + (s % 3) * 50} height={9} /></div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '14px 20px' }}>
+              {Array.from({ length: n }, (_, f) => (
+                <div key={f} style={skCol(false, 8)}>
+                  <Shimmer width={70 + ((s * 3 + f) * 17) % 50} height={9} />
+                  <Shimmer width="100%" height={46} radius={12} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       ))}
     </>
   );
@@ -457,6 +536,8 @@ export function IdCell({ code, date }: { code: string; date?: string | null }) {
   return <div className="whm-idcell"><span className="whm-idpill">{code}</span><span className="whm-iddate">{fmtDate(date)}</span></div>;
 }
 
+const NAME_MAX = 20;
+
 export function NameCell({ row, typeIcon }: { row: Pick<CredentialRow, 'name' | 'url' | 'access'>; typeIcon?: string }) {
   const shared = row.access?.via === 'share';
   const sub = row.url ?? '';
@@ -465,7 +546,7 @@ export function NameCell({ row, typeIcon }: { row: Pick<CredentialRow, 'name' | 
     <div className="whm-namecell">
       <span className="whm-namecell__ico"><Svg icon={typeIcon ?? 'lock'} size={15} /></span>
       <div className="whm-namecell__t">
-        <b>{row.name}</b>
+        <b title={row.name.length > NAME_MAX ? row.name : undefined}>{row.name.length > NAME_MAX ? `${row.name.slice(0, NAME_MAX).trimEnd()}…` : row.name}</b>
         {sub && <span className="whm-namecell__loc" title={sub}><Svg icon={subIcon} size={11} />{sub}</span>}
       </div>
     </div>

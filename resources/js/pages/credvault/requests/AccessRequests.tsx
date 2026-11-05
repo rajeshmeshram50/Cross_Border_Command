@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError, CV_ROUTES, type AccessRequestRow, type PageMeta } from '../cvApi';
+import { CV_ROUTES, type AccessRequestRow, type PageMeta } from '../cvApi';
+import { arData } from './arData';
 import {
-  ConfirmModal, CvBrief, CvCard, CvPage, CvPager, CvStrip, CvTabsRow, EmptyRow, ShimRows, StripBtn, Svg,
+  CvBrief, CvCard, CvPage, CvPortal, CvStrip, CvTabsRow, EmptyRow, ShimRows, StripBtn, Svg,
   errMsg, fmtDate, fmtTime, mmss, useCvMeta, useDebounced, useNow, type CvTab,
 } from '../shared';
 import './requests.css';
@@ -19,8 +21,6 @@ const I = {
   pending: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   approved: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
   rejected: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
-  toMe: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
-  mine: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   req: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>',
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   admin: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
@@ -40,12 +40,9 @@ const TABS: { key: string; label: string; icon: string; empty: string }[] = [
   { key: 'pending', label: 'Pending Requests', icon: I.pending, empty: 'No pending requests' },
   { key: 'approved', label: 'Approved Requests', icon: I.approved, empty: 'No approved requests' },
   { key: 'rejected', label: 'Rejected Requests', icon: I.rejected, empty: 'No rejected requests' },
-  { key: 'to_me', label: 'Awaiting My Approval', icon: I.toMe, empty: 'Nothing is waiting for you' },
-  { key: 'mine', label: 'My Requests', icon: I.mine, empty: 'You have not raised any requests' },
 ];
 
 const COLS = ['Sr. No', 'Request ID', 'Credential', 'Requested By', 'Reason', 'Access Window', 'Vault Admin', 'Reporting Manager', 'Status', 'Action'];
-const PER_PAGE = 10;
 const POLL_MS = 30_000;
 
 type Stage = NonNullable<AccessRequestRow['admin']> | NonNullable<AccessRequestRow['manager']>;
@@ -91,9 +88,10 @@ export default function AccessRequests() {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [rows, setRows] = useState<AccessRequestRow[]>([]);
   const [tabs, setTabs] = useState<Record<string, number>>({});
-  const [meta, setMeta] = useState<PageMeta>({ current_page: 1, per_page: PER_PAGE, total: 0, last_page: 1 });
+  const [meta, setMeta] = useState<PageMeta>({ current_page: 1, per_page: 10, total: 0, last_page: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState(() => Date.now());
@@ -101,15 +99,13 @@ export default function AccessRequests() {
   const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(() => new Set());
   const setBusy = (id: number, on: boolean) => setBusyIds(s => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [note, setNote] = useState('');
-  const [noteErr, setNoteErr] = useState<string | undefined>();
   const seq = useRef(0);
 
   const load = useCallback(async (silent = false) => {
     const my = ++seq.current;
     if (!silent) setLoading(true);
     try {
-      const r = await cvApi.requests({ tab, q: dq, page, per_page: PER_PAGE });
+      const r = await arData.requests({ tab, q: dq, page, per_page: perPage });
       if (my !== seq.current) return;
       setRows(r.data); setTabs(r.tabs); setMeta(r.meta); setError(null); setFetchedAt(Date.now());
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
@@ -120,7 +116,7 @@ export default function AccessRequests() {
       // A silent poll can supersede a normal load, so whichever finishes last clears the shimmer.
       if (my === seq.current) setLoading(false);
     }
-  }, [tab, dq, page]);
+  }, [tab, dq, page, perPage]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [dq]);
@@ -141,7 +137,7 @@ export default function AccessRequests() {
   const approve = async (x: AccessRequestRow) => {
     setBusy(x.id, true);
     try {
-      const res = await cvApi.approve(x.id);
+      const res = await arData.approve(x.id);
       const sentOn = x.stage === 'admin' && x.manager;
       toast.success(`${x.code} ${sentOn ? 'approved · sent to Reporting Manager' : 'fully approved'}`, res.message);
       load(true);
@@ -149,7 +145,7 @@ export default function AccessRequests() {
     finally { setBusy(x.id, false); }
   };
 
-  const openDialog = (kind: 'reject' | 'cancel' | 'lock', row: AccessRequestRow) => { setNote(''); setNoteErr(undefined); setDialog({ kind, row }); };
+  const openDialog = (kind: 'reject' | 'cancel' | 'lock', row: AccessRequestRow) => setDialog({ kind, row });
 
   const confirmDialog = async () => {
     if (!dialog) return;
@@ -157,21 +153,19 @@ export default function AccessRequests() {
     setBusy(x.id, true);
     try {
       if (dialog.kind === 'reject') {
-        const res = await cvApi.reject(x.id, note.trim() || undefined);
+        const res = await arData.reject(x.id);
         toast.warning(`${x.code} rejected`, res.message);
       } else if (dialog.kind === 'cancel') {
-        const res = await cvApi.cancel(x.id);
+        const res = await arData.cancel(x.id);
         toast.info(`${x.code} cancelled`, res.message);
       } else {
-        const res = await cvApi.lock(x.id);
+        const res = await arData.lock(x.id);
         toast.info(`${x.credential?.name ?? x.code} locked`, res.message);
       }
       setDialog(null);
       load(true);
     } catch (e) {
-      const field = e instanceof CvApiError ? e.field('note') : undefined;
-      if (field) setNoteErr(field);
-      else { toast.error('Action failed', errMsg(e)); setDialog(null); load(true); }
+      toast.error('Action failed', errMsg(e)); setDialog(null); load(true);
     } finally { setBusy(x.id, false); }
   };
 
@@ -209,7 +203,7 @@ export default function AccessRequests() {
   const dType = d?.credential ? typeOf(d.credential.type) : undefined;
 
   return (
-    <CvPage className="mv-page ar-page">
+    <CvPage className="mv-page tv-page ar-page">
       <CvStrip
         icon={I.req}
         title="Access Request Management"
@@ -227,10 +221,10 @@ export default function AccessRequests() {
           { icon: I.timer, title: 'Time-limited Access', desc: 'Once both approve, the credential unlocks for the requested window and then locks again.' },
         ]}
       />
-      <CvCard>
+      <CvCard pane>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
           search={q} onSearch={setQ} placeholder="Search by request ID, credential, requester or reason..." />
-        <div id="arListWrap">
+        <div id="arListWrap" className="tvc-list">
           <div className="whm-tblwrap">
             <table className="whm-tbl mv-tbl ar-tbl">
               <thead><tr>{COLS.map((c, i) => <th key={c} className={`ar-th-${i}`}>{c}</th>)}</tr></thead>
@@ -304,28 +298,25 @@ export default function AccessRequests() {
               </tbody>
             </table>
           </div>
-          {!loading && !error && (
-            <CvPager page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={meta.per_page} noun="requests" onPage={setPage} />
-          )}
+          <WorklistPager className="wl-teal" loading={loading}
+            total={meta.total} page={meta.current_page} pageSize={perPage}
+            onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
         </div>
       </CvCard>
 
+      {/* The prototype's arReject: the centred dl-modal, no reason box. Cancel and Lock now share it. */}
       {dialog && d && (
-        <ConfirmModal
-          icon={dialog.kind === 'reject' ? I.rejectHd : dialog.kind === 'lock' ? I.lock : I.no}
-          title={dialog.kind === 'reject' ? 'Reject access request?' : dialog.kind === 'lock' ? 'Lock this credential now?' : 'Cancel this request?'}
-          sub={dialog.kind === 'reject'
-            ? 'The requester will not be able to unlock this credential. They can raise a new request later.'
-            : dialog.kind === 'lock'
-              ? 'The access window ends now. A new request is needed to unlock it again.'
-              : 'The approvers will no longer see it. You can raise a new request later.'}
-          confirmLabel={dialog.kind === 'reject' ? 'Reject Request' : dialog.kind === 'lock' ? 'Lock Now' : 'Cancel Request'}
-          confirmIcon={dialog.kind === 'lock' ? I.lock : I.no}
-          busy={busyIds.has(d.id)}
-          onConfirm={confirmDialog}
-          onClose={() => { if (!busyIds.has(d.id)) setDialog(null); }}
-        >
-          <div className="arj">
+        <CvPortal onClose={() => { if (!busyIds.has(d.id)) setDialog(null); }}>
+          <div className="dl-ov" onClick={e => { if (e.target === e.currentTarget && !busyIds.has(d.id)) setDialog(null); }}>
+            <div className="dl-modal arj" role="dialog" aria-modal="true"
+              aria-label={dialog.kind === 'reject' ? 'Reject access request?' : dialog.kind === 'lock' ? 'Lock this credential now?' : 'Cancel this request?'}>
+              <div className="dl-ico"><Svg d={dialog.kind === 'reject' ? I.rejectHd : dialog.kind === 'lock' ? I.lock : I.no} size={30} sw={2.1} /></div>
+              <div className="dl-title">{dialog.kind === 'reject' ? 'Reject access request?' : dialog.kind === 'lock' ? 'Lock this credential now?' : 'Cancel this request?'}</div>
+              <div className="dl-text">{dialog.kind === 'reject'
+                ? 'The requester will not be able to unlock this credential. They can raise a new request later.'
+                : dialog.kind === 'lock'
+                  ? 'The access window ends now. A new request is needed to unlock it again.'
+                  : 'The approvers will no longer see it. You can raise a new request later.'}</div>
             <div className="arj-card">
               <div className="arj-row">
                 <span className="arj-ico"><Svg icon={dType?.icon ?? 'lock'} size={16} /></span>
@@ -340,15 +331,18 @@ export default function AccessRequests() {
               </div>
             </div>
             {dialog.kind === 'reject' && (
-              <>
-                <div className="arj-as"><Svg d={I.shieldO} size={12} sw={2.1} />Rejecting as <b>{d.stage === 'admin' ? 'Vault Admin' : 'Reporting Manager'}</b></div>
-                <textarea className="ar-why mapsup-finput" maxLength={300} value={note} placeholder="Reason for rejecting (optional) — the requester will see it"
-                  onChange={e => { setNote(e.target.value); setNoteErr(undefined); }} aria-label="Reason for rejecting" />
-                {noteErr && <span className="cv-ferr">{noteErr}</span>}
-              </>
+              <div className="arj-as"><Svg d={I.shieldO} size={12} sw={2.1} />Rejecting as <b>{d.stage === 'admin' ? 'Vault Admin' : 'Reporting Manager'}</b></div>
             )}
+              <div className="dl-actions">
+                <button type="button" data-h40="skip" className="dl-cancel" disabled={busyIds.has(d.id)} onClick={() => setDialog(null)}>Cancel</button>
+                <button type="button" data-h40="skip" className="dl-go" disabled={busyIds.has(d.id)} onClick={confirmDialog}>
+                  <Svg d={dialog.kind === 'lock' ? I.lock : I.no} size={13} sw={2.1} />
+                  {busyIds.has(d.id) ? 'Working…' : dialog.kind === 'reject' ? 'Reject Request' : dialog.kind === 'lock' ? 'Lock Now' : 'Cancel Request'}
+                </button>
+              </div>
+            </div>
           </div>
-        </ConfirmModal>
+        </CvPortal>
       )}
     </CvPage>
   );

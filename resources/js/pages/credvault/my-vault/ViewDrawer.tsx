@@ -6,12 +6,16 @@ import { bytes, cap, copyText, CvPortal, errMsg, fmtDay, fmtTime, Svg, useCvMeta
 import BinConfirm from './BinConfirm';
 
 
+/** The calls the drawer makes; the live API unless a page on dummy data hands in its own. */
+export type ViewSource = Pick<typeof cvApi, 'show' | 'activity' | 'reveal' | 'event' | 'attachment'>;
+
 export interface ViewDrawerProps {
   credentialId: number;
   onClose: () => void;
-  onChanged?: () => void;                
+  onChanged?: () => void;
   onEdit?: (id: number) => void;
   onShare?: (id: number) => void;
+  source?: ViewSource;
 }
 
 type Tab = 'overview' | 'details' | 'access' | 'activity';
@@ -49,7 +53,8 @@ function Badge({ cls, children, dot }: { cls: string; children: ReactNode; dot?:
   return <span className={`vd-b vd-b--${cls}`}>{dot && <i />}{children}</span>;
 }
 
-export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, onShare }: ViewDrawerProps) {
+export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, onShare, source = cvApi }: ViewDrawerProps) {
+  const api = source;
   const toast = useToast();
   const { typeOf, meta } = useCvMeta();
   const [d, setD] = useState<CredentialDetail | null>(null);
@@ -69,27 +74,27 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     const seq = ++actSeq.current;
     setActs(a => ({ ...a, loading: true }));
     try {
-      const r = await cvApi.activity(credentialId, page);
+      const r = await api.activity(credentialId, page);
       if (seq !== actSeq.current) return;
       setActs(a => ({ rows: page === 1 ? r.data : [...a.rows, ...r.data], meta: r.meta, loading: false }));
     } catch {
       if (seq === actSeq.current) setActs(a => ({ ...a, loading: false }));
     }
-  }, [credentialId]);
+  }, [credentialId, api]);
 
   const load = useCallback(async () => {
     try {
-      const c = await cvApi.show(credentialId);
+      const c = await api.show(credentialId);
       setD(c);
       setFailed(null);
       if (!c.locked) {
-        if (!viewed.current) { viewed.current = true; cvApi.event(credentialId, 'view').catch(() => {}); }
+        if (!viewed.current) { viewed.current = true; api.event(credentialId, 'view').catch(() => {}); }
         loadActivity(1);
       }
     } catch (e) {
       setFailed(errMsg(e));
     }
-  }, [credentialId, loadActivity]);
+  }, [credentialId, loadActivity, api]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -169,7 +174,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const reveal = async (key: string) => {
     if (shown[key] !== undefined) { setShown(s => { const n = { ...s }; delete n[key]; return n; }); clearTimeout(timers.current[key]); return; }
     try {
-      const r = await cvApi.reveal(d.id, 'reveal', key);
+      const r = await api.reveal(d.id, 'reveal', key);
       setShown(s => ({ ...s, [key]: r.value }));
       hideLater(key, r.hide_after_seconds || 30);
       loadActivity(1);
@@ -177,7 +182,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   };
   const copySecret = async (key: string) => {
     try {
-      const r = await cvApi.reveal(d.id, 'copy', key);
+      const r = await api.reveal(d.id, 'copy', key);
       await copyText(r.value, r.clear_clipboard_after);
       toast.success('Copied to clipboard', r.clear_clipboard_after ? `${r.label} · clears in ${r.clear_clipboard_after}s` : r.label);
       loadActivity(1);
@@ -188,11 +193,11 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     try {
       await copyText(value);
       toast.success('Copied to clipboard');
-      if (field) cvApi.event(d.id, 'copy', field).then(() => loadActivity(1)).catch(() => {});
+      if (field) api.event(d.id, 'copy', field).then(() => loadActivity(1)).catch(() => {});
     } catch { toast.error('Could not copy', 'Your browser blocked clipboard access.'); }
   };
   const download = async (key: string) => {
-    try { await cvApi.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
+    try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
   };
 
   const copyBtn = (fn: () => void) => <button type="button" data-h40="skip" className="vd-ic" title="Copy" onClick={fn}><Svg icon="copy" size={13} /></button>;
@@ -249,7 +254,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         <span className="vd-hd__ico"><Svg icon={T?.icon ?? 'lock'} size={24} /></span>
         <div className="vd-hd__t">
           <h3>{d.name}</h3>
-          <span>{url ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => cvApi.event(d.id, 'launch').catch(() => {})}>{d.url}</a> : `${d.type_label} · ${d.category_group}`}</span>
+          <span>{url ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => api.event(d.id, 'launch').catch(() => {})}>{d.url}</a> : `${d.type_label} · ${d.category_group}`}</span>
           <div className="vd-chips">
             <Badge cls="glass">{d.code}</Badge>
             <Badge cls="glass">{d.type_label}</Badge>
@@ -262,7 +267,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       <div className="vd-acts">
         {url && (
           <a className="vd-btn vd-btn--p" href={url} target="_blank" rel="noopener noreferrer"
-            onClick={() => cvApi.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {})}>
+            onClick={() => api.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {})}>
             <Svg icon={I.launch} size={14} />Launch
           </a>
         )}

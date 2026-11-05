@@ -2919,7 +2919,7 @@ class CredVaultController extends Controller
         $existing = $creating ? [] : ($c->fields ?? []);
         unset($existing['twofa']);
 
-        $fields = $this->validateTypeFields($def, $inputFields, $existing, $request, $c);
+        $fields = $this->validateTypeFields($def, $inputFields, $existing, $request, $c, $critical);
         foreach (['reg_email' => '_reg_email', 'reg_phone' => '_reg_phone', 'recovery_key' => '_recovery_key'] as $in => $key) {
             if (!array_key_exists($in, $data)) continue;
             if (filled($data[$in])) $fields[$key] = trim($data[$in]); else unset($fields[$key]);
@@ -3138,7 +3138,7 @@ class CredVaultController extends Controller
      *
      * @return array the merged fields, normalised
      */
-    protected function validateTypeFields(array $def, array $input, array $existing, Request $request, ?Credential $c): array
+    protected function validateTypeFields(array $def, array $input, array $existing, Request $request, ?Credential $c, bool $critical = false): array
     {
         $errors = [];
         $known  = array_column($def['fields'], 'key');
@@ -3169,7 +3169,7 @@ class CredVaultController extends Controller
             }
             if (!is_scalar($v)) { $errors["fields.{$k}"][] = "{$f['label']} must be text."; continue; }
 
-            [$msg, $norm] = $this->checkField($def['key'], $f, (string) $v);
+            [$msg, $norm] = $this->checkField($def['key'], $f, (string) $v, $critical);
             if ($msg) $errors["fields.{$k}"][] = $msg; else $merged[$k] = $norm;
         }
 
@@ -3179,7 +3179,7 @@ class CredVaultController extends Controller
     }
 
     /** @return array{0:?string,1:string} an error message, or null and the normalised value */
-    protected function checkField(string $type, array $f, string $v): array
+    protected function checkField(string $type, array $f, string $v, bool $critical = false): array
     {
         $label = $f['label'];
         $max   = $f['max'] ?? (in_array($f['kind'], ['secret', 'textarea'], true) || $f['secret'] ? 10000 : 500);
@@ -3218,6 +3218,8 @@ class CredVaultController extends Controller
                 return ((int) $v >= 1 && (int) $v <= 65535) ? [null, $v] : ['Port must be between 1 and 65535.', $v];
             case 'seed':
                 if ($type === 'totp') {
+                    // The base32 setup-key check applies to the Critical Vault only; My / Team Vault keep the key as typed.
+                    if (!$critical) return [null, $v];
                     $b32 = strtoupper(preg_replace('/\s+/', '', $v));
                     return preg_match('/^[A-Z2-7]{16,128}=*$/', $b32) ? [null, $b32] : ['Enter the base32 setup key from the QR setup.', $v];
                 }

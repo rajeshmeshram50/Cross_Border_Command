@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { CredentialRow } from '../cvApi';
 import {
-  ActBtn, CategoryCell, EmptyRow, IC, IdCell, NameCell, OwnerCell, RiskFlag, ShimRows, StrengthCell, Svg, TwofaCell,
+  ActBtn, CategoryCell, EmptyRow, IC, IdCell, NameCell, OwnerCell, RiskFlag, ShimCredRows, StrengthCell, Svg, TwofaCell,
   UpdatedCell, useCvMeta,
 } from '../shared';
 
@@ -39,7 +39,7 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
       <table className="whm-tbl mv-tbl">
         <thead><tr>{cols.map((c, i) => <th key={c} className={`mv-th-${i}`}>{c}</th>)}</tr></thead>
         <tbody>
-          {loading ? <ShimRows cols={cols.length} rows={8} />
+          {loading ? <ShimCredRows rows={8} extra={!!extra} />
             : rows.length === 0 ? (
               <EmptyRow cols={cols.length} title={emptyTitle} sub={emptySub}
                 action={onAdd ? (

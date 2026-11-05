@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import QRCode from 'qrcode';
+import { Shimmer } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CvApiError, type AccessRequestRow, type CredentialDetail, type LockStep, type UnlockState } from '../cvApi';
 import { CvPortal, IC, Svg, copyText, errMsg, fmtTime, initials, mmss, useCvMeta, useNow } from '../shared';
@@ -55,6 +56,56 @@ function Approver({ who, role, note }: { who: string; role: string; note: ReactN
       <div><b>{who}</b><em>{role}</em></div>
       <span className="rv-to__n">{note}</span>
     </div>
+  );
+}
+
+/** While the credential loads: the stepper, the request card and the footer, as shimmer blocks. */
+function UnlockSkeleton() {
+  const col = (gap: number): CSSProperties => ({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap });
+  return (
+    <>
+      <div className="rv-body"><div className="rv-pane">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: '4px 0 18px', borderBottom: '1px solid var(--shim-border, #e3eff3)' }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={col(6)}>
+              <Shimmer width={44} height={44} radius={13} />
+              <Shimmer width={42} height={8} />
+              <Shimmer width={i === 3 ? 54 : 82} height={12} />
+              <Shimmer width={64} height={9} />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
+          <Shimmer width={150} height={24} radius={999} />
+          <Shimmer width="46%" height={18} />
+          <Shimmer width="70%" height={11} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, border: '1px solid var(--shim-border, #e3eff3)', marginTop: 4 }}>
+            <Shimmer width={46} height={46} radius={13} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}><Shimmer width={140} height={13} /><Shimmer width={80} height={10} /></div>
+            <Shimmer width={120} height={26} radius={999} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, borderRadius: 16, border: '1px solid var(--shim-border, #e3eff3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><Shimmer width={130} height={10} /><Shimmer width={46} height={10} /></div>
+            <Shimmer width="100%" height={96} radius={12} />
+            <Shimmer width={190} height={10} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {[0, 1, 2, 3].map(i => <Shimmer key={i} height={66} radius={14} />)}
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div className="rv-foot">
+        <div className="rv-foot__l">
+          <div style={{ display: 'flex', gap: 5 }}>{[0, 1, 2].map(i => <Shimmer key={i} width={i ? 18 : 34} height={6} radius={999} />)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}><Shimmer width={80} height={12} /><Shimmer width={104} height={9} /></div>
+        </div>
+        <div className="rv-foot__r">
+          <Shimmer width={104} height={44} radius={12} />
+          <Shimmer width={84} height={44} radius={12} />
+          <Shimmer width={240} height={46} radius={12} />
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -683,7 +734,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
       </div></div>
     );
   } else if (!d) {
-    body = <div className="rv-body"><div className="rv-pane" style={{ display: 'grid', placeItems: 'center', minHeight: 160 }}><span className="cp-spin" /></div></div>;
+    body = <UnlockSkeleton />;
   } else if (!steps.length) {
     body = (
       <div className="rv-body"><div className="rv-pane">
