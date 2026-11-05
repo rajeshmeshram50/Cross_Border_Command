@@ -84,5 +84,6 @@
 ## 4. Notes for the team
 
 - **TOTP setup key:** base32 is checked in the Critical Vault only (`b0da752a`). My Vault, Team Vault and imports keep the key as typed. The tests follow this rule.
-- **Team Credentials** are the team credentials of the people **below** you in the reporting line. A colleague at the same level, or someone above, sees nothing of yours unless you share it.
+- **Team Credentials** (Normal Vault) are the team credentials of the people **below** you in the reporting line. A colleague at the same level, or someone above, sees nothing of yours unless you share it.
+- **Teams Critical Credentials** (Critical Vault) list every employee's Critical Vault team credential in your branch. Colleagues outside your downline get View only (`via: branch_team`) and open the credential through Request Access. Tested by `cv_critical_branch.php`, 41/41.
 - **Critical Vault items in the Recycle Bin** can be restored or deleted by the **Branch Admin** only.

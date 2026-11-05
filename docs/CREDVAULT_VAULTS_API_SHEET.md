@@ -39,7 +39,7 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 | Method & path | What it does |
 |---|---|
-| `GET /normal-vault/credentials` | List. Query: `tab` (all \| mine \| team \| shared \| others), `q`, `type`, `group`, `risk`, `department_id`, `member_id`, `page`, `per_page` |
+| `GET /normal-vault/credentials` | List. Query: `tab` (all \|| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |\| team \| shared \| others), `q`, `type`, `group`, `risk`, `department_id`, `member_id`, `page`, `per_page` |
 | `GET /normal-vault/credentials/next-code` | Next CRD- ID (a preview) |
 | `POST /normal-vault/credentials` | Create (JSON, or multipart when files go with it) |
 | `PUT /normal-vault/credentials/{id}` | Edit, partial: a field left out keeps its value |
@@ -50,7 +50,7 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 | Method & path | What it does |
 |---|---|
-| `GET /critical-vault/credentials` | List. Tabs all \| mine \| others |
+| `GET /critical-vault/credentials` | List. Tabs all \| mine \| others (Teams Critical Credentials: the whole branch, see below) |
 | `GET /critical-vault/credentials/next-code` | Next CCRD- ID (a preview) |
 | `POST /critical-vault/credentials` | Create, with the protection steps and the 2-step proof |
 | `PUT / POST /critical-vault/credentials/{id}` | Edit. Only the owner or a Vault Admin may change the steps, approvers, method or inbox |
@@ -61,10 +61,32 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 | `POST /critical-vault/two-step/email/send` | Mail a setup code `{ email? }` (default php@inhpl.com) and return a `token` |
 | `POST /critical-vault/two-step/email/verify` | `{ token, code }`: the token is then good for one save |
 | `POST /critical-vault/credentials/{id}/access-requests` | Request an unlock (`reason`, `duration_minutes` when the admin step is on) |
-| `GET /critical-vault/access-requests` · `GET …/{id}` | Request list (tabs all \| pending \| approved \| rejected \| mine \| to_me) and detail |
+| `GET /critical-vault/access-requests` · `GET …/{id}` | Request list (tabs all \| pending \| approved \| rejected \|| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |\| to_me) and detail |
 | `POST /critical-vault/access-requests/{id}/approve` · `/reject` · `/cancel` · `/lock` | The decisions, and "Lock now" |
 | `POST /critical-vault/access-requests/{id}/send-otp` | Email method: mail the unlock code to the credential's inbox |
 | `POST /critical-vault/access-requests/{id}/verify-otp` | `{ code }` → unlocked for the window |
+
+#### Teams Critical Credentials: the whole branch (Critical Vault only)
+
+`GET /critical-vault/credentials?tab=others` (the **Teams Critical Credentials** tab), and `all`, list **every Critical Vault team credential owned by an employee of your branch**. This is not limited to the people below you in the reporting line. The tab count follows the same rule, and the search.
+
+| Who | Teams Critical Credentials shows | Rights |
+|---|---|---|
+| Vault Admin | every branch's | Full (`via: admin`) |
+| Branch Admin | their branch's | Full (`via: branch`) |
+| Manager / HOD | the whole branch | Full on their downline (`via: manager` / `hod`); **View** on everyone else in the branch (`via: branch_team`) |
+| Employee / Intern | the whole branch | **View** (`via: branch_team`) |
+
+- **View** (`via: branch_team`):
+  - The row lists as **Locked · Approval needed**, and the View drawer shows the summary but no fields.
+  - **Request Access** works: `POST /critical-vault/credentials/{id}/access-requests`. After the approval steps, the person can reveal the credential for the window.
+  - Copy, Edit, Share and Delete are off (`can.copy/edit/share/delete = false`, 403 on the APIs).
+- **Not listed:**
+  - personal (`scope: personal`) critical credentials;
+  - other branches' credentials;
+  - credentials owned by an admin login (Vault Admin or Branch Admin).
+- **Normal Vault is unchanged.** My Vault's team tabs still follow the reporting line, and a colleague's Normal Vault team credential stays hidden (404).
+- **Tested:** `cv_critical_branch.php`, 41/41 checks. The access-rights suite (56/56), the tab-count suite (72/72) and the Vaults collection (315/315) still pass.
 
 ### Generate Password (both vaults use it)
 
@@ -667,12 +689,12 @@ attachments[0]=<file: access-approval.pdf>
 | 01 | Generate Password | 19 | Characters and passphrase modes, the 6 refusals, use it in an add, rotate it |
 | 02 | **Add Normal Vault** | 28 | Next CRD- code; **Add 01 … Add 25**, one per type, form-data with files; risk critical → 422; missing field → 422 |
 | 03 | **Edit Normal Vault** | 30 | **Edit 01 … Edit 25**: every field with a new value plus new files (form-data POST); add an attachment, download it, remove it; a JSON-only PUT; risk critical → 422 |
-| 04 | **Get Normal Vault (list)** | 11 | Tabs all / mine / team / shared / others; search; filter by type, group and risk; paging; the shared list with `?vault=normal`. Every row is checked: vault, strength name, no percentage |
+| 04 | **Get Normal Vault (list)** | 11 | Tabs all /| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |/ team / shared / others; search; filter by type, group and risk; paging; the shared list with `?vault=normal`. Every row is checked: vault, strength name, no percentage |
 | 05 | **Get single Normal Vault** | 27 | **Get single 01 … 25**, one per type. Each is checked: open, every field of the type returned **in plain text** (none masked) with `all_values`, strength name. Plus reveal and activity |
 | 06 | Delete Normal Vault | 2 | To the Recycle Bin; get single afterwards → 404 |
 | 07 | **Add Critical Vault** | 33 | Next CCRD- code; approvers; Google new secret and check; **Add 01 … Add 25** with approvals, Google 2-step and files; refusals: risk high, no method, all steps off, wrong code |
 | 08 | **Edit Critical Vault** | 30 | **Edit 01 … Edit 25**: every field plus new files, the lock kept, no new code; rename only; manager step off; risk high → 422; cross-vault ids → 404 both ways |
-| 09 | **Get Critical Vault (list)** | 9 | Tabs all / mine / others; search; filters; paging; `?vault=critical` |
+| 09 | **Get Critical Vault (list)** | 9 | Tabs all /| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |/ others; search; filters; paging; `?vault=critical` |
 | 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields and no values, strength name. Plus reveal while locked → 423 |
 | 11 | Delete Critical Vault | 2 | To the Recycle Bin (owner / Vault Admin); get single afterwards → 404 |
 | 12 | **Team Vault** | 24 | Departments (admin card + department cards) and search; one department (stats, the Admin chip first, members, tree); unknown department → 404; organisation (View all); add a team credential; table: My Credentials, Team Credentials for a department, search, a member's credentials, critical team credentials; **Export**: a colleague's team credential; popup counts for My, for Team, with categories ticked; files: Team CSV, two categories, JSON with filters, My CSV, with passwords; refusals: not acknowledged, wrong account password, no tab; history |

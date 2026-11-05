@@ -36,7 +36,8 @@ const ACT_ICO: Record<string, string> = {
   request: 'lock', approve: 'check', reject: 'x', unlock: 'lock', lock: 'lock',
 };
 const VIA_LABEL: Record<string, string> = {
-  owner: 'Owner · Full control', admin: 'Admin · Team access', hod: 'HOD · Team access', team: 'Team access', share: 'Shared access',
+  owner: 'Owner · Full control', admin: 'Admin · Team access', branch: 'Branch Admin · Team access', manager: 'Manager · Team access',
+  hod: 'HOD · Team access', team: 'Team access', branch_team: 'Branch team · View after approval', share: 'Shared access',
 };
 
 const dt = (iso?: string | null) => (iso ? `${fmtDay(iso)}, ${fmtTime(iso)}` : '—');

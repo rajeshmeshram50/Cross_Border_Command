@@ -90,7 +90,7 @@ async function download(method: 'get' | 'post', path: string, body?: unknown, pa
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
 export type Twofa = 'yes' | 'no' | 'na';
 export type Perm = 'use' | 'view' | 'copy' | 'full';
-export type Via = 'owner' | 'admin' | 'hod' | 'team' | 'share';
+export type Via = 'owner' | 'admin' | 'branch' | 'manager' | 'hod' | 'team' | 'branch_team' | 'share';
 export type LockStep = 'admin' | 'manager' | 'otp';
 
 export interface PageMeta { current_page: number; per_page: number; total: number; last_page: number }
