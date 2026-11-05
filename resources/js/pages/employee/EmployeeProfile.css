@@ -3625,6 +3625,16 @@
   color: var(--ext-section-icon-color);
 }
 .ext-section-body { padding-left: 8px; padding-right: 8px; }
+/* Pager is an external WorklistPager (table runs paginate=false): attach it as
+   the table's footer instead of floating below with a gap. */
+.ext-section-body .dt-root { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.ext-section-body .wl-pager {
+  margin-top: 0;
+  border: 1px solid var(--vz-border-color);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  padding: 10px 14px;
+}
 .ext-section-header { padding-left: 8px; padding-right: 8px; }
 .ext-section-title { font-size: 12px; }
 .ext-section-sub { font-size: 11px; }
