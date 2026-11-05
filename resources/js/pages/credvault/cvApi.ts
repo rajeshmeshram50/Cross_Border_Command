@@ -151,7 +151,7 @@ export interface CredentialDetail extends CredentialRow {
   all_values?: Record<string, string | null>;
   notes?: string | null; attachments?: Attachment[];
   shares?: ShareRow[];
-  protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; policy: { admin: boolean; manager: boolean; otp: boolean } };
+  protection?: { admin: boolean; admin_user: { id: number; name: string } | null; manager: boolean; manager_user: { id: number; name: string } | null; otp: boolean; otp_linked: boolean; otp_method?: 'google' | 'email' | null; otp_email?: string | null; policy: { admin: boolean; manager: boolean; otp: boolean } };
   unlock_plan?: { steps: PlanStep[]; of: number; durations: number[]; asks_reason: boolean; default_minutes: number; otp_method?: 'google' | 'email' | null; otp_sent_to?: string | null };
   last_request?: AccessRequestRow | null;
   health?: { resolved: { type: string; severity: string; issue: string }[]; still_open: { type: string; severity: string; issue: string }[] };
@@ -258,6 +258,9 @@ export const cvApi = {
   },
   approvers: (q?: string) => get<{ data: Loose }>('/critical-vault/approvers', { q }).then(r => r.data),
   newAuthenticator: (label?: string) => send<{ data: { secret: string; secret_display: string; otpauth_uri: string; works_with: string } }>('post', '/critical-vault/two-step/google/new', { label }).then(r => r.data),
+  verifyAuthenticator: (secret: string, code: string) => send<{ message: string; data: { method: 'google'; verified: boolean } }>('post', '/critical-vault/two-step/google/verify', { secret, code }),
+  emailSetupSend: (email: string, label?: string) => send<{ message: string; data: { token: string; sent_to: string; expires_in: number; resend_in: number } }>('post', '/critical-vault/two-step/email/send', { email, label }).then(r => r.data),
+  emailSetupVerify: (token: string, code: string) => send<{ message: string; data: { token: string; email: string; sent_to: string } }>('post', '/critical-vault/two-step/email/verify', { token, code }).then(r => r.data),
   /** The server-side generator (Postman / integrations). The dialog and ↻ generate on the device — see generator.ts. */
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
