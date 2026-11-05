@@ -5,9 +5,10 @@ import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_CHARS, STR_LBL, checkField, emailError, fieldSpan, fillRows, generatePassword, hasTwofaSwitch, phoneError,
+  PHONE_CHARS, STR_LBL, checkField, emailError, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor, verifyTotp,
 } from './formHelpers';
+import { quickPassword } from '../generator';
 import { AUTH_EMPTY, AuthBox, CP_I, ProtectionBody, authLinked, type AuthState, type ProtectionValue } from './ProtectionSection';
 
 export interface FormInit {
@@ -319,8 +320,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                 {f.kind === 'password' && (
                   <button type="button" data-h40="skip" className="crd-pw__b crd-pw__b--gen" title="Generate a strong password"
                     onClick={() => {
-                      setVal(f.key, generatePassword(pol.gen_length || 16, pol.gen_symbols ?? true));
+                      setVal(f.key, quickPassword());
                       setShown(s => new Set(s).add(f.key));
+                      setGenerated(g => new Set(g).add(f.key));
                     }}>
                     <Svg icon="gen" size={14} sw={2.4} />
                   </button>

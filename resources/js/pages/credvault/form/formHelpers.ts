@@ -9,31 +9,18 @@ export const TYPE_COLOR: Record<string, string> = {
 };
 export const typeColor = (k: string) => TYPE_COLOR[k] ?? '#0891b2';
 
-/** The prototype's meter — Credential::strengthOf() scores the same way. */
+/**
+ * The password strength criteria (D34) — Credential::strengthOf() decides the same way:
+ * Strong (4) 12+ characters with letters, numbers and a special character; Good (3) 8+
+ * with all three; anything else Fair (2), which counts as weak. A space is not special.
+ */
 export function strengthOf(pw: string): number {
   if (!pw) return 0;
-  let sc = 0;
-  if (pw.length >= 8) sc++;
-  if (pw.length >= 12) sc++;
-  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) sc++;
-  if (/\d/.test(pw)) sc++;
-  if (/[^A-Za-z0-9]/.test(pw)) sc++;
-  if (pw.length < 8) return 1;
-  return sc <= 2 ? 1 : sc === 3 ? 2 : sc === 4 ? 3 : 4;
+  const mixed = /\p{L}/u.test(pw) && /\p{N}/u.test(pw) && /[^\p{L}\p{N}\s]/u.test(pw);
+  const len = [...pw].length;
+  return mixed && len >= 12 ? 4 : mixed && len >= 8 ? 3 : 2;
 }
 export const STR_LBL = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-
-/** A strong password from the browser's CSPRNG — one of each set, then shuffled. */
-export function generatePassword(length = 16, symbols = true): string {
-  const sets = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789'];
-  if (symbols) sets.push('!@#$%^&*-_=+?');
-  const all = sets.join('');
-  const rnd = (n: number) => { const a = new Uint32Array(1); window.crypto.getRandomValues(a); return a[0] % n; };
-  const out = sets.map(s => s[rnd(s.length)]);
-  while (out.length < Math.max(length, 12)) out.push(all[rnd(all.length)]);
-  for (let i = out.length - 1; i > 0; i--) { const j = rnd(i + 1);[out[i], out[j]] = [out[j], out[i]]; }
-  return out.join('');
-}
 
 /** Whether the type's main secret is a password — rotation and strength apply to it. */
 export const secretIsPassword = (T: TypeDef) => !!T.sec && T.fields.some(f => f.key === T.sec && f.kind === 'password');

@@ -1,0 +1,2285 @@
+{
+    "info": {
+        "name": "Recycle Bin",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "The Recycle Bin screen: four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each with Normal Vault and Critical Vault sub-tabs and their counts; the retention period (Normal changeable, Critical fixed at 30 days); restore and delete (Critical Vault items: the Branch Admin only); Empty Bin for both vaults in one call.\n\nBEFORE YOU START\nFill baseUrl, email/password (an employee with Credentials Vault → View), branchEmail/branchPassword (the Branch Admin of that employee's branch) and adminEmail/adminPassword (a client admin). Run the folders in order: 00 → 05.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Recycle Bin."
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "00 · Setup — sign in",
+            "description": "Three people of the same company and branch:\n• email / password — an employee with Credentials Vault → View (owns and bins the test items);\n• branchEmail / branchPassword — the Branch Admin (branch user) of that employee's branch — the only one who restores or deletes Critical Vault items in the bin;\n• adminEmail / adminPassword — a Vault Admin (client admin) — changes the Normal Vault retention period.",
+            "item": [
+                {
+                    "name": "Login — employee",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Branch Admin (branch user)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{branchEmail}}\",\n  \"password\": \"{{branchPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('branchToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('branchToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Vault Admin (client admin)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('adminToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('adminToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 · Prepare — move Normal and Critical items to the bin",
+            "description": "Adds 3 Normal Vault and 2 Critical Vault credentials as the employee, then moves all five to the Recycle Bin.\nThe Critical Vault needs 2-step: \"Google — new secret\" first; the pre-request script computes {{otpCode}} from it.",
+            "item": [
+                {
+                    "name": "Normal — add item 1",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bin test N1 {{$timestamp}}\",\n    \"notes\": \"Recycle Bin API check\",\n    \"fields\": {\n        \"url\": \"https://N1.example\",\n        \"username\": \"bin.N1@inhpl.com\",\n        \"password\": \"Bin!N1-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('binNormalId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — add item 2",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bin test N2 {{$timestamp}}\",\n    \"notes\": \"Recycle Bin API check\",\n    \"fields\": {\n        \"url\": \"https://N2.example\",\n        \"username\": \"bin.N2@inhpl.com\",\n        \"password\": \"Bin!N2-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('binNormal2Id', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — add item 3",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bin test N3 {{$timestamp}}\",\n    \"notes\": \"Recycle Bin API check\",\n    \"fields\": {\n        \"url\": \"https://N3.example\",\n        \"username\": \"bin.N3@inhpl.com\",\n        \"password\": \"Bin!N3-2026#Strong\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('binNormal3Id', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Google — new secret (for the Critical items)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/two-step/google/new",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "two-step",
+                                "google",
+                                "new"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"label\": \"CredVault Bin test\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.secret; if (v !== undefined && v !== null) pm.collectionVariables.set('totpSecret', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — add item 1",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bin test C1 {{$timestamp}}\",\n    \"notes\": \"Recycle Bin API check\",\n    \"fields\": {\n        \"url\": \"https://C1.example\",\n        \"username\": \"bin.C1@inhpl.com\",\n        \"password\": \"Bin!C1-2026#Strong\"\n    },\n    \"lock_admin\": false,\n    \"lock_manager\": false,\n    \"twofa\": true,\n    \"twofa_method\": \"google\",\n    \"totp_secret\": \"{{totpSecret}}\",\n    \"totp_code\": \"{{otpCode}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('binCriticalId', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                                    "const s = (pm.collectionVariables.get('totpSecret') || '').replace(/[^A-Z2-7]/gi, '').toUpperCase();",
+                                    "let bits = ''; for (const c of s) bits += b32.indexOf(c).toString(2).padStart(5, '0');",
+                                    "let hex = ''; for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                                    "const step = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                                    "const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(step), CryptoJS.enc.Hex.parse(hex)).toString();",
+                                    "const off = parseInt(h.substr(-1), 16);",
+                                    "const code = ((parseInt(h.substr(off * 2, 8), 16) & 0x7fffffff) % 1000000).toString().padStart(6, '0');",
+                                    "pm.collectionVariables.set('otpCode', code);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — add item 2",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"Bin test C2 {{$timestamp}}\",\n    \"notes\": \"Recycle Bin API check\",\n    \"fields\": {\n        \"url\": \"https://C2.example\",\n        \"username\": \"bin.C2@inhpl.com\",\n        \"password\": \"Bin!C2-2026#Strong\"\n    },\n    \"lock_admin\": false,\n    \"lock_manager\": false,\n    \"twofa\": true,\n    \"twofa_method\": \"google\",\n    \"totp_secret\": \"{{totpSecret}}\",\n    \"totp_code\": \"{{otpCode}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('binCritical2Id', String(v)); } catch (e) {}"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                                    "const s = (pm.collectionVariables.get('totpSecret') || '').replace(/[^A-Z2-7]/gi, '').toUpperCase();",
+                                    "let bits = ''; for (const c of s) bits += b32.indexOf(c).toString(2).padStart(5, '0');",
+                                    "let hex = ''; for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                                    "const step = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                                    "const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(step), CryptoJS.enc.Hex.parse(hex)).toString();",
+                                    "const off = parseInt(h.substr(-1), 16);",
+                                    "const code = ((parseInt(h.substr(off * 2, 8), 16) & 0x7fffffff) % 1000000).toString().padStart(6, '0');",
+                                    "pm.collectionVariables.set('otpCode', code);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — move item 1 to the bin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{binNormalId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials",
+                                "{{binNormalId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('vault normal', () => pm.expect(b.data.vault).to.eql('normal'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — move item 2 to the bin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{binNormal2Id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials",
+                                "{{binNormal2Id}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — move item 3 to the bin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/normal-vault/credentials/{{binNormal3Id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "normal-vault",
+                                "credentials",
+                                "{{binNormal3Id}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — move item 1 to the bin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{binCriticalId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials",
+                                "{{binCriticalId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('restorable by the Branch Admin', () => pm.expect(b.message).to.include('Branch Admin'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — move item 2 to the bin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/credentials/{{binCritical2Id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "credentials",
+                                "{{binCritical2Id}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "02 · GET /recycle-bin — list, 4 tabs × Normal / Critical, counts",
+            "description": "GET /recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=\n\nThe four tabs — All Items · Deleted by Me · Team Credentials · Expiring Soon — each with a Normal Vault and a Critical Vault sub-tab. vault (default normal) is the sub-tab.\n\nResponse:\n• tabs — the chosen vault's four counts;\n• counts — { normal: {all, mine, team, soon}, critical: {…}, total: {…} } — every badge at once; they follow the search box;\n• summary — the cards of the chosen vault: retention_days, retention_fixed (Critical: true), can_change_retention (Normal + Vault Admin only), retention_options, items, deleted_by_me, expiring_soon (within 7 days of deletion), critical, next_deletion {name, at, days}, can_empty;\n• data[] — sr_no, code, vault, name, type_label, category_group, url, scope / scope_label, risk, owner {name, initials}, deleted_by {name ('You'), initials}, deleted_at, purges_at, days_left, left_pct, urgency (ok · warn · bad), can_restore, can_purge, locked_reason;\n• purged — items removed because their period ended.",
+            "item": [
+                {
+                    "name": "Normal · All Items",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=all&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('counts: both vaults × 4 tabs + total', () => { ['normal', 'critical', 'total'].forEach(v => pm.expect(b.counts[v]).to.include.keys('all', 'mine', 'team', 'soon')); pm.expect(b.counts.total.all).to.eql(b.counts.normal.all + b.counts.critical.all); });",
+                                    "pm.test('Normal: changeable period', () => { pm.expect(b.summary.vault).to.eql('normal'); pm.expect(b.summary.retention_fixed).to.eql(false); });",
+                                    "pm.test('tabs = the Normal counts', () => pm.expect(b.tabs).to.eql(b.counts.normal));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal · Deleted by Me",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=mine&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('all deleted by me', () => b.data.forEach(r => pm.expect(r.deleted_by.name).to.eql('You')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal · Team Credentials",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=team&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('team items only', () => b.data.forEach(r => pm.expect(r.scope).to.eql('team')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal · Expiring Soon",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=soon&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "soon"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('7 days or less left', () => b.data.forEach(r => pm.expect(r.days_left).to.be.at.most(7)));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical · All Items (employee: no restore / delete)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=all&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('counts: both vaults × 4 tabs + total', () => { ['normal', 'critical', 'total'].forEach(v => pm.expect(b.counts[v]).to.include.keys('all', 'mine', 'team', 'soon')); pm.expect(b.counts.total.all).to.eql(b.counts.normal.all + b.counts.critical.all); });",
+                                    "pm.test('Critical: fixed period, no change', () => { pm.expect(b.summary.retention_fixed).to.eql(true); pm.expect(b.summary.can_change_retention).to.eql(false); pm.expect(b.summary.retention_options).to.eql([]); });",
+                                    "pm.test('the employee cannot restore critical items', () => b.data.forEach(r => pm.expect(r.can_restore).to.eql(false)));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical · Deleted by Me",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=mine&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical · Team Credentials",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=team&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical · Expiring Soon",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=soon&per_page=50",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "soon"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Search — counts follow it",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=all&per_page=50&q=Bin%20test",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "Bin test"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('Normal and Critical test items found', () => pm.expect(b.counts.total.all).to.be.at.least(5));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Search — nothing matches (every count 0)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=all&per_page=50&q=zzzz-no-such-item",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "zzzz-no-such-item"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('all 0', () => pm.expect(b.counts.total).to.eql({ all: 0, mine: 0, team: 0, soon: 0 }));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Paged — 2 a page",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=normal&tab=all&per_page=2&page=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "normal"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "2"
+                                },
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('2 rows, sr_no from 1', () => { pm.expect(b.data.length).to.be.at.most(2); if (b.data.length) pm.expect(b.data[0].sr_no).to.eql(1); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Branch Admin · Critical · All Items (may restore / delete)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=critical&tab=all&per_page=50&q=Bin%20test",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "critical"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "Bin test"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('the Branch Admin may restore and delete', () => { pm.expect(b.data.length).to.be.at.least(2); b.data.forEach(r => { pm.expect(r.can_restore).to.eql(true); pm.expect(r.can_purge).to.eql(true); }); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Unknown vault (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin?vault=both",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vault",
+                                    "value": "both"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "03 · GET | PUT /recycle-bin/retention — Change period",
+            "description": "GET /recycle-bin/retention — the Change period popup: normal {days, options, can_change}, critical {days: 30, fixed: true, can_change: false}.\nPUT /recycle-bin/retention { days: 7|15|30|60|90, vault?: normal } — Vault Admins, Normal Vault only. A shorter period deletes the items already past it, right away (the popup's note). The Critical Vault keeps a fixed 30 days: a change is refused.",
+            "item": [
+                {
+                    "name": "Retention — both vaults",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('critical fixed at 30', () => { pm.expect(b.data.critical.fixed).to.eql(true); pm.expect(b.data.critical.days).to.eql(30); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — set 60 days (Vault Admin)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 60,\n    \"vault\": \"normal\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('60 days', () => pm.expect(b.data.days).to.eql(60));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Normal — back to 30 days (Vault Admin)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 30\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('30 days', () => pm.expect(b.data.days).to.eql(30));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Critical — change the period (422, fixed)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 15,\n    \"vault\": \"critical\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee changes the period (403)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 15\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "A period not offered — 10 days (422)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/retention",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "retention"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"days\": 10\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "04 · POST /recycle-bin/{id}/restore · DELETE /recycle-bin/{id}",
+            "description": "POST /recycle-bin/{id}/restore — back to its vault (My Vault, Team Vault or Critical Vault).\nDELETE /recycle-bin/{id} { confirm: true } — gone for good.\nA Critical Vault item: the Branch Admin of its branch only — anyone else gets 403 \"Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin.\"",
+            "item": [
+                {
+                    "name": "Employee restores a Critical item (403)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binCriticalId}}/restore",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binCriticalId}}",
+                                "restore"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee deletes a Critical item (403)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binCriticalId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binCriticalId}}"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee restores a Normal item",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binNormalId}}/restore",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binNormalId}}",
+                                "restore"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('back in My Vault', () => pm.expect(b.data.restored_to).to.eql('My Vault'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete without confirm (422)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binNormal2Id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binNormal2Id}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee deletes a Normal item for good",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binNormal2Id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binNormal2Id}}"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Branch Admin restores a Critical item",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binCriticalId}}/restore",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binCriticalId}}",
+                                "restore"
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('back in the Critical Vault', () => pm.expect(b.data.restored_to).to.eql('Critical Vault'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Restore it again — no longer in the bin (404)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{binCriticalId}}/restore",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{binCriticalId}}",
+                                "restore"
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "05 · DELETE /recycle-bin — Empty Bin (Normal + Critical)",
+            "description": "DELETE /recycle-bin { confirm: true, vault?: all|normal|critical } — vault all (default) empties both vaults at once: every Normal Vault item the caller sees in the bin, and — for the Branch Admin — every Critical Vault item of the branch. Critical items anyone else sees are left and counted in data.skipped.critical.\nResponse data: deleted {normal, critical, total}, skipped {critical, reason}.\n\n⚠ This deletes for good EVERYTHING the caller may delete in the bin — not only the test items. Run it on test data.",
+            "item": [
+                {
+                    "name": "Employee empties all — Normal deleted, Critical left (skipped)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true,\n    \"vault\": \"all\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('normal deleted, critical skipped', () => { pm.expect(b.data.deleted.normal).to.be.at.least(1); pm.expect(b.data.deleted.critical).to.eql(0); pm.expect(b.data.skipped.critical).to.be.at.least(1); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Employee empties only Critical (403)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true,\n    \"vault\": \"critical\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Branch Admin empties all — Normal and Critical",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true,\n    \"vault\": \"all\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('critical deleted too', () => pm.expect(b.data.deleted.critical).to.be.at.least(1));",
+                                    "pm.test('nothing skipped', () => pm.expect(b.data.skipped.critical).to.eql(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Empty again — already empty (409)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Empty without confirm (422)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "[]",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
+        },
+        {
+            "key": "email",
+            "value": ""
+        },
+        {
+            "key": "password",
+            "value": ""
+        },
+        {
+            "key": "branchEmail",
+            "value": ""
+        },
+        {
+            "key": "branchPassword",
+            "value": ""
+        },
+        {
+            "key": "adminEmail",
+            "value": ""
+        },
+        {
+            "key": "adminPassword",
+            "value": ""
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "branchToken",
+            "value": ""
+        },
+        {
+            "key": "adminToken",
+            "value": ""
+        },
+        {
+            "key": "totpSecret",
+            "value": ""
+        },
+        {
+            "key": "otpCode",
+            "value": ""
+        },
+        {
+            "key": "binNormalId",
+            "value": ""
+        },
+        {
+            "key": "binNormal2Id",
+            "value": ""
+        },
+        {
+            "key": "binNormal3Id",
+            "value": ""
+        },
+        {
+            "key": "binCriticalId",
+            "value": ""
+        },
+        {
+            "key": "binCritical2Id",
+            "value": ""
+        }
+    ]
+}

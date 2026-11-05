@@ -33,6 +33,7 @@ class Credential extends Model
     public const TWOFA_METHODS = ['google', 'email'];
     public const ROTATIONS = [30, 60, 90, 180];
 
+    /** D34 levels. 1 (Weak) is no longer given — Fair is the lowest and counts as weak. */
     public const STRENGTH_LABELS = [0 => '', 1 => 'Weak', 2 => 'Fair', 3 => 'Good', 4 => 'Strong'];
 
     public const GROUPS = [
@@ -336,22 +337,25 @@ class Credential extends Model
     }
 
     /**
-     * The prototype's meter, so the server and the form agree on a score.
-     * A point each for length ≥8, length ≥12, mixed case, a digit, a symbol;
-     * under 8 characters is always Weak.
+     * The password strength criteria (D34) — one rule for every password in CredVault,
+     * generated, typed, imported or edited:
+     *
+     *   Strong (4)  12 or more characters with letters, numbers and a special character
+     *   Good   (3)   8 or more characters with letters, numbers and a special character
+     *   Fair   (2)  anything else — under 8, only letters, only numbers, or no special
+     *               character. Fair counts as weak.
+     *
+     * A space is not a special character. 0 = no password.
      */
     public static function strengthOf(?string $pw): int
     {
         $pw = (string) $pw;
         if ($pw === '') return 0;
-        if (mb_strlen($pw) < 8) return 1;
 
-        $s = 1 + (mb_strlen($pw) >= 12 ? 1 : 0)
-            + (preg_match('/[a-z]/', $pw) && preg_match('/[A-Z]/', $pw) ? 1 : 0)
-            + (preg_match('/\d/', $pw) ? 1 : 0)
-            + (preg_match('/[^A-Za-z0-9]/', $pw) ? 1 : 0);
+        $mixed = preg_match('/\p{L}/u', $pw) && preg_match('/\p{N}/u', $pw) && preg_match('/[^\p{L}\p{N}\s]/u', $pw);
+        $len   = mb_strlen($pw);
 
-        return match (true) { $s <= 2 => 1, $s === 3 => 2, $s === 4 => 3, default => 4 };
+        return match (true) { $mixed && $len >= 12 => 4, $mixed && $len >= 8 => 3, default => 2 };
     }
 
     /** HMAC under the app key: equal secrets match, the hash alone reveals nothing. */

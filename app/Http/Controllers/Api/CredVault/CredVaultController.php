@@ -17,6 +17,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\CredVault\EmailOtp;
+use App\Services\CredVault\PasswordGenerator;
 use App\Services\CredVault\Totp;
 use App\Services\CredVault\VaultFile;
 use App\Support\BrandingResolver;
@@ -414,10 +415,13 @@ class CredVaultController extends Controller
             $this->audit($u, 'bin', $c, 'Moved to Recycle Bin');
         });
 
+        $days = Policy::binDays($pol, $c->vault);
+
         return response()->json([
             'status'  => true,
-            'message' => "“{$c->name}” moved to the Recycle Bin. It can be restored for {$pol['bin_days']} days.",
-            'data'    => ['id' => $c->id, 'purges_at' => now()->addDays($pol['bin_days'])->toIso8601String()],
+            'message' => "“{$c->name}” moved to the Recycle Bin. It can be restored for {$days} days"
+                . ($c->vault === 'critical' ? ' — by the Branch Admin.' : '.'),
+            'data'    => ['id' => $c->id, 'vault' => $c->vault, 'purges_at' => now()->addDays($days)->toIso8601String()],
         ], 200);
     }
 
@@ -1341,8 +1345,6 @@ class CredVaultController extends Controller
             'min_strength'     => ['sometimes', 'integer', Rule::in($o['min_strength'])],
             'rotation_default' => ['sometimes', 'nullable', 'integer', Rule::in(array_filter($o['rotation_default']))],
             'rotation_warn'    => ['sometimes', 'integer', Rule::in($o['rotation_warn'])],
-            'gen_length'       => ['sometimes', 'integer', Rule::in($o['gen_length'])],
-            'gen_symbols'      => ['sometimes', 'boolean'],
             'twofa_risks'      => ['sometimes', 'array'],
             'twofa_risks.*'    => ['distinct', Rule::in(Credential::RISKS)],
             'share_critical'   => ['sometimes', 'boolean'],
@@ -2003,111 +2005,152 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
 
+    /** The bin's four tabs, on a query already narrowed to one vault. */
+    protected function binTabCounts(Builder $q, User $u, int $days): array
+    {
+        $soon = now()->subDays($days)->addDays(7);
+
+        return [
+            'all'  => (clone $q)->count(),
+            'mine' => (clone $q)->where('deleted_by', $u->id)->count(),
+            'team' => (clone $q)->where('scope', 'team')->count(),
+            'soon' => (clone $q)->where('deleted_at', '<=', $soon)->count(),
+        ];
+    }
+
+    /** The bin search: ID, name, category, group, type label, owner and who deleted it. */
+    protected function binSearch(Builder $q, User $u, ?string $term): void
+    {
+        if ($term === null || trim($term) === '') return;
+        $like   = $this->likeTerm($term);
+        $types  = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), mb_strtolower(trim($term))))->keys()->all();
+        $people = User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id');
+        $q->where(function ($w) use ($like, $types, $people) {
+            foreach (['name', 'code', 'category_group'] as $col) $w->orWhereRaw("lower(coalesce(credvault_credentials.{$col}, '')) like ?", [$like]);
+            if ($types) $w->orWhereIn('type', $types);
+            $w->orWhereIn('owner_id', $people)->orWhereIn('deleted_by', $people);
+        });
+    }
+
     /**
-     * GET /credvault/recycle-bin?tab=all|mine|team|soon&q= — expired items are
-     * purged first, and `purged` says how many went (the prototype's toast).
-     * "expiring" is accepted for "soon". Tab counts ignore the search box.
+     * GET /credvault/recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=
+     *
+     * The four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each split
+     * into Normal Vault and Critical Vault. `vault` (default normal) picks the sub-tab; `tabs`
+     * are its four counts and `counts` all eight. Counts follow the search box.
+     *
+     * Each vault keeps its own retention: the Normal Vault's can be changed (Change period,
+     * Vault Admins); the Critical Vault's is a fixed 30 days and offers no change. Critical
+     * items can be restored or deleted only by the Branch Admin (`can_restore`, `can_purge`).
+     * Expired items are purged first; `purged` says how many went. "expiring" = "soon".
      */
     public function recycleBin(Request $request)
     {
         $u = $this->tenantUser($request);
         if ($request->query('tab') === 'expiring') $request->merge(['tab' => 'soon']);
-        $f = $request->validate($this->listRules(['all', 'mine', 'team', 'soon']));
-        $pol = Policy::for($u->client_id);
+        $f = $request->validate($this->listRules(['all', 'mine', 'team', 'soon']) + ['vault' => ['nullable', Rule::in(Credential::VAULTS)]]);
+        $pol    = Policy::for($u->client_id);
         $purged = $this->purgeExpired($u->client_id, $pol);
+        $vault  = $f['vault'] ?? 'normal';
+        $days   = Policy::binDays($pol, $vault);
+        $term   = $f['q'] ?? null;
 
-        $base = $this->binQuery($u);
-        $soon = now()->subDays($pol['bin_days'])->addDays(7);
+        $counts = [];
+        foreach (Credential::VAULTS as $v) {
+            $q = $this->binQuery($u, $v);
+            $this->binSearch($q, $u, $term);
+            $counts[$v] = $this->binTabCounts($q, $u, Policy::binDays($pol, $v));
+        }
+        $counts['total'] = array_map(fn ($k) => $counts['normal'][$k] + $counts['critical'][$k], ['all' => 'all', 'mine' => 'mine', 'team' => 'team', 'soon' => 'soon']);
 
-        $tabs = [
-            'all'  => (clone $base)->count(),
-            'mine' => (clone $base)->where('deleted_by', $u->id)->count(),
-            'team' => (clone $base)->where('scope', 'team')->count(),
-            'soon' => (clone $base)->where('deleted_at', '<=', $soon)->count(),
-        ];
+        $base = $this->binQuery($u, $vault);
         $next = (clone $base)->orderBy('deleted_at')->first(['id', 'name', 'deleted_at']);
+        $branchAdmin = (bool) $this->adminBranchOf($u);
         $summary = [
-            'retention_days'       => $pol['bin_days'],
+            'vault'                => $vault,
+            'retention_days'       => $days,
+            'retention_fixed'      => $vault === 'critical',
+            'can_change_retention' => $vault === 'normal' && $this->isAdmin($u),
+            'retention_options'    => $vault === 'normal' ? Policy::OPTIONS['bin_days'] : [],
             'purge_allowed'        => (bool) $pol['bin_purge'],
-            'can_change_retention' => $this->isAdmin($u),
-            'retention_options'    => Policy::OPTIONS['bin_days'],
-            'items'                => $tabs['all'],
-            'deleted_by_me'        => $tabs['mine'],
-            'expiring_soon'        => $tabs['soon'],
+            'can_empty'            => (bool) $pol['bin_purge'] && ($vault === 'normal' || $branchAdmin),
+            'critical_actions'     => $branchAdmin ? 'branch_admin' : 'none',
+            'items'                => (clone $base)->count(),
+            'deleted_by_me'        => (clone $base)->where('deleted_by', $u->id)->count(),
+            'expiring_soon'        => (clone $base)->where('deleted_at', '<=', now()->subDays($days)->addDays(7))->count(),
             'critical'             => (clone $base)->where('risk', 'critical')->count(),
             'next_deletion'        => $next ? [
-                'name' => $next->name, 'at' => $next->deleted_at->copy()->addDays($pol['bin_days'])->toIso8601String(),
-                'days' => max(1, (int) ceil(now()->diffInHours($next->deleted_at->copy()->addDays($pol['bin_days']), false) / 24)),
+                'name' => $next->name, 'at' => $next->deleted_at->copy()->addDays($days)->toIso8601String(),
+                'days' => max(1, (int) ceil(now()->diffInHours($next->deleted_at->copy()->addDays($days), false) / 24)),
             ] : null,
         ];
 
         match ($f['tab'] ?? 'all') {
             'mine'  => $base->where('deleted_by', $u->id),
             'team'  => $base->where('scope', 'team'),
-            'soon'  => $base->where('deleted_at', '<=', $soon),
+            'soon'  => $base->where('deleted_at', '<=', now()->subDays($days)->addDays(7)),
             default => null,
         };
-        if ($term = $f['q'] ?? null) {
-            // ID, name, category, group, owner and who deleted it.
-            $like   = $this->likeTerm($term);
-            $types  = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), mb_strtolower(trim($term))))->keys()->all();
-            $people = User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id');
-            $base->where(function ($w) use ($like, $types, $people) {
-                foreach (['name', 'code', 'category_group'] as $col) $w->orWhereRaw("lower(coalesce({$col}, '')) like ?", [$like]);
-                if ($types) $w->orWhereIn('type', $types);
-                $w->orWhereIn('owner_id', $people)->orWhereIn('deleted_by', $people);
-            });
-        }
+        $this->binSearch($base, $u, $term);
 
-        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by']))
+        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by', 'branch_id']))
             ->with(['owner:id,name'])->orderBy('deleted_at')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $deleters = User::whereIn('id', collect($page->items())->pluck('deleted_by')->filter()->unique()->all())->pluck('name', 'id');
+        $from = ($page->currentPage() - 1) * $page->perPage();
 
         return response()->json([
             'status'  => true,
             'purged'  => $purged,
             'summary' => $summary,
-            'data'    => collect($page->items())->map(function ($c) use ($pol, $deleters, $u) {
-                $purge = $c->deleted_at->copy()->addDays($pol['bin_days']);
+            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from) {
+                $total = Policy::binDays($pol, $c->vault);
+                $purge = $c->deleted_at->copy()->addDays($total);
                 // Never "0 days": an item still in the bin goes on its last day.
                 $days  = max(1, (int) ceil(now()->diffInHours($purge, false) / 24));
-                $total = $pol['bin_days'];
+                $deny  = $this->binDenial($u, $c);
 
                 return [
-                    'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type,
+                    'sr_no' => $from + $i + 1,
+                    'id' => $c->id, 'code' => $c->code, 'vault' => $c->vault, 'name' => $c->name, 'type' => $c->type,
                     'type_label' => Credential::typeDef($c->type)['label'] ?? $c->type, 'category_group' => $c->category_group,
-                    'url' => $c->url, 'scope' => $c->scope, 'risk' => $c->risk,
-                    'owner' => ['id' => $c->owner_id, 'name' => $c->owner?->name, 'is_me' => $c->owner_id === $u->id],
-                    'deleted_by' => ['id' => $c->deleted_by, 'name' => $c->deleted_by === $u->id ? 'You' : ($deleters[$c->deleted_by] ?? null)],
+                    'url' => $c->url, 'scope' => $c->scope, 'scope_label' => $c->scope === 'team' ? 'Team' : 'Personal', 'risk' => $c->risk,
+                    'owner' => ['id' => $c->owner_id, 'name' => $c->owner?->name, 'initials' => $this->initials($c->owner?->name), 'is_me' => $c->owner_id === $u->id],
+                    'deleted_by' => ['id' => $c->deleted_by, 'name' => $c->deleted_by === $u->id ? 'You' : ($deleters[$c->deleted_by] ?? null),
+                        'initials' => $this->initials($deleters[$c->deleted_by] ?? ($c->deleted_by === $u->id ? $u->name : null))],
                     'deleted_at' => $c->deleted_at->toIso8601String(),
                     'purges_at' => $purge->toIso8601String(), 'days_left' => $days,
                     'left_pct' => (int) round(min($days, $total) / max(1, $total) * 100),
                     'urgency' => $days <= 3 ? 'bad' : ($days <= 7 ? 'warn' : 'ok'),
-                    'can_purge' => (bool) $pol['bin_purge'],
+                    'can_restore' => $deny === null,
+                    'can_purge' => $deny === null && (bool) $pol['bin_purge'],
+                    'locked_reason' => $deny,
                 ];
             })->values(),
-            'tabs'    => $tabs,
+            'tabs'    => $counts[$vault],
+            'counts'  => $counts,
             'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
-    /** POST /credvault/recycle-bin/{id}/restore */
+    /** POST /credvault/recycle-bin/{id}/restore — a Critical Vault item: the Branch Admin only. */
     public function restore(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
+        if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
 
         $this->inTransaction('restore the credential', function () use ($c, $u) {
             $c->restore();
             $c->forceFill(['deleted_by' => null, 'updated_by' => $u->id])->saveQuietly();
             $this->audit($u, 'restore', $c, 'Restored from Recycle Bin');
         });
+        $to = $c->vault === 'critical' ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault');
 
-        return response()->json(['status' => true, 'message' => "“{$c->name}” restored to " . ($c->scope === 'team' ? 'Team Vault' : 'My Vault') . '.', 'data' => ['id' => $c->id]], 200);
+        return response()->json(['status' => true, 'message' => "“{$c->name}” restored to {$to}.", 'data' => ['id' => $c->id, 'vault' => $c->vault, 'restored_to' => $to]], 200);
     }
 
-    /** DELETE /credvault/recycle-bin/{id} { confirm: true } — gone for good. */
+    /** DELETE /credvault/recycle-bin/{id} { confirm: true } — gone for good. A Critical Vault item: the Branch Admin only. */
     public function purge(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -2116,90 +2159,176 @@ class CredVaultController extends Controller
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
 
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
+        if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
         $this->inTransaction('delete the credential permanently', fn () => $this->purgeOne($c, $u->id, 'Deleted permanently'));
 
-        return response()->json(['status' => true, 'message' => "“{$c->name}” deleted permanently."], 200);
+        return response()->json(['status' => true, 'message' => "“{$c->name}” deleted permanently.", 'data' => ['id' => $c->id, 'vault' => $c->vault]], 200);
     }
 
-    /** DELETE /credvault/recycle-bin { confirm: true } — Empty Bin: everything the user may purge. */
+    /**
+     * DELETE /credvault/recycle-bin { confirm: true, vault?: normal|critical|all } — Empty Bin.
+     *
+     * vault all (the default) empties both vaults in one call: every Normal Vault item the
+     * user sees in the bin, and — for the Branch Admin — every Critical Vault item of the
+     * branch. Critical items anyone else sees are left and counted in `skipped`.
+     */
     public function emptyBin(Request $request)
     {
         $u = $this->tenantUser($request);
-        $request->validate(['confirm' => ['accepted']], ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
+        $d = $request->validate(['confirm' => ['accepted'], 'vault' => ['nullable', Rule::in(array_merge(Credential::VAULTS, ['all']))]],
+            ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        $vault = $d['vault'] ?? 'all';
 
-        $items = $this->binQuery($u)->get();
+        $items = $this->binQuery($u, $vault === 'all' ? null : $vault)->get();
         if ($items->isEmpty()) $this->reject('The Recycle Bin is already empty.', null, 409);
+        [$go, $kept] = $items->partition(fn ($c) => $this->binDenial($u, $c) === null);
+        if ($go->isEmpty()) $this->reject('Only the Branch Admin can delete Critical Vault items in the Recycle Bin.', null, 403);
 
-        $this->inTransaction('empty the Recycle Bin', function () use ($items, $u) {
-            foreach ($items as $c) $this->purgeOne($c, $u->id, 'Deleted permanently (Empty Bin)');
+        $this->inTransaction('empty the Recycle Bin', function () use ($go, $u) {
+            foreach ($go as $c) $this->purgeOne($c, $u->id, 'Deleted permanently (Empty Bin)');
         });
+        $by = fn ($set, $v) => $set->where('vault', $v)->count();
 
-        return response()->json(['status' => true, 'message' => $items->count() . ' items deleted permanently.'], 200);
+        return response()->json([
+            'status'  => true,
+            'message' => $go->count() . ' ' . Str::plural('item', $go->count()) . ' deleted permanently'
+                . ($kept->count() ? " · {$kept->count()} Critical Vault " . Str::plural('item', $kept->count()) . ' left for the Branch Admin' : '') . '.',
+            'data'    => [
+                'vault'   => $vault,
+                'deleted' => ['normal' => $by($go, 'normal'), 'critical' => $by($go, 'critical'), 'total' => $go->count()],
+                'skipped' => ['critical' => $kept->count(), 'reason' => $kept->count() ? 'Only the Branch Admin can delete Critical Vault items.' : null],
+            ],
+        ], 200);
+    }
+
+    /**
+     * GET /credvault/recycle-bin/retention — the Change period popup: the Normal Vault's period
+     * and its options; the Critical Vault's fixed period (no change offered).
+     */
+    public function binRetention(Request $request)
+    {
+        $u   = $this->tenantUser($request);
+        $pol = Policy::for($u->client_id);
+
+        return response()->json(['status' => true, 'data' => [
+            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->isAdmin($u)],
+            'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
+            'note'     => 'Items already older than the new period are deleted right away.',
+        ]], 200);
+    }
+
+    /**
+     * PUT /credvault/recycle-bin/retention { days, vault?: normal } — Change period, Normal Vault
+     * only, Vault Admins. A shorter period deletes the items already past it, right away.
+     */
+    public function updateBinRetention(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $d = $request->validate([
+            'days'  => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
+            'vault' => ['nullable', Rule::in(Credential::VAULTS)],
+        ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
+        if (($d['vault'] ?? 'normal') === 'critical') {
+            $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
+        }
+        if (!$this->isAdmin($u)) $this->reject('Only a Vault Admin can change the retention period.', null, 403);
+
+        $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
+
+        return response()->json(['status' => true, 'message' => $res['data']['changed'] ? "Retention set to {$d['days']} days for the Normal Vault"
+                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} items past the new period deleted" : '') . '.' : 'Nothing changed.',
+            'data' => ['vault' => 'normal', 'days' => (int) Policy::for($u->client_id)['bin_days'], 'purged' => $res['data']['purged'] ?? 0]], 200);
     }
 
     /* ═══════════════════════════ GENERATOR ═══════════════════════════ */
 
     /**
-     * POST /credvault/generate-password — characters or passphrase, from the
-     * server's CSPRNG, with the prototype's defaults: length and symbols from
-     * the policy, "avoid ambiguous" on, 8 words, one Numbers switch for both
-     * modes (add_number is accepted as its passphrase alias).
+     * POST /credvault/generate-password — the Generate Password dialog and the ↻ button in
+     * password fields, one method and one set of defaults for both (GP-R8):
+     *
+     *   mode chars   length 12–64 (20) · upper · lower · numbers · symbols (all on) · avoid_ambiguous (on)
+     *   mode phrase  words 4–10 (6) · capitalize (on) · add_number (on) · separator hyphen | dot | underscore | space
+     *                (or the character itself; a bare " " is trimmed by the request middleware, so send "space")
+     *
+     * The level is the D34 rule every CredVault password follows (Fair · Good · Strong),
+     * `bits` only a hint. A setting that cannot reach the policy minimum is refused (GP-V03),
+     * so nothing below the minimum is ever shown. Only the action is audit-logged, never the value.
      */
     public function generatePassword(Request $request)
     {
         $u   = $this->tenantUser($request);
         $pol = Policy::for($u->client_id);
+        $G   = PasswordGenerator::class;
         $d   = $request->validate([
             'mode'            => ['nullable', Rule::in(['chars', 'phrase'])],
-            'length'          => ['nullable', 'integer', 'min:8', 'max:64'],
+            'length'          => ['nullable', 'integer', 'between:' . implode(',', $G::LENGTH)],
             'upper'           => ['nullable', 'boolean'],
             'lower'           => ['nullable', 'boolean'],
             'numbers'         => ['nullable', 'boolean'],
             'symbols'         => ['nullable', 'boolean'],
             'avoid_ambiguous' => ['nullable', 'boolean'],
-            'words'           => ['nullable', 'integer', 'min:4', 'max:12'],
-            'separator'       => ['nullable', Rule::in(['-', '.', '_', ' '])],
+            'words'           => ['nullable', 'integer', 'between:' . implode(',', $G::WORDS)],
+            'separator'       => ['nullable', Rule::in(array_merge(array_keys($G::SEPARATORS), array_keys($G::SEPARATOR_NAMES)))],
             'capitalize'      => ['nullable', 'boolean'],
             'add_number'      => ['nullable', 'boolean'],
+        ], [
+            'length.between' => 'Length is ' . implode(' to ', $G::LENGTH) . ' characters.',
+            'words.between'  => 'A passphrase has ' . implode(' to ', $G::WORDS) . ' words.',
         ]);
+        $o   = array_merge($G::DEFAULTS, array_filter($d, fn ($v) => $v !== null));
+        $o['separator'] = $G::SEPARATOR_NAMES[$o['separator']] ?? $o['separator'];
+        $min = (int) $pol['min_strength'];
+        $minLabel = $G::label($min);
 
-        $addNum = $d['add_number'] ?? $d['numbers'] ?? true;
-        if (($d['mode'] ?? 'chars') === 'phrase') {
-            $words = array_map(fn () => self::WORDS[random_int(0, count(self::WORDS) - 1)], range(1, $d['words'] ?? 8));
-            if ($d['capitalize'] ?? true) $words = array_map('ucfirst', $words);
-            if ($addNum) { $i = random_int(0, count($words) - 1); $words[$i] .= random_int(0, 9); }
-            $pw   = implode($d['separator'] ?? '-', $words);
-            $bits = count($words) * log(count(self::WORDS), 2) + ($addNum ? 3.3 : 0);
+        if ($o['mode'] === 'phrase') {
+            $out = $G::passphrase($o, $min >= 3);
         } else {
-            $amb  = $d['avoid_ambiguous'] ?? true;   // drops I O · l o · 0 1, as gpGen()
-            $sets = array_filter([
-                ($d['upper'] ?? true)   ? ($amb ? 'ABCDEFGHJKLMNPQRSTUVWXYZ' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') : null,
-                ($d['lower'] ?? true)   ? ($amb ? 'abcdefghijkmnpqrstuvwxyz' : 'abcdefghijklmnopqrstuvwxyz') : null,
-                ($d['numbers'] ?? true) ? ($amb ? '23456789' : '0123456789') : null,
-                ($d['symbols'] ?? $pol['gen_symbols']) ? '!@#$%^&*-_=+?' : null,
-            ]);
-            if (!$sets) $this->reject('Keep at least one character set on.', 'upper');
-
-            $len  = $d['length'] ?? $pol['gen_length'];
-            $pool = implode('', $sets);
-            // One from every chosen set, the rest from the whole pool, then shuffled.
-            $chars = array_map(fn ($s) => $s[random_int(0, strlen($s) - 1)], array_values($sets));
-            while (count($chars) < $len) $chars[] = $pool[random_int(0, strlen($pool) - 1)];
-            for ($i = count($chars) - 1; $i > 0; $i--) { $j = random_int(0, $i); [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]]; }
-            $pw   = implode('', $chars);
-            $bits = $len * log(strlen(count_chars($pool, 3)), 2);
+            if (!$G::sets($o)) $this->reject('Keep at least one character set on', 'upper');                 // GP-V01
+            if ($G::charsLevel($o) < $min) $this->reject("This setting can’t reach the policy minimum ({$minLabel})", 'symbols'); // GP-V03
+            $out = $G::characters($o);
         }
-
-        $bits = (int) round($bits);
+        $level = Credential::strengthOf($out['password']);
+        $this->audit($u, 'generate', null, 'Password generated · ' . ($o['mode'] === 'phrase' ? "passphrase, {$o['words']} words" : "{$o['length']} characters"),
+            ['mode' => $o['mode']], 'Generate Password');
 
         return response()->json(['status' => true, 'data' => [
-            'password' => $pw,
-            'bits'     => $bits,
-            'level'    => $bits >= 100 ? 'Very strong' : ($bits >= 75 ? 'Strong' : ($bits >= 55 ? 'Good' : ($bits >= 40 ? 'Fair' : 'Weak'))),
-            'strength' => Credential::strengthOf($pw),
-            'meets_policy' => Credential::strengthOf($pw) >= $pol['min_strength'],
+            'password'       => $out['password'],
+            'level'          => $G::label($level),
+            'strength_level' => $level,
+            'bits'           => (int) round($out['bits']),
+            'meets_policy'   => $level >= $min,
+            'policy_minimum' => $minLabel,
+            'settings'       => $o['mode'] === 'phrase'
+                ? array_intersect_key($o, array_flip(['mode', 'words', 'capitalize', 'add_number', 'separator'])) + ['add_number_forced' => $min >= 3]
+                : array_intersect_key($o, array_flip(['mode', 'length', 'upper', 'lower', 'numbers', 'symbols', 'avoid_ambiguous'])),
+        ]], 200);
+    }
+
+    /**
+     * GET /credvault/generate-password/options — what the dialog offers: the defaults, the
+     * ranges, the separators, and which Characters settings the policy minimum disables.
+     */
+    public function generatorOptions(Request $request)
+    {
+        $u   = $this->tenantUser($request);
+        $min = (int) Policy::for($u->client_id)['min_strength'];
+        $G   = PasswordGenerator::class;
+
+        return response()->json(['status' => true, 'data' => [
+            'defaults'       => $G::DEFAULTS,
+            'length'         => ['min' => $G::LENGTH[0], 'max' => $G::LENGTH[1]],
+            'words'          => ['min' => $G::WORDS[0], 'max' => $G::WORDS[1], 'list' => 'EFF long list', 'list_size' => count($G::wordList())],
+            // Send `name` (hyphen · dot · underscore · space): a bare space is trimmed from requests.
+            'separators'     => collect($G::SEPARATORS)->map(fn ($l, $v) => ['name' => array_search($v, $G::SEPARATOR_NAMES, true), 'value' => $v, 'label' => $l])->values(),
+            'symbols'        => $G::SYMBOLS,
+            'ambiguous'      => $G::AMBIGUOUS,
+            'policy_minimum' => ['level' => $min, 'label' => $G::label($min)],
+            // Characters mode reaches Good or Strong only with letters, numbers and symbols all on.
+            'required_on_for_minimum' => $min >= 3 ? ['numbers', 'symbols', 'letters (upper or lower)'] : [],
+            'add_number_forced'       => $min >= 3,
+            'clipboard_clear_seconds' => 30,
         ]], 200);
     }
 
@@ -3036,7 +3165,7 @@ class CredVaultController extends Controller
             'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type,
             'type_label' => Credential::typeDef($c->type)['label'] ?? $c->type, 'category_group' => $c->category_group,
             'url' => $c->url, 'risk' => $c->risk, 'scope' => $c->scope, 'owner' => $c->owner?->name ?? '',
-            'strength' => $c->strength, 'strength_pct' => $c->strength * 25, 'has_password' => $c->has_password,
+            'strength' => $c->strength, 'strength_label' => (Credential::STRENGTH_LABELS[$c->strength] ?? '') ?: null, 'has_password' => $c->has_password,
         ];
     }
 
@@ -3065,11 +3194,13 @@ class CredVaultController extends Controller
         $out  = [];
 
         if ($c->has_password && $c->strength < $pol['min_strength']) {
-            $out[] = ['type' => 'weak', 'severity' => ($crit || $c->strength <= 1) ? 'critical' : 'high',
-                'issue' => $c->strength <= 1 ? 'Weak password' : 'Password strength only fair',
-                'detail' => 'Strength ' . (Credential::STRENGTH_LABELS[$c->strength] ?: 'None') . ' · ' . ($c->strength * 25) . '/100',
-                'details' => ['strength' => $c->strength, 'strength_label' => Credential::STRENGTH_LABELS[$c->strength] ?? '', 'strength_pct' => $c->strength * 25],
-                'action' => 'Replace with a 16+ character generated password'];
+            // D34: Fair counts as weak. The level is named, never scored (D5).
+            $label = Credential::STRENGTH_LABELS[$c->strength] ?? '';
+            $out[] = ['type' => 'weak', 'severity' => ($crit || $c->strength <= 2) ? 'critical' : 'high',
+                'issue' => $c->strength <= 2 ? 'Weak password' : 'Password below the policy minimum',
+                'detail' => "Strength {$label} — the policy needs " . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger',
+                'details' => ['strength' => $c->strength, 'strength_label' => $label, 'policy_minimum' => Credential::STRENGTH_LABELS[$pol['min_strength']]],
+                'action' => 'Replace with a generated password (20 characters)'];
         }
         if ($reusedWith) {
             $out[] = ['type' => 'reused', 'severity' => $crit ? 'critical' : 'high', 'issue' => 'Password reused',
@@ -3195,24 +3326,60 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
 
-    /** What the user may see and restore in the bin: theirs, what they binned, and team items for a Vault Admin. */
-    protected function binQuery(User $u): Builder
+    /**
+     * What the user sees in the bin: theirs, what they binned, team items for a Vault Admin,
+     * and — for a Branch Admin — the branch's team items and every Critical Vault item of the
+     * branch (a Branch Admin is the one who restores or deletes those). $vault narrows it.
+     */
+    protected function binQuery(User $u, ?string $vault = null): Builder
     {
-        $admin = $this->isAdmin($u);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
 
-        return Credential::onlyTrashed()->where('client_id', $u->client_id)->where(function ($w) use ($u, $admin) {
-            $w->where('owner_id', $u->id)->orWhere('deleted_by', $u->id);
-            if ($admin) $w->orWhere('scope', 'team');
-        });
+        return Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id)
+            ->when($vault, fn ($q) => $q->where('vault', $vault))
+            ->where(function ($w) use ($u, $admin, $branch) {
+                $w->where('owner_id', $u->id)->orWhere('deleted_by', $u->id);
+                if ($admin) $w->orWhere('scope', 'team');
+                if ($branch) $w->orWhere(fn ($b) => $this->inBranch($b, $u->client_id, $branch)
+                    ->where(fn ($s) => $s->where('scope', 'team')->orWhere('vault', 'critical')));
+            });
     }
 
-    /** Purges everything past retention. Returns how many went. */
+    /** A credential of the branch: filed under it, or owned by someone in it. */
+    protected function inBranch(Builder $q, int $clientId, int $branch): Builder
+    {
+        return $q->where(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)
+            ->orWhereIn('owner_id', User::where('client_id', $clientId)->where('branch_id', $branch)->select('id')));
+    }
+
+    /**
+     * Whether the user may restore or permanently delete a binned item. A Critical Vault item
+     * is the Branch Admin's alone — of the branch it belongs to; anything else the user sees
+     * in the bin (binQuery) is theirs to restore. null = allowed, else the reason.
+     */
+    protected function binDenial(User $u, Credential $c): ?string
+    {
+        if ($c->vault !== 'critical') return null;
+        $branch = $this->adminBranchOf($u);
+        $ownerBranch = $branch ? User::whereKey($c->owner_id)->value('branch_id') : null;
+
+        return $branch && ((int) $c->branch_id === $branch || (int) $ownerBranch === $branch)
+            ? null : 'Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin.';
+    }
+
+    /** Purges everything past retention — each vault by its own period. Returns how many went. */
     protected function purgeExpired(int $clientId, array $pol, ?int $actorId = null): int
     {
-        $old = Credential::onlyTrashed()->where('client_id', $clientId)->where('deleted_at', '<', now()->subDays($pol['bin_days']))->get();
-        foreach ($old as $c) $this->purgeOne($c, $actorId, "Deleted automatically after {$pol['bin_days']} days in the bin");
+        $n = 0;
+        foreach (Credential::VAULTS as $vault) {
+            $days = Policy::binDays($pol, $vault);
+            $old  = Credential::onlyTrashed()->where('client_id', $clientId)->where('vault', $vault)->where('deleted_at', '<', now()->subDays($days))->get();
+            foreach ($old as $c) $this->purgeOne($c, $actorId, "Deleted automatically after {$days} days in the bin");
+            $n += $old->count();
+        }
 
-        return $old->count();
+        return $n;
     }
 
     protected function purgeOne(Credential $c, ?int $actorId, string $detail): void
@@ -4528,18 +4695,4 @@ class CredVaultController extends Controller
             $this->reject("Could not {$action}. Nothing was saved — please try again.", null, 500);
         }
     }
-
-    /** Passphrase words — the prototype's GP_WORDS. 100 of them: log2(100) ≈ 6.6 bits a word. */
-    protected const WORDS = [
-        'amber', 'anchor', 'arctic', 'atlas', 'autumn', 'bamboo', 'beacon', 'birch', 'blossom', 'breeze',
-        'bronze', 'canyon', 'carbon', 'cedar', 'cobalt', 'comet', 'copper', 'coral', 'cosmic', 'crimson',
-        'crystal', 'delta', 'desert', 'dragon', 'eagle', 'ember', 'falcon', 'fern', 'flint', 'forest',
-        'frost', 'galaxy', 'garnet', 'glacier', 'granite', 'harbor', 'hazel', 'horizon', 'indigo', 'iron',
-        'island', 'jade', 'jasper', 'jungle', 'lagoon', 'lantern', 'lava', 'lemon', 'lunar', 'maple',
-        'marble', 'meadow', 'meteor', 'mint', 'monsoon', 'nebula', 'nickel', 'noble', 'oasis', 'ocean',
-        'olive', 'onyx', 'opal', 'orbit', 'orchid', 'pebble', 'pepper', 'phoenix', 'pine', 'planet',
-        'plasma', 'polar', 'prairie', 'quartz', 'radar', 'raven', 'reef', 'river', 'rocket', 'ruby',
-        'saffron', 'sapphire', 'shadow', 'silver', 'solar', 'spruce', 'storm', 'summit', 'tango', 'thunder',
-        'tiger', 'timber', 'topaz', 'tundra', 'velvet', 'violet', 'walnut', 'willow', 'winter', 'zephyr',
-    ];
 }
