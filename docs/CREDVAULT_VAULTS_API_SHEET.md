@@ -56,7 +56,7 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 | `PUT / POST /critical-vault/credentials/{id}` | Edit. Only the owner or a Vault Admin may change the steps, approvers, method or inbox |
 | `DELETE /critical-vault/credentials/{id}` | To the Recycle Bin (owner or Vault Admin only) |
 | `GET /critical-vault/approvers` | The Vault Admin and manager pickers, with defaults |
-| `POST /critical-vault/two-step/google/new` | A new authenticator secret, with its QR URI |
+| `POST /critical-vault/two-step/google/new` | A new authenticator secret: `qr_image` (the QR to scan, an SVG data URI ready for `<img src>`; in Postman, the response's **Visualize** tab shows it), `otpauth_uri`, `secret` and `secret_display` (the setup key). Each call gives a new secret, so save with the latest one |
 | `POST /critical-vault/two-step/google/verify` | Check one app code `{ secret, code }` |
 | `POST /critical-vault/two-step/email/send` | Mail a setup code `{ email? }` (default php@inhpl.com) and return a `token` |
 | `POST /critical-vault/two-step/email/verify` | `{ token, code }`: the token is then good for one save |
@@ -68,21 +68,57 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 ### Generate Password (both vaults use it)
 
-`POST /credvault/generate-password` — nothing is stored. It returns `{ password, bits, level, strength (0–4), meets_policy }` once.
+Per the R&D sheet *Generate Password — R&D and Specification* (CS-1430 … CS-1433).
+
+- `POST /credvault/generate-password` makes one value. Nothing is stored, and the audit log records only "Password generated", never the value.
+- The Generate Password dialog and the ↻ button in password fields use this same method and the same defaults.
+- `GET /credvault/generate-password/options` returns what the dialog offers: defaults, ranges, separators (by name), the policy minimum, and whether a digit is forced.
+
+**Response:**
+
+```
+{ password, level: "Fair" | "Good" | "Strong", strength_level: 2–4, bits, meets_policy, policy_minimum, settings }
+```
+
+- `level` follows the **D34 strength criteria**, the one rule for every password in CredVault (see below).
+- `bits` is only a hint (e.g. ~122 for the default 20 characters, ~81 for 6 words). No score or percentage is shown (D5).
 
 | Mode | Body | Defaults | Limits |
 |---|---|---|---|
-| Characters | `mode: "chars"`, `length`, `upper`, `lower`, `numbers`, `symbols`, `avoid_ambiguous` | length = the policy's `gen_length`; every set on; symbols = the policy's `gen_symbols`; `avoid_ambiguous` on (drops I O l o 0 1) | length 8–64; at least one set on. Each chosen set appears at least once. |
-| Passphrase | `mode: "phrase"`, `words`, `separator`, `capitalize`, `add_number` | 8 words, `-`, capitalized, one digit added | 4–12 words; separator `-` `.` `_` or a space |
+| Characters | `mode: "chars"`, `length`, `upper`, `lower`, `numbers`, `symbols`, `avoid_ambiguous` | 20; every set on; `avoid_ambiguous` on (drops I O l o 0 1) | length **12–64**; at least one set on. Each chosen set appears at least once; the rest are picked from all chosen sets and shuffled (Fisher–Yates). |
+| Passphrase | `mode: "phrase"`, `words`, `separator`, `capitalize`, `add_number` | **6 words** from the **EFF long list (7,776 words)**, `hyphen`, capitalised, one digit | 4–10 words. Separator by name: `hyphen` · `dot` · `underscore` · `space` (the characters `-` `.` `_` also work). |
 
-**Refusals (422):**
-- `upper`: every set off;
-- `length`: outside 8–64;
-- `words`: outside 4–12;
-- `separator`: not one of the four;
-- `mode`: unknown.
+**Generator rules:**
+- **Random source:** every pick is `random_int()`, PHP's CSPRNG. It draws by rejection sampling, so every character and every word is exactly equally likely (GP-R1, GP-R2).
+- **Passphrase digit:** a digit is always added when the policy minimum is Good or Strong, even with `add_number: false` (`settings.add_number_forced: true`).
+- **Passphrase separator:** a hyphen, dot or underscore counts as the special character. With `space`, one symbol is added to a random word. So every passphrase is Strong.
+- **Sending a space:** send `"space"`, not `" "`. The server trims a bare space away before reading it, and the default hyphen is used.
+- **Generator settings:** `gen_length` and `gen_symbols` are **no longer policies** (D32). The generator's own defaults apply, and the Policies API no longer lists them.
 
-`meets_policy: false` means the password is below the policy's minimum strength, so a create with it would be refused.
+**Refusals (422), with the sheet's messages:**
+
+| Field | When | Message |
+|---|---|---|
+| `upper` | every set off (GP-V01) | Keep at least one character set on |
+| `symbols` | a Characters setting that can't reach the policy minimum, e.g. no symbols or no numbers when the minimum is Good (GP-V03) | This setting can’t reach the policy minimum (Good) |
+| `length` | outside 12–64 (GP-V02) | Length is 12 to 64 characters. |
+| `words` | outside 4–10 | A passphrase has 4 to 10 words. |
+| `separator` · `mode` | not one of the allowed values | The selected … is invalid. |
+
+**Saving below the minimum (GP-V08):** a typed or edited password below the policy minimum is refused on save with "Policy requires a Good or stronger password — use the generate button". The server re-checks every save.
+
+### Password strength criteria (D34): one rule everywhere
+
+| Level | A password is at this level when | Example |
+|---|---|---|
+| **Fair** (counts as weak) | under 8 characters, or only letters, or only numbers, or letters + numbers with no special character | `zoho2026` · `12345678` · `Password` |
+| **Good** | 8 or more characters with letters, numbers and at least one special character | `Zoho@2026` |
+| **Strong** | 12 or more characters with letters, numbers and a special character | `Zoho@Books#2026` |
+
+- A space is not a special character.
+- The rule applies to generated, typed, imported and edited passwords.
+- The migration `2026_11_04_000001_recompute_credvault_password_strength` recalculated the stored strength of existing credentials. "Weak" is no longer produced.
+- In Password Health, a password below the minimum reads "Weak password" (Fair) or "Password below the policy minimum" (Good under a Strong minimum), with no score.
 
 ### Get single — every stored value, in plain text
 
@@ -187,7 +223,7 @@ Each export is audit-logged and listed in the history.
 
 ### Strength in the responses
 
-The list rows (`GET …/credentials`) and the single credential (`GET /credentials/{id}`) return strength as a **name**: `"strength": "Strong"`. The names are `Weak`, `Fair`, `Good`, `Strong`, or `null` when the type has no password (e.g. Passkey, ID documents). There is **no percentage** (`strength_pct` was removed). `strength_level` (0–4) is there for sorting.
+The list rows (`GET …/credentials`) and the single credential (`GET /credentials/{id}`) return strength as a **name**: `"strength": "Strong"`. The names are `Fair`, `Good`, `Strong` (the D34 criteria; Fair counts as weak), or `null` when the type has no password (e.g. Passkey, ID documents). There is **no percentage** (`strength_pct` was removed). `strength_level` (0–4) is there for sorting.
 
 ### Share — with an email to the person or the team
 
@@ -304,6 +340,86 @@ Each row is the table's line, ready to show:
 ### Shared by both vaults
 
 `GET /credentials/{id}` (view) · `POST …/reveal` · `POST …/events` · `GET …/activity` · `GET …/attachments/{key}` (download a file)
+
+### Import & Recovery
+
+Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CREDVAULT_IMPORT_RECOVERY_API_SHEET.md), and its own Postman collection, **"Import & Recovery"** ([CredVault_ImportRecovery.postman_collection.json](CredVault_ImportRecovery.postman_collection.json)). It covers:
+- the 25-tab sample, in Excel and CSV;
+- import by category, with the form's validation and a failed list;
+- the Imported Credentials History;
+- Excel / CSV backups of My Vault or the Team Vault, with or without passwords, with the AES-256 password lock;
+- the Downloaded Backup History;
+- recovery: importing a backup tab back.
+
+### Recycle Bin — 4 tabs × Normal / Critical
+
+The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 45 requests:
+- 00 Setup (3 logins);
+- 01 Prepare (moves 3 Normal and 2 Critical items to the bin);
+- 02 `GET /recycle-bin`;
+- 03 `GET | PUT /recycle-bin/retention`;
+- 04 restore / delete one item;
+- 05 Empty Bin.
+
+To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword` (that employee's Branch Admin) and `adminEmail`/`adminPassword` (a client admin), then run the folders in order.
+
+| Request | What it does |
+|---|---|
+| `GET /credvault/recycle-bin?vault=normal\|critical&tab=all\|mine\|team\|soon&q=&page=&per_page=` | The list, the counts and the cards |
+| `POST /credvault/recycle-bin/{id}/restore` | Back to its vault: My Vault, Team Vault or Critical Vault |
+| `DELETE /credvault/recycle-bin/{id}` `{ confirm: true }` | Delete one item for good |
+| `DELETE /credvault/recycle-bin` `{ confirm: true, vault?: all\|normal\|critical }` | **Empty Bin.** `all` (the default) empties **both vaults in one call** |
+| `GET /credvault/recycle-bin/retention` | The Change period popup: Normal's period and options, Critical's fixed period |
+| `PUT /credvault/recycle-bin/retention` `{ days: 7\|15\|30\|60\|90, vault?: normal }` | Change the **Normal Vault** period (Vault Admins) |
+
+**Tabs.** There are four tabs: All Items, Deleted by Me, Team Credentials and Expiring Soon. Each has a Normal Vault and a Critical Vault sub-tab, and `vault` (default `normal`) picks the sub-tab. Expiring Soon means 7 days or less left. **Every badge comes back in one call, and the counts follow the search box:**
+
+```
+"tabs":   { "all": 2, "mine": 2, "team": 0, "soon": 1 },              ← the chosen vault
+"counts": { "normal":   { "all": 2, "mine": 2, "team": 0, "soon": 1 },
+            "critical": { "all": 1, "mine": 1, "team": 0, "soon": 0 },
+            "total":    { "all": 3, "mine": 3, "team": 0, "soon": 1 } }
+```
+
+**`summary`.** The cards, for the chosen vault:
+- `retention_days`;
+- `retention_fixed` (true for Critical);
+- `can_change_retention` (Normal and Vault Admin only);
+- `retention_options` (empty for Critical);
+- `items`, `deleted_by_me`, `expiring_soon`, `critical`;
+- `next_deletion { name, at, days }`;
+- `purge_allowed`, `can_empty`.
+
+**Rows (`data[]`).** Each row has:
+- `sr_no`, `code`, `vault`, `name`, `type_label`, `category_group`, `url`, `scope` / `scope_label`, `risk`;
+- `owner { name, initials }`, `deleted_by { name ("You"), initials }`, `deleted_at`;
+- `purges_at`, `days_left`, `left_pct`, `urgency` (ok · warn · bad);
+- **`can_restore`**, **`can_purge`**, and `locked_reason` when the user may not act.
+
+**Rules**
+
+| Rule | Normal Vault | Critical Vault |
+|---|---|---|
+| Retention period | The Vault Admin chooses it with Change period: 7 · 15 · 30 · 60 · 90 days. A shorter period deletes the items already past it, right away. | **Fixed 30 days.** No Change period is offered; `PUT …/retention` with `vault: critical` → 422 "…its period cannot be changed." |
+| Who sees an item | Its owner, whoever binned it, the Vault Admin (team items), and the Branch Admin (the branch's team items) | The same, and the **Branch Admin sees every Critical item of the branch** |
+| Restore / delete | Whoever sees it | **The Branch Admin of the item's branch only.** Anyone else gets 403 "Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin." |
+| Empty Bin (`vault: all`) | Everything the caller sees | The Branch Admin's: every Critical item of the branch. For anyone else, critical items are left and counted in `skipped.critical`. |
+
+**Empty Bin response:**
+
+```
+{ "deleted": { "normal": 2, "critical": 1, "total": 3 }, "skipped": { "critical": 0, "reason": null } }
+```
+
+- Emptying an empty bin → 409.
+- Emptying only Critical as someone who isn't the Branch Admin → 403.
+- No `confirm` → 422.
+- When permanent delete is off in Policies, deleting and emptying → 403.
+- Moving a credential to the bin returns its vault and its own period, and for a critical credential says "restorable by the Branch Admin".
+
+**Tested (05/11/2026):**
+- **Rules:** 42/42 checks. These covered the counts for both vaults, the Expiring Soon tab, the search, each person's view (employee, the Branch Admins of two branches, the Vault Admin), restore and delete per person, retention (a shorter Normal period deletes old Normal items but not a 25-day-old Critical one), and Empty Bin per person.
+- **Collection:** 42/42 requests (the 3 logins are done in-process), all inside a transaction that was rolled back, so no data changed.
 
 ---
 

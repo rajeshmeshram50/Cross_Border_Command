@@ -43,6 +43,7 @@ class AuditLog extends Model
         'backupfail'   => ['Backup attempt failed', 'critical'],
         'health_fixed' => ['Health issue resolved', 'info'],
         'totp_linked'  => ['2-step linked', 'info'],
+        'generate'     => ['Password generated', 'info'],   // the action only, never the value (GP-R6)
     ];
 
     /** Actions that touch a secret directly — on a critical credential they are security alerts. */
@@ -58,6 +59,7 @@ class AuditLog extends Model
         'bin' => 'moved to the recycle bin', 'restore' => 'restored', 'purge' => 'permanently deleted',
         'policy' => 'changed a CredVault policy', 'importx' => 'imported credentials', 'backup' => 'downloaded a backup',
         'backupfail' => 'attempted a backup', 'health_fixed' => 'resolved a health issue on', 'totp_linked' => 'linked 2-step verification to',
+        'generate' => 'generated a password',
     ];
 
     public const SEVERITY_LABELS = ['info' => 'Info', 'warn' => 'Warning', 'critical' => 'Critical'];

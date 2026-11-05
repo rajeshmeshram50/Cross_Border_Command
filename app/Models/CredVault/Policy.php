@@ -13,15 +13,15 @@ class Policy extends Model
     protected $table = 'credvault_policies';
 
     /**
-     * The 17 settings and their defaults — the prototype's CV_POL_DEF.
-     * cp_admin_user_id null means "any Vault Admin of the client".
+     * The 15 settings and their defaults — the prototype's CV_POL_DEF.
+     * cp_admin_user_id null means "any Vault Admin of the client". The generator's
+     * length and symbols are no longer policies (D32): they are the generator's
+     * own defaults (PasswordGenerator::DEFAULTS), and a stored value is ignored.
      */
     public const DEFAULTS = [
         'min_strength'     => 3,
         'rotation_default' => 90,
         'rotation_warn'    => 15,
-        'gen_length'       => 20,
-        'gen_symbols'      => true,
         'twofa_risks'      => ['critical', 'high'],
         'share_critical'   => true,
         'share_max_days'   => 30,
@@ -41,19 +41,30 @@ class Policy extends Model
         'min_strength'     => [2, 3, 4],
         'rotation_default' => [null, 30, 60, 90, 180],
         'rotation_warn'    => [7, 15, 30],
-        'gen_length'       => [16, 20, 24, 32],
         'share_max_days'   => [0, 7, 30, 90],      // 0 = no limit
         'overshare_limit'  => [2, 3, 5, 10],
         'cp_max_minutes'   => [5, 15, 30, 60],
         'bin_days'         => [7, 15, 30, 60, 90],
     ];
 
+    /**
+     * The Recycle Bin keeps Critical Vault items for a fixed period: `bin_days` (the
+     * "Change period" popup) applies to the Normal Vault only.
+     */
+    public const CRITICAL_BIN_DAYS = 30;
+
+    /** How long a binned item of $vault stays before it is deleted for good. */
+    public static function binDays(array $pol, string $vault): int
+    {
+        return $vault === 'critical' ? self::CRITICAL_BIN_DAYS : (int) $pol['bin_days'];
+    }
+
     /** 2FA risk levels are kept in this order — the order the policy screen and its summary read them. */
     public const RISK_ORDER = ['critical', 'high', 'medium', 'low'];
 
     /** The five policy cards: [title, subtitle], as POL_SECS / POL_SUBS. */
     public const SECTIONS = [
-        'password' => ['Password Policy', 'Strength, rotation and the password generator'],
+        'password' => ['Password Policy', 'Strength and rotation'],
         'twofa'    => ['Two-Factor', 'When two-factor authentication is mandatory'],
         'sharing'  => ['Sharing', 'Who can share, for how long, and how widely'],
         'critical' => ['Critical Access', 'Approval steps and unlock time for critical credentials'],
@@ -72,10 +83,6 @@ class Policy extends Model
             ['Add Credential'], 'seg', [[30, '30 days'], [60, '60 days'], [90, '90 days'], [180, '180 days'], [null, 'None']]],
         'rotation_warn' => ['password', 'Rotation reminder', 'How early a password is flagged as “Rotation due soon” before it expires.',
             ['Password Health'], 'seg', [[7, '7 days'], [15, '15 days'], [30, '30 days']]],
-        'gen_length' => ['password', 'Generated password length', 'Default length used by Generate Password everywhere in CredVault.',
-            ['Generate Password'], 'seg', [[16, '16'], [20, '20'], [24, '24'], [32, '32']]],
-        'gen_symbols' => ['password', 'Include symbols in generated passwords', 'Adds characters like ! @ # $ to generated passwords.',
-            ['Generate Password'], 'switch', null],
         'twofa_risks' => ['twofa', 'Two-factor authentication required for', 'Credentials at these risk levels are flagged in Password Health when 2FA is off.',
             ['Password Health', 'Add / Edit Credential'], 'multi', [['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']]],
         'share_critical' => ['sharing', 'Allow sharing critical credentials', 'When off, the Share option is blocked for credentials marked Critical.',
@@ -96,7 +103,7 @@ class Policy extends Model
             ['Critical Vault'], 'switch', null],
         'cp_max_minutes' => ['critical', 'Maximum unlock window', 'The longest access window a requester can choose. The credential locks again after it.',
             ['Critical Vault'], 'seg', [[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']]],
-        'bin_days' => ['bin', 'Retention period', 'How long credentials stay in the Recycle Bin before they are permanently deleted.',
+        'bin_days' => ['bin', 'Retention period', 'How long Normal Vault credentials stay in the Recycle Bin before they are permanently deleted. Critical Vault items are kept a fixed 30 days.',
             ['Recycle Bin', 'Move to Bin'], 'seg', [[7, '7 days'], [15, '15 days'], [30, '30 days'], [60, '60 days'], [90, '90 days']]],
         'bin_purge' => ['bin', 'Allow permanent delete', 'When off, items can only be restored or left to expire — no one can erase them early or empty the bin.',
             ['Recycle Bin'], 'switch', null],
@@ -123,7 +130,6 @@ class Policy extends Model
             'min_strength'     => [1 => 'Weak', 2 => 'Fair', 3 => 'Good', 4 => 'Strong'][$v] ?? (string) $v,
             'rotation_default' => $v ? "Every {$v} days" : 'No rotation',
             'rotation_warn'    => "{$v} days before",
-            'gen_length'       => "{$v} characters",
             'twofa_risks'      => $v ? implode(', ', array_map('ucfirst', $v)) : 'Not required',
             'share_max_days'   => $v ? "{$v} days" : 'No limit',
             'overshare_limit'  => "{$v} people / teams",

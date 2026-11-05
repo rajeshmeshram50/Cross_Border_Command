@@ -198,10 +198,47 @@
         },
         {
             "name": "01 · Generate Password",
-            "description": "POST /credvault/generate-password — the Generate Password popup, and the generate button in each password field. Nothing is stored: the password comes back once, with its strength.\n\nCharacters mode: length 8–64 (default: the policy's gen_length), upper / lower / numbers / symbols (symbols default: the policy's gen_symbols), avoid_ambiguous drops I O l o 0 1 (default on). At least one set must stay on.\nPassphrase mode: 4–12 words (default 8), separator - . _ or space, capitalize (default on), add_number (default on).\n\nResponse: data.password, data.bits (entropy), data.level, data.strength (0–4, the form's meter), data.meets_policy.",
+            "description": "POST /credvault/generate-password — the Generate Password dialog and the ↻ button in each password field: one method, one set of defaults (GP-R8). Nothing is stored and the value is never logged — the audit log records only \"Password generated\".\n\nCharacters: length 12–64 (default 20), upper / lower / numbers / symbols (all on), avoid_ambiguous drops I O l o 0 1 (on). At least one set must stay on.\nPassphrase: EFF long list (7,776 words), 4–10 words (default 6), capitalize (on), add_number (on — always on when the policy minimum is Good or Strong), separator hyphen · dot · underscore · space, by name (a space adds one symbol to a word).\n\nResponse: data.password, data.level (Fair · Good · Strong, the D34 rule every CredVault password follows), data.bits (a hint only), data.meets_policy, data.policy_minimum, data.settings.\nA setting that can't reach the policy minimum is refused (422 \"This setting can’t reach the policy minimum (Good)\") — the generator never shows a password below it.\n\nGET /credvault/generate-password/options — the defaults, ranges and separators for the dialog.",
             "item": [
                 {
-                    "name": "Characters — policy defaults",
+                    "name": "Options — defaults, ranges, separators",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password/options",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password",
+                                "options"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('defaults 20 characters / 6 words', () => { pm.expect(b.data.defaults.length).to.eql(20); pm.expect(b.data.defaults.words).to.eql(6); });",
+                                    "pm.test('EFF list, 7,776 words', () => pm.expect(b.data.words.list_size).to.eql(7776));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Characters — defaults (20, every set)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -243,8 +280,58 @@
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "const b = pm.response.json();",
                                     "try { const v = b.data.password; if (v !== undefined && v !== null) pm.collectionVariables.set('generatedPassword', String(v)); } catch (e) {}",
-                                    "pm.test('meets the policy', () => pm.expect(b.data.meets_policy).to.eql(true));",
-                                    "pm.test('no ambiguous characters', () => pm.expect(b.data.password).to.not.match(/[IOlo01]/));"
+                                    "pm.test('20 characters', () => pm.expect(b.data.password.length).to.eql(20));",
+                                    "pm.test('Strong', () => pm.expect(b.data.level).to.eql('Strong'));",
+                                    "pm.test('no ambiguous characters', () => pm.expect(b.data.password).to.not.match(/[IOlo01]/));",
+                                    "pm.test('meets the policy', () => pm.expect(b.data.meets_policy).to.eql(true));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Characters — 12 (shortest)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 12\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('12 characters, Strong', () => { pm.expect(b.data.password.length).to.eql(12); pm.expect(b.data.level).to.eql('Strong'); });"
                                 ]
                             }
                         }
@@ -291,6 +378,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('32 characters', () => pm.expect(b.data.password.length).to.eql(32));"
                                 ]
                             }
@@ -338,6 +426,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('64 characters', () => pm.expect(b.data.password.length).to.eql(64));"
                                 ]
                             }
@@ -345,7 +434,7 @@
                     ]
                 },
                 {
-                    "name": "Characters — 8 (shortest)",
+                    "name": "Characters — lower case, numbers, symbols (no capitals)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -370,7 +459,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 8\n}",
+                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 20,\n    \"upper\": false\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -385,101 +474,8 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "pm.test('8 characters', () => pm.expect(b.data.password.length).to.eql(8));"
-                                ]
-                            }
-                        }
-                    ]
-                },
-                {
-                    "name": "Characters — no symbols (for systems that refuse them)",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{baseUrl}}/credvault/generate-password",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "credvault",
-                                "generate-password"
-                            ]
-                        },
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 20,\n    \"symbols\": false\n}",
-                            "options": {
-                                "raw": {
-                                    "language": "json"
-                                }
-                            }
-                        }
-                    },
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "pm.test('letters and digits only', () => pm.expect(b.data.password).to.match(/^[A-Za-z0-9]+$/));"
-                                ]
-                            }
-                        }
-                    ]
-                },
-                {
-                    "name": "Characters — digits only (PIN style)",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{baseUrl}}/credvault/generate-password",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "credvault",
-                                "generate-password"
-                            ]
-                        },
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 8,\n    \"upper\": false,\n    \"lower\": false,\n    \"numbers\": true,\n    \"symbols\": false\n}",
-                            "options": {
-                                "raw": {
-                                    "language": "json"
-                                }
-                            }
-                        }
-                    },
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "pm.test('digits only', () => pm.expect(b.data.password).to.match(/^[0-9]{8}$/));"
+                                    "const b = pm.response.json();",
+                                    "pm.test('no capitals, still Strong', () => { pm.expect(b.data.password).to.not.match(/[A-Z]/); pm.expect(b.data.level).to.eql('Strong'); });"
                                 ]
                             }
                         }
@@ -532,7 +528,7 @@
                     ]
                 },
                 {
-                    "name": "Passphrase — defaults (8 words)",
+                    "name": "Passphrase — defaults (6 EFF words, hyphen, a digit)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -572,14 +568,17 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "pm.test('8 words', () => pm.expect(b.data.password.split('-').length).to.eql(8));"
+                                    "const b = pm.response.json();",
+                                    "pm.test('6 words', () => pm.expect(b.data.password.split('-').length).to.be.within(6, 7));",
+                                    "pm.test('a digit', () => pm.expect(b.data.password).to.match(/\\d/));",
+                                    "pm.test('Strong', () => pm.expect(b.data.level).to.eql('Strong'));"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "Passphrase — 6 words, dots, lower case, no number",
+                    "name": "Passphrase — 4 words, dots, lower case",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -604,7 +603,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 6,\n    \"separator\": \".\",\n    \"capitalize\": false,\n    \"add_number\": false\n}",
+                            "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 4,\n    \"separator\": \".\",\n    \"capitalize\": false\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -619,14 +618,16 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                                    "pm.test('6 lower-case words', () => pm.expect(b.data.password).to.match(/^[a-z]+(\\.[a-z]+){5}$/));"
+                                    "const b = pm.response.json();",
+                                    "pm.test('lower case', () => pm.expect(b.data.password).to.eql(b.data.password.toLowerCase()));",
+                                    "pm.test('Strong', () => pm.expect(b.data.level).to.eql('Strong'));"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "Passphrase — 12 words, spaces",
+                    "name": "Passphrase — 10 words, spaces (a symbol is added)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -651,7 +652,58 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 12,\n    \"separator\": \" \"\n}",
+                            "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 10,\n    \"separator\": \"space\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Send the separator by name — hyphen, dot, underscore or space. A bare \" \" is trimmed away by the server before it is read."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('10 words with spaces', () => pm.expect(b.data.password.split(' ').length).to.eql(10));",
+                                    "pm.test('a symbol added', () => pm.expect(b.data.password).to.match(/[!@#$%^&*=+?_-]/));",
+                                    "pm.test('Strong', () => pm.expect(b.data.level).to.eql('Strong'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Passphrase — add_number off (still added: the minimum is Good)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"mode\": \"phrase\",\n    \"add_number\": false\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -665,7 +717,10 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('a digit anyway', () => pm.expect(b.data.password).to.match(/\\d/));",
+                                    "pm.test('forced', () => pm.expect(b.data.settings.add_number_forced).to.eql(true));"
                                 ]
                             }
                         }
@@ -711,14 +766,16 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('message', () => pm.expect(pm.response.json().message).to.eql('Keep at least one character set on'));"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "Length 7 — too short (422)",
+                    "name": "No symbols — can't reach the policy minimum (422)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -743,7 +800,101 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"length\": 7\n}",
+                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 20,\n    \"symbols\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('message', () => pm.expect(pm.response.json().message).to.match(/can.t reach the policy minimum/));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Digits only — can't reach the policy minimum (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"mode\": \"chars\",\n    \"length\": 12,\n    \"upper\": false,\n    \"lower\": false,\n    \"numbers\": true,\n    \"symbols\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Length 11 — too short (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"length\": 11\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -836,6 +987,52 @@
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 3\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Passphrase — 11 words (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/generate-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "generate-password"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"mode\": \"phrase\",\n    \"words\": 11\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -8579,7 +8776,8 @@
                                     "language": "json"
                                 }
                             }
-                        }
+                        },
+                        "description": "data.qr_image is the QR to scan (an SVG data URI, ready for <img src>). In Postman open the response's **Visualize** tab to see it and scan it with Google / Microsoft Authenticator, or type data.secret_display in the app as the setup key. Every call gives a NEW secret: scan the latest one, and save with that same secret."
                     },
                     "event": [
                         {
@@ -8589,7 +8787,9 @@
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "const b = pm.response.json();",
-                                    "try { const v = b.data.secret; if (v !== undefined && v !== null) pm.collectionVariables.set('totpSecret', String(v)); } catch (e) {}"
+                                    "try { const v = b.data.secret; if (v !== undefined && v !== null) pm.collectionVariables.set('totpSecret', String(v)); } catch (e) {}",
+                                    "pm.test('QR image returned', () => pm.expect(b.data.qr_image).to.match(/^data:image\\/svg\\+xml;base64,/));",
+                                    "pm.visualizer.set('<div style=\"font-family:Arial,sans-serif;text-align:center;padding:16px\"><img src=\"{{qr}}\" style=\"width:260px;height:260px\"><p>Scan with Google / Microsoft Authenticator</p><p style=\"font:700 18px monospace;letter-spacing:2px\">{{key}}</p></div>', { qr: b.data.qr_image, key: b.data.secret_display });"
                                 ]
                             }
                         }
@@ -18835,7 +19035,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-23\",\n    \"reason\": \"Handover while I am on leave\"\n}",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-24\",\n    \"reason\": \"Handover while I am on leave\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -19705,7 +19905,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-04&shared_to=2026-11-03&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-05&shared_to=2026-11-04&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -19716,11 +19916,11 @@
                             "query": [
                                 {
                                     "key": "shared_from",
-                                    "value": "2026-10-04"
+                                    "value": "2026-10-05"
                                 },
                                 {
                                     "key": "shared_to",
-                                    "value": "2026-11-03"
+                                    "value": "2026-11-04"
                                 },
                                 {
                                     "key": "tz",
@@ -19752,7 +19952,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-03&expires_to=2026-12-03&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-04&expires_to=2026-12-04&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -19763,11 +19963,11 @@
                             "query": [
                                 {
                                     "key": "expires_from",
-                                    "value": "2026-11-03"
+                                    "value": "2026-11-04"
                                 },
                                 {
                                     "key": "expires_to",
-                                    "value": "2026-12-03"
+                                    "value": "2026-12-04"
                                 },
                                 {
                                     "key": "tz",

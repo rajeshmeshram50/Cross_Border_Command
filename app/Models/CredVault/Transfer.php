@@ -27,8 +27,8 @@ class Transfer extends Model
     protected $attributes = ['status' => 'done'];
 
     protected $fillable = [
-        'client_id', 'kind', 'code', 'user_id', 'scope', 'format', 'file_name', 'source',
-        'items', 'skipped', 'weak', 'duplicates', 'size_bytes', 'include_passwords', 'locked',
+        'client_id', 'kind', 'code', 'user_id', 'scope', 'format', 'file_name', 'source', 'credential_type',
+        'items', 'skipped', 'weak', 'duplicates', 'failed', 'failed_rows', 'size_bytes', 'include_passwords', 'locked',
         'status', 'failure_reason', 'created_at',
     ];
 
@@ -37,6 +37,8 @@ class Transfer extends Model
         'skipped'           => 'integer',
         'weak'              => 'integer',
         'duplicates'        => 'integer',
+        'failed'            => 'integer',
+        'failed_rows'       => 'array',
         'size_bytes'        => 'integer',
         'include_passwords' => 'boolean',
         'locked'            => 'boolean',

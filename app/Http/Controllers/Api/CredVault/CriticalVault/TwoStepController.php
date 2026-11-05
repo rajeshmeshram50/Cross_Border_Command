@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Api\CredVault\CriticalVault;
 use App\Http\Controllers\Api\CredVault\CredVaultController;
 use App\Services\CredVault\EmailOtp;
 use App\Services\CredVault\Totp;
+use chillerlan\QRCode\Common\EccLevel;
+use chillerlan\QRCode\Output\QRMarkupSVG;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Request;
 
 /**
@@ -25,19 +29,28 @@ class TwoStepController extends CredVaultController
 {
     /**
      * POST /critical-vault/two-step/google/new { label? } — a fresh authenticator
-     * secret: QR (otpauth URI) and setup key. Asking again simply gives a new one.
+     * secret: the QR image (qr_image), its otpauth URI and the setup key. Asking
+     * again simply gives a new one.
      */
     public function googleNew(Request $request)
     {
         $this->tenantUser($request);
         $d = $request->validate(['label' => ['nullable', 'string', 'max:100']]);
         $secret = Totp::newSecret();
+        $uri    = Totp::uri($secret, $d['label'] ?? 'CredVault');
 
         return response()->json(['status' => true, 'data' => [
             'method'         => 'google',
             'secret'         => $secret,
             'secret_display' => trim(chunk_split($secret, 4, ' ')),
-            'otpauth_uri'    => Totp::uri($secret, $d['label'] ?? 'CredVault'),
+            'otpauth_uri'    => $uri,
+            // The QR to scan, ready for <img src>: the otpauth URI drawn as an SVG data URI.
+            'qr_image'       => (new QRCode(new QROptions([
+                'outputInterface' => QRMarkupSVG::class,
+                'outputBase64'    => true,
+                'eccLevel'        => EccLevel::M,
+                'quietzoneSize'   => 2,
+            ])))->render($uri),
             'digits'         => 6,
             'period'         => 30,
             'works_with'     => 'Google Authenticator, Microsoft Authenticator, Authy and any TOTP app',

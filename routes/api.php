@@ -756,6 +756,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/meta',                              [CredVaultController::class, 'meta']);
         Route::get   ('/dashboard',                         [CredVaultController::class, 'dashboard']);
         Route::post  ('/generate-password',                 [CredVaultController::class, 'generatePassword']);
+        Route::get   ('/generate-password/options',         [CredVaultController::class, 'generatorOptions']);
 
         // Normal Vault (My Vault / Team Vault) — CRD-0001 …
         Route::prefix('normal-vault')->group(function () {
@@ -833,6 +834,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/imports/sample',                    [CredVaultController::class, 'importSample']);
         Route::post  ('/imports',                           [CredVaultController::class, 'import']);
         Route::get   ('/imports',                           [CredVaultController::class, 'imports']);
+        Route::get   ('/imports/types',                     [CredVaultController::class, 'importTypes']);
+        Route::get   ('/imports/{id}',                      [CredVaultController::class, 'importShow'])->whereNumber('id');
         Route::post  ('/backups',                           [CredVaultController::class, 'backup']);
         Route::get   ('/backups',                           [CredVaultController::class, 'backups']);
         Route::get   ('/exports/preview',                   [CredVaultController::class, 'exportPreview']);
@@ -844,6 +847,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/recycle-bin/{id}/restore',          [CredVaultController::class, 'restore'])->whereNumber('id');
         Route::delete('/recycle-bin/{id}',                  [CredVaultController::class, 'purge'])->whereNumber('id');
         Route::delete('/recycle-bin',                       [CredVaultController::class, 'emptyBin']);
+        Route::get   ('/recycle-bin/retention',             [CredVaultController::class, 'binRetention']);
+        Route::put   ('/recycle-bin/retention',             [CredVaultController::class, 'updateBinRetention']);
     });
 
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');

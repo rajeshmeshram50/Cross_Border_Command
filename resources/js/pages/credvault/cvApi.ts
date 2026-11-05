@@ -193,7 +193,9 @@ export interface HealthIssue {
 }
 
 export interface Policy {
-  min_strength: number; rotation_default: number | null; rotation_warn: number; gen_length: number; gen_symbols: boolean;
+  min_strength: number; rotation_default: number | null; rotation_warn: number;
+  /** No longer policies (D32) — the generator's own defaults apply. Kept optional for older servers. */
+  gen_length?: number; gen_symbols?: boolean;
   twofa_risks: Risk[]; share_critical: boolean; share_max_days: number; share_reason: boolean; overshare_limit: number;
   cp_admin: boolean; cp_admin_user_id: number | null; cp_manager: boolean; cp_otp: boolean; cp_max_minutes: number;
   bin_days: number; bin_purge: boolean;
@@ -256,7 +258,8 @@ export const cvApi = {
   },
   approvers: (q?: string) => get<{ data: Loose }>('/critical-vault/approvers', { q }).then(r => r.data),
   newAuthenticator: (label?: string) => send<{ data: { secret: string; secret_display: string; otpauth_uri: string; works_with: string } }>('post', '/critical-vault/two-step/google/new', { label }).then(r => r.data),
-  generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength: number; meets_policy: boolean } }>('post', '/generate-password', opts).then(r => r.data),
+  /** The server-side generator (Postman / integrations). The dialog and ↻ generate on the device — see generator.ts. */
+  generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
   /* Credentials */

@@ -17,6 +17,8 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\CredVault\EmailOtp;
+use App\Services\CredVault\ImportTemplate;
+use App\Services\CredVault\PasswordGenerator;
 use App\Services\CredVault\Totp;
 use App\Services\CredVault\VaultFile;
 use App\Support\BrandingResolver;
@@ -31,6 +33,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -399,8 +402,8 @@ class CredVaultController extends Controller
             $this->reject('Only the owner, a Vault Admin or someone with Full Access can delete this credential.', null, 403);
         }
 
-        if ($c->isCriticalVault() && !in_array($acc[1], ['owner', 'admin'], true)) {
-            $this->reject('A critical credential can only be moved to the bin by its owner or a Vault Admin.', null, 403);
+        if ($c->isCriticalVault() && !in_array($acc[1], ['owner', 'admin', 'branch'], true)) {
+            $this->reject('A critical credential can only be moved to the bin by its owner, a Vault Admin or the Branch Admin.', null, 403);
         }
 
         $pol = Policy::for($u->client_id);
@@ -414,10 +417,13 @@ class CredVaultController extends Controller
             $this->audit($u, 'bin', $c, 'Moved to Recycle Bin');
         });
 
+        $days = Policy::binDays($pol, $c->vault);
+
         return response()->json([
             'status'  => true,
-            'message' => "“{$c->name}” moved to the Recycle Bin. It can be restored for {$pol['bin_days']} days.",
-            'data'    => ['id' => $c->id, 'purges_at' => now()->addDays($pol['bin_days'])->toIso8601String()],
+            'message' => "“{$c->name}” moved to the Recycle Bin. It can be restored for {$days} days"
+                . ($c->vault === 'critical' ? ' — by the Branch Admin.' : '.'),
+            'data'    => ['id' => $c->id, 'vault' => $c->vault, 'purges_at' => now()->addDays($days)->toIso8601String()],
         ], 200);
     }
 
@@ -893,8 +899,9 @@ class CredVaultController extends Controller
         $share = CredentialShare::where('client_id', $u->client_id)->with('credential')->find($id)
             ?? $this->reject('Share not found.', null, 404);
         $c = $share->credential;
-        $allowed = $c && ($c->owner_id === $u->id || $share->shared_by === $u->id || ($c->scope === 'team' && $this->isAdmin($u)));
-        if (!$allowed) $this->reject('Only the owner, the person who shared it or a Vault Admin can revoke this share.', null, 403);
+        $allowed = $c && ($c->owner_id === $u->id || $share->shared_by === $u->id
+            || ($c->scope === 'team' && in_array($this->accessMap(collect([$c]), $u)[$c->id][1] ?? null, ['admin', 'branch', 'manager', 'hod'], true)));
+        if (!$allowed) $this->reject('Only the owner, the person who shared it, a Vault Admin or a manager above the owner can revoke this share.', null, 403);
 
         $fresh = $this->inTransaction('revoke the share', function () use ($share, $u, $c) {
             $fresh = CredentialShare::lockForUpdate()->find($share->id);
@@ -1340,8 +1347,6 @@ class CredVaultController extends Controller
             'min_strength'     => ['sometimes', 'integer', Rule::in($o['min_strength'])],
             'rotation_default' => ['sometimes', 'nullable', 'integer', Rule::in(array_filter($o['rotation_default']))],
             'rotation_warn'    => ['sometimes', 'integer', Rule::in($o['rotation_warn'])],
-            'gen_length'       => ['sometimes', 'integer', Rule::in($o['gen_length'])],
-            'gen_symbols'      => ['sometimes', 'boolean'],
             'twofa_risks'      => ['sometimes', 'array'],
             'twofa_risks.*'    => ['distinct', Rule::in(Credential::RISKS)],
             'share_critical'   => ['sometimes', 'boolean'],
@@ -1534,6 +1539,7 @@ class CredVaultController extends Controller
     public function importPreview(Request $request)
     {
         $u = $this->tenantUser($request);
+        if ($request->filled('type')) return $this->importPreviewTyped($request, $u);
         $request->validate([
             'sample' => ['sometimes', 'boolean'],
             'file'   => ['required_unless:sample,true,1', 'file', 'max:5120', 'extensions:xlsx,xls,csv,tsv,txt,json,xml'],
@@ -1625,6 +1631,141 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
+    /** Set while an import saves its rows: a weak password is imported (and counted), a file the sheet cannot carry is attached later. */
+    protected bool $importing = false;
+
+    /**
+     * POST /credvault/imports/preview  (multipart: type, file) — Import by category.
+     *
+     * type is one of the 25 forms. The file is that type's sheet (the sample's layout): an
+     * .xlsx is read at the tab named for the type (or its first tab), a CSV as it is. Every
+     * row is checked exactly as the type's Add form checks it — required fields, web
+     * addresses, emails, phones, dates, the select lists, card number and expiry, IFSC,
+     * CVV / PIN, seed phrases, setup keys, lengths, name, risk, rotation — and nothing is
+     * saved. Rows that fail come back in `failed` with the sheet row number and each
+     * reason; the rest are parked behind a token for POST /imports. No secret is returned.
+     *
+     * Flags on a valid row: dup (a credential of this type and name is already yours),
+     * dupfile (the name repeats in the file), weak (a password below the policy minimum —
+     * still importable, counted as weak). selected = valid and not a duplicate.
+     */
+    protected function importPreviewTyped(Request $request, User $u)
+    {
+        $d = $request->validate([
+            'type' => ['required', Rule::in(array_keys(Credential::TYPES))],
+            'file' => ['required', 'file', 'max:5120', 'extensions:xlsx,csv,tsv,txt'],
+        ], ['type.in' => 'Choose one of the 25 credential types.', 'file.required' => 'Choose a file to import.',
+            'file.extensions' => 'Upload the Excel (.xlsx) or CSV sheet of this category — download the sample to see the layout.']);
+        $type = $d['type'];
+        $def  = Credential::typeDef($type);
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension());
+
+        try {
+            $sheet = '';
+            if ($ext === 'xlsx') {
+                $sheets = VaultFile::xlsxSheets($file->getRealPath());
+                $named  = collect(array_keys($sheets))->first(fn ($n) => ImportTemplate::typeOfSheet($n) === $type);
+                $other  = collect(array_keys($sheets))->first(fn ($n) => ($t = ImportTemplate::typeOfSheet($n)) && $t !== $type);
+                if (!$named && $other && count($sheets) > 2) {
+                    $this->reject("This workbook has no “" . ImportTemplate::sheetName($type) . "” tab. Pick the category of the tab you filled, or upload that tab's sheet.", 'file');
+                }
+                [$sheet, $raw] = VaultFile::readXlsxSheet($file->getRealPath(), fn ($n) => $named ? $n === $named : ImportTemplate::norm($n) !== ImportTemplate::norm('How to fill'));
+            } else {
+                $raw = VaultFile::read($file->getRealPath(), $ext);
+            }
+        } catch (\RuntimeException $e) {
+            $this->reject($e->getMessage(), 'file');
+        }
+        if (!$raw) $this->reject('The sheet has no rows to import. Add one credential per row under the header.', 'file');
+
+        [$map, $missing, $unknown] = ImportTemplate::mapHeaders($type, array_keys($raw[0]));
+        if ($missing) {
+            $this->reject("The sheet is not a {$def['label']} sheet — missing column" . (count($missing) > 1 ? 's' : '') . ': ' . implode(', ', $missing)
+                . '. Download the sample for this category and keep its header row.', 'file');
+        }
+
+        $pol  = Policy::for($u->client_id);
+        $cols = collect(ImportTemplate::columns($type))->keyBy('key');
+        $mine = Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->where('type', $type)->get(['id', 'code', 'name'])
+            ->keyBy(fn ($c) => Str::lower(trim($c->name)));
+        $metaRules = array_intersect_key($this->credentialRules(true), array_flip(['name', 'risk', 'rotation_days', 'notes', 'reg_email', 'reg_phone', 'recovery_key']));
+        $metaRules['risk'] = ['nullable', Rule::in(['low', 'medium', 'high'])];
+        $label = fn (string $k) => $k === 'name' ? ImportTemplate::NAME : ($cols[$k]['label'] ?? ($cols[str_replace('fields.', '', $k)]['label'] ?? $k));
+
+        $this->importing = true;
+        $seen = [];
+        $rows = [];
+        foreach ($raw as $i => $r) {
+            $p = ImportTemplate::toPayload($type, $r, $map);
+            $errors = [];
+            $v = Validator::make($p, $metaRules, [
+                'name.required' => 'Enter the Credential Name.', 'name.min' => 'The Credential Name needs at least 2 characters.',
+                'risk.in' => 'Risk is Low, Medium or High.', 'rotation_days.in' => 'Rotation is 30, 60, 90 or 180 days.',
+                'reg_phone.regex' => 'Enter a phone number of 10 to 16 digits.', 'reg_email.email' => 'Enter a valid Registered Email.',
+            ]);
+            foreach ($v->errors()->messages() as $k => $m) $errors[] = ['field' => $k, 'label' => $label($k), 'message' => $m[0]];
+            try {
+                $fields = $this->validateTypeFields($def, array_diff_key($p['fields'], ['twofa' => 1]), [], $request, null);
+            } catch (ValidationException $e) {
+                $fields = [];
+                foreach ($e->errors() as $k => $m) $errors[] = ['field' => str_replace('fields.', '', $k), 'label' => $label(str_replace('fields.', '', $k)), 'message' => $m[0]];
+            }
+
+            $name  = trim((string) ($p['name'] ?? ''));
+            $key   = Str::lower($name);
+            $dupOf = $name !== '' ? $mine->get($key) : null;
+            $flags = [];
+            if ($dupOf) $flags[] = 'dup';
+            elseif ($name !== '' && isset($seen[$key])) $flags[] = 'dupfile';
+            if ($name !== '') $seen[$key] = true;
+            $secret   = $def['sec'] ? ($fields[$def['sec']] ?? null) : null;
+            $strength = Credential::secretIsPassword($type) && $secret ? Credential::strengthOf($secret) : null;
+            if ($strength !== null && $strength < $pol['min_strength']) $flags[] = 'weak';
+            $valid = !$errors;
+            $notes = array_map(fn ($f) => "Attach the {$f['label']} in the form after the import.", array_filter(ImportTemplate::fileFields($type), fn ($f) => $f['required']));
+
+            $rows[] = [
+                'index' => $i, 'row' => $i + 2, 'name' => Str::limit($name, 150, ''), 'status' => $valid ? 'valid' : 'failed',
+                'errors' => $errors, 'flags' => $flags, 'notes' => $valid ? array_values($notes) : [],
+                'strength' => $strength !== null ? (Credential::STRENGTH_LABELS[$strength] ?? null) : null,
+                'dup_of' => $dupOf ? ['id' => $dupOf->id, 'code' => $dupOf->code, 'name' => $dupOf->name] : null,
+                'selected' => $valid && !array_intersect($flags, ['dup', 'dupfile']),
+                'payload' => $p,
+            ];
+        }
+        $this->importing = false;
+
+        $token  = Str::random(40);
+        $format = $ext === 'txt' ? 'tsv' : $ext;
+        Cache::put($this->importCacheKey($u, $token), Crypt::encrypt(['typed' => true, 'type' => $type, 'rows' => $rows,
+            'file_name' => $file->getClientOriginalName(), 'format' => $format, 'source' => ImportTemplate::sheetName($type) . ' sheet']), self::IMPORT_TTL);
+        $c = collect($rows);
+        $public = fn ($r) => collect($r)->except('payload')->all();
+
+        return response()->json(['status' => true, 'data' => [
+            'token'        => $token,
+            'expires_in'   => self::IMPORT_TTL,
+            'type'         => $type,
+            'type_label'   => $def['label'],
+            'file_name'    => $file->getClientOriginalName(),
+            'sheet'        => $sheet ?: null,
+            'format'       => $format,
+            'format_label' => Transfer::FORMAT_LABELS[$format] ?? strtoupper($format),
+            'columns'      => ['matched' => $map, 'ignored' => $unknown],
+            'stats'        => [
+                'rows'       => $c->count(),
+                'valid'      => $c->where('status', 'valid')->count(),
+                'failed'     => $c->where('status', 'failed')->count(),
+                'duplicates' => $c->filter(fn ($r) => array_intersect(['dup', 'dupfile'], $r['flags']))->count(),
+                'weak'       => $c->filter(fn ($r) => in_array('weak', $r['flags'], true))->count(),
+                'selected'   => $c->where('selected', true)->count(),
+            ],
+            'rows'   => $c->map($public)->values(),
+            'failed' => $c->where('status', 'failed')->map(fn ($r) => ['row' => $r['row'], 'name' => $r['name'], 'errors' => $r['errors']])->values(),
+        ]], 200);
+    }
+
     /**
      * POST /credvault/imports { token, rows: [index…], duplicates: skip|copy, scope?, department_id? }
      *
@@ -1660,12 +1801,83 @@ class CredVaultController extends Controller
             $payload = Crypt::decrypt($payload);
             $pol     = Policy::for($u->client_id);
 
-            $result = $this->runImport($u, $d, $payload, $pol, $scope, $deptId);
+            $result = !empty($payload['typed'])
+                ? $this->runTypedImport($u, $d, $payload, $scope, $deptId)
+                : $this->runImport($u, $d, $payload, $pol, $scope, $deptId);
             Cache::forget($cacheKey);
         } finally {
             Cache::forget("{$cacheKey}:running");
         }
         return $result;
+    }
+
+    /**
+     * Import by category: each picked valid row is saved through the type's Add form
+     * (persistCredential), so it gets the same code, encryption, strength, risk, audit and
+     * checks as one typed in. A row the form still refuses joins the failed list. History
+     * counts: imported · skipped (every row not imported) · weak · duplicates · failed.
+     */
+    protected function runTypedImport(User $u, array $d, array $payload, string $scope, ?int $deptId)
+    {
+        $picked = array_flip($d['rows']);
+        $def    = Credential::typeDef($payload['type']);
+        $failed = [];
+        $items  = $weak = 0;
+        $codes  = [];
+
+        $t = $this->inTransaction('import the credentials', function () use ($u, $d, $payload, $scope, $deptId, $picked, &$failed, &$items, &$weak, &$codes) {
+            $this->importing = true;
+            try {
+                foreach ($payload['rows'] as $row) {
+                    if ($row['status'] === 'failed') { $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => $row['errors']]; continue; }
+                    if (!isset($picked[$row['index']])) continue;
+                    $isDup = (bool) array_intersect(['dup', 'dupfile'], $row['flags']);
+                    if ($isDup && $d['duplicates'] === 'skip') continue;
+
+                    $p = $row['payload'] + ['scope' => $scope] + ($deptId ? ['department_id' => $deptId] : []);
+                    if ($isDup) $p['name'] = Str::limit($p['name'], 139, '') . ' (imported)';
+                    try {
+                        $res = DB::transaction(fn () => $this->persistCredential(Request::create('/', 'POST', $p), $u, null, 'normal'));
+                        $codes[] = $res->getData(true)['data']['code'] ?? null;
+                        $items++;
+                        if (in_array('weak', $row['flags'], true)) $weak++;
+                    } catch (ValidationException $e) {
+                        $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => collect($e->errors())->map(fn ($m, $k) => ['field' => str_replace('fields.', '', $k), 'label' => $k, 'message' => $m[0]])->values()->all()];
+                    } catch (HttpResponseException $e) {
+                        $b = $e->getResponse()->getData(true);
+                        $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => [['field' => array_key_first($b['errors'] ?? []) ?? 'row', 'label' => '', 'message' => $b['message'] ?? 'Could not be imported.']]];
+                    }
+                }
+            } finally {
+                $this->importing = false;
+            }
+
+            $all = collect($payload['rows']);
+            $t = Transfer::create([
+                'client_id' => $u->client_id, 'kind' => 'import', 'code' => $this->nextCode('credvault_transfers', 'IM', $u->client_id),
+                'user_id' => $u->id, 'scope' => $scope === 'team' ? 'team' : 'mine', 'format' => $payload['format'],
+                'file_name' => Str::limit($payload['file_name'], 191, ''), 'source' => Str::limit($payload['source'], 40, ''), 'credential_type' => $payload['type'],
+                'items' => $items, 'skipped' => $all->count() - $items, 'weak' => $weak,
+                'duplicates' => $all->filter(fn ($r) => array_intersect(['dup', 'dupfile'], $r['flags']))->count(),
+                'failed' => count($failed), 'failed_rows' => array_slice($failed, 0, 500),
+                'status' => $items ? 'done' : 'failed', 'failure_reason' => $items ? null : 'No row could be imported',
+            ]);
+            $this->audit($u, 'importx', null, "{$t->code} · {$items} {$payload['type']} credentials imported" . ($failed ? ' · ' . count($failed) . ' failed' : ''),
+                ['transfer' => $t->code, 'items' => $items, 'weak' => $weak, 'failed' => count($failed)], 'Import & Recovery');
+
+            return $t;
+        });
+        $t->load('user:id,name');
+        $to = $scope === 'team' ? 'Team Vault' : 'My Vault';
+
+        return response()->json([
+            'status'  => (bool) $items,
+            'message' => $items
+                ? "{$items} {$def['label']} " . Str::plural('credential', $items) . " imported to {$to}" . ($failed ? ' · ' . count($failed) . ' failed — see the failed list' : '')
+                    . ($weak ? " · {$weak} with weak passwords — see Password Health" : '') . '.'
+                : 'Nothing was imported — every picked row failed. See the failed list.',
+            'data'    => $this->transferRow($t, $u) + ['imported_codes' => array_values(array_filter($codes)), 'failed_rows' => $failed],
+        ], $items ? 201 : 422);
     }
 
     protected function runImport(User $u, array $d, array $payload, array $pol, string $scope, ?int $deptId)
@@ -1725,18 +1937,83 @@ class CredVaultController extends Controller
         ], 201);
     }
 
-    /** GET /credvault/imports — import history. */
+    /** GET /credvault/imports — Imported Credentials History. */
     public function imports(Request $request)
     {
         return $this->transferHistory($request, 'import');
     }
 
-    /** GET /credvault/imports/sample?format=csv|json|xlsx — the prototype's sample: two example rows, and a "How to fill" sheet in Excel. */
+    /** GET /credvault/imports/{id} — one import, with its failed list (row, name, reasons). */
+    public function importShow(Request $request, int $id)
+    {
+        $u = $this->tenantUser($request);
+        $t = Transfer::where('client_id', $u->client_id)->where('kind', 'import')
+            ->when(!$this->isAdmin($u), fn ($q) => $q->where('user_id', $u->id))->with('user:id,name')->find($id)
+            ?? $this->reject('Import not found.', null, 404);
+
+        return response()->json(['status' => true, 'data' => $this->transferRow($t, $u) + ['failed_rows' => $t->failed_rows ?? []]], 200);
+    }
+
+    /**
+     * GET /credvault/imports/types — the 25 categories the import screen offers, each with its
+     * sheet (tab) name, its columns (required, hint, options) and the files attached later.
+     */
+    public function importTypes(Request $request)
+    {
+        $this->tenantUser($request);
+
+        return response()->json(['status' => true, 'data' => collect(array_keys(Credential::TYPES))->map(function ($t) {
+            $def = Credential::typeDef($t);
+            return [
+                'key' => $t, 'label' => $def['label'], 'group' => $def['group'], 'icon' => $def['icon'], 'sheet' => ImportTemplate::sheetName($t),
+                'columns' => array_map(fn ($c) => array_intersect_key($c, array_flip(['key', 'header', 'label', 'required', 'kind', 'options', 'hint'])), ImportTemplate::columns($t)),
+                'attach_later' => ImportTemplate::fileFields($t),
+            ];
+        })->values(), 'meta' => ['formats' => ['xlsx' => 'Excel', 'csv' => 'CSV'], 'max_rows' => VaultFile::MAX_ROWS, 'max_mb' => 5]], 200);
+    }
+
+    /**
+     * GET /credvault/imports/sample?format=xlsx|csv&type=&layout=types|simple — Download sample file.
+     *
+     * layout types (the default) — one sheet per credential type, laid out as that type's form,
+     * each with two example rows that pass every check:
+     *   xlsx            one workbook: 25 tabs (Login … Outdoor License) and "How to fill"
+     *   xlsx + type     that type's tab and "How to fill"
+     *   csv + type      that type's sheet as a CSV
+     *   csv             a .zip with the 25 CSVs (a CSV has no tabs) and how-to-fill.csv
+     * layout simple — the older any-type sample (name, url, username, password, category, notes).
+     */
     public function importSample(Request $request)
     {
         $this->tenantUser($request);
-        $d = $request->validate(['format' => ['nullable', Rule::in(['csv', 'json', 'xlsx'])]]);
+        $d = $request->validate([
+            'format' => ['nullable', Rule::in(['csv', 'json', 'xlsx'])],
+            'type'   => ['nullable', Rule::in(array_keys(Credential::TYPES))],
+            'layout' => ['nullable', Rule::in(['types', 'simple'])],
+        ], ['type.in' => 'Choose one of the 25 credential types.']);
         $fmt = $d['format'] ?? 'xlsx';
+
+        if (($d['layout'] ?? 'types') === 'types' && $fmt !== 'json') {
+            $types = !empty($d['type']) ? [$d['type']] : array_keys(Credential::TYPES);
+            $one   = count($types) === 1;
+            $base  = $one ? 'credvault-import-sample-' . $types[0] : 'credvault-import-sample';
+            if ($fmt === 'xlsx') {
+                $sheets = array_map(fn ($t) => ImportTemplate::sheet($t, ImportTemplate::sampleRows($t)), $types);
+                $sheets[] = ImportTemplate::guideSheet($types);
+
+                return $this->download(VaultFile::xlsx($sheets), "{$base}.xlsx", $this->mime('xlsx'), ['X-CredVault-Sheets' => (string) count($sheets)]);
+            }
+            $csv = fn ($t) => VaultFile::csv(array_column(ImportTemplate::columns($t), 'header'),
+                array_map(fn ($r) => array_map(fn ($c) => $r[$c['key']] ?? '', ImportTemplate::columns($t)), ImportTemplate::sampleRows($t)));
+            if ($one) return $this->download($csv($types[0]), "{$base}.csv", $this->mime('csv'));
+
+            $files = [];
+            foreach ($types as $i => $t) $files[sprintf('%02d-%s.csv', $i + 1, Str::slug(ImportTemplate::sheetName($t)))] = $csv($t);
+            $guide = ImportTemplate::guideSheet($types)['rows'];
+            $files['how-to-fill.csv'] = VaultFile::csv(array_shift($guide), $guide);
+
+            return $this->download(VaultFile::bundle($files), "{$base}-csv.zip", 'application/zip', ['X-CredVault-Sheets' => (string) count($files)]);
+        }
 
         $body = match ($fmt) {
             'csv'  => VaultFile::csv(self::IMPORT_COLUMNS, self::IMPORT_EXAMPLE),
@@ -1784,7 +2061,7 @@ class CredVaultController extends Controller
             'password'              => ['exclude_unless:lock,true,1', 'required', 'string', 'min:8', 'max:128'],
             'password_confirmation' => ['exclude_unless:lock,true,1', 'required', 'string'],
             'account_password'      => ['nullable', 'string'],
-        ], ['password.required' => 'Set a password for the backup file, or turn the lock off.', 'password.min' => 'Use at least 8 characters for the backup password.']);
+        ], ['password.required' => 'Set a password for the backup file, or turn the lock off.', 'password.min' => 'Use 8+ characters with letters, numbers & symbols for the backup password.']);
         $d['include_passwords'] = (bool) $d['include_passwords'];
         $d['lock'] = (bool) $d['lock'];
         $fmtLabel = Transfer::FORMAT_LABELS[$d['format']];
@@ -1801,6 +2078,10 @@ class CredVaultController extends Controller
             });
             $this->reject($why . '.', $field);
         };
+        // The screen's rule: 8+ characters with letters, numbers and a symbol (Good or stronger, D34).
+        if ($d['lock'] && Credential::strengthOf($d['password']) < 3) {
+            $this->reject('Use 8+ characters with letters, numbers & symbols for the backup password.', 'password');
+        }
         if ($d['lock'] && $d['password'] !== $d['password_confirmation']) $fail('Passwords did not match', 'password_confirmation');
         if ($d['include_passwords'] && !$d['lock']) {
             if (!filled($d['account_password'] ?? null)) $this->reject('A backup with readable passwords needs your account password. Or lock the file with a password.', 'account_password');
@@ -1811,22 +2092,26 @@ class CredVaultController extends Controller
         if ($creds->isEmpty()) $this->reject('There are no credentials in this vault to back up.', 'scope');
 
         [$keys, $rows, $withheld] = $this->backupRows($creds, $d['include_passwords']);
+        $typeSheets = $d['format'] === 'xlsx' ? $this->backupTypeSheets($creds, $d['include_passwords']) : [];
         $name  = "credvault-{$d['scope']}-backup-" . now()->format('Ymd');
         // Built inside the transaction below with the code it is recorded under, so the
         // Backup ID in the file always matches the history row.
         $build = fn (string $code) => match ($d['format']) {
+            // (xlsx below: the summary, one tab per type in the import layout, About)
             'csv'  => VaultFile::csv(array_values($keys), array_map(fn ($r) => array_values(array_intersect_key(array_replace($keys, $r), $keys)), $rows)),
             'json' => json_encode(['format' => 'CredVault backup', 'id' => $code, 'created' => now()->toIso8601String(), 'by' => $u->name,
                 'scope' => $scopeLabel, 'count' => count($rows), 'credentials' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            default => VaultFile::xlsx([
+            default => VaultFile::xlsx(array_merge([
                 ['name' => 'Credentials', 'head' => true, 'freeze' => true,
                     'widths' => array_values(array_map(fn ($k) => ['name' => 28, 'url' => 30, 'username' => 28, 'password' => 22, 'notes' => 30, 'category' => 16][$k] ?? 14, array_keys($keys))),
                     'rows' => array_merge([array_values($keys)], array_map(fn ($r) => array_values(array_intersect_key(array_replace($keys, $r), $keys)), $rows))],
-                ['name' => 'About', 'head' => true, 'widths' => [22, 40], 'rows' => [
+            ], $typeSheets, [
+                ['name' => 'About', 'head' => true, 'widths' => [22, 60], 'rows' => [
                     ['CredVault backup', ''], ['Backup ID', $code], ['Created', now()->format('d/m/Y, H:i:s')], ['Created by', $u->name],
                     ['Vault', $scopeLabel], ['Credentials', (string) count($rows)], ['Passwords included', $d['include_passwords'] ? 'Yes' : 'No'],
+                    ['Recovery', 'Each type tab uses the import layout: choose that category on Import & Recovery and upload this file to restore it.'],
                 ]],
-            ]),
+            ])),
         };
         $file = $d['lock'] ? "{$name}.zip" : "{$name}.{$d['format']}";
         $body = null;
@@ -2002,111 +2287,152 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
 
+    /** The bin's four tabs, on a query already narrowed to one vault. */
+    protected function binTabCounts(Builder $q, User $u, int $days): array
+    {
+        $soon = now()->subDays($days)->addDays(7);
+
+        return [
+            'all'  => (clone $q)->count(),
+            'mine' => (clone $q)->where('deleted_by', $u->id)->count(),
+            'team' => (clone $q)->where('scope', 'team')->count(),
+            'soon' => (clone $q)->where('deleted_at', '<=', $soon)->count(),
+        ];
+    }
+
+    /** The bin search: ID, name, category, group, type label, owner and who deleted it. */
+    protected function binSearch(Builder $q, User $u, ?string $term): void
+    {
+        if ($term === null || trim($term) === '') return;
+        $like   = $this->likeTerm($term);
+        $types  = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), mb_strtolower(trim($term))))->keys()->all();
+        $people = User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id');
+        $q->where(function ($w) use ($like, $types, $people) {
+            foreach (['name', 'code', 'category_group'] as $col) $w->orWhereRaw("lower(coalesce(credvault_credentials.{$col}, '')) like ?", [$like]);
+            if ($types) $w->orWhereIn('type', $types);
+            $w->orWhereIn('owner_id', $people)->orWhereIn('deleted_by', $people);
+        });
+    }
+
     /**
-     * GET /credvault/recycle-bin?tab=all|mine|team|soon&q= — expired items are
-     * purged first, and `purged` says how many went (the prototype's toast).
-     * "expiring" is accepted for "soon". Tab counts ignore the search box.
+     * GET /credvault/recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=
+     *
+     * The four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each split
+     * into Normal Vault and Critical Vault. `vault` (default normal) picks the sub-tab; `tabs`
+     * are its four counts and `counts` all eight. Counts follow the search box.
+     *
+     * Each vault keeps its own retention: the Normal Vault's can be changed (Change period,
+     * Vault Admins); the Critical Vault's is a fixed 30 days and offers no change. Critical
+     * items can be restored or deleted only by the Branch Admin (`can_restore`, `can_purge`).
+     * Expired items are purged first; `purged` says how many went. "expiring" = "soon".
      */
     public function recycleBin(Request $request)
     {
         $u = $this->tenantUser($request);
         if ($request->query('tab') === 'expiring') $request->merge(['tab' => 'soon']);
-        $f = $request->validate($this->listRules(['all', 'mine', 'team', 'soon']));
-        $pol = Policy::for($u->client_id);
+        $f = $request->validate($this->listRules(['all', 'mine', 'team', 'soon']) + ['vault' => ['nullable', Rule::in(Credential::VAULTS)]]);
+        $pol    = Policy::for($u->client_id);
         $purged = $this->purgeExpired($u->client_id, $pol);
+        $vault  = $f['vault'] ?? 'normal';
+        $days   = Policy::binDays($pol, $vault);
+        $term   = $f['q'] ?? null;
 
-        $base = $this->binQuery($u);
-        $soon = now()->subDays($pol['bin_days'])->addDays(7);
+        $counts = [];
+        foreach (Credential::VAULTS as $v) {
+            $q = $this->binQuery($u, $v);
+            $this->binSearch($q, $u, $term);
+            $counts[$v] = $this->binTabCounts($q, $u, Policy::binDays($pol, $v));
+        }
+        $counts['total'] = array_map(fn ($k) => $counts['normal'][$k] + $counts['critical'][$k], ['all' => 'all', 'mine' => 'mine', 'team' => 'team', 'soon' => 'soon']);
 
-        $tabs = [
-            'all'  => (clone $base)->count(),
-            'mine' => (clone $base)->where('deleted_by', $u->id)->count(),
-            'team' => (clone $base)->where('scope', 'team')->count(),
-            'soon' => (clone $base)->where('deleted_at', '<=', $soon)->count(),
-        ];
+        $base = $this->binQuery($u, $vault);
         $next = (clone $base)->orderBy('deleted_at')->first(['id', 'name', 'deleted_at']);
+        $branchAdmin = (bool) $this->adminBranchOf($u);
         $summary = [
-            'retention_days'       => $pol['bin_days'],
+            'vault'                => $vault,
+            'retention_days'       => $days,
+            'retention_fixed'      => $vault === 'critical',
+            'can_change_retention' => $vault === 'normal' && $this->isAdmin($u),
+            'retention_options'    => $vault === 'normal' ? Policy::OPTIONS['bin_days'] : [],
             'purge_allowed'        => (bool) $pol['bin_purge'],
-            'can_change_retention' => $this->isAdmin($u),
-            'retention_options'    => Policy::OPTIONS['bin_days'],
-            'items'                => $tabs['all'],
-            'deleted_by_me'        => $tabs['mine'],
-            'expiring_soon'        => $tabs['soon'],
+            'can_empty'            => (bool) $pol['bin_purge'] && ($vault === 'normal' || $branchAdmin),
+            'critical_actions'     => $branchAdmin ? 'branch_admin' : 'none',
+            'items'                => (clone $base)->count(),
+            'deleted_by_me'        => (clone $base)->where('deleted_by', $u->id)->count(),
+            'expiring_soon'        => (clone $base)->where('deleted_at', '<=', now()->subDays($days)->addDays(7))->count(),
             'critical'             => (clone $base)->where('risk', 'critical')->count(),
             'next_deletion'        => $next ? [
-                'name' => $next->name, 'at' => $next->deleted_at->copy()->addDays($pol['bin_days'])->toIso8601String(),
-                'days' => max(1, (int) ceil(now()->diffInHours($next->deleted_at->copy()->addDays($pol['bin_days']), false) / 24)),
+                'name' => $next->name, 'at' => $next->deleted_at->copy()->addDays($days)->toIso8601String(),
+                'days' => max(1, (int) ceil(now()->diffInHours($next->deleted_at->copy()->addDays($days), false) / 24)),
             ] : null,
         ];
 
         match ($f['tab'] ?? 'all') {
             'mine'  => $base->where('deleted_by', $u->id),
             'team'  => $base->where('scope', 'team'),
-            'soon'  => $base->where('deleted_at', '<=', $soon),
+            'soon'  => $base->where('deleted_at', '<=', now()->subDays($days)->addDays(7)),
             default => null,
         };
-        if ($term = $f['q'] ?? null) {
-            // ID, name, category, group, owner and who deleted it.
-            $like   = $this->likeTerm($term);
-            $types  = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), mb_strtolower(trim($term))))->keys()->all();
-            $people = User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id');
-            $base->where(function ($w) use ($like, $types, $people) {
-                foreach (['name', 'code', 'category_group'] as $col) $w->orWhereRaw("lower(coalesce({$col}, '')) like ?", [$like]);
-                if ($types) $w->orWhereIn('type', $types);
-                $w->orWhereIn('owner_id', $people)->orWhereIn('deleted_by', $people);
-            });
-        }
+        $this->binSearch($base, $u, $term);
 
-        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by']))
+        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by', 'branch_id']))
             ->with(['owner:id,name'])->orderBy('deleted_at')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $deleters = User::whereIn('id', collect($page->items())->pluck('deleted_by')->filter()->unique()->all())->pluck('name', 'id');
+        $from = ($page->currentPage() - 1) * $page->perPage();
 
         return response()->json([
             'status'  => true,
             'purged'  => $purged,
             'summary' => $summary,
-            'data'    => collect($page->items())->map(function ($c) use ($pol, $deleters, $u) {
-                $purge = $c->deleted_at->copy()->addDays($pol['bin_days']);
+            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from) {
+                $total = Policy::binDays($pol, $c->vault);
+                $purge = $c->deleted_at->copy()->addDays($total);
                 // Never "0 days": an item still in the bin goes on its last day.
                 $days  = max(1, (int) ceil(now()->diffInHours($purge, false) / 24));
-                $total = $pol['bin_days'];
+                $deny  = $this->binDenial($u, $c);
 
                 return [
-                    'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type,
+                    'sr_no' => $from + $i + 1,
+                    'id' => $c->id, 'code' => $c->code, 'vault' => $c->vault, 'name' => $c->name, 'type' => $c->type,
                     'type_label' => Credential::typeDef($c->type)['label'] ?? $c->type, 'category_group' => $c->category_group,
-                    'url' => $c->url, 'scope' => $c->scope, 'risk' => $c->risk,
-                    'owner' => ['id' => $c->owner_id, 'name' => $c->owner?->name, 'is_me' => $c->owner_id === $u->id],
-                    'deleted_by' => ['id' => $c->deleted_by, 'name' => $c->deleted_by === $u->id ? 'You' : ($deleters[$c->deleted_by] ?? null)],
+                    'url' => $c->url, 'scope' => $c->scope, 'scope_label' => $c->scope === 'team' ? 'Team' : 'Personal', 'risk' => $c->risk,
+                    'owner' => ['id' => $c->owner_id, 'name' => $c->owner?->name, 'initials' => $this->initials($c->owner?->name), 'is_me' => $c->owner_id === $u->id],
+                    'deleted_by' => ['id' => $c->deleted_by, 'name' => $c->deleted_by === $u->id ? 'You' : ($deleters[$c->deleted_by] ?? null),
+                        'initials' => $this->initials($deleters[$c->deleted_by] ?? ($c->deleted_by === $u->id ? $u->name : null))],
                     'deleted_at' => $c->deleted_at->toIso8601String(),
                     'purges_at' => $purge->toIso8601String(), 'days_left' => $days,
                     'left_pct' => (int) round(min($days, $total) / max(1, $total) * 100),
                     'urgency' => $days <= 3 ? 'bad' : ($days <= 7 ? 'warn' : 'ok'),
-                    'can_purge' => (bool) $pol['bin_purge'],
+                    'can_restore' => $deny === null,
+                    'can_purge' => $deny === null && (bool) $pol['bin_purge'],
+                    'locked_reason' => $deny,
                 ];
             })->values(),
-            'tabs'    => $tabs,
+            'tabs'    => $counts[$vault],
+            'counts'  => $counts,
             'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
-    /** POST /credvault/recycle-bin/{id}/restore */
+    /** POST /credvault/recycle-bin/{id}/restore — a Critical Vault item: the Branch Admin only. */
     public function restore(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
+        if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
 
         $this->inTransaction('restore the credential', function () use ($c, $u) {
             $c->restore();
             $c->forceFill(['deleted_by' => null, 'updated_by' => $u->id])->saveQuietly();
             $this->audit($u, 'restore', $c, 'Restored from Recycle Bin');
         });
+        $to = $c->vault === 'critical' ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault');
 
-        return response()->json(['status' => true, 'message' => "“{$c->name}” restored to " . ($c->scope === 'team' ? 'Team Vault' : 'My Vault') . '.', 'data' => ['id' => $c->id]], 200);
+        return response()->json(['status' => true, 'message' => "“{$c->name}” restored to {$to}.", 'data' => ['id' => $c->id, 'vault' => $c->vault, 'restored_to' => $to]], 200);
     }
 
-    /** DELETE /credvault/recycle-bin/{id} { confirm: true } — gone for good. */
+    /** DELETE /credvault/recycle-bin/{id} { confirm: true } — gone for good. A Critical Vault item: the Branch Admin only. */
     public function purge(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -2115,90 +2441,176 @@ class CredVaultController extends Controller
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
 
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
+        if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
         $this->inTransaction('delete the credential permanently', fn () => $this->purgeOne($c, $u->id, 'Deleted permanently'));
 
-        return response()->json(['status' => true, 'message' => "“{$c->name}” deleted permanently."], 200);
+        return response()->json(['status' => true, 'message' => "“{$c->name}” deleted permanently.", 'data' => ['id' => $c->id, 'vault' => $c->vault]], 200);
     }
 
-    /** DELETE /credvault/recycle-bin { confirm: true } — Empty Bin: everything the user may purge. */
+    /**
+     * DELETE /credvault/recycle-bin { confirm: true, vault?: normal|critical|all } — Empty Bin.
+     *
+     * vault all (the default) empties both vaults in one call: every Normal Vault item the
+     * user sees in the bin, and — for the Branch Admin — every Critical Vault item of the
+     * branch. Critical items anyone else sees are left and counted in `skipped`.
+     */
     public function emptyBin(Request $request)
     {
         $u = $this->tenantUser($request);
-        $request->validate(['confirm' => ['accepted']], ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
+        $d = $request->validate(['confirm' => ['accepted'], 'vault' => ['nullable', Rule::in(array_merge(Credential::VAULTS, ['all']))]],
+            ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        $vault = $d['vault'] ?? 'all';
 
-        $items = $this->binQuery($u)->get();
+        $items = $this->binQuery($u, $vault === 'all' ? null : $vault)->get();
         if ($items->isEmpty()) $this->reject('The Recycle Bin is already empty.', null, 409);
+        [$go, $kept] = $items->partition(fn ($c) => $this->binDenial($u, $c) === null);
+        if ($go->isEmpty()) $this->reject('Only the Branch Admin can delete Critical Vault items in the Recycle Bin.', null, 403);
 
-        $this->inTransaction('empty the Recycle Bin', function () use ($items, $u) {
-            foreach ($items as $c) $this->purgeOne($c, $u->id, 'Deleted permanently (Empty Bin)');
+        $this->inTransaction('empty the Recycle Bin', function () use ($go, $u) {
+            foreach ($go as $c) $this->purgeOne($c, $u->id, 'Deleted permanently (Empty Bin)');
         });
+        $by = fn ($set, $v) => $set->where('vault', $v)->count();
 
-        return response()->json(['status' => true, 'message' => $items->count() . ' items deleted permanently.'], 200);
+        return response()->json([
+            'status'  => true,
+            'message' => $go->count() . ' ' . Str::plural('item', $go->count()) . ' deleted permanently'
+                . ($kept->count() ? " · {$kept->count()} Critical Vault " . Str::plural('item', $kept->count()) . ' left for the Branch Admin' : '') . '.',
+            'data'    => [
+                'vault'   => $vault,
+                'deleted' => ['normal' => $by($go, 'normal'), 'critical' => $by($go, 'critical'), 'total' => $go->count()],
+                'skipped' => ['critical' => $kept->count(), 'reason' => $kept->count() ? 'Only the Branch Admin can delete Critical Vault items.' : null],
+            ],
+        ], 200);
+    }
+
+    /**
+     * GET /credvault/recycle-bin/retention — the Change period popup: the Normal Vault's period
+     * and its options; the Critical Vault's fixed period (no change offered).
+     */
+    public function binRetention(Request $request)
+    {
+        $u   = $this->tenantUser($request);
+        $pol = Policy::for($u->client_id);
+
+        return response()->json(['status' => true, 'data' => [
+            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->isAdmin($u)],
+            'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
+            'note'     => 'Items already older than the new period are deleted right away.',
+        ]], 200);
+    }
+
+    /**
+     * PUT /credvault/recycle-bin/retention { days, vault?: normal } — Change period, Normal Vault
+     * only, Vault Admins. A shorter period deletes the items already past it, right away.
+     */
+    public function updateBinRetention(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $d = $request->validate([
+            'days'  => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
+            'vault' => ['nullable', Rule::in(Credential::VAULTS)],
+        ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
+        if (($d['vault'] ?? 'normal') === 'critical') {
+            $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
+        }
+        if (!$this->isAdmin($u)) $this->reject('Only a Vault Admin can change the retention period.', null, 403);
+
+        $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
+
+        return response()->json(['status' => true, 'message' => $res['data']['changed'] ? "Retention set to {$d['days']} days for the Normal Vault"
+                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} items past the new period deleted" : '') . '.' : 'Nothing changed.',
+            'data' => ['vault' => 'normal', 'days' => (int) Policy::for($u->client_id)['bin_days'], 'purged' => $res['data']['purged'] ?? 0]], 200);
     }
 
     /* ═══════════════════════════ GENERATOR ═══════════════════════════ */
 
     /**
-     * POST /credvault/generate-password — characters or passphrase, from the
-     * server's CSPRNG, with the prototype's defaults: length and symbols from
-     * the policy, "avoid ambiguous" on, 8 words, one Numbers switch for both
-     * modes (add_number is accepted as its passphrase alias).
+     * POST /credvault/generate-password — the Generate Password dialog and the ↻ button in
+     * password fields, one method and one set of defaults for both (GP-R8):
+     *
+     *   mode chars   length 12–64 (20) · upper · lower · numbers · symbols (all on) · avoid_ambiguous (on)
+     *   mode phrase  words 4–10 (6) · capitalize (on) · add_number (on) · separator hyphen | dot | underscore | space
+     *                (or the character itself; a bare " " is trimmed by the request middleware, so send "space")
+     *
+     * The level is the D34 rule every CredVault password follows (Fair · Good · Strong),
+     * `bits` only a hint. A setting that cannot reach the policy minimum is refused (GP-V03),
+     * so nothing below the minimum is ever shown. Only the action is audit-logged, never the value.
      */
     public function generatePassword(Request $request)
     {
         $u   = $this->tenantUser($request);
         $pol = Policy::for($u->client_id);
+        $G   = PasswordGenerator::class;
         $d   = $request->validate([
             'mode'            => ['nullable', Rule::in(['chars', 'phrase'])],
-            'length'          => ['nullable', 'integer', 'min:8', 'max:64'],
+            'length'          => ['nullable', 'integer', 'between:' . implode(',', $G::LENGTH)],
             'upper'           => ['nullable', 'boolean'],
             'lower'           => ['nullable', 'boolean'],
             'numbers'         => ['nullable', 'boolean'],
             'symbols'         => ['nullable', 'boolean'],
             'avoid_ambiguous' => ['nullable', 'boolean'],
-            'words'           => ['nullable', 'integer', 'min:4', 'max:12'],
-            'separator'       => ['nullable', Rule::in(['-', '.', '_', ' '])],
+            'words'           => ['nullable', 'integer', 'between:' . implode(',', $G::WORDS)],
+            'separator'       => ['nullable', Rule::in(array_merge(array_keys($G::SEPARATORS), array_keys($G::SEPARATOR_NAMES)))],
             'capitalize'      => ['nullable', 'boolean'],
             'add_number'      => ['nullable', 'boolean'],
+        ], [
+            'length.between' => 'Length is ' . implode(' to ', $G::LENGTH) . ' characters.',
+            'words.between'  => 'A passphrase has ' . implode(' to ', $G::WORDS) . ' words.',
         ]);
+        $o   = array_merge($G::DEFAULTS, array_filter($d, fn ($v) => $v !== null));
+        $o['separator'] = $G::SEPARATOR_NAMES[$o['separator']] ?? $o['separator'];
+        $min = (int) $pol['min_strength'];
+        $minLabel = $G::label($min);
 
-        $addNum = $d['add_number'] ?? $d['numbers'] ?? true;
-        if (($d['mode'] ?? 'chars') === 'phrase') {
-            $words = array_map(fn () => self::WORDS[random_int(0, count(self::WORDS) - 1)], range(1, $d['words'] ?? 8));
-            if ($d['capitalize'] ?? true) $words = array_map('ucfirst', $words);
-            if ($addNum) { $i = random_int(0, count($words) - 1); $words[$i] .= random_int(0, 9); }
-            $pw   = implode($d['separator'] ?? '-', $words);
-            $bits = count($words) * log(count(self::WORDS), 2) + ($addNum ? 3.3 : 0);
+        if ($o['mode'] === 'phrase') {
+            $out = $G::passphrase($o, $min >= 3);
         } else {
-            $amb  = $d['avoid_ambiguous'] ?? true;   // drops I O · l o · 0 1, as gpGen()
-            $sets = array_filter([
-                ($d['upper'] ?? true)   ? ($amb ? 'ABCDEFGHJKLMNPQRSTUVWXYZ' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') : null,
-                ($d['lower'] ?? true)   ? ($amb ? 'abcdefghijkmnpqrstuvwxyz' : 'abcdefghijklmnopqrstuvwxyz') : null,
-                ($d['numbers'] ?? true) ? ($amb ? '23456789' : '0123456789') : null,
-                ($d['symbols'] ?? $pol['gen_symbols']) ? '!@#$%^&*-_=+?' : null,
-            ]);
-            if (!$sets) $this->reject('Keep at least one character set on.', 'upper');
-
-            $len  = $d['length'] ?? $pol['gen_length'];
-            $pool = implode('', $sets);
-            // One from every chosen set, the rest from the whole pool, then shuffled.
-            $chars = array_map(fn ($s) => $s[random_int(0, strlen($s) - 1)], array_values($sets));
-            while (count($chars) < $len) $chars[] = $pool[random_int(0, strlen($pool) - 1)];
-            for ($i = count($chars) - 1; $i > 0; $i--) { $j = random_int(0, $i); [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]]; }
-            $pw   = implode('', $chars);
-            $bits = $len * log(strlen(count_chars($pool, 3)), 2);
+            if (!$G::sets($o)) $this->reject('Keep at least one character set on', 'upper');                 // GP-V01
+            if ($G::charsLevel($o) < $min) $this->reject("This setting can’t reach the policy minimum ({$minLabel})", 'symbols'); // GP-V03
+            $out = $G::characters($o);
         }
-
-        $bits = (int) round($bits);
+        $level = Credential::strengthOf($out['password']);
+        $this->audit($u, 'generate', null, 'Password generated · ' . ($o['mode'] === 'phrase' ? "passphrase, {$o['words']} words" : "{$o['length']} characters"),
+            ['mode' => $o['mode']], 'Generate Password');
 
         return response()->json(['status' => true, 'data' => [
-            'password' => $pw,
-            'bits'     => $bits,
-            'level'    => $bits >= 100 ? 'Very strong' : ($bits >= 75 ? 'Strong' : ($bits >= 55 ? 'Good' : ($bits >= 40 ? 'Fair' : 'Weak'))),
-            'strength' => Credential::strengthOf($pw),
-            'meets_policy' => Credential::strengthOf($pw) >= $pol['min_strength'],
+            'password'       => $out['password'],
+            'level'          => $G::label($level),
+            'strength_level' => $level,
+            'bits'           => (int) round($out['bits']),
+            'meets_policy'   => $level >= $min,
+            'policy_minimum' => $minLabel,
+            'settings'       => $o['mode'] === 'phrase'
+                ? array_intersect_key($o, array_flip(['mode', 'words', 'capitalize', 'add_number', 'separator'])) + ['add_number_forced' => $min >= 3]
+                : array_intersect_key($o, array_flip(['mode', 'length', 'upper', 'lower', 'numbers', 'symbols', 'avoid_ambiguous'])),
+        ]], 200);
+    }
+
+    /**
+     * GET /credvault/generate-password/options — what the dialog offers: the defaults, the
+     * ranges, the separators, and which Characters settings the policy minimum disables.
+     */
+    public function generatorOptions(Request $request)
+    {
+        $u   = $this->tenantUser($request);
+        $min = (int) Policy::for($u->client_id)['min_strength'];
+        $G   = PasswordGenerator::class;
+
+        return response()->json(['status' => true, 'data' => [
+            'defaults'       => $G::DEFAULTS,
+            'length'         => ['min' => $G::LENGTH[0], 'max' => $G::LENGTH[1]],
+            'words'          => ['min' => $G::WORDS[0], 'max' => $G::WORDS[1], 'list' => 'EFF long list', 'list_size' => count($G::wordList())],
+            // Send `name` (hyphen · dot · underscore · space): a bare space is trimmed from requests.
+            'separators'     => collect($G::SEPARATORS)->map(fn ($l, $v) => ['name' => array_search($v, $G::SEPARATOR_NAMES, true), 'value' => $v, 'label' => $l])->values(),
+            'symbols'        => $G::SYMBOLS,
+            'ambiguous'      => $G::AMBIGUOUS,
+            'policy_minimum' => ['level' => $min, 'label' => $G::label($min)],
+            // Characters mode reaches Good or Strong only with letters, numbers and symbols all on.
+            'required_on_for_minimum' => $min >= 3 ? ['numbers', 'symbols', 'letters (upper or lower)'] : [],
+            'add_number_forced'       => $min >= 3,
+            'clipboard_clear_seconds' => 30,
         ]], 200);
     }
 
@@ -2541,7 +2953,7 @@ class CredVaultController extends Controller
         $isPw    = Credential::secretIsPassword($type);
         $changed = $creating || ($sec && array_key_exists($sec, $inputFields) && $secret !== $c->secret);
         $strength = $isPw ? Credential::strengthOf($secret) : 0;
-        if ($isPw && $secret !== null && $changed && $strength < $pol['min_strength']) {
+        if ($isPw && $secret !== null && $changed && $strength < $pol['min_strength'] && !$this->importing) {
             $this->reject('Policy requires a ' . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger password — use the generate button.', "fields.{$sec}");
         }
 
@@ -2660,7 +3072,8 @@ class CredVaultController extends Controller
         }, $stored);
 
         [$c, $resolved, $open] = $result;
-        $body = $this->detail($c->fresh(['owner:id,name', 'department:id,name']), $u, [self::RANK_FULL, $c->owner_id === $u->id ? 'owner' : 'admin']);
+        $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
+        $body  = $this->detail($fresh, $u, $this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, $c->owner_id === $u->id ? 'owner' : 'admin']);
         if (!$creating) {
             // The Fix flow's toast: "N health issues resolved" or "Saved — the issue is still open".
             $body['health'] = [
@@ -2739,7 +3152,8 @@ class CredVaultController extends Controller
             if ($f['kind'] === 'file') {
                 $has = $request->hasFile("files.{$k}") || collect($c?->attachments ?? [])->contains('key', $k);
                 $removing = in_array($k, (array) $request->input('remove_attachments', []), true) && !$request->hasFile("files.{$k}");
-                if ($f['required'] && (!$has || $removing)) $errors["files.{$k}"][] = "Upload the {$f['label']}.";
+                // An import cannot carry a file: it is attached in the form afterwards.
+                if ($f['required'] && (!$has || $removing) && !$this->importing) $errors["files.{$k}"][] = "Upload the {$f['label']}.";
                 continue;
             }
 
@@ -2989,7 +3403,7 @@ class CredVaultController extends Controller
         $all = $this->visibleQuery($u)->select(self::LIGHT_COLUMNS)->with('owner:id,name')->get();
         $acc = $this->accessMap($all, $u);
 
-        return $all->filter(fn ($c) => in_array($acc[$c->id][1] ?? null, ['owner', 'admin', 'hod', 'team'], true))
+        return $all->filter(fn ($c) => in_array($acc[$c->id][1] ?? null, ['owner', 'admin', 'branch', 'manager', 'hod', 'team'], true))
             ->each(fn ($c) => $c->setAttribute('_rank', $acc[$c->id][0]))->values();
     }
 
@@ -3034,7 +3448,7 @@ class CredVaultController extends Controller
             'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type,
             'type_label' => Credential::typeDef($c->type)['label'] ?? $c->type, 'category_group' => $c->category_group,
             'url' => $c->url, 'risk' => $c->risk, 'scope' => $c->scope, 'owner' => $c->owner?->name ?? '',
-            'strength' => $c->strength, 'strength_pct' => $c->strength * 25, 'has_password' => $c->has_password,
+            'strength' => $c->strength, 'strength_label' => (Credential::STRENGTH_LABELS[$c->strength] ?? '') ?: null, 'has_password' => $c->has_password,
         ];
     }
 
@@ -3063,11 +3477,13 @@ class CredVaultController extends Controller
         $out  = [];
 
         if ($c->has_password && $c->strength < $pol['min_strength']) {
-            $out[] = ['type' => 'weak', 'severity' => ($crit || $c->strength <= 1) ? 'critical' : 'high',
-                'issue' => $c->strength <= 1 ? 'Weak password' : 'Password strength only fair',
-                'detail' => 'Strength ' . (Credential::STRENGTH_LABELS[$c->strength] ?: 'None') . ' · ' . ($c->strength * 25) . '/100',
-                'details' => ['strength' => $c->strength, 'strength_label' => Credential::STRENGTH_LABELS[$c->strength] ?? '', 'strength_pct' => $c->strength * 25],
-                'action' => 'Replace with a 16+ character generated password'];
+            // D34: Fair counts as weak. The level is named, never scored (D5).
+            $label = Credential::STRENGTH_LABELS[$c->strength] ?? '';
+            $out[] = ['type' => 'weak', 'severity' => ($crit || $c->strength <= 2) ? 'critical' : 'high',
+                'issue' => $c->strength <= 2 ? 'Weak password' : 'Password below the policy minimum',
+                'detail' => "Strength {$label} — the policy needs " . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger',
+                'details' => ['strength' => $c->strength, 'strength_label' => $label, 'policy_minimum' => Credential::STRENGTH_LABELS[$pol['min_strength']]],
+                'action' => 'Replace with a generated password (20 characters)'];
         }
         if ($reusedWith) {
             $out[] = ['type' => 'reused', 'severity' => $crit ? 'critical' : 'high', 'issue' => 'Password reused',
@@ -3193,24 +3609,60 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
 
-    /** What the user may see and restore in the bin: theirs, what they binned, and team items for a Vault Admin. */
-    protected function binQuery(User $u): Builder
+    /**
+     * What the user sees in the bin: theirs, what they binned, team items for a Vault Admin,
+     * and — for a Branch Admin — the branch's team items and every Critical Vault item of the
+     * branch (a Branch Admin is the one who restores or deletes those). $vault narrows it.
+     */
+    protected function binQuery(User $u, ?string $vault = null): Builder
     {
-        $admin = $this->isAdmin($u);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
 
-        return Credential::onlyTrashed()->where('client_id', $u->client_id)->where(function ($w) use ($u, $admin) {
-            $w->where('owner_id', $u->id)->orWhere('deleted_by', $u->id);
-            if ($admin) $w->orWhere('scope', 'team');
-        });
+        return Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id)
+            ->when($vault, fn ($q) => $q->where('vault', $vault))
+            ->where(function ($w) use ($u, $admin, $branch) {
+                $w->where('owner_id', $u->id)->orWhere('deleted_by', $u->id);
+                if ($admin) $w->orWhere('scope', 'team');
+                if ($branch) $w->orWhere(fn ($b) => $this->inBranch($b, $u->client_id, $branch)
+                    ->where(fn ($s) => $s->where('scope', 'team')->orWhere('vault', 'critical')));
+            });
     }
 
-    /** Purges everything past retention. Returns how many went. */
+    /** A credential of the branch: filed under it, or owned by someone in it. */
+    protected function inBranch(Builder $q, int $clientId, int $branch): Builder
+    {
+        return $q->where(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)
+            ->orWhereIn('owner_id', User::where('client_id', $clientId)->where('branch_id', $branch)->select('id')));
+    }
+
+    /**
+     * Whether the user may restore or permanently delete a binned item. A Critical Vault item
+     * is the Branch Admin's alone — of the branch it belongs to; anything else the user sees
+     * in the bin (binQuery) is theirs to restore. null = allowed, else the reason.
+     */
+    protected function binDenial(User $u, Credential $c): ?string
+    {
+        if ($c->vault !== 'critical') return null;
+        $branch = $this->adminBranchOf($u);
+        $ownerBranch = $branch ? User::whereKey($c->owner_id)->value('branch_id') : null;
+
+        return $branch && ((int) $c->branch_id === $branch || (int) $ownerBranch === $branch)
+            ? null : 'Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin.';
+    }
+
+    /** Purges everything past retention — each vault by its own period. Returns how many went. */
     protected function purgeExpired(int $clientId, array $pol, ?int $actorId = null): int
     {
-        $old = Credential::onlyTrashed()->where('client_id', $clientId)->where('deleted_at', '<', now()->subDays($pol['bin_days']))->get();
-        foreach ($old as $c) $this->purgeOne($c, $actorId, "Deleted automatically after {$pol['bin_days']} days in the bin");
+        $n = 0;
+        foreach (Credential::VAULTS as $vault) {
+            $days = Policy::binDays($pol, $vault);
+            $old  = Credential::onlyTrashed()->where('client_id', $clientId)->where('vault', $vault)->where('deleted_at', '<', now()->subDays($days))->get();
+            foreach ($old as $c) $this->purgeOne($c, $actorId, "Deleted automatically after {$days} days in the bin");
+            $n += $old->count();
+        }
 
-        return $old->count();
+        return $n;
     }
 
     protected function purgeOne(Credential $c, ?int $actorId, string $detail): void
@@ -3277,7 +3729,7 @@ class CredVaultController extends Controller
         if ($withNotes)   $cols[] = 'Notes';
 
         $withheld = 0;
-        $via = ['owner' => 'Personal', 'admin' => 'Team', 'hod' => 'Team', 'team' => 'Team', 'share' => 'Shared with you'];
+        $via = ['owner' => 'Personal', 'admin' => 'Team', 'branch' => 'Team', 'manager' => 'Team', 'hod' => 'Team', 'team' => 'Team', 'share' => 'Shared with you'];
         $rows = $creds->values()->map(function ($c, $i) use ($withSecrets, $withNotes, &$withheld, $via) {
             $r = [
                 'Sr. No' => $i + 1, 'Credential ID' => $c->code, 'Created On' => $c->created_at?->format('d/m/Y'),
@@ -3336,6 +3788,36 @@ class CredVaultController extends Controller
         return [$keys, $rows, $withheld];
     }
 
+    /**
+     * The Excel backup's type tabs — one per type in the backup, laid out exactly as that type's
+     * import sheet, so a tab can be imported back. Secret fields are written only with
+     * passwords included, and never for a protected (locked critical) credential.
+     */
+    protected function backupTypeSheets(Collection $creds, bool $withSecrets): array
+    {
+        $sheets = [];
+        foreach ($creds->groupBy('type') as $type => $set) {
+            if (!Credential::typeDef($type)) continue;
+            $secretKeys = collect(Credential::typeDef($type)['fields'])->where('secret', true)->pluck('key')->all();
+            $rows = $set->map(function ($c) use ($withSecrets, $secretKeys) {
+                $open = $withSecrets && !$c->isProtected();
+                $f = $c->fields ?? [];
+                $r = ['credential_name' => $c->name, 'twofa' => $c->twofa === 'yes' ? 'Yes' : ($c->twofa === 'no' ? 'No' : ''),
+                    'reg_email' => $f['_reg_email'] ?? '', 'reg_phone' => $f['_reg_phone'] ?? '', 'recovery_key' => $open ? ($f['_recovery_key'] ?? '') : '',
+                    'risk' => $c->risk === 'critical' ? 'High' : ucfirst($c->risk), 'rotation_days' => (string) ($c->rotation_days ?? ''),
+                    'notes' => $c->isProtected() ? '' : ($c->notes ?? '')];
+                foreach ($f as $k => $v) {
+                    if (str_starts_with($k, '_')) continue;
+                    $r[$k] = in_array($k, $secretKeys, true) && !$open ? '' : (is_bool($v) ? ($v ? 'Yes' : 'No') : (string) $v);
+                }
+                return $r;
+            })->all();
+            $sheets[] = ImportTemplate::sheet($type, $rows);
+        }
+
+        return $sheets;
+    }
+
     protected function transferHistory(Request $request, string $kind)
     {
         $u = $this->tenantUser($request);
@@ -3346,11 +3828,13 @@ class CredVaultController extends Controller
             ->with('user:id,name')->orderByDesc('id')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $this->userInfo(collect($page->items())->pluck('user_id')->unique()->all());
+        $from = ($page->currentPage() - 1) * $page->perPage();
 
         return response()->json([
-            'status' => true,
-            'data'   => collect($page->items())->map(fn ($t) => $this->transferRow($t, $u))->values(),
-            'meta'   => $this->pageMeta($page),
+            'status'  => true,
+            'data'    => collect($page->items())->values()->map(fn ($t, $i) => ['sr_no' => $from + $i + 1] + $this->transferRow($t, $u))->values(),
+            'records' => $page->total(),
+            'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
@@ -3462,7 +3946,7 @@ class CredVaultController extends Controller
             'copy'   => $acc[0] >= self::RANK_COPY,
             'edit'   => $acc[0] >= self::RANK_FULL,
             'share'  => $acc[0] >= self::RANK_FULL,
-            'delete' => $acc[0] >= self::RANK_FULL && $acc[1] !== 'share' && ($c->risk !== 'critical' || in_array($acc[1], ['owner', 'admin'], true)),
+            'delete' => $acc[0] >= self::RANK_FULL && $acc[1] !== 'share' && ($c->risk !== 'critical' || in_array($acc[1], ['owner', 'admin', 'branch'], true)),
             // "Remove from your vault" — a credential that reached you by a share.
             'remove' => $acc[1] === 'share',
             'edit_protection' => in_array($acc[1], ['owner', 'admin'], true),
@@ -3810,15 +4294,26 @@ class CredVaultController extends Controller
 
     protected function transferRow(Transfer $t, ?User $u = null): array
     {
+        $scopeLabel = Transfer::SCOPE_LABELS[$t->scope] ?? $t->scope;
+        $kb = $t->size_bytes !== null ? max(1, (int) round($t->size_bytes / 1024)) . ' KB' : null;
+
         return [
             'id' => $t->id, 'code' => $t->code, 'kind' => $t->kind,
-            'scope' => $t->scope, 'scope_label' => Transfer::SCOPE_LABELS[$t->scope] ?? $t->scope,
+            'scope' => $t->scope, 'scope_label' => $scopeLabel,
             'format' => $t->format, 'format_label' => Transfer::FORMAT_LABELS[$t->format] ?? strtoupper((string) $t->format),
-            'file_name' => $t->file_name, 'source' => $t->source, 'items' => $t->items, 'skipped' => $t->skipped,
-            'weak' => $t->weak, 'duplicates' => $t->duplicates, 'size_bytes' => $t->size_bytes,
-            'include_passwords' => $t->include_passwords, 'locked' => $t->locked, 'status' => $t->status,
+            'file_name' => $t->file_name, 'source' => $t->source,
+            // The line under the file name: "Bitwarden · into My Vault".
+            'source_line' => $t->kind === 'import' ? trim(($t->source ?? '') . ' · into ' . $scopeLabel, ' ·') : null,
+            'type' => $t->credential_type, 'type_label' => $t->credential_type ? (Credential::typeDef($t->credential_type)['label'] ?? $t->credential_type) : null,
+            'items' => $t->items, 'skipped' => $t->skipped, 'weak' => $t->weak, 'duplicates' => $t->duplicates, 'failed' => (int) $t->failed,
+            'size_bytes' => $t->size_bytes, 'size_label' => $t->status === 'failed' && !$t->size_bytes ? null : $kb,
+            'include_passwords' => $t->include_passwords, 'locked' => $t->locked,
+            'protection' => $t->kind === 'backup' ? ($t->locked ? 'Password locked' : 'Not locked') : null,
+            'status' => $t->status,
+            'status_label' => $t->status === 'failed' ? 'Failed' : ['backup' => 'Downloaded', 'import' => 'Imported', 'export' => 'Downloaded'][$t->kind] ?? 'Done',
             'failure_reason' => $t->failure_reason,
             'by' => $t->user?->name, 'by_id' => $t->user_id, 'by_me' => $u ? $t->user_id === $u->id : null,
+            'by_display' => $u && $t->user_id === $u->id ? 'You' : $t->user?->name, 'by_initials' => $this->initials($t->user?->name),
             'by_role' => ($this->userInfo([$t->user_id])[$t->user_id]['role_line'] ?? null),
             'at' => $t->created_at?->toIso8601String(),
         ];
@@ -3865,30 +4360,110 @@ class CredVaultController extends Controller
 
     /* ═══════════════════════════ ACCESS MODEL ═══════════════════════════ */
 
-    /** Every credential the user can reach by any route — the base of each list. */
+    /**
+     * Every credential the user can reach by any route — the base of each list.
+     *
+     * Team credentials, by who is asking:
+     *   Vault Admin (client admin)  every team credential;
+     *   Branch Admin (branch user)  the branch's — owned by its people below them;
+     *   manager                     the ones owned by their downline (HOD → TL → Employee → Intern);
+     *   HOD                         their department's (see accessMap for the rights).
+     * A peer outside the reporting line sees none of them — only a share reaches them.
+     */
     protected function visibleQuery(User $u): Builder
     {
-        $heads   = $this->headedDepts($u);
-        $admin   = $this->isAdmin($u);
-        $subtree = $this->reportsSubtree($u);
+        $heads  = $this->headedDepts($u);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
+        $down   = $this->downlineIds($u);
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $subtree, $admin) {
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($admin) {
                 $w->orWhere('scope', 'team');
-            } elseif ($u->user_type === 'branch_user' && $u->branch_id) {
-                // The branch admin sits at the top of the Team Vault hierarchy —
-                // every team credential in their branch is theirs to see.
-                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where('branch_id', $u->branch_id));
-            } elseif ($heads || $subtree) {
-                // Reporting line: a HOD sees their department, anyone else sees the
-                // team credentials owned by the people under them (reports, recursively).
-                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where(function ($x) use ($heads, $subtree) {
-                    if ($heads)   $x->orWhereIn('department_id', $heads);
-                    if ($subtree) $x->orWhereIn('owner_id', $subtree);
-                }));
+                return;
             }
+            if ($heads) $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('department_id', $heads));
+            if ($branch) {
+                $below = User::where('client_id', $u->client_id)->whereNotIn('user_type', self::ADMIN_TYPES);
+                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where(fn ($b) => $b
+                    ->whereIn('owner_id', (clone $below)->where('branch_id', $branch)->select('id'))
+                    ->orWhere(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)->whereIn('owner_id', (clone $below)->select('id')))));
+            }
+            if ($down) $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('owner_id', $down));
         });
+    }
+
+    /** The logins that sit above every employee: no one below them gets rights over what they own. */
+    protected const ADMIN_TYPES = ['super_admin', 'client_admin', 'branch_user'];
+
+    /** A level's place, top first — a smaller number is higher up. */
+    protected const LEVEL_ORDER = ['admin' => 0, 'hod' => 1, 'tl' => 2, 'exec' => 3, 'emp' => 4, 'intern' => 5];
+
+    /** The branch a Branch Admin (branch user) runs, else null. */
+    protected function adminBranchOf(User $u): ?int
+    {
+        return $u->isBranchUser() && $u->branch_id ? (int) $u->branch_id : null;
+    }
+
+    /**
+     * The logins below the user in the reporting chain, at any depth (HOD → TL →
+     * Employee → Intern), never the user. Read from the HR employee records by either
+     * link HR may have used (reporting_manager_id / reporting_manager_user_id); a loop
+     * in the chain stops where it repeats.
+     */
+    protected function downlineIds(User $u): array
+    {
+        return $this->memo("down:{$u->id}", function () use ($u) {
+            $me = $this->employeeOf($u);
+            [$children, $userOf, $underUser] = $this->reportingTree($u->client_id);
+
+            // Start from the user's employee record and from links that name the login itself.
+            $out = []; $seen = $me ? [$me->id => true] : []; $queue = [];
+            foreach (array_merge($me ? ($children[$me->id] ?? []) : [], $underUser[$u->id] ?? []) as $kid) {
+                if (isset($seen[$kid])) continue;
+                $seen[$kid] = true; $queue[] = $kid;
+                if (($uid = $userOf[$kid] ?? null) && $uid !== $u->id) $out[$uid] = $uid;
+            }
+            while ($queue) {
+                $e = array_shift($queue);
+                foreach (array_merge($children[$e] ?? [], isset($userOf[$e]) ? ($underUser[$userOf[$e]] ?? []) : []) as $kid) {
+                    if (isset($seen[$kid])) continue;
+                    $seen[$kid] = true;
+                    $queue[] = $kid;
+                    if (($uid = $userOf[$kid] ?? null) && $uid !== $u->id) $out[$uid] = $uid;
+                }
+            }
+            return array_values($out);
+        });
+    }
+
+    /** [manager employee id => [employee ids]], [employee id => login id], [manager login id => [employee ids]] for the tenant. */
+    protected function reportingTree(int $clientId): array
+    {
+        return $this->memo("tree:{$clientId}", function () use ($clientId) {
+            $emps   = Employee::where('client_id', $clientId)->get(['id', 'user_id', 'emp_code', 'reporting_manager_id', 'reporting_manager_user_id']);
+            $byCode = User::where('client_id', $clientId)->whereNotNull('employee_code')->pluck('id', 'employee_code');
+            $userOf = [];
+            foreach ($emps as $e) {
+                $uid = $e->user_id ?: ($e->emp_code ? ($byCode[$e->emp_code] ?? null) : null);
+                if ($uid) $userOf[$e->id] = (int) $uid;
+            }
+            $children = $underUser = [];
+            foreach ($emps as $e) {
+                if ($e->reporting_manager_id && (int) $e->reporting_manager_id !== $e->id) $children[(int) $e->reporting_manager_id][] = $e->id;
+                elseif ($e->reporting_manager_user_id) $underUser[(int) $e->reporting_manager_user_id][] = $e->id;
+            }
+            return [$children, $userOf, $underUser];
+        });
+    }
+
+    /** A user's level: Admin for the admin logins, else from the HR designation. */
+    protected function levelOfUser(?User $x): string
+    {
+        if (!$x) return 'emp';
+        if (in_array($x->user_type, self::ADMIN_TYPES, true)) return 'admin';
+        return $this->levelOf($this->userInfo([$x->id])[$x->id]['designation'] ?? $x->designation);
     }
 
     /** Subquery: ids of credentials with a live share to the user or the user's team. */
@@ -3902,15 +4477,30 @@ class CredVaultController extends Controller
         })->select('credential_id');
     }
 
-    /** [id => [rank, via]] for a batch, in one share query. via: owner | admin | hod | team | share */
+    /**
+     * [id => [rank, via]] for a batch, in one share query.
+     * via: owner | admin | branch | manager | hod | team | share
+     *
+     * Full Access (edit, share, delete) on a team credential goes to the Vault Admin, the
+     * Branch Admin of the owner's branch, a manager the owner reports to (at any depth) and
+     * the HOD of its department — the last three only over people below them, never over
+     * someone above or at their level (a HOD keeps view-and-copy on those in the department).
+     */
     protected function accessMap(Collection $creds, User $u): array
     {
         if ($creds->isEmpty()) return [];
 
-        $dept    = $this->deptOf($u);
-        $heads   = $this->headedDepts($u);
-        $admin   = $this->isAdmin($u);
-        $subtree = $this->reportsSubtree($u);
+        $dept   = $this->deptOf($u);
+        $heads  = $this->headedDepts($u);
+        $admin  = $this->isAdmin($u);
+        $branch = $this->adminBranchOf($u);
+        $down   = array_flip($this->downlineIds($u));
+        // Heading a department makes one an HOD whatever the HR designation says.
+        $myRank = min(self::LEVEL_ORDER[$this->levelOfUser($u)], $heads ? self::LEVEL_ORDER['hod'] : PHP_INT_MAX);
+        $owners = $creds->where('scope', 'team')->isNotEmpty() && !$admin
+            ? User::whereIn('id', $creds->where('scope', 'team')->pluck('owner_id')->unique()->all())
+                ->get(['id', 'name', 'user_type', 'branch_id', 'designation', 'department_id', 'employee_code', 'client_id'])->keyBy('id')
+            : collect();
         $shareRank = [];
         CredentialShare::live()->whereIn('credential_id', $creds->pluck('id')->all())
             ->where(function ($w) use ($u, $dept) {
@@ -3926,12 +4516,13 @@ class CredVaultController extends Controller
             if ($c->owner_id === $u->id) { $out[$c->id] = [self::RANK_FULL, 'owner']; continue; }
             $best = null;
             if ($c->scope === 'team') {
+                $owner = $owners->get($c->owner_id);
+                $below = $owner && self::LEVEL_ORDER[$this->levelOfUser($owner)] > $myRank;
                 if ($admin) $best = [self::RANK_FULL, 'admin'];
-                // The branch admin manages every team credential in their branch.
-                elseif ($u->user_type === 'branch_user' && $u->branch_id && (int) $c->branch_id === (int) $u->branch_id) $best = [self::RANK_FULL, 'admin'];
-                elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = [self::RANK_FULL, 'hod'];
-                // A manager manages the team credentials of everyone under them — view, edit, share, delete.
-                elseif (in_array((int) $c->owner_id, $subtree, true)) $best = [self::RANK_FULL, 'team'];
+                elseif ($branch && $owner && !in_array($owner->user_type, self::ADMIN_TYPES, true)
+                    && ((int) $owner->branch_id === $branch || (int) $c->branch_id === $branch)) $best = [self::RANK_FULL, 'branch'];
+                elseif (isset($down[$c->owner_id])) $best = [self::RANK_FULL, 'manager'];
+                elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = $below ? [self::RANK_FULL, 'hod'] : [self::RANK_COPY, 'team'];
             }
             if (isset($shareRank[$c->id]) && (!$best || $shareRank[$c->id] > $best[0])) $best = [$shareRank[$c->id], 'share'];
             if ($best) $out[$c->id] = $best;
@@ -4023,33 +4614,7 @@ class CredVaultController extends Controller
      */
     protected function reportsSubtree(User $u): array
     {
-        return $this->memo("subtree:{$u->id}", function () use ($u) {
-            $emp          = $this->employeeOf($u);
-            $frontierEmp  = $emp ? [$emp->id] : [];
-            $frontierUser = [$u->id];
-            $seenEmp      = [];
-            $userIds      = [];
-
-            for ($depth = 0; ($frontierEmp || $frontierUser) && $depth < 50; $depth++) {
-                $children = Employee::where('client_id', $u->client_id)
-                    ->where(function ($w) use ($frontierEmp, $frontierUser) {
-                        if ($frontierEmp)  $w->orWhereIn('reporting_manager_id', $frontierEmp);
-                        if ($frontierUser) $w->orWhereIn('reporting_manager_user_id', $frontierUser);
-                    })
-                    ->when($seenEmp, fn ($q) => $q->whereNotIn('id', $seenEmp))
-                    ->get(['id', 'user_id']);
-                if ($children->isEmpty()) break;
-
-                $frontierEmp = $frontierUser = [];
-                foreach ($children as $ch) {
-                    $seenEmp[]     = $ch->id;
-                    $frontierEmp[] = $ch->id;
-                    if ($ch->user_id) { $frontierUser[] = (int) $ch->user_id; $userIds[] = (int) $ch->user_id; }
-                }
-            }
-
-            return array_values(array_unique($userIds));
-        });
+        return $this->downlineIds($u);
     }
 
     protected function deptOf(User $u): ?int
@@ -4152,7 +4717,7 @@ class CredVaultController extends Controller
 
         $mayUse = $unchanged
             || $this->isAdmin($u)
-            || ($u->user_type === 'branch_user' && $u->branch_id)   // a branch admin manages their whole branch
+            || $this->adminBranchOf($u)   // a branch admin manages their whole branch
             || $deptId === $this->deptOf($u)
             || in_array($deptId, $this->headedDepts($u), true);
         if (!$mayUse) $this->reject('You can only add team credentials to your own department.', 'department_id', 403);
@@ -4456,18 +5021,4 @@ class CredVaultController extends Controller
             $this->reject("Could not {$action}. Nothing was saved — please try again.", null, 500);
         }
     }
-
-    /** Passphrase words — the prototype's GP_WORDS. 100 of them: log2(100) ≈ 6.6 bits a word. */
-    protected const WORDS = [
-        'amber', 'anchor', 'arctic', 'atlas', 'autumn', 'bamboo', 'beacon', 'birch', 'blossom', 'breeze',
-        'bronze', 'canyon', 'carbon', 'cedar', 'cobalt', 'comet', 'copper', 'coral', 'cosmic', 'crimson',
-        'crystal', 'delta', 'desert', 'dragon', 'eagle', 'ember', 'falcon', 'fern', 'flint', 'forest',
-        'frost', 'galaxy', 'garnet', 'glacier', 'granite', 'harbor', 'hazel', 'horizon', 'indigo', 'iron',
-        'island', 'jade', 'jasper', 'jungle', 'lagoon', 'lantern', 'lava', 'lemon', 'lunar', 'maple',
-        'marble', 'meadow', 'meteor', 'mint', 'monsoon', 'nebula', 'nickel', 'noble', 'oasis', 'ocean',
-        'olive', 'onyx', 'opal', 'orbit', 'orchid', 'pebble', 'pepper', 'phoenix', 'pine', 'planet',
-        'plasma', 'polar', 'prairie', 'quartz', 'radar', 'raven', 'reef', 'river', 'rocket', 'ruby',
-        'saffron', 'sapphire', 'shadow', 'silver', 'solar', 'spruce', 'storm', 'summit', 'tango', 'thunder',
-        'tiger', 'timber', 'topaz', 'tundra', 'velvet', 'violet', 'walnut', 'willow', 'winter', 'zephyr',
-    ];
 }
