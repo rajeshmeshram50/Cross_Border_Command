@@ -1,0 +1,1854 @@
+{
+    "info": {
+        "name": "Import & Recovery",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "CredVault › Import & Recovery: the sample file (25 tabs, Excel and CSV), import by category with the form's validation and the failed list, Imported Credentials History, Download backup (Excel / CSV, My / Team Vault, passwords, password lock) and Downloaded Backup History.\n\nBEFORE YOU START\nFill baseUrl, email/password and adminEmail/adminPassword. The upload requests pick their files from docs/postman-samples (credvault-import-sample.xlsx, credvault-import-login.csv, credvault-import-card-with-errors.csv) — if your project is elsewhere, re-select them in Body → form-data. Run the folders in order.\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Import & Recovery."
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "00 · Setup — sign in",
+            "description": "email / password — the person who imports and downloads backups (Credentials Vault → View); `password` is also the account password for a backup with readable passwords.\nadminEmail / adminPassword — a client admin (sees everyone's history, backs up the Team Vault).",
+            "item": [
+                {
+                    "name": "Login — employee",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Vault Admin (client admin)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('adminToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('adminToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 · Download sample file — 25 tabs, Excel and CSV",
+            "description": "GET /imports/types — the 25 categories of the import screen: each with its sheet (tab) name, its columns (required, hint, the allowed values) and the files attached after the import.\nGET /imports/sample?format=xlsx|csv&type= — the sample: one sheet per category, laid out as that category's form, with two example rows that pass every check.\n• xlsx → one workbook, 25 tabs (Login … Outdoor License) + How to fill\n• xlsx&type=login → that tab + How to fill\n• csv&type=login → that sheet as a CSV\n• csv → a .zip with the 25 CSVs (a CSV has no tabs) + how-to-fill.csv\n• layout=simple → the older any-type sample (name, url, username, password, category, notes).\nPostman: Send and Download to save the file.",
+            "item": [
+                {
+                    "name": "Categories — the 25 types, their columns",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/types",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "types"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('25 categories', () => pm.expect(b.data.length).to.eql(25));",
+                                    "pm.test('each with columns', () => b.data.forEach(t => pm.expect(t.columns.length).to.be.above(1)));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — Excel, all 25 tabs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=xlsx",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "xlsx"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: credvault-import-sample.xlsx', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('credvault-import-sample.xlsx'));",
+                                    "pm.test('26 sheets', () => pm.expect(pm.response.headers.get('X-CredVault-Sheets')).to.eql('26'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — Excel, one category (Login)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=xlsx&type=login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "xlsx"
+                                },
+                                {
+                                    "key": "type",
+                                    "value": "login"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: credvault-import-sample-login.xlsx', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('credvault-import-sample-login.xlsx'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — CSV, one category (Credit Card)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=csv&type=card",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "csv"
+                                },
+                                {
+                                    "key": "type",
+                                    "value": "card"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: credvault-import-sample-card.csv', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('credvault-import-sample-card.csv'));",
+                                    "pm.test('the Card header', () => pm.expect(pm.response.text()).to.include('Card Number *'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — CSV, all 25 (zip)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=csv",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "csv"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: credvault-import-sample-csv.zip', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('credvault-import-sample-csv.zip'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — older any-type layout",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=csv&layout=simple",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "csv"
+                                },
+                                {
+                                    "key": "layout",
+                                    "value": "simple"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('name,url,username,password', () => pm.expect(pm.response.text()).to.include('name,url,username,password'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Sample — unknown category (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/sample?format=xlsx&type=car",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "sample"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "xlsx"
+                                },
+                                {
+                                    "key": "type",
+                                    "value": "car"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "02 · Import by category — preview, failed list, import",
+            "description": "POST /imports/preview (form-data: type, file) — choose the category, upload its sheet. Every row is checked as that category's Add form checks it (required fields, web address, email, phone, dates, the select lists, card number + expiry, IFSC, CVV / PIN, seed phrase, setup key, lengths, name, risk, rotation). Nothing is saved yet.\nResponse: token · stats {rows, valid, failed, duplicates, weak, selected} · rows[] (row = the sheet row, status valid | failed, errors [{field, label, message}], flags dup | dupfile | weak, notes, selected) · failed[] — the failed list.\nAn .xlsx is read at the tab named for the category — so the 25-tab sample (or an Excel backup) can be uploaded as it is.\n\nPOST /imports { token, rows: [index…], duplicates: skip | copy, scope?: personal | team, department_id? } — imports the picked valid rows through the Add form. Response: the history row + failed_rows + imported_codes. The token works once.",
+            "item": [
+                {
+                    "name": "Preview — Login, from the 25-tab Excel sample",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "login",
+                                    "type": "text",
+                                    "description": "One of the 25 categories"
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-sample.xlsx",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.token; if (v !== undefined && v !== null) pm.collectionVariables.set('importToken', String(v)); } catch (e) {}",
+                                    "pm.test('read the Login tab', () => pm.expect(b.data.sheet).to.eql('Login'));",
+                                    "pm.test('2 valid rows', () => pm.expect(b.data.stats.valid).to.eql(2));",
+                                    "pm.test('no failed rows', () => pm.expect(b.data.failed.length).to.eql(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Import — the 2 Login rows into My Vault",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{importToken}}\",\n    \"rows\": [\n        0,\n        1\n    ],\n    \"duplicates\": \"skip\",\n    \"scope\": \"personal\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('importId', String(v)); } catch (e) {}",
+                                    "pm.test('2 imported', () => pm.expect(b.data.items).to.eql(2));",
+                                    "pm.test('IM- code', () => pm.expect(b.data.code).to.match(/^IM-/));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Import — the same token again (410)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{importToken}}\",\n    \"rows\": [\n        0,\n        1\n    ],\n    \"duplicates\": \"skip\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 410', () => pm.response.to.have.status(410));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — Credit Card CSV with mistakes (the failed list)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "card",
+                                    "type": "text",
+                                    "description": ""
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-card-with-errors.csv",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.token; if (v !== undefined && v !== null) pm.collectionVariables.set('importToken', String(v)); } catch (e) {}",
+                                    "pm.test('1 valid, 4 failed', () => { pm.expect(b.data.stats.valid).to.eql(1); pm.expect(b.data.stats.failed).to.eql(4); });",
+                                    "pm.test('failed rows carry the sheet row and reasons', () => b.data.failed.forEach(f => { pm.expect(f.row).to.be.above(1); pm.expect(f.errors.length).to.be.above(0); }));",
+                                    "pm.test('no card number in the response', () => pm.expect(JSON.stringify(b)).to.not.include('4111111111111111'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Import — the valid card; the failed list comes back",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{importToken}}\",\n    \"rows\": [\n        0\n    ],\n    \"duplicates\": \"skip\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.id; if (v !== undefined && v !== null) pm.collectionVariables.set('importFailedId', String(v)); } catch (e) {}",
+                                    "pm.test('1 imported, 4 failed', () => { pm.expect(b.data.items).to.eql(1); pm.expect(b.data.failed).to.eql(4); pm.expect(b.data.failed_rows.length).to.eql(4); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — Login CSV",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "login",
+                                    "type": "text",
+                                    "description": ""
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-login.csv",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.token; if (v !== undefined && v !== null) pm.collectionVariables.set('importToken', String(v)); } catch (e) {}",
+                                    "pm.test('2 valid', () => pm.expect(b.data.stats.valid).to.eql(2));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Import — Login CSV into the Team Vault",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{importToken}}\",\n    \"rows\": [\n        0,\n        1\n    ],\n    \"duplicates\": \"skip\",\n    \"scope\": \"team\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "scope team files the rows under your department (or department_id for a Vault Admin / Branch Admin)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('into the Team Vault', () => pm.expect(b.data.scope_label).to.eql('Team Vault'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — the Login sheet again: duplicates",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "login",
+                                    "type": "text",
+                                    "description": ""
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-sample.xlsx",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data.token; if (v !== undefined && v !== null) pm.collectionVariables.set('importToken', String(v)); } catch (e) {}",
+                                    "pm.test('both already in My Vault', () => pm.expect(b.data.stats.duplicates).to.eql(2));",
+                                    "pm.test('not ticked', () => pm.expect(b.data.stats.selected).to.eql(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Import — duplicates as copies (\"… (imported)\")",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"token\": \"{{importToken}}\",\n    \"rows\": [\n        0,\n        1\n    ],\n    \"duplicates\": \"copy\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('2 imported as copies', () => pm.expect(b.data.items).to.eql(2));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — a Login sheet uploaded as Credit Card (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "card",
+                                    "type": "text",
+                                    "description": ""
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-login.csv",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('names the missing columns', () => pm.expect(b.message).to.include('Card Number *'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — no category (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "car",
+                                    "type": "text",
+                                    "description": ""
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "C:/xampp/htdocs/Cross_Border_Command/docs/postman-samples/credvault-import-login.csv",
+                                    "description": "The sheet to import (docs/postman-samples)"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Preview — no file (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "preview"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "type",
+                                    "value": "login",
+                                    "type": "text",
+                                    "description": ""
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "03 · Imported Credentials History",
+            "description": "GET /imports — Sr. No · Import ID (IM-…) · Imported On · Imported By (name, initials, role; \"You\") · File (+ \"<source> · into My Vault\") · Format (Excel / CSV) · Imported · Skipped · Weak · Duplicates · Failed · Category. `records` = the badge. A Vault Admin sees everyone's; others their own (mine=1 for only yours).\nGET /imports/{id} — one import with its failed list.",
+            "item": [
+                {
+                    "name": "History — imports",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports?per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ],
+                            "query": [
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('rows and the records badge', () => { pm.expect(b.data.length).to.be.above(0); pm.expect(b.records).to.be.above(0); });",
+                                    "pm.test('the columns', () => pm.expect(b.data[0]).to.include.keys('sr_no', 'code', 'at', 'by_display', 'by_initials', 'by_role', 'file_name', 'source_line', 'format_label', 'items', 'skipped', 'weak', 'duplicates', 'failed', 'type_label'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "History — one import with its failed list",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/{{importFailedId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "{{importFailedId}}"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('4 failed rows', () => pm.expect(b.data.failed_rows.length).to.eql(4));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "History — only mine",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports?mine=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports"
+                            ],
+                            "query": [
+                                {
+                                    "key": "mine",
+                                    "value": "1"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "History — an unknown import (404)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/imports/999999999",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "imports",
+                                "999999999"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "04 · Download backup — Excel / CSV, My / Team Vault, passwords, lock",
+            "description": "GET /backups — the Backup settings and the Downloaded Backup History: scopes [{scope: mine | team | all, label, count}] (My Vault · 29 credentials), the columns, and the history rows.\nPOST /backups { format: xlsx | csv | json, scope: mine | team | all, include_passwords, lock, password, password_confirmation, account_password? } — the file.\n• Choose a format — Excel (.xlsx) or CSV.\n• Choose what to include — My Vault or Team Vault; Include passwords on/off.\n• Lock the file with a password — on: the file is put in an AES-256 .zip that only the backup password opens (7-Zip, WinRAR). The password needs 8+ characters with letters, numbers & symbols, typed twice. CredVault does not store it.\n• Passwords included and the lock off — the file is readable, so your account password is asked again.\nAn Excel backup has the summary sheet, one tab per type in the import layout (so a tab can be imported back to restore it) and About. A protected (locked critical) credential's secrets are never written. Response headers: X-CredVault-Code (BK-…), X-CredVault-Items, X-CredVault-Withheld.",
+            "item": [
+                {
+                    "name": "Backup settings — counts per vault",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('My Vault and Team Vault counts', () => pm.expect(b.scopes.map(s => s.scope)).to.include.members(['mine', 'team']));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — Excel, My Vault, passwords, locked",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"xlsx\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": true,\n    \"password\": \"Backup@2026#Strong\",\n    \"password_confirmation\": \"Backup@2026#Strong\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Send and Download: a .zip. Open it with 7-Zip / WinRAR and the password Backup@2026#Strong."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('BK- code', () => pm.expect(pm.response.headers.get('X-CredVault-Code') || '').to.not.eql(''));",
+                                    "pm.test('file: .zip', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.zip'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — CSV, My Vault, no passwords, not locked",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"scope\": \"mine\",\n    \"include_passwords\": false,\n    \"lock\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: .csv', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.csv'));",
+                                    "pm.test('no Password column', () => pm.expect(pm.response.text().split('\\n')[0]).to.not.include('Password'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — Excel, Team Vault, no passwords, locked (Vault Admin)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"xlsx\",\n    \"scope\": \"team\",\n    \"include_passwords\": false,\n    \"lock\": true,\n    \"password\": \"Team@Backup#2026\",\n    \"password_confirmation\": \"Team@Backup#2026\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "description": "422 \"There are no credentials in this vault to back up.\" when the Team Vault is empty."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — CSV with passwords, not locked (account password)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": false,\n    \"account_password\": \"{{password}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Readable passwords without a lock need your account password again."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: .csv', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.csv'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — lock password too weak (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"xlsx\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": true,\n    \"password\": \"backup123\",\n    \"password_confirmation\": \"backup123\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('the screen\\'s rule', () => pm.expect(b.message).to.include('letters, numbers & symbols'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — passwords do not match (422, recorded as Failed)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"xlsx\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": true,\n    \"password\": \"Backup@2026#Strong\",\n    \"password_confirmation\": \"Backup@2026#Other\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — lock on, no password (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"xlsx\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — passwords, no lock, no account password (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — wrong account password (422, recorded as Failed)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": false,\n    \"account_password\": \"wrong-password\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — unknown format (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"pdf\",\n    \"scope\": \"mine\",\n    \"include_passwords\": false,\n    \"lock\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "05 · Downloaded Backup History",
+            "description": "GET /backups (history part) — Sr. No · Backup ID (BK-…) · Downloaded On · Downloaded By (name, initials, role) · Format · Scope (My Vault / Team Vault / All vaults) · Items · Size (KB) · Protection (Password locked / Not locked) · Status (Downloaded / Failed, with the reason). `records` = the badge.",
+            "item": [
+                {
+                    "name": "History — backups",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups?per_page=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ],
+                            "query": [
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('rows', () => pm.expect(b.data.length).to.be.above(0));",
+                                    "pm.test('the columns', () => pm.expect(b.data[0]).to.include.keys('sr_no', 'code', 'at', 'by_display', 'format_label', 'scope_label', 'items', 'size_label', 'protection', 'status_label'));",
+                                    "pm.test('a Failed attempt is listed', () => pm.expect(b.data.some(r => r.status_label === 'Failed')).to.eql(true));",
+                                    "pm.test('a password-locked one is listed', () => pm.expect(b.data.some(r => r.protection === 'Password locked')).to.eql(true));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "History — only mine",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups?mine=1&per_page=5",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ],
+                            "query": [
+                                {
+                                    "key": "mine",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "5"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
+        },
+        {
+            "key": "email",
+            "value": ""
+        },
+        {
+            "key": "password",
+            "value": ""
+        },
+        {
+            "key": "adminEmail",
+            "value": ""
+        },
+        {
+            "key": "adminPassword",
+            "value": ""
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "adminToken",
+            "value": ""
+        },
+        {
+            "key": "importToken",
+            "value": ""
+        },
+        {
+            "key": "importId",
+            "value": ""
+        },
+        {
+            "key": "importFailedId",
+            "value": ""
+        }
+    ]
+}

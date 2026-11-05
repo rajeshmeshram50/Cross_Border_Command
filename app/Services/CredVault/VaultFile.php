@@ -103,7 +103,54 @@ class VaultFile
         return $out;
     }
 
-    private static function readXlsx(string $path): array
+    /**
+     * The sheet names of an .xlsx, in workbook order, with their part paths.
+     *
+     * @return array<string,string> name => xl/worksheets/sheetN.xml
+     */
+    public static function xlsxSheets(string $path): array
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) throw new RuntimeException('The Excel file could not be opened.');
+        $wb   = $zip->getFromName('xl/workbook.xml');
+        $rels = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        $zip->close();
+        if ($wb === false) return [];
+
+        $targets = [];
+        if ($rels !== false) {
+            foreach (simplexml_load_string($rels)->Relationship as $r) $targets[(string) $r['Id']] = ltrim(str_replace('/xl/', '', (string) $r['Target']), '/');
+        }
+        $sx = simplexml_load_string($wb);
+        $out = [];
+        $i = 0;
+        foreach ($sx->sheets->sheet as $s) {
+            $i++;
+            $rid = (string) $s->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'];
+            $out[(string) $s['name']] = 'xl/' . ($targets[$rid] ?? "worksheets/sheet{$i}.xml");
+        }
+        return $out;
+    }
+
+    /**
+     * One sheet of an .xlsx — by name (case and spacing ignored, via $match), or the first.
+     *
+     * @return array{0:string,1:array} the sheet's name, its rows
+     */
+    public static function readXlsxSheet(string $path, ?callable $match = null): array
+    {
+        $sheets = self::xlsxSheets($path);
+        $name = null;
+        foreach ($sheets as $n => $part) { if ($match === null || $match($n)) { $name = $n; break; } }
+        if ($name === null) return ['', []];
+
+        $rows = self::readXlsx($path, $sheets[$name]);
+        if (count($rows) > self::MAX_ROWS) throw new RuntimeException('The sheet has ' . count($rows) . ' rows. Import up to ' . self::MAX_ROWS . ' at a time.');
+
+        return [$name, $rows];
+    }
+
+    private static function readXlsx(string $path, string $part = 'xl/worksheets/sheet1.xml'): array
     {
         $zip = new ZipArchive();
         if ($zip->open($path) !== true) throw new RuntimeException('The Excel file could not be opened.');
@@ -119,16 +166,24 @@ class VaultFile
             }
         }
 
-        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $sheet = $zip->getFromName($part);
         $zip->close();
         if ($sheet === false) throw new RuntimeException('The Excel file has no first sheet.');
 
         $sx   = simplexml_load_string($sheet);
         $grid = [];
         foreach ($sx->sheetData->row as $row) {
+            // A row that is only blank cells (Excel keeps formatted rows) is not a credential.
+            $any = false;
+            foreach ($row->c as $c) if (trim((string) $c->v . (string) $c->is->t) !== '') { $any = true; break; }
+            if (!$any) continue;
             $cells = [];
+            $next = 0;
             foreach ($row->c as $c) {
-                $col = self::colIndex(preg_replace('/\d+/', '', (string) $c['r']));
+                // A cell may leave out its reference (r="B2") — it then sits right after the previous one.
+                $ref = preg_replace('/\d+/', '', (string) $c['r']);
+                $col = $ref !== '' ? self::colIndex($ref) : $next;
+                $next = $col + 1;
                 $t   = (string) $c['t'];
                 $val = match ($t) {
                     's'         => $shared[(int) $c->v] ?? '',
@@ -264,6 +319,12 @@ class VaultFile
         ];
 
         return self::zip($parts);
+    }
+
+    /** Several files in one plain zip (e.g. one CSV per credential type). @param array<string,string> $files name => body */
+    public static function bundle(array $files): string
+    {
+        return self::zip($files);
     }
 
     /** One file inside an AES-256 zip that only $password opens. */

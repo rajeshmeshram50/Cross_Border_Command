@@ -1,0 +1,3 @@
+﻿Credential Name *,Website / URL *,Username *,Password *,2FA,Registered Email,Registered Phone,Recovery Key,Risk,Rotation (days),Notes
+Zoho Books Admin (CSV),https://books.zoho.in,admin@inhpl.com,Zoho@Books#2026,Yes,it.desk@inhpl.com,'+91 98200 11223,RECOVERY-7Q2K-9XZM,,,
+Canva Team (CSV),https://www.canva.com,ops@inhpl.com,Canva!Team#2026x,No,,,,,90,Imported from the CredVault sample

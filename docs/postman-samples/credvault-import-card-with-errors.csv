@@ -1,0 +1,6 @@
+﻿Credential Name *,Cardholder Name *,Card Number *,Issuing Bank,Expiry (MM/YY) *,CVV *,Card PIN,Registered Email,Registered Phone,Risk,Notes
+Postman Good Card,Inorbvict Healthcare,4111111111111111,HDFC Bank,12/29,123,,,,,
+Postman Bad Number,Inorbvict Healthcare,4111111111111112,,12/29,123,,,,,
+Postman Expired,Inorbvict Healthcare,5555555555554444,,01/20,123,,,,,
+Postman Bad CVV,Inorbvict Healthcare,5555555555554444,,12/29,12,,,,Critical,
+,,,,,,,,,,

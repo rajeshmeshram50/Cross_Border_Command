@@ -341,6 +341,16 @@ Each row is the table's line, ready to show:
 
 `GET /credentials/{id}` (view) · `POST …/reveal` · `POST …/events` · `GET …/activity` · `GET …/attachments/{key}` (download a file)
 
+### Import & Recovery
+
+Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CREDVAULT_IMPORT_RECOVERY_API_SHEET.md), and its own Postman collection, **"Import & Recovery"** ([CredVault_ImportRecovery.postman_collection.json](CredVault_ImportRecovery.postman_collection.json)). It covers:
+- the 25-tab sample, in Excel and CSV;
+- import by category, with the form's validation and a failed list;
+- the Imported Credentials History;
+- Excel / CSV backups of My Vault or the Team Vault, with or without passwords, with the AES-256 password lock;
+- the Downloaded Backup History;
+- recovery: importing a backup tab back.
+
 ### Recycle Bin — 4 tabs × Normal / Critical
 
 The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 45 requests:

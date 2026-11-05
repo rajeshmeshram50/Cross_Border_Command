@@ -17,6 +17,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\CredVault\EmailOtp;
+use App\Services\CredVault\ImportTemplate;
 use App\Services\CredVault\PasswordGenerator;
 use App\Services\CredVault\Totp;
 use App\Services\CredVault\VaultFile;
@@ -32,6 +33,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -1537,6 +1539,7 @@ class CredVaultController extends Controller
     public function importPreview(Request $request)
     {
         $u = $this->tenantUser($request);
+        if ($request->filled('type')) return $this->importPreviewTyped($request, $u);
         $request->validate([
             'sample' => ['sometimes', 'boolean'],
             'file'   => ['required_unless:sample,true,1', 'file', 'max:5120', 'extensions:xlsx,xls,csv,tsv,txt,json,xml'],
@@ -1628,6 +1631,141 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
+    /** Set while an import saves its rows: a weak password is imported (and counted), a file the sheet cannot carry is attached later. */
+    protected bool $importing = false;
+
+    /**
+     * POST /credvault/imports/preview  (multipart: type, file) — Import by category.
+     *
+     * type is one of the 25 forms. The file is that type's sheet (the sample's layout): an
+     * .xlsx is read at the tab named for the type (or its first tab), a CSV as it is. Every
+     * row is checked exactly as the type's Add form checks it — required fields, web
+     * addresses, emails, phones, dates, the select lists, card number and expiry, IFSC,
+     * CVV / PIN, seed phrases, setup keys, lengths, name, risk, rotation — and nothing is
+     * saved. Rows that fail come back in `failed` with the sheet row number and each
+     * reason; the rest are parked behind a token for POST /imports. No secret is returned.
+     *
+     * Flags on a valid row: dup (a credential of this type and name is already yours),
+     * dupfile (the name repeats in the file), weak (a password below the policy minimum —
+     * still importable, counted as weak). selected = valid and not a duplicate.
+     */
+    protected function importPreviewTyped(Request $request, User $u)
+    {
+        $d = $request->validate([
+            'type' => ['required', Rule::in(array_keys(Credential::TYPES))],
+            'file' => ['required', 'file', 'max:5120', 'extensions:xlsx,csv,tsv,txt'],
+        ], ['type.in' => 'Choose one of the 25 credential types.', 'file.required' => 'Choose a file to import.',
+            'file.extensions' => 'Upload the Excel (.xlsx) or CSV sheet of this category — download the sample to see the layout.']);
+        $type = $d['type'];
+        $def  = Credential::typeDef($type);
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension());
+
+        try {
+            $sheet = '';
+            if ($ext === 'xlsx') {
+                $sheets = VaultFile::xlsxSheets($file->getRealPath());
+                $named  = collect(array_keys($sheets))->first(fn ($n) => ImportTemplate::typeOfSheet($n) === $type);
+                $other  = collect(array_keys($sheets))->first(fn ($n) => ($t = ImportTemplate::typeOfSheet($n)) && $t !== $type);
+                if (!$named && $other && count($sheets) > 2) {
+                    $this->reject("This workbook has no “" . ImportTemplate::sheetName($type) . "” tab. Pick the category of the tab you filled, or upload that tab's sheet.", 'file');
+                }
+                [$sheet, $raw] = VaultFile::readXlsxSheet($file->getRealPath(), fn ($n) => $named ? $n === $named : ImportTemplate::norm($n) !== ImportTemplate::norm('How to fill'));
+            } else {
+                $raw = VaultFile::read($file->getRealPath(), $ext);
+            }
+        } catch (\RuntimeException $e) {
+            $this->reject($e->getMessage(), 'file');
+        }
+        if (!$raw) $this->reject('The sheet has no rows to import. Add one credential per row under the header.', 'file');
+
+        [$map, $missing, $unknown] = ImportTemplate::mapHeaders($type, array_keys($raw[0]));
+        if ($missing) {
+            $this->reject("The sheet is not a {$def['label']} sheet — missing column" . (count($missing) > 1 ? 's' : '') . ': ' . implode(', ', $missing)
+                . '. Download the sample for this category and keep its header row.', 'file');
+        }
+
+        $pol  = Policy::for($u->client_id);
+        $cols = collect(ImportTemplate::columns($type))->keyBy('key');
+        $mine = Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->where('type', $type)->get(['id', 'code', 'name'])
+            ->keyBy(fn ($c) => Str::lower(trim($c->name)));
+        $metaRules = array_intersect_key($this->credentialRules(true), array_flip(['name', 'risk', 'rotation_days', 'notes', 'reg_email', 'reg_phone', 'recovery_key']));
+        $metaRules['risk'] = ['nullable', Rule::in(['low', 'medium', 'high'])];
+        $label = fn (string $k) => $k === 'name' ? ImportTemplate::NAME : ($cols[$k]['label'] ?? ($cols[str_replace('fields.', '', $k)]['label'] ?? $k));
+
+        $this->importing = true;
+        $seen = [];
+        $rows = [];
+        foreach ($raw as $i => $r) {
+            $p = ImportTemplate::toPayload($type, $r, $map);
+            $errors = [];
+            $v = Validator::make($p, $metaRules, [
+                'name.required' => 'Enter the Credential Name.', 'name.min' => 'The Credential Name needs at least 2 characters.',
+                'risk.in' => 'Risk is Low, Medium or High.', 'rotation_days.in' => 'Rotation is 30, 60, 90 or 180 days.',
+                'reg_phone.regex' => 'Enter a phone number of 10 to 16 digits.', 'reg_email.email' => 'Enter a valid Registered Email.',
+            ]);
+            foreach ($v->errors()->messages() as $k => $m) $errors[] = ['field' => $k, 'label' => $label($k), 'message' => $m[0]];
+            try {
+                $fields = $this->validateTypeFields($def, array_diff_key($p['fields'], ['twofa' => 1]), [], $request, null);
+            } catch (ValidationException $e) {
+                $fields = [];
+                foreach ($e->errors() as $k => $m) $errors[] = ['field' => str_replace('fields.', '', $k), 'label' => $label(str_replace('fields.', '', $k)), 'message' => $m[0]];
+            }
+
+            $name  = trim((string) ($p['name'] ?? ''));
+            $key   = Str::lower($name);
+            $dupOf = $name !== '' ? $mine->get($key) : null;
+            $flags = [];
+            if ($dupOf) $flags[] = 'dup';
+            elseif ($name !== '' && isset($seen[$key])) $flags[] = 'dupfile';
+            if ($name !== '') $seen[$key] = true;
+            $secret   = $def['sec'] ? ($fields[$def['sec']] ?? null) : null;
+            $strength = Credential::secretIsPassword($type) && $secret ? Credential::strengthOf($secret) : null;
+            if ($strength !== null && $strength < $pol['min_strength']) $flags[] = 'weak';
+            $valid = !$errors;
+            $notes = array_map(fn ($f) => "Attach the {$f['label']} in the form after the import.", array_filter(ImportTemplate::fileFields($type), fn ($f) => $f['required']));
+
+            $rows[] = [
+                'index' => $i, 'row' => $i + 2, 'name' => Str::limit($name, 150, ''), 'status' => $valid ? 'valid' : 'failed',
+                'errors' => $errors, 'flags' => $flags, 'notes' => $valid ? array_values($notes) : [],
+                'strength' => $strength !== null ? (Credential::STRENGTH_LABELS[$strength] ?? null) : null,
+                'dup_of' => $dupOf ? ['id' => $dupOf->id, 'code' => $dupOf->code, 'name' => $dupOf->name] : null,
+                'selected' => $valid && !array_intersect($flags, ['dup', 'dupfile']),
+                'payload' => $p,
+            ];
+        }
+        $this->importing = false;
+
+        $token  = Str::random(40);
+        $format = $ext === 'txt' ? 'tsv' : $ext;
+        Cache::put($this->importCacheKey($u, $token), Crypt::encrypt(['typed' => true, 'type' => $type, 'rows' => $rows,
+            'file_name' => $file->getClientOriginalName(), 'format' => $format, 'source' => ImportTemplate::sheetName($type) . ' sheet']), self::IMPORT_TTL);
+        $c = collect($rows);
+        $public = fn ($r) => collect($r)->except('payload')->all();
+
+        return response()->json(['status' => true, 'data' => [
+            'token'        => $token,
+            'expires_in'   => self::IMPORT_TTL,
+            'type'         => $type,
+            'type_label'   => $def['label'],
+            'file_name'    => $file->getClientOriginalName(),
+            'sheet'        => $sheet ?: null,
+            'format'       => $format,
+            'format_label' => Transfer::FORMAT_LABELS[$format] ?? strtoupper($format),
+            'columns'      => ['matched' => $map, 'ignored' => $unknown],
+            'stats'        => [
+                'rows'       => $c->count(),
+                'valid'      => $c->where('status', 'valid')->count(),
+                'failed'     => $c->where('status', 'failed')->count(),
+                'duplicates' => $c->filter(fn ($r) => array_intersect(['dup', 'dupfile'], $r['flags']))->count(),
+                'weak'       => $c->filter(fn ($r) => in_array('weak', $r['flags'], true))->count(),
+                'selected'   => $c->where('selected', true)->count(),
+            ],
+            'rows'   => $c->map($public)->values(),
+            'failed' => $c->where('status', 'failed')->map(fn ($r) => ['row' => $r['row'], 'name' => $r['name'], 'errors' => $r['errors']])->values(),
+        ]], 200);
+    }
+
     /**
      * POST /credvault/imports { token, rows: [index…], duplicates: skip|copy, scope?, department_id? }
      *
@@ -1663,12 +1801,83 @@ class CredVaultController extends Controller
             $payload = Crypt::decrypt($payload);
             $pol     = Policy::for($u->client_id);
 
-            $result = $this->runImport($u, $d, $payload, $pol, $scope, $deptId);
+            $result = !empty($payload['typed'])
+                ? $this->runTypedImport($u, $d, $payload, $scope, $deptId)
+                : $this->runImport($u, $d, $payload, $pol, $scope, $deptId);
             Cache::forget($cacheKey);
         } finally {
             Cache::forget("{$cacheKey}:running");
         }
         return $result;
+    }
+
+    /**
+     * Import by category: each picked valid row is saved through the type's Add form
+     * (persistCredential), so it gets the same code, encryption, strength, risk, audit and
+     * checks as one typed in. A row the form still refuses joins the failed list. History
+     * counts: imported · skipped (every row not imported) · weak · duplicates · failed.
+     */
+    protected function runTypedImport(User $u, array $d, array $payload, string $scope, ?int $deptId)
+    {
+        $picked = array_flip($d['rows']);
+        $def    = Credential::typeDef($payload['type']);
+        $failed = [];
+        $items  = $weak = 0;
+        $codes  = [];
+
+        $t = $this->inTransaction('import the credentials', function () use ($u, $d, $payload, $scope, $deptId, $picked, &$failed, &$items, &$weak, &$codes) {
+            $this->importing = true;
+            try {
+                foreach ($payload['rows'] as $row) {
+                    if ($row['status'] === 'failed') { $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => $row['errors']]; continue; }
+                    if (!isset($picked[$row['index']])) continue;
+                    $isDup = (bool) array_intersect(['dup', 'dupfile'], $row['flags']);
+                    if ($isDup && $d['duplicates'] === 'skip') continue;
+
+                    $p = $row['payload'] + ['scope' => $scope] + ($deptId ? ['department_id' => $deptId] : []);
+                    if ($isDup) $p['name'] = Str::limit($p['name'], 139, '') . ' (imported)';
+                    try {
+                        $res = DB::transaction(fn () => $this->persistCredential(Request::create('/', 'POST', $p), $u, null, 'normal'));
+                        $codes[] = $res->getData(true)['data']['code'] ?? null;
+                        $items++;
+                        if (in_array('weak', $row['flags'], true)) $weak++;
+                    } catch (ValidationException $e) {
+                        $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => collect($e->errors())->map(fn ($m, $k) => ['field' => str_replace('fields.', '', $k), 'label' => $k, 'message' => $m[0]])->values()->all()];
+                    } catch (HttpResponseException $e) {
+                        $b = $e->getResponse()->getData(true);
+                        $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => [['field' => array_key_first($b['errors'] ?? []) ?? 'row', 'label' => '', 'message' => $b['message'] ?? 'Could not be imported.']]];
+                    }
+                }
+            } finally {
+                $this->importing = false;
+            }
+
+            $all = collect($payload['rows']);
+            $t = Transfer::create([
+                'client_id' => $u->client_id, 'kind' => 'import', 'code' => $this->nextCode('credvault_transfers', 'IM', $u->client_id),
+                'user_id' => $u->id, 'scope' => $scope === 'team' ? 'team' : 'mine', 'format' => $payload['format'],
+                'file_name' => Str::limit($payload['file_name'], 191, ''), 'source' => Str::limit($payload['source'], 40, ''), 'credential_type' => $payload['type'],
+                'items' => $items, 'skipped' => $all->count() - $items, 'weak' => $weak,
+                'duplicates' => $all->filter(fn ($r) => array_intersect(['dup', 'dupfile'], $r['flags']))->count(),
+                'failed' => count($failed), 'failed_rows' => array_slice($failed, 0, 500),
+                'status' => $items ? 'done' : 'failed', 'failure_reason' => $items ? null : 'No row could be imported',
+            ]);
+            $this->audit($u, 'importx', null, "{$t->code} · {$items} {$payload['type']} credentials imported" . ($failed ? ' · ' . count($failed) . ' failed' : ''),
+                ['transfer' => $t->code, 'items' => $items, 'weak' => $weak, 'failed' => count($failed)], 'Import & Recovery');
+
+            return $t;
+        });
+        $t->load('user:id,name');
+        $to = $scope === 'team' ? 'Team Vault' : 'My Vault';
+
+        return response()->json([
+            'status'  => (bool) $items,
+            'message' => $items
+                ? "{$items} {$def['label']} " . Str::plural('credential', $items) . " imported to {$to}" . ($failed ? ' · ' . count($failed) . ' failed — see the failed list' : '')
+                    . ($weak ? " · {$weak} with weak passwords — see Password Health" : '') . '.'
+                : 'Nothing was imported — every picked row failed. See the failed list.',
+            'data'    => $this->transferRow($t, $u) + ['imported_codes' => array_values(array_filter($codes)), 'failed_rows' => $failed],
+        ], $items ? 201 : 422);
     }
 
     protected function runImport(User $u, array $d, array $payload, array $pol, string $scope, ?int $deptId)
@@ -1728,18 +1937,83 @@ class CredVaultController extends Controller
         ], 201);
     }
 
-    /** GET /credvault/imports — import history. */
+    /** GET /credvault/imports — Imported Credentials History. */
     public function imports(Request $request)
     {
         return $this->transferHistory($request, 'import');
     }
 
-    /** GET /credvault/imports/sample?format=csv|json|xlsx — the prototype's sample: two example rows, and a "How to fill" sheet in Excel. */
+    /** GET /credvault/imports/{id} — one import, with its failed list (row, name, reasons). */
+    public function importShow(Request $request, int $id)
+    {
+        $u = $this->tenantUser($request);
+        $t = Transfer::where('client_id', $u->client_id)->where('kind', 'import')
+            ->when(!$this->isAdmin($u), fn ($q) => $q->where('user_id', $u->id))->with('user:id,name')->find($id)
+            ?? $this->reject('Import not found.', null, 404);
+
+        return response()->json(['status' => true, 'data' => $this->transferRow($t, $u) + ['failed_rows' => $t->failed_rows ?? []]], 200);
+    }
+
+    /**
+     * GET /credvault/imports/types — the 25 categories the import screen offers, each with its
+     * sheet (tab) name, its columns (required, hint, options) and the files attached later.
+     */
+    public function importTypes(Request $request)
+    {
+        $this->tenantUser($request);
+
+        return response()->json(['status' => true, 'data' => collect(array_keys(Credential::TYPES))->map(function ($t) {
+            $def = Credential::typeDef($t);
+            return [
+                'key' => $t, 'label' => $def['label'], 'group' => $def['group'], 'icon' => $def['icon'], 'sheet' => ImportTemplate::sheetName($t),
+                'columns' => array_map(fn ($c) => array_intersect_key($c, array_flip(['key', 'header', 'label', 'required', 'kind', 'options', 'hint'])), ImportTemplate::columns($t)),
+                'attach_later' => ImportTemplate::fileFields($t),
+            ];
+        })->values(), 'meta' => ['formats' => ['xlsx' => 'Excel', 'csv' => 'CSV'], 'max_rows' => VaultFile::MAX_ROWS, 'max_mb' => 5]], 200);
+    }
+
+    /**
+     * GET /credvault/imports/sample?format=xlsx|csv&type=&layout=types|simple — Download sample file.
+     *
+     * layout types (the default) — one sheet per credential type, laid out as that type's form,
+     * each with two example rows that pass every check:
+     *   xlsx            one workbook: 25 tabs (Login … Outdoor License) and "How to fill"
+     *   xlsx + type     that type's tab and "How to fill"
+     *   csv + type      that type's sheet as a CSV
+     *   csv             a .zip with the 25 CSVs (a CSV has no tabs) and how-to-fill.csv
+     * layout simple — the older any-type sample (name, url, username, password, category, notes).
+     */
     public function importSample(Request $request)
     {
         $this->tenantUser($request);
-        $d = $request->validate(['format' => ['nullable', Rule::in(['csv', 'json', 'xlsx'])]]);
+        $d = $request->validate([
+            'format' => ['nullable', Rule::in(['csv', 'json', 'xlsx'])],
+            'type'   => ['nullable', Rule::in(array_keys(Credential::TYPES))],
+            'layout' => ['nullable', Rule::in(['types', 'simple'])],
+        ], ['type.in' => 'Choose one of the 25 credential types.']);
         $fmt = $d['format'] ?? 'xlsx';
+
+        if (($d['layout'] ?? 'types') === 'types' && $fmt !== 'json') {
+            $types = !empty($d['type']) ? [$d['type']] : array_keys(Credential::TYPES);
+            $one   = count($types) === 1;
+            $base  = $one ? 'credvault-import-sample-' . $types[0] : 'credvault-import-sample';
+            if ($fmt === 'xlsx') {
+                $sheets = array_map(fn ($t) => ImportTemplate::sheet($t, ImportTemplate::sampleRows($t)), $types);
+                $sheets[] = ImportTemplate::guideSheet($types);
+
+                return $this->download(VaultFile::xlsx($sheets), "{$base}.xlsx", $this->mime('xlsx'), ['X-CredVault-Sheets' => (string) count($sheets)]);
+            }
+            $csv = fn ($t) => VaultFile::csv(array_column(ImportTemplate::columns($t), 'header'),
+                array_map(fn ($r) => array_map(fn ($c) => $r[$c['key']] ?? '', ImportTemplate::columns($t)), ImportTemplate::sampleRows($t)));
+            if ($one) return $this->download($csv($types[0]), "{$base}.csv", $this->mime('csv'));
+
+            $files = [];
+            foreach ($types as $i => $t) $files[sprintf('%02d-%s.csv', $i + 1, Str::slug(ImportTemplate::sheetName($t)))] = $csv($t);
+            $guide = ImportTemplate::guideSheet($types)['rows'];
+            $files['how-to-fill.csv'] = VaultFile::csv(array_shift($guide), $guide);
+
+            return $this->download(VaultFile::bundle($files), "{$base}-csv.zip", 'application/zip', ['X-CredVault-Sheets' => (string) count($files)]);
+        }
 
         $body = match ($fmt) {
             'csv'  => VaultFile::csv(self::IMPORT_COLUMNS, self::IMPORT_EXAMPLE),
@@ -1787,7 +2061,7 @@ class CredVaultController extends Controller
             'password'              => ['exclude_unless:lock,true,1', 'required', 'string', 'min:8', 'max:128'],
             'password_confirmation' => ['exclude_unless:lock,true,1', 'required', 'string'],
             'account_password'      => ['nullable', 'string'],
-        ], ['password.required' => 'Set a password for the backup file, or turn the lock off.', 'password.min' => 'Use at least 8 characters for the backup password.']);
+        ], ['password.required' => 'Set a password for the backup file, or turn the lock off.', 'password.min' => 'Use 8+ characters with letters, numbers & symbols for the backup password.']);
         $d['include_passwords'] = (bool) $d['include_passwords'];
         $d['lock'] = (bool) $d['lock'];
         $fmtLabel = Transfer::FORMAT_LABELS[$d['format']];
@@ -1804,6 +2078,10 @@ class CredVaultController extends Controller
             });
             $this->reject($why . '.', $field);
         };
+        // The screen's rule: 8+ characters with letters, numbers and a symbol (Good or stronger, D34).
+        if ($d['lock'] && Credential::strengthOf($d['password']) < 3) {
+            $this->reject('Use 8+ characters with letters, numbers & symbols for the backup password.', 'password');
+        }
         if ($d['lock'] && $d['password'] !== $d['password_confirmation']) $fail('Passwords did not match', 'password_confirmation');
         if ($d['include_passwords'] && !$d['lock']) {
             if (!filled($d['account_password'] ?? null)) $this->reject('A backup with readable passwords needs your account password. Or lock the file with a password.', 'account_password');
@@ -1814,22 +2092,26 @@ class CredVaultController extends Controller
         if ($creds->isEmpty()) $this->reject('There are no credentials in this vault to back up.', 'scope');
 
         [$keys, $rows, $withheld] = $this->backupRows($creds, $d['include_passwords']);
+        $typeSheets = $d['format'] === 'xlsx' ? $this->backupTypeSheets($creds, $d['include_passwords']) : [];
         $name  = "credvault-{$d['scope']}-backup-" . now()->format('Ymd');
         // Built inside the transaction below with the code it is recorded under, so the
         // Backup ID in the file always matches the history row.
         $build = fn (string $code) => match ($d['format']) {
+            // (xlsx below: the summary, one tab per type in the import layout, About)
             'csv'  => VaultFile::csv(array_values($keys), array_map(fn ($r) => array_values(array_intersect_key(array_replace($keys, $r), $keys)), $rows)),
             'json' => json_encode(['format' => 'CredVault backup', 'id' => $code, 'created' => now()->toIso8601String(), 'by' => $u->name,
                 'scope' => $scopeLabel, 'count' => count($rows), 'credentials' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            default => VaultFile::xlsx([
+            default => VaultFile::xlsx(array_merge([
                 ['name' => 'Credentials', 'head' => true, 'freeze' => true,
                     'widths' => array_values(array_map(fn ($k) => ['name' => 28, 'url' => 30, 'username' => 28, 'password' => 22, 'notes' => 30, 'category' => 16][$k] ?? 14, array_keys($keys))),
                     'rows' => array_merge([array_values($keys)], array_map(fn ($r) => array_values(array_intersect_key(array_replace($keys, $r), $keys)), $rows))],
-                ['name' => 'About', 'head' => true, 'widths' => [22, 40], 'rows' => [
+            ], $typeSheets, [
+                ['name' => 'About', 'head' => true, 'widths' => [22, 60], 'rows' => [
                     ['CredVault backup', ''], ['Backup ID', $code], ['Created', now()->format('d/m/Y, H:i:s')], ['Created by', $u->name],
                     ['Vault', $scopeLabel], ['Credentials', (string) count($rows)], ['Passwords included', $d['include_passwords'] ? 'Yes' : 'No'],
+                    ['Recovery', 'Each type tab uses the import layout: choose that category on Import & Recovery and upload this file to restore it.'],
                 ]],
-            ]),
+            ])),
         };
         $file = $d['lock'] ? "{$name}.zip" : "{$name}.{$d['format']}";
         $body = null;
@@ -2671,7 +2953,7 @@ class CredVaultController extends Controller
         $isPw    = Credential::secretIsPassword($type);
         $changed = $creating || ($sec && array_key_exists($sec, $inputFields) && $secret !== $c->secret);
         $strength = $isPw ? Credential::strengthOf($secret) : 0;
-        if ($isPw && $secret !== null && $changed && $strength < $pol['min_strength']) {
+        if ($isPw && $secret !== null && $changed && $strength < $pol['min_strength'] && !$this->importing) {
             $this->reject('Policy requires a ' . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger password — use the generate button.', "fields.{$sec}");
         }
 
@@ -2870,7 +3152,8 @@ class CredVaultController extends Controller
             if ($f['kind'] === 'file') {
                 $has = $request->hasFile("files.{$k}") || collect($c?->attachments ?? [])->contains('key', $k);
                 $removing = in_array($k, (array) $request->input('remove_attachments', []), true) && !$request->hasFile("files.{$k}");
-                if ($f['required'] && (!$has || $removing)) $errors["files.{$k}"][] = "Upload the {$f['label']}.";
+                // An import cannot carry a file: it is attached in the form afterwards.
+                if ($f['required'] && (!$has || $removing) && !$this->importing) $errors["files.{$k}"][] = "Upload the {$f['label']}.";
                 continue;
             }
 
@@ -3505,6 +3788,36 @@ class CredVaultController extends Controller
         return [$keys, $rows, $withheld];
     }
 
+    /**
+     * The Excel backup's type tabs — one per type in the backup, laid out exactly as that type's
+     * import sheet, so a tab can be imported back. Secret fields are written only with
+     * passwords included, and never for a protected (locked critical) credential.
+     */
+    protected function backupTypeSheets(Collection $creds, bool $withSecrets): array
+    {
+        $sheets = [];
+        foreach ($creds->groupBy('type') as $type => $set) {
+            if (!Credential::typeDef($type)) continue;
+            $secretKeys = collect(Credential::typeDef($type)['fields'])->where('secret', true)->pluck('key')->all();
+            $rows = $set->map(function ($c) use ($withSecrets, $secretKeys) {
+                $open = $withSecrets && !$c->isProtected();
+                $f = $c->fields ?? [];
+                $r = ['credential_name' => $c->name, 'twofa' => $c->twofa === 'yes' ? 'Yes' : ($c->twofa === 'no' ? 'No' : ''),
+                    'reg_email' => $f['_reg_email'] ?? '', 'reg_phone' => $f['_reg_phone'] ?? '', 'recovery_key' => $open ? ($f['_recovery_key'] ?? '') : '',
+                    'risk' => $c->risk === 'critical' ? 'High' : ucfirst($c->risk), 'rotation_days' => (string) ($c->rotation_days ?? ''),
+                    'notes' => $c->isProtected() ? '' : ($c->notes ?? '')];
+                foreach ($f as $k => $v) {
+                    if (str_starts_with($k, '_')) continue;
+                    $r[$k] = in_array($k, $secretKeys, true) && !$open ? '' : (is_bool($v) ? ($v ? 'Yes' : 'No') : (string) $v);
+                }
+                return $r;
+            })->all();
+            $sheets[] = ImportTemplate::sheet($type, $rows);
+        }
+
+        return $sheets;
+    }
+
     protected function transferHistory(Request $request, string $kind)
     {
         $u = $this->tenantUser($request);
@@ -3515,11 +3828,13 @@ class CredVaultController extends Controller
             ->with('user:id,name')->orderByDesc('id')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $this->userInfo(collect($page->items())->pluck('user_id')->unique()->all());
+        $from = ($page->currentPage() - 1) * $page->perPage();
 
         return response()->json([
-            'status' => true,
-            'data'   => collect($page->items())->map(fn ($t) => $this->transferRow($t, $u))->values(),
-            'meta'   => $this->pageMeta($page),
+            'status'  => true,
+            'data'    => collect($page->items())->values()->map(fn ($t, $i) => ['sr_no' => $from + $i + 1] + $this->transferRow($t, $u))->values(),
+            'records' => $page->total(),
+            'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
@@ -3979,15 +4294,26 @@ class CredVaultController extends Controller
 
     protected function transferRow(Transfer $t, ?User $u = null): array
     {
+        $scopeLabel = Transfer::SCOPE_LABELS[$t->scope] ?? $t->scope;
+        $kb = $t->size_bytes !== null ? max(1, (int) round($t->size_bytes / 1024)) . ' KB' : null;
+
         return [
             'id' => $t->id, 'code' => $t->code, 'kind' => $t->kind,
-            'scope' => $t->scope, 'scope_label' => Transfer::SCOPE_LABELS[$t->scope] ?? $t->scope,
+            'scope' => $t->scope, 'scope_label' => $scopeLabel,
             'format' => $t->format, 'format_label' => Transfer::FORMAT_LABELS[$t->format] ?? strtoupper((string) $t->format),
-            'file_name' => $t->file_name, 'source' => $t->source, 'items' => $t->items, 'skipped' => $t->skipped,
-            'weak' => $t->weak, 'duplicates' => $t->duplicates, 'size_bytes' => $t->size_bytes,
-            'include_passwords' => $t->include_passwords, 'locked' => $t->locked, 'status' => $t->status,
+            'file_name' => $t->file_name, 'source' => $t->source,
+            // The line under the file name: "Bitwarden · into My Vault".
+            'source_line' => $t->kind === 'import' ? trim(($t->source ?? '') . ' · into ' . $scopeLabel, ' ·') : null,
+            'type' => $t->credential_type, 'type_label' => $t->credential_type ? (Credential::typeDef($t->credential_type)['label'] ?? $t->credential_type) : null,
+            'items' => $t->items, 'skipped' => $t->skipped, 'weak' => $t->weak, 'duplicates' => $t->duplicates, 'failed' => (int) $t->failed,
+            'size_bytes' => $t->size_bytes, 'size_label' => $t->status === 'failed' && !$t->size_bytes ? null : $kb,
+            'include_passwords' => $t->include_passwords, 'locked' => $t->locked,
+            'protection' => $t->kind === 'backup' ? ($t->locked ? 'Password locked' : 'Not locked') : null,
+            'status' => $t->status,
+            'status_label' => $t->status === 'failed' ? 'Failed' : ['backup' => 'Downloaded', 'import' => 'Imported', 'export' => 'Downloaded'][$t->kind] ?? 'Done',
             'failure_reason' => $t->failure_reason,
             'by' => $t->user?->name, 'by_id' => $t->user_id, 'by_me' => $u ? $t->user_id === $u->id : null,
+            'by_display' => $u && $t->user_id === $u->id ? 'You' : $t->user?->name, 'by_initials' => $this->initials($t->user?->name),
             'by_role' => ($this->userInfo([$t->user_id])[$t->user_id]['role_line'] ?? null),
             'at' => $t->created_at?->toIso8601String(),
         ];

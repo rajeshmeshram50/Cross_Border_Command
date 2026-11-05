@@ -834,6 +834,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/imports/sample',                    [CredVaultController::class, 'importSample']);
         Route::post  ('/imports',                           [CredVaultController::class, 'import']);
         Route::get   ('/imports',                           [CredVaultController::class, 'imports']);
+        Route::get   ('/imports/types',                     [CredVaultController::class, 'importTypes']);
+        Route::get   ('/imports/{id}',                      [CredVaultController::class, 'importShow'])->whereNumber('id');
         Route::post  ('/backups',                           [CredVaultController::class, 'backup']);
         Route::get   ('/backups',                           [CredVaultController::class, 'backups']);
         Route::get   ('/exports/preview',                   [CredVaultController::class, 'exportPreview']);
