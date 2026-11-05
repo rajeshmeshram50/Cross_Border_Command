@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\CredVault;
 use App\Http\Controllers\Controller;
 use App\Mail\CredVaultShareMail;
 use App\Mail\PasswordChangedMail;
+use App\Models\Branch;
 use App\Models\CredVault\AccessRequest;
 use App\Models\CredVault\AuditLog;
 use App\Models\CredVault\Credential;
@@ -164,8 +165,8 @@ class CredVaultController extends Controller
             'audit_actions'    => collect(AuditLog::ACTIONS)->map(fn ($v, $k) => ['key' => $k, 'label' => $v[0], 'severity' => $v[1], 'verb' => AuditLog::VERBS[$k] ?? $v[0]])->values(),
             'file_types'       => ['attachments' => explode(',', self::ATTACH_TYPES), 'file_fields' => explode(',', self::FIELD_FILE_TYPES), 'max_mb' => self::FILE_MAX_KB / 1024, 'max_attachments' => self::MAX_EXTRA_ATTACHMENTS],
             'policy'           => $pol,
-            // Recycle Bin retention per vault — the Critical Vault's is fixed (Policy::binDays).
-            'bin_days'         => ['normal' => Policy::binDays($pol, 'normal'), 'critical' => Policy::binDays($pol, 'critical')],
+            // Recycle Bin retention: the viewer's branch period, one for both vaults (Policy::binDays).
+            'bin_days'         => ['normal' => Policy::binDays($pol, $this->binBranchFor($u)), 'critical' => Policy::binDays($pol, $this->binBranchFor($u))],
             'me'               => [
                 'id'              => $u->id,
                 'name'            => $u->name,
@@ -241,8 +242,10 @@ class CredVaultController extends Controller
         $this->sweepUnlocks($u->client_id);
         $tab = $f['tab'] ?? 'all';
 
-        $base = $this->visibleQuery($u);
-        if ($vault = $vault ?? ($f['vault'] ?? null)) $base->where('vault', $vault);
+        $vault = $vault ?? ($f['vault'] ?? null);
+        // The Critical Vault's team side is the whole branch's; the Normal Vault keeps the reporting line.
+        $base = $this->visibleQuery($u, $vault === 'critical');
+        if ($vault) $base->where('vault', $vault);
         if (!empty($f['risk']))  $base->where('risk', $f['risk']);
         if (!empty($f['type']))  $base->where('type', $f['type']);
         if (!empty($f['group'])) $base->where('category_group', $f['group']);
@@ -443,7 +446,7 @@ class CredVaultController extends Controller
             $this->audit($u, 'bin', $c, 'Moved to Recycle Bin');
         });
 
-        $days = Policy::binDays($pol, $c->vault);
+        $days = Policy::binDays($pol, $this->binBranchOfCredential($c));
 
         return response()->json([
             'status'  => true,
@@ -1308,13 +1311,13 @@ class CredVaultController extends Controller
         $pw      = $creds->where('has_password', true);
         $issues  = collect($this->healthIssues($creds, $pol));
         $shares  = $this->liveShareCounts($creds->pluck('id')->all());
-        $bin     = $this->binQuery($u)->orderBy('deleted_at')->get(['id', 'code', 'name', 'risk', 'deleted_at']);
+        $bin     = $this->binQuery($u)->orderBy('deleted_at')->select(['id', 'code', 'name', 'risk', 'deleted_at'])->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')->get();
         $admin   = $this->isAdmin($u);
         $reqs    = AccessRequest::where('client_id', $u->client_id)
             ->when(!$admin, fn ($q) => $q->where(fn ($w) => $w->where('requester_id', $u->id)->orWhere('admin_user_id', $u->id)->orWhere('manager_user_id', $u->id)));
         $required = $creds->whereIn('risk', $pol['twofa_risks']);
         $critIds  = $creds->where('risk', 'critical')->pluck('id')->all();
-        $soonBin  = $bin->filter(fn ($c) => $c->deleted_at->copy()->addDays($pol['bin_days'])->lte(now()->addDays(7)));
+        $soonBin  = $bin->filter(fn ($c) => $c->deleted_at->copy()->addDays(Policy::binDays($pol, $c->bin_branch))->lte(now()->addDays(7)));
 
         return [
             'password' => [
@@ -1356,7 +1359,7 @@ class CredVaultController extends Controller
                 'critical_items'     => $bin->where('risk', 'critical')->count(),
                 'next_bin_deletions' => $bin->take(3)->map(fn ($c) => [
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
-                    'purges_at' => $c->deleted_at->copy()->addDays($pol['bin_days'])->toIso8601String(),
+                    'purges_at' => $c->deleted_at->copy()->addDays(Policy::binDays($pol, $c->bin_branch))->toIso8601String(),
                 ])->values(),
             ],
         ];
@@ -1447,19 +1450,27 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ AUDIT LOGS ════════════════════════════ */
 
+    /** The audit screens show the company's local time unless the viewer sends `tz`. */
+    protected const AUDIT_TZ = 'Asia/Kolkata';
+
     /**
-     * GET /credvault/audit-logs?tab=all|mine|team|alerts&range=24h|7d|30d|all|custom&from=&to=&action=&credential_id=&q=
+     * GET /credvault/audit-logs?tab=all|mine|team|alerts&range=24h|7d|30d|all|custom&from=&to=&tz=&action=&credential_id=&q=&page=&per_page=
      *
-     * A Vault Admin sees the whole company; anyone else their own events and
-     * the events on credentials they own. As in the prototype, the summary
-     * and the tab counts follow the time range alone — switching tab or typing
-     * a search narrows only the timeline.
+     * Tabs: All Activity · My Activity · Team Activity (everyone else the viewer may see) ·
+     * Security Alerts (critical events). Who sees what: a Vault Admin the whole company; a
+     * Branch Admin their branch's people; a manager their reporting line (HOD → TL → Employee
+     * → Intern); everyone their own events and the events on credentials they own.
+     *
+     * The tab counts and the summary follow the time range and the search — switching tab
+     * narrows only the timeline. `groups` heads the timeline by day ("Today · 05/11/2026 ·
+     * 15 events"), counted over every page; times are the viewer's (`tz`, default India).
      */
     public function auditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
         $f = $request->validate($this->auditRules(), $this->auditMessages());
-        $ranged = $this->auditQuery($u, ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null, 'tz' => $f['tz'] ?? null]);
+        $f['tz'] ??= self::AUDIT_TZ;
+        $ranged = $this->auditQuery($u, array_diff_key($f, array_flip(['tab', 'page', 'per_page'])));
 
         $summary = (clone $ranged)->selectRaw(
             "count(*) as total,
@@ -1482,6 +1493,7 @@ class CredVaultController extends Controller
         $page = $this->auditQuery($u, $f)->with('user:id,name,user_type')->orderByDesc('created_at')->orderByDesc('id')
             ->paginate($f['per_page'] ?? 15, ['*'], 'page', $f['page'] ?? 1);
         $topName = $top ? User::whereKey($top->user_id)->value('name') : null;
+        $rows = $this->eventRows(collect($page->items()), $u, $f['tz']);
 
         return response()->json([
             'status'  => true,
@@ -1495,42 +1507,87 @@ class CredVaultController extends Controller
                 'security_alerts' => (int) $summary->alerts,
                 'most_active'     => $top ? ['user_id' => $top->user_id, 'name' => $topName, 'is_me' => $top->user_id === $u->id,
                                              'label' => $top->user_id === $u->id ? "You ({$topName})" : $topName, 'events' => (int) $top->n] : null,
-                'range'           => ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null],
+                'range'           => ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null, 'tz' => $f['tz']],
             ],
-            'data'    => $this->eventRows(collect($page->items()), $u),
+            'data'    => $rows,
+            'groups'  => $this->auditDayGroups($u, $f, $rows->pluck('date')->unique()->values()->all()),
             'tabs'    => $tabs,
             'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
-    /** GET /credvault/audit-logs/export — the filtered view as CSV, columns as the prototype's alExport. */
+    /**
+     * The timeline's day headers for the days on this page: date, "Today" / "Yesterday" /
+     * "Tuesday, 03/11/2026", and the day's event count over the whole filtered view.
+     */
+    protected function auditDayGroups(User $u, array $f, array $dates): array
+    {
+        if (!$dates) return [];
+        $tz = $f['tz'];
+        $day = "to_char((credvault_audit_logs.created_at AT TIME ZONE 'UTC') AT TIME ZONE ?, 'YYYY-MM-DD')";
+        $counts = $this->auditQuery($u, $f)->selectRaw("{$day} as d, count(*) as n", [$tz])
+            ->whereRaw("{$day} in (" . implode(',', array_fill(0, count($dates), '?')) . ')', array_merge([$tz], $dates))
+            ->groupBy('d')->pluck('n', 'd');
+        $today = now($tz)->toDateString();
+        $yday  = now($tz)->subDay()->toDateString();
+
+        return array_map(function ($d) use ($counts, $today, $yday) {
+            $c = Carbon::createFromFormat('Y-m-d', $d);
+            $n = (int) ($counts[$d] ?? 0);
+            return [
+                'date' => $d, 'date_display' => $c->format('d/m/Y'),
+                'label' => $d === $today ? 'Today' : ($d === $yday ? 'Yesterday' : $c->format('l')),
+                'heading' => ($d === $today ? 'Today' : ($d === $yday ? 'Yesterday' : $c->format('l') . ',')) . ' ' . $c->format('d/m/Y'),
+                'events' => $n, 'events_label' => $n . ' ' . Str::plural('event', $n),
+            ];
+        }, $dates);
+    }
+
+    /**
+     * GET /credvault/audit-logs/export?format=csv|xlsx + the list's filters (tab, range, from, to, tz, q, action,
+     * credential_id) — Export Logs: exactly the view on screen, every event (up to 10,000), in the viewer's time.
+     */
     public function exportAuditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
-        $f = $request->validate($this->auditRules(), $this->auditMessages());
+        $f = $request->validate($this->auditRules() + ['format' => ['nullable', Rule::in(['csv', 'xlsx'])]], $this->auditMessages());
+        $f['tz'] ??= self::AUDIT_TZ;
+        $fmt = $f['format'] ?? 'csv';
 
-        $rows = $this->auditQuery($u, $f)->with('user:id,name')->orderByDesc('created_at')->limit(10000)->get();
+        $rows = $this->auditQuery($u, $f)->with('user:id,name')->orderByDesc('created_at')->orderByDesc('id')->limit(10000)->get();
         if ($rows->isEmpty()) $this->reject('There are no events in this view to export.', null, 422);
+        $this->userInfo($rows->pluck('user_id')->filter()->unique()->all());
+        $risks = Credential::withTrashed()->whereIn('id', $rows->pluck('credential_id')->filter()->unique()->all())->pluck('risk', 'id');
 
-        $cols = ['Event ID', 'Date', 'Time', 'User', 'Action', 'Credential ID', 'Credential', 'Details', 'Module', 'Severity', 'IP'];
-        $body = VaultFile::build($cols, $rows->map(fn ($e) => [
-            'Event ID'      => 'EVT-' . $e->id,
-            'Date'          => $e->created_at->format('Y-m-d'),
-            'Time'          => $e->created_at->format('H:i:s'),
-            'User'          => $e->user?->name ?? 'System',
-            'Action'        => AuditLog::ACTIONS[$e->action][0] ?? $e->action,
-            'Credential ID' => $e->credential_code,
-            'Credential'    => $e->credential_name ?? 'Vault settings',
-            'Details'       => $e->detail,
-            'Module'        => $e->module,
-            'Severity'      => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
-            'IP'            => $e->ip,
-        ])->all(), 'csv');
+        $cols = ['Event ID', 'Date', 'Time', 'User', 'Role', 'Action', 'Credential ID', 'Credential', 'Risk', 'Details', 'Module', 'Severity', 'IP'];
+        $data = $rows->map(function ($e) use ($f, $risks) {
+            $t = $e->created_at->copy()->setTimezone($f['tz']);
+            return [
+                'Event ID'      => 'EVT-' . $e->id,
+                'Date'          => $t->format('d/m/Y'),
+                'Time'          => $t->format('H:i:s'),
+                'User'          => $e->user?->name ?? 'System',
+                'Role'          => $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id]['role_line'] ?? '') : 'CredVault',
+                'Action'        => AuditLog::ACTIONS[$e->action][0] ?? $e->action,
+                'Credential ID' => $e->credential_code,
+                'Credential'    => $e->credential_name ?? 'Vault settings',
+                'Risk'          => isset($risks[$e->credential_id]) ? ucfirst($risks[$e->credential_id]) : '',
+                'Details'       => $e->detail,
+                'Module'        => $e->module,
+                'Severity'      => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
+                'IP'            => $e->ip,
+            ];
+        })->all();
+        $body = $fmt === 'xlsx'
+            ? VaultFile::xlsx([['name' => 'Audit Logs', 'head' => true, 'freeze' => true, 'widths' => [12, 11, 9, 24, 26, 20, 14, 30, 10, 50, 18, 10, 14],
+                'rows' => array_merge([$cols], array_map('array_values', $data))]])
+            : VaultFile::build($cols, $data, 'csv');
 
         // The log leaving the system is itself on the record (as info — it carries no secret).
         $this->writeAudit($u->client_id, $u->id, $u->branch_id, 'export', null, 'Audit log exported · ' . $rows->count() . ' events', ['rows' => $rows->count(), 'kind' => 'audit_log'], 'Audit Logs', 'info');
+        $tab = ['all' => 'all-activity', 'mine' => 'my-activity', 'team' => 'team-activity', 'alerts' => 'security-alerts'][$f['tab'] ?? 'all'];
 
-        return $this->download($body, 'credvault-audit-log-' . now()->format('Ymd') . '.csv', 'text/csv', ['X-CredVault-Count' => (string) $rows->count()]);
+        return $this->download($body, "credvault-audit-log-{$tab}-" . now($f['tz'])->format('Ymd') . ".{$fmt}", $this->mime($fmt), ['X-CredVault-Count' => (string) $rows->count()]);
     }
 
     /* ══════════════════════════ IMPORT & RECOVERY ══════════════════════════ */
@@ -2314,15 +2371,13 @@ class CredVaultController extends Controller
     /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
 
     /** The bin's four tabs, on a query already narrowed to one vault. */
-    protected function binTabCounts(Builder $q, User $u, int $days): array
+    protected function binTabCounts(Builder $q, User $u, array $pol): array
     {
-        $soon = now()->subDays($days)->addDays(7);
-
         return [
             'all'  => (clone $q)->count(),
             'mine' => (clone $q)->where('deleted_by', $u->id)->count(),
             'team' => (clone $q)->where('scope', 'team')->count(),
-            'soon' => (clone $q)->where('deleted_at', '<=', $soon)->count(),
+            'soon' => $this->wherePastRetention(clone $q, $pol, 7)->count(),
         ];
     }
 
@@ -2347,9 +2402,9 @@ class CredVaultController extends Controller
      * into Normal Vault and Critical Vault. `vault` (default normal) picks the sub-tab; `tabs`
      * are its four counts and `counts` all eight. Counts follow the search box.
      *
-     * Each vault keeps its own retention: the Normal Vault's can be changed (Change period,
-     * Vault Admins); the Critical Vault's is a fixed 30 days and offers no change. Critical
-     * items can be restored or deleted only by the Branch Admin (`can_restore`, `can_purge`).
+     * One retention period covers both vaults, set per branch (Policy::binDays): each item
+     * follows its branch's period, and `retention_days` is the viewer's. Critical items can be
+     * restored or deleted only by the Branch Admin (`can_restore`, `can_purge`).
      * Expired items are purged first; `purged` says how many went. "expiring" = "soon".
      */
     public function recycleBin(Request $request)
@@ -2360,50 +2415,53 @@ class CredVaultController extends Controller
         $pol    = Policy::for($u->client_id);
         $purged = $this->purgeExpired($u->client_id, $pol);
         $vault  = $f['vault'] ?? 'normal';
-        $days   = Policy::binDays($pol, $vault);
+        $days   = Policy::binDays($pol, $this->binBranchFor($u));
         $term   = $f['q'] ?? null;
 
         $counts = [];
         foreach (Credential::VAULTS as $v) {
             $q = $this->binQuery($u, $v);
             $this->binSearch($q, $u, $term);
-            $counts[$v] = $this->binTabCounts($q, $u, Policy::binDays($pol, $v));
+            $counts[$v] = $this->binTabCounts($q, $u, $pol);
         }
         $counts['total'] = array_map(fn ($k) => $counts['normal'][$k] + $counts['critical'][$k], ['all' => 'all', 'mine' => 'mine', 'team' => 'team', 'soon' => 'soon']);
 
         $base = $this->binQuery($u, $vault);
-        $next = (clone $base)->orderBy('deleted_at')->first(['id', 'name', 'deleted_at']);
+        $next = (clone $base)->select(['id', 'name', 'deleted_at'])->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')->get()
+            ->map(fn ($c) => $c->setAttribute('_purge', $c->deleted_at->copy()->addDays(Policy::binDays($pol, $c->bin_branch))))
+            ->sortBy('_purge')->first();
         $branchAdmin = (bool) $this->adminBranchOf($u);
         $binAdmin = $this->binAdmin($u);
         $summary = [
             'vault'                => $vault,
             'retention_days'       => $days,
-            'retention_fixed'      => $vault === 'critical',
-            'can_change_retention' => $vault === 'normal' && $binAdmin,
-            'retention_options'    => $vault === 'normal' ? Policy::OPTIONS['bin_days'] : [],
+            'retention_scope'      => $this->binRetentionScope($u, $pol),
+            'retention_fixed'      => false,
+            'can_change_retention' => $binAdmin,
+            'retention_options'    => Policy::OPTIONS['bin_days'],
             'purge_allowed'        => (bool) $pol['bin_purge'],
             'is_bin_admin'         => $binAdmin,
             'can_empty'            => (bool) $pol['bin_purge'] && $binAdmin && ($vault === 'normal' || $branchAdmin),
             'critical_actions'     => $branchAdmin ? 'branch_admin' : 'none',
             'items'                => (clone $base)->count(),
             'deleted_by_me'        => (clone $base)->where('deleted_by', $u->id)->count(),
-            'expiring_soon'        => (clone $base)->where('deleted_at', '<=', now()->subDays($days)->addDays(7))->count(),
+            'expiring_soon'        => $this->wherePastRetention(clone $base, $pol, 7)->count(),
             'critical'             => (clone $base)->where('risk', 'critical')->count(),
             'next_deletion'        => $next ? [
-                'name' => $next->name, 'at' => $next->deleted_at->copy()->addDays($days)->toIso8601String(),
-                'days' => max(1, (int) ceil(now()->diffInHours($next->deleted_at->copy()->addDays($days), false) / 24)),
+                'name' => $next->name, 'at' => $next->_purge->toIso8601String(),
+                'days' => max(1, (int) ceil(now()->diffInHours($next->_purge, false) / 24)),
             ] : null,
         ];
 
         match ($f['tab'] ?? 'all') {
             'mine'  => $base->where('deleted_by', $u->id),
             'team'  => $base->where('scope', 'team'),
-            'soon'  => $base->where('deleted_at', '<=', now()->subDays($days)->addDays(7)),
+            'soon'  => $this->wherePastRetention($base, $pol, 7),
             default => null,
         };
         $this->binSearch($base, $u, $term);
 
-        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by', 'branch_id']))
+        $page = $base->select(array_merge(self::LIGHT_COLUMNS, ['deleted_at', 'deleted_by', 'branch_id']))->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')
             ->with(['owner:id,name'])->orderBy('deleted_at')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $deleters = User::whereIn('id', collect($page->items())->pluck('deleted_by')->filter()->unique()->all())->pluck('name', 'id');
@@ -2414,7 +2472,7 @@ class CredVaultController extends Controller
             'purged'  => $purged,
             'summary' => $summary,
             'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from, $binAdmin) {
-                $total = Policy::binDays($pol, $c->vault);
+                $total = Policy::binDays($pol, $c->bin_branch);
                 $purge = $c->deleted_at->copy()->addDays($total);
                 // Never "0 days": an item still in the bin goes on its last day.
                 $days  = max(1, (int) ceil(now()->diffInHours($purge, false) / 24));
@@ -2429,6 +2487,7 @@ class CredVaultController extends Controller
                     'deleted_by' => ['id' => $c->deleted_by, 'name' => $c->deleted_by === $u->id ? 'You' : ($deleters[$c->deleted_by] ?? null),
                         'initials' => $this->initials($deleters[$c->deleted_by] ?? ($c->deleted_by === $u->id ? $u->name : null))],
                     'deleted_at' => $c->deleted_at->toIso8601String(),
+                    'retention_days' => $total, 'branch_id' => $c->bin_branch ? (int) $c->bin_branch : null,
                     'purges_at' => $purge->toIso8601String(), 'days_left' => $days,
                     'left_pct' => (int) round(min($days, $total) / max(1, $total) * 100),
                     'urgency' => $days <= 3 ? 'bad' : ($days <= 7 ? 'warn' : 'ok'),
@@ -2516,52 +2575,114 @@ class CredVaultController extends Controller
     }
 
     /**
-     * GET /credvault/recycle-bin/retention[?days=7] — the Change period popup: the Normal Vault's
-     * period and its options; the Critical Vault's fixed period (no change offered).
+     * GET /credvault/recycle-bin/retention[?days=7][&branch_id=3] — the Change period popup.
      *
-     * With `days`, `preview` says what that period would delete right away: the bin items older
-     * than it, company-wide (`total`), and those the user can see in their own bin (`items`).
+     * One period covers both vaults (My Vault and Critical Vault), set per branch: `days` is the
+     * viewer's (their branch's own, else the company's), `normal` / `critical` repeat it per vault.
+     * A Branch Admin changes their branch's; a Vault Admin the company default (`branch_id`
+     * omitted) or one branch's, and gets `branches[]` with each branch's period.
+     *
+     * With `days`, `preview` says what that period would delete right away: the bin items of the
+     * branch (or of the branches on the company period) older than it (`total`), and those the
+     * user can see in their own bin (`items`).
      */
     public function binRetention(Request $request)
     {
         $u   = $this->tenantUser($request);
-        $f   = $request->validate(['days' => ['nullable', 'integer', Rule::in(Policy::OPTIONS['bin_days'])]], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
-        $pol = Policy::for($u->client_id);
+        $f   = $request->validate([
+            'days'      => ['nullable', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
+            'branch_id' => ['nullable', 'integer', 'min:1'],
+        ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
+        $pol    = Policy::for($u->client_id);
+        $target = $this->retentionTarget($u, $f['branch_id'] ?? null, false);
+        $days   = $target ? Policy::binDays($pol, $target) : (int) $pol['bin_days'];
+        $can    = $this->binAdmin($u);
+        $vault  = fn () => ['days' => $days, 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $can, 'fixed' => false];
 
         return response()->json(['status' => true, 'data' => array_filter([
-            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->binAdmin($u)],
-            'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
-            'note'     => 'Items already older than the new period are deleted right away.',
-            'preview'  => isset($f['days']) ? $this->retentionImpact($u, (int) $f['days']) : null,
+            'days'         => $days,
+            'applies_to'   => 'both',
+            'scope'        => $target ? 'branch' : 'company',
+            'branch'       => $target ? ['id' => $target, 'name' => Branch::whereKey($target)->value('name'),
+                'source' => isset($pol['bin_branch_days'][$target]) ? 'branch' : 'company'] : null,
+            'company_days' => (int) $pol['bin_days'],
+            'options'      => Policy::OPTIONS['bin_days'],
+            'can_change'   => $can,
+            'normal'       => $vault(),
+            'critical'     => $vault(),
+            'branches'     => $this->isAdmin($u) ? Branch::where('client_id', $u->client_id)->orderBy('name')->get(['id', 'name'])
+                ->map(fn ($b) => ['id' => $b->id, 'name' => $b->name, 'days' => Policy::binDays($pol, $b->id),
+                    'source' => isset($pol['bin_branch_days'][$b->id]) ? 'branch' : 'company'])->values() : null,
+            'note'         => 'One period for My Vault and Critical Vault. Items already older than the new period are deleted right away.',
+            'preview'      => isset($f['days']) ? $this->retentionImpact($u, (int) $f['days'], $target) : null,
         ], fn ($v) => $v !== null)], 200);
     }
 
     /**
-     * What a new Normal Vault period would delete at once — the same rule purgeExpired() applies
-     * (moved to the bin more than $days days ago). `items` is the user's own bin view, oldest first.
+     * The branch a retention call is about: a Branch Admin's own (another branch → 403); for a
+     * Vault Admin the branch_id sent, or null = the company default. Others: their own branch,
+     * read-only. $change: the caller wants to change it.
      */
-    protected function retentionImpact(User $u, int $days): array
+    protected function retentionTarget(User $u, ?int $branchId, bool $change): ?int
     {
-        $cut   = now()->subDays($days);
-        $total = Credential::onlyTrashed()->where('client_id', $u->client_id)->where('vault', 'normal')->where('deleted_at', '<', $cut)->count();
-        $mine  = $this->binQuery($u, 'normal')->where('deleted_at', '<', $cut)->orderBy('deleted_at');
-        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'deleted_at']);
+        if ($own = $this->adminBranchOf($u)) {
+            if ($branchId && $branchId !== $own) $this->reject('A Branch Admin can set the retention period of their own branch only.', 'branch_id', 403);
+            return $own;
+        }
+        if ($this->isAdmin($u)) {
+            if (!$branchId) return null;
+            if (!Branch::where('client_id', $u->client_id)->whereKey($branchId)->exists()) $this->reject('That branch is not part of your company.', 'branch_id', 404);
+            return $branchId;
+        }
+        if ($change) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can change the retention period.', null, 403);
+
+        return $this->binBranchFor($u);
+    }
+
+    /** The policy as it would read with $branch's period (null = the company's) set to $days. */
+    protected function withRetention(array $pol, ?int $branch, int $days): array
+    {
+        if ($branch) $pol['bin_branch_days'][$branch] = $days;
+        else $pol['bin_days'] = $days;
+
+        return $pol;
+    }
+
+    /**
+     * What a new period would delete at once — the same rule purgeExpired() applies, for the
+     * items the change covers: $branch's (or, for the company period, the branches without their
+     * own). `items` is the user's own bin view, oldest first.
+     */
+    protected function retentionImpact(User $u, int $days, ?int $branch = null): array
+    {
+        $pol  = Policy::for($u->client_id);
+        $next = $this->withRetention($pol, $branch, $days);
+        // Only what the change newly puts past its period: already-expired items go anyway.
+        $hit  = fn (Builder $q) => $this->wherePastRetention($q, $next)->whereNotIn('credvault_credentials.id',
+            $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id), $pol)->select('credvault_credentials.id'));
+        $total = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id))->count();
+        $mine  = $hit($this->binQuery($u))->orderBy('deleted_at');
+        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'vault', 'deleted_at']);
 
         return [
             'days'          => $days,
+            'branch_id'     => $branch,
             'total'         => $total,
             'visible_total' => (clone $mine)->count(),
             'items'         => $items->map(fn ($c) => [
-                'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk,
+                'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk, 'vault' => $c->vault,
                 'deleted_at' => $c->deleted_at->toIso8601String(), 'days_in_bin' => (int) $c->deleted_at->diffInDays(now()),
             ])->values(),
         ];
     }
 
     /**
-     * PUT /credvault/recycle-bin/retention { days, vault?: normal, confirm_purge?: true } — Change
-     * period, Normal Vault only, Vault Admins. A shorter period deletes the items already past it,
-     * right away — so when it would delete any, the call needs confirm_purge (409 without it).
+     * PUT /credvault/recycle-bin/retention { days, branch_id?, confirm_purge?: true } — Change
+     * period, for both vaults. A Branch Admin sets their branch's period (every employee of the
+     * branch, My Vault and Critical Vault); a Vault Admin the company default (no branch_id: every
+     * branch without its own) or one branch's. `vault` is accepted and ignored — one period covers
+     * both. A shorter period deletes the items already past it, right away — so when it would
+     * delete any, the call needs confirm_purge (409 without it).
      */
     public function updateBinRetention(Request $request)
     {
@@ -2569,27 +2690,47 @@ class CredVaultController extends Controller
         $d = $request->validate([
             'days'          => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
             'vault'         => ['nullable', Rule::in(Credential::VAULTS)],
+            'branch_id'     => ['nullable', 'integer', 'min:1'],
             'confirm_purge' => ['sometimes', 'boolean'],
         ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
-        if (($d['vault'] ?? 'normal') === 'critical') {
-            $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
-        }
         if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can change the retention period.', null, 403);
+        $branch = $this->retentionTarget($u, $d['branch_id'] ?? null, true);
+        $days   = (int) $d['days'];
 
-        $current = (int) Policy::for($u->client_id)['bin_days'];
-        if ($d['days'] < $current && empty($d['confirm_purge'])) {
-            $n = $this->retentionImpact($u, $d['days'])['total'];
+        $pol     = Policy::for($u->client_id);
+        $current = $branch ? Policy::binDays($pol, $branch) : (int) $pol['bin_days'];
+        if ($days < $current && empty($d['confirm_purge'])) {
+            $n = $this->retentionImpact($u, $days, $branch)['total'];
             if ($n > 0) {
                 $this->reject("{$n} " . Str::plural('credential', $n) . " in the Recycle Bin " . ($n === 1 ? 'is' : 'are')
-                    . " older than {$d['days']} days and will be deleted permanently. Confirm to continue.", 'confirm_purge', 409);
+                    . " older than {$days} days and will be deleted permanently. Confirm to continue.", 'confirm_purge', 409);
             }
         }
+        $where = $branch ? 'for ' . (Branch::whereKey($branch)->value('name') ?? "branch #{$branch}") : 'as the company default';
 
-        $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
+        if (!$branch) {
+            $res    = $this->savePolicies($u, ['bin_days' => $days])->getData(true);
+            $purged = $res['data']['purged'] ?? 0;
+            $changed = (bool) $res['data']['changed'];
+        } else {
+            $changed = !isset($pol['bin_branch_days'][$branch]) || $pol['bin_branch_days'][$branch] !== $days;
+            $purged  = !$changed ? 0 : $this->inTransaction('save the retention period', function () use ($u, $branch, $days, $current, $where) {
+                $row = Policy::where('client_id', $u->client_id)->lockForUpdate()->first() ?? new Policy(['client_id' => $u->client_id, 'settings' => []]);
+                $settings = $row->settings ?? [];
+                $settings['bin_branch_days'] = array_replace($settings['bin_branch_days'] ?? [], [$branch => $days]);
+                $row->fill(['settings' => $settings, 'updated_by' => $u->id])->save();
+                $this->audit($u, 'policy', null, "Retention period {$where}: {$current} days → {$days} days",
+                    ['key' => 'bin_days', 'branch_id' => $branch, 'from' => $current, 'to' => $days, 'from_label' => "{$current} days", 'to_label' => "{$days} days"], 'Recycle Bin');
+                Policy::forget($u->client_id);
 
-        return response()->json(['status' => true, 'message' => $res['data']['changed'] ? "Retention set to {$d['days']} days for the Normal Vault"
-                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} " . Str::plural('item', $res['data']['purged']) . ' past the new period deleted' : '') . '.' : 'Nothing changed.',
-            'data' => ['vault' => 'normal', 'days' => (int) Policy::for($u->client_id)['bin_days'], 'purged' => $res['data']['purged'] ?? 0]], 200);
+                return $days < $current ? $this->purgeExpired($u->client_id, Policy::for($u->client_id), $u->id) : 0;
+            });
+        }
+
+        return response()->json(['status' => true,
+            'message' => $changed ? "Retention set to {$days} days {$where}, for My Vault and Critical Vault"
+                . ($purged ? " · {$purged} " . Str::plural('item', $purged) . ' past the new period deleted' : '') . '.' : 'Nothing changed.',
+            'data' => ['days' => $days, 'applies_to' => 'both', 'scope' => $branch ? 'branch' : 'company', 'branch_id' => $branch, 'purged' => $purged]], 200);
     }
 
     /* ═══════════════════════════ GENERATOR ═══════════════════════════ */
@@ -2754,8 +2895,8 @@ class CredVaultController extends Controller
 
         $myShares = CredentialShare::live()->whereIn('credential_id', $all->where('owner_id', $u->id)->pluck('id')->all())->get(['credential_id', 'expires_at']);
         $endWeek  = $myShares->filter(fn ($s) => $s->expires_at && $s->expires_at->lte(now()->addDays(7)))->count();
-        $bin      = $this->binQuery($u)->get(['id', 'deleted_at', 'deleted_by']);
-        $binSoon  = $bin->filter(fn ($b) => $b->deleted_at->copy()->addDays($pol['bin_days'])->lte(now()->addDays(7)))->count();
+        $bin      = $this->binQuery($u)->select(['id', 'deleted_at', 'deleted_by'])->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')->get();
+        $binSoon  = $bin->filter(fn ($b) => $b->deleted_at->copy()->addDays(Policy::binDays($pol, $b->bin_branch))->lte(now()->addDays(7)))->count();
 
         // Activity: this range and the one before it, by the viewer's day.
         $startLocal = now($tz)->subDays($range - 1)->startOfDay();
@@ -3727,18 +3868,74 @@ class CredVaultController extends Controller
             ? null : 'Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin.';
     }
 
-    /** Purges everything past retention — each vault by its own period. Returns how many went. */
+    /** Purges everything past retention — both vaults, each item by its branch's period. Returns how many went. */
     protected function purgeExpired(int $clientId, array $pol, ?int $actorId = null): int
     {
-        $n = 0;
-        foreach (Credential::VAULTS as $vault) {
-            $days = Policy::binDays($pol, $vault);
-            $old  = Credential::onlyTrashed()->where('client_id', $clientId)->where('vault', $vault)->where('deleted_at', '<', now()->subDays($days))->get();
-            foreach ($old as $c) $this->purgeOne($c, $actorId, "Deleted automatically after {$days} days in the bin");
-            $n += $old->count();
+        $old = $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $clientId), $pol)
+            ->select('credvault_credentials.*')->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')->get();
+        foreach ($old as $c) {
+            $days = Policy::binDays($pol, $c->bin_branch);
+            $this->purgeOne($c, $actorId, "Deleted automatically after {$days} days in the bin");
         }
 
-        return $n;
+        return $old->count();
+    }
+
+    /** The branch whose period a binned credential follows: the one it is filed under, else its owner's. */
+    protected const BIN_BRANCH_SQL = 'coalesce(credvault_credentials.branch_id, (select users.branch_id from users where users.id = credvault_credentials.owner_id))';
+
+    /**
+     * Narrows $q to binned items past their branch's period — or, with $withinDays, due to
+     * go within that many days ("Expiring soon"). A branch without its own period follows
+     * the company's.
+     */
+    protected function wherePastRetention(Builder $q, array $pol, int $withinDays = 0): Builder
+    {
+        $own = $pol['bin_branch_days'] ?? [];
+        $cut = fn (int $days) => $withinDays ? now()->subDays($days)->addDays($withinDays) : now()->subDays($days);
+        $op  = $withinDays ? '<=' : '<';
+
+        return $q->where(function ($w) use ($own, $pol, $cut, $op) {
+            foreach ($own as $branch => $days) {
+                $w->orWhere(fn ($x) => $x->whereRaw(self::BIN_BRANCH_SQL . ' = ?', [(int) $branch])
+                    ->where('credvault_credentials.deleted_at', $op, $cut((int) $days)));
+            }
+            // Everything else — no branch, or a branch without its own period — on the company's.
+            $w->orWhere(fn ($x) => $x->when($own, fn ($y) => $y->where(fn ($b) => $b->whereRaw(self::BIN_BRANCH_SQL . ' is null')
+                    ->orWhereRaw(self::BIN_BRANCH_SQL . ' not in (' . implode(',', array_map('intval', array_keys($own))) . ')')))
+                ->where('credvault_credentials.deleted_at', $op, $cut((int) $pol['bin_days'])));
+        });
+    }
+
+    /** The branch a binned credential belongs to, for its period. */
+    protected function binBranchOfCredential(Credential $c): ?int
+    {
+        $b = $c->branch_id ?: User::whereKey($c->owner_id)->value('branch_id');
+
+        return $b ? (int) $b : null;
+    }
+
+    /**
+     * The branch whose period the user sees and sets: a Branch Admin's branch, an employee's
+     * own branch; null for a Vault Admin (the company period).
+     */
+    protected function binBranchFor(User $u): ?int
+    {
+        if ($b = $this->adminBranchOf($u)) return $b;
+
+        return !$this->isAdmin($u) && $u->branch_id ? (int) $u->branch_id : null;
+    }
+
+    /** Where the viewer's period comes from: their branch's own, or the company's. */
+    protected function binRetentionScope(User $u, array $pol): array
+    {
+        $b = $this->binBranchFor($u);
+
+        return [
+            'branch'  => $b ? ['id' => $b, 'name' => Branch::whereKey($b)->value('name')] : null,
+            'source'  => $b && isset($pol['bin_branch_days'][$b]) ? 'branch' : 'company',
+            'applies' => 'both',
+        ];
     }
 
     protected function purgeOne(Credential $c, ?int $actorId, string $detail): void
@@ -4339,23 +4536,31 @@ class CredVaultController extends Controller
     }
 
     /** Timeline rows, with the credential's risk and type and each actor's role read in two queries for the page. */
-    protected function eventRows(Collection $events, User $u): Collection
+    protected function eventRows(Collection $events, User $u, ?string $tz = null): Collection
     {
         $creds = Credential::withTrashed()->whereIn('id', $events->pluck('credential_id')->filter()->unique()->all())
-            ->get(['id', 'risk', 'type'])->keyBy('id');
+            ->get(['id', 'risk', 'type', 'vault'])->keyBy('id');
         $this->userInfo($events->pluck('user_id')->filter()->unique()->all());
 
-        return $events->map(fn ($e) => $this->eventRow($e, $u, $creds->get($e->credential_id)))->values();
+        return $events->map(fn ($e) => $this->eventRow($e, $u, $creds->get($e->credential_id), $tz))->values();
     }
 
-    protected function eventRow(AuditLog $e, User $u, ?Credential $c = null): array
+    protected function eventRow(AuditLog $e, User $u, ?Credential $c = null, ?string $tz = null): array
     {
-        $info = $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id] ?? []) : [];
+        $info  = $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id] ?? []) : [];
+        $local = $e->created_at->copy()->setTimezone($tz ?? self::AUDIT_TZ);
+        $risk  = $c?->risk ? ucfirst($c->risk) : null;
 
         return [
             'id'             => $e->id,
             'event_id'       => 'EVT-' . $e->id,
             'at'             => $e->created_at->toIso8601String(),
+            // As the timeline prints it: 15:22 over 46s, under the day's heading.
+            'date'           => $local->toDateString(),
+            'time'           => $local->format('H:i'),
+            'seconds'        => $local->format('s') . 's',
+            'local_at'       => $local->toIso8601String(),
+            'chip'           => $e->credential_id ? trim(($e->credential_code ?? '') . ($risk ? " · {$risk}" : ''), ' ·') : null,
             'actor'          => $e->user_id
                 ? ['id' => $e->user_id, 'name' => $e->user_id === $u->id ? 'You' : $e->user?->name, 'full_name' => $e->user?->name,
                    'initials' => $this->initials($e->user?->name), 'role' => $info['role_line'] ?? 'Team member', 'is_me' => $e->user_id === $u->id]
@@ -4366,8 +4571,12 @@ class CredVaultController extends Controller
             'severity'       => $e->severity,
             'severity_label' => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
             'credential'     => $e->credential_id
-                ? ['id' => $e->credential_id, 'code' => $e->credential_code, 'name' => $e->credential_name, 'risk' => $c?->risk, 'type' => $c?->type]
+                ? ['id' => $e->credential_id, 'code' => $e->credential_code, 'name' => $e->credential_name, 'risk' => $c?->risk, 'risk_label' => $risk,
+                   'type' => $c?->type, 'vault' => $c?->vault]
                 : null,
+            // "Priya Sharma approved access to Kotak Vendor Payments A/c"
+            'sentence'       => trim(($e->user_id ? ($e->user_id === $u->id ? 'You' : $e->user?->name) : 'System') . ' ' . (AuditLog::VERBS[$e->action] ?? $e->action)
+                . ' ' . ($e->credential_name ?? ($e->credential_id ? $e->credential_code : ''))),
             'target'         => $e->credential_id ? $e->credential_code : 'Vault settings',
             'module'         => $e->module,
             'detail'         => $e->detail,
@@ -4452,15 +4661,20 @@ class CredVaultController extends Controller
      *   manager                     the ones owned by their downline (HOD → TL → Employee → Intern);
      *   HOD                         their department's (see accessMap for the rights).
      * A peer outside the reporting line sees none of them — only a share reaches them.
+     *
+     * $branchCritical (the Critical Vault list only): an employee also sees every Critical
+     * Vault team credential of the employees of their branch — "Teams Critical Credentials"
+     * is the whole branch, still locked behind its approvals (accessMap: View, via branch_team).
      */
-    protected function visibleQuery(User $u): Builder
+    protected function visibleQuery(User $u, bool $branchCritical = false): Builder
     {
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
         $down   = $this->downlineIds($u);
+        $peers  = $branchCritical ? $this->criticalBranchOf($u) : null;
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down) {
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $peers) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($admin) {
                 $w->orWhere('scope', 'team');
@@ -4474,7 +4688,22 @@ class CredVaultController extends Controller
                     ->orWhere(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)->whereIn('owner_id', (clone $below)->select('id')))));
             }
             if ($down) $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('owner_id', $down));
+            if ($peers) {
+                $staff = User::where('client_id', $u->client_id)->whereNotIn('user_type', self::ADMIN_TYPES);
+                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where('vault', 'critical')->where(fn ($b) => $b
+                    ->whereIn('owner_id', (clone $staff)->where('branch_id', $peers)->select('id'))
+                    ->orWhere(fn ($x) => $x->where('credvault_credentials.branch_id', $peers)->whereIn('owner_id', (clone $staff)->select('id')))));
+            }
         });
+    }
+
+    /**
+     * The branch whose Critical Vault team credentials an employee sees, else null. The
+     * Vault Admin and the Branch Admin already see them by their own rule.
+     */
+    protected function criticalBranchOf(User $u): ?int
+    {
+        return !$this->isAdmin($u) && !$this->adminBranchOf($u) && $u->branch_id ? (int) $u->branch_id : null;
     }
 
     /** The logins that sit above every employee: no one below them gets rights over what they own. */
@@ -4613,12 +4842,14 @@ class CredVaultController extends Controller
 
     /**
      * [id => [rank, via]] for a batch, in one share query.
-     * via: owner | admin | branch | manager | hod | team | share
+     * via: owner | admin | branch | manager | hod | team | branch_team | share
      *
      * Full Access (edit, share, delete) on a team credential goes to the Vault Admin, the
      * Branch Admin of the owner's branch, a manager the owner reports to (at any depth) and
      * the HOD of its department — the last three only over people below them, never over
      * someone above or at their level (a HOD keeps view-and-copy on those in the department).
+     * Any other employee of the owner's branch gets View on a Critical Vault team credential
+     * (via branch_team): it lists, and opens only through its approval steps.
      */
     protected function accessMap(Collection $creds, User $u): array
     {
@@ -4628,6 +4859,7 @@ class CredVaultController extends Controller
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
+        $peers  = $this->criticalBranchOf($u);
         $down   = array_flip($this->downlineIds($u));
         // Heading a department makes one an HOD whatever the HR designation says.
         $myRank = min(self::LEVEL_ORDER[$this->levelOfUser($u)], $heads ? self::LEVEL_ORDER['hod'] : PHP_INT_MAX);
@@ -4657,6 +4889,8 @@ class CredVaultController extends Controller
                     && ((int) $owner->branch_id === $branch || (int) $c->branch_id === $branch)) $best = [self::RANK_FULL, 'branch'];
                 elseif (isset($down[$c->owner_id])) $best = [self::RANK_FULL, 'manager'];
                 elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = $below ? [self::RANK_FULL, 'hod'] : [self::RANK_COPY, 'team'];
+                elseif ($peers && $c->vault === 'critical' && $owner && !in_array($owner->user_type, self::ADMIN_TYPES, true)
+                    && ((int) $owner->branch_id === $peers || (int) $c->branch_id === $peers)) $best = [self::RANK_VIEW, 'branch_team'];
             }
             if (isset($shareRank[$c->id]) && (!$best || $shareRank[$c->id] > $best[0])) $best = [$shareRank[$c->id], 'share'];
             if ($best) $out[$c->id] = $best;
@@ -4968,11 +5202,18 @@ class CredVaultController extends Controller
     {
         $q = AuditLog::where('client_id', $u->client_id);
         if (!$this->isAdmin($u)) {
-            $q->where(fn ($w) => $w->where('user_id', $u->id)
-                ->orWhereIn('credential_id', Credential::withTrashed()->where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id')));
+            // Your team's activity, as the vaults define the team: your reporting line, and for a
+            // Branch Admin every person of the branch below them — plus events on credentials you own.
+            $people = array_merge([$u->id], $this->downlineIds($u));
+            $branch = $this->adminBranchOf($u);
+            $q->where(function ($w) use ($u, $people, $branch) {
+                $w->whereIn('user_id', $people)
+                  ->orWhereIn('credential_id', Credential::withTrashed()->where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'));
+                if ($branch) $w->orWhereIn('user_id', User::where('client_id', $u->client_id)->where('branch_id', $branch)->whereNotIn('user_type', self::ADMIN_TYPES)->select('id'));
+            });
         }
 
-        $tz    = $f['tz'] ?? config('app.timezone');
+        $tz    = $f['tz'] ?? self::AUDIT_TZ;
         $today = now($tz)->toDateString();
         foreach (['from' => 'From', 'to' => 'To'] as $k => $label) {
             if (!empty($f[$k]) && $f[$k] > $today) $this->reject("{$label} cannot be in the future.", $k);

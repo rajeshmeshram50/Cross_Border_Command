@@ -382,6 +382,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('department nodes under the Admin', () => b.data.tree.children.forEach(c => pm.expect(c.type).to.eql('department')));"
                                 ]
                             }
@@ -525,6 +526,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('tab counts', () => pm.expect(b.tabs).to.include.keys('mine', 'team'));"
                                 ]
                             }
@@ -672,7 +674,7 @@
                     ]
                 },
                 {
-                    "name": "Add a team credential as a colleague (the manager)",
+                    "name": "Add a team credential (yours — your manager sees it under Team Credentials)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -698,24 +700,14 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation (colleague) {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
+                            "raw": "{\n    \"type\": \"login\",\n    \"name\": \"GitHub Organisation (team) {{$timestamp}}\",\n    \"scope\": \"team\",\n    \"fields\": {\n        \"url\": \"https://github.com/inorbvict\",\n        \"username\": \"devops@inorbvict.com\",\n        \"password\": \"G1thub!Org-2026#Strong\"\n    }\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
                         },
-                        "auth": {
-                            "type": "bearer",
-                            "bearer": [
-                                {
-                                    "key": "token",
-                                    "value": "{{managerToken}}",
-                                    "type": "string"
-                                }
-                            ]
-                        },
-                        "description": "Team Credentials are the credentials of your team that are not yours, so a colleague adds one here."
+                        "description": "Team Credentials are the team credentials of the people below you in the reporting line (HOD → TL → Employee → Intern). The employee adds one here; their reporting manager (managerToken) exports the Team tab below."
                     },
                     "event": [
                         {
@@ -811,6 +803,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('5 categories that add up', () => { pm.expect(b.data.groups.length).to.eql(5); pm.expect(b.data.groups.reduce((n, g) => n + g.count, 0)).to.eql(b.data.total); });"
                                 ]
                             }
@@ -818,7 +811,7 @@
                     ]
                 },
                 {
-                    "name": "Export popup — counts, Team Credentials (the selected team)",
+                    "name": "Export popup — counts, Team Credentials (as the manager)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -847,6 +840,16 @@
                                     "value": "{{myDepartmentId}}"
                                 }
                             ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -856,6 +859,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
                                     "pm.test('both tab counts', () => pm.expect(b.data.tabs).to.include.keys('mine', 'team'));"
                                 ]
                             }
@@ -897,6 +901,16 @@
                                 }
                             ]
                         },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
                         "description": "Add more groups[] rows for more categories. data.selected is the \"20 of 41\" number."
                     },
                     "event": [
@@ -912,7 +926,7 @@
                     ]
                 },
                 {
-                    "name": "Export — Team Credentials, CSV, notes, no passwords",
+                    "name": "Export — Team Credentials, CSV, notes, no passwords (as the manager)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -943,6 +957,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         },
                         "description": "The response is the file. Headers: X-CredVault-Code (EX-…), X-CredVault-Count, X-CredVault-Withheld."
                     },
@@ -990,6 +1014,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -1036,6 +1070,16 @@
                                     "language": "json"
                                 }
                             }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         },
                         "description": "Nothing in the team matching → 422 \"No credentials match this selection\"."
                     },

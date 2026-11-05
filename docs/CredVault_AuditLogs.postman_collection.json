@@ -1,0 +1,2239 @@
+{
+    "info": {
+        "name": "Audit Logs",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "CredVault › Audit Logs: the four tabs (All Activity · My Activity · Team Activity · Security Alerts) with their counts, the time range (24h · 7 days · 30 days · All · Custom from → to), search and filters, the day headings, and Export Logs (CSV / Excel).\n\nBEFORE YOU START\nFill baseUrl, email/password, adminEmail/adminPassword and managerEmail/managerPassword. Run 00 · Setup, then the folders in order (folder 03 reads the Event ID saved in folder 01).\n\nFull details: docs/CREDVAULT_VAULTS_API_SHEET.md → Audit Logs."
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "00 · Setup — sign in",
+            "description": "email / password — an employee with Credentials Vault → View.\nadminEmail / adminPassword — a Vault Admin (client admin): sees the whole company's log.\nmanagerEmail / managerPassword — that employee's reporting manager: sees the team below them.",
+            "item": [
+                {
+                    "name": "Login — employee",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('token', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('token')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — Vault Admin (client admin)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('adminToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('adminToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — employee's reporting manager",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('managerToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('managerToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 · Tabs — All Activity · My Activity · Team Activity · Security Alerts",
+            "description": "GET /audit-logs?tab=all|mine|team|alerts — the four tabs. `tabs` holds all four counts (the badges); they follow the time range and the search, not the tab.\nWho sees what: a Vault Admin the whole company · a Branch Admin the branch's people · a manager their reporting line (HOD → TL → Employee → Intern) · everyone their own events and the events on credentials they own.\nResponse: summary (events, by_me, team_members, views_reveals, copies_exports, access_changes, security_alerts, most_active) · data[] (one event) · groups[] (the day headings: Today / Yesterday / \"Tuesday, 03/11/2026\" + its event count) · tabs · meta.",
+            "item": [
+                {
+                    "name": "All Activity (last 30 days)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=all&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "try { const v = b.data[0].event_id; if (v !== undefined && v !== null) pm.collectionVariables.set('eventId', String(v)); } catch (e) {}",
+                                    "try { const v = b.data.find(e => e.credential).credential.id; if (v !== undefined && v !== null) pm.collectionVariables.set('eventCredId', String(v)); } catch (e) {}",
+                                    "pm.test('tabs: all · mine · team · alerts', () => pm.expect(b.tabs).to.include.keys('all', 'mine', 'team', 'alerts'));",
+                                    "pm.test('rows: EVT- id, time + seconds, actor, label, severity, chip, IP', () => b.data.forEach(e => { pm.expect(e.event_id).to.match(/^EVT-/); pm.expect(e.time).to.match(/^\\d\\d:\\d\\d$/); pm.expect(e.seconds).to.match(/^\\d\\ds$/); pm.expect(e.actor).to.include.keys('name', 'initials', 'role'); pm.expect(e).to.include.keys('label', 'severity_label', 'chip', 'ip', 'sentence', 'date'); }));",
+                                    "pm.test('day groups for the rows', () => { const days = new Set(b.data.map(e => e.date)); pm.expect(b.groups.length).to.eql(days.size); b.groups.forEach(g => pm.expect(g).to.include.keys('heading', 'events', 'events_label')); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "My Activity",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=mine&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('only my events', () => pm.response.json().data.forEach(e => pm.expect(e.actor.is_me).to.eql(true)));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Team Activity",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=team&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('nobody\\'s but the team\\'s', () => pm.response.json().data.forEach(e => pm.expect(e.actor.is_me).to.eql(false)));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Security Alerts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=alerts&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "alerts"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('critical events only', () => pm.response.json().data.forEach(e => pm.expect(e.severity).to.eql('critical')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Team Activity — as the manager (the people below)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=team&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Unknown tab (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tab=everyone",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "everyone"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "02 · Time range — 24h · 7 days · 30 days · All · Custom (from → to)",
+            "description": "range=24h | 7d | 30d (default) | all | custom.\nCustom: from=YYYY-MM-DD and/or to=YYYY-MM-DD — the viewer's calendar days (tz, default Asia/Kolkata). Either end may be left open (no From = from the start, no To = today).\nRefused (422): From after To (\"From must be on or before To.\"), a date in the future (\"From cannot be in the future.\"), another date format, an unknown range.\nThe pre-request scripts set {{fromDate}} / {{toDate}} relative to today.",
+            "item": [
+                {
+                    "name": "Last 24 hours",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=24h&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "24h"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('tabs: all · mine · team · alerts', () => pm.expect(b.tabs).to.include.keys('all', 'mine', 'team', 'alerts'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Last 7 days",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=7d&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "7d"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Last 30 days",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=30d&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "30d"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "All time",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('all ≥ 30 days', () => pm.expect(pm.response.json().tabs.all).to.be.at.least(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — From and To",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&from={{fromDate}}&to={{toDate}}&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "{{fromDate}}"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "{{toDate}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('the range echoed', () => { const s = pm.response.json().summary.range; pm.expect(s.range).to.eql('custom'); pm.expect(s.from).to.eql(pm.collectionVariables.get('fromDate')); });"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — only From (To = today)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&from={{weekAgo}}&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "{{weekAgo}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — only To (from the start)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&to={{toDate}}&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "{{toDate}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — From after To (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&from={{toDate}}&to={{fromDate}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "{{toDate}}"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "{{fromDate}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "pm.test('message', () => pm.expect(pm.response.json().message).to.eql('From must be on or before To.'));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — a date in the future (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&from={{futureDate}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "{{futureDate}}"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Custom — wrong date format (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=custom&from=05-11-2026",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "05-11-2026"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Unknown range (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=90d",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "90d"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "03 · Search, filters, timezone, pages",
+            "description": "q= searches the user, the credential (name or CRD- code), the action (its label: \"Access approved\"), the details, the module and the Event ID (EVT-123 or 123). The tab counts follow the search.\naction= one action key (view, reveal, copy, share, request, approve, reject, export, …) · credential_id= one credential's history · tz= the viewer's timezone (times, days and custom dates) · page / per_page (≤ 100).",
+            "item": [
+                {
+                    "name": "Search — a person",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&q=a&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "a"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Search — an Event ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&q={{eventId}}&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "{{eventId}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('that event', () => pm.expect(pm.response.json().data[0].event_id).to.eql(pm.collectionVariables.get('eventId')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Search — an action label (\"Access approved\")",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&q=Access%20approved&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "Access approved"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Search — nothing matches (every count 0)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&q=zzzz-no-such-event&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "zzzz-no-such-event"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('all 0', () => pm.expect(pm.response.json().tabs).to.eql({ all: 0, mine: 0, team: 0, alerts: 0 }));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Filter — one action (approve)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&action=approve&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "action",
+                                    "value": "approve"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('approvals only', () => pm.response.json().data.forEach(e => pm.expect(e.action).to.eql('approve')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Filter — one credential's history",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&credential_id={{eventCredId}}&tz=Asia%2FKolkata&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "credential_id",
+                                    "value": "{{eventCredId}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Timezone — UTC",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=7d&tz=UTC",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "7d"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "UTC"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Pages — 5 a page, page 2",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?range=all&per_page=5&page=2&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "5"
+                                },
+                                {
+                                    "key": "page",
+                                    "value": "2"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('5 or fewer', () => pm.expect(pm.response.json().data.length).to.be.at.most(5));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Unknown action (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?action=dance",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "action",
+                                    "value": "dance"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Unknown timezone (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs?tz=Mars%2FBase",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tz",
+                                    "value": "Mars/Base"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "04 · Export Logs — CSV / Excel, exactly the view on screen",
+            "description": "GET /audit-logs/export?format=csv|xlsx + the same filters as the list (tab, range, from, to, tz, q, action, credential_id). Up to 10,000 events, in the viewer's time.\nColumns: Event ID · Date (dd/mm/yyyy) · Time · User · Role · Action · Credential ID · Credential · Risk · Details · Module · Severity · IP.\nFile: credvault-audit-log-<all-activity | my-activity | team-activity | security-alerts>-YYYYMMDD.csv / .xlsx. Header X-CredVault-Count = the events in it. The export itself is recorded (\"Audit log exported · N events\").\nPostman: Send ▾ → Download response to save the file.",
+            "item": [
+                {
+                    "name": "Export — All Activity, 30 days, CSV",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=all&range=30d&tz=Asia%2FKolkata&format=csv",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "30d"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "format",
+                                    "value": "csv"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: all-activity', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('all-activity'));",
+                                    "pm.test('file: .csv', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.csv'));",
+                                    "pm.test('X-CredVault-Count', () => pm.expect(Number(pm.response.headers.get('X-CredVault-Count'))).to.be.above(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — All Activity, Excel",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=all&range=all&tz=Asia%2FKolkata&format=xlsx",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                },
+                                {
+                                    "key": "format",
+                                    "value": "xlsx"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: .xlsx', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.xlsx'));",
+                                    "pm.test('X-CredVault-Count', () => pm.expect(Number(pm.response.headers.get('X-CredVault-Count'))).to.be.above(0));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — My Activity",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=mine&range=all&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "mine"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: my-activity', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('my-activity'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Team Activity, 7 days",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=team&range=7d&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "team"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "7d"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('file: team-activity', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('team-activity'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Security Alerts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=alerts&range=all&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "alerts"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "description": "422 \"There are no events in this view to export.\" when there are no critical events in the range."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200 or 422', () => pm.expect([200, 422]).to.include(pm.response.code));",
+                                    "if (pm.response.code === 200) pm.test('file: security-alerts', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('security-alerts'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — Custom range",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?tab=all&range=custom&from={{fromDate}}&to={{toDate}}&tz=Asia%2FKolkata",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "range",
+                                    "value": "custom"
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "{{fromDate}}"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "{{toDate}}"
+                                },
+                                {
+                                    "key": "tz",
+                                    "value": "Asia/Kolkata"
+                                }
+                            ]
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{adminToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const d = n => { const x = new Date(Date.now() - n * 86400000); return x.toISOString().slice(0, 10); };",
+                                    "pm.collectionVariables.set('fromDate', d(7)); pm.collectionVariables.set('toDate', d(0));",
+                                    "pm.collectionVariables.set('futureDate', d(-3)); pm.collectionVariables.set('weekAgo', d(7));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — nothing in the view (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?q=zzzz-no-such-event",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "zzzz-no-such-event"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export — unknown format (422)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/audit-logs/export?format=pdf",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "audit-logs",
+                                "export"
+                            ],
+                            "query": [
+                                {
+                                    "key": "format",
+                                    "value": "pdf"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000/api"
+        },
+        {
+            "key": "email",
+            "value": ""
+        },
+        {
+            "key": "password",
+            "value": ""
+        },
+        {
+            "key": "adminEmail",
+            "value": ""
+        },
+        {
+            "key": "adminPassword",
+            "value": ""
+        },
+        {
+            "key": "managerEmail",
+            "value": ""
+        },
+        {
+            "key": "managerPassword",
+            "value": ""
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "adminToken",
+            "value": ""
+        },
+        {
+            "key": "managerToken",
+            "value": ""
+        },
+        {
+            "key": "eventId",
+            "value": ""
+        },
+        {
+            "key": "eventCredId",
+            "value": ""
+        },
+        {
+            "key": "fromDate",
+            "value": ""
+        },
+        {
+            "key": "toDate",
+            "value": ""
+        },
+        {
+            "key": "futureDate",
+            "value": ""
+        },
+        {
+            "key": "weekAgo",
+            "value": ""
+        }
+    ]
+}

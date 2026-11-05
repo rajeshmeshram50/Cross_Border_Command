@@ -39,7 +39,7 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 | Method & path | What it does |
 |---|---|
-| `GET /normal-vault/credentials` | List. Query: `tab` (all \| mine \| team \| shared \| others), `q`, `type`, `group`, `risk`, `department_id`, `member_id`, `page`, `per_page` |
+| `GET /normal-vault/credentials` | List. Query: `tab` (all \|| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |\| team \| shared \| others), `q`, `type`, `group`, `risk`, `department_id`, `member_id`, `page`, `per_page` |
 | `GET /normal-vault/credentials/next-code` | Next CRD- ID (a preview) |
 | `POST /normal-vault/credentials` | Create (JSON, or multipart when files go with it) |
 | `PUT /normal-vault/credentials/{id}` | Edit, partial: a field left out keeps its value |
@@ -50,7 +50,7 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 
 | Method & path | What it does |
 |---|---|
-| `GET /critical-vault/credentials` | List. Tabs all \| mine \| others |
+| `GET /critical-vault/credentials` | List. Tabs all \| mine \| others (Teams Critical Credentials: the whole branch, see below) |
 | `GET /critical-vault/credentials/next-code` | Next CCRD- ID (a preview) |
 | `POST /critical-vault/credentials` | Create, with the protection steps and the 2-step proof |
 | `PUT / POST /critical-vault/credentials/{id}` | Edit. Only the owner or a Vault Admin may change the steps, approvers, method or inbox |
@@ -61,10 +61,32 @@ Each vault has the same 25 forms (§3). A credential never moves between vaults:
 | `POST /critical-vault/two-step/email/send` | Mail a setup code `{ email? }` (default php@inhpl.com) and return a `token` |
 | `POST /critical-vault/two-step/email/verify` | `{ token, code }`: the token is then good for one save |
 | `POST /critical-vault/credentials/{id}/access-requests` | Request an unlock (`reason`, `duration_minutes` when the admin step is on) |
-| `GET /critical-vault/access-requests` · `GET …/{id}` | Request list (tabs all \| pending \| approved \| rejected \| mine \| to_me) and detail |
+| `GET /critical-vault/access-requests` · `GET …/{id}` | Request list (tabs all \| pending \| approved \| rejected \|| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |\| to_me) and detail |
 | `POST /critical-vault/access-requests/{id}/approve` · `/reject` · `/cancel` · `/lock` | The decisions, and "Lock now" |
 | `POST /critical-vault/access-requests/{id}/send-otp` | Email method: mail the unlock code to the credential's inbox |
 | `POST /critical-vault/access-requests/{id}/verify-otp` | `{ code }` → unlocked for the window |
+
+#### Teams Critical Credentials: the whole branch (Critical Vault only)
+
+`GET /critical-vault/credentials?tab=others` (the **Teams Critical Credentials** tab), and `all`, list **every Critical Vault team credential owned by an employee of your branch**. This is not limited to the people below you in the reporting line. The tab count follows the same rule, and the search.
+
+| Who | Teams Critical Credentials shows | Rights |
+|---|---|---|
+| Vault Admin | every branch's | Full (`via: admin`) |
+| Branch Admin | their branch's | Full (`via: branch`) |
+| Manager / HOD | the whole branch | Full on their downline (`via: manager` / `hod`); **View** on everyone else in the branch (`via: branch_team`) |
+| Employee / Intern | the whole branch | **View** (`via: branch_team`) |
+
+- **View** (`via: branch_team`):
+  - The row lists as **Locked · Approval needed**, and the View drawer shows the summary but no fields.
+  - **Request Access** works: `POST /critical-vault/credentials/{id}/access-requests`. After the approval steps, the person can reveal the credential for the window.
+  - Copy, Edit, Share and Delete are off (`can.copy/edit/share/delete = false`, 403 on the APIs).
+- **Not listed:**
+  - personal (`scope: personal`) critical credentials;
+  - other branches' credentials;
+  - credentials owned by an admin login (Vault Admin or Branch Admin).
+- **Normal Vault is unchanged.** My Vault's team tabs still follow the reporting line, and a colleague's Normal Vault team credential stays hidden (404).
+- **Tested:** `cv_critical_branch.php`, 41/41 checks. The access-rights suite (56/56), the tab-count suite (72/72) and the Vaults collection (315/315) still pass.
 
 ### Generate Password (both vaults use it)
 
@@ -341,6 +363,60 @@ Each row is the table's line, ready to show:
 
 `GET /credentials/{id}` (view) · `POST …/reveal` · `POST …/events` · `GET …/activity` · `GET …/attachments/{key}` (download a file)
 
+### Audit Logs — All · My · Team · Security Alerts, time range, Export Logs
+
+The Postman collection **"Audit Logs"** holds only these APIs: [CredVault_AuditLogs.postman_collection.json](CredVault_AuditLogs.postman_collection.json), 5 folders and 38 requests.
+
+| API | Request |
+|---|---|
+| Audit Logs – List API (the four tabs, counts, day groups) | `GET /credvault/audit-logs?tab=&range=&from=&to=&tz=&q=&action=&credential_id=&page=&per_page=` |
+| Audit Logs – Export Logs API (CSV / Excel) | `GET /credvault/audit-logs/export?format=csv\|xlsx` + the same filters |
+
+| Filter | Values |
+|---|---|
+| `tab` | `all` (All Activity) · `mine` (My Activity) · `team` (Team Activity: everyone else you may see) · `alerts` (Security Alerts: critical events) |
+| `range` | `24h` · `7d` · `30d` (default) · `all` · `custom` |
+| `from` / `to` | with `custom`: `YYYY-MM-DD`, your calendar days. Either end may be open (no From = from the start, no To = today). |
+| `tz` | the viewer's timezone for times, days and custom dates (default `Asia/Kolkata`) |
+| `q` | user · credential (name or CRD- code) · action label ("Access approved") · details · module · Event ID (`EVT-123`) |
+| `action` · `credential_id` | one action · one credential's history |
+
+**Who sees what:**
+- a Vault Admin sees the whole company;
+- a Branch Admin sees the branch's people;
+- a manager sees their reporting line (HOD → TL → Employee → Intern);
+- everyone sees their own events and the events on credentials they own.
+
+**List response:**
+- `tabs { all, mine, team, alerts }`: the badges. They follow the range and the search, not the tab.
+- `summary`: events, by_me, team_members, views_reveals, copies_exports, access_changes, security_alerts, most_active, range.
+- `groups[]`: the day headings for the rows on the page: `heading` ("Today 05/11/2026", "Yesterday 04/11/2026", "Tuesday, 03/11/2026"), `events` / `events_label` ("15 events", counted over every page).
+- `data[]`, one per event:
+  - `event_id` (EVT-…), `time` (15:22), `seconds` (46s), `date`;
+  - `actor { name ("You"), initials, role ("HOD · Procurement") }`;
+  - `label` (the action chip: "Access approved"), `verb`, `sentence` ("Priya Sharma approved access to Kotak Vendor Payments A/c");
+  - `detail` ("REQ-6953 · as Reporting Manager for …"), `chip` ("CRD-0048 · Critical"), `credential { code, name, risk, risk_label, vault }`;
+  - `module`, `ip`, `severity` / `severity_label` (Info · Warning · Critical).
+
+**Export file:**
+- Columns: Event ID · Date (dd/mm/yyyy) · Time · User · Role · Action · Credential ID · Credential · Risk · Details · Module · Severity · IP.
+- Up to 10,000 events, in your time.
+- File name: `credvault-audit-log-<all-activity|my-activity|team-activity|security-alerts>-YYYYMMDD.csv|xlsx`.
+- Header: `X-CredVault-Count`.
+- The export itself is recorded ("Audit log exported · N events").
+
+**Refusals (422):**
+- From after To: "From must be on or before To.";
+- a future date: "From cannot be in the future.";
+- another date format, or an unknown tab / range / action / timezone / format;
+- an export of an empty view: "There are no events in this view to export."
+
+**Tested (05/11/2026):** 42/42 end to end, plus the collection at 35/35 requests, both in a rolled-back transaction. The end-to-end run planted 10 events from 1 hour to 40 days old and checked:
+- each range: 24h → 4, 7 days → 8, 30 days → 9, All → 10, plus custom ranges;
+- the tab counts, and who sees what: Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9;
+- search, the day groups, the row fields, the timezone, paging;
+- CSV / Excel export following tab, range and search.
+
 ### Import & Recovery
 
 Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CREDVAULT_IMPORT_RECOVERY_API_SHEET.md), and its own Postman collection, **"Import & Recovery"** ([CredVault_ImportRecovery.postman_collection.json](CredVault_ImportRecovery.postman_collection.json)). It covers:
@@ -353,11 +429,11 @@ Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CR
 
 ### Recycle Bin — 4 tabs × Normal / Critical
 
-The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 45 requests:
+The Recycle Bin screen. The Postman collection **"Recycle Bin"** holds only these APIs: [CredVault_RecycleBin.postman_collection.json](CredVault_RecycleBin.postman_collection.json), 6 folders and 53 requests:
 - 00 Setup (3 logins);
 - 01 Prepare (moves 3 Normal and 2 Critical items to the bin);
 - 02 `GET /recycle-bin`;
-- 03 `GET | PUT /recycle-bin/retention`;
+- 03 `GET | PUT /recycle-bin/retention` (per branch, both vaults);
 - 04 restore / delete one item;
 - 05 Empty Bin.
 
@@ -369,8 +445,8 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 | `POST /credvault/recycle-bin/{id}/restore` | Back to its vault: My Vault, Team Vault or Critical Vault |
 | `DELETE /credvault/recycle-bin/{id}` `{ confirm: true }` | Delete one item for good |
 | `DELETE /credvault/recycle-bin` `{ confirm: true, vault?: all\|normal\|critical }` | **Empty Bin.** `all` (the default) empties **both vaults in one call** |
-| `GET /credvault/recycle-bin/retention` | The Change period popup: Normal's period and options, Critical's fixed period |
-| `PUT /credvault/recycle-bin/retention` `{ days: 7\|15\|30\|60\|90, vault?: normal }` | Change the **Normal Vault** period (Vault Admins) |
+| `GET /credvault/recycle-bin/retention[?days=][&branch_id=]` | The Change period popup: the viewer's period (**one for both vaults**), its branch and source, the options, `branches[]` for the Vault Admin, `preview` with `days` |
+| `PUT /credvault/recycle-bin/retention` `{ days: 7\|15\|30\|60\|90, branch_id?, confirm_purge? }` | Change the period **per branch, for My Vault and Critical Vault**: a Branch Admin sets their own branch; a Vault Admin sets the company default (no `branch_id`) or one branch |
 
 **Tabs.** There are four tabs: All Items, Deleted by Me, Team Credentials and Expiring Soon. Each has a Normal Vault and a Critical Vault sub-tab, and `vault` (default `normal`) picks the sub-tab. Expiring Soon means 7 days or less left. **Every badge comes back in one call, and the counts follow the search box:**
 
@@ -382,10 +458,11 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 ```
 
 **`summary`.** The cards, for the chosen vault:
-- `retention_days`;
-- `retention_fixed` (true for Critical);
-- `can_change_retention` (Normal and Vault Admin only);
-- `retention_options` (empty for Critical);
+- `retention_days`: the viewer's branch period, the same on both sub-tabs;
+- `retention_scope { branch { id, name }, source: branch | company, applies: both }`;
+- `retention_fixed`: always false (nothing is fixed any more);
+- `can_change_retention`: Vault Admin or Branch Admin;
+- `retention_options`: 7 · 15 · 30 · 60 · 90 on both sub-tabs;
 - `items`, `deleted_by_me`, `expiring_soon`, `critical`;
 - `next_deletion { name, at, days }`;
 - `purge_allowed`, `can_empty`.
@@ -393,17 +470,44 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 **Rows (`data[]`).** Each row has:
 - `sr_no`, `code`, `vault`, `name`, `type_label`, `category_group`, `url`, `scope` / `scope_label`, `risk`;
 - `owner { name, initials }`, `deleted_by { name ("You"), initials }`, `deleted_at`;
-- `purges_at`, `days_left`, `left_pct`, `urgency` (ok · warn · bad);
+- `retention_days` (the period of the item's own branch), `branch_id`, `purges_at`, `days_left`, `left_pct`, `urgency` (ok · warn · bad);
 - **`can_restore`**, **`can_purge`**, and `locked_reason` when the user may not act.
 
 **Rules**
 
 | Rule | Normal Vault | Critical Vault |
 |---|---|---|
-| Retention period | The Vault Admin chooses it with Change period: 7 · 15 · 30 · 60 · 90 days. A shorter period deletes the items already past it, right away. | **Fixed 30 days.** No Change period is offered; `PUT …/retention` with `vault: critical` → 422 "…its period cannot be changed." |
+| Retention period | **One period for both vaults, set per branch** (see below) | The same period as My Vault. **No fixed 30 days.** |
 | Who sees an item | Its owner, whoever binned it, the Vault Admin (team items), and the Branch Admin (the branch's team items) | The same, and the **Branch Admin sees every Critical item of the branch** |
 | Restore / delete | Whoever sees it | **The Branch Admin of the item's branch only.** Anyone else gets 403 "Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin." |
 | Empty Bin (`vault: all`) | Everything the caller sees | The Branch Admin's: every Critical item of the branch. For anyone else, critical items are left and counted in `skipped.critical`. |
+
+#### Retention period: per branch, both vaults
+
+| Who | What Change period sets |
+|---|---|
+| Branch Admin | **Their branch's period:** every employee of the branch, My Vault and Critical Vault. Another `branch_id` → 403. |
+| Vault Admin (client admin) | No `branch_id`: the **company default**, used by every branch without its own period. With `branch_id`: that branch's period. A branch of another company → 404. |
+| Employee | Reads their branch's period (`can_change: false`). A change → 403. |
+
+- **Which period an item follows:** the branch the credential is filed under, else its owner's branch. An item with no branch follows the company default.
+- **Shorter period:** items already past it are deleted right away, in both vaults, in that branch only. When any would go, the PUT needs `confirm_purge: true` (409 without it). `GET …/retention?days=7` previews them.
+- **Stored:** in the company's CredVault policy row (`bin_branch_days`, branch id → days). No migration is needed. A save in CredVault Policies keeps the branch periods.
+- **Audit:** "Retention period for <branch>: 30 days → 7 days", module Recycle Bin.
+- **`vault`** in the PUT is still accepted (the screen sends it), and ignored.
+
+```
+GET /recycle-bin/retention   (Branch Admin)
+{ "days": 7, "applies_to": "both", "scope": "branch",
+  "branch": { "id": 3, "name": "…", "source": "branch" }, "company_days": 30,
+  "options": [7, 15, 30, 60, 90], "can_change": true,
+  "normal":   { "days": 7, "options": [7, 15, 30, 60, 90], "can_change": true, "fixed": false },
+  "critical": { "days": 7, "options": [7, 15, 30, 60, 90], "can_change": true, "fixed": false } }
+
+PUT /recycle-bin/retention { "days": 7, "confirm_purge": true }   (Branch Admin)
+{ "message": "Retention set to 7 days for <branch>, for My Vault and Critical Vault · 2 items past the new period deleted.",
+  "data": { "days": 7, "applies_to": "both", "scope": "branch", "branch_id": 3, "purged": 2 } }
+```
 
 **Empty Bin response:**
 
@@ -418,8 +522,16 @@ To use it, fill `email`/`password` (an employee), `branchEmail`/`branchPassword`
 - Moving a credential to the bin returns its vault and its own period, and for a critical credential says "restorable by the Branch Admin".
 
 **Tested (05/11/2026):**
-- **Rules:** 42/42 checks. These covered the counts for both vaults, the Expiring Soon tab, the search, each person's view (employee, the Branch Admins of two branches, the Vault Admin), restore and delete per person, retention (a shorter Normal period deletes old Normal items but not a 25-day-old Critical one), and Empty Bin per person.
-- **Collection:** 42/42 requests (the 3 logins are done in-process), all inside a transaction that was rolled back, so no data changed.
+- **Rules:** 43/43 checks: the counts for both vaults, the Expiring Soon tab, the search, each person's view, restore and delete per person, retention (a shorter period now deletes old My Vault **and** Critical items), and Empty Bin per person.
+- **Retention per branch:** 38/38 checks (`cv_bin_branch.php`):
+  - a Branch Admin's 7 days delete only their branch's old items, in both vaults; the other branch stays on 30;
+  - employees read their branch's period;
+  - who may change what (403 / 404);
+  - rows and cards on each item's own branch period;
+  - the Vault Admin's company default and per-branch change;
+  - CredVault Policies saves keep the branch periods;
+  - the audit entries.
+- **Collection:** 50/50 requests (the 3 logins are done in-process), all inside a transaction that was rolled back, so no data changed.
 
 ---
 
@@ -613,12 +725,12 @@ attachments[0]=<file: access-approval.pdf>
 | 01 | Generate Password | 19 | Characters and passphrase modes, the 6 refusals, use it in an add, rotate it |
 | 02 | **Add Normal Vault** | 28 | Next CRD- code; **Add 01 … Add 25**, one per type, form-data with files; risk critical → 422; missing field → 422 |
 | 03 | **Edit Normal Vault** | 30 | **Edit 01 … Edit 25**: every field with a new value plus new files (form-data POST); add an attachment, download it, remove it; a JSON-only PUT; risk critical → 422 |
-| 04 | **Get Normal Vault (list)** | 11 | Tabs all / mine / team / shared / others; search; filter by type, group and risk; paging; the shared list with `?vault=normal`. Every row is checked: vault, strength name, no percentage |
+| 04 | **Get Normal Vault (list)** | 11 | Tabs all /| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |/ team / shared / others; search; filter by type, group and risk; paging; the shared list with `?vault=normal`. Every row is checked: vault, strength name, no percentage |
 | 05 | **Get single Normal Vault** | 27 | **Get single 01 … 25**, one per type. Each is checked: open, every field of the type returned **in plain text** (none masked) with `all_values`, strength name. Plus reveal and activity |
 | 06 | Delete Normal Vault | 2 | To the Recycle Bin; get single afterwards → 404 |
 | 07 | **Add Critical Vault** | 33 | Next CCRD- code; approvers; Google new secret and check; **Add 01 … Add 25** with approvals, Google 2-step and files; refusals: risk high, no method, all steps off, wrong code |
 | 08 | **Edit Critical Vault** | 30 | **Edit 01 … Edit 25**: every field plus new files, the lock kept, no new code; rename only; manager step off; risk high → 422; cross-vault ids → 404 both ways |
-| 09 | **Get Critical Vault (list)** | 9 | Tabs all / mine / others; search; filters; paging; `?vault=critical` |
+| 09 | **Get Critical Vault (list)** | 9 | Tabs all /| `GET /critical-vault/credentials` | List. Tabs all | mine | others (Teams Critical Credentials: the whole branch, see below) |/ others; search; filters; paging; `?vault=critical` |
 | 10 | **Get single Critical Vault** | 26 | **Get single 01 … 25**. Each is checked: locked, the unlock plan, no fields and no values, strength name. Plus reveal while locked → 423 |
 | 11 | Delete Critical Vault | 2 | To the Recycle Bin (owner / Vault Admin); get single afterwards → 404 |
 | 12 | **Team Vault** | 24 | Departments (admin card + department cards) and search; one department (stats, the Admin chip first, members, tree); unknown department → 404; organisation (View all); add a team credential; table: My Credentials, Team Credentials for a department, search, a member's credentials, critical team credentials; **Export**: a colleague's team credential; popup counts for My, for Team, with categories ticked; files: Team CSV, two categories, JSON with filters, My CSV, with passwords; refusals: not acknowledged, wrong account password, no tab; history |

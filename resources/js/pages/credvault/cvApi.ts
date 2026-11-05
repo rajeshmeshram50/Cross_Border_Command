@@ -90,7 +90,7 @@ async function download(method: 'get' | 'post', path: string, body?: unknown, pa
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
 export type Twofa = 'yes' | 'no' | 'na';
 export type Perm = 'use' | 'view' | 'copy' | 'full';
-export type Via = 'owner' | 'admin' | 'hod' | 'team' | 'share';
+export type Via = 'owner' | 'admin' | 'branch' | 'manager' | 'hod' | 'team' | 'branch_team' | 'share';
 export type LockStep = 'admin' | 'manager' | 'otp';
 
 export interface PageMeta { current_page: number; per_page: number; total: number; last_page: number }
@@ -227,8 +227,11 @@ export interface TransferRow {
 export type BinVault = 'normal' | 'critical';
 export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
 
-/** GET /recycle-bin/retention — the Change period popup's data, per vault. */
+/** GET /recycle-bin/retention — the Change period popup's data: one period for both vaults, per branch. */
 export interface BinRetention {
+  days?: number;
+  scope?: 'branch' | 'company';
+  branch?: { id: number; name: string | null; source: 'branch' | 'company' } | null;
   normal: { days: number; options: number[]; can_change: boolean };
   critical: { days: number; options: number[]; can_change: boolean; fixed: boolean };
   note: string;
