@@ -23,8 +23,6 @@ export default function ImportRecovery() {
   const [imp, setImp] = useState<Hist>(EMPTY);
   const [bk, setBk] = useState<Hist>(EMPTY);
   const [info, setInfo] = useState<BackupInfo | null>(null);
-  // "Your recent downloads" always reflects the newest page, whatever page the history card shows.
-  const [bkLatest, setBkLatest] = useState<TransferRow[]>([]);
   // One request id per list, so a slow older page can't overwrite a newer one.
   const impSeq = useRef(0);
   const bkSeq = useRef(0);
@@ -43,7 +41,6 @@ export default function ImportRecovery() {
       .then(r => {
         if (my !== bkSeq.current) return;
         setBk({ rows: r.data, meta: r.meta, loading: false, error: '', page });
-        if (page === 1) setBkLatest(r.data);
         setInfo({ scopes: r.scopes ?? [], columns: r.columns ?? null, lock_note: r.lock_note ?? '' });
       })
       .catch(e => { if (my === bkSeq.current) setBk(h => ({ ...h, loading: false, error: errMsg(e) })); });
@@ -68,7 +65,7 @@ export default function ImportRecovery() {
             <HistoryCard kind="import" rows={imp.rows} meta={imp.meta} loading={imp.loading} error={imp.error} onPage={loadImports} />
           </div>
           <div style={{ display: tab === 'backup' ? 'contents' : 'none' }}>
-            <BackupTab info={info} history={bkLatest} infoError={info ? '' : bk.error} infoLoading={bk.loading}
+            <BackupTab info={info} infoError={info ? '' : bk.error} infoLoading={bk.loading}
               onRetry={() => loadBackups(1)} onDone={() => loadBackups(1)} />
             <HistoryCard kind="backup" rows={bk.rows} meta={bk.meta} loading={bk.loading} error={bk.error} onPage={loadBackups} />
           </div>
