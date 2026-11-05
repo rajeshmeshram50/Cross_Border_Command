@@ -2933,8 +2933,9 @@
 
 .cvx #crd-host .mapsup-ffield.is-err .mapsup-finput,
 .cvx #crd-host .mapsup-ffield.is-err .crd-file {
-  border-color: #fda4af !important;
-  box-shadow: 0 0 0 3px rgba(244, 63, 94, .1);
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .18) !important;
+  background: #fff5f5 !important;
 }
 
 .cvx .mv-str--na {
@@ -6823,6 +6824,7 @@
 }
 
 .cvx .tvc-list .whm-pager {
+  margin-top: 0 !important;
   padding: 8px 4px 0 !important;
 }
 
