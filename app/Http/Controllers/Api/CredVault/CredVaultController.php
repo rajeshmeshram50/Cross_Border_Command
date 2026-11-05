@@ -2372,14 +2372,16 @@ class CredVaultController extends Controller
         $base = $this->binQuery($u, $vault);
         $next = (clone $base)->orderBy('deleted_at')->first(['id', 'name', 'deleted_at']);
         $branchAdmin = (bool) $this->adminBranchOf($u);
+        $binAdmin = $this->binAdmin($u);
         $summary = [
             'vault'                => $vault,
             'retention_days'       => $days,
             'retention_fixed'      => $vault === 'critical',
-            'can_change_retention' => $vault === 'normal' && $this->isAdmin($u),
+            'can_change_retention' => $vault === 'normal' && $binAdmin,
             'retention_options'    => $vault === 'normal' ? Policy::OPTIONS['bin_days'] : [],
             'purge_allowed'        => (bool) $pol['bin_purge'],
-            'can_empty'            => (bool) $pol['bin_purge'] && ($vault === 'normal' || $branchAdmin),
+            'is_bin_admin'         => $binAdmin,
+            'can_empty'            => (bool) $pol['bin_purge'] && $binAdmin && ($vault === 'normal' || $branchAdmin),
             'critical_actions'     => $branchAdmin ? 'branch_admin' : 'none',
             'items'                => (clone $base)->count(),
             'deleted_by_me'        => (clone $base)->where('deleted_by', $u->id)->count(),
@@ -2409,7 +2411,7 @@ class CredVaultController extends Controller
             'status'  => true,
             'purged'  => $purged,
             'summary' => $summary,
-            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from) {
+            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from, $binAdmin) {
                 $total = Policy::binDays($pol, $c->vault);
                 $purge = $c->deleted_at->copy()->addDays($total);
                 // Never "0 days": an item still in the bin goes on its last day.
@@ -2429,7 +2431,7 @@ class CredVaultController extends Controller
                     'left_pct' => (int) round(min($days, $total) / max(1, $total) * 100),
                     'urgency' => $days <= 3 ? 'bad' : ($days <= 7 ? 'warn' : 'ok'),
                     'can_restore' => $deny === null,
-                    'can_purge' => $deny === null && (bool) $pol['bin_purge'],
+                    'can_purge' => $deny === null && (bool) $pol['bin_purge'] && $binAdmin,
                     'locked_reason' => $deny,
                 ];
             })->values(),
@@ -2463,6 +2465,7 @@ class CredVaultController extends Controller
         $request->validate(['confirm' => ['accepted']], ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can delete permanently. You can restore it.', null, 403);
 
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
         if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
@@ -2485,6 +2488,7 @@ class CredVaultController extends Controller
             ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can empty the Recycle Bin.', null, 403);
         $vault = $d['vault'] ?? 'all';
 
         $items = $this->binQuery($u, $vault === 'all' ? null : $vault)->get();
@@ -2519,7 +2523,7 @@ class CredVaultController extends Controller
         $pol = Policy::for($u->client_id);
 
         return response()->json(['status' => true, 'data' => [
-            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->isAdmin($u)],
+            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->binAdmin($u)],
             'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
             'note'     => 'Items already older than the new period are deleted right away.',
         ]], 200);
@@ -2539,7 +2543,7 @@ class CredVaultController extends Controller
         if (($d['vault'] ?? 'normal') === 'critical') {
             $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
         }
-        if (!$this->isAdmin($u)) $this->reject('Only a Vault Admin can change the retention period.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can change the retention period.', null, 403);
 
         $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
 
@@ -4439,6 +4443,15 @@ class CredVaultController extends Controller
     protected function adminBranchOf(User $u): ?int
     {
         return $u->isBranchUser() && $u->branch_id ? (int) $u->branch_id : null;
+    }
+
+    /**
+     * The Recycle Bin's Vault Admin: the client admin or a Branch Admin. Only they change the
+     * retention period and delete permanently (an item, or Empty Bin); everyone else may only restore.
+     */
+    protected function binAdmin(User $u): bool
+    {
+        return $this->isAdmin($u) || $this->adminBranchOf($u) !== null;
     }
 
     /**

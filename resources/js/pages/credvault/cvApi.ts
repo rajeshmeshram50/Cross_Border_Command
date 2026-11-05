@@ -222,11 +222,15 @@ export interface TransferRow {
   by: string | null; by_id: number; by_me: boolean | null; by_role: string | null; at: string | null;
 }
 
+export type BinVault = 'normal' | 'critical';
+export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
+
 export interface BinRow {
-  id: number; code: string; name: string; type: string; type_label: string; category_group: string; url: string | null;
-  scope: string; risk: Risk; owner: { id: number; name: string | null; is_me: boolean };
-  deleted_by: { id: number | null; name: string | null }; deleted_at: string; purges_at: string;
-  days_left: number; left_pct: number; urgency: 'bad' | 'warn' | 'ok'; can_purge: boolean;
+  id: number; code: string; vault: BinVault; name: string; type: string; type_label: string; category_group: string; url: string | null;
+  scope: string; risk: Risk; owner: { id: number; name: string | null; initials?: string; is_me: boolean };
+  deleted_by: { id: number | null; name: string | null; initials?: string }; deleted_at: string; purges_at: string;
+  days_left: number; left_pct: number; urgency: 'bad' | 'warn' | 'ok';
+  can_restore: boolean; can_purge: boolean; locked_reason: string | null;
 }
 
 export interface ImportPreviewRow {
@@ -331,10 +335,11 @@ export const cvApi = {
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),
 
   /* Recycle Bin */
-  bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number }>('/recycle-bin', q),
+  bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number; counts: Record<BinVault | 'total', BinCounts> }>('/recycle-bin', q),
   restore: (id: number) => send<{ message: string }>('post', `/recycle-bin/${id}/restore`, {}),
   purge: (id: number) => send<{ message: string }>('delete', `/recycle-bin/${id}`, { confirm: true }),
-  emptyBin: () => send<{ message: string }>('delete', '/recycle-bin', { confirm: true }),
+  saveBinRetention: (days: number) => send<{ message: string; data: { vault: BinVault; days: number; purged: number } }>('put', '/recycle-bin/retention', { days, vault: 'normal' }),
+  emptyBin: (vault: BinVault | 'all' = 'all') => send<{ message: string }>('delete', '/recycle-bin', { confirm: true, vault }),
 };
 
 /** Routes of the ten screens — the menu, the quick actions and cross-screen links use these. */

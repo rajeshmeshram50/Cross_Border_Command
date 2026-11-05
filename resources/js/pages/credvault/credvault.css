@@ -7994,6 +7994,30 @@
   color: #fff;
 }
 
+/* Read-only popup (Critical Vault's fixed period, or not a Vault Admin): the other options are greyed out. */
+.cvx .rb-opt:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.cvx .rb-opt:disabled:hover {
+  border-color: #dfeaf0;
+}
+
+[data-bs-theme="dark"] .cvx .rb-opt {
+  background: #0c1c24;
+  border-color: rgba(148, 163, 184, .22);
+}
+
+[data-bs-theme="dark"] .cvx .rb-opt b { color: #e2e8f0; }
+[data-bs-theme="dark"] .cvx .rb-opt small,
+[data-bs-theme="dark"] .cvx .rb-ret__note { color: #94a3b8; }
+[data-bs-theme="dark"] .cvx .rb-opt:hover { border-color: #22d3ee; }
+[data-bs-theme="dark"] .cvx .rb-opt:disabled:hover { border-color: rgba(148, 163, 184, .22); }
+[data-bs-theme="dark"] .cvx .rb-opt.is-on { background: linear-gradient(135deg, #0e7490, #22d3ee); border-color: transparent; }
+[data-bs-theme="dark"] .cvx .rb-opt.is-on b,
+[data-bs-theme="dark"] .cvx .rb-opt.is-on small { color: #fff; }
+
 .cvx .rb-ret__note {
   display: flex;
   align-items: center;
@@ -8008,6 +8032,145 @@
   background: linear-gradient(135deg, #0b4f63, #0e7490 40%, #0891b2 75%, #22d3ee) !important;
   box-shadow: 0 8px 18px -8px rgba(8, 145, 178, .7) !important;
 }
+
+/* Recycle Bin "Auto-delete In" cell: days left, a bar of the retention period still left, the purge date.
+   Colour by urgency (backend): bad ≤ 3 days · warn ≤ 7 · ok. */
+.cvx .rb-left {
+  --rb-left: #059669;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 82px;
+}
+
+.cvx .rb-left--warn { --rb-left: #d97706; }
+.cvx .rb-left--bad { --rb-left: #e11d48; }
+
+.cvx .rb-left__n {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--rb-left);
+  white-space: nowrap;
+}
+
+.cvx .rb-left__bar {
+  display: block;
+  width: 76px;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e8f0f4;
+}
+
+.cvx .rb-left__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--rb-left);
+  transition: width .3s ease;
+}
+
+.cvx .rb-left__on {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: #6a869c;
+  white-space: nowrap;
+}
+
+[data-bs-theme="dark"] .cvx .rb-left { --rb-left: #34d399; }
+[data-bs-theme="dark"] .cvx .rb-left--warn { --rb-left: #fbbf24; }
+[data-bs-theme="dark"] .cvx .rb-left--bad { --rb-left: #fb7185; }
+[data-bs-theme="dark"] .cvx .rb-left__bar { background: rgba(148, 163, 184, .18); }
+[data-bs-theme="dark"] .cvx .rb-left__on { color: #94a3b8; }
+
+/* Recycle Bin vault sub-tabs (Normal / Critical) — the SPI list's underline sub-tabs (p2p-common.css .spi-subtab). */
+.cvx .rb-sub {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 16px;
+  margin: 6px 0 4px;
+}
+
+.cvx .rb-subtabs {
+  display: flex;
+  gap: 14px;
+  border-bottom: 1.5px solid #e3f1f5;
+}
+
+.cvx .rb-subtab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: color .14s;
+}
+
+.cvx .rb-subtab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1.5px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(90deg, #22d3ee, #0891b2);
+  opacity: 0;
+  transition: opacity .16s;
+}
+
+.cvx .rb-subtab:hover { color: #0891b2; }
+.cvx .rb-subtab.is-active { color: #0c4a6e; }
+.cvx .rb-subtab.is-active::after { opacity: 1; }
+.cvx .rb-subtab svg { color: #94a3b8; transition: color .14s; }
+.cvx .rb-subtab:hover svg,
+.cvx .rb-subtab.is-active svg { color: #0891b2; }
+
+.cvx .rb-subtab-c {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #94a3b8;
+}
+
+.cvx .rb-subtab.is-active .rb-subtab-c {
+  background: #cffafe;
+  border-color: #a5f3fc;
+  color: #0891b2;
+}
+
+@media (max-width: 760px) {
+  .cvx .rb-sub { padding: 0 12px; }
+  .cvx .rb-subtabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cvx .rb-subtabs::-webkit-scrollbar { display: none; }
+}
+
+[data-bs-theme="dark"] .cvx .rb-subtabs { border-color: rgba(148, 163, 184, .18); }
+[data-bs-theme="dark"] .cvx .rb-subtab { color: #94a3b8; }
+[data-bs-theme="dark"] .cvx .rb-subtab.is-active { color: #67e8f9; }
+[data-bs-theme="dark"] .cvx .rb-subtab:hover svg,
+[data-bs-theme="dark"] .cvx .rb-subtab.is-active svg { color: #22d3ee; }
+[data-bs-theme="dark"] .cvx .rb-subtab-c { background: rgba(148, 163, 184, .12); border-color: rgba(148, 163, 184, .2); color: #94a3b8; }
+[data-bs-theme="dark"] .cvx .rb-subtab.is-active .rb-subtab-c { background: rgba(34, 211, 238, .14); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 
 .cvx .dl-modal.mb {
   max-width: 480px;
