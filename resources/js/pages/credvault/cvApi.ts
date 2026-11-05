@@ -126,6 +126,7 @@ export interface Can { reveal: boolean; copy: boolean; edit: boolean; share: boo
 export interface UnlockState {
   state: 'locked' | 'pending' | 'progress' | 'open';
   label: string; stage?: LockStep; request_id?: number; code?: string;
+  needs_forward?: boolean;
   waiting_for?: { name: string; role: string } | null;
   step?: { number: number; of: number };
   expires_at?: string; seconds_left?: number; total_seconds?: number;
@@ -294,6 +295,7 @@ export const cvApi = {
   requests: (q: Q) => get<ListResponse<AccessRequestRow>>('/critical-vault/access-requests', q),
   request: (id: number) => get<{ data: AccessRequestRow }>(`/critical-vault/access-requests/${id}`).then(r => r.data),
   approve: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/approve`, { note }),
+  raiseManager: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/raise-manager`, {}),
   reject: (id: number, note?: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/reject`, { note }),
   cancel: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/cancel`, {}),
   sendOtp: (id: number) => send<{ data: { sent_to: string; expires_in: number; resend_in: number }; message: string }>('post', `/critical-vault/access-requests/${id}/send-otp`, {}),

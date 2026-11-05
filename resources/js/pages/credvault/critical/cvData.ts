@@ -231,6 +231,9 @@ const dummy = {
     return answer(credId, 'Request sent');
   },
 
+  /** The requester forwards an admin-approved request to the manager (dummy: open the manager stage). */
+  raiseManager: (reqId: number) => { const f = flowOf(reqId); if (f.phase === 'manager_ready') f.phase = 'manager'; return answer(reqId, 'Forwarded to the reporting manager.'); },
+
   /** The prototype's "act as": the waiting approver approves or rejects. */
   decide: (reqId: number, approve: boolean) => {
     const r = rowOf(reqId), f = flowOf(reqId);
@@ -277,6 +280,8 @@ const live = {
   list: (q: ListQuery) => cvApi.list(q),
   show: (id: number) => cvApi.show(id),
   requestAccess: cvApi.requestAccess,
+  /** The requester forwards an admin-approved request to their reporting manager. */
+  raiseManager: cvApi.raiseManager,
   /** Only the dummy data has the prototype's "act as": real approvals come from Access Request Management. */
   decide: undefined as typeof dummy.decide | undefined,
   cancel: cvApi.cancel,

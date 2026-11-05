@@ -199,6 +199,30 @@ class CredVaultController extends Controller
         return $this->listCredentials($request, null);
     }
 
+    /**
+     * GET /credvault/dev/totp — LOCAL-ONLY dev helper. Returns the current authenticator
+     * code for the caller's client's critical google-2-step credentials, so a developer
+     * can test the unlock flow without an authenticator app. Hard-gated to APP_ENV=local;
+     * 404 everywhere else. This bypasses 2FA on purpose — it must never ship enabled.
+     */
+    public function devTotp(Request $request)
+    {
+        abort_unless(app()->environment('local'), 404);
+        $u = $this->tenantUser($request);
+
+        $rows = Credential::where('client_id', $u->client_id)->where('vault', 'critical')
+            ->where('twofa_method', 'google')->whereNotNull('totp_secret')
+            ->get(['id', 'code', 'name', 'totp_secret'])
+            ->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'totp' => Totp::code($c->totp_secret)])
+            ->values();
+
+        return response()->json([
+            'status' => true,
+            'note'   => 'LOCAL dev helper — live 2FA codes, valid ~30s. Never enable outside local.',
+            'data'   => $rows,
+        ], 200);
+    }
+
     /** index, and each vault's own list — $vault fixes the vault; null lets ?vault= pick one. */
     protected function listCredentials(Request $request, ?string $vault)
     {
@@ -3297,6 +3321,8 @@ class CredVaultController extends Controller
                     $this->reject('This request is waiting for ' . ($r->adminUser?->name ?? 'a Vault Admin') . '.', null, 403);
                 }
             } elseif ($stage === 'manager') {
+                // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
+                if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
                 if ($r->admin_decided_by === $u->id) $this->reject('The same person cannot give both approvals.', null, 403);
             } else {
@@ -3310,7 +3336,7 @@ class CredVaultController extends Controller
                 "{$stage}_decided_at" => now(),
                 "{$stage}_note"       => $note,
             ]);
-            if ($approve && $stage === 'admin' && $r->manager_required) $r->manager_status = 'pending';
+            // The manager stage is no longer opened automatically — the requester forwards it (raise-manager).
 
             $extra = ['request_id' => $r->id, 'credential_id' => $r->credential_id, 'url' => '/credentials-vault/critical-vault'];
             if (!$approve) {
@@ -3325,7 +3351,9 @@ class CredVaultController extends Controller
                 elseif ($next === 'otp')  $r->status = 'approved';
 
                 if ($next === 'manager') {
-                    $this->notifyStage($r, $r->requester?->name ?? 'A colleague');
+                    // Admin approved; the requester forwards to the manager (raise-manager), so tell THEM — the manager is notified on the forward.
+                    $this->notify([$r->requester_id], 'access_approved', 'Vault Admin approved',
+                        "The Vault Admin approved your request to unlock “{$r->credential?->name}”. Forward it to your reporting manager to continue.", $extra);
                 } else {
                     $this->notify([$r->requester_id], 'access_approved', 'Access approved',
                         $next === 'otp'
@@ -4090,15 +4118,20 @@ class CredVaultController extends Controller
         $order = $this->requestSteps($r);
         $n     = array_search($stage, $order, true) + 1;
         $who   = $stage === 'admin' ? ($r->adminUser?->name ?? 'Any Vault Admin') : ($stage === 'manager' ? $r->managerUser?->name : null);
+        // The manager stage is opened by the requester forwarding it; until then it awaits that forward, not the manager.
+        $needsForward = $stage === 'manager' && $r->manager_status !== 'pending';
 
         return [
-            'state'       => $stage === 'otp' ? 'progress' : 'pending',
-            'label'       => $stage === 'otp' ? "Step {$n} of " . count($order) . ' · ' . $this->otpLabel($r->credential) : self::STAGE_LABELS[$stage] . ' · ' . $who,
-            'stage'       => $stage,
-            'waiting_for' => $who ? ['name' => $who, 'role' => self::STAGE_LABELS[$stage]] : null,
-            'step'        => ['number' => $n, 'of' => count($order)],
-            'request_id'  => $r->id,
-            'code'        => $r->code,
+            'state'         => $stage === 'otp' ? 'progress' : 'pending',
+            'label'         => $needsForward
+                ? 'Forward to ' . ($r->managerUser?->name ?? 'your reporting manager')
+                : ($stage === 'otp' ? "Step {$n} of " . count($order) . ' · ' . $this->otpLabel($r->credential) : self::STAGE_LABELS[$stage] . ' · ' . $who),
+            'stage'         => $stage,
+            'needs_forward' => $needsForward,
+            'waiting_for'   => $who ? ['name' => $who, 'role' => self::STAGE_LABELS[$stage]] : null,
+            'step'          => ['number' => $n, 'of' => count($order)],
+            'request_id'    => $r->id,
+            'code'          => $r->code,
         ];
     }
 

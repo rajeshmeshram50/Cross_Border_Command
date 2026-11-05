@@ -755,6 +755,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::prefix('credvault')->middleware('throttle:credvault')->group(function () {
         Route::get   ('/meta',                              [CredVaultController::class, 'meta']);
         Route::get   ('/dashboard',                         [CredVaultController::class, 'dashboard']);
+        Route::get   ('/dev/totp',                          [CredVaultController::class, 'devTotp']);   // LOCAL-only test helper; 404 elsewhere
         Route::post  ('/generate-password',                 [CredVaultController::class, 'generatePassword']);
         Route::get   ('/generate-password/options',         [CredVaultController::class, 'generatorOptions']);
 
@@ -790,6 +791,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
             Route::get   ('/access-requests',               [CvAccessRequestController::class, 'accessRequests']);
             Route::get   ('/access-requests/{id}',          [CvAccessRequestController::class, 'accessRequest'])->whereNumber('id');
             Route::post  ('/access-requests/{id}/approve',  [CvAccessRequestController::class, 'approveRequest'])->whereNumber('id');
+            Route::post  ('/access-requests/{id}/raise-manager', [CvAccessRequestController::class, 'raiseManager'])->whereNumber('id');
             Route::post  ('/access-requests/{id}/reject',   [CvAccessRequestController::class, 'rejectRequest'])->whereNumber('id');
             Route::post  ('/access-requests/{id}/cancel',   [CvAccessRequestController::class, 'cancelRequest'])->whereNumber('id');
             Route::post  ('/access-requests/{id}/send-otp', [CvAccessRequestController::class, 'sendOtp'])->whereNumber('id');

@@ -243,6 +243,38 @@ class AccessRequestController extends CredVaultController
         return $this->decide($u, $id, false, filled($d['note'] ?? null) ? trim($d['note']) : 'Not approved at this time');
     }
 
+    /**
+     * POST /critical-vault/access-requests/{id}/raise-manager — the requester forwards an
+     * admin-approved request to their reporting manager. Only after this does the manager's
+     * approve button open; until then the request sits at "awaiting forward".
+     */
+    public function raiseManager(Request $request, int $id)
+    {
+        $u = $this->tenantUser($request);
+
+        $r = $this->inTransaction('forward to the reporting manager', function () use ($u, $id) {
+            $r = $this->findRequest($u, $id, true);
+            if ($r->requester_id !== $u->id)   $this->reject('Only the person who raised the request can forward it.', null, 403);
+            if ($r->status !== 'pending')       $this->reject('This request is no longer open.', null, 409);
+            if (!$r->manager_required)          $this->reject('This request has no reporting-manager step.', null, 409);
+            if ($r->admin_required && $r->admin_status !== 'approved') $this->reject('The Vault Admin has not approved this yet.', null, 409);
+            if ($r->manager_status === 'approved') $this->reject('The reporting manager has already approved this.', null, 409);
+            if ($r->manager_status === 'pending')  $this->reject('This request is already with the reporting manager.', null, 409);
+
+            $r->update(['manager_status' => 'pending']);
+            $this->audit($u, 'forward_mgr', $r->credential, "Request {$r->code} forwarded to the reporting manager", ['request_id' => $r->id], 'Access Requests');
+            $this->notifyStage($r, $r->requester?->name ?? 'A colleague');   // now notifies the manager — the stage is 'manager'
+
+            return $r;
+        });
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Forwarded to the reporting manager.',
+            'data'    => $this->requestRow($r->fresh(self::REQUEST_RELATIONS), $u),
+        ], 200);
+    }
+
     /** POST /critical-vault/access-requests/{id}/cancel — the requester withdraws it. */
     public function cancelRequest(Request $request, int $id)
     {
