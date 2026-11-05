@@ -222,8 +222,9 @@ class CredVaultController extends Controller
         // The Team-side filters: everything but "mine".
         $teamSide = clone $base;
         if (!empty($f['department_id'])) $teamSide->where('department_id', $f['department_id']);
+        // Picking a person shows that person's own credentials — not everything their reporting line can reach.
         $member = $this->memberFilter($u, $f);
-        if ($member) $teamSide->whereIn('credvault_credentials.id', $this->visibleQuery($member)->select('credvault_credentials.id'));
+        if ($member) $teamSide->where('owner_id', $member->id);
 
         $sharedIds = $this->sharedWithMeIds($u);
         $views = [
@@ -2520,7 +2521,7 @@ class CredVaultController extends Controller
 
         $scope  = $data['scope'] ?? ($c->scope ?? 'personal');
         $deptId = $scope === 'team'
-            ? $this->teamDepartmentFor($u, array_key_exists('department_id', $data) ? $data['department_id'] : ($c->department_id ?? null))
+            ? $this->teamDepartmentFor($u, array_key_exists('department_id', $data) ? $data['department_id'] : ($c->department_id ?? null), $creating ? null : $c)
             : null;
 
         if ($critical) {
@@ -4139,14 +4140,21 @@ class CredVaultController extends Controller
             ->map(fn ($n) => (int) $n)->all());
     }
 
-    /** The team a team-scope write is filed under — the user's own, or one they head or administer. */
-    protected function teamDepartmentFor(User $u, ?int $requested): int
+    /** The team a team-scope write is filed under — the user's own, one they head or administer, or (editing) the one it already sits in. */
+    protected function teamDepartmentFor(User $u, ?int $requested, ?Credential $c = null): int
     {
-        $deptId = $requested ?: $this->deptOf($u);
+        $deptId = $requested ?: $this->deptOf($u) ?: $c?->department_id;
         if (!$deptId) $this->reject('Pick the team (department) this credential belongs to.', 'department_id');
         if (!$this->clientDepartments($u)->contains('id', $deptId)) $this->reject('That department does not exist.', 'department_id', 404);
 
-        $mayUse = $this->isAdmin($u) || $deptId === $this->deptOf($u) || in_array($deptId, $this->headedDepts($u), true);
+        // Editing a credential they can already manage, without moving it to a different department, is always allowed.
+        $unchanged = $c && (int) $c->department_id === (int) $deptId;
+
+        $mayUse = $unchanged
+            || $this->isAdmin($u)
+            || ($u->user_type === 'branch_user' && $u->branch_id)   // a branch admin manages their whole branch
+            || $deptId === $this->deptOf($u)
+            || in_array($deptId, $this->headedDepts($u), true);
         if (!$mayUse) $this->reject('You can only add team credentials to your own department.', 'department_id', 403);
 
         return (int) $deptId;

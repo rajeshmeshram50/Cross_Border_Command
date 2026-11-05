@@ -131,8 +131,8 @@ export default function TeamVault() {
   let emptyTitle: string;
   let emptySub: string;
   if (showChip && member) {
-    emptyTitle = `No team credentials for ${member.name}`;
-    emptySub = memberErr ?? `${member.name} has not been given access to any credentials yet. Use Share on a credential to give access.`;
+    emptyTitle = `No credentials owned by ${member.name}`;
+    emptySub = memberErr ?? `${member.name} does not own any team credentials yet.`;
   } else if (loadErr) {
     emptyTitle = 'Could not load credentials';
     emptySub = loadErr;
@@ -200,7 +200,7 @@ export default function TeamVault() {
                 <div className={`tvc-fil tvx-lv--${member.lv}`}>
                   <span className="tvc-fil__av">{member.initials}</span>
                   <span className="tvc-fil__t">
-                    <small>Showing credentials accessible to</small>
+                    <small>Showing credentials owned by</small>
                     <b>{member.name}<em>{LV_SHORT[member.lv]}</em><i>{member.desig}</i></b>
                   </span>
                   <span className="tvc-fil__n"><b>{loading ? '·' : total}</b> credential{total === 1 ? '' : 's'}</span>
@@ -251,8 +251,9 @@ export default function TeamVault() {
         <UnlockModal credentialId={overlay.id} onClose={() => setOverlay(null)} onChanged={refresh}
           onFullDetails={id => setOverlay({ kind: 'view', id })} />
       )}
+      {/* The table's search must not narrow the export — it exports the whole tab (or open department). */}
       {overlay?.kind === 'export' && (
-        <ExportModal selection={{ tab, department_id: tab === 'team' ? deptId : null, q: dq }} teamName={deptId ? dept?.name : undefined}
+        <ExportModal selection={{ tab, department_id: tab === 'team' ? deptId : null }} teamName={deptId ? dept?.name : undefined}
           onClose={() => setOverlay(null)} preview={TV_DUMMY} loadPreview={tvData.exportPreview} />
       )}
     </CvPage>
