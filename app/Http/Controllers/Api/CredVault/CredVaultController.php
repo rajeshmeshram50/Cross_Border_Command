@@ -1421,19 +1421,27 @@ class CredVaultController extends Controller
 
     /* ════════════════════════════ AUDIT LOGS ════════════════════════════ */
 
+    /** The audit screens show the company's local time unless the viewer sends `tz`. */
+    protected const AUDIT_TZ = 'Asia/Kolkata';
+
     /**
-     * GET /credvault/audit-logs?tab=all|mine|team|alerts&range=24h|7d|30d|all|custom&from=&to=&action=&credential_id=&q=
+     * GET /credvault/audit-logs?tab=all|mine|team|alerts&range=24h|7d|30d|all|custom&from=&to=&tz=&action=&credential_id=&q=&page=&per_page=
      *
-     * A Vault Admin sees the whole company; anyone else their own events and
-     * the events on credentials they own. As in the prototype, the summary
-     * and the tab counts follow the time range alone — switching tab or typing
-     * a search narrows only the timeline.
+     * Tabs: All Activity · My Activity · Team Activity (everyone else the viewer may see) ·
+     * Security Alerts (critical events). Who sees what: a Vault Admin the whole company; a
+     * Branch Admin their branch's people; a manager their reporting line (HOD → TL → Employee
+     * → Intern); everyone their own events and the events on credentials they own.
+     *
+     * The tab counts and the summary follow the time range and the search — switching tab
+     * narrows only the timeline. `groups` heads the timeline by day ("Today · 05/11/2026 ·
+     * 15 events"), counted over every page; times are the viewer's (`tz`, default India).
      */
     public function auditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
         $f = $request->validate($this->auditRules(), $this->auditMessages());
-        $ranged = $this->auditQuery($u, ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null, 'tz' => $f['tz'] ?? null]);
+        $f['tz'] ??= self::AUDIT_TZ;
+        $ranged = $this->auditQuery($u, array_diff_key($f, array_flip(['tab', 'page', 'per_page'])));
 
         $summary = (clone $ranged)->selectRaw(
             "count(*) as total,
@@ -1456,6 +1464,7 @@ class CredVaultController extends Controller
         $page = $this->auditQuery($u, $f)->with('user:id,name,user_type')->orderByDesc('created_at')->orderByDesc('id')
             ->paginate($f['per_page'] ?? 15, ['*'], 'page', $f['page'] ?? 1);
         $topName = $top ? User::whereKey($top->user_id)->value('name') : null;
+        $rows = $this->eventRows(collect($page->items()), $u, $f['tz']);
 
         return response()->json([
             'status'  => true,
@@ -1469,42 +1478,87 @@ class CredVaultController extends Controller
                 'security_alerts' => (int) $summary->alerts,
                 'most_active'     => $top ? ['user_id' => $top->user_id, 'name' => $topName, 'is_me' => $top->user_id === $u->id,
                                              'label' => $top->user_id === $u->id ? "You ({$topName})" : $topName, 'events' => (int) $top->n] : null,
-                'range'           => ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null],
+                'range'           => ['range' => $f['range'] ?? '30d', 'from' => $f['from'] ?? null, 'to' => $f['to'] ?? null, 'tz' => $f['tz']],
             ],
-            'data'    => $this->eventRows(collect($page->items()), $u),
+            'data'    => $rows,
+            'groups'  => $this->auditDayGroups($u, $f, $rows->pluck('date')->unique()->values()->all()),
             'tabs'    => $tabs,
             'meta'    => $this->pageMeta($page),
         ], 200);
     }
 
-    /** GET /credvault/audit-logs/export — the filtered view as CSV, columns as the prototype's alExport. */
+    /**
+     * The timeline's day headers for the days on this page: date, "Today" / "Yesterday" /
+     * "Tuesday, 03/11/2026", and the day's event count over the whole filtered view.
+     */
+    protected function auditDayGroups(User $u, array $f, array $dates): array
+    {
+        if (!$dates) return [];
+        $tz = $f['tz'];
+        $day = "to_char((credvault_audit_logs.created_at AT TIME ZONE 'UTC') AT TIME ZONE ?, 'YYYY-MM-DD')";
+        $counts = $this->auditQuery($u, $f)->selectRaw("{$day} as d, count(*) as n", [$tz])
+            ->whereRaw("{$day} in (" . implode(',', array_fill(0, count($dates), '?')) . ')', array_merge([$tz], $dates))
+            ->groupBy('d')->pluck('n', 'd');
+        $today = now($tz)->toDateString();
+        $yday  = now($tz)->subDay()->toDateString();
+
+        return array_map(function ($d) use ($counts, $today, $yday) {
+            $c = Carbon::createFromFormat('Y-m-d', $d);
+            $n = (int) ($counts[$d] ?? 0);
+            return [
+                'date' => $d, 'date_display' => $c->format('d/m/Y'),
+                'label' => $d === $today ? 'Today' : ($d === $yday ? 'Yesterday' : $c->format('l')),
+                'heading' => ($d === $today ? 'Today' : ($d === $yday ? 'Yesterday' : $c->format('l') . ',')) . ' ' . $c->format('d/m/Y'),
+                'events' => $n, 'events_label' => $n . ' ' . Str::plural('event', $n),
+            ];
+        }, $dates);
+    }
+
+    /**
+     * GET /credvault/audit-logs/export?format=csv|xlsx + the list's filters (tab, range, from, to, tz, q, action,
+     * credential_id) — Export Logs: exactly the view on screen, every event (up to 10,000), in the viewer's time.
+     */
     public function exportAuditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
-        $f = $request->validate($this->auditRules(), $this->auditMessages());
+        $f = $request->validate($this->auditRules() + ['format' => ['nullable', Rule::in(['csv', 'xlsx'])]], $this->auditMessages());
+        $f['tz'] ??= self::AUDIT_TZ;
+        $fmt = $f['format'] ?? 'csv';
 
-        $rows = $this->auditQuery($u, $f)->with('user:id,name')->orderByDesc('created_at')->limit(10000)->get();
+        $rows = $this->auditQuery($u, $f)->with('user:id,name')->orderByDesc('created_at')->orderByDesc('id')->limit(10000)->get();
         if ($rows->isEmpty()) $this->reject('There are no events in this view to export.', null, 422);
+        $this->userInfo($rows->pluck('user_id')->filter()->unique()->all());
+        $risks = Credential::withTrashed()->whereIn('id', $rows->pluck('credential_id')->filter()->unique()->all())->pluck('risk', 'id');
 
-        $cols = ['Event ID', 'Date', 'Time', 'User', 'Action', 'Credential ID', 'Credential', 'Details', 'Module', 'Severity', 'IP'];
-        $body = VaultFile::build($cols, $rows->map(fn ($e) => [
-            'Event ID'      => 'EVT-' . $e->id,
-            'Date'          => $e->created_at->format('Y-m-d'),
-            'Time'          => $e->created_at->format('H:i:s'),
-            'User'          => $e->user?->name ?? 'System',
-            'Action'        => AuditLog::ACTIONS[$e->action][0] ?? $e->action,
-            'Credential ID' => $e->credential_code,
-            'Credential'    => $e->credential_name ?? 'Vault settings',
-            'Details'       => $e->detail,
-            'Module'        => $e->module,
-            'Severity'      => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
-            'IP'            => $e->ip,
-        ])->all(), 'csv');
+        $cols = ['Event ID', 'Date', 'Time', 'User', 'Role', 'Action', 'Credential ID', 'Credential', 'Risk', 'Details', 'Module', 'Severity', 'IP'];
+        $data = $rows->map(function ($e) use ($f, $risks) {
+            $t = $e->created_at->copy()->setTimezone($f['tz']);
+            return [
+                'Event ID'      => 'EVT-' . $e->id,
+                'Date'          => $t->format('d/m/Y'),
+                'Time'          => $t->format('H:i:s'),
+                'User'          => $e->user?->name ?? 'System',
+                'Role'          => $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id]['role_line'] ?? '') : 'CredVault',
+                'Action'        => AuditLog::ACTIONS[$e->action][0] ?? $e->action,
+                'Credential ID' => $e->credential_code,
+                'Credential'    => $e->credential_name ?? 'Vault settings',
+                'Risk'          => isset($risks[$e->credential_id]) ? ucfirst($risks[$e->credential_id]) : '',
+                'Details'       => $e->detail,
+                'Module'        => $e->module,
+                'Severity'      => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
+                'IP'            => $e->ip,
+            ];
+        })->all();
+        $body = $fmt === 'xlsx'
+            ? VaultFile::xlsx([['name' => 'Audit Logs', 'head' => true, 'freeze' => true, 'widths' => [12, 11, 9, 24, 26, 20, 14, 30, 10, 50, 18, 10, 14],
+                'rows' => array_merge([$cols], array_map('array_values', $data))]])
+            : VaultFile::build($cols, $data, 'csv');
 
         // The log leaving the system is itself on the record (as info — it carries no secret).
         $this->writeAudit($u->client_id, $u->id, $u->branch_id, 'export', null, 'Audit log exported · ' . $rows->count() . ' events', ['rows' => $rows->count(), 'kind' => 'audit_log'], 'Audit Logs', 'info');
+        $tab = ['all' => 'all-activity', 'mine' => 'my-activity', 'team' => 'team-activity', 'alerts' => 'security-alerts'][$f['tab'] ?? 'all'];
 
-        return $this->download($body, 'credvault-audit-log-' . now()->format('Ymd') . '.csv', 'text/csv', ['X-CredVault-Count' => (string) $rows->count()]);
+        return $this->download($body, "credvault-audit-log-{$tab}-" . now($f['tz'])->format('Ymd') . ".{$fmt}", $this->mime($fmt), ['X-CredVault-Count' => (string) $rows->count()]);
     }
 
     /* ══════════════════════════ IMPORT & RECOVERY ══════════════════════════ */
@@ -4258,23 +4312,31 @@ class CredVaultController extends Controller
     }
 
     /** Timeline rows, with the credential's risk and type and each actor's role read in two queries for the page. */
-    protected function eventRows(Collection $events, User $u): Collection
+    protected function eventRows(Collection $events, User $u, ?string $tz = null): Collection
     {
         $creds = Credential::withTrashed()->whereIn('id', $events->pluck('credential_id')->filter()->unique()->all())
-            ->get(['id', 'risk', 'type'])->keyBy('id');
+            ->get(['id', 'risk', 'type', 'vault'])->keyBy('id');
         $this->userInfo($events->pluck('user_id')->filter()->unique()->all());
 
-        return $events->map(fn ($e) => $this->eventRow($e, $u, $creds->get($e->credential_id)))->values();
+        return $events->map(fn ($e) => $this->eventRow($e, $u, $creds->get($e->credential_id), $tz))->values();
     }
 
-    protected function eventRow(AuditLog $e, User $u, ?Credential $c = null): array
+    protected function eventRow(AuditLog $e, User $u, ?Credential $c = null, ?string $tz = null): array
     {
-        $info = $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id] ?? []) : [];
+        $info  = $e->user_id ? ($this->userInfo([$e->user_id])[$e->user_id] ?? []) : [];
+        $local = $e->created_at->copy()->setTimezone($tz ?? self::AUDIT_TZ);
+        $risk  = $c?->risk ? ucfirst($c->risk) : null;
 
         return [
             'id'             => $e->id,
             'event_id'       => 'EVT-' . $e->id,
             'at'             => $e->created_at->toIso8601String(),
+            // As the timeline prints it: 15:22 over 46s, under the day's heading.
+            'date'           => $local->toDateString(),
+            'time'           => $local->format('H:i'),
+            'seconds'        => $local->format('s') . 's',
+            'local_at'       => $local->toIso8601String(),
+            'chip'           => $e->credential_id ? trim(($e->credential_code ?? '') . ($risk ? " · {$risk}" : ''), ' ·') : null,
             'actor'          => $e->user_id
                 ? ['id' => $e->user_id, 'name' => $e->user_id === $u->id ? 'You' : $e->user?->name, 'full_name' => $e->user?->name,
                    'initials' => $this->initials($e->user?->name), 'role' => $info['role_line'] ?? 'Team member', 'is_me' => $e->user_id === $u->id]
@@ -4285,8 +4347,12 @@ class CredVaultController extends Controller
             'severity'       => $e->severity,
             'severity_label' => AuditLog::SEVERITY_LABELS[$e->severity] ?? $e->severity,
             'credential'     => $e->credential_id
-                ? ['id' => $e->credential_id, 'code' => $e->credential_code, 'name' => $e->credential_name, 'risk' => $c?->risk, 'type' => $c?->type]
+                ? ['id' => $e->credential_id, 'code' => $e->credential_code, 'name' => $e->credential_name, 'risk' => $c?->risk, 'risk_label' => $risk,
+                   'type' => $c?->type, 'vault' => $c?->vault]
                 : null,
+            // "Priya Sharma approved access to Kotak Vendor Payments A/c"
+            'sentence'       => trim(($e->user_id ? ($e->user_id === $u->id ? 'You' : $e->user?->name) : 'System') . ' ' . (AuditLog::VERBS[$e->action] ?? $e->action)
+                . ' ' . ($e->credential_name ?? ($e->credential_id ? $e->credential_code : ''))),
             'target'         => $e->credential_id ? $e->credential_code : 'Vault settings',
             'module'         => $e->module,
             'detail'         => $e->detail,
@@ -4828,11 +4894,18 @@ class CredVaultController extends Controller
     {
         $q = AuditLog::where('client_id', $u->client_id);
         if (!$this->isAdmin($u)) {
-            $q->where(fn ($w) => $w->where('user_id', $u->id)
-                ->orWhereIn('credential_id', Credential::withTrashed()->where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id')));
+            // Your team's activity, as the vaults define the team: your reporting line, and for a
+            // Branch Admin every person of the branch below them — plus events on credentials you own.
+            $people = array_merge([$u->id], $this->downlineIds($u));
+            $branch = $this->adminBranchOf($u);
+            $q->where(function ($w) use ($u, $people, $branch) {
+                $w->whereIn('user_id', $people)
+                  ->orWhereIn('credential_id', Credential::withTrashed()->where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'));
+                if ($branch) $w->orWhereIn('user_id', User::where('client_id', $u->client_id)->where('branch_id', $branch)->whereNotIn('user_type', self::ADMIN_TYPES)->select('id'));
+            });
         }
 
-        $tz    = $f['tz'] ?? config('app.timezone');
+        $tz    = $f['tz'] ?? self::AUDIT_TZ;
         $today = now($tz)->toDateString();
         foreach (['from' => 'From', 'to' => 'To'] as $k => $label) {
             if (!empty($f[$k]) && $f[$k] > $today) $this->reject("{$label} cannot be in the future.", $k);

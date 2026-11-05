@@ -341,6 +341,60 @@ Each row is the table's line, ready to show:
 
 `GET /credentials/{id}` (view) · `POST …/reveal` · `POST …/events` · `GET …/activity` · `GET …/attachments/{key}` (download a file)
 
+### Audit Logs — All · My · Team · Security Alerts, time range, Export Logs
+
+The Postman collection **"Audit Logs"** holds only these APIs: [CredVault_AuditLogs.postman_collection.json](CredVault_AuditLogs.postman_collection.json), 5 folders and 38 requests.
+
+| API | Request |
+|---|---|
+| Audit Logs – List API (the four tabs, counts, day groups) | `GET /credvault/audit-logs?tab=&range=&from=&to=&tz=&q=&action=&credential_id=&page=&per_page=` |
+| Audit Logs – Export Logs API (CSV / Excel) | `GET /credvault/audit-logs/export?format=csv\|xlsx` + the same filters |
+
+| Filter | Values |
+|---|---|
+| `tab` | `all` (All Activity) · `mine` (My Activity) · `team` (Team Activity: everyone else you may see) · `alerts` (Security Alerts: critical events) |
+| `range` | `24h` · `7d` · `30d` (default) · `all` · `custom` |
+| `from` / `to` | with `custom`: `YYYY-MM-DD`, your calendar days. Either end may be open (no From = from the start, no To = today). |
+| `tz` | the viewer's timezone for times, days and custom dates (default `Asia/Kolkata`) |
+| `q` | user · credential (name or CRD- code) · action label ("Access approved") · details · module · Event ID (`EVT-123`) |
+| `action` · `credential_id` | one action · one credential's history |
+
+**Who sees what:**
+- a Vault Admin sees the whole company;
+- a Branch Admin sees the branch's people;
+- a manager sees their reporting line (HOD → TL → Employee → Intern);
+- everyone sees their own events and the events on credentials they own.
+
+**List response:**
+- `tabs { all, mine, team, alerts }`: the badges. They follow the range and the search, not the tab.
+- `summary`: events, by_me, team_members, views_reveals, copies_exports, access_changes, security_alerts, most_active, range.
+- `groups[]`: the day headings for the rows on the page: `heading` ("Today 05/11/2026", "Yesterday 04/11/2026", "Tuesday, 03/11/2026"), `events` / `events_label` ("15 events", counted over every page).
+- `data[]`, one per event:
+  - `event_id` (EVT-…), `time` (15:22), `seconds` (46s), `date`;
+  - `actor { name ("You"), initials, role ("HOD · Procurement") }`;
+  - `label` (the action chip: "Access approved"), `verb`, `sentence` ("Priya Sharma approved access to Kotak Vendor Payments A/c");
+  - `detail` ("REQ-6953 · as Reporting Manager for …"), `chip` ("CRD-0048 · Critical"), `credential { code, name, risk, risk_label, vault }`;
+  - `module`, `ip`, `severity` / `severity_label` (Info · Warning · Critical).
+
+**Export file:**
+- Columns: Event ID · Date (dd/mm/yyyy) · Time · User · Role · Action · Credential ID · Credential · Risk · Details · Module · Severity · IP.
+- Up to 10,000 events, in your time.
+- File name: `credvault-audit-log-<all-activity|my-activity|team-activity|security-alerts>-YYYYMMDD.csv|xlsx`.
+- Header: `X-CredVault-Count`.
+- The export itself is recorded ("Audit log exported · N events").
+
+**Refusals (422):**
+- From after To: "From must be on or before To.";
+- a future date: "From cannot be in the future.";
+- another date format, or an unknown tab / range / action / timezone / format;
+- an export of an empty view: "There are no events in this view to export."
+
+**Tested (05/11/2026):** 42/42 end to end, plus the collection at 35/35 requests, both in a rolled-back transaction. The end-to-end run planted 10 events from 1 hour to 40 days old and checked:
+- each range: 24h → 4, 7 days → 8, 30 days → 9, All → 10, plus custom ranges;
+- the tab counts, and who sees what: Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9;
+- search, the day groups, the row fields, the timezone, paging;
+- CSV / Excel export following tab, range and search.
+
 ### Import & Recovery
 
 Import & Recovery has its own sheet, [CREDVAULT_IMPORT_RECOVERY_API_SHEET.md](CREDVAULT_IMPORT_RECOVERY_API_SHEET.md), and its own Postman collection, **"Import & Recovery"** ([CredVault_ImportRecovery.postman_collection.json](CredVault_ImportRecovery.postman_collection.json)). It covers:
