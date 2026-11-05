@@ -775,7 +775,7 @@ function HolidayModal({
           </Row>
         </div>
 
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
             {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}{editing ? 'Update Holiday' : 'Save Holiday'}
           </button>
@@ -1023,7 +1023,7 @@ function ManageGroupsModal({
                 </Col>
               </Row>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="rec-btn-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
               <button type="button" className="rec-btn-primary" onClick={save} disabled={saving}>
                 {saving ? <Spinner size="sm" /> : <i className={editing ? 'ri-save-line' : 'ri-add-line'} />}{editing ? 'Update Group' : 'Save Group'}

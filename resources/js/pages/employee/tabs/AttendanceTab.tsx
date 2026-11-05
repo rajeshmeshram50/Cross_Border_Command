@@ -247,6 +247,21 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
 
   const { stats, today, history } = data;
   const todayPunches = today?.punches || [];
+  /* The timeline is a "today" card, but today is empty for anyone not currently
+     clocked in (off-hours, a day off, a freshly opened profile). Fall back to
+     the most recent day that has punches so it shows real attendance data
+     instead of sitting permanently empty, and label which day that is. */
+  const timelineRecord: AttendancePanelRecord | null = todayPunches.length
+    ? today
+    : [...history]
+        .filter(r => (r.punches?.length ?? 0) > 0)
+        .sort((a, b) => b.attendance_date.slice(0, 10).localeCompare(a.attendance_date.slice(0, 10)))[0]
+      || null;
+  const timelinePunches = timelineRecord?.punches ?? [];
+  const timelineIsToday = !!timelineRecord && timelineRecord.attendance_date === today?.attendance_date;
+  const timelineDayLabel = timelineRecord
+    ? new Date(timelineRecord.attendance_date).toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short' })
+    : '';
 
   // Rich Logs & Requests view (mirrors the HR Attendance module). Built from
   // the per-day `logs` the summary endpoint now returns.
@@ -370,25 +385,27 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                 <span className="att-logs-headbar-icon"><i className="ri-pulse-line" /></span>
                 <div>
                   <div className="att-logs-headbar-title">Intraday Punch Timeline</div>
-                  <div className="att-logs-headbar-sub">Every tap recorded today, in order</div>
+                  <div className="att-logs-headbar-sub">
+                    {timelineIsToday ? 'Every tap recorded today, in order' : `Last recorded day · ${timelineDayLabel}`}
+                  </div>
                 </div>
               </div>
               <small className="text-muted ep-fs-11">
-                {todayPunches.length} {todayPunches.length === 1 ? 'punch today' : 'punches today'}
+                {timelinePunches.length} {timelinePunches.length === 1 ? 'punch' : 'punches'}{timelineIsToday ? ' today' : ''}
               </small>
             </div>
             {/* Horizontal track-and-line timeline, matching HR Attendance's
                 "Updated Record" Intraday card (QA 211). */}
             <div className="att-h-timeline px-3 flex-grow-1 att-overflow-x">
-              {todayPunches.length === 0 ? (
+              {timelinePunches.length === 0 ? (
                 <div className="att-timeline-empty">
                   <i className="ri-calendar-2-line" />
-                  <span>No punches recorded for today.</span>
+                  <span>No punches recorded yet.</span>
                 </div>
               ) : (
                 <div className="att-h-timeline-track">
                   <div className="att-h-timeline-line" />
-                  {todayPunches.map((p) => {
+                  {timelinePunches.map((p) => {
                     const isIn = p.direction === 'in';
                     return (
                       <div key={p.id} className="att-h-event">
@@ -456,11 +473,18 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                     <tbody>
                       {visibleRegs.map(rg => {
                         const punches = (rg.punches ?? []).map(p => `${to12h(p.in)}–${to12h(p.out)}`).join(', ');
+                        // data-tone (not the raw status) drives the dark-mode
+                        // override, so any pending-like label ("Pending", "In
+                        // Process") themes the same amber. (QA 232)
+                        const toneKey =
+                          rg.status === 'Approved' ? 'approved' :
+                          rg.status === 'Rejected' ? 'rejected' :
+                          rg.status === 'Cancelled' ? 'cancelled' : 'pending';
                         const tone =
-                          rg.status === 'Approved' ? { bg: '#dcfce7', fg: '#15803d' } :
-                          rg.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c' } :
-                          rg.status === 'Cancelled' ? { bg: '#f1f5f9', fg: '#475569' } :
-                                                      { bg: '#fef3c7', fg: '#92400e' };
+                          toneKey === 'approved' ? { bg: '#dcfce7', fg: '#15803d' } :
+                          toneKey === 'rejected' ? { bg: '#fee2e2', fg: '#b91c1c' } :
+                          toneKey === 'cancelled' ? { bg: '#f1f5f9', fg: '#475569' } :
+                                                    { bg: '#fef3c7', fg: '#92400e' };
                         return (
                           <tr key={rg.id}>
                             <td className="fw-semibold">{attFmtDate(rg.regularization_date)}</td>
@@ -468,7 +492,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                             <td className="font-monospace ep-fs-12">{rg.mode === 'exempt' ? '—' : (punches || '—')}</td>
                             <td className="ep-fs-12" style={{ maxWidth: 240 }}>{rg.reason || '—'}</td>
                             <td>
-                              <span className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded" style={{ background: tone.bg, color: tone.fg }}>
+                              <span className="reg-status-pill d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded" data-tone={toneKey} style={{ background: tone.bg, color: tone.fg }}>
                                 {rg.status}
                               </span>
                             </td>

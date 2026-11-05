@@ -2259,7 +2259,7 @@ function ScopedStyles() {
       [data-bs-theme="dark"] .gd-page .gd-body,
       [data-layout-mode="dark"] .gd-page .gd-body { background: #1f2937; }
       [data-bs-theme="dark"] .gd-page .gd-footer,
-      [data-layout-mode="dark"] .gd-page .gd-footer { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
+      [data-layout-mode="dark"] .gd-page .gd-footer { background: #1f2937 !important; border-top-color: rgba(255,255,255,0.08) !important; }
       /* Step-1 table pagination strip — was a hardcoded light #fafafa (BUG-113). */
       [data-bs-theme="dark"] .gd-page .gd-pagination,
       [data-layout-mode="dark"] .gd-page .gd-pagination { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
