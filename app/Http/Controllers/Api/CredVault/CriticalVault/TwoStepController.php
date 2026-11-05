@@ -34,26 +34,43 @@ class TwoStepController extends CredVaultController
      */
     public function googleNew(Request $request)
     {
-        $this->tenantUser($request);
-        $d = $request->validate(['label' => ['nullable', 'string', 'max:100']]);
+        $u = $this->tenantUser($request);
+        $d = $request->validate([
+            'label'         => ['nullable', 'string', 'max:100'],
+            'credential_id' => ['nullable', 'integer', 'min:1'],
+        ]);
         $secret = Totp::newSecret();
-        $uri    = Totp::uri($secret, $d['label'] ?? 'CredVault');
+
+        // credential_id is sent when linking 2FA to an existing credential, so
+        // both sides can tie this secret to one credential; a fresh add has no
+        // id yet and relies on the label alone. Resolved within the tenant.
+        $credential = !empty($d['credential_id'])
+            ? \App\Models\CredVault\Credential::where('client_id', $u->client_id)->find($d['credential_id'], ['id', 'code', 'name'])
+            : null;
+        $label = $d['label'] ?? ($credential ? trim("{$credential->code} · {$credential->name}") : 'CredVault');
+        $uri   = Totp::uri($secret, $label);
 
         return response()->json(['status' => true, 'data' => [
-            'method'         => 'google',
-            'secret'         => $secret,
-            'secret_display' => trim(chunk_split($secret, 4, ' ')),
-            'otpauth_uri'    => $uri,
+            'method'          => 'google',
+            // Echoed back so one response can be told from another when several
+            // credentials are being added. credential_code is null when the id
+            // did not resolve to a credential in this tenant.
+            'credential_id'   => $credential?->id ?? ($d['credential_id'] ?? null),
+            'credential_code' => $credential?->code,
+            'label'           => $label,
+            'secret'          => $secret,
+            'secret_display'  => trim(chunk_split($secret, 4, ' ')),
+            'otpauth_uri'     => $uri,
             // The QR to scan, ready for <img src>: the otpauth URI drawn as an SVG data URI.
-            'qr_image'       => (new QRCode(new QROptions([
+            'qr_image'        => (new QRCode(new QROptions([
                 'outputInterface' => QRMarkupSVG::class,
                 'outputBase64'    => true,
                 'eccLevel'        => EccLevel::M,
                 'quietzoneSize'   => 2,
             ])))->render($uri),
-            'digits'         => 6,
-            'period'         => 30,
-            'works_with'     => 'Google Authenticator, Microsoft Authenticator, Authy and any TOTP app',
+            'digits'          => 6,
+            'period'          => 30,
+            'works_with'      => 'Google Authenticator, Microsoft Authenticator, Authy and any TOTP app',
         ]], 200);
     }
 
