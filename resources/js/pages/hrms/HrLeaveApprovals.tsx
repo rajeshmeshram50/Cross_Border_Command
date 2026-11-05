@@ -317,7 +317,8 @@ export default function HrLeaveApprovals() {
                 gap: 4,
               }}
             >
-              {(['All', 'Pending', 'Approved', 'Rejected'] as StatusFilter[]).map(s => {
+              {/* Every status that counts toward "All" needs its own tab, or the totals don't reconcile. */}
+              {(['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'] as StatusFilter[]).map(s => {
                 const on = status === s;
                 const count = statusCounts[s];
                 return (

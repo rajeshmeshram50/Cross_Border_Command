@@ -1,24 +1,22 @@
 import { useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError, type Loose, type TransferRow } from '../cvApi';
-import { Svg, bytes, errMsg, timeAgo, useCvMeta } from '../shared';
+import { cvApi, CvApiError, type Loose } from '../cvApi';
+import { Svg, errMsg, useCvMeta } from '../shared';
 import { IR_I, IrCard } from './irShared';
 
 /* Backup tab — the prototype's irBackupHtml / bkCreate; the file is built and locked (AES-256) on the API. */
 
-type Fmt = 'xlsx' | 'csv' | 'json';
+type Fmt = 'xlsx' | 'csv';
 type Scope = 'mine' | 'team' | 'all';
 const FMTS: [Fmt, string, string, string, string][] = [
   ['xlsx', 'Excel', '.xlsx', 'Opens in Excel & Google Sheets', IR_I.sheet],
   ['csv', 'CSV', '.csv', 'For other password managers', IR_I.file],
-  ['json', 'JSON', '.json', 'For developers & tools', IR_I.code],
 ];
 const SCOPES: [Scope, string, string, string][] = [
   ['mine', 'My Vault', 'Credentials you own', IR_I.user],
   ['team', 'Team Vault', 'Shared with your teams', IR_I.team],
   ['all', 'All vaults', 'Everything you manage', IR_I.db],
 ];
-const DEFAULT_COLS = ['Name', 'Type', 'Category', 'Website', 'Username', 'Password', 'Owner', 'Vault', 'Risk', '2FA', 'Rotation', 'Notes', 'Updated'];
 const LV = ['none', 'weak', 'fair', 'good', 'strong'];
 const LBL = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
@@ -37,8 +35,8 @@ function pwScore(p: string): number {
 
 export interface BackupInfo { scopes: Loose[]; columns: Loose | null; lock_note: string }
 
-export default function BackupTab({ info, history, infoError = '', infoLoading = false, onRetry, onDone }: {
-  info: BackupInfo | null; history: TransferRow[];
+export default function BackupTab({ info, infoError = '', infoLoading = false, onRetry, onDone }: {
+  info: BackupInfo | null;
   /** Set when GET /backups failed before any backup options arrived — Download stays off until a retry succeeds. */
   infoError?: string; infoLoading?: boolean; onRetry?: () => void; onDone: () => void;
 }) {
@@ -56,20 +54,13 @@ export default function BackupTab({ info, history, infoError = '', infoLoading =
   const [busy, setBusy] = useState(false);
 
   const F = FMTS.find(f => f[0] === fmt)!;
-  const S = SCOPES.find(s => s[0] === scope)!;
   const countOf = (k: Scope): number | null => {
     const s = info?.scopes.find(x => x.scope === k);
     return s ? Number(s.count) : null;
   };
   const n = countOf(scope);
-  const d = new Date();
-  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const base = `credvault-${scope}-backup-${stamp}`;
-  const fname = lock ? `${base}.zip` : base + F[2];
-  const cols: string[] = (withPw ? info?.columns?.with_passwords : info?.columns?.without_passwords) ?? DEFAULT_COLS.filter(c => withPw || c !== 'Password');
   const score = pwScore(pw);
   const needAcct = withPw && !lock;
-  const recent = history.filter(h => h.by_me).slice(0, 3);
   const ferr = (k: string) => err?.field(k);
   const clearErr = () => setErr(null);
 
@@ -107,7 +98,7 @@ export default function BackupTab({ info, history, infoError = '', infoLoading =
   const sec = (num: number, t: string, s: string) => <div className="ix-sec"><span>{num}</span><div><b>{t}</b><small>{s}</small></div></div>;
 
   return (
-    <div className="ix-grid ix-grid--bk">
+    <div className="ix-grid ix-grid--one">
       <IrCard icon={IR_I.db} title="Backup settings" sub="Choose the format, the vault and how to protect the file">
         {sec(1, 'Choose a format', 'The file type you want to download')}
         <div className="ix-fmtc">
@@ -188,44 +179,6 @@ export default function BackupTab({ info, history, infoError = '', infoLoading =
           </>
         )}
         <div className="ir-err">{err?.message ?? ''}</div>
-      </IrCard>
-
-      <IrCard icon={IR_I.down} title="Your backup" sub="Check what you are about to download" className="ix-sum">
-        <div className="ix-file">
-          <div className={`ix-file__ico${lock ? ' is-lock' : ''}`}>
-            <Svg d={lock ? IR_I.zip : F[4]} size={28} />
-            {lock && <span><Svg d={IR_I.lock} size={12} /></span>}
-          </div>
-          <div className="ix-file__t"><small>You will download</small><b>{fname}</b><em>{lock ? `Contains ${base}${F[2]}` : `${F[1]} file`}</em></div>
-        </div>
-        <div className="ix-sumg">
-          {([['Credentials', n ?? '—'], ['Vault', S[1]], ['Format', F[1]], ['Passwords', withPw ? 'Included' : 'Left out']] as const).map(([l, v]) => (
-            <div key={l}><small>{l}</small><b>{v}</b></div>
-          ))}
-        </div>
-        <div className={`ix-prot ${lock ? 'is-on' : withPw ? 'is-bad' : 'is-warn'}`}>
-          <Svg d={lock ? IR_I.shield : IR_I.warn} size={18} />
-          <div>
-            <b>{lock ? 'Protected with a password' : 'Not protected'}</b>
-            <small>{lock ? (info?.lock_note || 'Locked with AES-256 — open it with 7-Zip, WinRAR or another AES-capable zip tool.') : 'Turn on the password lock for any backup that contains passwords'}</small>
-          </div>
-        </div>
-        <div className="ix-colsl"><small>Columns in the file</small><div>{cols.map(c => <span key={c} className={c === 'Password' ? 'is-pw' : undefined}>{c}</span>)}</div></div>
-        <div className="ix-rec">
-          <small>Your recent downloads</small>
-          {recent.length ? recent.map(h => {
-            const failed = h.status === 'failed';
-            return (
-              <div className="ix-rec__i" key={h.id}>
-                <span className={failed ? 'is-bad' : h.locked ? 'is-on' : 'is-warn'}><Svg d={failed ? IR_I.warn : h.locked ? IR_I.lock : IR_I.unlock} size={12} /></span>
-                <div>
-                  <b>{h.code} · {h.format_label} · {h.scope_label}</b>
-                  <small>{timeAgo(h.at)} · {failed ? `Failed — ${h.failure_reason ?? ''}` : `${h.items} items · ${bytes(h.size_bytes)}${h.locked ? ' · locked' : ' · not locked'}`}</small>
-                </div>
-              </div>
-            );
-          }) : <em>No downloads yet</em>}
-        </div>
         {!info && infoError && (
           <div className="ir-err">
             Could not load the backup options — {infoError}{' '}

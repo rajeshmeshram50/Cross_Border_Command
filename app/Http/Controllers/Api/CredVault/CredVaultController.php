@@ -164,6 +164,8 @@ class CredVaultController extends Controller
             'audit_actions'    => collect(AuditLog::ACTIONS)->map(fn ($v, $k) => ['key' => $k, 'label' => $v[0], 'severity' => $v[1], 'verb' => AuditLog::VERBS[$k] ?? $v[0]])->values(),
             'file_types'       => ['attachments' => explode(',', self::ATTACH_TYPES), 'file_fields' => explode(',', self::FIELD_FILE_TYPES), 'max_mb' => self::FILE_MAX_KB / 1024, 'max_attachments' => self::MAX_EXTRA_ATTACHMENTS],
             'policy'           => $pol,
+            // Recycle Bin retention per vault — the Critical Vault's is fixed (Policy::binDays).
+            'bin_days'         => ['normal' => Policy::binDays($pol, 'normal'), 'critical' => Policy::binDays($pol, 'critical')],
             'me'               => [
                 'id'              => $u->id,
                 'name'            => $u->name,
@@ -197,6 +199,30 @@ class CredVaultController extends Controller
     public function index(Request $request)
     {
         return $this->listCredentials($request, null);
+    }
+
+    /**
+     * GET /credvault/dev/totp — LOCAL-ONLY dev helper. Returns the current authenticator
+     * code for the caller's client's critical google-2-step credentials, so a developer
+     * can test the unlock flow without an authenticator app. Hard-gated to APP_ENV=local;
+     * 404 everywhere else. This bypasses 2FA on purpose — it must never ship enabled.
+     */
+    public function devTotp(Request $request)
+    {
+        abort_unless(app()->environment('local'), 404);
+        $u = $this->tenantUser($request);
+
+        $rows = Credential::where('client_id', $u->client_id)->where('vault', 'critical')
+            ->where('twofa_method', 'google')->whereNotNull('totp_secret')
+            ->get(['id', 'code', 'name', 'totp_secret'])
+            ->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'totp' => Totp::code($c->totp_secret)])
+            ->values();
+
+        return response()->json([
+            'status' => true,
+            'note'   => 'LOCAL dev helper — live 2FA codes, valid ~30s. Never enable outside local.',
+            'data'   => $rows,
+        ], 200);
     }
 
     /** index, and each vault's own list — $vault fixes the vault; null lets ?vault= pick one. */
@@ -2348,14 +2374,16 @@ class CredVaultController extends Controller
         $base = $this->binQuery($u, $vault);
         $next = (clone $base)->orderBy('deleted_at')->first(['id', 'name', 'deleted_at']);
         $branchAdmin = (bool) $this->adminBranchOf($u);
+        $binAdmin = $this->binAdmin($u);
         $summary = [
             'vault'                => $vault,
             'retention_days'       => $days,
             'retention_fixed'      => $vault === 'critical',
-            'can_change_retention' => $vault === 'normal' && $this->isAdmin($u),
+            'can_change_retention' => $vault === 'normal' && $binAdmin,
             'retention_options'    => $vault === 'normal' ? Policy::OPTIONS['bin_days'] : [],
             'purge_allowed'        => (bool) $pol['bin_purge'],
-            'can_empty'            => (bool) $pol['bin_purge'] && ($vault === 'normal' || $branchAdmin),
+            'is_bin_admin'         => $binAdmin,
+            'can_empty'            => (bool) $pol['bin_purge'] && $binAdmin && ($vault === 'normal' || $branchAdmin),
             'critical_actions'     => $branchAdmin ? 'branch_admin' : 'none',
             'items'                => (clone $base)->count(),
             'deleted_by_me'        => (clone $base)->where('deleted_by', $u->id)->count(),
@@ -2385,7 +2413,7 @@ class CredVaultController extends Controller
             'status'  => true,
             'purged'  => $purged,
             'summary' => $summary,
-            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from) {
+            'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from, $binAdmin) {
                 $total = Policy::binDays($pol, $c->vault);
                 $purge = $c->deleted_at->copy()->addDays($total);
                 // Never "0 days": an item still in the bin goes on its last day.
@@ -2405,7 +2433,7 @@ class CredVaultController extends Controller
                     'left_pct' => (int) round(min($days, $total) / max(1, $total) * 100),
                     'urgency' => $days <= 3 ? 'bad' : ($days <= 7 ? 'warn' : 'ok'),
                     'can_restore' => $deny === null,
-                    'can_purge' => $deny === null && (bool) $pol['bin_purge'],
+                    'can_purge' => $deny === null && (bool) $pol['bin_purge'] && $binAdmin,
                     'locked_reason' => $deny,
                 ];
             })->values(),
@@ -2439,6 +2467,7 @@ class CredVaultController extends Controller
         $request->validate(['confirm' => ['accepted']], ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can delete permanently. You can restore it.', null, 403);
 
         $c = $this->binQuery($u)->find($id) ?? $this->reject('That item is not in your Recycle Bin.', null, 404);
         if ($why = $this->binDenial($u, $c)) $this->reject($why, null, 403);
@@ -2461,6 +2490,7 @@ class CredVaultController extends Controller
             ['confirm.accepted' => 'Confirm that you understand this cannot be undone.']);
         $pol = Policy::for($u->client_id);
         if (!$pol['bin_purge']) $this->reject('Permanent delete is turned off in CredVault Policies.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can empty the Recycle Bin.', null, 403);
         $vault = $d['vault'] ?? 'all';
 
         $items = $this->binQuery($u, $vault === 'all' ? null : $vault)->get();
@@ -2486,41 +2516,79 @@ class CredVaultController extends Controller
     }
 
     /**
-     * GET /credvault/recycle-bin/retention — the Change period popup: the Normal Vault's period
-     * and its options; the Critical Vault's fixed period (no change offered).
+     * GET /credvault/recycle-bin/retention[?days=7] — the Change period popup: the Normal Vault's
+     * period and its options; the Critical Vault's fixed period (no change offered).
+     *
+     * With `days`, `preview` says what that period would delete right away: the bin items older
+     * than it, company-wide (`total`), and those the user can see in their own bin (`items`).
      */
     public function binRetention(Request $request)
     {
         $u   = $this->tenantUser($request);
+        $f   = $request->validate(['days' => ['nullable', 'integer', Rule::in(Policy::OPTIONS['bin_days'])]], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
         $pol = Policy::for($u->client_id);
 
-        return response()->json(['status' => true, 'data' => [
-            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->isAdmin($u)],
+        return response()->json(['status' => true, 'data' => array_filter([
+            'normal'   => ['days' => (int) $pol['bin_days'], 'options' => Policy::OPTIONS['bin_days'], 'can_change' => $this->binAdmin($u)],
             'critical' => ['days' => Policy::CRITICAL_BIN_DAYS, 'options' => [], 'can_change' => false, 'fixed' => true],
             'note'     => 'Items already older than the new period are deleted right away.',
-        ]], 200);
+            'preview'  => isset($f['days']) ? $this->retentionImpact($u, (int) $f['days']) : null,
+        ], fn ($v) => $v !== null)], 200);
     }
 
     /**
-     * PUT /credvault/recycle-bin/retention { days, vault?: normal } — Change period, Normal Vault
-     * only, Vault Admins. A shorter period deletes the items already past it, right away.
+     * What a new Normal Vault period would delete at once — the same rule purgeExpired() applies
+     * (moved to the bin more than $days days ago). `items` is the user's own bin view, oldest first.
+     */
+    protected function retentionImpact(User $u, int $days): array
+    {
+        $cut   = now()->subDays($days);
+        $total = Credential::onlyTrashed()->where('client_id', $u->client_id)->where('vault', 'normal')->where('deleted_at', '<', $cut)->count();
+        $mine  = $this->binQuery($u, 'normal')->where('deleted_at', '<', $cut)->orderBy('deleted_at');
+        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'deleted_at']);
+
+        return [
+            'days'          => $days,
+            'total'         => $total,
+            'visible_total' => (clone $mine)->count(),
+            'items'         => $items->map(fn ($c) => [
+                'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk,
+                'deleted_at' => $c->deleted_at->toIso8601String(), 'days_in_bin' => (int) $c->deleted_at->diffInDays(now()),
+            ])->values(),
+        ];
+    }
+
+    /**
+     * PUT /credvault/recycle-bin/retention { days, vault?: normal, confirm_purge?: true } — Change
+     * period, Normal Vault only, Vault Admins. A shorter period deletes the items already past it,
+     * right away — so when it would delete any, the call needs confirm_purge (409 without it).
      */
     public function updateBinRetention(Request $request)
     {
         $u = $this->tenantUser($request);
         $d = $request->validate([
-            'days'  => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
-            'vault' => ['nullable', Rule::in(Credential::VAULTS)],
+            'days'          => ['required', 'integer', Rule::in(Policy::OPTIONS['bin_days'])],
+            'vault'         => ['nullable', Rule::in(Credential::VAULTS)],
+            'confirm_purge' => ['sometimes', 'boolean'],
         ], ['days.in' => 'Choose 7, 15, 30, 60 or 90 days.']);
         if (($d['vault'] ?? 'normal') === 'critical') {
             $this->reject('The Critical Vault keeps binned items a fixed ' . Policy::CRITICAL_BIN_DAYS . ' days — its period cannot be changed.', 'vault', 422);
         }
-        if (!$this->isAdmin($u)) $this->reject('Only a Vault Admin can change the retention period.', null, 403);
+        if (!$this->binAdmin($u)) $this->reject('Only a Vault Admin (the client admin or a Branch Admin) can change the retention period.', null, 403);
+
+        $current = (int) Policy::for($u->client_id)['bin_days'];
+        if ($d['days'] < $current && empty($d['confirm_purge'])) {
+            $n = $this->retentionImpact($u, $d['days'])['total'];
+            if ($n > 0) {
+                $this->reject("{$n} " . Str::plural('credential', $n) . " in the Recycle Bin " . ($n === 1 ? 'is' : 'are')
+                    . " older than {$d['days']} days and will be deleted permanently. Confirm to continue.", 'confirm_purge', 409);
+            }
+        }
 
         $res  = $this->savePolicies($u, ['bin_days' => $d['days']])->getData(true);
 
         return response()->json(['status' => true, 'message' => $res['data']['changed'] ? "Retention set to {$d['days']} days for the Normal Vault"
-                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} items past the new period deleted" : '') . '.' : 'Nothing changed.',
+                . (($res['data']['purged'] ?? 0) ? " · {$res['data']['purged']} " . Str::plural('item', $res['data']['purged']) . ' past the new period deleted' : '') . '.' : 'Nothing changed.',
             'data' => ['vault' => 'normal', 'days' => (int) Policy::for($u->client_id)['bin_days'], 'purged' => $res['data']['purged'] ?? 0]], 200);
     }
 
@@ -3297,6 +3365,8 @@ class CredVaultController extends Controller
                     $this->reject('This request is waiting for ' . ($r->adminUser?->name ?? 'a Vault Admin') . '.', null, 403);
                 }
             } elseif ($stage === 'manager') {
+                // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
+                if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
                 if ($r->admin_decided_by === $u->id) $this->reject('The same person cannot give both approvals.', null, 403);
             } else {
@@ -3310,7 +3380,7 @@ class CredVaultController extends Controller
                 "{$stage}_decided_at" => now(),
                 "{$stage}_note"       => $note,
             ]);
-            if ($approve && $stage === 'admin' && $r->manager_required) $r->manager_status = 'pending';
+            // The manager stage is no longer opened automatically — the requester forwards it (raise-manager).
 
             $extra = ['request_id' => $r->id, 'credential_id' => $r->credential_id, 'url' => '/credentials-vault/critical-vault'];
             if (!$approve) {
@@ -3325,7 +3395,9 @@ class CredVaultController extends Controller
                 elseif ($next === 'otp')  $r->status = 'approved';
 
                 if ($next === 'manager') {
-                    $this->notifyStage($r, $r->requester?->name ?? 'A colleague');
+                    // Admin approved; the requester forwards to the manager (raise-manager), so tell THEM — the manager is notified on the forward.
+                    $this->notify([$r->requester_id], 'access_approved', 'Vault Admin approved',
+                        "The Vault Admin approved your request to unlock “{$r->credential?->name}”. Forward it to your reporting manager to continue.", $extra);
                 } else {
                     $this->notify([$r->requester_id], 'access_approved', 'Access approved',
                         $next === 'otp'
@@ -4090,15 +4162,20 @@ class CredVaultController extends Controller
         $order = $this->requestSteps($r);
         $n     = array_search($stage, $order, true) + 1;
         $who   = $stage === 'admin' ? ($r->adminUser?->name ?? 'Any Vault Admin') : ($stage === 'manager' ? $r->managerUser?->name : null);
+        // The manager stage is opened by the requester forwarding it; until then it awaits that forward, not the manager.
+        $needsForward = $stage === 'manager' && $r->manager_status !== 'pending';
 
         return [
-            'state'       => $stage === 'otp' ? 'progress' : 'pending',
-            'label'       => $stage === 'otp' ? "Step {$n} of " . count($order) . ' · ' . $this->otpLabel($r->credential) : self::STAGE_LABELS[$stage] . ' · ' . $who,
-            'stage'       => $stage,
-            'waiting_for' => $who ? ['name' => $who, 'role' => self::STAGE_LABELS[$stage]] : null,
-            'step'        => ['number' => $n, 'of' => count($order)],
-            'request_id'  => $r->id,
-            'code'        => $r->code,
+            'state'         => $stage === 'otp' ? 'progress' : 'pending',
+            'label'         => $needsForward
+                ? 'Forward to ' . ($r->managerUser?->name ?? 'your reporting manager')
+                : ($stage === 'otp' ? "Step {$n} of " . count($order) . ' · ' . $this->otpLabel($r->credential) : self::STAGE_LABELS[$stage] . ' · ' . $who),
+            'stage'         => $stage,
+            'needs_forward' => $needsForward,
+            'waiting_for'   => $who ? ['name' => $who, 'role' => self::STAGE_LABELS[$stage]] : null,
+            'step'          => ['number' => $n, 'of' => count($order)],
+            'request_id'    => $r->id,
+            'code'          => $r->code,
         ];
     }
 
@@ -4406,6 +4483,15 @@ class CredVaultController extends Controller
     protected function adminBranchOf(User $u): ?int
     {
         return $u->isBranchUser() && $u->branch_id ? (int) $u->branch_id : null;
+    }
+
+    /**
+     * The Recycle Bin's Vault Admin: the client admin or a Branch Admin. Only they change the
+     * retention period and delete permanently (an item, or Empty Bin); everyone else may only restore.
+     */
+    protected function binAdmin(User $u): bool
+    {
+        return $this->isAdmin($u) || $this->adminBranchOf($u) !== null;
     }
 
     /**

@@ -275,6 +275,20 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     } finally { setBusy(false); }
   }
 
+  /** The requester forwards an admin-approved request to their reporting manager. */
+  async function forward() {
+    if (!live || busy || !cvData.raiseManager) return;
+    setBusy(true);
+    try {
+      await cvData.raiseManager(live.id);
+      toast.success(`Forwarded to ${approverName('manager')}`);
+      await load(true);
+    } catch (e) {
+      if (e instanceof CvApiError) { if (e.status === 409 && e.data) { await load(true); toast.info(e.message); } else setErr({ general: e.message }); }
+      else setErr({ general: errMsg(e) });
+    } finally { setBusy(false); }
+  }
+
   /** Dummy data only: the prototype's "act as" stands in for the waiting approver. */
   async function actAs(approve: boolean, who: string) {
     if (!live || busy || !cvData.decide) return;
@@ -778,6 +792,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     if (!past && cur !== 'done') {
       if (cur === 'otp') {
         prim = <button type="button" className="cp-btn cp-btn--pri" onClick={verify} disabled={busy}><Svg d={CP_I.lock} size={13} /> {busy ? 'Verifying…' : 'Verify & reveal'}</button>;
+      } else if (cur === 'manager' && unlock.needs_forward) {
+        prim = <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy}><Svg d={CP_I.send} size={13} /> {busy ? 'Sending…' : `Send to ${approverName('manager')}`}</button>;
       } else if (stageStatus(cur) === 'pend') {
         prim = <button type="button" className="cp-btn cp-btn--pri is-wait" disabled><span className="cp-spin cp-spin--sm" /> Waiting for {approverName(cur)}…</button>;
       } else {
