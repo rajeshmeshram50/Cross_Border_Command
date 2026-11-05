@@ -4,7 +4,6 @@ import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type AuditEvent, type PageMeta } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { CvPage, CvStrip, StripBtn, CvPager, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
-import CrdSelect from '../form/CrdSelect';
 import './audit.css';
 
 const CAL = '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
@@ -14,7 +13,6 @@ const ALERT = '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7
 const GRID = '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>';
 const MONITOR = '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>';
 const SLIDERS = '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>';
-const FILTER = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
 
 const ACT_ICON: Record<string, string> = {
   view: IC.view, reveal: IC.view, copy: IC.copy,
@@ -46,11 +44,6 @@ const PER_PAGE = 15;
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const fmtD = (v: string) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '');
 
-interface Summary {
-  events: number; by_me: number; team_members: number; views_reveals: number; copies_exports: number;
-  access_changes: number; security_alerts: number;
-  most_active: { user_id: number; name: string; is_me: boolean; label: string; events: number } | null;
-}
 
 export default function AuditLogs() {
   const toast = useToast();
@@ -61,7 +54,7 @@ export default function AuditLogs() {
   const [range, setRange] = useState('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [action, setAction] = useState(params.get('action') ?? '');
+  const [action] = useState(params.get('action') ?? '');
   const [credId, setCredId] = useState<number | null>(Number(params.get('credential_id')) || null);
   const [credLabel, setCredLabel] = useState<string>(params.get('credential') ?? '');
   const [q, setQ] = useState('');
@@ -70,7 +63,6 @@ export default function AuditLogs() {
   const [rows, setRows] = useState<AuditEvent[]>([]);
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [pm, setPm] = useState<PageMeta | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
@@ -100,7 +92,6 @@ export default function AuditLogs() {
       setRows(r.data);
       setTabs(r.tabs ?? {});
       setPm(r.meta);
-      setSummary(r.summary as Summary);
       if (r.meta && page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
     } catch (e) {
       if (my !== seq.current) return;
@@ -140,38 +131,6 @@ export default function AuditLogs() {
       setExporting(false);
     }
   }
-
-  const rangeLabel = range === 'custom'
-    ? `${fmtD(from) || 'start'} – ${fmtD(to) || 'today'}`
-    : range === '24h' ? 'last 24 hours' : range === '7d' ? 'last 7 days' : range === '30d' ? 'last 30 days' : 'all time';
-
-  const card = (cls: string, ico: string, v: number | string, l: string, sub: string) => (
-    <div className={`phx-card phx-card--${cls}`} key={cls}>
-      <span className="phx-card__glow" />
-      <div className="phx-card__top"><span className="phx-card__ico"><Svg d={ico} size={16} /></span><b className="phx-card__n">{v}</b></div>
-      <span className="phx-card__l">{l}</span>
-      <small className="phx-card__s rb-sub">{sub}</small>
-    </div>
-  );
-  const S = summary;
-  const summaryStrip = (
-    <div className="rbx al-sum">
-      <div className="phx-score rb-hero">
-        <span className="phx-score__dots" />
-        <span className="rb-hero__ico"><Svg d={PULSE} size={26} /></span>
-        <div className="phx-score__t">
-          <small>{cap(rangeLabel)}</small>
-          <b>{S ? S.events : '—'} events</b>
-          <span>{S ? `${S.by_me} by you · ${S.events - S.by_me} by ${S.team_members} team member${S.team_members === 1 ? '' : 's'}` : 'Loading…'}</span>
-        </div>
-      </div>
-      {card('teal', IC.view, S?.views_reveals ?? '—', 'Views & reveals', 'Credentials opened')}
-      {card('sky', IC.copy, S?.copies_exports ?? '—', 'Copies & exports', 'Secrets taken out')}
-      {card('amber', IC.share, S?.access_changes ?? '—', 'Access changes', 'Shares, requests, approvals')}
-      {card('rose', ALERT, S?.security_alerts ?? '—', 'Security alerts', 'Critical-level events')}
-      {card('green', '<circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/>', S?.most_active?.events ?? 0, 'Most active', S?.most_active?.label ?? '—')}
-    </div>
-  );
 
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   const dayLbl = (iso: string) => {
@@ -240,7 +199,7 @@ export default function AuditLogs() {
                         <div className="alh2-l1">
                           <p>
                             <b title={e.actor.full_name}>{e.actor.name}</b> {e.verb || a?.verb || 'updated'}
-                            {c && <> <b className="alh-cr cva-link" role="button" tabIndex={0} title="Show only this credential's events"
+                            {c && <> <b className="alh-cr cva-link" role="button" tabIndex={0} title={`${c.name ?? c.code} — show only this credential's events`}
                               onClick={() => pickCred(e)} onKeyDown={k => { if (k.key === 'Enter') pickCred(e); }}>{c.name ?? c.code}</b></>}
                           </p>
                           <span className="alh2-role">{e.actor.role}</span>
@@ -280,7 +239,6 @@ export default function AuditLogs() {
         sub="Every view, copy, share, approval and policy change across CredVault — for you and your team, time-stamped."
         actions={<StripBtn icon={IC.download} onClick={exportLogs} disabled={exporting || loading}>{exporting ? 'Exporting…' : 'Export Logs'}</StripBtn>} />
 
-      {summaryStrip}
 
       <div className="bst-wrap"><div className="bst-card">
         <CvTabsRow className="tvc-top al-top"
@@ -308,22 +266,14 @@ export default function AuditLogs() {
           </div>
           } />
 
-        <div className="cva-filters">
-          <span className="cva-filters__l"><Svg d={FILTER} size={12} />Filter</span>
-          <div className="cva-sel-ms" style={{ minWidth: 200 }}>
-            <CrdSelect value={action} onChange={setAction}
-              options={[{ value: '', label: 'All actions' }, ...(meta?.audit_actions ?? []).map(a => ({ value: a.key, label: a.label }))]} />
-          </div>
-          {credId && (
-            <span className="cva-chip"><Svg icon="lock" size={11} />{credLabel || `Credential #${credId}`}
+        {/* Picked by clicking a credential name: the one filter the Figma has no control for. */}
+        {credId && (
+          <div className="cva-filters">
+            <span className="cva-chip" title={credLabel || undefined}><Svg icon="lock" size={11} /><span className="cva-chip__t">{credLabel || `Credential #${credId}`}</span>
               <button type="button" data-h40="skip" onClick={clearCred} aria-label="Clear credential filter"><Svg d={IC.close} size={11} sw={2.6} /></button>
             </span>
-          )}
-          {(action || credId) && (
-            <button type="button" data-h40="skip" className="cva-clear" onClick={() => { setAction(''); clearCred(); }}>Clear filters</button>
-          )}
-          <span className="cva-filters__n">Tip: click a credential name to see only its events.</span>
-        </div>
+          </div>
+        )}
 
         {list()}
         {pm && !err && <CvPager page={pm.current_page} lastPage={pm.last_page} total={pm.total} perPage={pm.per_page} noun="events" onPage={setPage} />}

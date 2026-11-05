@@ -6,6 +6,10 @@
 .cvx .cva-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 10px;border-radius:999px;background:#ecfeff;border:1px solid #a5f3fc;font-size:11.5px;font-weight:700;color:#0e7490;}
 .cvx .cva-chip button{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;border-radius:50%;background:rgba(14,116,144,.12);color:#0e7490;cursor:pointer;}
 .cvx .cva-clear{border:0;background:none;font:inherit;font-size:11.5px;font-weight:700;color:#e11d48;cursor:pointer;}
+/* A long credential name never stretches the card or the chip: one line, "…", full name on hover. */
+.cvx .al-page .alh-cr{display:inline-block;max-width:min(420px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+.cvx .cva-chip{max-width:min(520px,100%);}
+.cvx .cva-chip__t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cvx .cva-link{cursor:pointer;}
 .cvx .cva-link:hover{text-decoration:underline;}
 .cvx .cva-det{cursor:pointer;}
