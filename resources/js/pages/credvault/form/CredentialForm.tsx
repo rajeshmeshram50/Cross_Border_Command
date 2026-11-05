@@ -116,7 +116,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const savingRef = useRef(false);
   const [code, setCode] = useState(detail?.code ?? '');
   const [wide, setWide] = useState(() => window.innerWidth > 980);
-  const [approvers, setApprovers] = useState<Loose | null>(null);
 
   const wasCritical = detail?.risk === 'critical';
   const inCritical = !!init.critical || wasCritical;
@@ -125,10 +124,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     admin: wasCritical && P ? P.admin : true,
     manager: wasCritical && P ? P.manager : true,
     otp: wasCritical && P ? P.otp : true,
-    adminUserId: String(P?.admin_user?.id ?? ''),
-    managerUserId: String(P?.manager_user?.id ?? ''),
   }));
-  const protIdsTouched = useRef(editing && wasCritical);
   const policyGate = { admin: pol.cp_admin, manager: pol.cp_manager, otp: pol.cp_otp };
 
   const twofaOn = T.twofa ? twofa : toggleField ? vals.twofa === 'yes' : false;
@@ -167,28 +163,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!critical || !canProtect || approvers) return;
-    let on = true;
-    cvApi.approvers().then(a => {
-      if (!on) return;
-      setApprovers(a);
-      if (!protIdsTouched.current) {
-        // Pre-fill a named approver, never the person saving: the policy's default first,
-        // else the first Vault Admin; the manager is the logged-in person's reporting manager.
-        const me = meta.me.id;
-        const admins = (a.admins ?? []) as Loose[];
-        const others = (list: Loose[]) => list.filter(x => Number(x.id) !== me);
-        const admin = a.defaults?.admin_user_id ?? (others(admins)[0] ?? admins[0])?.id ?? '';
-        const reporting = meta.me.manager_user_id && meta.me.manager_user_id !== me ? meta.me.manager_user_id : null;
-        // No reporting manager on file: '' = "The requester's reporting manager", resolved by the API.
-        const manager = a.defaults?.manager_user_id ?? reporting ?? '';
-        setProt(p => ({ ...p, adminUserId: String(admin), managerUserId: String(manager) }));
-      }
-    }).catch(() => { if (on) setApprovers({ admins: [], managers: [], defaults: {} }); });
-    return () => { on = false; };
-  }, [critical, canProtect, approvers]);
-
   const fetchSecret = () => {
     setAuth(a => ({ ...a, loading: true, failed: null }));
     const label = `${code && code !== 'Auto' ? code : 'Credential'}${name.trim() ? ' · ' + name.trim() : ''}`;
@@ -210,7 +184,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       name, risk, rotation_days: rotation, twofa: String(twofa), notes, reg_email: regEmail, reg_phone: regPhone,
       recovery_key: rkey, scope, department_id: scope === 'team' ? deptId : '',
       attachments: `${attNew.length}/${attRemoved.length}`,
-      lock_admin: `${prot.admin}|${prot.adminUserId}`, lock_manager: `${prot.manager}|${prot.managerUserId}`, lock_otp: String(prot.otp),
+      lock_admin: String(prot.admin), lock_manager: String(prot.manager), lock_otp: String(prot.otp),
       totp_code: String(auth.verified), twofa_email: `${method}|${gmail.trim()}`,
     };
     T.fields.forEach(f => { s['fields.' + f.key] = f.kind === 'file' ? (fieldFiles[f.key]?.name ?? '') : (vals[f.key] ?? ''); });
@@ -221,11 +195,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   if (!orig.current) orig.current = now;
   const changed = (k: string) => editing && orig.current![k] !== now[k];
   const changedCount = editing ? Object.keys(now).filter(k => orig.current![k] !== now[k]).length : 0;
-  const dirty = Object.keys(now).some(k => {
-    if (orig.current![k] === now[k]) return false;
-    if ((k === 'lock_admin' || k === 'lock_manager') && !protIdsTouched.current) return orig.current![k].split('|')[0] !== now[k].split('|')[0];
-    return true;
-  });
+  const dirty = Object.keys(now).some(k => orig.current![k] !== now[k]);
   const askClose = () => onClose();
 
   const clr = (k: string) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; });
@@ -690,16 +660,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         gm={gm} onSend={sendGmailCode} onGmCode={c => setGm(g => ({ ...g, code: c, error: '' }))} onGmVerify={verifyGmailCode} />
     : null;
 
-  // The Vault Admin is the Branch Admin of the user's branch; the manager is the user's own reporting manager.
-  const hasAdmins = !!(approvers?.admins as Loose[] | undefined)?.length;
-  const hasManager = !!(approvers?.managers as Loose[] | undefined)?.length;
-  const adminOptions: CrdOption[] = [{ value: '', label: !approvers || hasAdmins ? 'Any Branch Admin' : 'No Branch Admin set for your branch' },
-    ...((approvers?.admins ?? []) as Loose[]).map(a => ({ value: String(a.id), label: `${a.name}${a.role ? ' · ' + a.role : ''}` }))];
-  const managerOptions: CrdOption[] = [{ value: '', label: !approvers || hasManager ? 'The requester’s reporting manager' : 'No reporting manager set for you' },
-    ...((approvers?.managers ?? []) as Loose[]).map(a => ({ value: String(a.id), label: `${a.name}${a.role ? ' · ' + a.role : ''}` }))];
-  if (prot.adminUserId && !adminOptions.some(o => o.value === prot.adminUserId)) adminOptions.push({ value: prot.adminUserId, label: P?.admin_user?.name ?? 'Loading…' });
-  if (prot.managerUserId && !managerOptions.some(o => o.value === prot.managerUserId)) managerOptions.push({ value: prot.managerUserId, label: P?.manager_user?.name ?? 'Loading…' });
-
   const save = async () => {
     if (savingRef.current) return;
     savingRef.current = true;
@@ -835,11 +795,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         put('lock_admin', lockAdmin);
         put('lock_manager', lockManager);
         put('lock_otp', lockOtp);
-        // A Branch Admin from /approvers is sent as "any branch admin" (null): the save still accepts only
-        // company admins (CredVaultController:3048), while raising a request pins it to the branch admin anyway.
-        const branchAdmin = ((approvers?.admins ?? []) as Loose[]).some(a => String(a.id) === prot.adminUserId);
-        put('lock_admin_user_id', lockAdmin && prot.adminUserId && !branchAdmin ? Number(prot.adminUserId) : null, 'lock_admin');
-        put('lock_manager_user_id', lockManager && prot.managerUserId ? Number(prot.managerUserId) : null, 'lock_manager');
+        // Approvers are resolved when access is requested — Vault Admin = the
+        // branch's Branch Admin (common), manager = the requester's own
+        // reporting manager (individual). The form pins no specific person.
+        put('lock_admin_user_id', null, 'lock_admin');
+        put('lock_manager_user_id', null, 'lock_manager');
       }
     }
     if (sendTotp && auth.secret) {
@@ -961,8 +921,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                   span: 4,
                   render: () => (
                     <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={twofaLocks} twofaOn={twofaOn} mainChip={twofaChip}
-                      set={p => { if ('adminUserId' in p || 'managerUserId' in p) protIdsTouched.current = true; setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
-                      adminOptions={adminOptions} managerOptions={managerOptions} auth={auth} authBox={authBox} errors={errors} />
+                      set={p => { setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
+                      auth={auth} authBox={authBox} errors={errors} />
                   ),
                 }]} />
             </div>

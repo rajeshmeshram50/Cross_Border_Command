@@ -3185,14 +3185,12 @@ class CredVaultController extends Controller
         if ($critical && !$lockAdmin && !$lockManager && !$lockOtp) {
             $this->reject('Turn on at least one protection step for a critical credential.', 'lock_admin');
         }
-        $adminUserId = $lockAdmin ? (array_key_exists('lock_admin_user_id', $data) ? $data['lock_admin_user_id'] : $c?->lock_admin_user_id) : null;
-        if ($adminUserId && !in_array((int) $adminUserId, $this->adminIds($u->client_id), true)) {
-            $this->reject('The approving Vault Admin must be a company admin.', 'lock_admin_user_id');
-        }
-        $managerUserId = $lockManager ? (array_key_exists('lock_manager_user_id', $data) ? $data['lock_manager_user_id'] : $c?->lock_manager_user_id) : null;
-        if ($managerUserId && !User::where('client_id', $u->client_id)->where('status', 'active')->whereKey($managerUserId)->exists()) {
-            $this->reject('The approving manager must be an active user of your company.', 'lock_manager_user_id');
-        }
+        /* New flow: the form no longer pins a specific approver. Both are
+         * resolved when access is requested — the Vault Admin is the credential
+         * branch's Branch Admin (common), the manager is the requester's own
+         * reporting manager (individual). Only the on/off toggles are stored. */
+        $adminUserId = null;
+        $managerUserId = null;
 
         // The 2-step method: linked afresh (a code that matched) or the one already linked, kept.
         [$method, $newSecret, $email, $emailToken] = $lockOtp ? $this->twoStepLink($data, $u, $c) : [null, null, null, null];
@@ -4328,10 +4326,13 @@ class CredVaultController extends Controller
 
         $out = [];
         foreach ($steps as $i => $s) {
+            // Common Vault Admin = the requester branch's Branch Admin; the
+            // manager is the requester's own reporting manager. (new flow)
+            $branchAdmin = $this->branchAdminIds($u->branch_id, $u->client_id)[0] ?? null;
             $approver = match ($s) {
-                'admin'   => $person($this->liveAdmin($c->lock_admin_user_id ?: $pol['cp_admin_user_id'], $c->client_id), 'Vault Admin')
+                'admin'   => $person($this->liveAdmin($branchAdmin ?: $pol['cp_admin_user_id'], $c->client_id), 'Vault Admin')
                     ?? ['id' => null, 'name' => 'Any Vault Admin', 'initials' => 'VA', 'role' => 'Vault Admin'],
-                'manager' => $person($c->lock_manager_user_id ?: $this->managerOf($u), 'Reporting Manager'),
+                'manager' => $person($this->managerOf($u), 'Reporting Manager'),
                 default   => null,
             };
             $out[] = ['step' => $i + 1, 'key' => $s, 'label' => $s === 'otp' ? $this->otpLabel($c) : self::STAGE_LABELS[$s], 'approver' => $approver,

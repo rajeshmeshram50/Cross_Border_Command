@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { Svg } from '../shared';
-import CrdSelect, { type CrdOption } from './CrdSelect';
 
 
 export const CP_I = {
@@ -323,17 +322,15 @@ export function TwofaCard({ method, readOnly, authBox, chip, onMethod, gmail, gm
 
 export interface ProtectionValue {
   admin: boolean; manager: boolean; otp: boolean;
-  adminUserId: string; managerUserId: string;
 }
 
 /** The three steps. `hasMain`: the type's own 2FA switch stands in for step 3. */
-export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, adminOptions, managerOptions, auth, authBox, errors }: {
+export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, auth, authBox, errors }: {
   v: ProtectionValue; set: (p: Partial<ProtectionValue>) => void;
   policy: { admin: boolean; manager: boolean; otp: boolean };
   hasMain: boolean; twofaOn: boolean;
   /** step 3's chip when the type's 2FA switch stands in for it — mirrors the 2FA card */
   mainChip: { ok: boolean; text: string };
-  adminOptions: CrdOption[]; managerOptions: CrdOption[];
   auth: AuthState; authBox: ReactNode;
   errors: Record<string, string>;
 }) {
@@ -348,20 +345,12 @@ export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, adm
     <div className="cp-form mapsup-span-full" style={{ gridColumn: '1/-1' }}>
       <div data-f="lock_admin">
         <Row n={1} ico={CP_I.admin} t="Request access to Vault Admin"
-          d="User must ask the Vault Admin for access, with a reason and a time window."
-          extra={<div className="mapsup-inputwrap" data-f="lock_admin_user_id">
-            <span className="mapsup-input-ico"><Svg icon="user" size={13} /></span>
-            <CrdSelect value={v.adminUserId} options={adminOptions} onChange={x => set({ adminUserId: x })} disabled={!v.admin} />
-          </div>}
+          d="The Vault Admin for this credential's branch (the Branch Admin) must approve, with a reason and a time window. Resolved when access is requested."
           toggle={<StepToggle on={v.admin && policy.admin} disabled={!policy.admin} title={policy.admin ? undefined : off} onChange={x => set({ admin: x })} />} />
       </div>
       <div data-f="lock_manager">
         <Row n={2} ico={CP_I.mgr} t="Request approval from Manager"
-          d="After the Vault Admin approves, the manager must also approve the request."
-          extra={<div className="mapsup-inputwrap" data-f="lock_manager_user_id">
-            <span className="mapsup-input-ico"><Svg icon="user" size={13} /></span>
-            <CrdSelect value={v.managerUserId} options={managerOptions} onChange={x => set({ managerUserId: x })} disabled={!v.manager} />
-          </div>}
+          d="After the Vault Admin approves, the requester's own reporting manager must also approve. Resolved per requester when access is requested."
           toggle={<StepToggle on={v.manager && policy.manager} disabled={!policy.manager} title={policy.manager ? undefined : off} onChange={x => set({ manager: x })} />} />
       </div>
       {hasMain ? (
