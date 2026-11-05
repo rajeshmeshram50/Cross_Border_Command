@@ -20,12 +20,11 @@ const TABS: { key: string; label: string; icon: string }[] = [
   { key: 'team', label: 'Team Credentials', icon: IC.users },
   { key: 'soon', label: 'Expiring Soon', icon: I_SOON },
 ];
-/* Sub-tabs under the main tabs: each vault keeps its own bin (retention, who may restore). */
 const VAULT_TABS: { key: BinVault; label: string; icon: string }[] = [
-  { key: 'normal', label: 'Normal Credentials', icon: IC.lock },
-  { key: 'critical', label: 'Critical Credentials', icon: I_SHIELD },
+  { key: 'normal', label: 'My Vault', icon: IC.lock },
+  { key: 'critical', label: 'Critical Vault', icon: I_SHIELD },
 ];
-const VAULT_LABEL: Record<BinVault, string> = { normal: 'Normal Vault', critical: 'Critical Vault' };
+const VAULT_LABEL: Record<BinVault, string> = { normal: 'My Vault', critical: 'Critical Vault' };
 const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Owner', 'Risk', 'Deleted By', 'Deleted On', 'Auto-delete In', 'Action'];
 
 type Ask = { kind: 'purge'; row: BinRow } | { kind: 'empty' } | null;
@@ -96,7 +95,6 @@ export default function RecycleBin() {
         const r = await cvApi.purge(ask.row.id);
         toast.warning(r.message);
       } else {
-        // Only the vault on screen — the confirm popup names it and counts its items.
         const r = await cvApi.emptyBin(vault);
         toast.warning(r.message);
       }
@@ -211,7 +209,6 @@ export default function RecycleBin() {
                           </td>
                           <td><UpdatedCell iso={r.deleted_at} /></td>
                           <td>
-                            {/* Days left, a bar of the retention period still left, and the purge date. */}
                             <div className={`rb-left rb-left--${r.urgency}`} title={`Deleted permanently on ${fmtDay(r.purges_at)}`}>
                               <b className="rb-left__n">{r.days_left} {r.days_left === 1 ? 'day' : 'days'}</b>
                               <span className="rb-left__bar"><i style={{ width: `${Math.max(3, Math.min(100, r.left_pct))}%` }} /></span>
@@ -270,15 +267,10 @@ export default function RecycleBin() {
   );
 }
 
-/**
- * The Change period popup. Normal Vault: a Vault Admin picks 7–90 days. Everyone else sees the
- * period read-only, and the Critical Vault's period is fixed — same popup, Save switched off.
- */
 function RetentionModal({ vault, current: listDays, options, fixed: listFixed, canChange: listCanChange, onClose, onSaved }: {
   vault: BinVault; current: number; options: number[]; fixed: boolean; canChange: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const toast = useToast();
-  // The list's summary paints the popup at once; GET /recycle-bin/retention then has the final say.
   const [ret, setRet] = useState<BinRetention | null>(null);
   const [loadErr, setLoadErr] = useState('');
   const [d, setD] = useState(listDays);
@@ -299,10 +291,8 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   const fixed = ret ? vault === 'critical' && !!ret.critical.fixed : listFixed;
   const canChange = v ? v.can_change : listCanChange;
   const opts = useMemo(() => (v?.options.length ? v.options : options), [v, options]);
-  // Locked for the Critical Vault's fixed period, and for anyone who is not a Vault Admin (client admin or Branch Admin).
   const locked = fixed || !canChange;
 
-  // A shorter period that would delete bin items right away: the warning step, before anything is saved.
   const [warn, setWarn] = useState<RetentionImpact | null>(null);
 
   const commit = async (confirmPurge: boolean) => {
@@ -310,13 +300,12 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
     try {
       const r = await cvApi.saveBinRetention(d, confirmPurge);
       toast.success(r.message);
-      // The cached meta carries bin_days (Move to Bin popup, policies) — refresh it.
       cvApi.meta(true).catch(() => undefined);
-      onSaved();   // the list reloads: purged items gone, the rest counted on the new period
+      onSaved();
     } catch (e) {
-      // 409: items became due since the check (someone else binned or time passed) — ask again.
       if ((e as { status?: number })?.status === 409 && !confirmPurge) {
-        try { const p = (await cvApi.binRetention(d)).preview; if (p?.total) { setWarn(p); setBusy(false); return; } } catch { /* fall through */ }
+        const p = (await cvApi.binRetention(d).catch(() => null))?.preview;
+        if (p?.total) { setWarn(p); setBusy(false); return; }
       }
       toast.error('Could not change the period', errMsg(e));
       setBusy(false);
@@ -325,7 +314,7 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
 
   const save = async () => {
     if (locked || d === current) { onClose(); return; }
-    if (d > current) { await commit(false); return; }   // longer: nothing is deleted
+    if (d > current) { await commit(false); return; }
     setBusy(true);
     try {
       const p = (await cvApi.binRetention(d)).preview;
