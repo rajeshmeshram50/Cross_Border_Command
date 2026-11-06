@@ -379,3 +379,17 @@
    .al-pop sits at 99999, so the calendar opened behind it. Keep the popup above the page
    (topbar ≈1002) but under the calendar. Audit Logs only. */
 .cvx.al-page .al-pop { z-index: 1060; }
+
+/* Tabs row, as the Figma: tab group · time range · search sit on one 48px line with even 14px
+   gaps; the range group is the same height as the tabs, and the search takes the rest of the row
+   (the old 340px cap left a gap before it). Audit Logs only. */
+.cvx.al-page .al-top { gap: 14px; }
+/* The tab row sits straight in .bst-card (Team / Critical Vault have a padded pane body round it),
+   so .tvc-top's padding:0 left it stuck to the card's top border. Same 10px breathing room. */
+.cvx.al-page .bst-card > .tvc-top.al-top { padding: 10px 12px 0 !important; }
+.cvx.al-page .al-tools { gap: 14px; justify-content: flex-start; align-items: stretch; }
+.cvx.al-page .cva-rangewrap { display: flex; flex-shrink: 0; }
+.cvx.al-page .al-range { height: 48px; box-sizing: border-box; align-items: center; padding: 0 5px; gap: 4px; border-radius: 13px; }
+.cvx.al-page .al-range button { height: 38px; padding: 0 14px; border-radius: 10px; font-size: 12px; }
+.cvx.al-page .al-range .al-cust { display: inline-flex; align-items: center; gap: 6px; }
+.cvx.al-page .al-tools .whm-main-search { flex: 1 1 auto; max-width: none; min-width: 220px; }

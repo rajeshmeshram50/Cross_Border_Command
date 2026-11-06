@@ -11,7 +11,7 @@ import {
 } from './formHelpers';
 import { quickPassword } from '../generator';
 import {
-  AUTH_EMPTY, AuthBox, CP_I, GMAIL_EMPTY, ProtectionBody, TwofaCard, authLinked,
+  AUTH_EMPTY, AuthBox, CP_I, GMAIL_EMPTY, ProtectionBody, TwofaCard, TwofaPicker, authLinked,
   type AuthState, type GmailState, type ProtectionValue,
 } from './ProtectionSection';
 
@@ -769,13 +769,17 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const twofaChip = method === 'email'
     ? { ok: gm.verified, text: gm.verified ? 'Gmail verified' : gm.token ? 'Enter the code' : 'Gmail needed' }
     : { ok: authLinked(auth), text: authLinked(auth) ? 'App linked' : 'Scan to link' };
-  const twofaCard = twofaLocks && canProtect && twofaOn
-    ? <TwofaCard method={method} readOnly={twofaReadOnly} authBox={authBox} chip={twofaChip}
-        onMethod={m => { setMethod(m); clr('twofa_email'); }}
-        gmail={gmail} gmailOk={gmailOk} gmailErr={errors.twofa_email}
-        onGmail={v => { setGmail(v); setGm(GMAIL_EMPTY); if (GMAIL_RE.test(v.trim())) clr('twofa_email'); }}
-        gm={gm} onSend={sendGmailCode} onGmCode={c => setGm(g => ({ ...g, code: c, error: '' }))} onGmVerify={verifyGmailCode} />
-    : null;
+  // One Authenticator-or-Gmail picker: the Login-style 2FA card (types with a 2FA field) and
+  // step 3 of Critical Access Protection (types without one) both use it, so every type offers Gmail.
+  const pickerProps = {
+    method, readOnly: twofaReadOnly, authBox,
+    onMethod: (m: 'google' | 'email') => { setMethod(m); clr('twofa_email'); },
+    gmail, gmailOk, gmailErr: errors.twofa_email,
+    onGmail: (v: string) => { setGmail(v); setGm(GMAIL_EMPTY); if (GMAIL_RE.test(v.trim())) clr('twofa_email'); },
+    gm, onSend: sendGmailCode, onGmCode: (c: string) => setGm(g => ({ ...g, code: c, error: '' })), onGmVerify: verifyGmailCode,
+  };
+  const twofaCard = twofaLocks && canProtect && twofaOn ? <TwofaCard {...pickerProps} chip={twofaChip} /> : null;
+  const step3Picker = !twofaLocks ? <TwofaPicker {...pickerProps} /> : undefined;
 
   const save = async () => {
     if (savingRef.current) return;
@@ -1059,7 +1063,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                   render: () => (
                     <ProtectionBody key="cp" v={prot} policy={policyGate} hasMain={twofaLocks} twofaOn={twofaOn} mainChip={twofaChip}
                       set={p => { setProt(s => ({ ...s, ...p })); clr('lock_admin'); }}
-                      auth={auth} authBox={authBox} errors={errors} />
+                      auth={auth} authBox={authBox} picker={step3Picker} errors={errors} />
                   ),
                 }]} />
             </div>
