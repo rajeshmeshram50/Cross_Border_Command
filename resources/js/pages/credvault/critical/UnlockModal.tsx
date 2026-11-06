@@ -6,6 +6,7 @@ import { CvApiError, type AccessRequestRow, type CredentialDetail, type LockStep
 import { CvPortal, IC, Svg, copyText, errMsg, fmtTime, initials, mmss, useCvMeta, useNow } from '../shared';
 import OtpDigits from './OtpDigits';
 import { cvData, type OtpSetup } from './cvData';
+import './unlock.css';
 
 /**
  * CredVault · Critical Access Protection unlock modal — the stepper
@@ -157,8 +158,15 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const steps: LockStep[] = useMemo(() => plan?.steps.map(s => s.key) ?? d?.lock_steps ?? [], [plan, d]);
   const unlock: UnlockState = d?.unlock ?? { state: 'locked', label: 'Approval needed' };
   const req: AccessRequestRow | null = d?.last_request ?? null;
-  const live = req && unlock.request_id === req.id ? req : null;   // the open request, if any
-  const open = unlock.state === 'open';
+  /* ── countdown ── the API can still read 'open' with 0 seconds left until its sweep locks the
+     window; that is an ended window, so the popup starts a new request instead of the old Reveal. */
+  const apiOpen = unlock.state === 'open';
+  const now = useNow(apiOpen);
+  const left = apiOpen ? Math.max(0, (unlock.seconds_left ?? 0) - (now - fetchedAt) / 1000) : 0;
+  // Under a second left already reads 00:00, so that is the end of the window too.
+  const ended = apiOpen && left < 1;
+  const open = apiOpen && !ended;
+  const live = req && unlock.request_id === req.id && !ended ? req : null;   // the open request, if any
   const order: Stage[] = useMemo(() => [...steps, 'done'], [steps]);
 
   const cur: Stage = open ? 'done'
@@ -206,7 +214,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const rejectedStage: 'admin' | 'manager' | null = lastRejected
     ? (lastRejected.admin?.status === 'rejected' ? 'admin' : lastRejected.manager?.status === 'rejected' ? 'manager' : null) : null;
   const lastReset = !live && req?.status === 'locked' && req.locked_reason === 'otp_failed';
-  const lastExpired = !live && req?.status === 'locked' && req.locked_reason === 'expired';
+  const lastExpired = (!live && req?.status === 'locked' && req.locked_reason === 'expired') || ended;
 
   const stageStatus = (k: LockStep): 'done' | 'pend' | 'bad' | null => {
     if (live) {
@@ -228,17 +236,21 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const deciderName = (k: 'admin' | 'manager', r: AccessRequestRow | null) =>
     (k === 'admin' ? r?.admin?.decided_by?.name ?? r?.admin?.user?.name : r?.manager?.decided_by?.name ?? r?.manager?.user?.name) ?? approverName(k);
 
-  /* ── countdown ── */
-  const now = useNow(open);
-  const left = open ? Math.max(0, (unlock.seconds_left ?? 0) - (now - fetchedAt) / 1000) : 0;
   const total = unlock.total_seconds || 1;
+  // The window is time-limited: when it ends the popup goes back to Locked (the request step with
+  // the "last window ended" note), never stays on the green Reveal. Revealed values are dropped, and
+  // it reloads shortly so the API's sweep marks the old window locked.
+  const sawOpen = useRef(false);
+  useEffect(() => { if (open) sawOpen.current = true; }, [open]);
   useEffect(() => {
-    if (!open || left > 0 || relocked.current) return;
+    if (!ended || relocked.current) return;
     relocked.current = true;
-    toast.warning(`${d?.name ?? 'Credential'} is locked again`);
+    setRevealed({});
     onChanged?.();
-    onClose();
-  }, [open, left, d, toast, onChanged, onClose]);
+    if (sawOpen.current) toast.warning(`${d?.name ?? 'Credential'} is locked again`, 'The unlock window ended — send a new request to view it again.');
+    const t = window.setTimeout(() => load(true), 1500);
+    return () => clearTimeout(t);
+  }, [ended, d, toast, onChanged, load]);
 
   /* ── a pending approval is decided elsewhere: look again every 15 s ── */
   const waiting = unlock.state === 'pending';
@@ -546,7 +558,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
       return <div className="cp-note cp-note--bad"><Svg d={CP_I.x} size={13} /><span>Too many wrong authenticator codes on {req?.code} — the approvals were reset. You can send a new request.</span></div>;
     }
     if (lastExpired) {
-      return <div className="cp-note"><Svg d={CP_I.clock} size={13} /><span>Your last unlock window ({req?.code}) ended and the credential locked again. You can send a new request.</span></div>;
+      return <div className="cp-note"><Svg d={CP_I.clock} size={13} /><span>Your last unlock window{req?.code ? ` (${req.code})` : ''} ended and the credential locked again. You can send a new request.</span></div>;
     }
     return null;
   }

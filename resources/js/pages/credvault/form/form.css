@@ -89,6 +89,37 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search input { color: #e2f4f8; }
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
 
+/* Critical Vault type picker · dark mode. Scoped to crd-pickbox--cv so My Vault's picker is untouched.
+   Tiles, their icon chips and the risk / count / New badges lose the light-theme white fills. */
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile.crd-tile--c { background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile.crd-tile--c:hover { background: rgba(34, 211, 238, .07) !important; border-color: rgba(34, 211, 238, .5) !important; box-shadow: 0 0 0 3px rgba(34, 211, 238, .12), 0 12px 24px -14px rgba(0, 0, 0, .7) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile--c .crd-tile__ico { color: #67e8f9 !important; background: rgba(34, 211, 238, .12) !important; border-color: rgba(34, 211, 238, .3) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile--c:hover .crd-tile__ico { color: #fff !important; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490) !important; border-color: transparent !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile--c:hover .crd-tile__l { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile--c .crd-tile__new { color: #a5f3fc !important; background: rgba(34, 211, 238, .16) !important; border: 1px solid rgba(34, 211, 238, .4) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--low { color: #6ee7b7 !important; background: rgba(16, 185, 129, .12) !important; border-color: rgba(16, 185, 129, .38) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--medium { color: #fcd34d !important; background: rgba(245, 158, 11, .12) !important; border-color: rgba(245, 158, 11, .38) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--high { color: #fdba74 !important; background: rgba(249, 115, 22, .12) !important; border-color: rgba(249, 115, 22, .38) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--critical { color: #fda4af !important; background: rgba(244, 63, 94, .12) !important; border-color: rgba(244, 63, 94, .38) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--low i { background: #34d399 !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--medium i { background: #fbbf24 !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--high i { background: #fb923c !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--critical i { background: #fb7185 !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-nav__b:not(.is-on) .crd-nav__c { color: #67e8f9 !important; background: rgba(34, 211, 238, .1) !important; border-color: rgba(34, 211, 238, .3) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-nav__tip svg { color: #67e8f9; }
+/* Critical Vault Add / Edit form · dark mode. #crd-host gets crd-host--cv only when opened from Critical Vault,
+   so My Vault's form keeps its look. Header chips + the 2FA "selected" badges lose their white fills. */
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-box .crd-hicon { color: #fff !important; background: rgba(8, 30, 40, .32) !important; border: 1px solid rgba(255, 255, 255, .35) !important; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15) !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-box .crd-hicon svg { color: #fff !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-edit-id { color: #fff !important; background: rgba(8, 30, 40, .32) !important; border: 1px solid rgba(255, 255, 255, .4) !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-hbtns .mv-rk { color: #fff !important; background: rgba(8, 30, 40, .32) !important; border: 1px solid rgba(255, 255, 255, .4) !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-hbtns .mv-rk--critical { color: #fff !important; background: rgba(225, 29, 72, .55) !important; border-color: rgba(253, 164, 175, .6) !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-hbtns .mv-rk--critical i { background: #fff !important; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .cp-chip.is-ok,
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .k2-opt__sel { color: #6ee7b7 !important; background: rgba(16, 185, 129, .12) !important; border: 1px solid rgba(16, 185, 129, .38) !important; }
+
+[data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .mapsup-footer__info { color: #8fb3c2 !important; background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }
+
 /* "Two-factor authentication on Kryptone" card under the 2FA switch (prototype k2-*). */
 .cvx .cp-fcard--main { margin-top: 14px; }
 .cvx .cp-frow--main { grid-template-columns: 36px minmax(0, 1fr) auto; }

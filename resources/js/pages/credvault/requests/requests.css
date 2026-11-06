@@ -3,3 +3,209 @@
 .cvx .ar-st--reset{color:#b45309;background:#fff7ed;border-color:#fed7aa;}
 .cvx .ar-st__sub.ar-cd{display:inline-flex;align-items:center;gap:4px;color:#047857;font-weight:800;font-variant-numeric:tabular-nums;}
 .cvx .arj .ar-why{margin:0;}
+
+/* Tabs ↔ search: the Figma search bar is 665px wide, pinned right; the gap is whatever is left.
+   On narrow screens it shrinks (down to 240px) before the gap disappears. */
+.cvx.ar-page .tvc-top .bst-search.whm-main-search{flex:0 1 665px;min-width:240px;margin-left:auto !important;}
+
+/* Vault Admin / Reporting Manager cells: one fixed-width block per cell, centred under the header,
+   content left-aligned inside it, so every row's avatar sits in the same column. */
+.cvx.ar-page #arListWrap .ar-tbl .ar-ap{display:flex;width:200px;max-width:100%;margin:0;justify-content:flex-start;text-align:left;}
+/* Vault Admin / Reporting Manager: the header starts where the approver block starts (left of the
+   column, as Credential and Requested By), so the title sits above the name. */
+.cvx.ar-page #arListWrap .whm-tbl.ar-tbl thead th.ar-th-6,
+.cvx.ar-page #arListWrap .whm-tbl.ar-tbl thead th.ar-th-7,
+.cvx.ar-page #arListWrap .whm-tbl.ar-tbl tbody td:nth-child(7),
+.cvx.ar-page #arListWrap .whm-tbl.ar-tbl tbody td:nth-child(8){text-align:left !important;}
+.cvx.ar-page #arListWrap .ar-tbl .ar-ap>div{flex:1;min-width:0;}
+.cvx.ar-page #arListWrap .ar-tbl .ar-ap b{overflow:hidden;text-overflow:ellipsis;}
+
+/* ── Dark mode (Access Requests page .ar-page and its Approve/Reject dialog only) ─────────
+   Generated from the light .ar- / .arj- colours with the CredVault dark recipe, then polish. */
+[data-bs-theme="dark"] .cvx.ar-page .ar-sub {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-reason {
+  color: rgba(162, 194, 205, 1);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-win {
+  color: rgba(125, 217, 242, 1);
+  background: rgba(26, 243, 255, 0.12);
+  border: 1px solid rgba(78, 206, 228, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap b {
+  color: #e2f4f8;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--approved em {
+  color: #e2f4f8;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--pending em {
+  color: rgba(248, 175, 119, 1);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--rejected em {
+  color: rgba(243, 125, 153, 1);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait .ar-ap__av {
+  color: #8fb3c2;
+  background: rgba(71, 140, 209, 0.12);
+  border: 1px dashed rgba(34, 211, 238, 0.16);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait b {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait em {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st--pending {
+  color: rgba(248, 175, 119, 1);
+  background: rgba(255, 209, 26, 0.12);
+  border-color: rgba(249, 176, 57, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st--approved {
+  color: #e2f4f8;
+  background: rgba(26, 255, 147, 0.12);
+  border-color: rgba(75, 231, 159, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st--rejected {
+  color: rgba(243, 125, 153, 1);
+  background: rgba(255, 26, 42, 0.12);
+  border-color: rgba(251, 55, 79, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st__sub {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--no {
+  color: rgba(125, 217, 242, 1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(26, 243, 255, 0.12));
+  border: 1.5px solid rgba(78, 206, 228, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st--cancelled {
+  color: #8fb3c2;
+  background: rgba(71, 140, 209, 0.12);
+  border-color: rgba(34, 211, 238, 0.16);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st--reset {
+  color: rgba(248, 175, 119, 1);
+  background: rgba(255, 153, 26, 0.12);
+  border-color: rgba(253, 160, 53, 0.3);
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-st__sub.ar-cd {
+  color: #e2f4f8;
+}
+
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-card {
+  background: linear-gradient(180deg, rgba(26, 198, 255, 0.12), rgba(33, 208, 247, 0.12));
+  border: 1.5px solid rgba(95, 187, 211, 0.3);
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-sep {
+  background: repeating-linear-gradient(90deg, rgba(57, 188, 223, 0.12) 0 6px, transparent 6px 10px);
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-t b {
+  color: #e2f4f8;
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-t small {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-rid,
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-win {
+  color: rgba(125, 217, 242, 1);
+  background: rgba(26, 243, 255, 0.12);
+  border: 1px solid rgba(78, 206, 228, 0.3);
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-as {
+  color: #8fb3c2;
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-as svg {
+  color: rgba(239, 129, 153, 1);
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-as b {
+  color: #e2f4f8;
+}
+
+/* polish */
+[data-bs-theme="dark"] .cvx.ar-page .ar-reason { color: #8aa4b1 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-sub,
+[data-bs-theme="dark"] .cvx.ar-page .ar-st__sub { color: #8aa4b1 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--no:not(:disabled) {
+  color: #fda4af !important; background: rgba(244, 63, 94, .1) !important; border-color: rgba(244, 63, 94, .35) !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--no:disabled,
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--ok:disabled {
+  color: rgba(138, 164, 177, .55) !important; background: rgba(255, 255, 255, .03) !important;
+  border-color: rgba(148, 197, 214, .1) !important; box-shadow: none !important; opacity: 1 !important;
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-card {
+  background: rgba(255, 255, 255, .035) !important; border-color: rgba(148, 197, 214, .14) !important;
+}
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-t b { color: #f3f9fb !important; }
+[data-bs-theme="dark"] .cvx.cv-portal:has(.arj-card) .arj-t small { color: #8aa4b1 !important; }
+
+/* readability: approver names, approval times, reason and status lines readable on dark;
+   the "after Vault Admin" placeholder is a dim tile, not a white box; disabled buttons visible. */
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap b { color: #f3f9fb !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--approved em { color: #4ade80 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--pending em { color: #fbbf24 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--rejected em { color: #fb7185 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait b { color: #c4d6de !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait em { color: #8aa4b1 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-ap--wait .ar-ap__av {
+  color: #8aa4b1 !important; background: rgba(255, 255, 255, .06) !important; border: 1px dashed rgba(148, 197, 214, .3) !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .ar-reason,
+[data-bs-theme="dark"] .cvx.ar-page .ar-st__sub,
+[data-bs-theme="dark"] .cvx.ar-page .ar-sub { color: #a9c1cc !important; }
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--no:disabled,
+[data-bs-theme="dark"] .cvx.ar-page .ar-btn--ok:disabled {
+  color: rgba(196, 214, 222, .6) !important; border-color: rgba(148, 197, 214, .22) !important;
+}
+
+/* crisp surfaces (Access Requests only): the shared dark table is teal on every layer, which reads
+   as haze; here the card, tabs and table use neutral dark surfaces with hairline edges and keep
+   teal as the accent — the Audit Logs / Vault Dashboard recipe. */
+[data-bs-theme="dark"] .cvx.ar-page {
+  --arx-surf: linear-gradient(180deg, #14232f 0%, #101c27 100%);
+  --arx-line: rgba(148, 197, 214, .14);
+  --arx-row: rgba(148, 197, 214, .08);
+  --arx-t1: #f3f9fb; --arx-t2: #c4d6de; --arx-t3: #8aa4b1;
+}
+[data-bs-theme="dark"] .cvx.ar-page .tv-pane {
+  background: var(--arx-surf) !important;
+  border: 1px solid var(--arx-line) !important;
+  box-shadow: 0 16px 40px -24px rgba(0, 0, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+  backdrop-filter: none !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .tv-pane__bd { background: transparent !important; }
+[data-bs-theme="dark"] .cvx.ar-page .smt-proctype-tabs {
+  background: rgba(255, 255, 255, .03) !important; border: 1px solid var(--arx-line) !important; box-shadow: none !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .smt-proctype-tab:not(.active):not(.is-on) .smt-proctype-tab__lbl { color: var(--arx-t2) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .bst-search {
+  background: rgba(255, 255, 255, .035) !important; border: 1px solid var(--arx-line) !important; box-shadow: none !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .bst-search input { color: var(--arx-t1) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .bst-search input::placeholder { color: var(--arx-t3) !important; }
+
+/* table */
+[data-bs-theme="dark"] .cvx.ar-page .tvc-list .whm-tblwrap { background: transparent !important; border-color: var(--arx-line) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl thead th {
+  color: #a5f3fc !important;
+  background: linear-gradient(180deg, rgba(34, 211, 238, .12), rgba(34, 211, 238, .06)), #0f1d27 !important;
+  border-top: 1px solid rgba(34, 211, 238, .16) !important;
+  border-bottom: 1px solid rgba(34, 211, 238, .3) !important; box-shadow: none !important;
+}
+/* row text one step brighter so each line reads clearly */
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td { color: #d5e4ea !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td small { color: #9db6c2 !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td {
+  background: transparent !important; color: var(--arx-t2) !important;
+  border-bottom: 1px solid var(--arx-row) !important;
+}
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .018) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody tr:hover td { background: rgba(34, 211, 238, .06) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td b { color: var(--arx-t1) !important; }
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td small,
+[data-bs-theme="dark"] .cvx.ar-page .whm-tbl tbody td em:not(.ar-ap em) { color: var(--arx-t3); }
+
+/* pager */
+[data-bs-theme="dark"] .cvx.ar-page .whm-pager,
+[data-bs-theme="dark"] .cvx.ar-page .wl-pager { background: transparent !important; border-color: var(--arx-line) !important; }

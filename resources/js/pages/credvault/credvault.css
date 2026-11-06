@@ -17136,6 +17136,13 @@
   height: 100%;
 }
 
+/* Critical Vault only: Figma search bar is 665px wide, pinned right; the gap to the tabs is the leftover space. */
+.cvx.cv-page .tvc-top .bst-search.whm-main-search {
+  flex: 0 1 665px;
+  min-width: 240px;
+  margin-left: auto !important;
+}
+
 /* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
 .cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
 .cvx .cv-acc__b { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 10.5px; font-weight: 800; border: 1px solid; }

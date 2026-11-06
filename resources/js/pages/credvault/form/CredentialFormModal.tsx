@@ -125,7 +125,7 @@ export default function CredentialFormModal({ credentialId, initialType, critica
 
   return (
     <CvPortal onClose={onClose}>
-      <div id="crd-host">{content}</div>
+      <div id="crd-host" className={critical ? 'crd-host--cv' : undefined}>{content}</div>
     </CvPortal>
   );
 }

@@ -133,7 +133,7 @@ const round = (v: number, dp: number) => Math.round(v * 10 ** dp) / 10 ** dp;
 const FIELD_FOR: Record<string, keyof Draft> = {
   warehouse_id: 'wh', zone_name: 'name', area_sqft: 'area', rack_mode: 'type', purpose: 'purpose',
   storage_mode: 'storage', capacity_litres: 'litres', length: 'len', width: 'wid', height: 'ht',
-  usable_pct: 'use', cold_chain: 'cold', temp_min_c: 'cold', temp_max_c: 'cold',
+  usable_pct: 'use', cold_chain: 'cold', temp_min_c: 'cold', temp_max_c: 'cold', hazardous: 'haz',
 };
 
 function fieldForMessage(msg: string): keyof Draft | null {
@@ -142,6 +142,8 @@ function fieldForMessage(msg: string): keyof Draft | null {
   if (m.includes('sq. ft is still free')) return 'area';
   if (m.includes('warehouse')) return 'wh';
   if (m.includes('temperature')) return 'cold';
+  if (m.includes('hazardous')) return 'haz';
+  if (m.includes('cold chain') || m.includes('cold-chain')) return 'cold';
   if (m.includes('refrigerator storage or regular')) return 'storage';
   if (m.includes('litres')) return 'litres';
   if (m.includes('length, width')) return 'len';
@@ -386,6 +388,12 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
         if (!Object.keys(next).length) {
           const f = fieldForMessage(err.message);
           if (f) next[f] = err.message;
+        }
+        // CS-940: a flag the zone's racks still need was switched off and refused, so the toggle
+        // goes back to its saved state instead of showing a change that was never saved.
+        if (editing && zone) {
+          if (next.haz && zone.haz && !d.haz) set({ haz: true });
+          if (next.cold && zone.cold && !d.cold && /cold.chain/i.test(next.cold)) set({ cold: true });
         }
         setErrors(next);
         toast.error(editing ? 'Could not update the zone' : 'Could not create the zone', Object.values(next)[0] ?? err.message);
@@ -659,8 +667,8 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               </div>
             </Field>
 
-            <Field label="Hazardous Allowed">
-              <div className={`znm-tg${d.haz ? ' is-on' : ''}`} onClick={() => set({ haz: !d.haz })}>
+            <Field label="Hazardous Allowed" error={errors.haz}>
+              <div className={`znm-tg${d.haz ? ' is-on' : ''}`} onClick={() => { set({ haz: !d.haz }); clear('haz'); }}>
                 <button type="button" className={`whm-toggle${d.haz ? ' is-on' : ''}`}
                   role="switch" aria-checked={d.haz} aria-label="Toggle hazardous">
                   <span />

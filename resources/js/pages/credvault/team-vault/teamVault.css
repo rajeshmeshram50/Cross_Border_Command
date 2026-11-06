@@ -1,0 +1,21 @@
+/* Team Vault only (.tvx-page is on the Team Vault page alone, not My Vault or the Recycle Bin).
+   Delete in the list matches the other action buttons, as the Figma: teal, not rose. */
+.cvx.tvx-page button.whm-act.whm-act--danger {
+  color: #0e7490 !important;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%) !important;
+  border: 0 !important;
+}
+.cvx.tvx-page button.whm-act.whm-act--danger:hover:not(:disabled) {
+  color: #fff !important;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%) !important;
+}
+[data-bs-theme="dark"] .cvx.tvx-page button.whm-act.whm-act--danger:not(.whm-act--edit) {
+  color: #67e8f9 !important;
+  background: rgba(6, 182, 212, .08) !important;
+  border-color: rgba(34, 211, 238, .28) !important;
+}
+[data-bs-theme="dark"] .cvx.tvx-page button.whm-act.whm-act--danger:not(.whm-act--edit):hover:not(:disabled) {
+  color: #fff !important;
+  background: #0891b2 !important;
+  border-color: #0891b2 !important;
+}

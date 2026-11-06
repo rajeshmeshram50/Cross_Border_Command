@@ -13,6 +13,7 @@ import TeamDetails, { type OpenDept } from './TeamDetails';
 import ExportModal from './ExportModal';
 import { tvData, TV_DUMMY } from './tvData';
 import { LV_SHORT, TV_IC, type TreeNode } from './tvShared';
+import './teamVault.css';
 
 /**
  * CredVault · Team Vault — header strip with Export, the "What We Are Doing
@@ -148,7 +149,7 @@ export default function TeamVault() {
   }
 
   return (
-    <CvPage className="mv-page tv-page">
+    <CvPage className="mv-page tv-page tvx-page">
       <CvStrip
         icon={TV_IC.team}
         title="Team Vault"
