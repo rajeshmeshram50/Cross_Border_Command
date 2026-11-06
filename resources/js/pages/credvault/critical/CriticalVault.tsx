@@ -200,7 +200,7 @@ export default function CriticalVault() {
         <div className="tvc-list">
           <CredentialTable critical rows={rows} startIndex={(page - 1) * perPage} loading={loading}
             emptyTitle={emptyTitle} emptySub={emptySub}
-            onAdd={tab !== 'team' && !dq && !error ? () => setOverlay({ kind: 'add' }) : undefined}
+            // No "Add Credential" button in the empty state: the strip's "Add Critical Credential" is the one add.
             extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} /> }}
             actions={r => {
               const own = isDirect(r.unlock);   // Branch Admin: straight to the credential
