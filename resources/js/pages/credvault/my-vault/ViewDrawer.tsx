@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type AuditEvent, type CredentialDetail, type DetailField, type PageMeta } from '../cvApi';
 import UnlockModal from '../critical/UnlockModal';
-import { bytes, cap, copyText, CvPortal, errMsg, fmtDay, fmtTime, Svg, useCvMeta } from '../shared';
+import { bytes, cap, ConfirmModal, copyText, CvPortal, errMsg, fmtDay, fmtTime, IC, Svg, useCvMeta } from '../shared';
 import BinConfirm from './BinConfirm';
 
 
@@ -66,6 +66,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const [open, setOpen] = useState(false);
   const [acts, setActs] = useState<{ rows: AuditEvent[]; meta: PageMeta | null; loading: boolean }>({ rows: [], meta: null, loading: true });
   const [binAsk, setBinAsk] = useState(false);
+  const [launchAsk, setLaunchAsk] = useState(false);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const viewed = useRef(false);
   const actSeq = useRef(0);
@@ -156,6 +157,10 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const secF: DetailField | undefined = fields.find(f => f.key === T?.sec && f.masked) ?? fields.find(f => f.masked);
   const hasSec = !!secF?.has_value;
   const url = launchUrl(d.url);
+  // Launch opens the credential's website, else its first saved link (e.g. Endpoint URL, Router Admin URL).
+  // It is shown for every risk level; with nothing to open it stays, disabled, and says why.
+  const launchTo = url || fields.map(f => (f.kind === 'url' && !f.masked ? launchUrl(f.value) : '')).find(Boolean) || '';
+  const launchRisky = d.risk === 'high' || d.risk === 'critical';
   const shared = d.access?.via === 'share';
   const vault = shared ? 'Shared with you' : d.scope === 'team' ? 'Team vault' : 'Personal vault';
   const detF = fields.filter(f => f.has_value);
@@ -198,6 +203,13 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       if (field) api.event(d.id, 'copy', field).then(() => loadActivity(1)).catch(() => {});
     } catch { toast.error('Could not copy', 'Your browser blocked clipboard access.'); }
   };
+  const openLaunch = () => {
+    if (!launchTo) return;
+    window.open(launchTo, '_blank', 'noopener,noreferrer');
+    api.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {});
+  };
+  /** High and Critical risk ask first; Low and Medium open at once. */
+  const launch = () => { if (launchRisky) setLaunchAsk(true); else openLaunch(); };
   const download = async (key: string) => {
     try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
   };
@@ -267,12 +279,10 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         <button type="button" data-h40="skip" className="vd-x" onClick={close} aria-label="Close"><Svg icon="x" size={14} sw={2.6} /></button>
       </div>
       <div className="vd-acts">
-        {url && (
-          <a className="vd-btn vd-btn--p" href={url} target="_blank" rel="noopener noreferrer"
-            onClick={() => api.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {})}>
-            <Svg icon={I.launch} size={14} />Launch
-          </a>
-        )}
+        <button type="button" data-h40="skip" className="vd-btn vd-btn--p" disabled={!launchTo} onClick={launch}
+          title={launchTo ? `Open ${launchTo}${launchRisky ? ' (asks first — ' + cap(d.risk) + ' risk)' : ''}` : `No website or link is saved for this ${d.type_label}`}>
+          <Svg icon={I.launch} size={14} />Launch
+        </button>
         {hasSec && secF && (
           <>
             <button type="button" data-h40="skip" className="vd-btn" disabled={!can?.reveal} title={can?.reveal ? undefined : 'Your access is Use Only'}
@@ -490,6 +500,22 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       </CvPortal>
       {binAsk && (
         <BinConfirm row={d} onClose={() => setBinAsk(false)} onDone={() => { setBinAsk(false); onChanged?.(); onClose(); }} />
+      )}
+      {launchAsk && (
+        <ConfirmModal
+          icon={`<path d="${I.launch}"/>`}
+          title={`Open this ${cap(d.risk)} risk credential?`}
+          sub="The site opens in a new tab and the launch is recorded in the activity log."
+          cred={{ icon: T?.icon, name: d.name, code: d.code, meta: ` · ${d.type_label}`, risk: d.risk }}
+          points={[
+            { icon: `<path d="${I.launch}"/>`, title: 'Opens', text: <b>{launchTo}</b> },
+            { icon: IC.shield, title: `${cap(d.risk)} risk`, text: 'Check you are on the right site before you sign in with these details.' },
+          ]}
+          confirmLabel="Open site"
+          confirmIcon={`<path d="${I.launch}"/>`}
+          onConfirm={() => { setLaunchAsk(false); openLaunch(); }}
+          onClose={() => setLaunchAsk(false)}
+        />
       )}
     </>
   );
