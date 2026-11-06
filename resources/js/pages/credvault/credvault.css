@@ -19438,3 +19438,32 @@
   align-items: flex-start;
   text-align: left;
 }
+
+/* ══ Type picker (My Vault) · dark mode: risk badges are tinted on the dark tiles instead of light blocks ══ */
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--low {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .12);
+  border-color: rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--medium {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(251, 191, 36, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--high {
+  color: #fdba74;
+  background: rgba(249, 115, 22, .12);
+  border-color: rgba(251, 146, 60, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--critical {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .12);
+  border-color: rgba(251, 113, 133, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk i {
+  background: currentColor;
+}
