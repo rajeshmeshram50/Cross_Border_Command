@@ -14613,6 +14613,11 @@
   transition: all .18s;
 }
 
+.cvx .ix-sw.is-disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
 .cvx .ix-sw input {
   position: absolute;
   opacity: 0;

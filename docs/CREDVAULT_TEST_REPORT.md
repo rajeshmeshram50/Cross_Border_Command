@@ -21,7 +21,7 @@
 | CredVault — Team Vault API | `CredVault_TeamVault.postman_collection.json` | **25 / 25** | 36 | 1 |
 | CredVault — Export Credentials API | `CredVault_Export.postman_collection.json` | **14 / 14** | 18 | 1 |
 | Recycle Bin | `CredVault_RecycleBin.postman_collection.json` | **42 / 42** | 65 | 0 |
-| Import & Recovery | `CredVault_ImportRecovery.postman_collection.json` | **35 / 35** | 72 | 1 |
+| Import & Recovery | `CredVault_ImportRecovery.postman_collection.json` | **36 / 36** | 75 | 1 |
 | Audit Logs | `CredVault_AuditLogs.postman_collection.json` | **35 / 35** | 56 | 0 |
 | **Total** | | **607 / 607** | **1,238** | 7 |
 
@@ -33,7 +33,7 @@
 |---|---|---|
 | Endpoint sweep | every CredVault GET endpoint (33) answers without a server error for the Vault Admin, the Branch Admin and an employee | **99 / 99** |
 | Audit Logs | 10 events from 1 hour to 40 days old:<br>• ranges 24h 4 · 7 days 8 · 30 days 9 · All 10, plus custom dates;<br>• tabs, and who sees what (Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9);<br>• search, day groups, row fields, timezone, paging;<br>• CSV and Excel export | **42 / 42** |
-| Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked zip opening only with its password;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **62 / 62** |
+| Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked Excel backup (an .xlsx with Excel's own password, no zip) refused with a wrong password and opened with the right one in Microsoft Excel; CSV with the lock on → 422;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **62 / 62** |
 | Recycle Bin rules | • counts for both vaults × 4 tabs, search;<br>• each person's view;<br>• restore and delete per person (Critical: Branch Admin only);<br>• retention (one period for both vaults);<br>• Empty Bin | **43 / 43** |
 | Recycle Bin retention per branch | • a Branch Admin sets their branch's period for My Vault and Critical Vault;<br>• other branches unaffected; employees read their branch's;<br>• Vault Admin: company default and one branch;<br>• 403 / 404 rules, Policies saves keep it, audit | **38 / 38** |
 | Teams Critical Credentials (whole branch) | every role; View via `branch_team` with Request Access; Normal Vault unchanged | **41 / 41** |

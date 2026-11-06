@@ -212,7 +212,7 @@ The prototype is a single-browser demo, and some of its behaviour cannot be safe
 | Personal credentials are visible to admins in the Team view | A personal credential is the owner's alone unless shared | Privacy |
 | The export popup has only an "I understand the risk" checkbox | Exporting readable passwords also asks for the account password | The file is plain text |
 | Backups and exports write every password | Secrets of protected (critical / 2FA-locked) credentials are written as "[Protected — unlock in CredVault]" | They open through an unlock, not a file |
-| ZipCrypto backup lock; "opens in Windows & 7-Zip" | AES-256; opens with 7-Zip / WinRAR (`lock_note`) | ZipCrypto is broken in minutes |
+| ZipCrypto backup lock; "opens in Windows & 7-Zip" | Excel's own password on the `.xlsx` (AES-256, no zip); only Excel backups can be locked (`lock_note`) | ZipCrypto is broken in minutes, and Windows cannot open an AES zip |
 | Exporting the audit log is not logged | It is logged (severity info) | The log of the log |
 | Delete just happens | Permanent delete needs `confirm: true` | Server-side guard for an irreversible action |
 | Same name twice is allowed | One owner cannot have two credentials of the same type with the same name | Prevents duplicate insertion |

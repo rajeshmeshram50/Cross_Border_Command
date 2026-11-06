@@ -12,7 +12,7 @@ CredVault › Import & Recovery, as the screens show it:
 | Base URL | `{{baseUrl}}/credvault` (Bearer token, Credentials Vault → View) |
 | Postman collection | **"Import & Recovery"**: [CredVault_ImportRecovery.postman_collection.json](CredVault_ImportRecovery.postman_collection.json), 6 folders and 38 requests |
 | Sample files for the uploads | [postman-samples/credvault-import-sample.xlsx](postman-samples/credvault-import-sample.xlsx) (the 25-tab sample) · [credvault-import-login.csv](postman-samples/credvault-import-login.csv) · [credvault-import-card-with-errors.csv](postman-samples/credvault-import-card-with-errors.csv) |
-| Code | `ImportTemplate` (the 25 sheet layouts and samples) · `VaultFile` (reading and writing xlsx / csv / zip) · `CredVaultController` (Import & Recovery section) |
+| Code | `ImportTemplate` (the 25 sheet layouts and samples) · `VaultFile` (reading and writing xlsx / csv / zip) · `ExcelLock` (the backup lock: Excel's own password encryption) · `CredVaultController` (Import & Recovery section) |
 | Database | `credvault_transfers`: one row per import / backup. Migration `2026_11_05_000001` adds `credential_type`, `failed` and `failed_rows` |
 
 ---
@@ -567,7 +567,7 @@ A Vault Admin sees everyone's imports; others see their own. `mine=1` shows only
 | 1 · Choose a format | `format` | `xlsx` (Excel) or `csv` (`json` is accepted too) |
 | 2 · Choose what to include | `scope` | `mine` (My Vault) or `team` (Team Vault); `all` = both. The counts come from `GET /backups` → `scopes[]` |
 | Include passwords | `include_passwords` | true / false. Without it, every secret field is left blank. |
-| 3 · Lock the file with a password | `lock` | true: the file is put in an **AES-256 .zip** that only the backup password opens (7-Zip, WinRAR). CredVault does not store the password. |
+| 3 · Lock the file with a password | `lock` | true (**Excel only**): the `.xlsx` itself is encrypted with **Excel's own password** (MS-OFFCRYPTO Agile: AES-256, SHA-512, 100,000 spins). Excel (and LibreOffice) asks for the password when the file opens. **No zip** — Windows' built-in extractor cannot open an AES zip ("The destination file could not be created"). A CSV or JSON file cannot hold a password: `lock: true` with CSV → 422 on `lock` "A CSV file cannot hold a password. Choose Excel to lock the backup, or turn the lock off." The screen turns the lock off for CSV. CredVault does not store the password. |
 | Backup password | `password` | required when locked; **8+ characters with letters, numbers & symbols** → else 422 "Use 8+ characters with letters, numbers & symbols for the backup password." |
 | Confirm password | `password_confirmation` | must match → else 422 "Passwords did not match." (**recorded as Failed** in the history) |
 | Passwords included and the lock off | `account_password` | your account password is asked again: missing → 422; wrong → 422 "Account password incorrect." (recorded as Failed) |
@@ -583,9 +583,9 @@ A Vault Admin sees everyone's imports; others see their own. `mine=1` shows only
 - **Empty vault:** 422 "There are no credentials in this vault to back up."
 
 **Recovery, step by step:**
-1. Unzip the backup with its password.
+1. Open the locked backup in Excel with its password, remove the password (File > Info > Protect Workbook > Encrypt with Password, clear it) and save.
 2. On Import & Recovery, choose a category (e.g. Bank Account).
-3. Upload the backup's `.xlsx`. The tab for that category is read.
+3. Upload that `.xlsx`. The tab for that category is read. Uploading the still-locked file → 422 "This Excel file is password-protected … remove the password … then upload again."
 4. Import.
 
 ## 6. Downloaded Backup History: `GET /backups`
@@ -635,7 +635,9 @@ Everything ran in-process inside a database transaction that was **rolled back**
   - a weak lock password → 422 with the screen's rule;
   - a mismatch → 422 and a Failed row;
   - lock with no password → 422; passwords, no lock, no account password → 422;
-  - a locked Excel backup is a zip that **does not open without the password and opens with it**, containing Credentials, one tab per type and About;
+  - CSV with the lock on → 422 on `lock`;
+  - a locked Excel backup is an `.xlsx` (not a zip, `Content-Type` spreadsheetml), checked **in Microsoft Excel**: a wrong password is refused, the backup password opens it, and it holds Credentials, one tab per type and About;
+  - the still-locked file uploaded to import → 422 "password-protected";
   - CSV without passwords has no Password column; Excel without passwords has blank secrets;
   - the Team Vault backup works.
 - **Recovery:** after the bank credentials were deleted, the backup's "Bank Account" tab imported back, every row valid; account number and net-banking password intact.

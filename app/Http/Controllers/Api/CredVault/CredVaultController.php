@@ -18,6 +18,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\CredVault\EmailOtp;
+use App\Services\CredVault\ExcelLock;
 use App\Services\CredVault\ImportTemplate;
 use App\Services\CredVault\PasswordGenerator;
 use App\Services\CredVault\Totp;
@@ -2127,8 +2128,10 @@ class CredVaultController extends Controller
      * The file matches the prototype's backup: columns Name, Type, Category,
      * Website, Username, [Password], Owner, Vault, Risk, 2FA, Rotation, Notes,
      * Updated; Excel adds an "About" sheet; JSON wraps the rows with the
-     * backup's id, date, author and vault. A locked backup is an AES-256 zip
-     * (open it with 7-Zip or WinRAR). Passwords without a lock would be a
+     * backup's id, date, author and vault. A locked backup is an .xlsx with
+     * Excel's own password encryption (AES-256): Excel asks for the password
+     * when it opens, no zip. A CSV or JSON file cannot carry a password, so
+     * only Excel can be locked. Passwords without a lock would be a
      * readable file, so that case asks for the account password again.
      * Secrets of protected credentials are never written — they open through
      * an unlock, not a file. A failed attempt is recorded too.
@@ -2162,6 +2165,9 @@ class CredVaultController extends Controller
             $this->reject($why . '.', $field);
         };
         // The screen's rule: 8+ characters with letters, numbers and a symbol (Good or stronger, D34).
+        if ($d['lock'] && $d['format'] !== 'xlsx') {
+            $this->reject('A ' . $fmtLabel . ' file cannot hold a password. Choose Excel to lock the backup, or turn the lock off.', 'lock');
+        }
         if ($d['lock'] && Credential::strengthOf($d['password']) < 3) {
             $this->reject('Use 8+ characters with letters, numbers & symbols for the backup password.', 'password');
         }
@@ -2196,13 +2202,13 @@ class CredVaultController extends Controller
                 ]],
             ])),
         };
-        $file = $d['lock'] ? "{$name}.zip" : "{$name}.{$d['format']}";
+        $file = "{$name}.{$d['format']}";
         $body = null;
 
         $t = $this->inTransaction('record the backup', function () use ($u, $d, $rows, $build, $name, $file, &$body, $fmtLabel, $scopeLabel) {
             $code = $this->nextCode('credvault_transfers', 'BK', $u->client_id);
             $body = $build($code);
-            if ($d['lock']) $body = VaultFile::lock("{$name}.{$d['format']}", $body, $d['password']);
+            if ($d['lock']) $body = ExcelLock::encrypt($body, $d['password']);
             $t = Transfer::create([
                 'client_id' => $u->client_id, 'kind' => 'backup', 'code' => $code,
                 'user_id' => $u->id, 'scope' => $d['scope'], 'format' => $d['format'], 'file_name' => $file,
@@ -2214,7 +2220,7 @@ class CredVaultController extends Controller
             return $t;
         });
 
-        return $this->download($body, $file, $d['lock'] ? 'application/zip' : $this->mime($d['format']), [
+        return $this->download($body, $file, $this->mime($d['format']), [
             'X-CredVault-Code'     => $t->code,
             'X-CredVault-Items'    => (string) count($rows),
             'X-CredVault-Withheld' => (string) $withheld,
@@ -2232,7 +2238,7 @@ class CredVaultController extends Controller
         $res = $this->transferHistory($request, 'backup')->getData(true);
         $res['scopes'] = collect(['mine', 'team', 'all'])->map(fn ($s) => ['scope' => $s, 'label' => Transfer::SCOPE_LABELS[$s], 'count' => $this->fileScope($u, $s, true)->count()])->values();
         $res['columns'] = ['with_passwords' => array_values(self::BACKUP_KEYS), 'without_passwords' => array_values(array_diff_key(self::BACKUP_KEYS, ['password' => 1]))];
-        $res['lock_note'] = 'Locked with AES-256 — open it with 7-Zip, WinRAR or another AES-capable zip tool.';
+        $res['lock_note'] = 'Locked with Excel’s own password (AES-256) — Excel asks for it when the file opens. Only Excel backups can be locked.';
 
         return response()->json($res, 200);
     }

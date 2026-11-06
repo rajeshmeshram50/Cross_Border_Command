@@ -583,7 +583,7 @@ export function Backup({ b, go, R }: { b: Loose; go: Go; R: Routes }) {
       ) : <small className="cvd-none">No backups yet — download one from Import &amp; Recovery.</small>}
       <div className="cvd-bnx">
         <VdMini ico={VD_I.team} v={<Num v={num(b.people)} />} l="People downloading" sub="Admins who took a backup" />
-        <VdMini ico={VD_I.lock} v="Password lock" l="How backups are protected" sub="Locked .zip · opens in Windows & 7-Zip" />
+        <VdMini ico={VD_I.lock} v="Password lock" l="How backups are protected" sub="Excel file locked with a password · no zip" />
       </div>
     </VdCard>
   );

@@ -7,16 +7,19 @@ use ZipArchive;
 
 /**
  * Reading and writing the files CredVault exchanges: CSV / TSV, JSON, Excel
- * (.xlsx and Excel 2003 XML) in, CSV / JSON / .xlsx out, and the
- * password-locked .zip a backup is wrapped in.
+ * (.xlsx and Excel 2003 XML) in, CSV / JSON / .xlsx out.
  *
  * No spreadsheet library is installed, and .xlsx is only a zip of XML parts,
- * so ZipArchive and SimpleXML cover it. The backup lock is AES-256 — not the
- * legacy ZipCrypto the prototype used, which is broken in minutes.
+ * so ZipArchive and SimpleXML cover it. A locked backup is encrypted by
+ * ExcelLock (Excel's own password), not wrapped in a zip.
  */
 class VaultFile
 {
     public const MAX_ROWS = 2000;
+
+    /** An Excel file with a password (a locked backup) or an old .xls — both are OLE2 files, not a zip. */
+    private const OLE2 = "\xD0\xCF\x11\xE0";
+    private const OLE2_MESSAGE = 'This Excel file is password-protected or in the old .xls format. Open it in Excel (with the backup password if it is a locked backup), remove the password under File > Info > Protect Workbook > Encrypt with Password, and Save As .xlsx — then upload again.';
 
     /* ═════════════════════════════ READ ═════════════════════════════ */
 
@@ -29,9 +32,7 @@ class VaultFile
     {
         $raw = (string) file_get_contents($path);
 
-        if (str_starts_with($raw, "\xD0\xCF\x11\xE0")) {
-            throw new RuntimeException('This Excel file is password-protected or in the old .xls format. Open it in Excel, remove the password if it has one, and Save As .xlsx — then upload again.');
-        }
+        if (str_starts_with($raw, self::OLE2)) throw new RuntimeException(self::OLE2_MESSAGE);
 
         $rows = match (true) {
             str_starts_with($raw, 'PK')                      => self::readXlsx($path),
@@ -110,6 +111,7 @@ class VaultFile
      */
     public static function xlsxSheets(string $path): array
     {
+        if ((string) @file_get_contents($path, false, null, 0, 4) === self::OLE2) throw new RuntimeException(self::OLE2_MESSAGE);
         $zip = new ZipArchive();
         if ($zip->open($path) !== true) throw new RuntimeException('The Excel file could not be opened.');
         $wb   = $zip->getFromName('xl/workbook.xml');
@@ -327,22 +329,12 @@ class VaultFile
         return self::zip($files);
     }
 
-    /** One file inside an AES-256 zip that only $password opens. */
-    public static function lock(string $innerName, string $body, string $password): string
-    {
-        return self::zip([$innerName => $body], $password);
-    }
-
-    private static function zip(array $parts, ?string $password = null): string
+    private static function zip(array $parts): string
     {
         $tmp = tempnam(sys_get_temp_dir(), 'cvz');
         $zip = new ZipArchive();
         $zip->open($tmp, ZipArchive::OVERWRITE);
-        if ($password !== null) $zip->setPassword($password);
-        foreach ($parts as $name => $body) {
-            $zip->addFromString($name, $body);
-            if ($password !== null) $zip->setEncryptionName($name, ZipArchive::EM_AES_256);
-        }
+        foreach ($parts as $name => $body) $zip->addFromString($name, $body);
         $zip->close();
 
         $out = (string) file_get_contents($tmp);

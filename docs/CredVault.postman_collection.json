@@ -5783,7 +5783,7 @@
         },
         {
             "name": "09 · Import & Recovery",
-            "description": "Import: preview (upload) → import the selected rows by index. Passwords stay on the server between the two calls; the token works once.\\nBackup: CSV / JSON / Excel, optionally locked in an AES-256 zip.",
+            "description": "Import: preview (upload) → import the selected rows by index. Passwords stay on the server between the two calls; the token works once.\\nBackup: CSV / JSON / Excel; an Excel backup can be locked with Excel's own password (no zip).",
             "item": [
                 {
                     "name": "Sample file — Excel",
