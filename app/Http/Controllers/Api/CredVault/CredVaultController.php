@@ -4663,9 +4663,10 @@ class CredVaultController extends Controller
      *   HOD                         their department's (see accessMap for the rights).
      * A peer outside the reporting line sees none of them — only a share reaches them.
      *
-     * $branchCritical (the Critical Vault list only): an employee also sees every Critical
-     * Vault team credential of the employees of their branch — "Teams Critical Credentials"
-     * is the whole branch, still locked behind its approvals (accessMap: View, via branch_team).
+     * $branchCritical (the Critical Vault list only): a Branch Admin / employee also sees
+     * every Critical Vault credential of their branch — personal or team, any owner — not
+     * just their own or their team, still locked behind its approvals (accessMap: View, via
+     * branch_critical). The Branch Admin opens them directly; everyone else via the steps.
      */
     protected function visibleQuery(User $u, bool $branchCritical = false): Builder
     {
@@ -4673,10 +4674,17 @@ class CredVaultController extends Controller
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
         $down   = $this->downlineIds($u);
-        $peers  = $branchCritical ? $this->criticalBranchOf($u) : null;
+        // Critical Vault list: everyone in the branch sees EVERY critical
+        // credential of the branch — personal or team, any owner — not just
+        // their own or their team. The reveal still runs the approval flow
+        // (accessMap gives View via branch_critical; the Branch Admin opens it
+        // directly). Only for a Branch Admin / employee; the client admin keeps
+        // its company-wide team-scope rule below. (new flow)
+        $critBranch = ($branchCritical && !$admin) ? ($branch ?? ($u->branch_id ? (int) $u->branch_id : null)) : null;
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $peers) {
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
+            if ($critBranch) $w->orWhere(fn ($t) => $t->where('vault', 'critical')->where('credvault_credentials.branch_id', $critBranch));
             if ($admin) {
                 $w->orWhere('scope', 'team');
                 return;
@@ -4689,22 +4697,7 @@ class CredVaultController extends Controller
                     ->orWhere(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)->whereIn('owner_id', (clone $below)->select('id')))));
             }
             if ($down) $w->orWhere(fn ($t) => $t->where('scope', 'team')->whereIn('owner_id', $down));
-            if ($peers) {
-                $staff = User::where('client_id', $u->client_id)->whereNotIn('user_type', self::ADMIN_TYPES);
-                $w->orWhere(fn ($t) => $t->where('scope', 'team')->where('vault', 'critical')->where(fn ($b) => $b
-                    ->whereIn('owner_id', (clone $staff)->where('branch_id', $peers)->select('id'))
-                    ->orWhere(fn ($x) => $x->where('credvault_credentials.branch_id', $peers)->whereIn('owner_id', (clone $staff)->select('id')))));
-            }
         });
-    }
-
-    /**
-     * The branch whose Critical Vault team credentials an employee sees, else null. The
-     * Vault Admin and the Branch Admin already see them by their own rule.
-     */
-    protected function criticalBranchOf(User $u): ?int
-    {
-        return !$this->isAdmin($u) && !$this->adminBranchOf($u) && $u->branch_id ? (int) $u->branch_id : null;
     }
 
     /** The logins that sit above every employee: no one below them gets rights over what they own. */
@@ -4843,14 +4836,15 @@ class CredVaultController extends Controller
 
     /**
      * [id => [rank, via]] for a batch, in one share query.
-     * via: owner | admin | branch | manager | hod | team | branch_team | share
+     * via: owner | admin | branch | manager | hod | team | branch_critical | share
      *
      * Full Access (edit, share, delete) on a team credential goes to the Vault Admin, the
      * Branch Admin of the owner's branch, a manager the owner reports to (at any depth) and
      * the HOD of its department — the last three only over people below them, never over
      * someone above or at their level (a HOD keeps view-and-copy on those in the department).
-     * Any other employee of the owner's branch gets View on a Critical Vault team credential
-     * (via branch_team): it lists, and opens only through its approval steps.
+     * In the Critical Vault every employee of the branch gets View on every credential of
+     * their branch (personal or team) via branch_critical: it lists, and opens only through
+     * its approval steps — the Branch Admin opens it directly.
      */
     protected function accessMap(Collection $creds, User $u): array
     {
@@ -4860,7 +4854,10 @@ class CredVaultController extends Controller
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
-        $peers  = $this->criticalBranchOf($u);
+        // The branch whose Critical Vault credentials the viewer may see as View
+        // (new flow): a Branch Admin / employee sees their whole branch's; the
+        // client admin keeps its own team-scope rule, so null here.
+        $critBranch = $admin ? null : ($branch ?? ($u->branch_id ? (int) $u->branch_id : null));
         $down   = array_flip($this->downlineIds($u));
         // Heading a department makes one an HOD whatever the HR designation says.
         $myRank = min(self::LEVEL_ORDER[$this->levelOfUser($u)], $heads ? self::LEVEL_ORDER['hod'] : PHP_INT_MAX);
@@ -4890,8 +4887,12 @@ class CredVaultController extends Controller
                     && ((int) $owner->branch_id === $branch || (int) $c->branch_id === $branch)) $best = [self::RANK_FULL, 'branch'];
                 elseif (isset($down[$c->owner_id])) $best = [self::RANK_FULL, 'manager'];
                 elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = $below ? [self::RANK_FULL, 'hod'] : [self::RANK_COPY, 'team'];
-                elseif ($peers && $c->vault === 'critical' && $owner && !in_array($owner->user_type, self::ADMIN_TYPES, true)
-                    && ((int) $owner->branch_id === $peers || (int) $c->branch_id === $peers)) $best = [self::RANK_VIEW, 'branch_team'];
+            }
+            // Critical Vault: anyone in the branch sees every critical credential
+            // (personal or team) as View — it lists and opens only through the
+            // approval steps; the Branch Admin opens it directly. (new flow)
+            if (!$best && $critBranch && $c->vault === 'critical' && (int) $c->branch_id === $critBranch) {
+                $best = [self::RANK_VIEW, 'branch_critical'];
             }
             if (isset($shareRank[$c->id]) && (!$best || $shareRank[$c->id] > $best[0])) $best = [$shareRank[$c->id], 'share'];
             if ($best) $out[$c->id] = $best;

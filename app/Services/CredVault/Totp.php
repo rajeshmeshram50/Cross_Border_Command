@@ -49,7 +49,7 @@ class Totp
     }
 
     /**
-     * Whether $code is valid now, allowing one step of clock drift either side.
+     * Whether $code is valid now, allowing a window of clock drift either side.
      * Compared in constant time so a timing attack learns nothing.
      */
     public static function verify(string $secret, string $code): bool
@@ -57,13 +57,26 @@ class Totp
         return self::matchStep($secret, $code) !== null;
     }
 
-    /** The time step $code belongs to (drift ±1), or null — callers store it to refuse a replay. */
+    /**
+     * Accepted drift either side, in 30-second steps. ONE step in production —
+     * the standard RFC 6238 tolerance. Wider in local only, where the dev box's
+     * clock is deliberately set to a future date and a phone authenticator can
+     * never sit within 30s of it, so the first scanned code would otherwise be
+     * rejected until the next window. Never loosen the production check.
+     */
+    private static function window(): int
+    {
+        return app()->environment('local') ? 4 : 1;
+    }
+
+    /** The time step $code belongs to (within the drift window), or null — callers store it to refuse a replay. */
     public static function matchStep(string $secret, string $code): ?int
     {
         if (!preg_match('/^\d{6}$/', $code)) return null;
 
         $now = intdiv(time(), self::PERIOD);
-        foreach ([-1, 0, 1] as $drift) {
+        $w   = self::window();
+        for ($drift = -$w; $drift <= $w; $drift++) {
             if (hash_equals(self::code($secret, $now + $drift), $code)) return $now + $drift;
         }
         return null;
