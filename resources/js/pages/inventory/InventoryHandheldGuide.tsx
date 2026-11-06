@@ -15,7 +15,7 @@ import './handheld-guide.css';
  * into being a second, half-working put-away screen.
  */
 
-type Key = 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's7' | 's8';
+type Key = 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's7' | 's8' | 's9';
 
 const SCREENS: Array<{ key: Key; n: number; title: string; sub: string }> = [
   { key: 's1', n: 1, title: 'Pending tasks',      sub: 'Nothing in hand' },
@@ -26,6 +26,7 @@ const SCREENS: Array<{ key: Key; n: number; title: string; sub: string }> = [
   { key: 's6', n: 6, title: 'Ready to complete',  sub: 'Both halves matched' },
   { key: 's7', n: 7, title: 'Queue mid-task',     sub: 'From the badge' },
   { key: 's8', n: 8, title: 'Box cleared',        sub: 'Scans given back' },
+  { key: 's9', n: 9, title: 'Already put away',   sub: 'Re-scan of a placed box' },
 ];
 
 /** The note beside the phone: what this moment is, and why it behaves so. */
@@ -58,7 +59,11 @@ const NOTES: Record<Key, {
   s3: {
     title: 'Box verified',
     lead: 'The label matched, so the card fills in and the walk appears as three rungs.',
-    points: ['Chip turns BOX_SCAN_VERIFIED, count moves to 1/2.', 'The task binds to this handheld so nobody takes it mid-walk.'],
+    points: [
+      'Chip turns BOX_SCAN_VERIFIED, count moves to 1/2.',
+      'Next names the zone, but any level — zone, rack or shelf — scans directly and marks the ones above it.',
+      'The task binds to this handheld so nobody takes it mid-walk.',
+    ],
     records: {
       heading: 'What the system records',
       items: ['box_scan_at is stamped and completed_scans moves to 1.', 'The device serial is written to the task.'],
@@ -106,6 +111,22 @@ const NOTES: Record<Key, {
         'putaway.box_scanned — B-001',
         'putaway.zone_scanned — ZN-A',
         'putaway.released — had_scans: [box, zone]',
+      ],
+    },
+  },
+  s9: {
+    title: 'Already put away',
+    lead: 'Scanning a box that is already placed opens the same full card — not a dead end — so the operator can read off exactly where it already sits.',
+    points: [
+      'The toast says it is already put away.',
+      'All three rungs read Scanned; the shelf is where to find it.',
+      'No scan field and no Complete — there is nothing left to do.',
+    ],
+    records: {
+      heading: 'Why it still shows everything',
+      items: [
+        'The completed task is returned in full — box, products and location.',
+        'A re-scan only reads state; it never places the box a second time.',
       ],
     },
   },
@@ -303,7 +324,7 @@ export default function InventoryHandheldGuide() {
                     </div>
                     <div className="hhg-next">
                       <span>NEXT SCAN</span><b>Zone QR ZN-A</b>
-                      <small>A rack or zone QR verifies its own level and parents only.</small>
+                      <small>Scan the zone next — or the shelf directly; any level scans and marks the ones above it.</small>
                     </div>
                   </>
                 )}
@@ -386,11 +407,39 @@ export default function InventoryHandheldGuide() {
                     </div>
                   </>
                 )}
+
+                {key === 's9' && (
+                  <>
+                    <div className="hhg-toast"><b>B-001 is already put away</b><small>Placed at SH-102 · nothing left to scan</small></div>
+                    <section className="hhg-card">
+                      <div className="hhg-card-top">
+                        <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
+                        <Chip>MIXED</Chip><span className="hhg-sp" />
+                        <span className="hhg-more">More <b>4</b></span>
+                      </div>
+                      <div className="hhg-name">Mixed Product Box</div>
+                      <div className="hhg-meta3">
+                        <div><span>PRODUCTS</span><b>4 products</b></div>
+                        <div><span>CONDITION</span><b>Good</b></div>
+                        <div><span>DESTINATION</span><b>SH-102</b></div>
+                      </div>
+                      <div className="hhg-tags">
+                        <Chip tone="ok">BOX_SCAN_VERIFIED</Chip>
+                        <span className="hhg-pill">ZT-…001 · 2/2</span>
+                      </div>
+                    </section>
+                    <div className="hhg-slots">
+                      <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="done" />
+                      <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="done" />
+                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="done" />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="hhg-foot">
                 {key === 's6' && <div className="hhg-btn"><i className="ri-checkbox-circle-line" />Complete put-away</div>}
-                <div className="hhg-ghost"><i className="ri-close-line" />Clear box</div>
+                {key !== 's9' && <div className="hhg-ghost"><i className="ri-close-line" />Clear box</div>}
               </div>
             </div>
           </div>
