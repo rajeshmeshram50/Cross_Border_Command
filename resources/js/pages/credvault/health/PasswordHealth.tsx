@@ -323,7 +323,7 @@ export default function PasswordHealth() {
         <CredentialFormModal prefillPassword={newPw} onClose={() => setNewPw(null)} onSaved={onSaved} />
       )}
       {viewId !== null && (
-        <ViewDrawer key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={() => load(true)}
+        <ViewDrawer fieldLabels key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={() => load(true)}
           onEdit={id => { setViewId(null); setEditId(id); }} />
       )}
       {gen && <GeneratorModal onClose={() => setGen(false)} onUse={pw => { setGen(false); setNewPw(pw); }} />}

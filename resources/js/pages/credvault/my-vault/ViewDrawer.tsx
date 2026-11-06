@@ -16,6 +16,9 @@ export interface ViewDrawerProps {
   onEdit?: (id: number) => void;
   onShare?: (id: number) => void;
   source?: ViewSource;
+  /** My Vault and Password Health only: copy toasts and tooltips name the field ("API Key copied", CS-1444)
+   *  and Launch shows for every risk level (CS-1442). Off for Team Vault and Critical Vault. */
+  fieldLabels?: boolean;
 }
 
 type Tab = 'overview' | 'details' | 'access' | 'activity';
@@ -55,7 +58,7 @@ function Badge({ cls, children, dot }: { cls: string; children: ReactNode; dot?:
   return <span className={`vd-b vd-b--${cls}`}>{dot && <i />}{children}</span>;
 }
 
-export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, onShare, source = cvApi }: ViewDrawerProps) {
+export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, onShare, source = cvApi, fieldLabels = false }: ViewDrawerProps) {
   const api = source;
   const toast = useToast();
   const { typeOf, meta } = useCvMeta();
@@ -191,15 +194,17 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     try {
       const r = await api.reveal(d.id, 'copy', key);
       await copyText(r.value, r.clear_clipboard_after);
-      toast.success('Copied to clipboard', r.clear_clipboard_after ? `${r.label} · clears in ${r.clear_clipboard_after}s` : r.label);
+      // Names the copied field ("API Key copied", "Passphrase copied"), from the server's label for it.
+      if (fieldLabels) toast.success(`${r.label} copied`, r.clear_clipboard_after ? `The clipboard clears in ${r.clear_clipboard_after} seconds.` : undefined);
+      else toast.success('Copied to clipboard', r.clear_clipboard_after ? `${r.label} · clears in ${r.clear_clipboard_after}s` : r.label);
       loadActivity(1);
     } catch (e) { lockedErr(e); }
   };
   /** A plain value; `field` logs it as "Field copied" when it is one of the credential's fields. */
-  const copyPlain = async (value: string, field?: string) => {
+  const copyPlain = async (value: string, field?: string, label?: string) => {
     try {
       await copyText(value);
-      toast.success('Copied to clipboard');
+      toast.success(fieldLabels && label ? `${label} copied` : 'Copied to clipboard');
       if (field) api.event(d.id, 'copy', field).then(() => loadActivity(1)).catch(() => {});
     } catch { toast.error('Could not copy', 'Your browser blocked clipboard access.'); }
   };
@@ -214,7 +219,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
   };
 
-  const copyBtn = (fn: () => void) => <button type="button" data-h40="skip" className="vd-ic" title="Copy" onClick={fn}><Svg icon="copy" size={13} /></button>;
+  const copyBtn = (fn: () => void, label?: string) => <button type="button" data-h40="skip" className="vd-ic" title={fieldLabels && label ? `Copy ${label}` : 'Copy'} onClick={fn}><Svg icon="copy" size={13} /></button>;
   const revealBtn = (key: string, allowed: boolean) => (
     <button type="button" data-h40="skip" className={`vd-ic${shown[key] !== undefined ? ' is-on' : ''}`} disabled={!allowed}
       title={allowed ? (shown[key] !== undefined ? 'Hide' : crit ? 'Reveal (logged)' : 'Reveal') : 'Your access is Use Only'} onClick={() => reveal(key)}>
@@ -235,7 +240,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         <>
           <b className="vd-mask">{shown[f.key] ?? mask(12)}</b>
           {revealBtn(f.key, !!can?.reveal)}
-          {can?.copy && copyBtn(() => copySecret(f.key))}
+          {can?.copy && copyBtn(() => copySecret(f.key), f.label)}
         </>
       );
     }
@@ -255,7 +260,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
           : <b className={f.kind === 'textarea' ? 'vd-multi' : ''} style={f.kind === 'textarea' ? { whiteSpace: 'pre-line' } : undefined}>
             {f.kind === 'date' && /^\d{4}-\d\d-\d\d$/.test(v) ? fmtDay(`${v}T00:00:00`) : v}
           </b>}
-        {copyBtn(() => copyPlain(v, f.key))}
+        {copyBtn(() => copyPlain(v, f.key, f.label), f.label)}
       </>
     );
   };
@@ -279,10 +284,18 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         <button type="button" data-h40="skip" className="vd-x" onClick={close} aria-label="Close"><Svg icon="x" size={14} sw={2.6} /></button>
       </div>
       <div className="vd-acts">
-        <button type="button" data-h40="skip" className="vd-btn vd-btn--p" disabled={!launchTo} onClick={launch}
-          title={launchTo ? `Open ${launchTo}${launchRisky ? ' (asks first — ' + cap(d.risk) + ' risk)' : ''}` : `No website or link is saved for this ${d.type_label}`}>
-          <Svg icon={I.launch} size={14} />Launch
-        </button>
+        {fieldLabels ? (
+          // My Vault / Password Health (CS-1442): Launch for every risk level, High / Critical ask first.
+          <button type="button" data-h40="skip" className="vd-btn vd-btn--p" disabled={!launchTo} onClick={launch}
+            title={launchTo ? `Open ${launchTo}${launchRisky ? ' (asks first — ' + cap(d.risk) + ' risk)' : ''}` : `No website or link is saved for this ${d.type_label}`}>
+            <Svg icon={I.launch} size={14} />Launch
+          </button>
+        ) : url && (
+          <a className="vd-btn vd-btn--p" href={url} target="_blank" rel="noopener noreferrer"
+            onClick={() => api.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {})}>
+            <Svg icon={I.launch} size={14} />Launch
+          </a>
+        )}
         {hasSec && secF && (
           <>
             <button type="button" data-h40="skip" className="vd-btn" disabled={!can?.reveal} title={can?.reveal ? undefined : 'Your access is Use Only'}
@@ -329,7 +342,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
               <span className="vd-secret__ico"><Svg icon="key" size={16} /></span>
               <div className="vd-secret__t"><small>{secF.label}</small><b className={shown[secF.key] !== undefined ? 'is-shown' : ''}>{shown[secF.key] ?? mask(18, 18)}</b></div>
               {revealBtn(secF.key, !!can?.reveal)}
-              {can?.copy && copyBtn(() => copySecret(secF.key))}
+              {can?.copy && copyBtn(() => copySecret(secF.key), secF.label)}
             </div>
             {crit && <div className="vd-note"><Svg icon="shield" size={12} />Critical credential — handle with care. Reveals and copies are recorded in Activity.</div>}
           </>
@@ -340,7 +353,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
           {kv('Category', d.category_group)}
           {plain.map(f => kv(f.label,
             f.kind === 'url' && url ? <a className="vd-a" href={url} target="_blank" rel="noopener noreferrer">{f.value}</a> : <b>{f.value}</b>,
-            copyBtn(() => copyPlain(f.value!, f.key))))}
+            copyBtn(() => copyPlain(f.value!, f.key, f.label), f.label)))}
           {kv('Vault', <Badge cls="teal">{vault}</Badge>)}
           {kv('Owner', (
             <span className="vd-own">
@@ -385,10 +398,10 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
           <div className="vd-xt">
             <div className="vd-xt__hd"><Svg icon={I.shieldOk} size={13} /><b>Recovery &amp; Proof</b></div>
             <div className="vd-kvs">
-              {extras?.reg_email && kv('Registered email', rec?.reg_email ? <b>{rec.reg_email}</b> : '', copyBtn(() => copyPlain(rec!.reg_email!, 'reg_email')))}
-              {extras?.reg_phone && kv('Registered phone', rec?.reg_phone ? <b>{rec.reg_phone}</b> : '', copyBtn(() => copyPlain(rec!.reg_phone!, 'reg_phone')))}
+              {extras?.reg_email && kv('Registered email', rec?.reg_email ? <b>{rec.reg_email}</b> : '', copyBtn(() => copyPlain(rec!.reg_email!, 'reg_email', 'Registered email'), 'Registered email'))}
+              {extras?.reg_phone && kv('Registered phone', rec?.reg_phone ? <b>{rec.reg_phone}</b> : '', copyBtn(() => copyPlain(rec!.reg_phone!, 'reg_phone', 'Registered phone'), 'Registered phone'))}
               {extras?.recovery_key && kv('Secret / recovery key', rec?.has_recovery_key ? <b className="vd-mask">{shown.recovery_key ?? mask(14)}</b> : '', (
-                <>{revealBtn('recovery_key', !!can?.reveal)}{can?.copy && copyBtn(() => copySecret('recovery_key'))}</>
+                <>{revealBtn('recovery_key', !!can?.reveal)}{can?.copy && copyBtn(() => copySecret('recovery_key'), 'Recovery key')}</>
               ))}
             </div>
             {extras?.attachments && (

@@ -23,6 +23,8 @@ export interface CredentialTableProps {
   extra?: { header: string; cell: (row: CredentialRow) => ReactNode };
   /** Critical Vault: the ID column shows the CCRD code. */
   critical?: boolean;
+  /** Copy tooltip names the type's main secret ("Copy API Key") — My Vault only; the other vaults keep "Copy Password". */
+  secretLabels?: boolean;
 }
 
 const USER_SHOWN = 12;
@@ -30,8 +32,13 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s
 
 const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Username', 'Owner', 'Risk', 'Strength', '2FA', 'Last Updated'];
 
-export default function CredentialTable({ rows, startIndex, loading, emptyTitle, emptySub, onAdd, onEdit, onShare, onView, onCopy, onDelete, actions, extra, critical = false }: CredentialTableProps) {
+export default function CredentialTable({ rows, startIndex, loading, emptyTitle, emptySub, onAdd, onEdit, onShare, onView, onCopy, onDelete, actions, extra, critical = false, secretLabels = false }: CredentialTableProps) {
   const { typeOf } = useCvMeta();
+  /** The type's main secret by its own label — "API Key", "Private Key", "Card Number"… — not always "Password". */
+  const secLabel = (type: string) => {
+    const t = typeOf(type);
+    return t?.fields.find(f => f.key === t.sec)?.label ?? 'Password';
+  };
   const cols = [...COLS, ...(extra ? [extra.header] : []), 'Action'];
 
   return (
@@ -69,7 +76,7 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
                           <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!can?.edit} onClick={() => onEdit?.(r)} />
                           {onShare && <ActBtn icon={IC.share} title="Share" disabled={!can?.share} onClick={() => onShare(r)} />}
                           <ActBtn icon={IC.view} title="View" onClick={() => onView?.(r)} />
-                          <ActBtn icon={IC.copy} title="Copy Password" disabled={!canCopy} onClick={() => onCopy?.(r)} />
+                          <ActBtn icon={IC.copy} title={secretLabels ? `Copy ${secLabel(r.type)}` : 'Copy Password'} disabled={!canCopy} onClick={() => onCopy?.(r)} />
                           <ActBtn icon={IC.del} title={binTitle} tone="danger" disabled={!(can?.delete || can?.remove)} onClick={() => onDelete?.(r)} />
                         </>
                       )}

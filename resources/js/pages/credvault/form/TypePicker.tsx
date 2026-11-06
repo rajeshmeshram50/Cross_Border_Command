@@ -97,7 +97,7 @@ export default function TypePicker({ meta, critical = false, onPick, onClose }: 
                 <Svg icon="search" size={16} />
                 <input ref={search} type="text" value={q} onChange={e => setQ(e.target.value)}
                   placeholder="Search type — e.g. card, server, Aadhaar, Wi-Fi…" autoComplete="off" aria-label="Search credential types" />
-                {q ? (
+                {q && !critical ? (
                   <button type="button" data-h40="skip" className="crd-search__clear" aria-label="Clear search"
                     onClick={() => { setQ(''); search.current?.focus(); }}>
                     <Svg icon="x" size={12} sw={2.6} />

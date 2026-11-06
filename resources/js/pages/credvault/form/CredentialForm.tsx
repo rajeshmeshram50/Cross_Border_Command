@@ -207,9 +207,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const el = bodyRef.current?.querySelector(`[data-f="${CSS.escape(k)}"]`);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
-  const copyField = (v: string) => {
+  const copyField = (v: string, label?: string) => {
     if (!v) { toast.warning('Nothing to copy yet'); return; }
-    copyText(v).then(() => toast.success('Copied to clipboard')).catch(() => toast.error('Could not copy — your browser blocked the clipboard'));
+    copyText(v).then(() => toast.success(label && !inCritical ? `${label} copied` : 'Copied to clipboard')).catch(() => toast.error('Could not copy — your browser blocked the clipboard'));
   };
 
   const fieldItem = (f: FieldDef) => {
@@ -223,17 +223,17 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
       // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
-      const v = f.key === 'acno' ? raw.replace(/\D/g, '').slice(0, 18)
+      const v = f.key === 'acno' && !inCritical ? raw.replace(/\D/g, '').slice(0, 18)
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
-        const m = v.trim() ? checkField(f, v.trim()) : null;
+        const m = v.trim() ? checkField(f, v.trim(), !inCritical) : null;
         if (m) setErrors(e => ({ ...e, [k]: m }));
       }
     };
     const onLeave = () => {
       const v = (vals[f.key] ?? '').trim();
-      const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v) : null;
+      const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v, !inCritical) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
     const req = f.required && !(editing && had && (f.secret || f.kind === 'file'));
@@ -301,15 +301,15 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           ctl = (
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
-                value={val} placeholder={ph} maxLength={f.key === 'acno' ? 18 : f.max ?? undefined} autoComplete="new-password"
-                inputMode={f.key === 'acno' ? 'numeric' : undefined}
+                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : f.max ?? undefined} autoComplete="new-password"
+                inputMode={f.key === 'acno' && !inCritical ? 'numeric' : undefined}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
               <span className="crd-pw__btns">
                 <button type="button" data-h40="skip" className={`crd-pw__b${vis ? ' is-on' : ''}`} title={vis ? 'Hide' : 'Show / hide'}
                   onClick={() => setShown(s => { const n = new Set(s); if (vis) n.delete(f.key); else n.add(f.key); return n; })}>
                   <Svg icon={vis ? undefined : 'eye'} d={vis ? EYE_OFF : undefined} size={14} />
                 </button>
-                <button type="button" data-h40="skip" className="crd-pw__b" title="Copy" onClick={() => copyField(val)}><Svg icon="copy" size={14} /></button>
+                <button type="button" data-h40="skip" className="crd-pw__b" title={inCritical ? 'Copy' : `Copy ${f.label}`} onClick={() => copyField(val, f.label)}><Svg icon="copy" size={14} /></button>
                 {f.kind === 'password' && (
                   <button type="button" data-h40="skip" className="crd-pw__b crd-pw__b--gen" title="Generate a strong password"
                     onClick={() => {
@@ -334,7 +334,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           }
         } else if (f.kind === 'date') {
           ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal" onChange={v => onText(v)} />;
-        } else if (f.key === 'exp') {
+        } else if (f.key === 'exp' && !inCritical) {
           // Credit Card expiry (MM/YY): typeable, and its calendar icon opens a month / year picker.
           ctl = <ExpiryPicker id={`crdF_${f.key}`} className={cls} value={val} placeholder={ph} onChange={onText} onBlur={onLeave} />;
         } else {
@@ -351,7 +351,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               badge={generated.has(f.key) && f.key === prefillKey
                 ? <span className="mapsup-lock mapsup-lock--auto"><Svg icon="key" size={9} sw={2.6} /> Generated</span> : undefined} />
             <div className={wrapCls}>
-              {f.kind !== 'date' && f.key !== 'exp' && <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>}
+              {f.kind !== 'date' && !(f.key === 'exp' && !inCritical) && <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>}
               {ctl}
             </div>
             {meter}
@@ -478,7 +478,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                 onClick={() => setShown(s => { const n = new Set(s); if (vis) n.delete('_rkey'); else n.add('_rkey'); return n; })}>
                 <Svg icon={vis ? undefined : 'eye'} d={vis ? EYE_OFF : undefined} size={14} />
               </button>
-              <button type="button" data-h40="skip" className="crd-pw__b" title="Copy" onClick={() => copyField(rkey)}><Svg icon="copy" size={14} /></button>
+              <button type="button" data-h40="skip" className="crd-pw__b" title={inCritical ? 'Copy' : 'Copy recovery key'} onClick={() => copyField(rkey, 'Recovery key')}><Svg icon="copy" size={14} /></button>
             </span>
           </div>
           <span className="crd-hint crd-hint--key"><Svg icon="shield" size={11} />Use this to get back into the account if the password is forgotten. It is encrypted like the password and every reveal is logged.</span>
@@ -682,7 +682,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (!name.trim()) errs.name = 'Enter a name for this credential';
     else if (name.trim().length < 2) errs.name = 'The name needs at least 2 characters';
     // A name of symbols only (e.g. "@@@###") names nothing: it needs at least one letter or digit (any script).
-    else if (!/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
+    else if (!inCritical && !/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
     if (!risk) errs.risk = 'Select the risk level';
     T.fields.forEach(f => {
       const k = 'fields.' + f.key;
@@ -699,7 +699,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         if (f.required && !(editing && f.secret && had)) errs[k] = `${f.kind === 'select' ? 'Select' : 'Enter'} ${f.label.toLowerCase()}`;
         return;
       }
-      const m = checkField(f, v);
+      const m = checkField(f, v, !inCritical);
       if (m) errs[k] = m;
     });
     const regEmailErr = ex.reg_email && regEmail.trim() ? emailError(regEmail) : null;

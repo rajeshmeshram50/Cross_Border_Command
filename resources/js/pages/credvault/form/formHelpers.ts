@@ -78,12 +78,13 @@ export function emailError(v: string): string | null {
 }
 
 /** crdSave's per-field check — the server repeats these and more. */
-export function checkField(f: FieldDef, val: string): string | null {
+/** `strict` adds the My Vault QA checks (CS-1435): symbols-only text, numbers-only Program Name, Account Number. */
+export function checkField(f: FieldDef, val: string, strict = false): string | null {
   const k = f.key;
   // A text field of symbols only (e.g. "@@@###", Member ID) holds nothing: it needs a letter or a digit.
-  if (f.kind === 'text' && !/[\p{L}\p{N}]/u.test(val)) return `${f.label} must include at least one letter or number`;
+  if (strict && f.kind === 'text' && !/[\p{L}\p{N}]/u.test(val)) return `${f.label} must include at least one letter or number`;
   // Rewards → Program Name is a name: digits alone (e.g. "123456") are not one.
-  if (k === 'program' && !/\p{L}/u.test(val)) return 'Program name must include letters, not only numbers';
+  if (strict && k === 'program' && !/\p{L}/u.test(val)) return 'Program name must include letters, not only numbers';
   if (f.kind === 'url' && !URL_RE.test(val)) return 'Enter a valid URL';
   if (f.kind === 'email') return emailError(val);
   if (f.kind === 'tel') return phoneError(val);
@@ -92,7 +93,7 @@ export function checkField(f: FieldDef, val: string): string | null {
   if (k === 'cvv' && !/^\d{3,4}$/.test(val)) return 'CVV must be 3 or 4 digits';
   if (k === 'ifsc' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(val.toUpperCase())) return 'IFSC must look like ICIC0001234';
   // Bank Account → Account Number: digits only, 9–18 of them (the range Indian bank account numbers use).
-  if (k === 'acno' && !/^\d{9,18}$/.test(val)) return /\D/.test(val) ? 'Account number must contain digits only' : 'Account number must be 9–18 digits';
+  if (strict && k === 'acno' && !/^\d{9,18}$/.test(val)) return /\D/.test(val) ? 'Account number must contain digits only' : 'Account number must be 9–18 digits';
   if (k === 'port' && !(+val > 0 && +val < 65536)) return 'Port must be between 1 and 65535';
   return null;
 }

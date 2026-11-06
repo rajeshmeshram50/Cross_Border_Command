@@ -165,7 +165,7 @@ export default function MyVault() {
         : `Credentials you add to ${tab === 'all' ? 'My Vault' : tabLabel} will appear here.`;
 
   return (
-    <CvPage className="mv-page tv-page">
+    <CvPage className="mv-page tv-page myv-page">
       <CvStrip icon={IC.lock} title="My Vault"
         sub="Store and manage your personal logins, secure notes, and secrets — encrypted and visible only to you."
         actions={(
@@ -234,7 +234,7 @@ export default function MyVault() {
             </table>
           </div>
         ) : (
-          <CredentialTable rows={rows} startIndex={start} loading={loading} emptyTitle={emptyTitle} emptySub={emptySub}
+          <CredentialTable secretLabels rows={rows} startIndex={start} loading={loading} emptyTitle={emptyTitle} emptySub={emptySub}
             onEdit={r => setForm({ credentialId: r.id })}
             onShare={r => setShareId(r.id)}
             onView={r => setViewId(r.id)}
@@ -254,7 +254,7 @@ export default function MyVault() {
       )}
       {gen && <GeneratorModal onClose={() => setGen(false)} onUse={pw => { setGen(false); setForm({ prefillPassword: pw }); }} />}
       {viewId != null && (
-        <ViewDrawer key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={reload}
+        <ViewDrawer fieldLabels key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={reload}
           onEdit={id => { setViewId(null); setForm({ credentialId: id }); }}
           onShare={id => { setViewId(null); setShareId(id); }} />
       )}
