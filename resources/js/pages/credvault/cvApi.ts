@@ -211,6 +211,13 @@ export interface AuditEvent {
   action: string; label: string; verb: string; severity: 'info' | 'warn' | 'critical'; severity_label: string;
   credential: { id: number; code: string | null; name: string | null; risk: Risk | null; type: string | null } | null;
   target: string; module: string | null; detail: string | null; ip: string | null;
+  /** The viewer's calendar day / time (sent in `tz`): "2026-11-05", "14:32", "07s". */
+  date?: string; time?: string; seconds?: string;
+}
+
+/** GET /audit-logs `groups[]`: one timeline day heading, counted over the whole filtered view (every page). */
+export interface AuditGroup {
+  date: string; date_display: string; label: string; heading: string; events: number; events_label: string;
 }
 
 /** What an export takes from the table: the tab and the table's filters. */
@@ -361,7 +368,7 @@ export const cvApi = {
   policyHistory: (page = 1) => get<{ data: Loose[]; stats: Loose; meta: PageMeta }>('/policies/history', { page }),
 
   /* Audit */
-  audit: (q: Q) => get<{ data: AuditEvent[]; tabs: Record<string, number>; meta: PageMeta; summary: Loose }>('/audit-logs', { ...q, tz: viewerTz() }),
+  audit: (q: Q) => get<{ data: AuditEvent[]; groups?: AuditGroup[]; tabs: Record<string, number>; meta: PageMeta; summary: Loose }>('/audit-logs', { ...q, tz: viewerTz() }),
   auditExport: (q: Q) => download('get', '/audit-logs/export', undefined, { ...q, tz: viewerTz() }),
 
   /* Import & Recovery */

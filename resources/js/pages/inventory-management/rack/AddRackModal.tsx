@@ -80,7 +80,16 @@ const IcoInfo = () => Ico(
     <line x1="12" y1="8" x2="12.01" y2="8" /></>, 13,
 );
 
-type Unit = 'cm' | 'm';
+/* One unit set across Zone / Rack / Shelf (CS-940/941/942): Cm · Metres · Feet. The rack API stores
+   cm or m only (dim_unit in:cm,m), so a rack entered in feet is converted to cm on save. */
+type Unit = 'cm' | 'm' | 'ft';
+const CM_PER: Record<Unit, number> = { cm: 1, m: 100, ft: 30.48 };
+const UNIT_LABEL: Record<Unit, string> = { cm: 'Cm', m: 'Metres', ft: 'Feet' };
+const UNIT_PH: Record<Unit, { len: string; wid: string; ht: string }> = {
+  cm: { len: 'e.g. 240', wid: 'e.g. 100', ht: 'e.g. 300' },
+  m: { len: 'e.g. 2.4', wid: 'e.g. 1', ht: 'e.g. 3' },
+  ft: { len: 'e.g. 8', wid: 'e.g. 3.3', ht: 'e.g. 10' },
+};
 
 interface Draft {
   wh: string;
@@ -208,13 +217,13 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     const L = parseFloat(d.len), W = parseFloat(d.wid);
     if (!(L > 0) || !(W > 0)) return null;
     const a = L * W;
-    const sqm = unit === 'm' ? a : a / 10000;
+    const sqm = a * (CM_PER[unit] / 100) ** 2;
     return { raw: a, sqft: sqm * SQFT_PER_SQM };
   }, [d.len, d.wid, unit]);
 
   const switchUnit = (next: Unit) => {
     if (next === unit) return;
-    const k = next === 'm' ? 0.01 : 100;
+    const k = CM_PER[unit] / CM_PER[next];
     const conv = (v: string) => {
       const n = parseFloat(v);
       return Number.isFinite(n) ? String(Math.round(n * k * 1000) / 1000) : v;
@@ -241,16 +250,18 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     }
     if (!zone?.apiId) return;
 
+    const toApi = (v: string) => (unit === 'ft' ? Math.round(parseFloat(v) * CM_PER.ft * 100) / 100 : parseFloat(v));
     const payload: RackPayload = {
       zone_id: zone.apiId,
       rack_name: d.name.trim(),
       // The zone's own flags — the server copies them down regardless.
       cold_chain: zone.cold ? 1 : 0,
       hazardous: zone.haz ? 1 : 0,
-      dim_unit: unit,
-      length: parseFloat(d.len),
-      width: parseFloat(d.wid),
-      height: parseFloat(d.ht),
+      // Feet is a form-only unit: sent to the API as cm (2 dp), which it does accept.
+      dim_unit: unit === 'ft' ? 'cm' : unit,
+      length: toApi(d.len),
+      width: toApi(d.wid),
+      height: toApi(d.ht),
     };
 
     setSaving(true);
@@ -415,19 +426,19 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
               <div className="znm-sub__hd">
                 <i className="znm-sub__bar" />Rack Dimensions
                 <div className="znm-unit" role="group" aria-label="Unit">
-                  {(['cm', 'm'] as Unit[]).map(u => (
+                  {(['cm', 'm', 'ft'] as Unit[]).map(u => (
                     <button key={u} type="button" className={unit === u ? 'is-on' : undefined}
                       onClick={() => switchUnit(u)}>
-                      {u === 'cm' ? 'Cm' : 'Metres'}
+                      {UNIT_LABEL[u]}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="spi-dt-grid4">
                 {([
-                  ['len', 'Length', unit === 'cm' ? 'e.g. 240' : 'e.g. 2.4'],
-                  ['wid', 'Width', unit === 'cm' ? 'e.g. 100' : 'e.g. 1'],
-                  ['ht', 'Height', unit === 'cm' ? 'e.g. 300' : 'e.g. 3'],
+                  ['len', 'Length', UNIT_PH[unit].len],
+                  ['wid', 'Width', UNIT_PH[unit].wid],
+                  ['ht', 'Height', UNIT_PH[unit].ht],
                 ] as const).map(([key, label, ph]) => (
                   <Field key={key} label={label} req error={errors[key]}>
                     <div className="whm-suf">

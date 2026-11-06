@@ -7,13 +7,28 @@
 .cvx .cva-chip button{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;border-radius:50%;background:rgba(14,116,144,.12);color:#0e7490;cursor:pointer;}
 .cvx .cva-clear{border:0;background:none;font:inherit;font-size:11.5px;font-weight:700;color:#e11d48;cursor:pointer;}
 /* A long credential name never stretches the card or the chip: one line, "…", full name on hover. */
-.cvx .al-page .alh-cr{display:inline-block;max-width:min(420px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+.cvx.al-page .alh-cr{display:inline-block;max-width:min(420px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
 .cvx .cva-chip{max-width:min(520px,100%);}
 .cvx .cva-chip__t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cvx .cva-link{cursor:pointer;}
 .cvx .cva-link:hover{text-decoration:underline;}
 .cvx .cva-det{cursor:pointer;}
-.cvx .cva-det.is-open{white-space:normal;overflow:visible;word-break:break-word;}
+.cvx .cva-det.is-open{white-space:normal;overflow:visible;word-break:break-word;overflow-wrap:anywhere;}
+
+/* A long detail (e.g. a 300-character access reason) stops at about half the row with "…" instead of
+   running up to the meta; click it to read it in full (cva-det.is-open wraps, even one unbroken word). */
+.cvx.al-page .alh2-det{flex:0 1 auto;max-width:min(640px, 48%);}
+.cvx.al-page .alh2-det.is-open{max-width:none;flex:1 1 auto;}
+.cvx.al-page .alh2-meta{margin-left:auto;}
+
+/* The card fills to the bottom of the screen (CvCard sets its min-height): the list grows into the
+   free space, the empty state sits centred in it, and the pager stays pinned at the foot. */
+.cvx.al-page .bst-card{display:flex;flex-direction:column;}
+.cvx.al-page .bst-card>.alh,
+.cvx.al-page .bst-card>.alh-empty,
+.cvx.al-page .bst-card>.cva-shim{flex:1 0 auto;}
+.cvx.al-page .bst-card>.alh-empty{justify-content:center;}
+.cvx.al-page .bst-card>.wl-pager{margin-top:auto;flex-shrink:0;}
 .cvx .cva-busy{opacity:.55;transition:opacity .15s;}
 .cvx .cva-retry{margin-top:8px;}
 .cvx .cva-shim{display:flex;flex-direction:column;gap:10px;padding:14px;}
@@ -338,3 +353,29 @@
   border-color: rgba(148, 197, 214, .08) !important;
   opacity: 1 !important;
 }
+
+/* Custom date range popup · dark mode: a solid panel (the rows behind no longer show through),
+   lifted with a shadow, and Apply is the filled primary button again (the generic dark
+   .al-pop__btn rule above had turned it into a second ghost button). */
+[data-bs-theme="dark"] .cvx.al-page .al-pop {
+  background: linear-gradient(180deg, #13262f 0%, #0f1f27 100%) !important;
+  border: 1px solid rgba(34, 211, 238, .3) !important;
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, .75), 0 0 0 1px rgba(34, 211, 238, .08) !important;
+  backdrop-filter: none !important;
+}
+[data-bs-theme="dark"] .cvx.al-page .al-pop__hd {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(34, 211, 238, .14);
+}
+[data-bs-theme="dark"] .cvx.al-page .al-pop__btn.is-pri {
+  color: #fff !important;
+  border: 0 !important;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #22d3ee) !important;
+  box-shadow: 0 8px 18px -8px rgba(8, 145, 178, .7) !important;
+}
+[data-bs-theme="dark"] .cvx.al-page .al-pop__btn.is-pri:hover { filter: brightness(1.08); }
+
+/* The From / To calendar (MasterDatePicker) is portalled to <body> at z-index 11100; the shared
+   .al-pop sits at 99999, so the calendar opened behind it. Keep the popup above the page
+   (topbar ≈1002) but under the calendar. Audit Logs only. */
+.cvx.al-page .al-pop { z-index: 1060; }

@@ -982,8 +982,10 @@ class CredVaultController extends Controller
         $u = $this->tenantUser($request);
         $d = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
 
-        $levels = $this->levelCounts($u->client_id);
+        $branch = $this->teamBranchOf($u);
+        $levels = $this->levelCounts($u->client_id, $branch);
         $creds  = Credential::where('client_id', $u->client_id)->where('scope', 'team')
+            ->when($branch !== null, fn ($q) => $q->where('branch_id', $branch))
             ->selectRaw('department_id, count(*) as n, sum(case when risk = ? then 1 else 0 end) as crit', ['critical'])
             ->groupBy('department_id')->get()->keyBy('department_id');
 
@@ -1044,7 +1046,9 @@ class CredVaultController extends Controller
 
     protected function hierarchy(User $u, ?Departments $dep): array
     {
+        $branch = $this->teamBranchOf($u);
         $emps = Employee::where('client_id', $u->client_id)->where('status', 'Active')
+            ->when($branch !== null, fn ($q) => $q->where('branch_id', $branch))
             ->when($dep, fn ($q) => $q->where('department_id', $dep->id), fn ($q) => $q->whereNotNull('department_id'))
             ->with('designation:id,name')
             ->get(['id', 'user_id', 'emp_code', 'first_name', 'last_name', 'display_name', 'department_id', 'designation_id', 'reporting_manager_id', 'reporting_manager_user_id']);
@@ -1076,6 +1080,7 @@ class CredVaultController extends Controller
         $counts = ['admin' => $admins->count()] + $counts;   // the department's "Admin" chip: the Vault Admin(s)
 
         $creds = Credential::where('client_id', $u->client_id)->where('scope', 'team')
+            ->when($branch !== null, fn ($q) => $q->where('branch_id', $branch))
             ->when($dep, fn ($q) => $q->where('department_id', $dep->id))
             ->selectRaw('count(*) as n, sum(case when risk = ? then 1 else 0 end) as crit', ['critical'])->first();
 
@@ -1136,10 +1141,22 @@ class CredVaultController extends Controller
     }
 
     /** [department_id => [level => active members]] for the tenant, in one query. */
-    protected function levelCounts(int $clientId): array
+    /**
+     * Team Details for a Branch Admin (branch_user) covers only their own branch — a client with two
+     * branches must not show branch A's admin the employees of branch B. Everyone else: null (no branch
+     * filter; a client admin sees every branch, a manager is narrowed to their reporting line client-side).
+     * A branch_user with no branch on file gets 0, which matches nobody, rather than the whole company.
+     */
+    protected function teamBranchOf(User $u): ?int
     {
-        return $this->memo("levels:{$clientId}", function () use ($clientId) {
+        return $u->user_type === 'branch_user' ? (int) ($u->branch_id ?? 0) : null;
+    }
+
+    protected function levelCounts(int $clientId, ?int $branchId = null): array
+    {
+        return $this->memo("levels:{$clientId}:" . ($branchId ?? 'all'), function () use ($clientId, $branchId) {
             $rows = Employee::where('employees.client_id', $clientId)->where('employees.status', 'Active')->whereNotNull('employees.department_id')
+                ->when($branchId !== null, fn ($q) => $q->where('employees.branch_id', $branchId))
                 ->leftJoin('master_designations as d', 'd.id', '=', 'employees.designation_id')
                 ->selectRaw('employees.department_id, d.name as designation, count(*) as n')
                 ->groupBy('employees.department_id', 'd.name')->get();

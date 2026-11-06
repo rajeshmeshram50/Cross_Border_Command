@@ -60,7 +60,11 @@ const IcoInfo = (p: { size?: number }) => Ico(
     <line x1="12" y1="8" x2="12.01" y2="8" /></>, p.size ?? 13,
 );
 
-type Unit = 'cm' | 'm';
+/* One unit set across Zone / Rack / Shelf (CS-940/941/942): Cm · Metres · Feet. The shelf API stores
+   cm or m only (dim_unit in:cm,m), so a shelf entered in feet is converted to cm on save. */
+type Unit = 'cm' | 'm' | 'ft';
+const CM_PER: Record<Unit, number> = { cm: 1, m: 100, ft: 30.48 };
+const UNIT_LABEL: Record<Unit, string> = { cm: 'Cm', m: 'Metres', ft: 'Feet' };
 
 interface Draft {
   level: string;
@@ -140,13 +144,13 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
     const L = parseFloat(d.len), W = parseFloat(d.wid), H = parseFloat(d.ht);
     const area = L > 0 && W > 0 ? L * W : null;
     const vol = area != null && H > 0 ? area * H : null;
-    const m3 = vol == null ? null : unit === 'm' ? vol : vol / 1e6;
+    const m3 = vol == null ? null : vol * (CM_PER[unit] / 100) ** 3;
     return { area, m3 };
   }, [d.len, d.wid, d.ht, unit]);
 
   const switchUnit = (to: Unit) => {
     if (to === unit) return;
-    const k = to === 'm' ? 0.01 : 100;
+    const k = CM_PER[unit] / CM_PER[to];
     const conv = (v: string) => {
       const n = parseFloat(v);
       return Number.isFinite(n) ? String(Math.round(n * k * 1000) / 1000) : v;
@@ -171,7 +175,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       if (!d[k].trim()) e[k] = `Enter the ${word}`;
       else if (!(Number(d[k]) > 0)) e[k] = `Enter a valid ${word}`;
     });
-    const hCm = unit === 'm' ? parseFloat(d.ht) * 100 : parseFloat(d.ht);
+    const hCm = parseFloat(d.ht) * CM_PER[unit];
     if (Number.isFinite(hCm) && hCm > freeCm) {
       e.ht = `Only ${freeCm} cm of rack height is left`;
     }
@@ -184,7 +188,9 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       toast.warning('Shelf not saved', e[first] ?? 'Check the highlighted fields.');
       return;
     }
-    const L = parseFloat(d.len), W = parseFloat(d.wid), H = parseFloat(d.ht);
+    // Feet is a form-only unit: converted to cm (2 dp) for the API, area / volume worked out from those.
+    const toApi = (v: string) => (unit === 'ft' ? Math.round(parseFloat(v) * CM_PER.ft * 100) / 100 : parseFloat(v));
+    const L = toApi(d.len), W = toApi(d.wid), H = toApi(d.ht);
     const payload: ShelfPayload = {
       shelf_name: d.name.trim(),
       level_no: Number(d.level),
@@ -194,7 +200,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       // The rack's own flags — the server copies them down regardless.
       cold_chain: r.cold ? 1 : 0,
       hazardous: r.haz ? 1 : 0,
-      dim_unit: unit,
+      dim_unit: unit === 'ft' ? 'cm' : unit,
       length: L,
       width: W,
       height: H,
@@ -344,10 +350,10 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
               <div className="znm-sub__hd">
                 <i className="znm-sub__bar" />Shelf Dimensions
                 <div className="znm-unit" role="group" aria-label="Unit">
-                  {(['cm', 'm'] as Unit[]).map(u => (
+                  {(['cm', 'm', 'ft'] as Unit[]).map(u => (
                     <button key={u} type="button" className={unit === u ? 'is-on' : undefined}
                       onClick={() => switchUnit(u)}>
-                      {u === 'cm' ? 'Cm' : 'Metres'}
+                      {UNIT_LABEL[u]}
                     </button>
                   ))}
                 </div>
@@ -357,9 +363,10 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
               </div>
               <div className="spi-dt-grid5">
                 {([
-                  ['len', 'Length', unit === 'cm' ? `e.g. ${nf(rackDims.length * (ru === 'm' ? 100 : 1), 0)}` : 'e.g. 2.4'],
-                  ['wid', 'Width', unit === 'cm' ? `e.g. ${nf(rackDims.width * (ru === 'm' ? 100 : 1), 0)}` : 'e.g. 1'],
-                  ['ht', 'Height', unit === 'cm' ? 'e.g. 50' : 'e.g. 0.5'],
+                  // Length / width hint = the rack's own size, shown in the unit picked here.
+                  ['len', 'Length', `e.g. ${nf(rackDims.length * CM_PER[ru] / CM_PER[unit], unit === 'cm' ? 0 : 1)}`],
+                  ['wid', 'Width', `e.g. ${nf(rackDims.width * CM_PER[ru] / CM_PER[unit], unit === 'cm' ? 0 : 1)}`],
+                  ['ht', 'Height', `e.g. ${nf(50 / CM_PER[unit], unit === 'cm' ? 0 : 1)}`],
                 ] as const).map(([key, label, ph]) => (
                   <Field key={key} label={label} req error={errors[key]}>
                     <div className="whm-suf">

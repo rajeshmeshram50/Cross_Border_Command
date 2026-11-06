@@ -1202,8 +1202,19 @@ export default function InvoiceForm({
                   {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
                 </div>
                 <div className="spi-dt-step-big">{pad2(i + 1)}</div>
-                <div className="spi-dt-step-title">{stageLabel(i).title}</div>
-                <div className="spi-dt-step-desc">{stageLabel(i).desc}</div>
+                {typeUnknown && i === 1 ? (
+                  // CS-1139: the match type (2-way / 3-way) is only known once the SPI has loaded, so the
+                  // title shimmers like the form below instead of showing a label that then changes.
+                  <>
+                    <div className="spi-dt-step-title" aria-hidden><span className="spi-dt-sk" style={{ display: 'block', width: '62%', height: 12, marginTop: 3 }} /></div>
+                    <div className="spi-dt-step-desc" aria-label="Loading match type"><span className="spi-dt-sk" style={{ display: 'block', width: '78%', height: 9, marginTop: 6 }} /></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="spi-dt-step-title">{stageLabel(i).title}</div>
+                    <div className="spi-dt-step-desc">{stageLabel(i).desc}</div>
+                  </>
+                )}
                 <span className="spi-dt-step-ghost">{pad2(i + 1)}</span>
               </div>
               </Tooltip>
@@ -1303,7 +1314,11 @@ export default function InvoiceForm({
           <div className="spi-dt-foot-l">
             <div>
               <div className="spi-dt-foot-step">STEP {pad2(stage + 1)} OF {pad2(STAGES.length)}</div>
-              <div className="spi-dt-foot-name">{stageLabel(stage).title}</div>
+              <div className="spi-dt-foot-name">
+                {typeUnknown && stage === 1
+                  ? <span className="spi-dt-sk" aria-label="Loading" style={{ display: 'inline-block', width: 180, height: 12 }} />
+                  : stageLabel(stage).title}
+              </div>
             </div>
             <div className="spi-dt-dots">
               {STAGES.map((s, i) => (

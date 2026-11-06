@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
-import { cvApi, CvApiError, type AuditEvent, type PageMeta } from '../cvApi';
+import { cvApi, CvApiError, type AuditEvent, type AuditGroup, type PageMeta } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
-import { CvPage, CvStrip, StripBtn, CvPager, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
+import WorklistPager from '../../../components/ui/WorklistPager';
+import { CvCard, CvPage, CvStrip, StripBtn, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
 import './audit.css';
 
 const CAL = '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
@@ -35,11 +36,11 @@ const TABS: [string, string, string][] = [
   ['all', 'All Activity', PULSE],
   ['mine', 'My Activity', IC.user],
   ['team', 'Team Activity', IC.users],
-  ['alerts', 'Security Alerts', ALERT],
+  // Security Alerts tab removed from the page on request; the API's tab=alerts still exists.
 ];
 const RANGES: [string, string][] = [['24h', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All']];
 const SEV_FALLBACK: Record<string, string> = { info: 'Info', warn: 'Warning', critical: 'Critical' };
-const PER_PAGE = 15;
+const PER_PAGE = 10;   // same default and 10 / 25 / 50 choices as the other CredVault lists
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const fmtD = (v: string) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '');
@@ -61,6 +62,7 @@ export default function AuditLogs() {
   const dq = useDebounced(q.trim());
 
   const [rows, setRows] = useState<AuditEvent[]>([]);
+  const [apiGroups, setApiGroups] = useState<AuditGroup[]>([]);
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [pm, setPm] = useState<PageMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,8 @@ export default function AuditLogs() {
     action: action || undefined, credential_id: credId ?? undefined, q: dq || undefined,
   }), [tab, range, from, to, action, credId, dq]);
 
-  const fkey = JSON.stringify(filters);
+  const [perPage, setPerPage] = useState(PER_PAGE);
+  const fkey = JSON.stringify({ ...filters, perPage });   // a new filter or page size starts again at page 1
   const [pg, setPg] = useState({ key: fkey, page: 1 });
   const page = pg.key === fkey ? pg.page : 1;
   const setPage = useCallback((p: number) => setPg({ key: fkey, page: p }), [fkey]);
@@ -87,9 +90,10 @@ export default function AuditLogs() {
     setLoading(true);
     setErr(null);
     try {
-      const r = await cvApi.audit({ ...filters, page, per_page: PER_PAGE });
+      const r = await cvApi.audit({ ...filters, page, per_page: perPage });
       if (my !== seq.current) return;
       setRows(r.data);
+      setApiGroups(r.groups ?? []);
       setTabs(r.tabs ?? {});
       setPm(r.meta);
       if (r.meta && page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
@@ -97,10 +101,11 @@ export default function AuditLogs() {
       if (my !== seq.current) return;
       setErr(errMsg(e));
       setRows([]);
+      setApiGroups([]);
     } finally {
       if (my === seq.current) setLoading(false);
     }
-  }, [filters, page, setPage]);
+  }, [filters, page, perPage, setPage]);
   useEffect(() => { load(); }, [load]);
 
   function clearCred() {
@@ -138,11 +143,17 @@ export default function AuditLogs() {
     const diff = Math.round((t0.getTime() - x.getTime()) / 864e5);
     return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : x.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' });
   };
-  const groups: { k: string; d: string; L: AuditEvent[] }[] = [];
+  // Day headings: the API's groups[] (the viewer's tz, and the day's count over EVERY page — a day that
+  // runs onto page 2 still reads its full total). Falls back to this page's rows if groups is missing.
+  const byDate = new Map(apiGroups.map(g => [g.date, g]));
+  const groups: { id: string; k: string; sub: string; n: number; L: AuditEvent[] }[] = [];
   rows.forEach(e => {
-    const k = dayLbl(e.at);
+    const ag = e.date ? byDate.get(e.date) : undefined;
+    const fallbackDay = new Date(e.at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const id = ag ? ag.date : fallbackDay;          // keyed by the day itself — two "Tuesday"s never merge
     const g = groups[groups.length - 1];
-    if (!g || g.k !== k) groups.push({ k, d: e.at, L: [e] }); else g.L.push(e);
+    if (g && g.id === id) { g.L.push(e); if (!ag) g.n = g.L.length; return; }
+    groups.push({ id, k: ag ? ag.label : dayLbl(e.at), sub: ag ? ag.date_display : fallbackDay, n: ag ? ag.events : 1, L: [e] });
   });
   const filtered = !!(dq || action || credId);
 
@@ -170,11 +181,11 @@ export default function AuditLogs() {
     return (
       <div className={`alh${loading ? ' cva-busy' : ''}`}>
         {groups.map(g => (
-          <div className="alh-day" key={g.k}>
+          <div className="alh-day" key={g.id}>
             <div className="alh-day__hd">
               <span className="alh-day__ico"><Svg d={CAL} size={13} /></span><b>{g.k}</b>
-              {(g.k === 'Today' || g.k === 'Yesterday') && <small>{new Date(g.d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</small>}
-              <em>{g.L.length} event{g.L.length > 1 ? 's' : ''}</em>
+              <small>{g.sub}</small>
+              <em>{g.n} event{g.n === 1 ? '' : 's'}</em>
             </div>
             <div className="alh-list">
               {g.L.map(e => {
@@ -189,8 +200,8 @@ export default function AuditLogs() {
                 return (
                   <div className={`alh-it alh-it--${e.severity}`} key={e.id}>
                     <span className="alh-time">
-                      {d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      <small>{String(d.getSeconds()).padStart(2, '0')}s</small>
+                      {e.time ?? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      <small>{e.seconds ?? `${String(d.getSeconds()).padStart(2, '0')}s`}</small>
                     </span>
                     <span className={`alh-node alh-node--${base}`}><Svg d={ACT_ICON[e.action] ?? IC.view} size={14} /></span>
                     <div className="alh-card alh2">
@@ -240,7 +251,9 @@ export default function AuditLogs() {
         actions={<StripBtn icon={IC.download} onClick={exportLogs} disabled={exporting || loading}>{exporting ? 'Exporting…' : 'Export Logs'}</StripBtn>} />
 
 
-      <div className="bst-wrap"><div className="bst-card">
+      {/* CvCard stretches the card to the bottom of the screen (min-height), so an empty or short
+          list keeps the pager pinned at the foot instead of floating mid-page. */}
+      <CvCard>
         <CvTabsRow className="tvc-top al-top"
           tabs={TABS.map(([k, l, ico]) => ({ key: k, label: l, icon: ico, count: tabs[k] }))}
           active={tab} onTab={k => setTab(k as typeof tab)}
@@ -276,8 +289,12 @@ export default function AuditLogs() {
         )}
 
         {list()}
-        {pm && !err && <CvPager page={pm.current_page} lastPage={pm.last_page} total={pm.total} perPage={pm.per_page} noun="events" onPage={setPage} />}
-      </div></div>
+        {!err && (
+          <WorklistPager className="wl-teal" loading={loading}
+            total={pm?.total ?? 0} page={pm?.current_page ?? page} pageSize={perPage}
+            onPage={setPage} onPageSize={n => setPerPage(n)} />
+        )}
+      </CvCard>
     </CvPage>
   );
 }

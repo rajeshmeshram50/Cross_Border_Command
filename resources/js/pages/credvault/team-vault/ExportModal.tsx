@@ -79,7 +79,7 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [cats, setCats] = useState<Record<string, boolean>>({});
   const fmt = 'csv';
-  const [notes, setNotes] = useState(true);
+  const notes = true;   // no longer a choice in the popup — notes are always exported
   const [pw, setPw] = useState(false);
   const [ack, setAck] = useState(false);
   const [password, setPassword] = useState('');
@@ -213,8 +213,9 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
                     <Svg d={CSV} size={14} sw={2.1} /><span><b>CSV</b><small>Opens in Excel or Sheets</small></span>
                   </button>
                 </div>
-                <div className="gp-opts">
-                  <Toggle on={notes} set={setNotes} label="Include notes" sub="Remarks saved with each credential" />
+                {/* "Include notes" removed on request: notes stay in the file (include_notes: true, as the
+                    old default), and Include passwords spans the row on its own. */}
+                <div className="gp-opts" style={{ gridTemplateColumns: '1fr' }}>
                   <Toggle on={pw} set={v => { setPw(v); setAck(false); setPassword(''); setErr(null); }} label="Include passwords" sub="Exported as plain, readable text" />
                 </div>
                 {pw && (
