@@ -5835,6 +5835,31 @@
   border-bottom: 0;
 }
 
+/* Lists with the footer pager (Import & Recovery, My Vault and the other CredVault lists): no grey line
+   above the footer — the pager's own top border is the one divider. Beats `.cvx .tvc-list .whm-tblwrap`'s
+   !important bottom border. */
+.cvx .tvc-list > .whm-tblwrap:has(+ .wl-pager) {
+  border-bottom: 0 !important;
+}
+
+/* A card that ends with its list's footer pager (My Vault, Team Vault, Recycle Bin…): the footer sits on
+   the card's bottom edge — no white strip of the card's 12px bottom padding under it. */
+.cvx .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) {
+  padding-bottom: 0 !important;
+}
+
+/* …and the list with its footer runs to the card's left and right edges too, so the footer reaches the
+   end of the card on every side (the card's own rounded corners clip it). */
+.cvx .tv-pane__bd.tvc-bd:not(.tv-split *):has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child {
+  margin-left: -12px !important;
+  margin-right: -12px !important;
+  margin-bottom: 0 !important;
+}
+
+.cvx .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child {
+  border-radius: 0;
+}
+
 [data-bs-theme="dark"] .cvx .ir-body.is-fill .ir-hist > .tv-pane__hd {
   border-color: rgba(148, 163, 184, .18);
 }
