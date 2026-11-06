@@ -5333,6 +5333,246 @@
   flex-shrink: 0;
 }
 
+/* Import & Recovery → Import data popup: the 3-step guide and the Upload file card. */
+.cvx #crd-host .mapsup-box.crd-box.gp-box.ir-imp-box {
+  width: min(1180px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+}
+
+.cvx #crd-host .ir-imp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cvx #crd-host .ir-imp-body > * {
+  flex-shrink: 0;
+}
+
+.cvx #crd-host .ir-imp-body .ix-guide {
+  margin-bottom: 0;
+}
+
+/* Download backup popup: the backup settings (format, vault, passwords, lock). */
+.cvx #crd-host .mapsup-box.crd-box.gp-box.ir-bk-box {
+  width: min(980px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+}
+
+.cvx #crd-host .ir-bk-body {
+  gap: 10px;
+}
+
+/* Import by category popup: category dropdown, then the drop zone of that category's sheet. */
+.cvx #crd-host .mapsup-box.crd-box.gp-box.ir-cat-box {
+  width: min(760px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+}
+
+.cvx .ir-cat-f {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cvx .ir-cat-f>label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0c2c3a;
+}
+
+.cvx .ir-cat-f>label i {
+  font-style: normal;
+  color: #e11d48;
+}
+
+.cvx .ir-cat-f>small {
+  font-size: 11px;
+  color: #6a869c;
+}
+
+.cvx #crd-host .ir-cat-box .ix-drop {
+  min-height: 220px;
+}
+
+.cvx .ix-drop.is-off {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.cvx .ix-drop.is-off input {
+  cursor: not-allowed;
+}
+
+.cvx .ir-cat-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+}
+
+/* Review popup: Accepted / Discarded records tabs, then Save. */
+.cvx #crd-host .mapsup-box.crd-box.gp-box.ir-rev-box {
+  width: min(1080px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+}
+
+.cvx .ir-rev-tbl {
+  max-height: min(52vh, 460px);
+  overflow: auto;
+}
+
+.cvx .ir-rev-tbl .whm-tbl.mv-tbl td.ir-al {
+  text-align: left !important;
+}
+
+.cvx .ir-why {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #9f1239;
+}
+
+.cvx .ir-why b {
+  font-weight: 800;
+}
+
+[data-bs-theme="dark"] .cvx .ir-cat-f>label { color: #e2e8f0; }
+[data-bs-theme="dark"] .cvx .ir-cat-f>small { color: #94a3b8; }
+[data-bs-theme="dark"] .cvx .ir-cat-file { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cvx .ir-why { color: #fda4af; }
+
+/* The "Import data" button at the right end of the Import & Recovery tabs row. */
+/* Import tab "Import data" — the same teal button as My Vault's Add Credential, at the search box's height. */
+.cvx .cstrip__action-btn.ir-import-btn {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  box-shadow: 0 4px 16px rgba(8, 145, 178, .5), 0 1px 3px rgba(14, 116, 144, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  transition: background .2s, transform .2s, box-shadow .2s;
+}
+
+.cvx .cstrip__action-btn.ir-import-btn:hover {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%);
+  box-shadow: 0 8px 24px rgba(8, 145, 178, .6), 0 2px 6px rgba(14, 116, 144, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  transform: translateY(-1.5px);
+}
+
+.cvx .ir-import-btn .cstrip__action-btn-sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
+  border-radius: 12px 12px 0 0;
+}
+
+/* Import tab: the history card fills the white card down to its bottom edge. */
+.cvx .ir-body.is-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cvx .ir-body.is-fill .ir-hist {
+  flex: 1 1 auto;
+}
+
+.cvx .ir-body.is-fill .ir-hist .tvc-list {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cvx .ir-body.is-fill .ir-hist .tvc-list > .whm-tblwrap {
+  flex: 1 1 auto;
+}
+
+/* Empty or error state: the table stretches over the area so its message sits in the middle (header keeps its height). */
+.cvx .ir-body.is-fill .ir-hist .whm-tblwrap:has(td.mv-empty) {
+  display: flex;
+  flex-direction: column;
+}
+
+.cvx .ir-body.is-fill .ir-hist .whm-tblwrap:has(td.mv-empty) > table {
+  flex: 1 1 auto;
+}
+
+.cvx .ir-body.is-fill .ir-hist .whm-tblwrap:has(td.mv-empty) thead tr {
+  height: 1px;
+}
+
+.cvx .ir-body.is-fill .ir-hist td.mv-empty {
+  vertical-align: middle;
+}
+
+/* One container on the Import tab: the history strip keeps its own outline; the table and pager
+   sit straight in the outer tabs card instead of a second bordered card. */
+.cvx .ir-body.is-fill .ir-hist {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  overflow: visible;
+}
+
+.cvx .ir-body.is-fill .ir-hist > .tv-pane__hd {
+  border: 1.5px solid #cdeef5;
+  border-radius: 14px;
+  margin-bottom: 10px;
+}
+
+.cvx .ir-body.is-fill .ir-hist > .tv-pane__bd {
+  padding: 0 !important;
+}
+
+/* The table and pager run to the card's edges and its bottom, like the Recycle Bin and My Vault:
+   no padding under the footer (the card's own 12px is taken back), one line above the pager. */
+.cvx .ir-body.is-fill {
+  padding-bottom: 0;
+  margin-bottom: -12px;
+}
+
+.cvx .ir-body.is-fill .ir-hist .tvc-list {
+  margin: 0 -12px;
+}
+
+.cvx .ir-body.is-fill .ir-hist .tvc-list > .whm-tblwrap {
+  border-bottom: 0;
+}
+
+[data-bs-theme="dark"] .cvx .ir-body.is-fill .ir-hist > .tv-pane__hd {
+  border-color: rgba(148, 163, 184, .18);
+}
+
 /* Short screens: a tighter header, cards and footer so more of the form fits before it scrolls */
 @media (max-height: 860px) {
   .cvx #crd-host .ex-box > .mapsup-header .mapsup-hrow {

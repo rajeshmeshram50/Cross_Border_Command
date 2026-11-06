@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Loose } from '../cvApi';
-import { Svg, errMsg, useCvMeta } from '../shared';
-import { IR_I, IrCard } from './irShared';
+import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
+import { IR_I } from './irShared';
 
-/* Backup tab — the prototype's irBackupHtml / bkCreate; the file is built and locked (AES-256) on the API. */
+/* Download backup popup — the prototype's irBackupHtml / bkCreate; the file is built and locked (AES-256) on the API. */
 
 type Fmt = 'xlsx' | 'csv';
 type Scope = 'mine' | 'team' | 'all';
@@ -35,10 +35,13 @@ function pwScore(p: string): number {
 
 export interface BackupInfo { scopes: Loose[]; columns: Loose | null; lock_note: string }
 
-export default function BackupTab({ info, infoError = '', infoLoading = false, onRetry, onDone }: {
+export default function BackupModal({ info, infoError = '', infoLoading = false, onRetry, onDone, onClose }: {
   info: BackupInfo | null;
   /** Set when GET /backups failed before any backup options arrived — Download stays off until a retry succeeds. */
-  infoError?: string; infoLoading?: boolean; onRetry?: () => void; onDone: () => void;
+  infoError?: string; infoLoading?: boolean; onRetry?: () => void;
+  /** After every attempt (failed ones are recorded too) — refreshes the history. */
+  onDone: () => void;
+  onClose: () => void;
 }) {
   const toast = useToast();
   const { meta } = useCvMeta();
@@ -80,15 +83,17 @@ export default function BackupTab({ info, infoError = '', infoLoading = false, o
       toast.success(`${code ? `${code} · ` : ''}${items} credentials downloaded as ${F[1]}${lock ? ' · password locked' : ''}`,
         withheld ? `${withheld} protected secret${withheld > 1 ? 's were' : ' was'} left out — they open through an unlock, not a file.` : undefined);
       setPw(''); setPw2(''); setAcct('');
+      onDone();
+      onClose();
     } catch (e) {
       const ae = e instanceof CvApiError ? e : new CvApiError(errMsg(e));
       if (ae.field('password_confirmation')) ae.message = 'The two passwords don’t match. This attempt was recorded.';
       setErr(ae);
-    } finally {
       setBusy(false);
       onDone(); // failed attempts are recorded in the history too
     }
   };
+  const close = () => { if (!busy) onClose(); };
 
   const eyeBtn = (k: string) => (
     <button type="button" data-h40="skip" aria-label={show[k] ? 'Hide' : 'Show'} onClick={() => setShow(s => ({ ...s, [k]: !s[k] }))}>
@@ -98,8 +103,26 @@ export default function BackupTab({ info, infoError = '', infoLoading = false, o
   const sec = (num: number, t: string, s: string) => <div className="ix-sec"><span>{num}</span><div><b>{t}</b><small>{s}</small></div></div>;
 
   return (
-    <div className="ix-grid ix-grid--one">
-      <IrCard icon={IR_I.db} title="Backup settings" sub="Choose the format, the vault and how to protect the file">
+    <CvPortal onClose={close}>
+      <div id="crd-host">
+        <div className="mapsup-overlay">
+          <div className="mapsup-box crd-box gp-box ir-bk-box" role="dialog" aria-modal="true" aria-label="Download backup">
+            <div className="mapsup-header gp-hd">
+              <div className="mapsup-hrow">
+                <div className="mapsup-title-wrap">
+                  <div className="mapsup-hicon crd-hicon"><Svg d={IR_I.db} size={22} sw={2.1} /></div>
+                  <div className="mapsup-title-block">
+                    <h3 className="mapsup-title">Download backup</h3>
+                    <p className="mapsup-sub">Choose the format, the vault and how to protect the file.</p>
+                  </div>
+                </div>
+                <div className="crd-hbtns">
+                  <button type="button" className="mapsup-close" onClick={close} disabled={busy} aria-label="Close"><Svg icon="x" size={13} sw={2.8} /></button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mapsup-body gp-body ir-imp-body ir-bk-body">
         {sec(1, 'Choose a format', 'The file type you want to download')}
         <div className="ix-fmtc">
           {FMTS.map(f => (
@@ -185,11 +208,20 @@ export default function BackupTab({ info, infoError = '', infoLoading = false, o
             {onRetry && <button type="button" data-h40="skip" className="ir-btn" onClick={onRetry} disabled={infoLoading}>{infoLoading ? 'Retrying…' : 'Retry'}</button>}
           </div>
         )}
-        <button type="button" data-h40="skip" className="ir-btn ir-btn--pri ir-btn--full ix-dl" onClick={create} disabled={!n || busy}>
-          <Svg d={IR_I.down} size={15} />{busy ? 'Preparing…' : `Download ${F[1]} Backup${lock ? ' · Locked' : ''}`}
-        </button>
-        <small className="ix-logged"><Svg d={IR_I.hist} size={11} />Every download is recorded in the history below and in Audit Logs</small>
-      </IrCard>
-    </div>
+            </div>
+
+            <div className="mapsup-footer">
+              <div className="mapsup-footer__info"><Svg d={IR_I.hist} size={12} /> Every download is recorded in the backup history and in Audit Logs</div>
+              <div className="mapsup-footer__actions">
+                <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={close} disabled={busy}>Cancel</button>
+                <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={create} disabled={!n || busy}>
+                  <Svg d={IR_I.down} size={13} sw={2.1} />{busy ? 'Preparing…' : `Download ${F[1]} Backup${lock ? ' · Locked' : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </CvPortal>
   );
 }
