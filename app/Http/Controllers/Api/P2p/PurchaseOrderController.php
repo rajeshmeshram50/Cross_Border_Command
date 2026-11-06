@@ -1511,6 +1511,7 @@ class PurchaseOrderController extends Controller
             ->whereNull('deleted_at')->where('status', '!=', SupplierInvoice::STATUS_CANCELLED)
             ->orderBy('id')->get(['purchase_order_id', 'code', 'invoice_date', 'created_at'])
             ->groupBy('purchase_order_id') : collect();
+        $openQty = $this->openQtyByPo($poIds);
         $out = [];
         foreach ($pos as $po) {
             $sh = $ships->get($po->shipment_order_id);
@@ -1526,9 +1527,51 @@ class PurchaseOrderController extends Controller
                     'code' => $s->code,
                     'date' => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
                 ])->values()->all(),
+                /* CS-937 — what is still to be invoiced on the order, summed
+                   over its lines, so the SPI chooser can lock an order whose
+                   every line is already billed. Null = the order has no lines. */
+                'open_qty'         => $openQty[$po->id] ?? null,
+                'fully_invoiced'   => isset($openQty[$po->id]) && $openQty[$po->id] <= 0,
             ];
         }
         return $out;
+    }
+
+    /**
+     * Quantity each order still has open to invoice: per line, ordered minus
+     * billed on live (not deleted, not cancelled) SPIs, floored at 0 because an
+     * over-supplied line does not make room on another — then summed per order.
+     * The same counting as SupplierInvoiceService::openQtyByPoItem, batched for
+     * a list. Orders without lines are left out.
+     *
+     * @param  int[] $poIds
+     * @return array<int,float> po_id => open qty
+     */
+    private function openQtyByPo(array $poIds): array
+    {
+        if (!$poIds) return [];
+
+        $lines = DB::table('p2p_purchase_order_items')
+            ->whereIn('purchase_order_id', $poIds)
+            ->get(['id', 'purchase_order_id', 'quantity']);
+        if ($lines->isEmpty()) return [];
+
+        $billed = DB::table('p2p_supplier_invoice_items as sii')
+            ->join('p2p_supplier_invoices as spi', 'spi.id', '=', 'sii.supplier_invoice_id')
+            ->whereIn('sii.po_item_id', $lines->pluck('id')->all())
+            ->whereNull('sii.deleted_at')
+            ->whereNull('spi.deleted_at')
+            ->where('spi.status', '<>', SupplierInvoice::STATUS_CANCELLED)
+            ->groupBy('sii.po_item_id')
+            ->selectRaw('sii.po_item_id, SUM(sii.qty_spi) AS billed')
+            ->pluck('billed', 'po_item_id');
+
+        $open = [];
+        foreach ($lines as $l) {
+            $left = max(0, round((float) $l->quantity - (float) ($billed[$l->id] ?? 0), 3));
+            $open[(int) $l->purchase_order_id] = round(($open[(int) $l->purchase_order_id] ?? 0) + $left, 3);
+        }
+        return $open;
     }
 
     private function shapeRow(PurchaseOrder $po): array

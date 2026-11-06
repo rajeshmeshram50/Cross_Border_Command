@@ -362,6 +362,24 @@ class SupplierInvoiceController extends Controller
             $user = $this->tenantUser($request);
             $data = $this->validateHeader($request, $user, null);
 
+            /* CS-937 — an order whose every line is already billed has nothing
+               left to invoice. The chooser locks it; this is the same rule for
+               a request that did not come through the chooser. The tenant
+               scope on PurchaseOrder also refuses another client's order. */
+            if (!empty($data['purchase_order_id'])) {
+                $po = PurchaseOrder::find((int) $data['purchase_order_id']);
+                if (!$po) {
+                    abort(response()->json(['status' => false, 'message' => 'Purchase order not found.',
+                        'errors' => ['purchase_order_id' => ['Purchase order not found.']]], 422));
+                }
+                $open = $this->svc->openQtyByPoItem((int) $po->id);
+                if ($open && array_sum(array_map(fn ($q) => max(0, (float) $q), $open)) <= 0) {
+                    $msg = "{$po->code} is fully invoiced — every line is already billed on its SPIs, so there is nothing left to invoice.";
+                    abort(response()->json(['status' => false, 'message' => $msg,
+                        'errors' => ['purchase_order_id' => [$msg]]], 422));
+                }
+            }
+
             $spi = SupplierInvoice::create($data + [
                 'code'            => $this->svc->nextCode((int) $user->client_id, (int) $user->branch_id),
                 /* A DIRECT SPI is only a draft row at this point: the setup modal
@@ -560,6 +578,11 @@ class SupplierInvoiceController extends Controller
                 'eway_file.mimes'    => 'The e-way bill must be a PDF or an image.',
                 'eway_file.max'      => 'The e-way bill may not be larger than 10 MB.',
             ]);
+
+            /* CS-1140 — refused before anything is written, uploads included. */
+            if (!$spi->purchase_order_id) {
+                $this->guardSupplierSegments($spi, $data['items'], (int) $user->client_id);
+            }
 
             // On disk now; the catch deletes them again if the write fails.
             $files = $this->storeAttachments($request, $spi);
@@ -1815,6 +1838,66 @@ class SupplierInvoiceController extends Controller
      *                        calculation so its own old quantity is not counted
      *                        against the line it is replacing.
      */
+    /**
+     * CS-1140 — a Direct SPI bills only what its supplier deals in.
+     *
+     * A PO-backed invoice takes its products from the order, which was held to
+     * this rule when it was raised (PurchaseOrderController). A Direct one picks
+     * them here, so the same rule applies here: the product's segment must be
+     * one of the supplier's, or the product must be mapped to the supplier
+     * directly. The grid already locks such products in its picker, but a line
+     * picked before the supplier was changed in Stage 01 kept its product, and
+     * nothing on the server looked.
+     *
+     * Products are read within the tenant, so another client's product id is
+     * refused as "not found" instead of being billed.
+     */
+    private function guardSupplierSegments(SupplierInvoice $spi, array $items, int $clientId): void
+    {
+        $vendorId = (int) $spi->vendor_id;
+        if (!$vendorId) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Pick the supplier in Stage 01 before adding products.',
+            ], 422));
+        }
+
+        $segments = DB::table('vendor_segments')->where('vendor_id', $vendorId)
+            ->pluck('segment_id')->map(fn ($v) => (int) $v)->all();
+        if (!$segments && ($legacy = DB::table('vendors')->where('id', $vendorId)->value('segment_id'))) {
+            $segments = [(int) $legacy];
+        }
+        $mapped = $this->poSvc->vendorProductIds($vendorId);
+
+        $products = DB::table('products as p')
+            ->leftJoin('clm_segments as sg', 'sg.id', '=', 'p.segment_id')
+            ->where('p.client_id', $clientId)
+            ->whereNull('p.deleted_at')
+            ->whereIn('p.id', collect($items)->pluck('product_id')->map(fn ($v) => (int) $v)->all())
+            ->get(['p.id', 'p.name', 'p.segment_id', 'sg.name as segment_name'])
+            ->keyBy('id');
+
+        $errors = [];
+        foreach ($items as $i => $line) {
+            $pid  = (int) ($line['product_id'] ?? 0);
+            $prod = $products->get($pid);
+            if (!$prod) {
+                $errors["items.$i.product_id"] = ['Product not found.'];
+            } elseif (!in_array((int) $prod->segment_id, $segments, true) && !in_array($pid, $mapped, true)) {
+                $seg = $prod->segment_name ?: 'no segment';
+                $errors["items.$i.product_id"] = ["Segment mismatch — {$prod->name} is in {$seg}, and neither that segment nor the product is mapped to this supplier. Remove it, or map one of them in the Supplier master."];
+            }
+        }
+
+        if ($errors) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => reset($errors)[0],
+                'errors'  => $errors,
+            ], 422));
+        }
+    }
+
     private function priceLines(array $items, bool $international, ?int $poId = null, ?int $spiId = null): array
     {
         $poLines = DB::table('p2p_purchase_order_items')

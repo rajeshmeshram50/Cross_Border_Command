@@ -96,12 +96,16 @@ const inspectionOf = (r: PoListRow): { label: string; tone: string; blocked: boo
 function Row({ r, on, onPick }: { r: PoListRow; on: boolean; onPick: () => void }) {
   const proc = procOf(r);
   const insp = inspectionOf(r);
-  const pick = () => { if (!insp.blocked) onPick(); };
+  /* CS-937 — every line already billed on the order's SPIs: listed so the
+     user can see it, but there is nothing left to invoice against it. */
+  const full = !!r.fully_invoiced;
+  const blocked = insp.blocked || full;
+  const pick = () => { if (!blocked) onPick(); };
   return (
     <div
-      className={`spim${on ? ' sel' : ''}${insp.blocked ? ' is-locked' : ''}`}
-      role="option" aria-selected={on} aria-disabled={insp.blocked} tabIndex={insp.blocked ? -1 : 0}
-      title={insp.blocked ? 'Physical inspection pending' : undefined}
+      className={`spim${on ? ' sel' : ''}${blocked ? ' is-locked' : ''}`}
+      role="option" aria-selected={on} aria-disabled={blocked} tabIndex={blocked ? -1 : 0}
+      title={full ? 'Fully invoiced — every line of this PO is already billed' : insp.blocked ? 'Physical inspection pending' : undefined}
       onClick={pick}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}
     >
@@ -111,7 +115,8 @@ function Row({ r, on, onPick }: { r: PoListRow; on: boolean; onPick: () => void 
         <div className="spim-sub">{refsOf(r)}</div>
       </div>
       <span className="spim-amt">{amountOf(r)}</span>
-      {proc ? <span className={`spim-st spim-st--${proc.tone}`}>{proc.label}</span>
+      {full ? <span className="spim-st spim-st--done">Fully Invoiced</span>
+        : proc ? <span className={`spim-st spim-st--${proc.tone}`}>{proc.label}</span>
         : <span className={`spim-st spim-st--${insp.tone}`}>{insp.label}</span>}
       <span className="spim-tick"><IcoTick /></span>
     </div>
