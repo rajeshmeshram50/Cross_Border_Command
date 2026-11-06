@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, type PageMeta, type TransferRow } from '../cvApi';
 import { CvCard, CvPage, CvStrip, CvTabsRow, Svg, errMsg } from '../shared';
 import BackupModal, { type BackupInfo } from './BackupModal';
 import ImportModal from './ImportModal';
 import { HistoryCard, IR_I } from './irShared';
-import type { ImportReview } from './irSample';
 
 /* CredVault · Import & Recovery — the prototype's importRecoveryBody: bulk import into My Vault, and backups. */
 
@@ -27,12 +25,10 @@ export default function ImportRecovery() {
   const [bk, setBk] = useState<Hist>(EMPTY);
   const [info, setInfo] = useState<BackupInfo | null>(null);
   const [importing, setImporting] = useState(false);
-  const [sampleImports, setSampleImports] = useState<TransferRow[]>([]);
   const [q, setQ] = useState('');
   const [qBk, setQBk] = useState('');
   const [backingUp, setBackingUp] = useState(false);
   const toast = useToast();
-  const { user } = useAuth();
   // One request id per list, so a slow older page can't overwrite a newer one.
   const impSeq = useRef(0);
   const bkSeq = useRef(0);
@@ -61,34 +57,20 @@ export default function ImportRecovery() {
 
   useEffect(() => { loadImports(1); loadBackups(1); }, [loadImports, loadBackups]);
 
-  /* Sample data: a saved review becomes a row of the import history on this screen only (nothing is sent to the API). */
-  const saved = (r: ImportReview) => {
-    const n = (imp.meta?.total ?? 0) + sampleImports.length + 1;
-    const weak = r.accepted.filter(x => x.flags.includes('weak')).length;
-    const dups = r.discarded.filter(x => x.reasons.some(y => y.label === 'Duplicate')).length;
-    const row: TransferRow = {
-      id: -Date.now(), code: `IM-${String(n).padStart(4, '0')}`, kind: 'import', scope: 'mine', scope_label: 'My Vault',
-      format: r.format, format_label: r.format === 'csv' ? 'CSV' : 'Excel', file_name: r.fileName, source: `${r.category.label} sheet`,
-      items: r.accepted.length, skipped: r.discarded.length, weak, duplicates: dups, size_bytes: null,
-      include_passwords: false, locked: false, status: 'done', failure_reason: null,
-      by: user?.name ?? 'You', by_id: user?.id ?? 0, by_me: true, by_role: null, at: new Date().toISOString(),
-    };
-    setSampleImports(s => [row, ...s]);
+  /* POST /imports saved the rows: close every popup, show the server's message, reload the history. */
+  const saved = (message: string) => {
     setImporting(false);
     setTab('import');
-    toast.success(`${r.accepted.length} ${r.category.label} ${r.accepted.length === 1 ? 'credential' : 'credentials'} imported to My Vault`,
-      `${r.discarded.length} discarded${weak ? ` · ${weak} with weak passwords` : ''}`);
+    toast.success(message);
+    loadImports(1);
   };
 
-  /* Search filters the history rows on screen (the loaded page and this session's imports). */
+  /* Search filters the history rows on screen (the loaded page). */
   const term = q.trim().toLowerCase();
-  const allImp = [...sampleImports, ...imp.rows];
   const impRows = term
-    ? allImp.filter(h => [h.code, h.file_name, h.source, h.format_label, h.by, h.scope_label].some(v => (v ?? '').toLowerCase().includes(term)))
-    : allImp;
-  const impMeta: PageMeta | null = imp.meta
-    ? (term ? { ...imp.meta, total: impRows.length, current_page: 1, last_page: 1 } : { ...imp.meta, total: imp.meta.total + sampleImports.length })
-    : null;
+    ? imp.rows.filter(h => [h.code, h.file_name, h.source, h.format_label, h.by, h.scope_label].some(v => (v ?? '').toLowerCase().includes(term)))
+    : imp.rows;
+  const impMeta: PageMeta | null = imp.meta && term ? { ...imp.meta, total: impRows.length, current_page: 1, last_page: 1 } : imp.meta;
   const termBk = qBk.trim().toLowerCase();
   const bkRows = termBk
     ? bk.rows.filter(h => [h.code, h.format_label, h.scope_label, h.by, h.file_name, h.status === 'failed' ? 'failed' : 'downloaded', h.locked ? 'password locked' : 'not locked']
@@ -104,7 +86,7 @@ export default function ImportRecovery() {
 
       <CvCard pane>
         <CvTabsRow active={tab} onTab={k => setTab(k as Tab)} tabs={[
-          { key: 'import', label: 'Import Bulk Credentials', icon: IR_I.up, count: imp.meta ? imp.meta.total + sampleImports.length : null },
+          { key: 'import', label: 'Import Bulk Credentials', icon: IR_I.up, count: imp.meta?.total ?? null },
           { key: 'backup', label: 'Download Credentials Backup', icon: IR_I.down, count: bk.meta?.total ?? null },
         ]}
           search={isImport ? q : qBk} onSearch={isImport ? setQ : setQBk}

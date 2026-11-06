@@ -5,12 +5,12 @@ import { CvPortal, Svg, errMsg } from '../shared';
 import { IR_I, IrCard } from './irShared';
 import ImportCategoryModal from './ImportCategoryModal';
 import ImportReviewModal from './ImportReviewModal';
-import type { ImportReview } from './irSample';
+import type { ImportReview } from './irReview';
 
 const COLS = ['name', 'url', 'username', 'password', 'category', 'notes'];
 const FMTS: [string, string, string][] = [['Excel', '.xlsx', IR_I.sheet], ['CSV', '.csv', IR_I.file]];
 
-export default function ImportModal({ onClose, onImported }: { onClose: () => void; onImported: (review: ImportReview) => void }) {
+export default function ImportModal({ onClose, onImported }: { onClose: () => void; onImported: (message: string) => void }) {
   const toast = useToast();
   const [over, setOver] = useState(false);
   const [cat, setCat] = useState<{ file: File | null } | null>(null);
@@ -109,7 +109,8 @@ export default function ImportModal({ onClose, onImported }: { onClose: () => vo
       {cat && <ImportCategoryModal initialFile={cat.file} onClose={() => setCat(null)}
         onReviewed={r => { setCat(null); setReview(r); }} />}
       {review && <ImportReviewModal review={review} onBack={() => setReview(null)}
-        onSaved={r => { setReview(null); onImported(r); }} />}
+        onExpired={() => { setReview(null); setCat({ file: null }); }}
+        onSaved={m => { setReview(null); onImported(m); }} />}
     </CvPortal>
   );
 }
