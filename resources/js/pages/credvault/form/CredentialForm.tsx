@@ -292,9 +292,24 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               options={[{ value: '', label: 'Select…' }, ...(f.options ?? []).map(o => ({ value: o, label: o }))]} />
           );
         } else if (f.kind === 'textarea') {
+          // A masked textarea (Secure Note, Private Key, Seed…) gets the eye and copy buttons in My Vault (CS-1438).
+          const eye = !!f.secret && !inCritical;
+          const vis = eye && shown.has(f.key);
+          if (eye) wrapCls += ' crd-pw crd-pw--ta';
           ctl = (
-            <textarea id={`crdF_${f.key}`} className={`${cls} crd-ta${f.secret ? ' crd-secret-ta' : ''}`} rows={3} value={val}
-              placeholder={ph} maxLength={f.max ?? undefined} autoComplete="off" onChange={e => onText(e.target.value)} />
+            <>
+              <textarea id={`crdF_${f.key}`} className={`${cls} crd-ta${f.secret && !vis ? ' crd-secret-ta' : ''}${eye ? ' crd-pw__in' : ''}`} rows={3} value={val}
+                placeholder={ph} maxLength={f.max ?? undefined} autoComplete="off" onChange={e => onText(e.target.value)} />
+              {eye && (
+                <span className="crd-pw__btns">
+                  <button type="button" data-h40="skip" className={`crd-pw__b${vis ? ' is-on' : ''}`} title={vis ? `Hide ${f.label}` : `Show ${f.label}`}
+                    onClick={() => setShown(s => { const n = new Set(s); if (vis) n.delete(f.key); else n.add(f.key); return n; })}>
+                    <Svg icon={vis ? undefined : 'eye'} d={vis ? EYE_OFF : undefined} size={14} />
+                  </button>
+                  <button type="button" data-h40="skip" className="crd-pw__b" title={`Copy ${f.label}`} onClick={() => copyField(val, f.label)}><Svg icon="copy" size={14} /></button>
+                </span>
+              )}
+            </>
           );
         } else if (f.kind === 'password' || f.kind === 'secret') {
           const vis = shown.has(f.key);
@@ -368,9 +383,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     render: (style: CSSProperties | undefined) => (
       <div className="mapsup-ffield" style={style}>
         <Lbl text={lbl} badge={<span className="mapsup-lock"><Svg icon="lock" size={9} sw={2.6} /> Auto</span>} />
-        <div className="mapsup-inputwrap is-frozen">
+        <div className={`mapsup-inputwrap is-frozen${inCritical ? '' : ' is-inert'}`}>
           <span className="mapsup-input-ico"><Svg icon={ico} size={13} /></span>
-          <input className="mapsup-finput has-ico" type="text" value={value} readOnly />
+          <input className="mapsup-finput has-ico" type="text" value={value} readOnly tabIndex={inCritical ? undefined : -1} aria-readonly="true" />
           <span className="mapsup-freeze-ico"><Svg icon="lock" size={9} sw={2.6} /></span>
         </div>
       </div>
@@ -443,7 +458,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           <input className="mapsup-finput has-ico" type={type} value={value} placeholder={ph} autoComplete="off"
             maxLength={type === 'tel' ? 16 : 191} inputMode={type === 'tel' ? 'tel' : 'email'}
             onChange={e => {
-              const v = type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value;
+              let v = type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value;
+              // My Vault: spaces alone are not a value (no "Edited", no Update) — a phone can't start with or double a
+              // space, and an email holds none at all.
+              if (!inCritical) v = type === 'tel' ? v.replace(/^\s+/, '').replace(/\s{2,}/g, ' ') : v.replace(/\s/g, '');
               set(v);
               const m = errors[k] && v.trim() ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;
               if (m) setErrors(x => ({ ...x, [k]: m })); else clr(k);

@@ -19254,3 +19254,30 @@
   cursor: not-allowed;
   transform: none;
 }
+
+/* CS-1438 · My Vault form: the locked Auto fields (Credential ID, Category, Owner) are inert — no focus, border change or text cursor. */
+.cvx .mapsup-inputwrap.is-frozen.is-inert {
+  cursor: not-allowed;
+}
+
+.cvx #crd-host .crd-box .mapsup-inputwrap.is-frozen.is-inert input {
+  pointer-events: none;
+  user-select: none;
+  caret-color: transparent;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* CS-1438 · My Vault: a masked textarea (Secure Note, Private Key…) carries its eye / copy buttons in the top-right corner. */
+.cvx #crd-host .crd-pw.crd-pw--ta {
+  position: relative;
+}
+
+.cvx #crd-host .crd-pw.crd-pw--ta .crd-pw__btns {
+  top: 8px;
+  transform: none;
+}
+
+.cvx #crd-host .crd-pw.crd-pw--ta textarea.crd-pw__in {
+  padding-right: 84px !important;
+}
