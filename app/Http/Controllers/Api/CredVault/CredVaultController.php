@@ -336,10 +336,8 @@ class CredVaultController extends Controller
         $this->sweepUnlocks($u->client_id);
         [$c, $acc] = $this->findCredential($u, $id);
         $d = $this->detail($c, $u, $acc, true);
-        // Plain-text values were returned: logged like a reveal, so the trail stays complete.
-        if (!empty($d['all_values'])) {
-            $this->audit($u, 'reveal', $c, 'All stored values returned by the detail API', ['fields' => array_keys($d['all_values'])]);
-        }
+        // Opening the drawer is logged once by logAccess ('Opened credential details');
+        // an actual field reveal is logged by the reveal/copy endpoint. No entry here.
 
         return response()->json(['status' => true, 'data' => $d], 200);
     }
@@ -558,6 +556,8 @@ class CredVaultController extends Controller
         [$c] = $this->findCredential($u, $id);
 
         $page = AuditLog::where('client_id', $u->client_id)->where('credential_id', $c->id)
+            // Hide the legacy per-open reveal rows; opening is logged once as 'view'.
+            ->whereNot(fn ($w) => $w->where('action', 'reveal')->where('detail', 'All stored values returned by the detail API'))
             ->with('user:id,name,user_type,designation')->orderByDesc('id')
             ->paginate($f['per_page'] ?? 50, ['*'], 'page', $f['page'] ?? 1);
 
