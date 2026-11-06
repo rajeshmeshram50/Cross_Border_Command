@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Attachment, type CredentialDetail, type FieldDef, type Loose, type Meta, type Risk, type TypeDef } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import ExpiryPicker from './ExpiryPicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
@@ -221,7 +222,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
-      const v = f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
+      // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
+      const v = f.key === 'acno' ? raw.replace(/\D/g, '').slice(0, 18)
+        : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
         const m = v.trim() ? checkField(f, v.trim()) : null;
@@ -298,7 +301,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           ctl = (
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
-                value={val} placeholder={ph} maxLength={f.max ?? undefined} autoComplete="new-password"
+                value={val} placeholder={ph} maxLength={f.key === 'acno' ? 18 : f.max ?? undefined} autoComplete="new-password"
+                inputMode={f.key === 'acno' ? 'numeric' : undefined}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
               <span className="crd-pw__btns">
                 <button type="button" data-h40="skip" className={`crd-pw__b${vis ? ' is-on' : ''}`} title={vis ? 'Hide' : 'Show / hide'}
@@ -330,6 +334,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           }
         } else if (f.kind === 'date') {
           ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal" onChange={v => onText(v)} />;
+        } else if (f.key === 'exp') {
+          // Credit Card expiry (MM/YY): typeable, and its calendar icon opens a month / year picker.
+          ctl = <ExpiryPicker id={`crdF_${f.key}`} className={cls} value={val} placeholder={ph} onChange={onText} onBlur={onLeave} />;
         } else {
           ctl = (
             <input id={`crdF_${f.key}`} type={f.kind} className={cls} value={val} placeholder={ph}
@@ -344,7 +351,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               badge={generated.has(f.key) && f.key === prefillKey
                 ? <span className="mapsup-lock mapsup-lock--auto"><Svg icon="key" size={9} sw={2.6} /> Generated</span> : undefined} />
             <div className={wrapCls}>
-              {f.kind !== 'date' && <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>}
+              {f.kind !== 'date' && f.key !== 'exp' && <span className="mapsup-input-ico"><Svg icon={f.icon ?? 'tag'} size={13} /></span>}
               {ctl}
             </div>
             {meter}
@@ -674,6 +681,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const check = (k: string) => !editing || changed(k);
     if (!name.trim()) errs.name = 'Enter a name for this credential';
     else if (name.trim().length < 2) errs.name = 'The name needs at least 2 characters';
+    // A name of symbols only (e.g. "@@@###") names nothing: it needs at least one letter or digit (any script).
+    else if (!/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
     if (!risk) errs.risk = 'Select the risk level';
     T.fields.forEach(f => {
       const k = 'fields.' + f.key;

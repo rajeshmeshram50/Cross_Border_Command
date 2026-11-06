@@ -1385,6 +1385,39 @@
   padding: 3px 9px;
 }
 
+/* The type picker search's clear (×): shown in place of the "/" hint once text is typed. */
+.cvx .crd-search__clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  color: #cffafe;
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .22);
+  transition: background .15s, color .15s;
+}
+
+.cvx .crd-search__clear:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .24);
+}
+
+.cvx .crd-pickbox--cv .crd-search__clear {
+  color: #0891b2;
+  background: #ecfeff;
+  border-color: #a5f3fc;
+}
+
+.cvx .crd-pickbox--cv .crd-search__clear:hover {
+  color: #0e7490;
+  background: #cffafe;
+}
+
 .cvx .crd-pick {
   flex: 1;
   min-height: 0;
@@ -2759,6 +2792,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Type picker header: the search box and the close (×) share one row, centred on each other —
+   the search's default 0 26px 20px margin is for its old place under the title, not this row. */
+.cvx .crd-hbtns .crd-search {
+  margin: 0;
+  height: 44px;
+}
+
+.cvx .crd-hbtns .mapsup-close {
+  flex-shrink: 0;
 }
 
 .cvx #crd-host .mapsup-fgrid {
@@ -18917,6 +18961,42 @@
 .master-datepicker-popup.crd-cal {
   min-width: 0 !important;
   width: 320px !important;
+}
+
+/* Credit Card "Expiry (MM/YY)": the calendar icon is a button that opens the month / year picker. */
+.cvx .crd-exp {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.cvx .mapsup-input-ico.crd-exp__btn {
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cvx .mapsup-input-ico.crd-exp__btn:hover,
+.cvx .mapsup-input-ico.crd-exp__btn.is-open {
+  color: #0891b2 !important;
+  background: #ecfeff;
+}
+
+.master-datepicker-popup.crd-cal.crd-exp__pop {
+  width: 260px !important;
+}
+
+[data-bs-theme="dark"] .cvx .mapsup-input-ico.crd-exp__btn:hover,
+[data-bs-theme="dark"] .cvx .mapsup-input-ico.crd-exp__btn.is-open {
+  color: #22d3ee !important;
+  background: rgba(34, 211, 238, .12);
 }
 
 /* Move to Recycle Bin and the other ConfirmModal popups · dark mode, in their red theme */
