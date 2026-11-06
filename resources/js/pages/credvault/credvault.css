@@ -19432,3 +19432,94 @@
     margin-left: 0 !important;
   }
 }
+
+/* ══ Password Health table · dark mode: Issue, Details and Suggested Action had light-mode ink (#0c2c3a) on the dark rows ══ */
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss,
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl b,
+[data-bs-theme="dark"] .cvx.ph-page .ph-ref {
+  color: #e2f3f8;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--weak svg,
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--twofa svg {
+  color: #fb7185;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--reused svg,
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--rotation svg {
+  color: #fbbf24;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl small {
+  color: #94b4c2;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl em.is-bad {
+  color: #fda4af;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-act {
+  color: #a9c6d2;
+}
+
+/* ══ Password Health table: one alignment per column, header and cells alike.
+   Left — Credential Name, Owner, Issue, Details, Suggested Action / Resolved On.
+   Centre — Sr. No, Credential ID, Severity, Action. ══ */
+.cvx.ph-page .whm-tbl.mv-tbl thead th,
+.cvx.ph-page .whm-tbl.mv-tbl tbody td {
+  text-align: center !important;
+}
+
+.cvx.ph-page .whm-tbl.mv-tbl thead th:is(.ph-th-2, .ph-th-3, .ph-th-4, .ph-th-6, .ph-th-7),
+.cvx.ph-page .whm-tbl.mv-tbl tbody td:is(:nth-child(3), :nth-child(4), :nth-child(5), :nth-child(7), :nth-child(8)) {
+  text-align: left !important;
+}
+
+.cvx.ph-page .whm-tbl.mv-tbl tbody td.mv-empty {
+  text-align: center !important;
+}
+
+.cvx.ph-page .mv-tbl .mv-ownc,
+.cvx.ph-page .mv-tbl .whm-namecell {
+  justify-content: flex-start;
+}
+
+.cvx.ph-page .mv-tbl td:nth-child(6) .znm-flagcell,
+.cvx.ph-page .mv-tbl td:nth-child(9) .whm-acts {
+  justify-content: center;
+}
+
+/* Details: title and explanation start on the same left edge. */
+.cvx.ph-page .mv-tbl .ph-dl {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* ══ Type picker (My Vault) · dark mode: risk badges are tinted on the dark tiles instead of light blocks ══ */
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--low {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .12);
+  border-color: rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--medium {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(251, 191, 36, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--high {
+  color: #fdba74;
+  background: rgba(249, 115, 22, .12);
+  border-color: rgba(251, 146, 60, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--critical {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .12);
+  border-color: rgba(251, 113, 133, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk i {
+  background: currentColor;
+}
