@@ -61,7 +61,7 @@ const NOTES: Record<Key, {
     lead: 'The label matched, so the card fills in and the walk appears as three rungs.',
     points: [
       'Chip turns BOX_SCAN_VERIFIED, count moves to 1/2.',
-      'Next names the zone, but any level — zone, rack or shelf — scans directly and marks the ones above it.',
+      'Next names the destination — the shelf here, or the zone for a zone-only box; scanning it ticks the levels above, and any level still scans directly.',
       'The task binds to this handheld so nobody takes it mid-walk.',
     ],
     records: {
@@ -76,7 +76,7 @@ const NOTES: Record<Key, {
   },
   s5: {
     title: 'Walking the levels',
-    lead: 'Zone, then rack, then shelf. Each scan ticks its rung and moves the prompt on.',
+    lead: 'The prompt points at the destination — the shelf — the whole way. Scanning any level ticks that rung and the ones above it.',
     points: ['Scanning the shelf directly ticks all three at once.', 'The field stays focused — the scanner types, nobody taps.'],
   },
   s6: {
@@ -299,7 +299,7 @@ export default function InventoryHandheldGuide() {
 
                 {key === 's3' && (
                   <>
-                    <div className="hhg-toast"><b>Box scanned successfully</b><small>Now scan the zone ZN-A</small></div>
+                    <div className="hhg-toast"><b>Box scanned successfully</b><small>Now scan the shelf SH-102</small></div>
                     <section className="hhg-card">
                       <div className="hhg-card-top">
                         <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
@@ -318,13 +318,13 @@ export default function InventoryHandheldGuide() {
                       </div>
                     </section>
                     <div className="hhg-slots">
-                      <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="next" />
+                      <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="pending" />
                       <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="pending" />
-                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="pending" />
+                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="next" />
                     </div>
                     <div className="hhg-next">
-                      <span>NEXT SCAN</span><b>Zone QR ZN-A</b>
-                      <small>Scan the zone next — or the shelf directly; any level scans and marks the ones above it.</small>
+                      <span>NEXT SCAN</span><b>Shelf QR SH-102</b>
+                      <small>The box's destination — the last level of its address. Scanning it places the box and ticks the zone and rack above. A zone-only box reads Zone QR instead.</small>
                     </div>
                   </>
                 )}
@@ -347,15 +347,15 @@ export default function InventoryHandheldGuide() {
 
                 {key === 's5' && (
                   <>
-                    <div className="hhg-toast"><b>Zone scanned successfully</b><small>Now scan the rack RK-A1</small></div>
+                    <div className="hhg-toast"><b>Zone scanned successfully</b><small>Now scan the shelf SH-102</small></div>
                     <div className="hhg-slots">
                       <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="done" />
-                      <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="next" />
-                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="pending" />
+                      <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="pending" />
+                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="next" />
                     </div>
                     <div className="hhg-next">
-                      <span>NEXT SCAN</span><b>Rack QR RK-A1</b>
-                      <small>Scanning the shelf directly ticks all three at once.</small>
+                      <span>NEXT SCAN</span><b>Shelf QR SH-102</b>
+                      <small>The destination. Scanning it finishes the put-away and ticks the rack above at the same time.</small>
                     </div>
                     <Waiting label="SCAN THE ZONE / RACK / SHELF" />
                   </>
@@ -432,6 +432,10 @@ export default function InventoryHandheldGuide() {
                       <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="done" />
                       <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="done" />
                       <Rung label="SHELF" code="SH-102" sub="Level 2"         state="done" />
+                    </div>
+                    <div className="hhg-next">
+                      <span>CURRENT LOCATION</span><b>Zone ZN-A · Rack RK-A1 · Shelf SH-102</b>
+                      <small>Where B-001 is stored now.</small>
                     </div>
                   </>
                 )}
