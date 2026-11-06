@@ -3974,7 +3974,8 @@ class CredVaultController extends Controller
 
     /**
      * The credentials an export or backup covers. mine = owned · team = team
-     * vault · all = both; never ones that are only shared with the user.
+     * vault · all = both; never ones that are only shared with the user,
+     * and never Critical Vault ones.
      * $light skips the encrypted columns — for counting, not for writing.
      */
     protected function fileScope(User $u, string $scope, bool $light = false): Collection
@@ -3986,6 +3987,8 @@ class CredVaultController extends Controller
         return $all->filter(function ($c) use ($acc, $scope, $u) {
             $via = $acc[$c->id][1] ?? null;
             if ($via === 'share' || $via === null) return false;
+            // A backup is the My Vault / Team Vault file: Critical Vault credentials never leave in one.
+            if ($c->isCriticalVault()) return false;
             return match ($scope) {
                 'mine'  => $c->owner_id === $u->id,
                 'team'  => $c->scope === 'team',
