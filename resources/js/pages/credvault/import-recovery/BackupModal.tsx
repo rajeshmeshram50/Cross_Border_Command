@@ -51,7 +51,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
   const [lock, setLock] = useState(true);
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
-  const [acct, setAcct] = useState('');
   const [show, setShow] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<CvApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +62,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
   };
   const n = countOf(scope);
   const score = pwScore(pw);
-  const needAcct = withPw && !lock;
   const ferr = (k: string) => err?.field(k);
   const clearErr = () => setErr(null);
 
@@ -75,14 +73,13 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
       const r = await cvApi.backup({
         format: fmt, scope, include_passwords: withPw, lock,
         ...(lock ? { password: pw, password_confirmation: pw2 } : {}),
-        ...(needAcct ? { account_password: acct } : {}),
       });
       const code = r.headers['x-credvault-code'] ?? '';
       const items = Number(r.headers['x-credvault-items'] ?? n ?? 0);
       const withheld = Number(r.headers['x-credvault-withheld'] ?? 0);
       toast.success(`${code ? `${code} · ` : ''}${items} credentials downloaded as ${F[1]}${lock ? ' · password locked' : ''}`,
         withheld ? `${withheld} protected secret${withheld > 1 ? 's were' : ' was'} left out — they open through an unlock, not a file.` : undefined);
-      setPw(''); setPw2(''); setAcct('');
+      setPw(''); setPw2('');
       onDone();
       onClose();
     } catch (e) {
@@ -187,18 +184,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
         ) : (
           <>
             <div className="ix-note is-warn"><Svg d={IR_I.warn} size={13} /><span>{withPw ? 'Without a lock, the passwords in this file can be read by anyone who gets it.' : 'This file has no passwords, but it still lists your accounts and usernames.'}</span></div>
-            {needAcct && (
-              <div className="ix-pwrow">
-                <div className="ix-f">
-                  <label>Your account password <i>*</i></label>
-                  <div className="ix-in">
-                    <input type={show.acct ? 'text' : 'password'} placeholder="Confirm it’s you" autoComplete="current-password" value={acct} onChange={e => { setAcct(e.target.value); clearErr(); }} />
-                    {eyeBtn('acct')}
-                  </div>
-                  {ferr('account_password') && <span className="cv-ferr">{ferr('account_password')}</span>}
-                </div>
-              </div>
-            )}
           </>
         )}
         <div className="ir-err">{err?.message ?? ''}</div>
