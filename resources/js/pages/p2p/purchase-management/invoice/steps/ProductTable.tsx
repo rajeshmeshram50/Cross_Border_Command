@@ -412,31 +412,33 @@ const Row = memo(function Row({
                   : { productId: pick.productId, spiName: pick.name });
               }}
             />
-            <Tooltip label={line.productId == null
-              ? 'This line is not linked to a product in the master'
-              : 'Edit this product in the product master'}>
-              <button
-                type="button" className="cpd-iconbtn"
-                disabled={readOnly || line.productId == null}
-                onClick={() => line.productId != null && onEditProduct(line.productId)}
-              >
-                <IcoPencil />
-              </button>
-            </Tooltip>
+            {/* View-only (a completed SPI): no edit / add buttons, they could not be used and
+                crowded the HSN · GST line in the narrower view column. */}
+            {!readOnly && (
+              <Tooltip label={line.productId == null
+                ? 'This line is not linked to a product in the master'
+                : 'Edit this product in the product master'}>
+                <button
+                  type="button" className="cpd-iconbtn"
+                  disabled={line.productId == null}
+                  onClick={() => line.productId != null && onEditProduct(line.productId)}
+                >
+                  <IcoPencil />
+                </button>
+              </Tooltip>
+            )}
           </div>
           <div className="cpd-prod__meta">
             <span className="cpd-kv">HSN <b>{line.hsn}</b></span>
             <span className="cpd-prod__dot" />
             <span className="cpd-kv">GST <b>{line.gst}%</b></span>
-            <Tooltip label="Add a new product to the product master">
-              <button
-                type="button" className="cpd-addbtn"
-                disabled={readOnly}
-                onClick={onAddProduct}
-              >
-                <IcoPlus />
-              </button>
-            </Tooltip>
+            {!readOnly && (
+              <Tooltip label="Add a new product to the product master">
+                <button type="button" className="cpd-addbtn" onClick={onAddProduct}>
+                  <IcoPlus />
+                </button>
+              </Tooltip>
+            )}
           </div>
           {issue?.product && <div className="cpd-cell-msg">{issue.product}</div>}
         </div>

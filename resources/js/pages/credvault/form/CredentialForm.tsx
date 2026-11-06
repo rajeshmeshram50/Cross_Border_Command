@@ -119,6 +119,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
   const wasCritical = detail?.risk === 'critical';
   const inCritical = !!init.critical || wasCritical;
+  const addFromCritical = !!init.critical && !detail;
   const P = detail?.protection;
   const [prot, setProt] = useState<ProtectionValue>(() => ({
     admin: wasCritical && P ? P.admin : true,
@@ -544,7 +545,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      meta.risks.filter(r => (r.key === 'critical') === inCritical).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
+      // Adding from the Critical Vault offers every level, as the Figma (Critical is the default);
+      // elsewhere the form keeps its own vault's levels.
+      meta.risks.filter(r => (addFromCritical ? true : (r.key === 'critical') === inCritical)).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
   ];
   if (isPw) {
     s3.push(selItem('rotation_days', 'Password Rotation', 'cal', false, rotation,
@@ -840,8 +843,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
-      toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
+      // The Critical Vault API takes critical risk only (CredVaultController:3149), so a lower level
+      // picked in the Critical Vault's Add form is saved to My Vault.
+      const toMyVault = addFromCritical && !critical;
+      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical && !toMyVault);
+      toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`,
+        toMyVault ? `Saved in My Vault — only critical credentials live in the Critical Vault.` : r.message);
       onSaved(r.data);
     } catch (e) {
       if (e instanceof CvApiError && Object.keys(e.errors).length) {

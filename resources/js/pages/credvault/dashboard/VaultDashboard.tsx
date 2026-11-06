@@ -6,6 +6,7 @@ import { cvApi, CV_ROUTES, type AuditEvent, type Loose } from '../cvApi';
 import { CvPage, CvStrip, StripBtn, Svg, errMsg } from '../shared';
 import { AnimCtx, VD_I, num, useVdTip } from './vdKit';
 import { Activity, Attention, Backup, Depts, Hero, Hygiene, Imports, Kpis, Recent, RiskCard, Types, Where, type Routes } from './widgets';
+import ComingSoon from '../../../components/ui/ComingSoon';
 import './dashboard.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -34,7 +35,17 @@ function Shimmer() {
   );
 }
 
+/* Not shown on the server yet, so the route shows the shared ComingSoon placeholder for now.
+ * The real dashboard is left intact below as `VaultDashboardFull` — delete this wrapper and
+ * re-export it to bring it back; nothing else has to change. Same pattern as HrOverview and
+ * the main dashboards. */
 export default function VaultDashboard() {
+  return (
+    <ComingSoon title="The Vault Dashboard is being rebuilt" />
+  );
+}
+
+function VaultDashboardFull() {
   const navigate = useNavigate();
   const toast = useToast();
   const [data, setData] = useState<Loose | null>(null);

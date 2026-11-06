@@ -1114,8 +1114,12 @@ export default function InvoiceForm({
 
   const isLast = stage === STAGES.length - 1;
   const poHasPi = !!draft.piNumber || lines.some(l => l.piItemId != null);
+  // An opened SPI is known to be With-PO or Without-PO only once it has loaded (setNoPo, above);
+  // until then stage 02 carries no match type, so a 2-way SPI never flashes "3-Way Match" (CS-1139).
+  const typeUnknown = !input.direct && poLoading;
   const stageLabel = (i: number) =>
-    (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i]))
+    (typeUnknown && i === 1 ? UNMATCHED_STAGES[1] : undefined)
+    || (isDirect && (matchedToPi ? DIRECT_STAGES[i] : UNMATCHED_STAGES[i]))
     || (!isDirect && i === 1 && !poLoading && !poHasPi
       ? { title: 'Invoice & Product Details (2-Way Match)', desc: 'Enter invoice details & match products against the PO' }
       : undefined)

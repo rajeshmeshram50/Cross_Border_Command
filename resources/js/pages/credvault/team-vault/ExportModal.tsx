@@ -7,7 +7,7 @@ import { TV_IC } from './tvShared';
 /**
  * Team Vault · "Export Credentials" popup: exports what the table lists (its tab,
  * department and search), narrowed to the ticked categories (counts from
- * /exports/preview), as CSV / JSON, with or without notes and passwords. Readable passwords take
+ * /exports/preview), as CSV, with or without notes and passwords. Readable passwords take
  * the risk acknowledgement and the account password; the server builds the
  * file and logs the export.
  */
@@ -16,7 +16,6 @@ const FOLDER = '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l
 const SUM = '<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>';
 const FILE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/>';
 const CSV = '<path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/>';
-const JSON_ICO = '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/>';
 const WARN = '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>';
 
 interface Group { group: string; count: number }
@@ -79,7 +78,7 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [cats, setCats] = useState<Record<string, boolean>>({});
-  const [fmt, setFmt] = useState<'csv' | 'json'>('csv');
+  const fmt = 'csv';
   const [notes, setNotes] = useState(true);
   const [pw, setPw] = useState(false);
   const [ack, setAck] = useState(false);
@@ -205,15 +204,13 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
                   <span className="mapsup-sechead__ico"><Svg d={FILE} size={14} sw={2.1} /></span>
                   <div className="mapsup-sechead__txt">
                     <span className="mapsup-sechead__title">File format &amp; contents</span>
-                    <span className="mapsup-sechead__sub">Pick a format and what each row contains</span>
+                    <span className="mapsup-sechead__sub">A CSV file · choose what each row contains</span>
                   </div>
                 </div>
-                <div className="gp-modes">
-                  <button type="button" data-h40="skip" className={fmt === 'csv' ? 'is-on' : ''} onClick={() => setFmt('csv')}>
+                {/* CSV only (JSON removed on request); the one option spans the row. */}
+                <div className="gp-modes" style={{ gridTemplateColumns: '1fr' }}>
+                  <button type="button" data-h40="skip" className="is-on">
                     <Svg d={CSV} size={14} sw={2.1} /><span><b>CSV</b><small>Opens in Excel or Sheets</small></span>
-                  </button>
-                  <button type="button" data-h40="skip" className={fmt === 'json' ? 'is-on' : ''} onClick={() => setFmt('json')}>
-                    <Svg d={JSON_ICO} size={14} sw={2.1} /><span><b>JSON</b><small>For import into other tools</small></span>
                   </button>
                 </div>
                 <div className="gp-opts">

@@ -19,7 +19,6 @@
    Every light .cvd-* colour mapped to the CredVault dark recipe (CLM Segment Master): white
    sheens ~.04, tints kept as translucent colour, light text, muted secondary text,
    translucent teal borders; vivid icon tiles, bars and charts keep their colours. */
-
 [data-bs-theme="dark"] .cvx .cvd-upd {
   color: rgba(125, 217, 242, 1);
   background: rgba(255, 255, 255, 0.04);
@@ -41,16 +40,10 @@
 [data-bs-theme="dark"] .cvx .cvd-card__hd small {
   color: #8fb3c2;
 }
-[data-bs-theme="dark"] .cvx .cvd-card__ico {
-  color: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-link {
   color: rgba(125, 217, 242, 1);
   background: rgba(26, 243, 255, 0.12);
   border: 1px solid rgba(83, 199, 223, 0.3);
-}
-[data-bs-theme="dark"] .cvx .cvd-link:hover {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-tag {
   color: rgba(125, 217, 242, 1);
@@ -74,9 +67,6 @@
   color: #e2f4f8;
 }
 [data-bs-theme="dark"] .cvx .cvd-sub {
-  color: #8fb3c2;
-}
-[data-bs-theme="dark"] .cvx .cvd-hero {
   color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-hero__dots {
@@ -113,18 +103,12 @@
 [data-bs-theme="dark"] .cvx .cvd-kpi__shine {
   background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.038), transparent);
 }
-[data-bs-theme="dark"] .cvx .cvd-kpi__ico {
-  color: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-kpi__l {
   color: #e2f4f8;
 }
 [data-bs-theme="dark"] .cvx .cvd-kpi__go {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(116, 170, 190, 0.3);
-}
-[data-bs-theme="dark"] .cvx .cvd-kpi:hover .cvd-kpi__go {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-kpi__n {
   color: #e2f4f8;
@@ -158,9 +142,6 @@
 }
 [data-bs-theme="dark"] .cvx .cvd-kpi--slate {
   --bg: rgba(71, 140, 209, 0.12);
-}
-[data-bs-theme="dark"] .cvx .cvd-hbar__ico {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-hbar__t {
   color: #e2f4f8;
@@ -198,9 +179,6 @@
 [data-bs-theme="dark"] .cvx .cvd-mt {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(41, 190, 240, 0.12));
   border: 1px solid rgba(116, 170, 190, 0.3);
-}
-[data-bs-theme="dark"] .cvx .cvd-mt>span {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-mt b {
   color: #e2f4f8;
@@ -323,9 +301,6 @@
 [data-bs-theme="dark"] .cvx .cvd-hy2__t small {
   color: #8fb3c2;
 }
-[data-bs-theme="dark"] .cvx .cvd-bars2 em {
-  color: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-chips2 span {
   color: rgba(162, 194, 205, 1);
   background: rgba(255, 255, 255, 0.05);
@@ -337,9 +312,6 @@
 [data-bs-theme="dark"] .cvx .cvd-wt {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(44, 181, 236, 0.12));
   border: 1px solid rgba(116, 170, 190, 0.3);
-}
-[data-bs-theme="dark"] .cvx .cvd-wt__ico {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-wt>b {
   color: #e2f4f8;
@@ -369,9 +341,6 @@
   background: rgba(54, 192, 227, 0.12);
   border: 1px solid rgba(114, 169, 192, 0.3);
 }
-[data-bs-theme="dark"] .cvx .cvd-own>span {
-  color: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-own>div>b {
   color: #e2f4f8;
 }
@@ -390,9 +359,6 @@
 }
 [data-bs-theme="dark"] .cvx .cvd-rng button:hover {
   color: rgba(125, 217, 242, 1);
-}
-[data-bs-theme="dark"] .cvx .cvd-rng button.is-on {
-  color: #8fb3c2;
 }
 [data-bs-theme="dark"] .cvx .cvd-astat {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(41, 190, 240, 0.12));
@@ -441,9 +407,6 @@
 [data-bs-theme="dark"] .cvx .cvd-avg__bg {
   fill: #e2f4f8;
 }
-[data-bs-theme="dark"] .cvx .cvd-avg__t {
-  fill: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-stack__lg {
   color: rgba(162, 194, 205, 1);
 }
@@ -464,7 +427,6 @@
   --bg: rgba(255, 209, 26, 0.12);
 }
 [data-bs-theme="dark"] .cvx .cvd-att__ico {
-  color: #8fb3c2;
   background: linear-gradient(135deg, color-mix(in srgb, var(--c) 60%, rgba(255, 255, 255, 0.05)), var(--c));
 }
 [data-bs-theme="dark"] .cvx .cvd-att__t b {
@@ -535,9 +497,6 @@
   background: rgba(26, 243, 255, 0.12);
   border: 1px solid rgba(83, 201, 223, 0.3);
 }
-[data-bs-theme="dark"] .cvx .cvd-dept:hover .cvd-dept__ico {
-  color: #8fb3c2;
-}
 [data-bs-theme="dark"] .cvx .cvd-dept__l {
   color: #e2f4f8;
 }
@@ -565,9 +524,6 @@
 }
 [data-bs-theme="dark"] .cvx .cvd-bs.is-bad {
   --bg: rgba(255, 26, 42, 0.12);
-}
-[data-bs-theme="dark"] .cvx .cvd-tip b {
-  color: #8fb3c2;
 }
 
 /* ── Dark mode · polish (hand-tuned, wins over the generated block above) ──────────────────

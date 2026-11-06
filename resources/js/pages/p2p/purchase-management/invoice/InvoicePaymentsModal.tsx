@@ -545,7 +545,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                                         : `Release ${money(due)} against ${q.id}`
                                   }
                                 >
-                                  {ICON_RUPEE}<span>Make SPI Payment</span>
+                                  {ICON_RUPEE}<span>{poCode ? 'Make PO Payment' : 'Make SPI Payment'}</span>
                                 </button>
                               )}
                               <button
