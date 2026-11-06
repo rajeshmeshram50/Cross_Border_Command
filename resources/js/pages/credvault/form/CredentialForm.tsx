@@ -30,6 +30,19 @@ function normKey(k: string): string {
   return k;
 }
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A YYYY-MM-DD day moved by n days, in the same format. */
+const shiftDay = (iso: string, n: number) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(y, m - 1, d + n);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
+/** Date of Expiry on or before Date of Issue is a clash (both YYYY-MM-DD, which compare as text). */
+const expiryError = (issue: string, expiry: string) =>
+  ISO_DAY.test(issue) && ISO_DAY.test(expiry) && expiry <= issue
+    ? (expiry === issue ? 'Date of Expiry cannot be the same as the Date of Issue' : 'Date of Expiry must be later than the Date of Issue')
+    : null;
+
 function Lbl({ text, req, badge }: { text: string; req?: boolean; badge?: ReactNode }) {
   return <label className="mapsup-flabel">{text}{req && <> <span className="req">*</span></>}{badge && <> {badge}</>}</label>;
 }
@@ -223,7 +236,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
       // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
+      const dl = !inCritical && T.key === 'driver' && f.key === 'number';
+      // Driver License number (CS-1437): letters, digits and single spaces only — symbols are dropped as typed.
       const v = f.key === 'acno' && !inCritical ? raw.replace(/\D/g, '').slice(0, 18)
+        : dl ? raw.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/^ +/, '').replace(/ {2,}/g, ' ')
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
@@ -317,7 +333,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           ctl = (
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
-                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : f.max ?? undefined} autoComplete="new-password"
+                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : !inCritical && T.key === 'driver' && f.key === 'number' ? 19 : f.max ?? undefined} autoComplete="new-password"
                 inputMode={f.key === 'acno' && !inCritical ? 'numeric' : undefined}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
               <span className="crd-pw__btns">
@@ -349,7 +365,21 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             );
           }
         } else if (f.kind === 'date') {
-          ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal" onChange={v => onText(v)} />;
+          // Date of Issue → Date of Expiry (Passport, CS-1437): expiry must fall after issue, so each picker
+          // greys out the other side's days and a clash is flagged at once. My Vault only.
+          const paired = !inCritical && T.fields.some(x => x.key === 'issue') && T.fields.some(x => x.key === 'expiry')
+            && (f.key === 'issue' || f.key === 'expiry');
+          const other = paired ? vals[f.key === 'issue' ? 'expiry' : 'issue'] ?? '' : '';
+          const bound = ISO_DAY.test(other) ? shiftDay(other, f.key === 'issue' ? -1 : 1) : undefined;
+          ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal"
+            minDate={paired && f.key === 'expiry' ? bound : undefined} maxDate={paired && f.key === 'issue' ? bound : undefined}
+            onChange={v => {
+              onText(v);
+              if (!paired) return;
+              const issue = f.key === 'issue' ? v : other, expiry = f.key === 'expiry' ? v : other;
+              const m = expiryError(issue, expiry);
+              if (m) setErrors(e => ({ ...e, 'fields.expiry': m })); else clr('fields.expiry');
+            }} />;
         } else if (f.key === 'exp' && !inCritical) {
           // Credit Card expiry (MM/YY): typeable, and its calendar icon opens a month / year picker.
           ctl = <ExpiryPicker id={`crdF_${f.key}`} className={cls} value={val} placeholder={ph} onChange={onText} onBlur={onLeave} />;
@@ -722,6 +752,18 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       if (m) errs[k] = m;
       // Login → Username (CS-1434): a single letter is not a username — at least 3 characters (an email passes).
       else if (!inCritical && T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
+      // Driver License number (CS-1437): 15–16 letters and digits (spaces ignored), with both letters and digits.
+      else if (!inCritical && T.key === 'driver' && f.key === 'number') {
+        const c = v.replace(/\s/g, '');
+        if (!/^[A-Za-z0-9]+$/.test(c)) errs[k] = 'License number can have letters and numbers only';
+        else if (c.length < 15 || c.length > 16) errs[k] = 'License number must be 15–16 characters, e.g. MH12 20110012345';
+        else if (!/[A-Za-z]/.test(c) || !/\d/.test(c)) errs[k] = 'License number must include both letters and numbers';
+      }
+      // Date of Expiry must be later than Date of Issue (CS-1437).
+      else if (!inCritical && f.key === 'expiry' && T.fields.some(x => x.key === 'issue')) {
+        const e = expiryError((vals.issue ?? '').trim(), v);
+        if (e) errs[k] = e;
+      }
     });
     const regEmailErr = ex.reg_email && regEmail.trim() ? emailError(regEmail) : null;
     if (regEmailErr) errs.reg_email = regEmailErr;

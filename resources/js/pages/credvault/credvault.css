@@ -3618,12 +3618,13 @@
 
 .cvx .gp-opts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .cvx .gp-tg {
   height: 46px !important;
+  min-width: 0;
 }
 
 .cvx .gp-tg__t {
