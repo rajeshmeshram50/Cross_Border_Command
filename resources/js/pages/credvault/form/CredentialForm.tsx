@@ -236,7 +236,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v, !inCritical) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
-    const req = f.required && !(editing && had && (f.secret || f.kind === 'file'));
+    // The asterisk stays in Edit too (CS-1436): a saved secret or file still counts, so leaving it blank keeps it.
+    const req = f.required && (!inCritical || !(editing && had && (f.secret || f.kind === 'file')));
 
     return {
       span,
@@ -701,6 +702,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       }
       const m = checkField(f, v, !inCritical);
       if (m) errs[k] = m;
+      // Login → Username (CS-1434): a single letter is not a username — at least 3 characters (an email passes).
+      else if (!inCritical && T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
     });
     const regEmailErr = ex.reg_email && regEmail.trim() ? emailError(regEmail) : null;
     if (regEmailErr) errs.reg_email = regEmailErr;
