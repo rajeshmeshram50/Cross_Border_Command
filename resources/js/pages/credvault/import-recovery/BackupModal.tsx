@@ -119,7 +119,10 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
               </div>
             </div>
 
-            <div className="mapsup-body gp-body ir-imp-body ir-bk-body">
+            {/* Its own <form> with a hidden username box: when a saved password is picked for the backup
+                password, the browser fills that login's email in here — not into the page's search box. */}
+            <form className="mapsup-body gp-body ir-imp-body ir-bk-body" autoComplete="off" noValidate onSubmit={e => e.preventDefault()}>
+        <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" className="ir-ac-trap" />
         {sec(1, 'Choose a format', 'The file type you want to download')}
         <div className="ix-fmtc">
           {FMTS.map(f => (
@@ -193,7 +196,7 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
             {onRetry && <button type="button" data-h40="skip" className="ir-btn" onClick={onRetry} disabled={infoLoading}>{infoLoading ? 'Retrying…' : 'Retry'}</button>}
           </div>
         )}
-            </div>
+            </form>
 
             <div className="mapsup-footer">
               <div className="mapsup-footer__info"><Svg d={IR_I.hist} size={12} /> Every download is recorded in the backup history and in Audit Logs</div>

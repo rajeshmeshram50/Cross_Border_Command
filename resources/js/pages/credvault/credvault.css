@@ -5532,6 +5532,25 @@
   max-width: none !important;
 }
 
+/* The tabs-row search's own <form> takes no box of its own, so the row lays out exactly as before. */
+.cvx .cv-search-form {
+  display: contents;
+}
+
+/* Download backup popup: the hidden username box that catches a browser's saved-login fill. */
+.cvx .ir-ac-trap {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  border: 0 !important;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  pointer-events: none;
+}
+
 /* Tabs-row search is type="search" (keeps browser login autofill out of it): drop the browser's own
    search styling and clear (×) button — the row has its own clear button. */
 .cvx .bst-search input[type="search"] {
