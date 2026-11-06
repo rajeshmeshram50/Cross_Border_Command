@@ -36,10 +36,14 @@ type Overlay =
 
 const STAGE: Record<LockStep, string> = { admin: 'Vault Admin', manager: 'Manager', otp: 'Authenticator' };
 
+/** The Branch Admin (Vault Admin of the credential's branch) opens it directly: the API sends
+ *  'open' with no request and no timer (CredVaultController::opensDirectly). Everyone else — owners
+ *  included — goes through the unlock steps. */
+const isDirect = (u?: CredentialRow['unlock']) => !!u && u.state === 'open' && !u.request_id;
+
 /** Access Status, as the prototype draws it (cv-acc): Locked, Pending, In progress, or Unlocked with its countdown. */
-function AccessCell({ row, left, owner }: { row: CredentialRow; left: number | null; owner?: boolean }) {
-  // My Critical Credentials: the owner opens their own credential directly — no unlock steps.
-  if (owner) return <div className="cv-acc cv-acc--owner"><span className="cv-acc__b"><Svg d={IC.view} size={12} />Owner</span><span className="cv-acc__t">Full access · no approval</span></div>;
+function AccessCell({ row, left }: { row: CredentialRow; left: number | null }) {
+  if (isDirect(row.unlock)) return <div className="cv-acc cv-acc--owner"><span className="cv-acc__b"><Svg d={IC.view} size={12} />Vault Admin</span><span className="cv-acc__t">Full access · no approval</span></div>;
   const a = row.unlock;
   if (!a) return <div className="cv-acc cv-acc--locked"><span className="cv-acc__b">Open</span><span className="cv-acc__t">No unlock steps</span></div>;
   // The window ran out: it is locked again, even while the API still reads 'open' until its sweep.
@@ -137,12 +141,12 @@ export default function CriticalVault() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [tab, dq]);
 
-  const anyOpen = rows.some(r => r.unlock?.state === 'open');
+  const anyOpen = rows.some(r => r.unlock?.state === 'open' && !isDirect(r.unlock));
   const anyWaiting = rows.some(r => r.unlock?.state === 'pending' || r.unlock?.state === 'progress');
   const now = useNow(anyOpen);
   // `now` can trail a fresh fetchedAt until the next tick: never count up past the server's figure,
   // or an ended window reads above 0 again and the expiry reload loops (the rows blink).
-  const leftOf = useCallback((r: CredentialRow) => (r.unlock?.state === 'open'
+  const leftOf = useCallback((r: CredentialRow) => (r.unlock?.state === 'open' && !isDirect(r.unlock)
     ? (r.unlock.seconds_left ?? 0) - Math.max(0, now - fetchedAt) / 1000 : null), [now, fetchedAt]);
   const expired = useMemo(() => rows.some(r => { const l = leftOf(r); return l !== null && l <= 0; }), [rows, leftOf]);
   const expiredTries = useRef(0);
@@ -197,9 +201,9 @@ export default function CriticalVault() {
           <CredentialTable critical rows={rows} startIndex={(page - 1) * perPage} loading={loading}
             emptyTitle={emptyTitle} emptySub={emptySub}
             onAdd={tab !== 'team' && !dq && !error ? () => setOverlay({ kind: 'add' }) : undefined}
-            extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} owner={tab === 'mine' && r.owner.is_me} /> }}
+            extra={{ header: 'Access Status', cell: r => <AccessCell row={r} left={leftOf(r)} /> }}
             actions={r => {
-              const own = tab === 'mine' && r.owner.is_me;
+              const own = isDirect(r.unlock);   // Branch Admin: straight to the credential
               const lk = own ? { icon: IC.view, title: 'View credential', cls: '' } : lockAction(r, leftOf(r));
               return (
                 <>

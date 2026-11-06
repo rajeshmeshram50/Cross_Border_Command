@@ -161,10 +161,12 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   /* ── countdown ── the API can still read 'open' with 0 seconds left until its sweep locks the
      window; that is an ended window, so the popup starts a new request instead of the old Reveal. */
   const apiOpen = unlock.state === 'open';
-  const now = useNow(apiOpen);
+  // A Branch Admin's direct access has no request and no timer: open, and never an ended window.
+  const direct = apiOpen && !unlock.request_id;
+  const now = useNow(apiOpen && !direct);
   const left = apiOpen ? Math.max(0, (unlock.seconds_left ?? 0) - (now - fetchedAt) / 1000) : 0;
   // Under a second left already reads 00:00, so that is the end of the window too.
-  const ended = apiOpen && left < 1;
+  const ended = apiOpen && !direct && left < 1;
   const open = apiOpen && !ended;
   const live = req && unlock.request_id === req.id && !ended ? req : null;   // the open request, if any
   const order: Stage[] = useMemo(() => [...steps, 'done'], [steps]);

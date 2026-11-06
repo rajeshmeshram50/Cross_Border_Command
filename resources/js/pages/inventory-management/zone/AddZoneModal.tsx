@@ -56,9 +56,11 @@ function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string)
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
-const FEET_PER_METRE = 3.28084;
-const METRES_PER_FOOT = 0.3048;
 const SQFT_PER_SQM = 10.7639;
+/* One unit set across Zone / Rack / Shelf (CS-940/941/942): Cm · Metres · Feet. Each unit's
+   size in metres; the API stores zone dimensions in metres, so any unit is converted on save. */
+const M_PER: Record<'cm' | 'm' | 'ft', number> = { cm: 0.01, m: 1, ft: 0.3048 };
+const UNIT_LABEL: Record<'cm' | 'm' | 'ft', string> = { cm: 'Cm', m: 'Metres', ft: 'Feet' };
 
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -103,7 +105,7 @@ const IcoInfo = () => Ico(
     <line x1="12" y1="16" x2="12.01" y2="16" /></>, 13,
 );
 
-type Unit = 'm' | 'ft';
+type Unit = 'cm' | 'm' | 'ft';
 
 interface Draft {
   wh: string;
@@ -270,7 +272,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [d.len, d.wid, d.ht, d.use]);
 
   const areaFromFloor = noRack && d.storage === 'regular' && calc.area > 0;
-  const derivedArea = String(Math.round(unit === 'm' ? calc.area * SQFT_PER_SQM : calc.area));
+  const derivedArea = String(Math.round(calc.area * M_PER[unit] * M_PER[unit] * SQFT_PER_SQM));
 
   /* A measured floor IS the zone's area, so it is written into the draft
      rather than only displayed over it.
@@ -299,8 +301,9 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     ? `Exceeds the free area by ${inWhole.format(-leftAfter)} Sq. Ft — only ${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft is still free in ${picked.id}`
     : '';
 
-  const other: Unit = unit === 'm' ? 'ft' : 'm';
-  const k = unit === 'm' ? FEET_PER_METRE : 1 / FEET_PER_METRE;
+  // The "≈" hint under each figure: feet for cm / m, metres for feet.
+  const other: Unit = unit === 'ft' ? 'm' : 'ft';
+  const k = M_PER[unit] / M_PER[other];
   const fmt = (v: number, dp = 2) =>
     (Number.isFinite(v) ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: dp }).format(v) : '—');
 
@@ -345,7 +348,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     }
     if (!picked || !type) return;
 
-    const toM = (v: number) => (unit === 'ft' ? round(v * METRES_PER_FOOT, 2) : round(v, 2));
+    const toM = (v: number) => round(v * M_PER[unit], 2);
     const regular = noRack && d.storage === 'regular';
     const Lm = toM(calc.L), Wm = toM(calc.W), Hm = toM(calc.H);
     const payload: ZonePayload = {
@@ -573,10 +576,10 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                       <i className="znm-sub__bar" />Zone Dimensions &amp; Capacity
                       <span className="znm-sub__tag">Floor storage · no racks</span>
                       <div className="znm-unit" role="group" aria-label="Unit">
-                        {(['m', 'ft'] as Unit[]).map(u => (
+                        {(['cm', 'm', 'ft'] as Unit[]).map(u => (
                           <button key={u} type="button" className={unit === u ? 'is-on' : undefined}
                             onClick={() => setUnit(u)}>
-                            {u === 'm' ? 'Metres' : 'Feet'}
+                            {UNIT_LABEL[u]}
                           </button>
                         ))}
                       </div>
