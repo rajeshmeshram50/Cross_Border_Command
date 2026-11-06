@@ -11,6 +11,8 @@ export interface BinConfirmProps {
   row: Pick<CredentialRow, 'id' | 'code' | 'name' | 'type' | 'type_label' | 'url' | 'risk' | 'scope' | 'access' | 'active_shares'>;
   onClose: () => void;
   onDone: () => void;
+  /** My Vault (CS-1445): lock Cancel / × while the move runs and show a spinner. */
+  lockBusy?: boolean;
 }
 
 const BIN = '<path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>';
@@ -18,7 +20,7 @@ const PT_GONE = '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx
 const PT_RESTORE = '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>';
 const PT_CLOCK = '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>';
 
-export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
+export default function BinConfirm({ row, onClose, onDone, lockBusy = false }: BinConfirmProps) {
   const toast = useToast();
   const { meta, typeOf } = useCvMeta();
   const [busy, setBusy] = useState(false);
@@ -50,13 +52,15 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
               Are you sure you want to remove <b>{row.name}</b> <span className="dl-id">{row.code}</span>? The original stays with its owner.
             </div>
             <label className="dl-ack">
-              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
+              <input type="checkbox" checked={ack} disabled={lockBusy && busy} onChange={e => setAck(e.target.checked)} />
               <span className="dl-ack__box"><Svg icon="check" size={11} sw={3.2} /></span>
               <span>I understand and want to remove it.</span>
             </label>
             <div className="dl-actions">
-              <button type="button" data-h40="skip" className="dl-cancel" onClick={onClose}>Cancel</button>
-              <button type="button" data-h40="skip" className="dl-go" disabled={!ack || busy} onClick={go}>{busy ? 'Working…' : 'Remove'}</button>
+              <button type="button" data-h40="skip" className="dl-cancel" disabled={lockBusy && busy} onClick={onClose}>Cancel</button>
+              <button type="button" data-h40="skip" className="dl-go" disabled={!ack || busy} aria-busy={(lockBusy && busy) || undefined} onClick={go}>
+                {lockBusy && busy && <span className="cp-spin cp-spin--sm" />}{busy ? (lockBusy ? 'Removing…' : 'Working…') : 'Remove'}
+              </button>
             </div>
           </div>
         </div>
@@ -91,6 +95,8 @@ export default function BinConfirm({ row, onClose, onDone }: BinConfirmProps) {
       confirmLabel="Move to Bin"
       confirmIcon={BIN}
       busy={busy}
+      lockBusy={lockBusy}
+      busyLabel="Moving to Bin…"
       onConfirm={go}
       onClose={onClose}
     />

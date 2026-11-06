@@ -77,11 +77,35 @@ export function emailError(v: string): string | null {
   return t.length > 191 || t.includes('..') || !EMAIL_RE.test(t) ? EMAIL_MSG : null;
 }
 
+const HOST_MSG = 'Enter a valid hostname, domain or IP address, e.g. prod.example.com or 10.0.1.25';
+
+/** Host (SSH Key, Database, Server): a hostname / domain, an IPv4 or an IPv6 address — no scheme, path, spaces or symbols. */
+export function hostError(v: string): string | null {
+  const t = v.trim();
+  // Digits and dots only is meant as an IPv4: four octets of 0–255.
+  if (/^[\d.]+$/.test(t)) {
+    const o = t.split('.');
+    return o.length === 4 && o.every(x => /^\d{1,3}$/.test(x) && +x <= 255) ? null : HOST_MSG;
+  }
+  if (t.includes(':')) {
+    const parts = t.split('::');
+    if (parts.length > 2 || !/^[0-9a-f:]+$/i.test(t)) return HOST_MSG;
+    const groups = parts.flatMap(p => (p ? p.split(':') : []));
+    if (groups.some(g => !/^[0-9a-f]{1,4}$/i.test(g))) return HOST_MSG;
+    return (parts.length === 2 ? groups.length < 8 : groups.length === 8) ? null : HOST_MSG;
+  }
+  // Hostname: dot-separated labels of letters, digits and hyphens (1–63 each, no hyphen at either end), 253 at most.
+  if (t.length > 253) return HOST_MSG;
+  const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+  return t.split('.').every(l => label.test(l)) ? null : HOST_MSG;
+}
+
 /** crdSave's per-field check — the server repeats these and more. */
 /** `strict` adds the My Vault QA checks (CS-1435): symbols-only text, numbers-only Program Name, Account Number. */
 export function checkField(f: FieldDef, val: string, strict = false): string | null {
   const k = f.key;
   // A text field of symbols only (e.g. "@@@###", Member ID) holds nothing: it needs a letter or a digit.
+  if (strict && k === 'host') return hostError(val);
   if (strict && f.kind === 'text' && !/[\p{L}\p{N}]/u.test(val)) return `${f.label} must include at least one letter or number`;
   // Rewards → Program Name is a name: digits alone (e.g. "123456") are not one.
   if (strict && k === 'program' && !/\p{L}/u.test(val)) return 'Program name must include letters, not only numbers';

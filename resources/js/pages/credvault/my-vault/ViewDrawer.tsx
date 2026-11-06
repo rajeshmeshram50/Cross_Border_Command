@@ -512,7 +512,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         </div>
       </CvPortal>
       {binAsk && (
-        <BinConfirm row={d} onClose={() => setBinAsk(false)} onDone={() => { setBinAsk(false); onChanged?.(); onClose(); }} />
+        <BinConfirm row={d} lockBusy={fieldLabels} onClose={() => setBinAsk(false)} onDone={() => { setBinAsk(false); onChanged?.(); onClose(); }} />
       )}
       {launchAsk && (
         <ConfirmModal

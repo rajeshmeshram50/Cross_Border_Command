@@ -431,14 +431,17 @@ export function CvPortal({ children }: { onClose?: () => void; children: ReactNo
   return createPortal(<div className="cvx cv-portal">{children}</div>, document.body);
 }
 
-export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirmLabel, confirmIcon, busy, onConfirm, onClose, children }: {
+export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirmLabel, confirmIcon, busy, busyLabel, lockBusy, onConfirm, onClose, children }: {
   title: string; sub?: ReactNode; icon: string;
   cred?: { icon?: string; name: string; code: string; meta?: string; risk?: Risk };
   points?: { icon: string; title: ReactNode; text: ReactNode }[];
   ackLabel?: ReactNode; confirmLabel: string; confirmIcon?: string; busy?: boolean;
+  /** While busy: a spinner on the confirm button, and Cancel / × / the tick are locked (CS-1445, My Vault). */
+  lockBusy?: boolean; busyLabel?: string;
   onConfirm: () => void; onClose: () => void; children?: ReactNode;
 }) {
   const [ack, setAck] = useState(!ackLabel);
+  const locked = !!(lockBusy && busy);
   return (
     <CvPortal onClose={onClose}>
       <div className="dl-ov">
@@ -446,7 +449,7 @@ export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirm
           <div className="mb-hd">
             <span className="mb-hd__ico"><Svg d={icon} size={24} sw={2.1} /></span>
             <div><b>{title}</b>{sub && <small>{sub}</small>}</div>
-            <button type="button" data-h40="skip" className="mb-x" onClick={onClose} aria-label="Close"><Svg icon="x" size={13} sw={2.8} /></button>
+            <button type="button" data-h40="skip" className="mb-x" disabled={locked} onClick={onClose} aria-label="Close"><Svg icon="x" size={13} sw={2.8} /></button>
           </div>
           <div className="mb-bd">
             {cred && (
@@ -466,16 +469,17 @@ export function ConfirmModal({ title, sub, icon, cred, points, ackLabel, confirm
             {children}
             {ackLabel && (
               <label className="mb-ack">
-                <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
+                <input type="checkbox" checked={ack} disabled={locked} onChange={e => setAck(e.target.checked)} />
                 <span className="dl-ack__box"><Svg icon="check" size={11} sw={3.2} /></span>
                 <span>{ackLabel}</span>
               </label>
             )}
           </div>
           <div className="mb-ft">
-            <button type="button" data-h40="skip" className="mb-btn mb-btn--ghost" onClick={onClose}>Cancel</button>
-            <button type="button" data-h40="skip" className="mb-btn mb-btn--go" disabled={!ack || busy} onClick={onConfirm}>
-              {confirmIcon && <Svg d={confirmIcon} size={14} />}{busy ? 'Working…' : confirmLabel}
+            <button type="button" data-h40="skip" className="mb-btn mb-btn--ghost" disabled={locked} onClick={onClose}>Cancel</button>
+            <button type="button" data-h40="skip" className="mb-btn mb-btn--go" disabled={!ack || busy} aria-busy={locked || undefined} onClick={onConfirm}>
+              {locked ? <span className="cp-spin cp-spin--sm" /> : confirmIcon && <Svg d={confirmIcon} size={14} />}
+              {busy ? (locked && busyLabel) || 'Working…' : confirmLabel}
             </button>
           </div>
         </div>
