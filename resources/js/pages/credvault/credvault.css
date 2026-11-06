@@ -17697,12 +17697,47 @@
   height: 100%;
 }
 
-/* Critical Vault only: Figma search bar is 665px wide, pinned right; the gap to the tabs is the leftover space. */
+/* Critical Vault only: Figma search bar up to 665px wide, pinned right; the gap to the tabs is the leftover
+   space. flex-basis 0, not 665px — the row wraps, and a 665px basis dropped the search under the tabs. */
 .cvx.cv-page .tvc-top .bst-search.whm-main-search {
-  flex: 0 1 665px;
+  flex: 1 1 0;
+  max-width: 665px;
   min-width: 240px;
   margin-left: auto !important;
 }
+
+/* Critical Vault: a credential with no username (Secure Note, API key …) reads "N/A" in the same grey
+   pill as the Strength and 2FA columns, not a bare dash. CSS-only: the shared column (shared.tsx)
+   renders the dash for every vault, so it is swapped here for this page alone. */
+.cvx.cv-page .mv-user .mv-str--na {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0;
+  line-height: 1;
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.cvx.cv-page .mv-user .mv-str--na::after {
+  content: "N/A";
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .cvx.cv-page .mv-user .mv-str--na {
+  color: var(--tvd-mu);
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .12);
+}
+
+/* Critical Vault footer pager, as My Vault: one divider, pager flush with the card's bottom and sides. */
+.cvx.cv-page .tvc-list > .whm-tblwrap:has(+ .wl-pager) { border-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) { padding-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child { margin-left: -12px !important; margin-right: -12px !important; margin-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child { border-radius: 0; }
+.cvx.cv-page .whm-tbl.mv-tbl tbody td.mv-empty { border-bottom: 0 !important; }
 
 /* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
 .cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
@@ -18092,6 +18127,14 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mv-meter__lbl {
   filter: brightness(1.35);
 }
+
+/* CS-1457 #30: the dark track colour above ([data-bs-theme] .cvx .mv-meter__bars i) ties with the
+   filled-bar rules and comes later, so every bar stayed grey — "Strong" lit up but its bars did not.
+   Re-state the filled bars for dark mode (one class more specific), slightly brighter on the dark card. */
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="1"] .mv-meter__bars i:nth-child(-n+1) { background: #fb7185; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="2"] .mv-meter__bars i:nth-child(-n+2) { background: #fbbf24; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="3"] .mv-meter__bars i:nth-child(-n+3) { background: #38bdf8; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="4"] .mv-meter__bars i { background: #34d399; box-shadow: 0 0 6px rgba(52, 211, 153, .45); }
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att {
   background: rgba(34, 211, 238, .05) !important;
   border-color: rgba(34, 211, 238, .3) !important;
@@ -19375,4 +19418,17 @@
   color: #fff;
   filter: brightness(1.08);
   box-shadow: 0 6px 16px -6px rgba(8, 145, 178, .6);
+}
+
+/* Critical Vault toolbar: when the row is too narrow for the three tabs and the search side by side
+   (zoom, an open inspector, a laptop with the sidebar out), the search wraps to its own line. It
+   then takes the whole line instead of sitting right-aligned at 665px with a gap before it.
+   A container query, so it follows the row's real width, not the window's. Critical Vault only. */
+.cvx.cv-page .tvc-top { container-type: inline-size; container-name: cvtop; }
+@container cvtop (max-width: 1010px) {
+  .cvx.cv-page .tvc-top .whm-main-search {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+  }
 }

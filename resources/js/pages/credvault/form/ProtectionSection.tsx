@@ -310,7 +310,7 @@ export function TwofaPicker({ method, readOnly, authBox, onMethod, gmail, gmailO
                 <label className="k2-gm__lbl" htmlFor="k2Gmail">Gmail address <i>*</i></label>
                 <div className="mapsup-inputwrap">
                   <span className="mapsup-input-ico"><Svg d={CP_I.mail} size={13} /></span>
-                  <input id="k2Gmail" className="mapsup-finput has-ico" type="email" placeholder="name@gmail.com" autoComplete="off" maxLength={191}
+                  <input id="k2Gmail" className="mapsup-finput has-ico" type="email" placeholder="name@company.com" autoComplete="off" maxLength={191}
                     value={gmail} onChange={e => onGmail(e.target.value)} />
                   {!gm.verified && (
                     <button type="button" className="cp-btn cp-btn--ghost k2-gm__send" onClick={onSend}

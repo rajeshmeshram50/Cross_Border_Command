@@ -66,6 +66,8 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const [failed, setFailed] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [shown, setShown] = useState<Record<string, string>>({});
+  /** Critical credential secrets that came in plain: which ones the viewer has unhidden in the drawer. */
+  const [peek, setPeek] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const [acts, setActs] = useState<{ rows: AuditEvent[]; meta: PageMeta | null; loading: boolean }>({ rows: [], meta: null, loading: true });
   const [binAsk, setBinAsk] = useState(false);
@@ -245,6 +247,23 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       );
     }
     const v = f.value ?? '';
+    // Critical credential, already opened: the API sends its secrets (Secure Note, key …) in plain. They
+    // still start hidden, with an eye to show them and copy beside it — not printed out on open.
+    if (crit && f.secret && f.kind !== 'file' && v) {
+      const on = peek.has(f.key);
+      return (
+        <>
+          <b className={on ? (f.kind === 'textarea' ? 'vd-multi' : '') : 'vd-mask'} style={on && f.kind === 'textarea' ? { whiteSpace: 'pre-line' } : undefined}>
+            {on ? v : mask(12)}
+          </b>
+          <button type="button" data-h40="skip" className={`vd-ic${on ? ' is-on' : ''}`} title={on ? `Hide ${f.label}` : `Show ${f.label}`}
+            onClick={() => setPeek(s => { const n = new Set(s); if (on) n.delete(f.key); else n.add(f.key); return n; })}>
+            <Svg icon={on ? I.eyeOff : 'eye'} size={13} />
+          </button>
+          {copyBtn(() => copyPlain(v, f.key, f.label), f.label)}
+        </>
+      );
+    }
     if (f.kind === 'file') {
       return (
         <>

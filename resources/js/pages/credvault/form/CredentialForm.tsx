@@ -6,7 +6,7 @@ import ExpiryPicker from './ExpiryPicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_CHARS, STR_LBL, checkField, emailError, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
+  PHONE_CHARS, STR_LBL, checkField, emailError, fieldMax, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor,
 } from './formHelpers';
 import { quickPassword } from '../generator';
@@ -122,7 +122,11 @@ function Section({ ico, title, sub, items, wide, after }: {
   );
 }
 
-const GMAIL_RE = /^[a-z0-9._%+-]+@(gmail|googlemail)\.com$/i;
+/* The 2FA "Gmail" inbox can be any real mailbox (dev@inhpl.com, a team inbox…), not only
+   @gmail.com: the API sends the code to whatever passes email:rfc. Same check as every other
+   email field in the form. */
+const OTP_EMAIL_MSG = 'Enter a valid email address, e.g. name@company.com';
+const otpEmailOk = (v: string) => !!v.trim() && !emailError(v);
 const PROTECT_HINT ='Only the owner or a Vault Admin can change this.';
 const LOCKED_STYLE: CSSProperties = { opacity: .6, cursor: 'not-allowed' };
 
@@ -200,7 +204,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [auth, setAuth] = useState<AuthState>(() => ({ ...AUTH_EMPTY, linkedOnServer: !!(P?.otp && P?.otp_linked) }));
   const [method, setMethod] = useState<'google' | 'email'>(P?.otp_method === 'email' ? 'email' : 'google');
   const [gmail, setGmail] = useState(P?.otp_email ?? '');
-  const gmailOk = GMAIL_RE.test(gmail.trim());
+  const gmailOk = otpEmailOk(gmail);
   const [gm, setGm] = useState<GmailState>(GMAIL_EMPTY);
   const [verifying, setVerifying] = useState(false);
   const verifiedAt = useRef(0);
@@ -282,26 +286,30 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const had = !!dField.get(f.key)?.has_value || locked;
     const keep = editing && f.secret && had;
     // Driver License / Aadhaar / PAN number (CS-1437): its own characters only — the rest are dropped as typed.
-    const idRule = inCritical ? null : idRuleFor(T.key, f.key, vals.idtype);
+    // CS-1456: the Critical Vault runs the same field checks as My Vault (they were My-Vault-only).
+    const idRule = idRuleFor(T.key, f.key, vals.idtype);
     const ph = keep ? KEEP : (idRule?.ph ?? f.placeholder ?? '');
     const cls = `mapsup-finput has-ico${f.mono ? ' crd-mono' : ''}`;
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
       // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
-      const v = f.key === 'acno' && !inCritical ? raw.replace(/\D/g, '').slice(0, 18)
+      const v = f.key === 'acno' ? raw.replace(/\D/g, '').slice(0, 18)
+        // Card Number (CS-1456 #1): digits only, up to 19 — the spaces it is shown with are not stored, so
+        // they no longer eat into the 19-character limit (a 19-digit card could not be typed with them).
+        : f.key === 'cardno' ? raw.replace(/\D/g, '').slice(0, 19)
         : idRule ? idRule.clean(raw)
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
-        const m = v.trim() ? checkField(f, v.trim(), !inCritical) : null;
+        const m = v.trim() ? checkField(f, v.trim(), true) : null;
         if (m) setErrors(e => ({ ...e, [k]: m }));
       }
     };
     const onLeave = () => {
       const v = (vals[f.key] ?? '').trim();
       const m = !v ? null
-        : f.kind === 'email' || f.kind === 'tel' ? checkField(f, v, !inCritical)
+        : f.kind === 'email' || f.kind === 'tel' ? checkField(f, v, true)
         : idRule ? idRule.error(v) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
@@ -361,14 +369,15 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               options={[{ value: '', label: 'Select…' }, ...(f.options ?? []).map(o => ({ value: o, label: o }))]} />
           );
         } else if (f.kind === 'textarea') {
-          // A masked textarea (Secure Note, Private Key, Seed…) gets the eye and copy buttons in My Vault (CS-1438).
-          const eye = !!f.secret && !inCritical;
+          // A masked textarea (Secure Note, Private Key, Seed…) gets the eye and copy buttons (CS-1438) — in the
+          // Critical Vault too: typing into dots with no way to check them hid the note from its own author.
+          const eye = !!f.secret;
           const vis = eye && shown.has(f.key);
           if (eye) wrapCls += ' crd-pw crd-pw--ta';
           ctl = (
             <>
               <textarea id={`crdF_${f.key}`} className={`${cls} crd-ta${f.secret && !vis ? ' crd-secret-ta' : ''}${eye ? ' crd-pw__in' : ''}`} rows={3} value={val}
-                placeholder={ph} maxLength={f.max ?? undefined} autoComplete="off" onChange={e => onText(e.target.value)} />
+                placeholder={ph} maxLength={fieldMax(f)} autoComplete="off" onChange={e => onText(e.target.value)} />
               {eye && (
                 <span className="crd-pw__btns">
                   <button type="button" data-h40="skip" className={`crd-pw__b${vis ? ' is-on' : ''}`} title={vis ? `Hide ${f.label}` : `Show ${f.label}`}
@@ -386,8 +395,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           ctl = (
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
-                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : idRule ? idRule.max : f.max ?? undefined} autoComplete="new-password"
-                inputMode={(f.key === 'acno' && !inCritical) || idRule?.numeric ? 'numeric' : undefined}
+                value={f.key === 'cardno' ? val.replace(/(\d{4})(?=\d)/g, '$1 ') : val} placeholder={ph}
+                maxLength={f.key === 'acno' ? 18 : f.key === 'cardno' ? 23 /* 19 digits + 4 group spaces */ : idRule ? idRule.max : fieldMax(f)} autoComplete="new-password"
+                inputMode={f.key === 'acno' || f.key === 'cardno' || idRule?.numeric ? 'numeric' : undefined}
                 onBlur={onLeave}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
               <span className="crd-pw__btns">
@@ -549,7 +559,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               let v = type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value;
               // My Vault: spaces alone are not a value (no "Edited", no Update) — a phone can't start with or double a
               // space, and an email holds none at all.
-              if (!inCritical) v = type === 'tel' ? v.replace(/^\s+/, '').replace(/\s{2,}/g, ' ') : v.replace(/\s/g, '');
+              v = type === 'tel' ? v.replace(/^\s+/, '').replace(/\s{2,}/g, ' ') : v.replace(/\s/g, '');
               set(v);
               const m = errors[k] && v.trim() ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;
               if (m) setErrors(x => ({ ...x, [k]: m })); else clr(k);
@@ -726,7 +736,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   };
   // POST two-step/email/send, then two-step/email/verify — the save sends the token as email_otp_token.
   const sendGmailCode = async () => {
-    if (!gmailOk) { setErrors(e => ({ ...e, twofa_email: 'Enter a Gmail address, e.g. name@gmail.com' })); return; }
+    if (!gmailOk) { setErrors(e => ({ ...e, twofa_email: OTP_EMAIL_MSG })); return; }
     setGm(g => ({ ...g, sending: true, error: '' }));
     try {
       const d = await cvApi.emailSetupSend(gmail.trim().toLowerCase(), name.trim() || undefined);
@@ -775,7 +785,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     method, readOnly: twofaReadOnly, authBox,
     onMethod: (m: 'google' | 'email') => { setMethod(m); clr('twofa_email'); },
     gmail, gmailOk, gmailErr: errors.twofa_email,
-    onGmail: (v: string) => { setGmail(v); setGm(GMAIL_EMPTY); if (GMAIL_RE.test(v.trim())) clr('twofa_email'); },
+    onGmail: (v: string) => { setGmail(v); setGm(GMAIL_EMPTY); if (otpEmailOk(v)) clr('twofa_email'); },
     gm, onSend: sendGmailCode, onGmCode: (c: string) => setGm(g => ({ ...g, code: c, error: '' })), onGmVerify: verifyGmailCode,
   };
   const twofaCard = twofaLocks && canProtect && twofaOn ? <TwofaCard {...pickerProps} chip={twofaChip} /> : null;
@@ -793,7 +803,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (!name.trim()) errs.name = 'Enter a name for this credential';
     else if (name.trim().length < 2) errs.name = 'The name needs at least 2 characters';
     // A name of symbols only (e.g. "@@@###") names nothing: it needs at least one letter or digit (any script).
-    else if (!inCritical && !/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
+    else if (!/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
     if (!risk) errs.risk = 'Select the risk level';
     T.fields.forEach(f => {
       const k = 'fields.' + f.key;
@@ -810,19 +820,19 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         if (f.required && !(editing && f.secret && had)) errs[k] = `${f.kind === 'select' ? 'Select' : 'Enter'} ${f.label.toLowerCase()}`;
         return;
       }
-      const m = checkField(f, v, !inCritical);
+      const m = checkField(f, v, true);
       if (m) errs[k] = m;
       // Login → Username (CS-1434): a single letter is not a username — at least 3 characters (an email passes).
-      else if (!inCritical && T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
+      else if (T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
       // Driver License / Aadhaar / PAN number (CS-1437).
-      else if (!inCritical && idRuleFor(T.key, f.key, vals.idtype)) {
+      else if (idRuleFor(T.key, f.key, vals.idtype)) {
         const e = idRuleFor(T.key, f.key, vals.idtype)!.error(v);
         if (e) errs[k] = e;
       }
       // Date of Birth: 18 or older (CS-1437).
-      else if (!inCritical && f.key === 'dob' && dobError(v)) errs[k] = dobError(v)!;
+      else if (f.key === 'dob' && dobError(v)) errs[k] = dobError(v)!;
       // Date of Expiry must be later than Date of Issue (CS-1437).
-      else if (!inCritical && f.key === 'expiry' && T.fields.some(x => x.key === 'issue')) {
+      else if (f.key === 'expiry' && T.fields.some(x => x.key === 'issue')) {
         const e = expiryError((vals.issue ?? '').trim(), v);
         if (e) errs[k] = e;
       }
@@ -858,8 +868,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     }, 30);
     if (needAuth && !auth.linkedOnServer && method === 'email') {
       if (!gmailOk) {
-        setErrors({ twofa_email: 'Enter a Gmail address, e.g. name@gmail.com' });
-        toast.warning('Add the Gmail address the 2FA code goes to');
+        setErrors({ twofa_email: OTP_EMAIL_MSG });
+        toast.warning('Add a valid email address for the 2FA code');
         toGmail();
         return;
       }
