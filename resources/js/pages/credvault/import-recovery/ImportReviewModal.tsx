@@ -81,7 +81,7 @@ export default function ImportReviewModal({ review, onBack, onExpired, onSaved }
                 {tab === 'accepted' ? (
                   <table className="whm-tbl mv-tbl">
                     <colgroup><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '32%' }} /><col style={{ width: '12%' }} /><col style={{ width: '36%' }} /></colgroup>
-                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th className="ir-al">Credential Name</th><th>Strength</th><th className="ir-al">Check</th></tr></thead>
+                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th className="ir-al">Credential Name</th><th>Strength</th><th>Check</th></tr></thead>
                     <tbody>
                       {accepted.length ? accepted.map((r, i) => (
                         <tr key={r.row}>
@@ -89,8 +89,8 @@ export default function ImportReviewModal({ review, onBack, onExpired, onSaved }
                           <td><span className="whm-idpill">Row {r.row}</span></td>
                           <td className="ir-al"><b title={r.name}>{r.name}</b></td>
                           <td>{r.strength ?? <span className="mv-str--na">—</span>}</td>
-                          <td className="ir-al">
-                            <div className="ir-flags ir-flags--l">
+                          <td>
+                            <div className="ir-flags">
                               {r.weak && <span className="ir-flag ir-flag--bad">Weak password</span>}
                               {r.notes.map(n => <span key={n} className="ir-flag ir-flag--warn" title={n}>{n}</span>)}
                               {!r.weak && !r.notes.length && <span className="ir-flag ir-flag--ok"><Svg d={IR_I.tick} size={10} />Ready</span>}

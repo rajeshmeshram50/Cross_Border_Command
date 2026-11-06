@@ -5684,11 +5684,6 @@
   justify-content: center;
 }
 
-/* Check column: the flags start at the left edge, under their left-aligned header. */
-.cvx #crd-host .ir-rev-list .ir-flags.ir-flags--l {
-  justify-content: flex-start;
-}
-
 /* Dark mode: the page tables' wrapper rule is under .cvx.tv-page, which a popup is not inside. */
 [data-bs-theme="dark"] .cvx #crd-host .tvc-list .whm-tblwrap {
   background: transparent;
