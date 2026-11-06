@@ -441,7 +441,14 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         {shares.length ? shares.map(s => (
           <div className="vd-person" key={s.id}>
             <span className="mv-ownc__av">{s.recipient.type === 'team' ? <Svg icon="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0 .01" size={13} /> : s.recipient.initials}</span>
-            <div><b>{s.recipient.name}</b><small>{s.expires_at ? `Until ${fmtDay(s.expires_at)}` : 'No expiry'}{s.reason ? ` · ${s.reason}` : ''}</small></div>
+            {/* Branch leads — the leaf of the hierarchy — then the user with access. */}
+            <div>
+              <b>{s.recipient.branch ?? s.recipient.name}</b>
+              <small>
+                {s.recipient.branch ? `${s.recipient.name} · ` : ''}
+                {s.expires_at ? `Until ${fmtDay(s.expires_at)}` : 'No expiry'}{s.reason ? ` · ${s.reason}` : ''}
+              </small>
+            </div>
             <Badge cls="teal">{s.permission_label}</Badge>
           </div>
         )) : !shared && (
@@ -481,7 +488,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       <CvPortal onClose={binAsk ? undefined : close}>
         <div className={`vd-ov${open ? ' is-open' : ''}`}>
           <div className="vd-scrim" />
-          <aside className="vd" role="dialog" aria-label={d.name}>
+          <aside className={`vd${fieldLabels ? ' vd--mv' : ''}`} role="dialog" aria-label={d.name}>
             <>
               {hdr}
               <div className="vd-body">

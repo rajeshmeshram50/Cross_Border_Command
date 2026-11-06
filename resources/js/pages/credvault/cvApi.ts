@@ -164,7 +164,7 @@ export interface ShareMail { status: 'sent' | 'partly_sent' | 'failed' | 'mail_o
 export interface ShareRow {
   id: number;
   credential: { id: number; code: string; name: string; type: string; type_label: string; category_group: string | null; risk: Risk; url: string | null; updated_at: string | null } | null;
-  recipient: { type: 'user' | 'team'; id: number; name: string | null; initials?: string; sub: string; members?: number | null };
+  recipient: { type: 'user' | 'team'; id: number; name: string | null; initials?: string; sub: string; members?: number | null; branch?: string | null };
   permission: Perm; permission_label: string; reason: string | null;
   shared_at: string | null; updated_at: string | null; expires_at: string | null; revoked_at: string | null;
   state: 'active' | 'soon' | 'expired' | 'revoked';

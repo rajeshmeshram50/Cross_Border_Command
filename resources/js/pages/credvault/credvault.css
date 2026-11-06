@@ -5684,11 +5684,6 @@
   justify-content: center;
 }
 
-/* Check column: the flags start at the left edge, under their left-aligned header. */
-.cvx #crd-host .ir-rev-list .ir-flags.ir-flags--l {
-  justify-content: flex-start;
-}
-
 /* Dark mode: the page tables' wrapper rule is under .cvx.tv-page, which a popup is not inside. */
 [data-bs-theme="dark"] .cvx #crd-host .tvc-list .whm-tblwrap {
   background: transparent;
@@ -19291,4 +19286,93 @@
 
 .cvx #crd-host .crd-pw.crd-pw--ta textarea.crd-pw__in {
   padding-right: 84px !important;
+}
+
+/* ══ My Vault View drawer · dark mode (CS UI #37): the header, its buttons and the footer follow the dark theme ══ */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd {
+  background: linear-gradient(120deg, #041f28 0%, #07384a 40%, #0b4f63 75%, #0e6f86 100%);
+  border-bottom: 1px solid rgba(34, 211, 238, .16);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd::after {
+  border-color: rgba(103, 232, 249, .06);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd__ico {
+  background: rgba(255, 255, 255, .08) !important;
+  color: #67e8f9 !important;
+  border: 1px solid rgba(103, 232, 249, .28);
+  box-shadow: none !important;
+}
+
+/* Header buttons: tinted glass instead of white blocks. */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn:hover:not(:disabled) {
+  color: #ecfeff;
+  background: rgba(34, 211, 238, .16);
+  border-color: rgba(103, 232, 249, .5);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--p {
+  color: #ecfeff;
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--del {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .1);
+  border-color: rgba(251, 113, 133, .35);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--del:hover {
+  color: #fff;
+  background: #e11d48;
+  border-color: #e11d48;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-x {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+}
+
+/* Footer Close: an outline on the dark footer, not a white button. */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-ft .mapsup-footer__btn--ghost.vd-fb {
+  color: #67e8f9 !important;
+  background: rgba(34, 211, 238, .06) !important;
+  border: 1.5px solid rgba(34, 211, 238, .35) !important;
+  box-shadow: none !important;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
+  color: #ecfeff !important;
+  background: rgba(34, 211, 238, .14) !important;
+}
+
+/* Dark mode · header ghost button (e.g. Generate Password): the same filled teal as the View drawer's Launch (four modules). */
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .cstrip--teal .cstrip__action-btn--ghost {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  color: #ecfeff;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .cstrip--teal .cstrip__action-btn--ghost:hover {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  color: #fff;
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px -6px rgba(8, 145, 178, .6);
 }

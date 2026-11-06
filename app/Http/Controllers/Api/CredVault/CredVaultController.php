@@ -336,10 +336,8 @@ class CredVaultController extends Controller
         $this->sweepUnlocks($u->client_id);
         [$c, $acc] = $this->findCredential($u, $id);
         $d = $this->detail($c, $u, $acc, true);
-        // Plain-text values were returned: logged like a reveal, so the trail stays complete.
-        if (!empty($d['all_values'])) {
-            $this->audit($u, 'reveal', $c, 'All stored values returned by the detail API', ['fields' => array_keys($d['all_values'])]);
-        }
+        // Opening the drawer is logged once by logAccess ('Opened credential details');
+        // an actual field reveal is logged by the reveal/copy endpoint. No entry here.
 
         return response()->json(['status' => true, 'data' => $d], 200);
     }
@@ -558,6 +556,8 @@ class CredVaultController extends Controller
         [$c] = $this->findCredential($u, $id);
 
         $page = AuditLog::where('client_id', $u->client_id)->where('credential_id', $c->id)
+            // Hide the legacy per-open reveal rows; opening is logged once as 'view'.
+            ->whereNot(fn ($w) => $w->where('action', 'reveal')->where('detail', 'All stored values returned by the detail API'))
             ->with('user:id,name,user_type,designation')->orderByDesc('id')
             ->paginate($f['per_page'] ?? 50, ['*'], 'page', $f['page'] ?? 1);
 
@@ -719,7 +719,7 @@ class CredVaultController extends Controller
         });
 
         [$row, $renewed] = $share;
-        $row->load(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name']);
+        $row->load(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation,branch_id', 'recipientUser.branch:id,name', 'recipientDepartment:id,name']);
         $mail = $this->mailShare($request, $u, $c, $row, $members, $renewed, $toName, $teamSize);
 
         return response()->json([
@@ -886,7 +886,7 @@ class CredVaultController extends Controller
         };
         $base->orderByDesc('created_at')->orderByDesc('id');
 
-        $page = $base->with(['credential:id,code,vault,name,type,risk,url,username,category_group,created_at,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name'])
+        $page = $base->with(['credential:id,code,vault,name,type,risk,url,username,category_group,created_at,updated_at', 'recipientUser:id,name,designation,branch_id', 'recipientUser.branch:id,name', 'recipientDepartment:id,name'])
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $from = ($page->currentPage() - 1) * $page->perPage();
 
@@ -947,7 +947,7 @@ class CredVaultController extends Controller
 
             return $fresh;
         });
-        $fresh->load(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation', 'recipientDepartment:id,name']);
+        $fresh->load(['credential:id,code,name,type,risk,url,category_group,updated_at', 'recipientUser:id,name,designation,branch_id', 'recipientUser.branch:id,name', 'recipientDepartment:id,name']);
 
         return response()->json(['status' => true, 'message' => 'Access revoked.', 'data' => $this->shareRow($fresh, $u->client_id)], 200);
     }
@@ -3974,7 +3974,8 @@ class CredVaultController extends Controller
 
     /**
      * The credentials an export or backup covers. mine = owned · team = team
-     * vault · all = both; never ones that are only shared with the user.
+     * vault · all = both; never ones that are only shared with the user,
+     * and never Critical Vault ones.
      * $light skips the encrypted columns — for counting, not for writing.
      */
     protected function fileScope(User $u, string $scope, bool $light = false): Collection
@@ -3986,6 +3987,8 @@ class CredVaultController extends Controller
         return $all->filter(function ($c) use ($acc, $scope, $u) {
             $via = $acc[$c->id][1] ?? null;
             if ($via === 'share' || $via === null) return false;
+            // A backup is the My Vault / Team Vault file: Critical Vault credentials never leave in one.
+            if ($c->isCriticalVault()) return false;
             return match ($scope) {
                 'mine'  => $c->owner_id === $u->id,
                 'team'  => $c->scope === 'team',
@@ -4325,7 +4328,7 @@ class CredVaultController extends Controller
 
         if ($acc[0] >= self::RANK_FULL) {
             $out['shares'] = CredentialShare::live()->where('credential_id', $c->id)
-                ->with(['recipientUser:id,name,designation', 'recipientDepartment:id,name', 'credential:id,code,name,type,risk,url,category_group,updated_at'])
+                ->with(['recipientUser:id,name,designation,branch_id', 'recipientUser.branch:id,name', 'recipientDepartment:id,name', 'credential:id,code,name,type,risk,url,category_group,updated_at'])
                 ->orderByDesc('id')->get()->map(fn ($s) => $this->shareRow($s, $u->client_id));
             $out['protection'] = [
                 'admin'        => $c->lock_admin,
@@ -4540,10 +4543,12 @@ class CredVaultController extends Controller
                                   'updated_at' => $c->updated_at?->toIso8601String()] : null,
             'recipient'  => $s->recipient_type === 'user'
                 ? ['type' => 'user', 'id' => $s->recipient_user_id, 'name' => $s->recipientUser?->name,
-                   'initials' => $this->initials($s->recipientUser?->name), 'sub' => $s->recipientUser?->designation ?: 'Individual']
+                   'initials' => $this->initials($s->recipientUser?->name), 'sub' => $s->recipientUser?->designation ?: 'Individual',
+                   // The branch is the leaf of the hierarchy — lead the access row with it.
+                   'branch' => $s->recipientUser?->branch?->name]
                 : ['type' => 'team', 'id' => $s->recipient_department_id, 'name' => $s->recipientDepartment?->name,
                    'initials' => $this->initials($s->recipientDepartment?->name),
-                   'members' => $members, 'sub' => 'Team' . ($members !== null ? " · {$members} members" : '')],
+                   'members' => $members, 'sub' => 'Team' . ($members !== null ? " · {$members} members" : ''), 'branch' => null],
             'permission' => $s->permission,
             'permission_label' => ['use' => 'Use Only', 'view' => 'View', 'copy' => 'Copy', 'full' => 'Full Access'][$s->permission] ?? $s->permission,
             'reason'     => $s->reason,
