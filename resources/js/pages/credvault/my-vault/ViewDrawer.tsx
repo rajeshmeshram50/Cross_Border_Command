@@ -488,7 +488,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       <CvPortal onClose={binAsk ? undefined : close}>
         <div className={`vd-ov${open ? ' is-open' : ''}`}>
           <div className="vd-scrim" />
-          <aside className="vd" role="dialog" aria-label={d.name}>
+          <aside className={`vd${fieldLabels ? ' vd--mv' : ''}`} role="dialog" aria-label={d.name}>
             <>
               {hdr}
               <div className="vd-body">
