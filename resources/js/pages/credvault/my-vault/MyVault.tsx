@@ -223,7 +223,6 @@ export default function MyVault() {
                         <td>
                           <div className="whm-acts">
                             <ActBtn icon={IC.view} title="View credential" disabled={!c} onClick={() => c && setViewId(c.id)} />
-                            <ActBtn icon={IC.share} title="Share again" disabled={!c} onClick={() => c && setShareId(c.id)} />
                             <ActBtn icon={BAN} title={dead ? STATE_LABEL[s.state] : 'Revoke access'} tone="danger" disabled={dead} onClick={() => setRevoke(s)} />
                           </div>
                         </td>
