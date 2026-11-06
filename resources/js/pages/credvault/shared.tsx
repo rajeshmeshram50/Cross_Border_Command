@@ -260,9 +260,11 @@ export function CvCard({ children, pane = false, fit = false }: { children: Reac
 }
 
 export interface CvTab { key: string; label: string; icon: string; count?: number | null }
-export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra, className = 'tvc-top' }: {
+export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra, after, className = 'tvc-top' }: {
   tabs: CvTab[]; active: string; onTab: (k: string) => void;
-  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode; className?: string;
+  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode;
+  /** Rendered after the search box (e.g. the row's main action button). */
+  after?: ReactNode; className?: string;
 }) {
   return (
     <div className={`parch-main-row whm-main-row ${className}`}>
@@ -280,16 +282,23 @@ export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, 
       </div>
       {extra}
       {onSearch && (
-        <div className="bst-search parch-search whm-main-search">
-          <Svg d={IC.search} size={14} stroke="#94a3b8" />
-          <input type="text" value={search ?? ''} placeholder={placeholder} onChange={e => onSearch(e.target.value)} aria-label="Search" autoComplete="off" />
-          {search ? (
-            <button type="button" className="bst-search-clear" onClick={() => onSearch('')} aria-label="Clear search">
-              <Svg d={IC.close} size={13} sw={2.4} />
-            </button>
-          ) : null}
-        </div>
+        // Its own form (display: contents, so the row's layout is unchanged): a browser filling a saved
+        // login for a password field elsewhere on the page never reaches into this one.
+        <form role="search" autoComplete="off" noValidate className="cv-search-form" onSubmit={e => e.preventDefault()}>
+          <div className="bst-search parch-search whm-main-search">
+            <Svg d={IC.search} size={14} stroke="#94a3b8" />
+            {/* type="search" + its own name: browsers do not treat it as a username box. */}
+            <input type="search" name="cv-tabs-search" value={search ?? ''} placeholder={placeholder} onChange={e => onSearch(e.target.value)}
+              aria-label="Search" autoComplete="off" autoCorrect="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
+            {search ? (
+              <button type="button" className="bst-search-clear" onClick={() => onSearch('')} aria-label="Clear search">
+                <Svg d={IC.close} size={13} sw={2.4} />
+              </button>
+            ) : null}
+          </div>
+        </form>
       )}
+      {after}
     </div>
   );
 }

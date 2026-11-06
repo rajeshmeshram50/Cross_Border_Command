@@ -258,6 +258,28 @@ export interface ImportPreviewRow {
   flags: ('invalid' | 'nopw' | 'dup' | 'dupfile' | 'weak')[]; dup_of: { id: number; code: string; name: string } | null;
   ok: boolean; ready: boolean; selected: boolean; has_password: boolean;
 }
+/** GET /imports/types — one of the 25 categories the import screen offers. */
+export interface ImportType {
+  key: string; label: string; group: string; icon: string; sheet: string;
+  columns: { key: string; header: string; label: string; required: boolean; kind: string; options?: string[]; hint?: string }[];
+  attach_later: { key: string; label: string; required: boolean }[];
+}
+
+export interface TypedImportError { field: string; label: string; message: string }
+/** A row of POST /imports/preview with `type`: checked as that category's Add form checks it. No secret comes back. */
+export interface TypedImportRow {
+  index: number; row: number; name: string; status: 'valid' | 'failed'; errors: TypedImportError[];
+  flags: ('dup' | 'dupfile' | 'weak')[]; notes: string[]; strength: string | null;
+  dup_of: { id: number; code: string; name: string } | null; selected: boolean;
+}
+export interface TypedImportPreview {
+  token: string; expires_in: number; type: string; type_label: string; file_name: string; sheet: string | null;
+  format: string; format_label: string; columns: { matched: Record<string, string>; ignored: string[] };
+  stats: { rows: number; valid: number; failed: number; duplicates: number; weak: number; selected: number };
+  rows: TypedImportRow[];
+  failed: { row: number; name: string; errors: TypedImportError[] }[];
+}
+
 export interface ImportPreview {
   token: string; expires_in: number; file_name: string; format: string; format_label: string; source: string;
   columns: Record<string, string>;
@@ -343,15 +365,21 @@ export const cvApi = {
   auditExport: (q: Q) => download('get', '/audit-logs/export', undefined, { ...q, tz: viewerTz() }),
 
   /* Import & Recovery */
-  importSample: (format: 'xlsx' | 'csv') => download('get', '/imports/sample', undefined, { format }),
+  importSample: (format: 'xlsx' | 'csv', type?: string) => download('get', '/imports/sample', undefined, { format, type }),
+  /* Import by category: the 25 categories, then one category's sheet checked row by row. */
+  importTypes: () => get<{ data: ImportType[]; meta: { formats: Record<string, string>; max_rows: number; max_mb: number } }>('/imports/types'),
+  importPreviewTyped: (type: string, file: File) => {
+    const fd = new FormData(); fd.append('type', type); fd.append('file', file);
+    return send<{ data: TypedImportPreview }>('post', '/imports/preview', fd).then(r => r.data);
+  },
   importPreview: (file: File) => {
     const fd = new FormData(); fd.append('file', file);
     return send<{ data: ImportPreview }>('post', '/imports/preview', fd).then(r => r.data);
   },
   importRun: (body: { token: string; rows: number[]; duplicates: 'skip' | 'copy'; scope?: string; department_id?: number }) => send<{ data: TransferRow; message: string }>('post', '/imports', body),
-  imports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/imports', { page }),
+  imports: (page = 1, perPage?: number) => get<{ data: TransferRow[]; meta: PageMeta }>('/imports', { page, per_page: perPage }),
   backup: (body: Loose) => download('post', '/backups', body),
-  backups: (mine = false, page = 1) => get<{ data: TransferRow[]; meta: PageMeta; scopes: Loose[]; columns: Loose; lock_note: string }>('/backups', { mine: mine ? 1 : undefined, page }),
+  backups: (mine = false, page = 1, perPage?: number) => get<{ data: TransferRow[]; meta: PageMeta; scopes: Loose[]; columns: Loose; lock_note: string }>('/backups', { mine: mine ? 1 : undefined, page, per_page: perPage }),
   exportPreview: (sel: ExportSelection) => get<{ data: Loose }>('/exports/preview', sel).then(r => r.data),
   exportRun: (body: Loose) => download('post', '/exports', body),
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),
