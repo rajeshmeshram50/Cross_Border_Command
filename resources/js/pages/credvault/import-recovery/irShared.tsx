@@ -72,8 +72,10 @@ const IMPORT_COLS: Col[] = [['Sr. No', 'c', 64], ['Import ID', 'c', 105], ['Impo
 const BACKUP_COLS: Col[] = [['Sr. No', 'c', 64], ['Backup ID', 'c', 105], ['Downloaded On', 'c', 125], ['Downloaded By', 'l', 190], ['Format', 'c', 100], ['Scope', 'c', 110], ['Items', 'c', 75], ['Size', 'c', 80], ['Protection', 'c', 150], ['Status', 'c', 110]];
 
 /** The history card under each tab (irHistHtml), with paging from the API. */
-export function HistoryCard({ kind, rows, meta, loading, error, onPage }: {
+export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSize }: {
   kind: 'import' | 'backup'; rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; onPage: (p: number) => void;
+  /** Shows the pager's "Rows per page" select. */
+  onPageSize?: (n: number) => void;
 }) {
   const head = kind === 'import' ? IMPORT_COLS : BACKUP_COLS;
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
@@ -143,7 +145,7 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage }: {
           </table>
         </div>
         <WorklistPager className="wl-teal" loading={loading} total={error ? 0 : meta?.total ?? 0}
-          page={meta?.current_page ?? 1} pageSize={meta?.per_page ?? 10} onPage={onPage} />
+          page={meta?.current_page ?? 1} pageSize={meta?.per_page ?? 10} onPage={onPage} onPageSize={onPageSize} />
       </div>
     </IrCard>
   );

@@ -349,9 +349,9 @@ export const cvApi = {
     return send<{ data: ImportPreview }>('post', '/imports/preview', fd).then(r => r.data);
   },
   importRun: (body: { token: string; rows: number[]; duplicates: 'skip' | 'copy'; scope?: string; department_id?: number }) => send<{ data: TransferRow; message: string }>('post', '/imports', body),
-  imports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/imports', { page }),
+  imports: (page = 1, perPage?: number) => get<{ data: TransferRow[]; meta: PageMeta }>('/imports', { page, per_page: perPage }),
   backup: (body: Loose) => download('post', '/backups', body),
-  backups: (mine = false, page = 1) => get<{ data: TransferRow[]; meta: PageMeta; scopes: Loose[]; columns: Loose; lock_note: string }>('/backups', { mine: mine ? 1 : undefined, page }),
+  backups: (mine = false, page = 1, perPage?: number) => get<{ data: TransferRow[]; meta: PageMeta; scopes: Loose[]; columns: Loose; lock_note: string }>('/backups', { mine: mine ? 1 : undefined, page, per_page: perPage }),
   exportPreview: (sel: ExportSelection) => get<{ data: Loose }>('/exports/preview', sel).then(r => r.data),
   exportRun: (body: Loose) => download('post', '/exports', body),
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),

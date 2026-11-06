@@ -260,9 +260,11 @@ export function CvCard({ children, pane = false, fit = false }: { children: Reac
 }
 
 export interface CvTab { key: string; label: string; icon: string; count?: number | null }
-export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra, className = 'tvc-top' }: {
+export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, extra, after, className = 'tvc-top' }: {
   tabs: CvTab[]; active: string; onTab: (k: string) => void;
-  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode; className?: string;
+  search?: string; onSearch?: (v: string) => void; placeholder?: string; extra?: ReactNode;
+  /** Rendered after the search box (e.g. the row's main action button). */
+  after?: ReactNode; className?: string;
 }) {
   return (
     <div className={`parch-main-row whm-main-row ${className}`}>
@@ -290,6 +292,7 @@ export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, 
           ) : null}
         </div>
       )}
+      {after}
     </div>
   );
 }
