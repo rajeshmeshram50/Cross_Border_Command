@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Date | 05/11/2026 |
+| Date | 06/11/2026 (full re-run, after the team's commits of 05–06/11) |
 | Branch | `saas` (with the team's latest commits merged) |
 | Scope | Every CredVault backend API: My Vault (Normal Vault) and Critical Vault for all 25 types, sharing, Team Vault, Export, Recycle Bin, Import & Recovery, Audit Logs, Password Health, Policies, Dashboard, Generate Password |
 | Method | Every request runs in-process against the real database, **inside a transaction that is rolled back**, so no data is changed. **Every Postman test script is evaluated** (not only the status code). Requests are paced at about 4 a second, as in a Postman run with a 300 ms delay. |
@@ -10,20 +10,27 @@
 
 ## 1. Result
 
-**Everything passes.** 0 failed requests, 0 failed checks, 0 server errors.
+**Every Postman collection passes:** 624 / 624 requests, 1,265 Postman tests, 0 server errors.
+
+**One open item:** the Teams Critical Credentials suite (26 / 41). Commit `2112e908` (05–06/11) changed the Critical Vault rule on purpose: every employee of a branch now sees **every** Critical Vault credential of the branch, **personal ones included** (via `branch_critical`), where the earlier rule (`b8e39cd8`) showed only the branch's **team** credentials (via `branch_team`). The 15 failing checks are the old rule's expectations: a colleague's personal critical credential is now listed and its detail opens (200, secrets still behind the approval steps). The suite is left on the old rule until the team confirms which one is wanted.
+
+**Changed since 05/11:**
+- Critical access requests: after the Vault Admin approves, the requester forwards the request to the reporting manager (`POST /critical-vault/access-requests/{id}/raise-manager`); only then can the manager approve. Both vault collections now include the forward (and the manager's 409 before it).
+- Recycle Bin: deleting for good and emptying the bin are Vault Admin / Branch Admin only; the older collection now does them as the Branch Admin (and checks the employee's 403).
+- Backup lock: a locked backup is the `.xlsx` itself with Excel's own password, no zip; only Excel can be locked.
 
 ### Postman collections (`docs/`)
 
 | Collection (name in Postman) | File | Requests passed | Postman tests | Skipped* |
 |---|---|---|---|---|
-| CredVault — Normal Vault & Critical Vault API | `CredVault_Vaults.postman_collection.json` | **315 / 315** | 849 | 1 |
-| CredVault — Password Manager API (Dashboard, Health, Policies, Audit, …) | `CredVault.postman_collection.json` | **141 / 141** | 142 | 3 |
+| CredVault — Normal Vault & Critical Vault API | `CredVault_Vaults.postman_collection.json` | **319 / 319** | 855 | 1 |
+| CredVault — Password Manager API (Dashboard, Health, Policies, Audit, …) | `CredVault.postman_collection.json` | **145 / 145** | 146 | 3 |
 | CredVault — Team Vault API | `CredVault_TeamVault.postman_collection.json` | **25 / 25** | 36 | 1 |
 | CredVault — Export Credentials API | `CredVault_Export.postman_collection.json` | **14 / 14** | 18 | 1 |
-| Recycle Bin | `CredVault_RecycleBin.postman_collection.json` | **42 / 42** | 65 | 0 |
+| Recycle Bin | `CredVault_RecycleBin.postman_collection.json` | **50 / 50** | 79 | 0 |
 | Import & Recovery | `CredVault_ImportRecovery.postman_collection.json` | **36 / 36** | 75 | 1 |
 | Audit Logs | `CredVault_AuditLogs.postman_collection.json` | **35 / 35** | 56 | 0 |
-| **Total** | | **607 / 607** | **1,238** | 7 |
+| **Total** | | **624 / 624** | **1,265** | 7 |
 
 \* **Skipped** requests need a person's real account password (e.g. an export or backup with readable passwords) or a second account. Run them in Postman with your own login. The login requests themselves are not counted: the runner signs in directly.
 
@@ -31,12 +38,12 @@
 
 | Suite | What it proves | Passed |
 |---|---|---|
-| Endpoint sweep | every CredVault GET endpoint (33) answers without a server error for the Vault Admin, the Branch Admin and an employee | **99 / 99** |
+| Endpoint sweep | every CredVault GET endpoint answers without a server error for the Vault Admin, the Branch Admin and an employee | **102 / 102** |
 | Audit Logs | 10 events from 1 hour to 40 days old:<br>• ranges 24h 4 · 7 days 8 · 30 days 9 · All 10, plus custom dates;<br>• tabs, and who sees what (Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9);<br>• search, day groups, row fields, timezone, paging;<br>• CSV and Excel export | **42 / 42** |
-| Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked Excel backup (an .xlsx with Excel's own password, no zip) refused with a wrong password and opened with the right one in Microsoft Excel; CSV with the lock on → 422;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **62 / 62** |
+| Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked Excel backup (an .xlsx with Excel's own password, no zip) refused with a wrong password and opened with the right one in Microsoft Excel; CSV with the lock on → 422; the still-locked file uploaded to import → 422;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **66 / 66** |
 | Recycle Bin rules | • counts for both vaults × 4 tabs, search;<br>• each person's view;<br>• restore and delete per person (Critical: Branch Admin only);<br>• retention (one period for both vaults);<br>• Empty Bin | **43 / 43** |
 | Recycle Bin retention per branch | • a Branch Admin sets their branch's period for My Vault and Critical Vault;<br>• other branches unaffected; employees read their branch's;<br>• Vault Admin: company default and one branch;<br>• 403 / 404 rules, Policies saves keep it, audit | **38 / 38** |
-| Teams Critical Credentials (whole branch) | every role; View via `branch_team` with Request Access; Normal Vault unchanged | **41 / 41** |
+| Teams Critical Credentials (whole branch) | every role; View via `branch_team` with Request Access; Normal Vault unchanged | **26 / 41** — see the open item above (rule changed by `2112e908`) |
 | Team access rights | Branch Admin, managers down the reporting line, no rights over people above or at the same level; edit, share and delete on the real APIs | **56 / 56** |
 | Generate Password (R&D spec) | • D34 strength examples;<br>• 10,000 passwords all correct;<br>• no bias over 10 million picks (largest deviation about 0.3%);<br>• EFF passphrases;<br>• the spec's messages | **49 / 49** |
 | Vault collection samples | every sample password still saves; the generator folder answers as its tests expect | **45 / 45** |
@@ -46,8 +53,8 @@
 
 | Check | Result |
 |---|---|
-| PHP lint: every CredVault controller, model, service and migration (25 files) | 0 errors |
-| Routes | 67 CredVault routes registered |
+| PHP lint: every CredVault controller, model, service and migration (26 files) | 0 errors |
+| Routes | 69 CredVault routes registered |
 | Migrations | none pending |
 | TypeScript (CredVault pages) | 0 errors (the 180 in the project are in other modules) |
 | Frontend build (Vite) | builds |

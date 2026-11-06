@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "CredVault — Password Manager API",
-        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Two vaults: normal-vault/* (CRD-0001…, 2-step only recorded) and critical-vault/* (CCRD-0001…, approvals + 2-step by Google Authenticator or email). Everything else is shared.\n3. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
+        "description": "Every API behind the Kryptone CredVault prototype (Kryptone_CredVault_Prototype.html). Coverage, rules and test results: docs/CREDVAULT_API_SHEET.md.\n\nBEFORE YOU START\n1. Migrations: php artisan migrate (runs database/migrations/credvault).\n2. Two vaults: normal-vault/* (CRD-0001…, 2-step only recorded) and critical-vault/* (CCRD-0001…, approvals + 2-step by Google Authenticator or email). Everything else is shared.\n3. Fill the variables: baseUrl, email/password (an employee), adminEmail/adminPassword (a client admin of the SAME company), managerEmail/managerPassword (the employee's reporting manager), branchEmail/branchPassword (the Branch Admin of the employee's branch), recipientUserId (any other active user of the company).\n3. Run 00 · Setup first, then the folders in order — later requests read ids saved by earlier ones.\n\nRESPONSES\nSuccess: { status: true, data, tabs?, meta? }. Refusal: { status: false, message, errors? } with errors keyed by field. 401 no token · 403 not allowed · 404 not found or out of reach · 409 state conflict · 410 import token used/expired · 422 validation · 423 credential locked / too many OTP attempts · 429 rate limit.\n\nRATE LIMITS\n240/min per user across CredVault · 60/min on reveal · 10/min on authenticator checks.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -17,7 +17,7 @@
     "item": [
         {
             "name": "00 · Setup",
-            "description": "Log in three people. Most requests run as the requester ({{token}}). The approval steps run as the Vault Admin ({{adminToken}}) and the requester's reporting manager ({{managerToken}}). The share recipient must be an active user of the same company — put their user id in {{recipientUserId}}.",
+            "description": "Log in four people. Most requests run as the requester ({{token}}). Deleting from and emptying the Recycle Bin run as the requester’s Branch Admin ({{branchToken}}). The approval steps run as the Vault Admin ({{adminToken}}) and the requester's reporting manager ({{managerToken}}). The share recipient must be an active user of the same company — put their user id in {{recipientUserId}}.",
             "item": [
                 {
                     "name": "Login — requester (employee)",
@@ -151,6 +151,52 @@
                                     "const b = pm.response.json();",
                                     "if (b.token) pm.collectionVariables.set('managerToken', b.token);",
                                     "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('managerToken')).to.not.eql(''));",
+                                    "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login — requester's Branch Admin (branch user)",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{branchEmail}}\",\n  \"password\": \"{{branchPassword}}\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const b = pm.response.json();",
+                                    "if (b.token) pm.collectionVariables.set('branchToken', b.token);",
+                                    "pm.test('token stored', () => pm.expect(pm.collectionVariables.get('branchToken')).to.not.eql(''));",
                                     "if (b.needs_org_selection) console.warn('This email exists in several companies — pick the org in the app first, or use a unique login.');"
                                 ]
                             }
@@ -3598,6 +3644,115 @@
                     ]
                 },
                 {
+                    "name": "Manager before the forward (409 not forwarded yet)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{requestId}}",
+                                "approve"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Forward to the reporting manager — requester",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/raise-manager",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{requestId}}",
+                                "raise-manager"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "After the Vault Admin approves, the requester forwards the request; only then can the reporting manager approve."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "Approve — Reporting Manager",
                     "request": {
                         "method": "POST",
@@ -5783,7 +5938,7 @@
         },
         {
             "name": "09 · Import & Recovery",
-            "description": "Import: preview (upload) → import the selected rows by index. Passwords stay on the server between the two calls; the token works once.\\nBackup: CSV / JSON / Excel; an Excel backup can be locked with Excel's own password (no zip).",
+            "description": "Import: preview (upload) → import the selected rows by index. Passwords stay on the server between the two calls; the token works once.\\nBackup: CSV / JSON / Excel; an Excel backup can be locked with Excel’s own password (no zip).",
             "item": [
                 {
                     "name": "Sample file — Excel",
@@ -6637,7 +6792,7 @@
                     ]
                 },
                 {
-                    "name": "Delete permanently",
+                    "name": "Delete permanently — employee (403: Vault Admin or Branch Admin only)",
                     "request": {
                         "method": "DELETE",
                         "header": [
@@ -6669,6 +6824,63 @@
                                     "language": "json"
                                 }
                             }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete permanently — Branch Admin",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin/{{teamCredId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin",
+                                "{{teamCredId}}"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
                         }
                     },
                     "event": [
@@ -6719,7 +6931,53 @@
                     ]
                 },
                 {
-                    "name": "Empty bin",
+                    "name": "Empty bin — employee (403)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/recycle-bin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "recycle-bin"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"confirm\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Empty bin — Branch Admin",
                     "request": {
                         "method": "DELETE",
                         "header": [
@@ -6751,7 +7009,17 @@
                                 }
                             }
                         },
-                        "description": "409 when the bin is already empty."
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{branchToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "description": "Vault Admin or Branch Admin only. 409 when the bin is already empty."
                     },
                     "event": [
                         {
@@ -6802,6 +7070,15 @@
             "value": ""
         },
         {
+            "key": "branchEmail",
+            "value": "",
+            "description": "The Branch Admin (branch user) of the requester's branch"
+        },
+        {
+            "key": "branchPassword",
+            "value": ""
+        },
+        {
             "key": "recipientUserId",
             "value": "",
             "description": "Another active user of the company, to share with"
@@ -6821,6 +7098,10 @@
         },
         {
             "key": "managerToken",
+            "value": ""
+        },
+        {
+            "key": "branchToken",
             "value": ""
         },
         {
