@@ -55,6 +55,10 @@ export interface SpiRequestTotals {
   approvedUnpaid: number;
   requestCount: number;
   available: number;
+  /* Released so far, on the same scope as the figures above: the PO's for a
+     PO-backed SPI (the SPI's own paid column stays 0 there), else the SPI's. */
+  paid: number;
+  pctPaid: number;
 }
 
 const toRequest = (r: PoPayRequest, spiId: number | null): InvoicePaymentRequest => ({
@@ -258,18 +262,26 @@ export default function InvoicePaymentsModal({ row, onClose }: {
       lockedBy: ledger?.tds_locked_by ?? (paid > 0 ? 'payment' : approvedCount > 0 ? 'approval' : null),
       room: Math.max(0, balance), base, gst, extra, total, amount: ledger?.tds_amount ?? 0,
     } : null;
-  /* The raise popup is about THIS SPI, so its request figures are this SPI's
-     own - the list above also carries the PO's and the sibling SPIs'. */
-  const ownApproved = ownList.filter(q => q.status === 'approved');
-  const ownPending = ownList.filter(q => q.status === 'pending');
+  /* CS-933 — an SPI on a PO is paid against the PO: its ceiling (`available`)
+     already nets off every open request on the order, so the raise popup's
+     request KPIs count those same requests — the PO's own and its sibling
+     SPIs' — and the PO's paid figure. Counting only this SPI's requests showed
+     ₹0 everywhere while the order's balance was spoken for. A Direct SPI is
+     its own ledger, so its list is already just its own. */
+  const reqScope = po ? list : ownList;
+  const scopeApproved = reqScope.filter(q => q.status === 'approved');
+  const scopePending = reqScope.filter(q => q.status === 'pending');
+  const scopePaid = po ? po.paid : paid;
   const totals: SpiRequestTotals = {
-    requested: ownList.reduce((n, q) => n + q.amount, 0),
-    approvedTotal: ownApproved.reduce((n, q) => n + q.approved, 0),
-    pendingAmt: ownPending.reduce((n, q) => n + q.amount, 0),
-    pendingCount: ownPending.length,
-    approvedUnpaid: ownApproved.reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0),
-    requestCount: ownList.length,
+    requested: reqScope.reduce((n, q) => n + q.amount, 0),
+    approvedTotal: scopeApproved.reduce((n, q) => n + q.approved, 0),
+    pendingAmt: scopePending.reduce((n, q) => n + q.amount, 0),
+    pendingCount: scopePending.length,
+    approvedUnpaid: scopeApproved.reduce((n, q) => n + Math.max(0, q.approved - q.paid), 0),
+    requestCount: reqScope.length,
     available,
+    paid: scopePaid,
+    pctPaid: po ? (po.net_payable > 0 ? Math.round((po.paid / po.net_payable) * 100) : 0) : pctPaid,
   };
 
   const needsTds = po ? po.tds_applies && !po.tds_saved : !!tdsCtl && !tdsCtl.saved;

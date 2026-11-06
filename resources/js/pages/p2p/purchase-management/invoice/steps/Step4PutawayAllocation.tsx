@@ -1035,6 +1035,10 @@ const SCAN_SLOT_LABEL: Record<string, string> = {
  *  the two real events (location selected, placed) are expanded into the four
  *  Stage-4 steps — Steps 1 & 3 borrow the adjacent real time (CS-1144). A Zebra
  *  or edged log (scans, failures, release) keeps the per-event mapping. */
+/** Sent as the cancel reason and read back as the log row's reason_label. */
+const CANCEL_REASON_ONLY = 'Option selected · Cancel Task Only';
+const CANCEL_REASON_MANUAL = 'Option selected · Cancel & Continue with Manual';
+
 const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] => {
   const hasDeviceFlow = rows.some(r =>
     ['task_created', 'task_cancelled', 'scan_passed', 'scan_failed', 'confirmed_device'].includes(r.event));
@@ -1058,9 +1062,28 @@ const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] => {
     return steps;
   }
 
-  return rows.flatMap((r): LogEntry[] => {
+  return rows.flatMap((r, i): LogEntry[] => {
     const time = logTime(r.at);
     const by = r.actor ?? null;
+    /* A manual confirmation after a Zebra task (typically "Cancel & Continue
+       with Manual") gets the same step trail as a clean manual putaway: the
+       method picked, then Steps 1–4. The method and Steps 1–2 borrow the time
+       of the cancellation that started the manual run; Steps 3–4 the confirm
+       (CS-1144). */
+    if (r.event === 'confirmed_manual') {
+      const before = rows.slice(0, i);
+      const cancel = [...before].reverse().find(x => x.event === 'task_cancelled');
+      const loc = [...before].reverse().find(x => x.event === 'assigned' || x.event === 'reassigned')?.location ?? '';
+      const sTime = cancel ? logTime(cancel.at) : time;
+      const sBy = cancel?.actor ?? by;
+      return [
+        { k: 'method', t: 'Putaway method chosen', d: 'Option 02 · Manual Confirmation', time: sTime, by: sBy },
+        { k: 'task', t: 'Step 1 · Box picked', d: '', time: sTime, by: sBy },
+        { k: 'loc', t: 'Step 2 · Location selected', d: loc, time: sTime, by: sBy },
+        { k: 'task', t: 'Step 3 · Manual confirmation', d: 'Manual confirmation', time, by },
+        { k: 'done', t: 'Step 4 · Putaway confirmed (manual)', d: r.location ?? loc, time, by },
+      ];
+    }
     const withDev = (s: string) => [s, r.device].filter(Boolean).join(' · ');
     // Carry the server's actor on every row — manual and zebra alike — so the
     // log shows who did it, not a hardcoded desk name.
@@ -1069,10 +1092,10 @@ const fromServerLog = (rows: PutawayLogRow[]): LogEntry[] => {
       case 'assigned':         return mk('loc', 'Location assigned', r.location ?? '');
       case 'reassigned':       return mk('loc', 'Location reassigned', r.location ?? '');
       case 'task_created':     return mk('task', 'Zebra scan task created', '');
-      case 'task_cancelled':   return mk('cancel', 'Zebra scan task cancelled', '');
+      // reason_label names the option picked (Cancel Task Only / Continue with Manual).
+      case 'task_cancelled':   return mk('cancel', 'Zebra scan task cancelled', r.reason_label ?? '');
       case 'scan_passed':      return mk('scan', SCAN_SLOT_LABEL[r.slot ?? ''] ?? 'Scan verified', withDev(r.location ?? ''));
       case 'scan_failed':      return mk('err', 'Scan rejected', r.reason_label ?? '');
-      case 'confirmed_manual': return mk('done', 'Putaway confirmed (manual)', ['Manual confirmation', r.location].filter(Boolean).join(' · '));
       case 'confirmed_device': return mk('done', 'Putaway confirmed', withDev(r.location ?? ''));
       case 'released':         return mk('cancel', 'Box released', '');
       // lock_acquired / lock_released are internal — not shown.
@@ -1722,7 +1745,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     setCancelBusy(true);
     setCancelWhich(which);
     try {
-      await spiApi.putawayCancelTask(scanTask.apiId, 'Cancelled from the SPI form');
+      // The reason is what the frozen log shows under the cancellation, so it
+      // names the option picked (CS-1144). Old rows carry the bare sentence.
+      await spiApi.putawayCancelTask(scanTask.apiId, which === 'manual' ? CANCEL_REASON_MANUAL : CANCEL_REASON_ONLY);
       setBoardTick(t => t + 1);
       return true;
     } catch (e) {
@@ -2013,9 +2038,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                    instead of "Method not chosen". (CS-1144) */
                 method={methodPick === 'zebra' || scanTask ? 'Using Zebra Device'
                   : methodPick === 'manual' ? 'Manual Confirmation'
-                  : serverLog.some(e => /manual/i.test(e.t) || /manual/i.test(e.d)) ? 'Manual Confirmation'
-                  : serverLog.some(e => e.k === 'scan' || /zebra|scanned|device/i.test(e.t)) ? 'Using Zebra Device'
-                  : 'Method not chosen'}
+                  /* The final confirmation decides it: a cancel reason can say
+                     "Continue with Manual" for a box later finished on Zebra. */
+                  : (() => {
+                    const fin = [...serverLog].reverse().find(e => e.k === 'done');
+                    if (fin) return /manual/i.test(fin.t) || /manual/i.test(fin.d) ? 'Manual Confirmation' : 'Using Zebra Device';
+                    return null;
+                  })()
+                  ?? (serverLog.some(e => e.k === 'scan' || /zebra|scanned|device/i.test(e.t)) ? 'Using Zebra Device' : null)
+                  ?? (serverLog.some(e => e.k === 'method' && /manual/i.test(e.d)) ? 'Manual Confirmation' : null)
+                  ?? 'Method not chosen'}
                 task={scanTask?.id ?? null}
                 scans={scanTask ? scanSteps : 0}
                 done={placedAt !== null || box?.status === 'placed'}

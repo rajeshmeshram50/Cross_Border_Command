@@ -54,6 +54,10 @@ export type PoLinkRefs = {
   customer_name: string | null; opportunity_code: string | null;
   /** SPIs mapped to the order, oldest first. */
   spis?: { code: string; date: string | null }[];
+  /** Quantity still to be invoiced across the order's lines; null when it has none (CS-937). */
+  open_qty?: number | null;
+  /** Every line already billed on live SPIs — the SPI chooser locks such an order. */
+  fully_invoiced?: boolean;
 };
 
 export type PoListRow = PoLinkRefs & {

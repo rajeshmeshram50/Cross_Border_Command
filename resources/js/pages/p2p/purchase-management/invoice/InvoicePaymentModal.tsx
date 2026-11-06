@@ -170,6 +170,11 @@ export default function InvoicePaymentModal({
   const room = approvedRequest ? Math.max(0, request.approved - paidHere) : 0;
   const settled = approvedRequest && request.approved > 0 && room <= 0;
   const canEdit = approvedRequest;
+  /* CS-932 — how far THIS request has been paid, as on the PO's Make Payment
+     popup (CS-423): a request settled in full reads 100%. request.pct is the
+     request's share of the order, which never moves as payments land. */
+  const paidPct = approvedRequest && request.approved > 0
+    ? Math.min(100, Math.round((paidHere / request.approved) * 1000) / 10) : 0;
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -225,9 +230,9 @@ export default function InvoicePaymentModal({
             <div className="cpay-grid">
               <Field label="Payment Request ID"><span className="cpay-id">{request.id}</span></Field>
               <Field label="Payment Type"><span className="cpay-type">{request.type}</span></Field>
-              <Field label="Payment %" mod="cpay-f--pct">
-                <span className="cpay-pct">{request.pct}%</span>
-                <span className="cpay-bar"><i style={{ width: `${Math.max(0, Math.min(100, request.pct))}%` }} /></span>
+              <Field label="Payment % (of this request)" mod="cpay-f--pct">
+                <span className="cpay-pct">{paidPct}%</span>
+                <span className="cpay-bar"><i style={{ width: `${paidPct}%` }} /></span>
               </Field>
               <Field label="Requested Payment Amount">{money(request.amount)}</Field>
               <Field label="Requested To" mod="cpay-f--who">
