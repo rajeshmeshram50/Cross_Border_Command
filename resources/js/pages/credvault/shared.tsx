@@ -284,7 +284,10 @@ export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, 
       {onSearch && (
         <div className="bst-search parch-search whm-main-search">
           <Svg d={IC.search} size={14} stroke="#94a3b8" />
-          <input type="text" value={search ?? ''} placeholder={placeholder} onChange={e => onSearch(e.target.value)} aria-label="Search" autoComplete="off" />
+          {/* type="search" + its own name: browsers never treat it as a username box, so a saved login is not
+              auto-filled into it when a popup on the page has password fields (e.g. Download backup). */}
+          <input type="search" name="cv-tabs-search" value={search ?? ''} placeholder={placeholder} onChange={e => onSearch(e.target.value)}
+            aria-label="Search" autoComplete="off" autoCorrect="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
           {search ? (
             <button type="button" className="bst-search-clear" onClick={() => onSearch('')} aria-label="Clear search">
               <Svg d={IC.close} size={13} sw={2.4} />

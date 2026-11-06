@@ -5353,6 +5353,56 @@
   margin-bottom: 0;
 }
 
+/* Import & Recovery popups (Import data, Import by category, Review, Download backup):
+   footer buttons in the right corner, 40px tall like the tabs row's Import data button. */
+.cvx #crd-host .ir-imp-box>.mapsup-footer .mapsup-footer__actions,
+.cvx #crd-host .ir-cat-box>.mapsup-footer .mapsup-footer__actions,
+.cvx #crd-host .ir-rev-box>.mapsup-footer .mapsup-footer__actions,
+.cvx #crd-host .ir-bk-box>.mapsup-footer .mapsup-footer__actions {
+  /* .gp-box makes the actions a full-width left-aligned grid; here they sit in the right corner. */
+  width: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.cvx #crd-host .ir-imp-box>.mapsup-footer .mapsup-footer__btn,
+.cvx #crd-host .ir-cat-box>.mapsup-footer .mapsup-footer__btn,
+.cvx #crd-host .ir-rev-box>.mapsup-footer .mapsup-footer__btn,
+.cvx #crd-host .ir-bk-box>.mapsup-footer .mapsup-footer__btn {
+  height: 40px !important;
+  min-height: 40px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Dark mode inside these popups: the panel cards (Upload file) take the page's dark card look —
+   the page rules sit under .cvx.tv-page, which a popup is not inside. */
+[data-bs-theme="dark"] .cvx #crd-host .ir-imp-body .tv-pane {
+  background: var(--tvd-card, #0f1e26);
+  border-color: var(--tvd-line, rgba(148, 163, 184, .18));
+  box-shadow: 0 10px 26px -18px rgba(0, 0, 0, .8);
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-imp-body .tv-pane__hd {
+  background: linear-gradient(100deg, #0b2430, #0e3646 60%, #104252);
+  border-bottom-color: var(--tvd-line, rgba(148, 163, 184, .18));
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-imp-body .tv-pane__t b {
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-imp-body .tv-pane__t small {
+  color: #67e8f9;
+  opacity: .85;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-imp-body .tv-pane__bd {
+  background: transparent;
+}
+
 /* Download backup popup: the backup settings (format, vault, passwords, lock). */
 .cvx #crd-host .mapsup-box.crd-box.gp-box.ir-bk-box {
   width: min(980px, calc(100vw - 32px)) !important;
@@ -5423,13 +5473,99 @@
   max-width: none !important;
 }
 
-.cvx .ir-rev-tbl {
-  max-height: min(52vh, 460px);
-  overflow: auto;
+/* Tabs-row search is type="search" (keeps browser login autofill out of it): drop the browser's own
+   search styling and clear (×) button — the row has its own clear button. */
+.cvx .bst-search input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-.cvx .ir-rev-tbl .whm-tbl.mv-tbl td.ir-al {
+.cvx .bst-search input[type="search"]::-webkit-search-cancel-button,
+.cvx .bst-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
+
+/* History tables (Import and Backup): HistoryCard marks each column ir-al (left) or ir-ac (centre) on
+   both the header and the cells, so a header always lines up with its data. */
+.cvx .ir-hist .whm-tbl.mv-tbl th.ir-ac,
+.cvx .ir-hist .whm-tbl.mv-tbl td.ir-ac {
+  text-align: center !important;
+}
+
+.cvx .ir-hist .whm-tbl.mv-tbl th.ir-al,
+.cvx .ir-hist .whm-tbl.mv-tbl td.ir-al {
   text-align: left !important;
+}
+
+.cvx .ir-hist .whm-tbl.mv-tbl td.ir-ac .whm-idcell {
+  align-items: center;
+}
+
+.cvx .ir-hist .whm-tbl.mv-tbl td.ir-al .mv-ownc,
+.cvx .ir-hist .whm-tbl.mv-tbl td.ir-al .ix-fc {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* The outer tabs card never scrolls sideways: the history runs to its edges, nothing past them. */
+.cvx.ir-page > .tv-pane > .tv-pane__bd {
+  overflow-x: hidden;
+}
+
+/* The review table uses the page tables' markup (tvc-list → whm-tblwrap → whm-tbl mv-tbl). */
+.cvx #crd-host .ir-rev-list {
+  margin: 0;
+}
+
+.cvx #crd-host .ir-rev-list .whm-tblwrap {
+  max-height: min(52vh, 460px);
+  overflow-x: hidden !important;
+  overflow-y: auto;
+}
+
+/* Fits the popup: fixed column widths (colgroup), no minimum width, so no horizontal scroll. */
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed;
+}
+
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl th,
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl td {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Header and cells share one alignment per column: names / IDs / reasons left, the rest centred. */
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl th,
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl td {
+  text-align: center !important;
+}
+
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl th.ir-al,
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl td.ir-al {
+  text-align: left !important;
+}
+
+.cvx #crd-host .ir-rev-list .whm-tbl.mv-tbl td.ir-al b {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cvx #crd-host .ir-rev-list .ir-flags {
+  justify-content: center;
+}
+
+/* Dark mode: the page tables' wrapper rule is under .cvx.tv-page, which a popup is not inside. */
+[data-bs-theme="dark"] .cvx #crd-host .tvc-list .whm-tblwrap {
+  background: transparent;
+  border-top-color: var(--tvd-line) !important;
+  border-bottom-color: var(--tvd-line) !important;
 }
 
 .cvx .ir-why {
@@ -5460,10 +5596,13 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 40px;
-  padding: 0 18px;
+  /* Same height and corners as the tabs row's tabs and search box (48px, 11px). */
+  height: 48px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 0 20px;
   border: none;
-  border-radius: 12px;
+  border-radius: 11px;
   font-family: inherit;
   font-size: 11.5px;
   font-weight: 700;
@@ -5492,7 +5631,7 @@
   height: 50%;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
-  border-radius: 12px 12px 0 0;
+  border-radius: 11px 11px 0 0;
 }
 
 /* Import tab: the history card fills the white card down to its bottom edge. */
@@ -5552,11 +5691,16 @@
 
 .cvx .ir-body.is-fill .ir-hist > .tv-pane__bd {
   padding: 0 !important;
+  /* Its table runs 12px past each side to the card edges; the body must not turn that into a
+     horizontal scrollbar (the table wrapper does its own scrolling). */
+  overflow: visible !important;
 }
 
 /* The table and pager run to the card's edges and its bottom, like the Recycle Bin and My Vault:
    no padding under the footer (the card's own 12px is taken back), one line above the pager. */
 .cvx .ir-body.is-fill {
+  /* No top padding: the card's own 8px gap is the only space between the tabs row and the history strip. */
+  padding-top: 0;
   padding-bottom: 0;
   margin-bottom: -12px;
 }

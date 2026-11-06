@@ -50,10 +50,12 @@ export default function ImportReviewModal({ review, onBack, onSaved }: {
                 { key: 'discarded', label: 'Discarded Records', icon: IR_I.warn, count: discarded.length },
               ]} />
 
-              <div className="whm-tblwrap ir-rev-tbl">
+              <div className="tvc-list ir-rev-list">
+              <div className="whm-tblwrap">
                 {tab === 'accepted' ? (
                   <table className="whm-tbl mv-tbl">
-                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th>Credential Name</th><th>{category.idLabel}</th><th>Strength</th><th>Check</th></tr></thead>
+                    <colgroup><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '30%' }} /><col style={{ width: '22%' }} /><col style={{ width: '11%' }} /><col style={{ width: '17%' }} /></colgroup>
+                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th className="ir-al">Credential Name</th><th className="ir-al">{category.idLabel}</th><th>Strength</th><th>Check</th></tr></thead>
                     <tbody>
                       {accepted.length ? accepted.map((r, i) => (
                         <tr key={r.row}>
@@ -75,7 +77,8 @@ export default function ImportReviewModal({ review, onBack, onSaved }: {
                   </table>
                 ) : (
                   <table className="whm-tbl mv-tbl">
-                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th>Credential Name</th><th>Why it was discarded</th></tr></thead>
+                    <colgroup><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '30%' }} /><col style={{ width: '50%' }} /></colgroup>
+                    <thead><tr><th>Sr. No</th><th>Sheet Row</th><th className="ir-al">Credential Name</th><th className="ir-al">Why it was discarded</th></tr></thead>
                     <tbody>
                       {discarded.length ? discarded.map((r, i) => (
                         <tr key={r.row}>
@@ -91,6 +94,7 @@ export default function ImportReviewModal({ review, onBack, onSaved }: {
                   </table>
                 )}
               </div>
+              </div>
             </div>
 
             <div className="mapsup-footer">
@@ -100,7 +104,7 @@ export default function ImportReviewModal({ review, onBack, onSaved }: {
               <div className="mapsup-footer__actions">
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={back} disabled={busy}>Back</button>
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={save} disabled={busy || !accepted.length}>
-                  <Svg d={IR_I.check} size={13} sw={2.1} />{busy ? 'Saving…' : `Save ${accepted.length} Record${accepted.length === 1 ? '' : 's'}`}
+                  {busy ? 'Saving…' : `Save ${accepted.length} Record${accepted.length === 1 ? '' : 's'}`}
                 </button>
               </div>
             </div>
