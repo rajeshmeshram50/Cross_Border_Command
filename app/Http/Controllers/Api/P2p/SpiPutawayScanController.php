@@ -477,21 +477,43 @@ class SpiPutawayScanController extends Controller
             $here = $at ? " It does not belong at {$at}." : '';
 
             if ($row?->isPlaced()) {
-                /* Not a mistake — the carton is where it should be. Say so,
-                   with the proof, and leave the open task's attempts alone. */
+                /* Already put away. Show the SAME full details screen as a fresh
+                   scan — box, products and where it now sits — marked done, not a
+                   bare "already placed" line. The completed task carries all of
+                   it (destination = its current zone/rack/shelf). (CS-956 #64) */
+                $placed = [
+                    'box_code'    => $box->box_code,
+                    'spi_code'    => $spi->code,
+                    'destination' => $row->destination,
+                    'at'          => optional($row->confirmed_at)->toIso8601String(),
+                    'method'      => $row->verify_method,
+                    'by'          => $row->confirmed_by
+                        ? DB::table('users')->where('id', $row->confirmed_by)->value('name')
+                        : null,
+                ];
+
+                $done = SpiPutawayTask::where('box_id', $box->id)
+                    ->where('supplier_invoice_id', $spi->id)
+                    ->where('client_id', $device->client_id)
+                    ->whereNotNull('completed_at')->latest('completed_at')->first();
+
+                if ($done) {
+                    $this->log($done, $device, PutawayActivityLog::SCAN_PASSED, [
+                        'box_id' => $box->id,
+                        'meta'   => ['act' => 'lookup', 'slot' => 'box', 'already_placed' => true],
+                    ]);
+
+                    return response()->json([
+                        'status'         => true,
+                        'notice'         => "{$box->box_code} of {$spi->code} is already put away.",
+                        'already_placed' => true,
+                        'data'           => $this->state($done, $device) + ['already_placed' => true, 'placed' => $placed],
+                    ], 200);
+                }
+
+                /* Hand-confirmed / legacy with no completed task row — the proof only. */
                 return $this->refuse($task, $device, 'already_placed',
-                    "{$box->box_code} of {$spi->code} is already put away.", $data, [
-                        'placed' => [
-                            'box_code'    => $box->box_code,
-                            'spi_code'    => $spi->code,
-                            'destination' => $row->destination,
-                            'at'          => optional($row->confirmed_at)->toIso8601String(),
-                            'method'      => $row->verify_method,
-                            'by'          => $row->confirmed_by
-                                ? DB::table('users')->where('id', $row->confirmed_by)->value('name')
-                                : null,
-                        ],
-                    ], false);
+                    "{$box->box_code} of {$spi->code} is already put away.", $data, ['placed' => $placed], false);
             }
 
             $named = "{$box->box_code} of {$spi->code}";
@@ -924,10 +946,12 @@ class SpiPutawayScanController extends Controller
     /** Real, active, and in this task's warehouse — or why not. */
     private function locationUsable(string $slot, int $id, SpiPutawayTask $task): ?string
     {
+        // Org-scoped: a location owned by another client is not this task's to
+        // use, whatever its id. (CS-956: other-org location scan)
         $row = match ($slot) {
-            'zone'  => DB::table('inventory_zones')->where('id', $id)->first(['id', 'status', 'warehouse_id']),
-            'rack'  => DB::table('inventory_racks')->where('id', $id)->first(['id', 'status', 'warehouse_id']),
-            default => DB::table('inventory_shelves')->where('id', $id)->first(['id', 'status', 'rack_id']),
+            'zone'  => DB::table('inventory_zones')->where('id', $id)->where('client_id', $task->client_id)->first(['id', 'status', 'warehouse_id']),
+            'rack'  => DB::table('inventory_racks')->where('id', $id)->where('client_id', $task->client_id)->first(['id', 'status', 'warehouse_id']),
+            default => DB::table('inventory_shelves')->where('id', $id)->where('client_id', $task->client_id)->first(['id', 'status', 'rack_id']),
         };
 
         if (!$row) return 'That location no longer exists.';
@@ -952,10 +976,16 @@ class SpiPutawayScanController extends Controller
     {
         if (!$id) return null;
 
-        if ($slot === 'zone') return DB::table('inventory_zones')->where('id', $id)->value('code');
-        if ($slot === 'rack') return DB::table('inventory_racks')->where('id', $id)->value('code');
+        // Scope to the device's organisation — a zone/rack/shelf owned by another
+        // client must read as "not on this account", exactly like the box scan.
+        // $device is null only for internal display of a task already scoped to
+        // its client. (CS-956: other-org location scan)
+        $scope = fn ($q) => $device ? $q->where('client_id', $device->client_id) : $q;
 
-        $shelf = DB::table('inventory_shelves')->where('id', $id)->first(['rack_id', 'level_no']);
+        if ($slot === 'zone') return $scope(DB::table('inventory_zones')->where('id', $id))->value('code');
+        if ($slot === 'rack') return $scope(DB::table('inventory_racks')->where('id', $id))->value('code');
+
+        $shelf = $scope(DB::table('inventory_shelves')->where('id', $id))->first(['rack_id', 'level_no']);
         if (!$shelf) return null;
 
         $rack = DB::table('inventory_racks')->where('id', $shelf->rack_id)->value('code');

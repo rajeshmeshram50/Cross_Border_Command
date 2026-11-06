@@ -1196,7 +1196,7 @@
         },
         {
             "name": "04 · Download backup — Excel / CSV, My / Team Vault, passwords, lock",
-            "description": "GET /backups — the Backup settings and the Downloaded Backup History: scopes [{scope: mine | team | all, label, count}] (My Vault · 29 credentials), the columns, and the history rows.\nPOST /backups { format: xlsx | csv | json, scope: mine | team | all, include_passwords, lock, password, password_confirmation, account_password? } — the file.\n• Choose a format — Excel (.xlsx) or CSV.\n• Choose what to include — My Vault or Team Vault; Include passwords on/off.\n• Lock the file with a password — on: the file is put in an AES-256 .zip that only the backup password opens (7-Zip, WinRAR). The password needs 8+ characters with letters, numbers & symbols, typed twice. CredVault does not store it.\n• Passwords included and the lock off — the file is readable, so your account password is asked again.\nAn Excel backup has the summary sheet, one tab per type in the import layout (so a tab can be imported back to restore it) and About. A protected (locked critical) credential's secrets are never written. Response headers: X-CredVault-Code (BK-…), X-CredVault-Items, X-CredVault-Withheld.",
+            "description": "GET /backups — the Backup settings and the Downloaded Backup History: scopes [{scope: mine | team | all, label, count}] (My Vault · 29 credentials), the columns, and the history rows.\nPOST /backups { format: xlsx | csv | json, scope: mine | team | all, include_passwords, lock, password, password_confirmation, account_password? } — the file.\n• Choose a format — Excel (.xlsx) or CSV.\n• Choose what to include — My Vault or Team Vault; Include passwords on/off.\n• Lock the file with a password — on (Excel only): the .xlsx itself is encrypted with Excel's own password (AES-256) — Excel asks for it when the file opens; no zip. A CSV cannot hold a password: lock with CSV → 422. The password needs 8+ characters with letters, numbers & symbols, typed twice. CredVault does not store it.\n• Passwords included and the lock off — the file is readable, so your account password is asked again.\nAn Excel backup has the summary sheet, one tab per type in the import layout (so a tab can be imported back to restore it) and About. A protected (locked critical) credential's secrets are never written. Response headers: X-CredVault-Code (BK-…), X-CredVault-Items, X-CredVault-Withheld.",
             "item": [
                 {
                     "name": "Backup settings — counts per vault",
@@ -1266,7 +1266,7 @@
                                 }
                             }
                         },
-                        "description": "Send and Download: a .zip. Open it with 7-Zip / WinRAR and the password Backup@2026#Strong."
+                        "description": "Send and Download: an .xlsx. Open it in Excel — it asks for the password Backup@2026#Strong."
                     },
                     "event": [
                         {
@@ -1276,7 +1276,8 @@
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
                                     "pm.test('BK- code', () => pm.expect(pm.response.headers.get('X-CredVault-Code') || '').to.not.eql(''));",
-                                    "pm.test('file: .zip', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.zip'));"
+                                    "pm.test('file: .xlsx', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.include('.xlsx'));",
+                                    "pm.test('not a zip: an Excel-encrypted file', () => pm.expect(pm.response.headers.get('Content-Disposition') || '').to.not.include('.zip'));"
                                 ]
                             }
                         }
@@ -1524,6 +1525,54 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Backup — CSV with the lock on (422: only Excel can be locked)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/backups",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "backups"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"format\": \"csv\",\n    \"scope\": \"mine\",\n    \"include_passwords\": true,\n    \"lock\": true,\n    \"password\": \"Backup@2026#Strong\",\n    \"password_confirmation\": \"Backup@2026#Strong\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('choose Excel', () => { pm.expect(b.errors).to.have.property('lock'); pm.expect(b.message).to.include('Choose Excel'); });"
                                 ]
                             }
                         }

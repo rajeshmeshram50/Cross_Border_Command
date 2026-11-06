@@ -30,6 +30,70 @@ function normKey(k: string): string {
   return k;
 }
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A YYYY-MM-DD day moved by n days, in the same format. */
+const shiftDay = (iso: string, n: number) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(y, m - 1, d + n);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** Today 18 years ago (YYYY-MM-DD): the latest Date of Birth an adult can have. 29 Feb falls back to 28 Feb. */
+const adultCutoff = () => {
+  const t = new Date();
+  const d = new Date(t.getFullYear() - 18, t.getMonth(), t.getDate());
+  if (d.getMonth() !== t.getMonth()) d.setDate(0);
+  return isoOf(d);
+};
+/** Date of Birth (CS-1437): not today or later, and at least 18 years ago. */
+const dobError = (v: string) =>
+  !ISO_DAY.test(v) ? null
+    : v >= isoOf(new Date()) ? 'Date of birth cannot be today or a future date'
+    : v > adultCutoff() ? 'You must be at least 18 years old' : null;
+
+/** Date of Expiry on or before Date of Issue is a clash (both YYYY-MM-DD, which compare as text). */
+const expiryError = (issue: string, expiry: string) =>
+  ISO_DAY.test(issue) && ISO_DAY.test(expiry) && expiry <= issue
+    ? (expiry === issue ? 'Date of Expiry cannot be the same as the Date of Issue' : 'Date of Expiry must be later than the Date of Issue')
+    : null;
+
+/**
+ * ID-number rules (CS-1437, My Vault): Driver License number, and the SSN / Aadhaar / PAN number by its ID Type.
+ * Each has a typing filter (`clean`), a length cap and a check. Spaces are separators and are not counted.
+ */
+type IdRule = { clean: (raw: string) => string; max: number; numeric?: boolean; ph?: string; error: (v: string) => string | null };
+const oneSpace = (s: string) => s.replace(/^ +/, '').replace(/ {2,}/g, ' ');
+const ID_RULES: Record<string, IdRule> = {
+  driver: {
+    clean: raw => oneSpace(raw.toUpperCase().replace(/[^A-Z0-9 ]/g, '')), max: 19,
+    error: v => {
+      const c = v.replace(/\s/g, '');
+      if (!/^[A-Za-z0-9]+$/.test(c)) return 'License number can have letters and numbers only';
+      if (c.length < 15 || c.length > 16) return 'License number must be 15–16 characters, e.g. MH12 20110012345';
+      if (!/[A-Za-z]/.test(c) || !/\d/.test(c)) return 'License number must include both letters and numbers';
+      return null;
+    },
+  },
+  Aadhaar: {
+    clean: raw => oneSpace(raw.replace(/[^\d ]/g, '')), max: 14, numeric: true, ph: 'e.g. 1234 5678 9012',
+    error: v => {
+      const c = v.replace(/\s/g, '');
+      if (!/^\d+$/.test(c)) return 'Aadhaar number can have digits only';
+      return c.length === 12 ? null : 'Aadhaar number must be exactly 12 digits';
+    },
+  },
+  PAN: {
+    clean: raw => raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10), max: 10, ph: 'e.g. ABCDE1234F',
+    error: v => {
+      if (!/^[A-Za-z0-9]+$/.test(v)) return 'PAN can have letters and numbers only';
+      if (v.length !== 10) return 'PAN must be exactly 10 characters, e.g. ABCDE1234F';
+      return /^[A-Z]{5}\d{4}[A-Z]$/i.test(v) ? null : 'PAN must be 5 letters, 4 digits and 1 letter, e.g. ABCDE1234F';
+    },
+  },
+};
+const idRuleFor = (type: string, key: string, idtype?: string): IdRule | null =>
+  key !== 'number' ? null : type === 'driver' ? ID_RULES.driver : type === 'govid' && idtype ? ID_RULES[idtype] ?? null : null;
+
 function Lbl({ text, req, badge }: { text: string; req?: boolean; badge?: ReactNode }) {
   return <label className="mapsup-flabel">{text}{req && <> <span className="req">*</span></>}{badge && <> {badge}</>}</label>;
 }
@@ -217,13 +281,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const span = fieldSpan(f);
     const had = !!dField.get(f.key)?.has_value || locked;
     const keep = editing && f.secret && had;
-    const ph = keep ? KEEP : (f.placeholder ?? '');
+    // Driver License / Aadhaar / PAN number (CS-1437): its own characters only — the rest are dropped as typed.
+    const idRule = inCritical ? null : idRuleFor(T.key, f.key, vals.idtype);
+    const ph = keep ? KEEP : (idRule?.ph ?? f.placeholder ?? '');
     const cls = `mapsup-finput has-ico${f.mono ? ' crd-mono' : ''}`;
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
       // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
       const v = f.key === 'acno' && !inCritical ? raw.replace(/\D/g, '').slice(0, 18)
+        : idRule ? idRule.clean(raw)
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
@@ -233,7 +300,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     };
     const onLeave = () => {
       const v = (vals[f.key] ?? '').trim();
-      const m = v && (f.kind === 'email' || f.kind === 'tel') ? checkField(f, v, !inCritical) : null;
+      const m = !v ? null
+        : f.kind === 'email' || f.kind === 'tel' ? checkField(f, v, !inCritical)
+        : idRule ? idRule.error(v) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
     // The asterisk stays in Edit too (CS-1436): a saved secret or file still counts, so leaving it blank keeps it.
@@ -317,8 +386,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           ctl = (
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
-                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : f.max ?? undefined} autoComplete="new-password"
-                inputMode={f.key === 'acno' && !inCritical ? 'numeric' : undefined}
+                value={val} placeholder={ph} maxLength={f.key === 'acno' && !inCritical ? 18 : idRule ? idRule.max : f.max ?? undefined} autoComplete="new-password"
+                inputMode={(f.key === 'acno' && !inCritical) || idRule?.numeric ? 'numeric' : undefined}
+                onBlur={onLeave}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
               <span className="crd-pw__btns">
                 <button type="button" data-h40="skip" className={`crd-pw__b${vis ? ' is-on' : ''}`} title={vis ? 'Hide' : 'Show / hide'}
@@ -349,7 +419,25 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             );
           }
         } else if (f.kind === 'date') {
-          ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal" onChange={v => onText(v)} />;
+          // Date of Issue → Date of Expiry (Passport, CS-1437): expiry must fall after issue, so each picker
+          // greys out the other side's days and a clash is flagged at once. My Vault only.
+          const paired = !inCritical && T.fields.some(x => x.key === 'issue') && T.fields.some(x => x.key === 'expiry')
+            && (f.key === 'issue' || f.key === 'expiry');
+          const other = paired ? vals[f.key === 'issue' ? 'expiry' : 'issue'] ?? '' : '';
+          const bound = ISO_DAY.test(other) ? shiftDay(other, f.key === 'issue' ? -1 : 1) : undefined;
+          // Date of Birth (CS-1437): 18 or older, so the latest day is today 18 years ago — Today and later are greyed out.
+          const dob = !inCritical && f.key === 'dob';
+          ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal"
+            minDate={paired && f.key === 'expiry' ? bound : undefined}
+            maxDate={dob ? adultCutoff() : paired && f.key === 'issue' ? bound : undefined}
+            onChange={v => {
+              onText(v);
+              if (dob) { const m = dobError(v); if (m) setErrors(e => ({ ...e, [k]: m })); return; }
+              if (!paired) return;
+              const issue = f.key === 'issue' ? v : other, expiry = f.key === 'expiry' ? v : other;
+              const m = expiryError(issue, expiry);
+              if (m) setErrors(e => ({ ...e, 'fields.expiry': m })); else clr('fields.expiry');
+            }} />;
         } else if (f.key === 'exp' && !inCritical) {
           // Credit Card expiry (MM/YY): typeable, and its calendar icon opens a month / year picker.
           ctl = <ExpiryPicker id={`crdF_${f.key}`} className={cls} value={val} placeholder={ph} onChange={onText} onBlur={onLeave} />;
@@ -722,6 +810,18 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       if (m) errs[k] = m;
       // Login → Username (CS-1434): a single letter is not a username — at least 3 characters (an email passes).
       else if (!inCritical && T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
+      // Driver License / Aadhaar / PAN number (CS-1437).
+      else if (!inCritical && idRuleFor(T.key, f.key, vals.idtype)) {
+        const e = idRuleFor(T.key, f.key, vals.idtype)!.error(v);
+        if (e) errs[k] = e;
+      }
+      // Date of Birth: 18 or older (CS-1437).
+      else if (!inCritical && f.key === 'dob' && dobError(v)) errs[k] = dobError(v)!;
+      // Date of Expiry must be later than Date of Issue (CS-1437).
+      else if (!inCritical && f.key === 'expiry' && T.fields.some(x => x.key === 'issue')) {
+        const e = expiryError((vals.issue ?? '').trim(), v);
+        if (e) errs[k] = e;
+      }
     });
     const regEmailErr = ex.reg_email && regEmail.trim() ? emailError(regEmail) : null;
     if (regEmailErr) errs.reg_email = regEmailErr;

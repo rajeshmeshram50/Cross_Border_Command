@@ -4,7 +4,8 @@ import { cvApi, CvApiError, type Loose } from '../cvApi';
 import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
 import { IR_I } from './irShared';
 
-/* Download backup popup — the prototype's irBackupHtml / bkCreate; the file is built and locked (AES-256) on the API. */
+/* Download backup popup — the prototype's irBackupHtml / bkCreate; the file is built and locked on the API
+   (a locked backup is an .xlsx with Excel's own password, no zip; a CSV cannot hold a password). */
 
 type Fmt = 'xlsx' | 'csv';
 type Scope = 'mine' | 'team' | 'all';
@@ -51,11 +52,15 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
   const [lock, setLock] = useState(true);
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
+  const [acct, setAcct] = useState('');
   const [show, setShow] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<CvApiError | null>(null);
   const [busy, setBusy] = useState(false);
 
   const F = FMTS.find(f => f[0] === fmt)!;
+  // Only Excel can carry a password; a CSV is always downloaded unlocked.
+  const canLock = fmt === 'xlsx';
+  const locked = lock && canLock;
   const countOf = (k: Scope): number | null => {
     const s = info?.scopes.find(x => x.scope === k);
     return s ? Number(s.count) : null;
@@ -67,19 +72,19 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
 
   const create = async () => {
     setErr(null);
-    if (lock && pw.length < 8) { setErr(new CvApiError('Choose a password of at least 8 characters.', 422, { password: ['Choose a password of at least 8 characters.'] })); return; }
+    if (locked && pw.length < 8) { setErr(new CvApiError('Choose a password of at least 8 characters.', 422, { password: ['Choose a password of at least 8 characters.'] })); return; }
     setBusy(true);
     try {
       const r = await cvApi.backup({
-        format: fmt, scope, include_passwords: withPw, lock,
-        ...(lock ? { password: pw, password_confirmation: pw2 } : {}),
+        format: fmt, scope, include_passwords: withPw, lock: locked,
+        ...(locked ? { password: pw, password_confirmation: pw2 } : withPw ? { account_password: acct } : {}),
       });
       const code = r.headers['x-credvault-code'] ?? '';
       const items = Number(r.headers['x-credvault-items'] ?? n ?? 0);
       const withheld = Number(r.headers['x-credvault-withheld'] ?? 0);
-      toast.success(`${code ? `${code} · ` : ''}${items} credentials downloaded as ${F[1]}${lock ? ' · password locked' : ''}`,
+      toast.success(`${code ? `${code} · ` : ''}${items} credentials downloaded as ${F[1]}${locked ? ' · password locked' : ''}`,
         withheld ? `${withheld} protected secret${withheld > 1 ? 's were' : ' was'} left out — they open through an unlock, not a file.` : undefined);
-      setPw(''); setPw2('');
+      setPw(''); setPw2(''); setAcct('');
       onDone();
       onClose();
     } catch (e) {
@@ -153,14 +158,18 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
         </label>
 
         {sec(3, 'Lock the file with a password', 'Anyone opening the backup will be asked for it')}
-        <label className={`ix-sw ix-sw--lock${lock ? ' is-on' : ''}`}>
-          <input type="checkbox" checked={lock} onChange={e => { setLock(e.target.checked); clearErr(); }} />
+        <label className={`ix-sw ix-sw--lock${locked ? ' is-on' : ''}${canLock ? '' : ' is-disabled'}`}>
+          <input type="checkbox" checked={locked} disabled={!canLock} onChange={e => { setLock(e.target.checked); clearErr(); }} />
           <span className="ix-sw__t"><i /></span>
-          <span><b>{lock ? 'Password lock is on' : 'Password lock is off'}</b><small>{lock ? `Your ${F[1]} file is placed in a password-protected .zip` : 'The file can be opened by anyone who has it'}</small></span>
-          <Svg d={lock ? IR_I.lock : IR_I.unlock} size={16} />
+          <span>
+            <b>{locked ? 'Password lock is on' : 'Password lock is off'}</b>
+            <small>{!canLock ? 'A CSV file can’t hold a password — choose Excel to lock the backup' : locked ? 'The Excel file itself is locked — Excel asks for this password when it opens' : 'The file can be opened by anyone who has it'}</small>
+          </span>
+          <Svg d={locked ? IR_I.lock : IR_I.unlock} size={16} />
         </label>
+        {ferr('lock') && <span className="cv-ferr">{ferr('lock')}</span>}
 
-        {lock ? (
+        {locked ? (
           <>
             <div className="ix-pwrow">
               <div className="ix-f">
@@ -187,6 +196,16 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
         ) : (
           <>
             <div className="ix-note is-warn"><Svg d={IR_I.warn} size={13} /><span>{withPw ? 'Without a lock, the passwords in this file can be read by anyone who gets it.' : 'This file has no passwords, but it still lists your accounts and usernames.'}</span></div>
+            {withPw && (
+              <div className="ix-f">
+                <label>Your account password <i>*</i></label>
+                <div className="ix-in">
+                  <input type={show.acct ? 'text' : 'password'} placeholder="Confirm it’s you to download readable passwords" autoComplete="current-password" value={acct} onChange={e => { setAcct(e.target.value); clearErr(); }} />
+                  {eyeBtn('acct')}
+                </div>
+                {ferr('account_password') && <span className="cv-ferr">{ferr('account_password')}</span>}
+              </div>
+            )}
           </>
         )}
         <div className="ir-err">{err?.message ?? ''}</div>
@@ -203,7 +222,7 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
               <div className="mapsup-footer__actions">
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={close} disabled={busy}>Cancel</button>
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={create} disabled={!n || busy}>
-                  <Svg d={IR_I.down} size={13} sw={2.1} />{busy ? 'Preparing…' : `Download ${F[1]} Backup${lock ? ' · Locked' : ''}`}
+                  <Svg d={IR_I.down} size={13} sw={2.1} />{busy ? 'Preparing…' : `Download ${F[1]} Backup${locked ? ' · Locked' : ''}`}
                 </button>
               </div>
             </div>

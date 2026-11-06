@@ -40,6 +40,10 @@ export default function InvoiceRaiseRequestModal({ row, po = null, figures, tota
   onClose: () => void;
 }) {
   const { requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid, requestCount, available } = totals;
+  // Request-side paid figures: the PO's for a PO-backed SPI (CS-933).
+  const reqPaid = totals.paid;
+  const reqPctPaid = totals.pctPaid;
+  const reqBasis = po ? po.net_payable : 0;
   useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -151,12 +155,12 @@ export default function InvoiceRaiseRequestModal({ row, po = null, figures, tota
         sub={`${pendingCount} with the approver now`} />
       <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount" value={money(approvedTotal)}
         sub={`${money(approvedUnpaid)} awaiting release`} />
-      <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total Paid Amount" value={money(paid)}
-        sub={`${pctPaid}% of the SPI released`} />
+      <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total Paid Amount" value={money(reqPaid)}
+        sub={`${reqPctPaid}% of the ${po ? 'PO' : 'SPI'} released`} />
       <Stat mod="mpr-stat--tds" icon={STAT_ICONS.trend} label="Balance Amount" value={money(available)}
         sub={complete ? 'Fully settled' : 'Open to request'} />
     </div>
-  ), [po, total, balance, paid, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
+  ), [po, total, balance, reqPaid, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, reqPctPaid, available, complete]);
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -209,7 +213,9 @@ export default function InvoiceRaiseRequestModal({ row, po = null, figures, tota
 
           <Box
             label="Request" title="Payment Request Details"
-            sub={`${money(paid)} of ${money(total)} paid · ${progPct}% · ${money(available)} open for this request`}
+            sub={po
+              ? `${money(reqPaid)} of ${money(reqBasis)} paid on ${po.code} · ${reqPctPaid}% · ${money(available)} open for this request`
+              : `${money(paid)} of ${money(total)} paid · ${progPct}% · ${money(available)} open for this request`}
             icon={ICON_PENCIL}
             className="rpr-details-box"
             headerExtra={<div className="rpr-hdstats">{requestStats}</div>}

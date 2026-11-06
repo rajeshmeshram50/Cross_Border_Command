@@ -360,6 +360,14 @@ const Row = memo(function Row({
 }) {
   const rowToast = useToast();
   const t = lineTotals(line, taxMode, twoWay);
+  /* CS-1140 — a Direct line whose product is outside the supplier's segments
+     (picked before the supplier changed, or reopened after the supplier's
+     segments changed) is flagged here, with the same reason the picker gives;
+     the Stage 02 save refuses it. A With-PO line bills the order's product. */
+  const segIssue = twoWay && !readOnly && line.productId != null
+    ? catalogue.find(c => c.value === String(line.productId))?.disabledReason
+    : undefined;
+  const productIssue = issue?.product ?? segIssue;
   const inter = taxMode === 'inter' || taxMode === 'export';
 
   const patch = useCallback(
@@ -381,7 +389,7 @@ const Row = memo(function Row({
         </td>
       )}
 
-      <td className={`cpd-prodcell cpd-ed${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}${issue?.product ? ' cpd-cell-err' : ''}`}>
+      <td className={`cpd-prodcell cpd-ed${showPi || !twoWay ? '' : ' cpd-stick cpd-stick--2'}${productIssue ? ' cpd-cell-err' : ''}`}>
         <div className="cpd-prod cpd-prod--po">
           <div className="cpd-pick">
             <MasterSelect
@@ -440,7 +448,7 @@ const Row = memo(function Row({
               </Tooltip>
             )}
           </div>
-          {issue?.product && <div className="cpd-cell-msg">{issue.product}</div>}
+          {productIssue && <div className="cpd-cell-msg">{productIssue}</div>}
         </div>
       </td>
 

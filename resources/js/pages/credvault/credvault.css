@@ -3618,12 +3618,13 @@
 
 .cvx .gp-opts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .cvx .gp-tg {
   height: 46px !important;
+  min-width: 0;
 }
 
 .cvx .gp-tg__t {
@@ -5681,6 +5682,11 @@
 
 .cvx #crd-host .ir-rev-list .ir-flags {
   justify-content: center;
+}
+
+/* Check column: the flags start at the left edge, under their left-aligned header. */
+.cvx #crd-host .ir-rev-list .ir-flags.ir-flags--l {
+  justify-content: flex-start;
 }
 
 /* Dark mode: the page tables' wrapper rule is under .cvx.tv-page, which a popup is not inside. */
@@ -14610,6 +14616,11 @@
   background: #fbfdfe;
   border: 1.5px solid #e3eef2;
   transition: all .18s;
+}
+
+.cvx .ix-sw.is-disabled {
+  cursor: not-allowed;
+  opacity: .6;
 }
 
 .cvx .ix-sw input {

@@ -80,7 +80,7 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
     if (!SETS.includes(k) || !o[k]) return null;
     const next = { ...o, [k]: false };
     if (!charSets(next).length) return 'Keep at least one character set on';
-    if (charsLevel(next) < minLevel) return `This setting can’t reach the policy minimum (${minLabel})`;
+    if (charsLevel(next) < minLevel) return `Needed for the policy minimum (${minLabel})`;
     return null;
   };
 
