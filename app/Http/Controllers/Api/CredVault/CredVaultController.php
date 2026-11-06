@@ -3507,7 +3507,9 @@ class CredVaultController extends Controller
                 // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
                 if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
-                if ($r->admin_decided_by === $u->id) $this->reject('The same person cannot give both approvals.', null, 403);
+                // When the reporting manager IS the Vault Admin (the branch admin
+                // most employees report to), the same person gives both approvals
+                // — two separate, audited actions, by design. (not two people)
             } else {
                 $this->reject('This request has no approval waiting.', null, 409);
             }
@@ -4401,7 +4403,9 @@ class CredVaultController extends Controller
 
         $canDecide = $r->status === 'pending' && $r->requester_id !== $u->id && (
             ($stage === 'admin' && $this->canApproveAdmin($u, $r))
-            || ($stage === 'manager' && $r->manager_user_id === $u->id && $r->admin_decided_by !== $u->id)
+            // Manager step: the manager decides — even if they are also the Vault
+            // Admin who approved step 1 (RM = branch admin). Two separate actions.
+            || ($stage === 'manager' && $r->manager_user_id === $u->id)
         );
         $display = match (true) {
             $r->status === 'pending'                                 => 'pending',
