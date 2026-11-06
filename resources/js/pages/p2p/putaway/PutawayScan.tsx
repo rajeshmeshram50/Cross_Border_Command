@@ -107,6 +107,9 @@ interface State {
   due_boxes?: QueueRow[];
   open?: QueueRow[];
   count?: number;
+  // Set when an already-put-away box is re-scanned: show the FULL details
+  // screen (box, products, its location), not the minimal Done card. (CS-956 #64)
+  already_placed?: boolean;
   staged_name?: string | null;
   step?: Step;
   step_label?: string;
@@ -876,7 +879,10 @@ export default function PutawayScan() {
     </>
   );
 
-  if (done) {
+  /* A fresh completion gets the minimal Done card (it moves on to the next box).
+     Re-scanning a box that was ALREADY put away instead shows the full details
+     screen below — box, products and where it now sits — marked complete. (#64) */
+  if (done && !state.already_placed) {
     return (
       <Done
         box={state.box?.box_code}
