@@ -19238,3 +19238,19 @@
 :where([data-bs-theme="dark"]) .cvx .ix-fmtc em {
   color: #67e8f9;
 }
+
+/* CS-1445 · Move to Bin in progress (My Vault): the confirm button keeps its colour with a spinner; Cancel / × are locked. */
+.cvx :is(.mb-btn--go, .dl-go)[aria-busy="true"]:disabled {
+  opacity: 1;
+  cursor: progress;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cvx :is(.mb-btn--ghost, .dl-cancel, .mb-x):disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
