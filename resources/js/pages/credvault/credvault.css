@@ -19552,3 +19552,22 @@
 [data-bs-theme="dark"] .cvx #crd-host .ir-veil {
   background: rgba(2, 12, 18, .5);
 }
+
+/* CS-1460 row 30 — View credential drawer opened from the Critical Vault: the tab rail is a fixed
+   48px band and every tab inside it a fixed 40px (1px border + 3px inset + 40 = 48), the same pair
+   as the Critical Vault list toolbar. Scoped to the Critical Vault page; My Vault / Team Vault keep
+   their drawer as it is. */
+body:has(.cvx.cv-page) .cvx .vd .vd-ptabs {
+  height: 48px !important;
+  min-height: 48px;
+  padding: 3px !important;
+  align-items: center !important;
+  box-sizing: border-box;
+}
+body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
+  height: 40px !important;
+  min-height: 40px;
+  padding: 0 12px 0 6px !important;
+  box-sizing: border-box;
+  align-items: center;
+}

@@ -18,6 +18,9 @@ export interface UnlockModalProps {
   onClose: () => void;
   onChanged?: () => void;               // a request / unlock / lock happened
   onFullDetails?: (id: number) => void;  // "Full details" once unlocked
+  /** The request was accepted: the list shows the row as Pending at once, before its refresh lands
+   *  (on the server that refresh takes a moment, and the lock stayed clickable meanwhile). */
+  onPending?: (u: UnlockState) => void;
 }
 
 type Stage = LockStep | 'done';
@@ -113,7 +116,7 @@ function UnlockSkeleton() {
   );
 }
 
-export default function UnlockModal({ credentialId, onClose, onChanged, onFullDetails }: UnlockModalProps) {
+export default function UnlockModal({ credentialId, onClose, onChanged, onFullDetails, onPending }: UnlockModalProps) {
   const toast = useToast();
   const { typeOf } = useCvMeta();
   const [d, setD] = useState<CredentialDetail | null>(null);
@@ -279,6 +282,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     try {
       const body = plan?.asks_reason ? { reason: reason.trim(), duration_minutes: dur ?? undefined } : {};
       await cvData.requestAccess(d.id, body);
+      onPending?.({ state: 'pending', label: 'Approval pending', stage: k,
+        waiting_for: { name: approverName(k), role: k === 'admin' ? 'Vault Admin' : 'Manager' } });
       toast.success(`Request sent to ${approverName(k)}`);
       await load(true);
     } catch (e) {
@@ -295,6 +300,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     setBusy(true);
     try {
       await cvData.raiseManager(live.id);
+      onPending?.({ state: 'pending', label: 'Approval pending', stage: 'manager',
+        waiting_for: { name: approverName('manager'), role: 'Manager' } });
       toast.success(`Forwarded to ${approverName('manager')}`);
       await load(true);
     } catch (e) {
@@ -581,10 +588,11 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
           {previousNote()}
           <Approver who={who} role={role} note="Notified instantly" />
           {k === 'admin' ? (
-            <div className="rv-card">
+            /* While the request is being sent (busy) the form is locked: no edits, no duration change. */
+            <div className={`rv-card${busy ? ' is-busy' : ''}`} aria-busy={busy || undefined}>
               <div className="rv-fld">
                 <div className="rv-lbl"><span>Reason for access <i>*</i></span><em id="cpCnt">{reason.length} / 300</em></div>
-                <textarea id="cpReason" className="cp-in" rows={3} maxLength={300} value={reason} autoFocus
+                <textarea id="cpReason" className="cp-in" rows={3} maxLength={300} value={reason} autoFocus disabled={busy}
                   onChange={e => { setReason(e.target.value); if (err.reason) setErr(x => ({ ...x, reason: undefined })); }}
                   placeholder="e.g. Need the bank portal login to complete the month-end tax payment" />
                 {err.reason && <span className="cv-ferr">{err.reason}</span>}
@@ -595,7 +603,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
                   {durations.map(m => {
                     const [big, un] = durLabel(m);
                     return (
-                      <button key={m} type="button" className={`rv-chip${m === dur ? ' is-on' : ''}`} data-m={m} onClick={() => setDur(m)}>
+                      <button key={m} type="button" className={`rv-chip${m === dur ? ' is-on' : ''}`} data-m={m} disabled={busy} onClick={() => setDur(m)}>
                         <b>{big}</b><span>{un}</span>
                       </button>
                     );
@@ -774,8 +782,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     const vi = order.indexOf(view);
     return (
       <>
-        <button type="button" className="cp-btn cp-btn--ghost cp-nav" onClick={() => go(-1)} disabled={vi <= 0}><Svg d={CP_I.prev} size={13} /> Previous</button>
-        <button type="button" className="cp-btn cp-btn--ghost cp-nav" onClick={() => go(1)} disabled={vi >= ci}
+        <button type="button" className="cp-btn cp-btn--ghost cp-nav" onClick={() => go(-1)} disabled={busy || vi <= 0}><Svg d={CP_I.prev} size={13} /> Previous</button>
+        <button type="button" className="cp-btn cp-btn--ghost cp-nav" onClick={() => go(1)} disabled={busy || vi >= ci}
           title={vi >= ci ? 'Complete this stage to continue' : undefined}>Next <Svg d={CP_I.next} size={13} /></button>
       </>
     );
@@ -792,7 +800,9 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
           <div className="rv-foot__r">
             {nav()}
             <button type="button" className="cp-btn cp-btn--ghost" onClick={fullDetails}><Svg d={IC.view} size={13} /> Full details</button>
-            <button type="button" className="cp-btn cp-btn--bad" onClick={lockNow} disabled={busy}><Svg d={CP_I.lock} size={13} /> Lock now</button>
+            <button type="button" className="cp-btn cp-btn--bad" onClick={lockNow} disabled={busy} aria-busy={busy || undefined}>
+              {busy ? <><span className="cp-spin cp-spin--sm cp-spin--bad" /> Locking…</> : <><Svg d={CP_I.lock} size={13} /> Lock now</>}
+            </button>
           </div>
         </>
       );

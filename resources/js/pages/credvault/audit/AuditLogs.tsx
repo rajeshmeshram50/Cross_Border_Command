@@ -265,7 +265,7 @@ export default function AuditLogs() {
                   <button key={k} type="button" data-h40="skip" className={range === k ? 'is-on' : ''} onClick={() => { setRange(k); setPop(false); }}>{l}</button>
                 ))}
                 <button type="button" data-h40="skip" className={`al-cust${range === 'custom' ? ' is-on' : ''}`} onClick={() => setPop(p => !p)}>
-                  <Svg d={CAL} size={12} />{range === 'custom' ? `${fmtD(from) || 'Start'} – ${fmtD(to) || 'Today'}` : 'Custom'}
+                  <Svg d={CAL} size={12} />{range === 'custom' ? (from && from === to ? fmtD(from) : `${fmtD(from) || 'Start'} – ${fmtD(to) || 'Today'}`) : 'Custom'}
                 </button>
               </div>
               {pop && <CustomRange from={from} to={to} onClose={() => setPop(false)}
@@ -302,7 +302,8 @@ export default function AuditLogs() {
 
 function CustomRange({ from, to, onApply, onClose }: { from: string; to: string; onApply: (f: string, t: string) => void; onClose: () => void }) {
   const today = ymd(new Date());
-  const [f, setF] = useState(from || ymd(new Date(Date.now() - 29 * 864e5)));
+  // Opens on today–today: picking one date and pressing Apply shows that day only.
+  const [f, setF] = useState(from || today);
   const [t, setT] = useState(to || today);
   const [e, setE] = useState('');
   const ref = useRef<HTMLDivElement>(null);

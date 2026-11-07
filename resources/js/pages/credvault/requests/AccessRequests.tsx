@@ -342,8 +342,11 @@ export default function AccessRequests() {
               <div className="dl-actions">
                 <button type="button" data-h40="skip" className="dl-cancel" disabled={busyIds.has(d.id)} onClick={() => setDialog(null)}>Cancel</button>
                 <button type="button" data-h40="skip" className="dl-go" disabled={busyIds.has(d.id)} onClick={confirmDialog}>
-                  <Svg d={dialog.kind === 'lock' ? I.lock : I.no} size={13} sw={2.1} />
-                  {busyIds.has(d.id) ? 'Working…' : dialog.kind === 'reject' ? 'Reject Request' : dialog.kind === 'lock' ? 'Lock Now' : 'Cancel Request'}
+                  {/* CS-1462: a spinner while it runs, and the verb of what is happening. */}
+                  {busyIds.has(d.id) ? <span className="cp-spin cp-spin--sm" /> : <Svg d={dialog.kind === 'lock' ? I.lock : I.no} size={13} sw={2.1} />}
+                  {busyIds.has(d.id)
+                    ? (dialog.kind === 'reject' ? 'Rejecting…' : dialog.kind === 'lock' ? 'Locking…' : 'Cancelling…')
+                    : dialog.kind === 'reject' ? 'Reject Request' : dialog.kind === 'lock' ? 'Lock Now' : 'Cancel Request'}
                 </button>
               </div>
             </div>

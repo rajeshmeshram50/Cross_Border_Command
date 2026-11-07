@@ -556,3 +556,20 @@
   font-size: 12.5px;
   line-height: 1;
 }
+
+/* Unlock request being sent (row 28): the reason box and the duration chips are locked and read as
+   such, in both themes. */
+.cvx .rv-box .rv-card.is-busy .cp-in,
+.cvx .rv-box .rv-card.is-busy .rv-chip {
+  opacity: .6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* CS-1462: Lock now shows a spinner while it locks. The button is white with red ink, so the
+   spinner is red, not the white one the filled buttons use. */
+.cvx .rv-box .cp-spin.cp-spin--bad {
+  border-color: rgba(220, 38, 38, .22);
+  border-top-color: #dc2626;
+}
+.cvx .rv-box .cp-btn--bad:disabled { cursor: progress; opacity: .85; }

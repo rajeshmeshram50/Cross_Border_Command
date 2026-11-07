@@ -393,3 +393,13 @@
 .cvx.al-page .al-range button { height: 38px; padding: 0 14px; border-radius: 10px; font-size: 12px; }
 .cvx.al-page .al-range .al-cust { display: inline-flex; align-items: center; gap: 6px; }
 .cvx.al-page .al-tools .whm-main-search { flex: 1 1 auto; max-width: none; min-width: 220px; }
+
+/* Custom date range: the From / To date boxes. The CredVault reset (.cvx :where(...) { padding: 0 })
+   loads after MasterDatePicker.css at the same specificity and wiped the toggle's 12px inset, so the
+   date sat on the left border. Restored here, at the popup's 40px / 11px. Audit Logs only. */
+.cvx.al-page .al-pop .master-datepicker-toggle {
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 11px;
+}
