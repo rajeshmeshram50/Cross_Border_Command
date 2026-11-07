@@ -3776,20 +3776,6 @@ class CredVaultController extends Controller
             ['request_id' => $r->id, 'requester_id' => $r->requester_id], 'Critical Vault');
     }
 
-    /**
-     * CS-1460 #32: a window opened a moment ago starts when its popup first shows it. The approval /
-     * code request and the page load after it take a few seconds, so a 15-min window used to read
-     * 14:55 — and when the screen showed it from 14:59, the server locked it ~5 s before the countdown
-     * reached 0. Once per request (cache), only within 30 s of opening, so it moves the end by at most
-     * those seconds and a window seen later keeps its real remaining time.
-     */
-    protected function startWindowOnFirstSight(AccessRequest $r): void
-    {
-        if (!$r->unlocked_at || abs($r->unlocked_at->diffInSeconds(now(), false)) > 30) return;
-        if (!Cache::add("credvault:unlock-seen:{$r->id}", 1, now()->addMinutes($r->duration_minutes + 5))) return;
-        $r->forceFill(['unlocked_at' => now(), 'expires_at' => now()->addMinutes($r->duration_minutes)])->save();
-    }
-
     /** Ends every unlock whose window has passed. One indexed read when there is nothing to do. */
     protected function sweepUnlocks(int $clientId): void
     {
@@ -4585,7 +4571,6 @@ class CredVaultController extends Controller
     {
         if (!$r) return ['state' => 'locked', 'label' => 'Approval needed'];
         if ($r->isLive()) {
-            $this->startWindowOnFirstSight($r);
             return ['state' => 'open', 'label' => 'Unlocked', 'request_id' => $r->id, 'expires_at' => $r->expires_at->toIso8601String(),
                 'seconds_left' => max(0, (int) now()->diffInSeconds($r->expires_at, false)), 'total_seconds' => $r->duration_minutes * 60];
         }

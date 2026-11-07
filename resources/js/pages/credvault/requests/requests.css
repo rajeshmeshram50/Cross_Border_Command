@@ -35,6 +35,9 @@
    so the table is not half shimmer, half blank. */
 .cvx.ar-page #arListWrap .ar-tbl tbody tr.cv-shimrow td{height:61px;box-sizing:border-box;vertical-align:middle;}
 
+/* Header strip: the "Critical Vault" button reads at 12.5px. Access Requests only. */
+.cvx.ar-page .cstrip__action-btn{font-size:12.5px !important;}
+
 /* Vault Admin / Reporting Manager cells: one fixed-width block per cell, centred under the header,
    content left-aligned inside it, so every row's avatar sits in the same column. */
 .cvx.ar-page #arListWrap .ar-tbl .ar-ap{display:flex;width:200px;max-width:100%;margin:0;justify-content:flex-start;text-align:left;}
