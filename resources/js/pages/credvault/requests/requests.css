@@ -19,6 +19,22 @@
 /* Empty table: no row line under the empty message — only the pager's divider remains. */
 .cvx.ar-page .whm-tbl.mv-tbl tbody td.mv-empty{border-bottom:0 !important;}
 
+/* CS-1467: Approve shows a white spinner and "Approving…" and keeps its colour while it runs
+   (disabled, but not the greyed look of a button that cannot be used). */
+.cvx.ar-page #arListWrap .ar-btn--ok[aria-busy="true"]{opacity:1 !important;filter:none !important;cursor:progress;
+  color:#fff !important;background:linear-gradient(135deg,#0b4f63,#0e7490 40%,#0891b2 75%,#22d3ee) !important;}
+.cvx.ar-page #arListWrap .ar-btn--ok .cp-spin{width:13px;height:13px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff;}
+
+/* CS-1463..1466 row 5: the tabs match the Critical Vault — a 48px rail, each tab 40px, label 12.5px. */
+.cvx.ar-page .tvc-top .smt-proctype-tabs{height:48px !important;min-height:48px;padding:3px !important;box-sizing:border-box;align-items:center;}
+.cvx.ar-page .tvc-top .smt-proctype-tab{height:40px !important;min-height:40px;box-sizing:border-box;font-size:12.5px !important;}
+.cvx.ar-page .tvc-top .smt-proctype-tab__lbl{font-size:12.5px !important;}
+
+/* Row 34: the loading shimmer fills the list like the real rows — one shimmer row per row of the
+   page (Rows per page), each as tall as a real row (40px buttons + 10px padding top and bottom),
+   so the table is not half shimmer, half blank. */
+.cvx.ar-page #arListWrap .ar-tbl tbody tr.cv-shimrow td{height:61px;box-sizing:border-box;vertical-align:middle;}
+
 /* Vault Admin / Reporting Manager cells: one fixed-width block per cell, centred under the header,
    content left-aligned inside it, so every row's avatar sits in the same column. */
 .cvx.ar-page #arListWrap .ar-tbl .ar-ap{display:flex;width:200px;max-width:100%;margin:0;justify-content:flex-start;text-align:left;}

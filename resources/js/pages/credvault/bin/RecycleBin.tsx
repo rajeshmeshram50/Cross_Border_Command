@@ -295,6 +295,8 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   const canChange = v ? v.can_change : listCanChange;
   const opts = useMemo(() => (v?.options.length ? v.options : options), [v, options]);
   const locked = fixed || !canChange;
+  // CS-1493: the popup opens before GET /recycle-bin/retention answers — a shimmer until it does.
+  const loading = !ret && !loadErr;
 
   const [warn, setWarn] = useState<RetentionImpact | null>(null);
 
@@ -346,6 +348,8 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
         confirmLabel="Confirm & Delete"
         confirmIcon={IC.bin}
         busy={busy}
+        lockBusy
+        busyLabel="Deleting…"
         onConfirm={() => commit(true)}
         onClose={() => { if (!busy) setWarn(null); }}
       >
@@ -367,12 +371,23 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   return (
     <CvPortal onClose={onClose}>
       <div className="dl-ov">
-        <div className="dl-modal rb-ret" role="dialog" aria-modal="true" aria-label="Retention period">
+        <div className="dl-modal rb-ret" role="dialog" aria-modal="true" aria-label="Retention period" aria-busy={loading || busy || undefined}>
+          {busy && (
+            <div role="status" aria-live="polite" className="cv-lock">
+              <div className="cv-lock__box"><span className="cv-lock__spin" />Saving…</div>
+            </div>
+          )}
           <div className="dl-ico rb-ret__ico"><Svg icon="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2" size={30} sw={2.1} /></div>
           <div className="dl-title">Retention period</div>
           <div className="dl-text">Choose how long credentials stay in the recycle bin before they are permanently deleted.
             {ret && ` One period for My Vault and Critical Vault${ret.scope === 'branch' && ret.branch?.name
               ? `, for everyone in ${ret.branch.name}.` : ' — the company default, for every branch without its own period.'}`}</div>
+          {loading ? (
+            <div className="rb-ret__shim" role="status" aria-label="Loading the retention period">
+              <div className="rb-opts">{opts.map(o => <i key={o} className="rb-ret__shim-opt" />)}</div>
+              <i className="rb-ret__shim-note" />
+            </div>
+          ) : <>
           <div className="rb-opts">
             {opts.map(o => (
               <button key={o} type="button" data-h40="skip" className={`rb-opt${o === d ? ' is-on' : ''}`} disabled={locked && o !== d}
@@ -384,9 +399,10 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
             : loadErr ? loadErr
               : !canChange ? 'Only a Vault Admin (client admin or Branch Admin) can change the retention period.'
                 : (ret?.note ?? 'Items already older than the new period are deleted right away.')}</div>
+          </>}
           <div className="dl-actions">
             <button type="button" data-h40="skip" className="dl-cancel" disabled={busy} onClick={onClose}>Cancel</button>
-            <button type="button" data-h40="skip" className="dl-go rb-save" disabled={busy || locked} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" data-h40="skip" className="dl-go rb-save" disabled={busy || locked || loading} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       </div>

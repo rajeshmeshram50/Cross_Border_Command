@@ -134,16 +134,24 @@ export default function AccessRequests() {
   // `now` is frozen while nothing is live, so it can trail fetchedAt — never count up past the server's figure.
   const left = (r: AccessRequestRow) => Math.max(0, Math.min(r.seconds_left, r.seconds_left - Math.floor(Math.max(0, now - fetchedAt) / 1000)));
 
+  /* CS-1467 / CS-1468: once a decision is accepted the row's Approve / Reject are switched off at
+     once, and the row stays busy until the refreshed list lands — before, both buttons came back for
+     3–4 s while the reload was still on its way. */
+  const decided = (id: number) => setRows(rs => rs.map(r => (r.id === id ? { ...r, can: { ...r.can, approve: false, reject: false } } : r)));
+
+  const [approving, setApproving] = useState<number | null>(null);
   const approve = async (x: AccessRequestRow) => {
     setBusy(x.id, true);
+    setApproving(x.id);
     try {
       const res = await arData.approve(x.id);
+      decided(x.id);
       // A Vault Admin approval waits for the requester to forward it to the manager (raise-manager).
       const toMgr = x.stage === 'admin' && x.manager;
       toast.success(`${x.code} ${toMgr ? 'approved · the requester forwards it to the Manager' : 'fully approved'}`, res.message);
-      load(true);
-    } catch (e) { toast.error('Could not approve', errMsg(e)); load(true); }
-    finally { setBusy(x.id, false); }
+      await load(true);
+    } catch (e) { toast.error('Could not approve', errMsg(e)); await load(true); }
+    finally { setBusy(x.id, false); setApproving(null); }
   };
 
   const openDialog = (kind: 'reject' | 'cancel' | 'lock', row: AccessRequestRow) => setDialog({ kind, row });
@@ -155,6 +163,7 @@ export default function AccessRequests() {
     try {
       if (dialog.kind === 'reject') {
         const res = await arData.reject(x.id);
+        decided(x.id);
         toast.warning(`${x.code} rejected`, res.message);
       } else if (dialog.kind === 'cancel') {
         const res = await arData.cancel(x.id);
@@ -164,9 +173,9 @@ export default function AccessRequests() {
         toast.info(`${x.credential?.name ?? x.code} locked`, res.message);
       }
       setDialog(null);
-      load(true);
+      await load(true);
     } catch (e) {
-      toast.error('Action failed', errMsg(e)); setDialog(null); load(true);
+      toast.error('Action failed', errMsg(e)); setDialog(null); await load(true);
     } finally { setBusy(x.id, false); }
   };
 
@@ -231,7 +240,7 @@ export default function AccessRequests() {
             <table className="whm-tbl mv-tbl ar-tbl">
               <thead><tr>{COLS.map((c, i) => <th key={c} className={`ar-th-${i}`}>{c}</th>)}</tr></thead>
               <tbody>
-                {loading ? <ShimRows cols={COLS.length} /> : error ? (
+                {loading ? <ShimRows cols={COLS.length} rows={perPage} /> : error ? (
                   <EmptyRow cols={COLS.length} title="Could not load requests" sub={error}
                     action={<button type="button" className="ar-btn ar-btn--no" style={{ marginTop: 10 }} onClick={() => load()}>Try again</button>} />
                 ) : !rows.length ? (
@@ -277,8 +286,9 @@ export default function AccessRequests() {
                       <td>
                         <div className="ar-acts">
                           <button type="button" data-h40="skip" className="ar-btn ar-btn--ok" disabled={!canDecide(x.can.approve) || busy}
-                            title={awaitingForward ? 'The requester has not forwarded this to the manager yet' : x.can.approve ? `Approve as ${asRole}` : undefined} onClick={() => approve(x)}>
-                            <Svg d={I.ok} size={12} sw={2.1} />Approve
+                            title={awaitingForward ? 'The requester has not forwarded this to the manager yet' : x.can.approve ? `Approve as ${asRole}` : undefined} onClick={() => approve(x)}
+                            aria-busy={approving === x.id || undefined}>
+                            {approving === x.id ? <><span className="cp-spin cp-spin--sm" />Approving…</> : <><Svg d={I.ok} size={12} sw={2.1} />Approve</>}
                           </button>
                           <button type="button" data-h40="skip" className="ar-btn ar-btn--no" disabled={!canDecide(x.can.reject) || busy}
                             title={awaitingForward ? 'The requester has not forwarded this to the manager yet' : x.can.reject ? `Reject as ${asRole}` : undefined} onClick={() => openDialog('reject', x)}>

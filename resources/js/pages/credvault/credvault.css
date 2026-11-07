@@ -8233,80 +8233,6 @@
   border: 1px solid rgba(255, 255, 255, .3);
 }
 
-/* Score card: passed / failed and the attention breakdown (Password Health only) */
-.cvx .phx-score .phx-score__t .phx-pf {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  font-size: 10.5px;
-}
-
-.cvx .phx-score .phx-score__t .phx-pf span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-weight: 700;
-  opacity: 1;
-}
-
-.cvx .phx-score .phx-score__t .phx-pf b {
-  font-size: 11.5px;
-  letter-spacing: 0;
-}
-
-.cvx .phx-score .phx-score__t .phx-pf .is-pass {
-  background: rgba(16, 185, 129, .28);
-  border: 1px solid rgba(110, 231, 183, .55);
-}
-
-.cvx .phx-score .phx-score__t .phx-pf .is-fail {
-  background: rgba(244, 63, 94, .26);
-  border: 1px solid rgba(253, 164, 175, .55);
-}
-
-.cvx .phx-score .phx-score__t .phx-pf i {
-  font-style: normal;
-  opacity: .8;
-}
-
-.cvx .phx-score .phx-score__t .phx-att {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
-}
-
-.cvx .phx-score .phx-score__t .phx-att button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  color: inherit;
-  background: rgba(255, 255, 255, .1);
-  border: 1px solid rgba(255, 255, 255, .24);
-  cursor: pointer;
-  transition: background .15s;
-}
-
-.cvx .phx-score .phx-score__t .phx-att button b {
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0;
-  color: inherit;
-}
-
-.cvx .phx-score .phx-score__t .phx-att button:hover,
-.cvx .phx-score .phx-score__t .phx-att button.is-on {
-  background: rgba(255, 255, 255, .28);
-}
-
 .cvx .phx-card {
   --c1: #0e7490;
   --c2: #22d3ee;
@@ -17222,6 +17148,9 @@
 .cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child { margin-left: -12px !important; margin-right: -12px !important; margin-bottom: 0 !important; }
 .cvx.cv-page .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child { border-radius: 0; }
 .cvx.cv-page .whm-tbl.mv-tbl tbody td.mv-empty { border-bottom: 0 !important; }
+/* Team Vault: same — no empty-state row line sitting just above the table footer. */
+.cvx.tvx-page .whm-tbl.mv-tbl tbody td.mv-empty,
+.cvx.tvx-page table tbody td.mv-empty { border-bottom: 0 !important; }
 
 /* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
 .cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
@@ -18976,7 +18905,6 @@
   background: currentColor;
 }
 
-
 /* CS-1460 row 30 — View credential drawer opened from the Critical Vault: the tab rail is a fixed
    48px band and every tab inside it a fixed 40px (1px border + 3px inset + 40 = 48), the same pair
    as the Critical Vault list toolbar. Scoped to the Critical Vault page; My Vault / Team Vault keep
@@ -19100,7 +19028,7 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   overflow: hidden;
 }
 
-.cvx #crd-host .cv-lock {
+.cvx .cv-lock {
   position: absolute;
   inset: 0;
   z-index: 50;
@@ -19114,7 +19042,7 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   cursor: progress;
 }
 
-.cvx #crd-host .cv-lock__box {
+.cvx .cv-lock__box {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -19125,7 +19053,7 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   color: #0e7490;
 }
 
-.cvx #crd-host .cv-lock__spin {
+.cvx .cv-lock__spin {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
@@ -19139,19 +19067,60 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   to { transform: rotate(360deg); }
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .cv-lock {
+[data-bs-theme="dark"] .cvx .cv-lock {
   background: rgba(10, 22, 32, .62);
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .cv-lock__box {
+[data-bs-theme="dark"] .cvx .cv-lock__box {
   color: #67e8f9;
 }
 
-[data-bs-theme="dark"] .cvx #crd-host .cv-lock__spin {
+[data-bs-theme="dark"] .cvx .cv-lock__spin {
   border-color: rgba(34, 211, 238, .22);
   border-top-color: #22d3ee;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cvx #crd-host .cv-lock__spin { animation: none; }
+  .cvx .cv-lock__spin { animation: none; }
+}
+
+/* ══ Recycle Bin · Retention period popup (CS-1493): shimmer while it opens, the save lock while it saves ══ */
+.cvx .dl-modal.rb-ret {
+  position: relative;
+}
+
+.cvx .dl-modal.rb-ret:has(> .cv-lock) {
+  overflow: hidden;
+}
+
+.cvx .rb-ret__shim i {
+  display: block;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eef2f7 0%, #e2e8f0 50%, #eef2f7 100%);
+  background-size: 200% 100%;
+  animation: cv-shim 1.2s linear infinite;
+}
+
+.cvx .rb-ret__shim-opt {
+  height: 58px;
+}
+
+.cvx .rb-ret__shim-note {
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+[data-bs-theme="dark"] .cvx .rb-ret__shim i {
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, .04) 0%, rgba(34, 211, 238, .12) 50%, rgba(255, 255, 255, .04) 100%);
+}
+
+/* Download backup · empty vault (CS-1474 / 1475 / 1476): the note sits under the vault cards; Download stays clickable
+   but reads as unavailable, and a click explains why. */
+.cvx #crd-host .ix-note.ix-empty-scope {
+  margin-top: 8px;
+}
+
+.cvx #crd-host .mapsup-footer__btn--primary[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
 }

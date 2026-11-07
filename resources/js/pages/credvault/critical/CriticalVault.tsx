@@ -241,7 +241,8 @@ export default function CriticalVault() {
           onPending={u => { const id = overlay.id; setRows(rs => rs.map(r => (r.id === id ? { ...r, unlock: u } : r))); }} />
       )}
       {overlay?.kind === 'bin' && (
-        <BinConfirm row={overlay.row} onClose={close} onDone={() => { close(); refresh(); }} />
+        // CS-1445: while the move runs the popup is locked (checkbox, Cancel, ×) and shows a spinner.
+        <BinConfirm row={overlay.row} lockBusy onClose={close} onDone={() => { close(); refresh(); }} />
       )}
     </CvPage>
   );

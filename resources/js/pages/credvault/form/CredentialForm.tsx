@@ -6,7 +6,7 @@ import ExpiryPicker from './ExpiryPicker';
 import { Svg, bytes, cap, copyText, errMsg } from '../shared';
 import CrdSelect, { type CrdOption } from './CrdSelect';
 import {
-  PHONE_CHARS, STR_LBL, checkField, emailError, fieldMax, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
+  DOMAIN_CHARS, HOLDER_CHARS, HOST_CHARS, PHONE_CHARS, STR_LBL, checkField, emailError, fieldMax, fieldSpan, fillRows, hasTwofaSwitch, phoneError,
   policyStrengthMsg, secretIsPassword, strengthOf, typeColor,
 } from './formHelpers';
 import { quickPassword } from '../generator';
@@ -302,6 +302,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         // they no longer eat into the 19-character limit (a 19-digit card could not be typed with them).
         : f.key === 'cardno' ? raw.replace(/\D/g, '').slice(0, 19)
         : idRule ? idRule.clean(raw)
+        // CS-1457 #12 / #14: Hostname / IP and the certificate domain drop _ and symbols as they are typed.
+        : f.key === 'host' ? HOST_CHARS(raw)
+        // CS-1456 #2: Account Holder / Cardholder take no digits — they are dropped as typed or pasted.
+        : f.key === 'holder' ? HOLDER_CHARS(raw)
+        : f.key === 'domain' && T.key === 'cert' ? DOMAIN_CHARS(raw)
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
       setVal(f.key, v);
       if (errors[k] && (f.kind === 'email' || f.kind === 'tel')) {
@@ -312,7 +317,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const onLeave = () => {
       const v = (vals[f.key] ?? '').trim();
       const m = !v ? null
-        : f.kind === 'email' || f.kind === 'tel' ? checkField(f, v, true)
+        : f.kind === 'email' || f.kind === 'tel' || f.key === 'host' || (f.key === 'domain' && T.key === 'cert') ? checkField(f, v, true)
         : idRule ? idRule.error(v) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
@@ -457,7 +462,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         } else {
           ctl = (
             <input id={`crdF_${f.key}`} type={f.kind} className={cls} value={val} placeholder={ph}
-              maxLength={f.kind === 'tel' ? 16 : f.kind === 'email' ? 191 : f.max ?? undefined} autoComplete="off"
+              maxLength={f.kind === 'tel' ? 16 : f.kind === 'email' ? 191 : fieldMax(f)} autoComplete="off"
               inputMode={f.kind === 'tel' ? 'tel' : f.kind === 'email' ? 'email' : undefined}
               onChange={e => onText(e.target.value)} onBlur={onLeave} />
           );
