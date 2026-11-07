@@ -121,7 +121,6 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const { typeOf } = useCvMeta();
   const [d, setD] = useState<CredentialDetail | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [fetchedAt, setFetchedAt] = useState(() => Date.now());
   const [shown, setShown] = useState(false);
   const [viewSel, setViewSel] = useState<Stage | null>(null);
   const [reason, setReason] = useState('');
@@ -142,7 +141,6 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
       const x = await cvData.show(credentialId);
       if (seq !== loadSeq.current) return;   // a newer load (or poll) owns the state
       setD(x);
-      setFetchedAt(Date.now());
       setLoadErr(null);
     } catch (e) {
       if (!silent && seq === loadSeq.current) setLoadErr(errMsg(e));
@@ -167,7 +165,21 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   // A Branch Admin's direct access has no request and no timer: open, and never an ended window.
   const direct = apiOpen && !unlock.request_id;
   const now = useNow(apiOpen && !direct);
-  const left = apiOpen ? Math.max(0, (unlock.seconds_left ?? 0) - (now - fetchedAt) / 1000) : 0;
+  // Fix the window's end once, client-side, so seconds lost to the stage 3→4 page
+  // load don't eat the display: a fresh grant starts at its full length (14:59 for
+  // 15m, 59:59 for 1h), a re-opened mid-window resumes the real remaining time.
+  const winRef = useRef<{ id: number | null; at: number } | null>(null);
+  if (apiOpen && !direct && (unlock.total_seconds ?? 0) > 0) {
+    const totalSec = unlock.total_seconds as number;
+    const rawLeft = unlock.seconds_left ?? 0;
+    const startSec = totalSec - rawLeft <= 30 ? totalSec - 1 : rawLeft;
+    if (!winRef.current || winRef.current.id !== (unlock.request_id ?? null)) {
+      winRef.current = { id: unlock.request_id ?? null, at: Date.now() + startSec * 1000 };
+    }
+  } else if (!apiOpen) {
+    winRef.current = null;
+  }
+  const left = apiOpen && !direct && winRef.current ? Math.max(0, (winRef.current.at - now) / 1000) : 0;
   // Under a second left already reads 00:00, so that is the end of the window too.
   const ended = apiOpen && !direct && left < 1;
   const open = apiOpen && !ended;

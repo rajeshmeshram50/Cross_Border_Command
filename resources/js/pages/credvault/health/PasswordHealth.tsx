@@ -5,7 +5,7 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import { cvApi, CV_ROUTES, type CredentialDetail, type HealthIssue, type Loose, type PageMeta } from '../cvApi';
 import {
   ActBtn, CvBrief, CvCard, CvPage, CvStrip, CvTabsRow, EmptyRow, IC, ShimRows, StrengthCell, StripBtn, Svg,
-  cap, errMsg, fmtDay, fmtTime, initials, useCvMeta, useDebounced, type CvTab,
+  cap, errMsg, fmtDay, initials, useCvMeta, useDebounced, type CvTab,
 } from '../shared';
 import CredentialFormModal from '../form/CredentialFormModal';
 import ViewDrawer from '../my-vault/ViewDrawer';
@@ -36,7 +36,10 @@ const ICO = {
   alert: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
 };
 
-const TABS: [string, string][] = [['all', 'All Issues'], ['weak', 'Weak'], ['reused', 'Reused'], ['twofa', '2FA Off'], ['rotation', 'Rotation Due'], ['shared', 'Over-shared'], ['fixed', 'Resolved']];
+const TABS: [string, string][] = [['all', 'All Issues'], ['weak', 'Weak'], ['reused', 'Reused'], ['twofa', '2FA Off'], ['rotation', 'Rotation Due'], ['shared', 'Over-shared']];
+/** Fixed severity per issue type — not raised or lowered by the credential's risk level. */
+const SEV_BY_TYPE: Record<string, 'critical' | 'high' | 'medium'> = { weak: 'critical', reused: 'high', twofa: 'medium', rotation: 'critical', shared: 'medium' };
+const CARD_LBL: Record<string, string> = { weak: 'Weak passwords', reused: 'Reused passwords', twofa: 'Missing 2FA', rotation: 'Rotation due', shared: 'Over-shared' };
 const FIX_LBL: Record<string, string> = {
   weak: 'Opens the credential form to set a strong password',
   reused: 'Opens the credential form to set a unique password',
@@ -52,25 +55,40 @@ const RING = 2 * Math.PI * 34;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 
-/** The score ring + five cards (phSummaryHtml). */
-function Summary({ s }: { s: Loose | null }) {
+const FILTER_ICO = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
+const CLEAR_ICO = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+
+/**
+ * The score ring + five issue cards (phSummaryHtml). Each card is one issue type — Weak, Reused, Missing 2FA,
+ * Rotation due, Over-shared — and filters the list to that tab; clicking the active card clears it (phCardFilter).
+ */
+function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<string, number>; active: string; onPick: (k: string) => void }) {
   const score = num(s?.score ?? 0);
   const level = s ? (score >= 80 ? ['Good', 'is-good'] : score >= 60 ? ['Fair', 'is-fair'] : ['At risk', 'is-bad']) : ['—', 'is-good'];
-  const pct = (s?.pct ?? {}) as Record<string, number>;
-  const n = (k: string) => (s ? num(s[k]) : '—');
-  const card = (cls: string, ico: string, value: number | string, l: string, sub: string, p: number) => (
-    <div className={`phx-card phx-card--${cls}`}>
+  const pwN = s ? num(s.with_passwords) : 0;
+  const all = s ? num(s.checked) : 0;
+  const pctOf = (n: number, of: number) => (of ? Math.round(n / of * 100) : 0);
+  const card = (cls: string, ico: string, k: string, l: string, sub: (n: number) => string, of: number) => {
+    const value = s ? num(tabs[k] ?? 0) : 0;
+    const on = active === k;
+    const p = pctOf(value, of);
+    return (
+    <div key={k} className={`phx-card phx-card--${cls} phx-card--clickable${on ? ' is-active' : ''}`} role="button" tabIndex={0} aria-pressed={on}
+      title={on ? 'Clear filter — show all issues' : `Filter the list to ${l}`} onClick={() => onPick(k)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(k); } }}>
       <span className="phx-card__glow" />
       <div className="phx-card__top">
         <span className="phx-card__ico"><Svg d={ico} size={16} /></span>
-        <b className="phx-card__n">{value}</b>
+        <b className="phx-card__n">{s ? value : '—'}</b>
         <span className="phx-card__pct">{p}%</span>
       </div>
       <span className="phx-card__l">{l}</span>
       <div className="phx-card__bar"><i style={{ width: `${p}%` }} /></div>
-      <small className="phx-card__s">{sub}</small>
+      <small className="phx-card__s">{s ? sub(value) : '…'}</small>
+      <small className="phx-card__hint"><Svg d={on ? CLEAR_ICO : FILTER_ICO} size={11} />{on ? 'Showing — click to clear' : 'Click to filter list'}</small>
     </div>
-  );
+    );
+  };
   return (
     <div className="phx">
       <div className={`phx-score ${level[1]}`}>
@@ -89,20 +107,20 @@ function Summary({ s }: { s: Loose | null }) {
           <em><Svg d={PH_I.weak} size={11} />{s ? `${num(s.at_risk)} need attention` : '…'}</em>
         </div>
       </div>
-      {card('teal', ICO.lock, n('checked'), 'Credentials checked', 'Owned & team credentials', s ? 100 : 0)}
-      {card('sky', ICO.key, n('with_passwords'), 'With passwords', 'Strength & reuse checked', pct.with_passwords ?? 0)}
-      {card('amber', PH_I.weak, n('open_issues'), 'Open issues', `Across ${s ? num(s.at_risk) : '—'} credentials`, pct.at_risk ?? 0)}
-      {card('rose', ICO.alert, n('critical_issues'), 'Critical issues', 'Fix these first', pct.critical_issues ?? 0)}
-      {card('green', PH_I.fixed, n('safe'), 'Strong & safe', 'No open issues', pct.safe ?? 0)}
+      {card('teal', PH_I.weak, 'weak', 'Weak passwords', n => `${n} of ${pwN} passwords below policy`, pwN)}
+      {card('sky', PH_I.reused, 'reused', 'Reused passwords', n => `${n} of ${pwN} share a password`, pwN)}
+      {/* The API has no count of 2FA-capable credentials yet, so this one is out of every credential checked. */}
+      {card('amber', PH_I.twofa, 'twofa', 'Missing 2FA', n => `${n} of ${all} credentials without 2FA`, all)}
+      {card('rose', PH_I.rotation, 'rotation', 'Rotation due', n => `${n} of ${pwN} passwords past policy age`, pwN)}
+      {card('green', PH_I.shared, 'shared', 'Over-shared', n => `${n} of ${all} credentials shared too widely`, all)}
     </div>
   );
 }
 
 /** The Details column (phDetail), read from the issue's structured `details`. */
-function Detail({ x, fixed }: { x: HealthIssue; fixed: boolean }) {
+function Detail({ x }: { x: HealthIssue }) {
   const d = (x.details ?? {}) as Loose;
   const c = x.credential;
-  if (fixed) return x.detail ? <div className="ph-dl"><small>{x.detail}</small></div> : <span className="ph-act">—</span>;
   if (x.type === 'weak') {
     const st = num(d.strength ?? c.strength);
     return <StrengthCell row={{ has_password: c.has_password !== false, strength_level: st, strength: d.strength_label || STR_LBL[st] || 'Weak' }} />;
@@ -117,7 +135,7 @@ function Detail({ x, fixed }: { x: HealthIssue; fixed: boolean }) {
     );
   }
   if (x.type === 'twofa') {
-    return <div className="ph-dl"><b>Password-only sign-in</b><small>No OTP or authenticator code is asked at login — anyone with the password can get in</small></div>;
+    return <div className="ph-dl"><b>2FA is turned off</b><small>Login needs only the password — no phone or app code to confirm it is really you</small></div>;
   }
   if (x.type === 'rotation') {
     const age = num(d.age_days), od = num(d.overdue_days);
@@ -158,6 +176,15 @@ export default function PasswordHealth() {
   const [newPw, setNewPw] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const seq = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  /** A summary card filters the list to its issue type; the active card clears it (phCardFilter). */
+  const pickCard = (k: string) => {
+    const next = tab === k ? 'all' : k;
+    setTab(next); setPage(1);
+    toast.info(next === 'all' ? 'Filter cleared — showing all issues' : `Filtered to ${CARD_LBL[k] ?? k}`);
+    listRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
 
   const load = useCallback(async (silent = false) => {
     const my = ++seq.current;
@@ -210,8 +237,7 @@ export default function PasswordHealth() {
     load(true);
   };
 
-  const fixed = tab === 'fixed';
-  const cols = ['Sr. No', 'Credential ID', 'Credential Name', 'Owner', 'Issue', 'Severity', 'Details', fixed ? 'Resolved On' : 'Suggested Action', 'Action'];
+  const cols = ['Sr. No', 'Credential ID', 'Credential Name', 'Owner', 'Issue', 'Severity', 'Details', 'Suggested Action', 'Action'];
   const cvTabs: CvTab[] = TABS.map(([k, l]) => ({ key: k, label: l, icon: PH_I[k], count: tabs[k] ?? null }));
   const start = (meta.current_page - 1) * meta.per_page;
   const tabLabel = TABS.find(t => t[0] === tab)?.[1] ?? '';
@@ -235,14 +261,14 @@ export default function PasswordHealth() {
           { icon: ICO.scan, title: 'Scan Credentials', desc: 'Each credential is checked for strength, reuse, 2FA, rotation age and how widely it is shared.' },
           { icon: PH_I.weak, title: 'Prioritise by Severity', desc: 'Critical issues on high-risk credentials appear first so the biggest risks are fixed first.' },
           { icon: ICO.tool, title: 'Fix in One Click', desc: 'Generate a strong password, confirm 2FA or revoke extra access straight from the list.' },
-          { icon: PH_I.fixed, title: 'Track Resolved Issues', desc: 'Fixed issues move to Resolved with the time and who fixed them.' },
+          { icon: PH_I.fixed, title: 'Re-check Any Time', desc: 'Run Health Check again after fixing — resolved issues drop off the list and the score goes up.' },
         ]}
       />
-      <div id="phSum"><Summary s={summary} /></div>
+      <div id="phSum"><Summary s={summary} tabs={tabs} active={tab} onPick={pickCard} /></div>
       <CvCard pane fit>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
           search={q} onSearch={setQ} placeholder="Search by credential, owner or issue..." />
-        <div id="phListWrap" className="tvc-list">
+        <div id="phListWrap" ref={listRef} className="tvc-list">
           <div className="whm-tblwrap">
             <table className="whm-tbl mv-tbl">
               <thead><tr>{cols.map((c, i) => <th key={c} className={`ph-th-${i}`}>{c}</th>)}</tr></thead>
@@ -255,15 +281,16 @@ export default function PasswordHealth() {
                     <td colSpan={cols.length} className="mv-empty">
                       <div className="mv-empty__box">
                         <div className="mv-empty__ico"><Svg d={PH_I.fixed} size={24} /></div>
-                        <div className="mv-empty__t">{dq ? 'No issues match your search' : fixed ? 'Nothing resolved yet' : `All clear — no ${tab === 'all' ? '' : tabLabel.toLowerCase() + ' '}issues`}</div>
-                        <div className="mv-empty__s">{dq ? 'Try a credential name, ID, owner or issue.' : fixed ? 'Issues you fix will be listed here with the time they were resolved.' : 'Every credential in this check is healthy.'}</div>
+                        <div className="mv-empty__t">{dq ? 'No issues match your search' : `All clear — no ${tab === 'all' ? '' : tabLabel.toLowerCase() + ' '}issues`}</div>
+                        <div className="mv-empty__s">{dq ? 'Try a credential name, ID, owner or issue.' : 'Every credential in this check is healthy.'}</div>
                       </div>
                     </td>
                   </tr>
                 ) : rows.map((x, i) => {
                   const c = x.credential;
                   const T = typeOf(c.type);
-                  const sev = x.severity;
+                  // Severity is fixed per issue type, whatever the credential (Weak / Rotation critical, Reused high, 2FA / Over-shared medium).
+                  const sev = SEV_BY_TYPE[x.type] ?? x.severity;
                   const urlIco = c.url && /^https?:|\.[a-z]{2,}/i.test(c.url) ? 'globe' : 'tag';
                   return (
                     <tr key={`${c.id}-${x.type}-${x.resolved_at ?? i}`}>
@@ -286,21 +313,13 @@ export default function PasswordHealth() {
                       </td>
                       <td><span className={`ph-iss ph-iss--${x.type ?? 'weak'}`}><Svg d={PH_I[x.type] ?? PH_I.all} size={12} /><span>{x.issue}</span></span></td>
                       <td><div className="znm-flagcell">{sev ? <span className={`znm-flag mv-rk mv-rk--${sev}`}><i />{cap(sev)}</span> : '—'}</div></td>
-                      <td><Detail x={x} fixed={fixed} /></td>
-                      <td>
-                        {fixed ? (
-                          <div className="whm-idcell"><b className="mv-upd-d">{fmtDay(x.resolved_at)}</b><span className="whm-iddate">{fmtTime(x.resolved_at)} · by {x.resolved_by ?? '—'}</span></div>
-                        ) : <span className="ph-act">{x.action}</span>}
-                      </td>
+                      <td><Detail x={x} /></td>
+                      <td><span className="ph-act">{x.action}</span></td>
                       <td>
                         <div className="whm-acts">
-                          {fixed ? (
-                            <span className="znm-flag mv-2on"><Svg d={IC.check} size={11} />Fixed</span>
-                          ) : (
-                            <ActBtn icon={ICO.tool} tone="edit" disabled={!x.can_fix}
-                              title={x.can_fix ? `Fix — ${FIX_LBL[x.type]}` : 'You can only use this credential — ask its owner to fix it'}
-                              onClick={() => fix(x)} />
-                          )}
+                          <ActBtn icon={ICO.tool} tone="edit" disabled={!x.can_fix}
+                            title={x.can_fix ? `Fix — ${FIX_LBL[x.type]}` : 'You can only use this credential — ask its owner to fix it'}
+                            onClick={() => fix(x)} />
                           {c.id ? <ActBtn icon={IC.view} title="View credential" onClick={() => setViewId(c.id)} /> : null}
                         </div>
                       </td>
