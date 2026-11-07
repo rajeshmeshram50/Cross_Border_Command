@@ -114,7 +114,7 @@ const dummy = {
     let rows = by[tab as keyof typeof by] ?? all;
     const t = String(text ?? '').trim().toLowerCase();
     // As the spec: request ID, credential, requester, department, reason and the approvers' names.
-    if (t) rows = rows.filter(r => [r.code, r.credential?.name, r.credential?.code, r.requester.name, r.requester.department, r.reason, r.admin?.user?.name, r.manager?.user?.name]
+    if (t) rows = rows.filter(r => [r.code, r.credential?.name, r.credential?.code, r.requester.name, r.requester.department, r.reason, r.admin?.user?.name, r.manager?.user?.name, r.duration_label]
       .some(v => String(v ?? '').toLowerCase().includes(t)));
     const per = Number(per_page) || 10;
     const last_page = Math.max(1, Math.ceil(rows.length / per));
