@@ -1038,7 +1038,13 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     <div className="mapsup-overlay">
       <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}
         style={{ position: 'relative' }}>
-        {saving && (
+        {/* My Vault: the Customer form's save lock — a blurred sheet, a big ring and the word under it, no card. */}
+        {saving && !inCritical && (
+          <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">
+            <div className="cv-lock__box"><span className="cv-lock__spin" />{editing ? 'Updating…' : 'Saving…'}</div>
+          </div>
+        )}
+        {saving && inCritical && (
           <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>
             <div className="mapsup-seccard cv-saving" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
               <span className="cp-spin" />

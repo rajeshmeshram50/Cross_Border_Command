@@ -157,11 +157,8 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSi
  */
 export function ImportVeil({ label }: { label: string }) {
   return (
-    <div role="status" aria-live="polite" className="ir-veil">
-      <div className="mapsup-seccard cv-saving ir-veil__card">
-        <span className="cp-spin" />
-        <b className="mapsup-sechead__title">{label}</b>
-      </div>
+    <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">
+      <div className="cv-lock__box"><span className="cv-lock__spin" />{label}</div>
     </div>
   );
 }
