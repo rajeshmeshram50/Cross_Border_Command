@@ -122,9 +122,12 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  // Shared With Me: the person who shared it with you (and its owner) is not offered — it can't go back to them.
+  const sharers = cred?.access?.shared_by ?? [];
+  const blocked = useMemo(() => new Set([cred?.owner?.id, ...(cred?.access?.shared_by ?? []).map(s => s.id)].filter(Boolean).map(String)), [cred]);
   const options = useMemo(() => (type === 'user'
-    ? (people?.users ?? []).map(u => ({ id: String(u.id), label: `${u.name}${u.designation ? ` — ${u.designation}` : u.email ? ` — ${u.email}` : ''}` }))
-    : (people?.teams ?? []).map(t => ({ id: String(t.id), label: `${t.name} — Team · ${t.members} members` }))), [people, type]);
+    ? (people?.users ?? []).filter(u => !blocked.has(String(u.id))).map(u => ({ id: String(u.id), label: `${u.name}${u.designation ? ` — ${u.designation}` : u.email ? ` — ${u.email}` : ''}` }))
+    : (people?.teams ?? []).map(t => ({ id: String(t.id), label: `${t.name} — Team · ${t.members} members` }))), [people, type, blocked]);
 
   const end = endOf(dur);
   const permDef = meta?.permissions.find(p => p.key === perm);
@@ -227,6 +230,9 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                           placeholder={`Select ${type === 'team' ? 'a team' : 'a person'}…`} onChange={v => { setWho(v); clr('who'); }} />
                       </div>
                       {errs.who && <span className="crd-err cv-ferr">{errs.who}</span>}
+                      {type === 'user' && sharers.length > 0 && !errs.who && (
+                        <span className="crd-hint">{sharers.map(s => s.name).join(', ')} shared this with you, so they are not in the list — it can't be shared back.</span>
+                      )}
                       {!options.length && <span className="crd-err cv-ferr" style={{ color: '#64748b' }}>{type === 'team' ? 'No teams with members yet.' : 'No other active users in your company.'}</span>}
                     </div>
                     <div className="sh-note"><Svg icon="shield" size={12} />External sharing is off by policy — use Secure Send or Vendor access for outsiders.</div>

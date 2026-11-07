@@ -141,7 +141,7 @@ export interface CredentialRow {
   risk: Risk; strength: string | null; strength_level: number; has_password: boolean; twofa: Twofa;
   rotation_days: number | null; next_rotation_due: string | null; rotation_state: 'ok' | 'soon' | 'over' | null;
   protected: boolean; lock_steps: LockStep[];
-  access: { permission: Perm; via: Via } | null; can: Can | null; unlock: UnlockState | null;
+  access: { permission: Perm; via: Via; shared_by?: { id: number; name: string }[] } | null; can: Can | null; unlock: UnlockState | null;
   active_shares: number; created_at: string | null; updated_at: string | null;
 }
 export interface DetailField { key: string; label: string; kind: string; value: string | null; masked: boolean; has_value: boolean; attachment_key?: string | null;

@@ -707,6 +707,8 @@ class CredVaultController extends Controller
                 ?? $this->reject('That person is not an active user of your company.', 'recipient_id', 404);
             if ($to->id === $c->owner_id) $this->reject('That person owns this credential already.', 'recipient_id');
             if ($to->id === $u->id) $this->reject('You cannot share a credential with yourself.', 'recipient_id');
+            // Shared With Me: never back to the person who shared it with you.
+            if (isset($this->sharedToMeBy($u, $c)[$to->id])) $this->reject("{$to->name} shared this credential with you — it can't be shared back to them.", 'recipient_id');
             $toName  = $to->name;
             $members = collect([$to]);
             $teamSize = null;
@@ -4423,7 +4425,9 @@ class CredVaultController extends Controller
             'rotation_state'    => $rot['state'],
             'protected'         => $steps !== [],
             'lock_steps'        => $steps,
-            'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1]] : null,
+            'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1],
+                // Who shared it with the viewer (live shares to them or their team): the Share popup leaves them out.
+                'shared_by'     => collect($this->sharedToMeBy($u, $c))->map(fn ($name, $id) => ['id' => $id, 'name' => $name])->values()->all()] : null,
             'can'               => $acc ? $this->canFlags($c, $acc) : null,
             'unlock'            => $steps
                 ? ($this->opensDirectly($u, $c) ? ['state' => 'open', 'label' => 'Open — Vault Admin'] : $this->unlockState($req, $steps))
@@ -5053,6 +5057,26 @@ class CredVaultController extends Controller
         if (!$x) return 'emp';
         if (in_array($x->user_type, self::ADMIN_TYPES, true)) return 'admin';
         return $this->levelOf($this->userInfo([$x->id])[$x->id]['designation'] ?? $x->designation);
+    }
+
+    /**
+     * [user id => name] of the people who shared $c with $u — live shares to $u or to $u's team — so a
+     * Shared With Me credential is never shared back to them. The owner is excluded by the share rules already.
+     */
+    protected function sharedToMeBy(User $u, Credential $c): array
+    {
+        return $this->memo("sharedby:{$u->id}:{$c->id}", function () use ($u, $c) {
+            $dept = $this->deptOf($u);
+
+            return CredentialShare::live()->where('client_id', $u->client_id)->where('credential_id', $c->id)
+                ->where(function ($w) use ($u, $dept) {
+                    $w->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $u->id));
+                    if ($dept) $w->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $dept));
+                })
+                ->whereNotNull('shared_by')->where('shared_by', '!=', $u->id)
+                ->with('sharer:id,name')->get(['id', 'shared_by'])
+                ->mapWithKeys(fn ($s) => [(int) $s->shared_by => $s->sharer?->name ?? 'Someone'])->all();
+        });
     }
 
     /** Subquery: ids of credentials with a live share to the user or the user's team. */
