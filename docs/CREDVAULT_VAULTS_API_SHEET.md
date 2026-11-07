@@ -583,22 +583,24 @@ Each card also has: `passed` (= of − failed), `pct` (failed ÷ of), `issues` (
 - **Order:** worst severity first, then the most issues, then the credential ID.
 - **Tabs:** `all` = summary `failed`; one count per type = `attention.by_type`.
 - **Search** (`q`): credential ID, name, type, owner and issue text.
+- **Tab counts follow the search** (both `/health` and `/health/attention`): each badge in `tabs` is what that tab lists for the term typed; clearing the search brings back the whole vault's counts. The score card and the five cards (`summary`) always stay the whole vault.
 - **Paging:** `page`, `per_page`.
 - **Refusals:** unknown `tab` → 422; no sign-in → 401.
 
 #### Tested (07/11/2026)
 
-- **Suite `cv_health_cards.php`, 64 / 64.** 8 known credentials were added for one employee: one healthy, one weak, two reused with each other, one 2FA off, one rotation overdue, one over-shared (3 shares) and one weak **and** 2FA off. Checked exactly:
+- **Suite `cv_health_cards.php`, 84 / 84.** 8 known credentials were added for one employee: one healthy, one weak, two reused with each other, one 2FA off, one rotation overdue, one over-shared (3 shares) and one weak **and** 2FA off. Checked exactly:
   - total +8, failed +7, passed +1; passed + failed = total;
   - by_type weak +2 · reused +2 · twofa +2 · rotation +1 · shared +1, and each equals its card;
   - multiple +1, single +6, single + multiple = failed; open issues +8;
   - each card's `of`, `passed + failed = of`, `pct` and the "N of M" line; score and level;
   - `/health/attention`: the 7 failing credentials (not the healthy one), the double-issue row, the reused pair named, severity = worst issue, every type tab = its card, paging 3 / 3 / 1, search;
   - `/health` returns the same summary, and its tabs equal each card's issues;
+  - **search:** on `/health` and `/health/attention` every tab badge equals the rows that tab lists for the term (the 8 test credentials · one credential ID · the credential with two issues · issue text · nothing matches → all 0); clearing the search restores the whole vault's counts; the cards do not change with the search;
   - a peer does not see the employee's personal credentials;
   - the same totals hold for the Vault Admin, the Branch Admin, a manager and two employees;
   - fixing the weak password moves it to passed; fixing one of two issues keeps the credential in failed.
-- **Collection, 17 / 17 requests, 50 Postman tests** (the 3 logins are done in-process), inside a transaction that was rolled back.
+- **Collection, 27 / 27 requests, 71 Postman tests** (folder 04: search) (the 3 logins are done in-process), inside a transaction that was rolled back.
 - **Endpoint sweep:** both new endpoints answer for the Vault Admin, the Branch Admin and an employee (108 / 108, 0 server errors).
 
 ---

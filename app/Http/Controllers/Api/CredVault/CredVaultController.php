@@ -1248,24 +1248,29 @@ class CredVaultController extends Controller
         $creds  = $this->healthScope($u);
         $issues = collect($this->healthIssues($creds, $pol, $u));
 
-        $tabs = ['all' => $issues->count()];
-        foreach (['weak', 'reused', 'twofa', 'rotation', 'shared'] as $t) $tabs[$t] = $issues->where('type', $t)->count();
-        $resolved = AuditLog::where('client_id', $u->client_id)->where('action', 'health_fixed')
-            ->where(fn ($w) => $w->where('user_id', $u->id)->orWhereIn('credential_id', $creds->pluck('id')->all()));
-        $tabs['fixed'] = (clone $resolved)->count();
-
         $tab  = $f['tab'] ?? 'all';
         $per  = $f['per_page'] ?? self::PAGE_SIZE;
         $pg   = $f['page'] ?? 1;
         $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
 
+        // The tab counts follow the search: each badge is what that tab lists for the term typed.
+        $matched = $term === '' ? $issues : $issues->filter(fn ($i) => str_contains(mb_strtolower(implode(' ', [
+            $i['credential']['code'], $i['credential']['name'], $i['credential']['type_label'], $i['credential']['category_group'],
+            $i['credential']['owner'], $i['issue'],
+        ])), $term))->values();
+        $tabs = ['all' => $matched->count()];
+        foreach (self::HEALTH_TYPES as $t) $tabs[$t] = $matched->where('type', $t)->count();
+        $resolved = AuditLog::where('client_id', $u->client_id)->where('action', 'health_fixed')
+            ->where(fn ($w) => $w->where('user_id', $u->id)->orWhereIn('credential_id', $creds->pluck('id')->all()));
+        if ($term !== '') {
+            $like = $this->likeTerm($term);
+            $resolved->where(fn ($w) => $w->whereRaw('lower(coalesce(credential_name, \'\')) like ?', [$like])
+                ->orWhereRaw('lower(coalesce(credential_code, \'\')) like ?', [$like])
+                ->orWhereRaw('lower(coalesce(detail, \'\')) like ?', [$like]));
+        }
+        $tabs['fixed'] = (clone $resolved)->count();
+
         if ($tab === 'fixed') {
-            if ($term !== '') {
-                $like = $this->likeTerm($term);
-                $resolved->where(fn ($w) => $w->whereRaw('lower(coalesce(credential_name, \'\')) like ?', [$like])
-                    ->orWhereRaw('lower(coalesce(credential_code, \'\')) like ?', [$like])
-                    ->orWhereRaw('lower(coalesce(detail, \'\')) like ?', [$like]));
-            }
             $page  = $resolved->with('user:id,name')->orderByDesc('id')->paginate($per, ['*'], 'page', $pg);
             $now   = Credential::withTrashed()->whereIn('id', collect($page->items())->pluck('credential_id')->filter()->all())
                 ->with('owner:id,name')->get(['id', 'code', 'name', 'type', 'category_group', 'url', 'risk', 'scope', 'owner_id'])->keyBy('id');
@@ -1283,12 +1288,7 @@ class CredVaultController extends Controller
             });
             $meta = $this->pageMeta($page);
         } else {
-            $list = $issues->when($tab !== 'all', fn ($c) => $c->where('type', $tab))
-                ->when($term !== '', fn ($c) => $c->filter(fn ($i) => str_contains(mb_strtolower(implode(' ', [
-                    $i['credential']['code'], $i['credential']['name'], $i['credential']['type_label'], $i['credential']['category_group'],
-                    $i['credential']['owner'], $i['issue'],
-                ])), $term)))
-                ->values();
+            $list = $matched->when($tab !== 'all', fn ($c) => $c->where('type', $tab))->values();
             $data = $list->slice(($pg - 1) * $per, $per)->values();
             $meta = ['current_page' => $pg, 'per_page' => $per, 'total' => $list->count(), 'last_page' => max(1, (int) ceil($list->count() / $per))];
         }
@@ -1345,17 +1345,17 @@ class CredVaultController extends Controller
             ];
         })->sortBy(fn ($r) => [self::SEVERITY_RANK[$r['severity']] ?? 9, -$r['issue_count'], $r['credential']['code']])->values();
 
-        $counts = ['all' => $rows->count()];
-        foreach (self::HEALTH_TYPES as $t) $counts[$t] = $rows->filter(fn ($r) => in_array($t, $r['types'], true))->count();
-
         $tab  = $f['tab'] ?? 'all';
         $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
-        $list = $rows->when($tab !== 'all', fn ($c) => $c->filter(fn ($r) => in_array($tab, $r['types'], true)))
-            ->when($term !== '', fn ($c) => $c->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
-                $r['credential']['code'], $r['credential']['name'], $r['credential']['type_label'], $r['credential']['owner'],
-                implode(' ', array_column($r['issues'], 'issue')),
-            ])), $term)))
-            ->values();
+        // The tab counts follow the search, like the list.
+        $matched = $term === '' ? $rows : $rows->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
+            $r['credential']['code'], $r['credential']['name'], $r['credential']['type_label'], $r['credential']['owner'],
+            implode(' ', array_column($r['issues'], 'issue')),
+        ])), $term))->values();
+        $counts = ['all' => $matched->count()];
+        foreach (self::HEALTH_TYPES as $t) $counts[$t] = $matched->filter(fn ($r) => in_array($t, $r['types'], true))->count();
+
+        $list = $matched->when($tab !== 'all', fn ($c) => $c->filter(fn ($r) => in_array($tab, $r['types'], true)))->values();
         $per = $f['per_page'] ?? self::PAGE_SIZE;
         $pg  = $f['page'] ?? 1;
 

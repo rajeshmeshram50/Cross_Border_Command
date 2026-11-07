@@ -10,7 +10,7 @@
 
 ## 1. Result
 
-**Every Postman collection passes:** 641 / 641 requests, 1,315 Postman tests, 0 server errors (07/11: Password Health score card added).
+**Every Postman collection passes:** 651 / 651 requests, 1,336 Postman tests, 0 server errors (07/11: Password Health score card added; its tab counts follow the search).
 
 **One open item:** the Teams Critical Credentials suite (26 / 41). Commit `2112e908` (05–06/11) changed the Critical Vault rule on purpose: every employee of a branch now sees **every** Critical Vault credential of the branch, **personal ones included** (via `branch_critical`), where the earlier rule (`b8e39cd8`) showed only the branch's **team** credentials (via `branch_team`). The 15 failing checks are the old rule's expectations: a colleague's personal critical credential is now listed and its detail opens (200, secrets still behind the approval steps). The suite is left on the old rule until the team confirms which one is wanted.
 
@@ -30,8 +30,8 @@
 | Recycle Bin | `CredVault_RecycleBin.postman_collection.json` | **50 / 50** | 79 | 0 |
 | Import & Recovery | `CredVault_ImportRecovery.postman_collection.json` | **36 / 36** | 75 | 1 |
 | Audit Logs | `CredVault_AuditLogs.postman_collection.json` | **35 / 35** | 56 | 0 |
-| Password Health — score card & cards | `CredVault_PasswordHealth.postman_collection.json` | **17 / 17** | 50 | 0 |
-| **Total** | | **641 / 641** | **1,315** | 7 |
+| Password Health — score card & cards | `CredVault_PasswordHealth.postman_collection.json` | **27 / 27** | 71 | 0 |
+| **Total** | | **651 / 651** | **1,336** | 7 |
 
 \* **Skipped** requests need a person's real account password (e.g. an export or backup with readable passwords) or a second account. Run them in Postman with your own login. The login requests themselves are not counted: the runner signs in directly.
 
@@ -40,7 +40,7 @@
 | Suite | What it proves | Passed |
 |---|---|---|
 | Endpoint sweep | every CredVault GET endpoint answers without a server error for the Vault Admin, the Branch Admin and an employee | **108 / 108** |
-| Password Health score card | 8 known credentials (healthy, weak, reused pair, 2FA off, rotation overdue, over-shared, weak + 2FA off):<br>• total / passed / failed exact; need attention split by weak · reused · Missing 2FA · rotation · over-shared;<br>• single + multiple = failed; each card's "N of M";<br>• `/health/attention` one row per credential, type tabs = cards, search, paging;<br>• same numbers on `/health`; 5 roles; fixing moves a credential to passed | **64 / 64** |
+| Password Health score card | 8 known credentials (healthy, weak, reused pair, 2FA off, rotation overdue, over-shared, weak + 2FA off):<br>• total / passed / failed exact; need attention split by weak · reused · Missing 2FA · rotation · over-shared;<br>• single + multiple = failed; each card's "N of M";<br>• `/health/attention` one row per credential, type tabs = cards, search, paging;<br>• same numbers on `/health`; 5 roles; fixing moves a credential to passed;<br>• **tab counts follow the search** on `/health` and `/health/attention` (badge = rows listed; nothing matches → 0; cleared → whole vault) | **84 / 84** |
 | Audit Logs | 10 events from 1 hour to 40 days old:<br>• ranges 24h 4 · 7 days 8 · 30 days 9 · All 10, plus custom dates;<br>• tabs, and who sees what (Vault Admin 10 · employee 8 · manager 9 · intern 2 · Branch Admin 9);<br>• search, day groups, row fields, timezone, paging;<br>• CSV and Excel export | **42 / 42** |
 | Import & Recovery | • the 25-tab sample: all 25 tabs import cleanly (50 credentials);<br>• one failure per form rule, duplicates, the failed list;<br>• backup lock rules, the locked Excel backup (an .xlsx with Excel's own password, no zip) refused with a wrong password and opened with the right one in Microsoft Excel; CSV with the lock on → 422; the still-locked file uploaded to import → 422;<br>• restore from a backup tab;<br>• TOTP key: kept as typed in My Vault, base32 still required in the Critical Vault | **66 / 66** |
 | Recycle Bin rules | • counts for both vaults × 4 tabs, search;<br>• each person's view;<br>• restore and delete per person (Critical: Branch Admin only);<br>• retention (one period for both vaults);<br>• Empty Bin | **43 / 43** |
