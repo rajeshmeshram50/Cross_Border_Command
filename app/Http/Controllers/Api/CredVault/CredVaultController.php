@@ -318,13 +318,21 @@ class CredVaultController extends Controller
     {
         if ($term === null || trim($term) === '') return;
         $like  = $this->likeTerm($term);
-        $types = collect(Credential::TYPES)->filter(fn ($t) => str_contains(mb_strtolower($t[0]), mb_strtolower(trim($term))))->keys()->all();
+        $needle = mb_strtolower(trim($term));
+        $types = collect(Credential::TYPES)->filter(fn ($t) => str_contains(mb_strtolower($t[0]), $needle))->keys()->all();
+        // CS-1461: the Risk and Strength columns are searchable by the words the list shows
+        // ("High", "Critical", "Weak", "Strong" …), matched like the category label.
+        $risks  = array_values(array_filter(Credential::RISKS, fn ($r) => str_contains($r, $needle)));
+        $levels = array_keys(array_filter(Credential::STRENGTH_LABELS, fn ($l) => $l !== '' && str_contains(mb_strtolower($l), $needle)));
 
-        $q->where(function ($w) use ($like, $types, $u) {
+        $q->where(function ($w) use ($like, $types, $risks, $levels, $u) {
             foreach (['name', 'code', 'username', 'url', 'category_group'] as $col) {
                 $w->orWhereRaw("lower(coalesce(credvault_credentials.{$col}, '')) like ?", [$like]);
             }
             if ($types) $w->orWhereIn('credvault_credentials.type', $types);
+            if ($risks) $w->orWhereIn('credvault_credentials.risk', $risks);
+            // Strength only means something for a password; the rest show N/A.
+            if ($levels) $w->orWhere(fn ($s) => $s->where('credvault_credentials.has_password', true)->whereIn('credvault_credentials.strength', $levels));
             $w->orWhereIn('owner_id', User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id'));
         });
     }

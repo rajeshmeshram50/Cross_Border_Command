@@ -17148,6 +17148,9 @@
 .cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child { margin-left: -12px !important; margin-right: -12px !important; margin-bottom: 0 !important; }
 .cvx.cv-page .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child { border-radius: 0; }
 .cvx.cv-page .whm-tbl.mv-tbl tbody td.mv-empty { border-bottom: 0 !important; }
+/* Team Vault: same — no empty-state row line sitting just above the table footer. */
+.cvx.tvx-page .whm-tbl.mv-tbl tbody td.mv-empty,
+.cvx.tvx-page table tbody td.mv-empty { border-bottom: 0 !important; }
 
 /* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
 .cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }

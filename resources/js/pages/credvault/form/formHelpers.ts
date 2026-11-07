@@ -100,6 +100,34 @@ export function hostError(v: string): string | null {
   return t.split('.').every(l => label.test(l)) ? null : HOST_MSG;
 }
 
+/* ── CS-1457 #12 / #14 / #16: Development & IT fields ───────────────────────────────────────── */
+
+/** Longest hostname / domain name DNS allows. */
+export const HOST_MAX = 253;
+/** Certificate → Issued By: an X.509 name attribute is 64 characters at most (CS-1457 #14). */
+export const ISSUER_MAX = 64;
+/** Software License → License Key: 4,096 characters at most (CS-1457 #16). */
+export const LKEY_MAX = 4096;
+
+/** Host (Hostname / IP): only what a hostname, IPv4 or IPv6 can hold — letters, digits, . - and : (no _ or symbols). */
+export const HOST_CHARS = (raw: string) => raw.replace(/[^A-Za-z0-9.:-]/g, '').slice(0, HOST_MAX);
+/** Certificate domain: a hostname's characters plus the * of a wildcard (*.example.com). */
+export const DOMAIN_CHARS = (raw: string) => raw.replace(/[^A-Za-z0-9.*-]/g, '').slice(0, HOST_MAX);
+
+const DOMAIN_MSG = 'Enter a valid domain, e.g. inorbvict.com or *.inorbvict.com';
+/** Certificate → Domain / Common Name: a domain name, optionally a wildcard "*." in front; 253 at most. */
+export function domainError(v: string): string | null {
+  const t = v.trim();
+  if (t.length > HOST_MAX) return `Domain can be at most ${HOST_MAX} characters`;
+  const name = t.startsWith('*.') ? t.slice(2) : t;
+  if (name.includes('*')) return 'A wildcard can only be "*." at the very start, e.g. *.inorbvict.com';
+  const labels = name.split('.');
+  const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+  // A domain has at least two labels, and the last one (the TLD) is not only digits.
+  if (labels.length < 2 || !labels.every(l => label.test(l)) || /^\d+$/.test(labels[labels.length - 1])) return DOMAIN_MSG;
+  return null;
+}
+
 /* ── CS-1456 field formats ─────────────────────────────────────────────────────────────────── */
 
 /** API key / secret: 128 characters at most (CS-1457 #5, as QA asked). The API's own limit is 10,000. */
@@ -112,7 +140,9 @@ const KEY_MAX = 128;
 const PRIVKEY_MAX = 64;
 /** Longest value the input lets a field hold — the type's own max, KEY_MAX for an API key / secret, PRIVKEY_MAX for an SSH key. */
 export const fieldMax = (f: FieldDef): number | undefined =>
-  (f.key === 'apikey' || f.key === 'secret' ? KEY_MAX : f.key === 'privkey' ? PRIVKEY_MAX : f.max ?? undefined);
+  (f.key === 'apikey' || f.key === 'secret' ? KEY_MAX : f.key === 'privkey' ? PRIVKEY_MAX
+    : f.key === 'lkey' ? LKEY_MAX : f.key === 'host' || f.key === 'domain' ? HOST_MAX : f.key === 'issuer' ? ISSUER_MAX
+    : f.max ?? undefined);
 
 /** Luhn checksum — every real card number passes it; a mistyped digit fails it. */
 function luhnOk(digits: string): boolean {
@@ -125,8 +155,10 @@ function luhnOk(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-/** Account holder / cardholder: a person's or company's name — letters required; digits only beside letters ("3M India"). */
-const HOLDER_RE = /^[\p{L}\p{M}\p{N}\s.'’&,()/-]+$/u;
+/** Account holder / cardholder: a person's or company's name — letters, no digits (CS-1456 #2, as QA asked). */
+const HOLDER_RE = /^[\p{L}\p{M}\s.'’&,()/-]+$/u;
+/** The same name's characters while typing: digits and other symbols are dropped. */
+export const HOLDER_CHARS = (raw: string) => raw.replace(/[^\p{L}\p{M}\s.'’&,()/-]/gu, '');
 
 /**
  * SSH private key: the whole PEM block — "-----BEGIN … PRIVATE KEY-----", base64 lines (A–Z a–z 0–9 + / =),
@@ -166,7 +198,8 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
   }
   if (k === 'holder') {
     if (!/\p{L}/u.test(val)) return `${f.label} must include letters, not only numbers or symbols`;
-    if (!HOLDER_RE.test(val)) return `${f.label} can only use letters, numbers, spaces and . ' - & , ( ) /`;
+    if (/\p{N}/u.test(val)) return `${f.label} cannot contain numbers`;
+    if (!HOLDER_RE.test(val)) return `${f.label} can only use letters, spaces and . ' - & , ( ) /`;
   }
   if (k === 'apikey' || k === 'secret') {
     if (/\s/.test(val)) return `${f.label} cannot contain spaces or line breaks`;
@@ -178,6 +211,9 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
     if (!/^[A-Za-z0-9+/=\-\s]+$/.test(val)) return `${f.label} can only contain letters, numbers and + / = -`;
     return PRIVKEY_MAX >= 400 ? privateKeyError(val) : null;
   }
+  if (k === 'domain') return domainError(val);
+  if (k === 'issuer' && [...val].length > ISSUER_MAX) return `${f.label} can be at most ${ISSUER_MAX} characters`;
+  if (k === 'lkey' && val.length > LKEY_MAX) return `${f.label} can be at most ${LKEY_MAX.toLocaleString('en-IN')} characters`;
   if (k === 'exp' && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(val)) return 'Use MM/YY, e.g. 08/28';
   if (k === 'cvv' && !/^\d{3,4}$/.test(val)) return 'CVV must be 3 or 4 digits';
   if (k === 'ifsc' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(val.toUpperCase())) return 'IFSC must look like ICIC0001234';
