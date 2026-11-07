@@ -65,12 +65,16 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
     return s ? Number(s.count) : null;
   };
   const n = countOf(scope);
+  // CS-1474 / 1475 / 1476: an empty vault says so — inline under the vault cards and on Download — instead of a dead button.
+  const scopeLabel = SCOPES.find(x => x[0] === scope)?.[1] ?? 'this vault';
+  const emptyMsg = n === 0 ? `0 credentials found in ${scopeLabel} — there is nothing to download. Choose another vault.` : null;
   const score = pwScore(pw);
   const ferr = (k: string) => err?.field(k);
   const clearErr = () => setErr(null);
 
   const create = async () => {
     setErr(null);
+    if (emptyMsg) { toast.warning(`Can't download an empty backup`, emptyMsg); return; }
     if (locked && pw.length < 8) { setErr(new CvApiError('Choose a password of at least 8 characters.', 422, { password: ['Choose a password of at least 8 characters.'] })); return; }
     setBusy(true);
     try {
@@ -150,7 +154,9 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
             );
           })}
         </div>
-        {ferr('scope') && <span className="cv-ferr">{ferr('scope')}</span>}
+        {emptyMsg
+          ? <div className="ix-note is-warn ix-empty-scope" role="alert"><Svg d={IR_I.warn} size={13} /><span>{emptyMsg}</span></div>
+          : ferr('scope') && <span className="cv-ferr">{ferr('scope')}</span>}
         <label className={`ix-sw${withPw ? ' is-on' : ''}`}>
           <input type="checkbox" checked={withPw} onChange={e => { setWithPw(e.target.checked); clearErr(); }} />
           <span className="ix-sw__t"><i /></span>
@@ -211,7 +217,8 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
               <div className="mapsup-footer__info"><Svg d={IR_I.hist} size={12} /> Every download is recorded in the backup history and in Audit Logs</div>
               <div className="mapsup-footer__actions">
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={close} disabled={busy}>Cancel</button>
-                <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={create} disabled={!n || busy}>
+                <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={create} disabled={busy || n === null} aria-disabled={!!emptyMsg || undefined}
+                  title={emptyMsg ?? undefined}>
                   <Svg d={IR_I.down} size={13} sw={2.1} />{busy ? 'Preparing…' : `Download ${F[1]} Backup${locked ? ' · Locked' : ''}`}
                 </button>
               </div>
