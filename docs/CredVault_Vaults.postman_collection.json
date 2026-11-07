@@ -19200,7 +19200,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-25\",\n    \"reason\": \"Handover while I am on leave\"\n}",
+                            "raw": "{\n    \"recipient_type\": \"user\",\n    \"recipient_id\": \"{{shareUserId}}\",\n    \"permission\": \"full\",\n    \"expires_at\": \"2026-11-26\",\n    \"reason\": \"Handover while I am on leave\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -20073,7 +20073,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-06&shared_to=2026-11-05&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?shared_from=2026-10-07&shared_to=2026-11-06&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -20084,11 +20084,11 @@
                             "query": [
                                 {
                                     "key": "shared_from",
-                                    "value": "2026-10-06"
+                                    "value": "2026-10-07"
                                 },
                                 {
                                     "key": "shared_to",
-                                    "value": "2026-11-05"
+                                    "value": "2026-11-06"
                                 },
                                 {
                                     "key": "tz",
@@ -20120,7 +20120,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-05&expires_to=2026-12-05&tz=Asia%2FKolkata",
+                            "raw": "{{baseUrl}}/credvault/shares?expires_from=2026-11-06&expires_to=2026-12-06&tz=Asia%2FKolkata",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -20131,11 +20131,11 @@
                             "query": [
                                 {
                                     "key": "expires_from",
-                                    "value": "2026-11-05"
+                                    "value": "2026-11-06"
                                 },
                                 {
                                     "key": "expires_to",
-                                    "value": "2026-12-05"
+                                    "value": "2026-12-06"
                                 },
                                 {
                                     "key": "tz",
@@ -20932,7 +20932,7 @@
         },
         {
             "name": "15 · Critical Vault — unlock (access requests)",
-            "description": "Request → Vault Admin approves → Manager approves → 2-step code → unlocked for the window → lock. Google: the pre-request script computes the code. Email: send-otp mails it; paste it into {{emailOtpCode}}.",
+            "description": "Request → Vault Admin approves → the requester forwards it to the reporting manager (raise-manager) → Manager approves → 2-step code → unlocked for the window → lock. Google: the pre-request script computes the code. Email: send-otp mails it; paste it into {{emailOtpCode}}.",
             "item": [
                 {
                     "name": "Request access — Google credential",
@@ -21187,6 +21187,167 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Manager before the forward (409 not forwarded yet)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{requestId}}",
+                                "approve"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{managerToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('not forwarded yet', () => pm.expect(b.message).to.include('not been forwarded'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Forward to the reporting manager — requester",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/raise-manager",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{requestId}}",
+                                "raise-manager"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                                    "const b = pm.response.json();",
+                                    "pm.test('forwarded', () => pm.expect(b.message).to.include('Forwarded'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Forward again (409 already with the manager)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{requestId}}/raise-manager",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{requestId}}",
+                                "raise-manager"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
                                 ]
                             }
                         }
@@ -21581,6 +21742,55 @@
                                     "type": "string"
                                 }
                             ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Forward to the reporting manager — requester (email credential)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/credvault/critical-vault/access-requests/{{emailRequestId}}/raise-manager",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "credvault",
+                                "critical-vault",
+                                "access-requests",
+                                "{{emailRequestId}}",
+                                "raise-manager"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         }
                     },
                     "event": [

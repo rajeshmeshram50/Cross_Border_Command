@@ -3,7 +3,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type ImportType } from '../cvApi';
 import { CvPortal, Svg, errMsg } from '../shared';
 import CrdSelect from '../form/CrdSelect';
-import { IR_I } from './irShared';
+import { IR_I, ImportVeil } from './irShared';
 import { buildReview, type ImportReview } from './irReview';
 
 const FMTS: [string, string, string][] = [['Excel', '.xlsx', IR_I.sheet], ['CSV', '.csv', IR_I.file]];
@@ -81,6 +81,7 @@ export default function ImportCategoryModal({ initialFile, onClose, onReviewed }
       <div id="crd-host">
         <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box ir-cat-box" role="dialog" aria-modal="true" aria-label="Select the category to import">
+            {busy && <ImportVeil label={`Checking your ${category?.label ?? ''} sheet…`} />}
             <div className="mapsup-header gp-hd">
               <div className="mapsup-hrow">
                 <div className="mapsup-title-wrap">

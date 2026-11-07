@@ -19523,3 +19523,32 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk i {
   background: currentColor;
 }
+
+/* ══ Import popups · busy veil (checking a sheet / saving records): the form's saving overlay, so nothing changes mid-request ══ */
+.cvx #crd-host .mapsup-box.crd-box.gp-box:is(.ir-cat-box, .ir-rev-box, .ir-bk-box) {
+  position: relative;
+}
+
+.cvx #crd-host .ir-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: rgba(8, 30, 40, .28);
+  backdrop-filter: blur(1.5px);
+  cursor: progress;
+}
+
+.cvx #crd-host .ir-veil__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-veil {
+  background: rgba(2, 12, 18, .5);
+}

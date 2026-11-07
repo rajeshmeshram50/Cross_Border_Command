@@ -98,12 +98,16 @@ const FIELD_LABEL: Record<keyof Draft, string> = {
   contact: 'Contact Person', mobile: 'Mobile Number', email: 'Email', card: 'Attachment',
 };
 
-function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, string>> {
+const fmtSqft = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+function validate(d: Draft, hasStates: boolean, minArea = 0): Partial<Record<keyof Draft, string>> {
   const e: Partial<Record<keyof Draft, string>> = {};
   const india = d.country === 'India';
   if (!d.type) e.type = 'Select the warehouse type';
   if (!d.name.trim()) e.name = 'Enter the warehouse name';
   if (!(Number(d.area) > 0)) e.area = 'Enter the area in square feet';
+  // CS-939: the area may grow or shrink, but not below what the zones hold.
+  else if (minArea > 0 && Number(d.area) < minArea) e.area = `Area cannot be less than ${fmtSqft(minArea)} Sq. Ft already allocated to zones`;
   if (!d.address.trim()) e.address = 'Enter the warehouse address';
   if (!d.country) e.country = 'Select the country';
   if (!d.state.trim()) e.state = hasStates ? 'Select the state' : 'Enter the state';
@@ -146,17 +150,17 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   onSaved?: (warehouse: Warehouse) => void;
 }) {
   const editing = !!warehouse;
-  /* Four fields settle once the first zone is built.
+  /* The location settles once the first zone is built: the address is not a
+     label — the goods are physically in that city, under that state's tax
+     code, and they do not move because a dropdown changed.
 
-     A zone is allocated AGAINST the warehouse's area, so shrinking it afterwards
-     leaves every zone over-committed and the free figure pinned at nothing. And
-     the address is not a label: the goods are physically in that city, under
-     that state's tax code, and they do not move because a dropdown changed.
-
-     The server refuses all four (WarehouseController::guardSettled); this says
-     so before the form is filled in rather than after it is sent. */
+     The AREA stays editable (CS-939), floored at what the zones already claim,
+     since a zone is allocated against it. The server refuses both
+     (WarehouseController::guardSettled / guardArea); this says so before the
+     form is sent rather than after. */
   const zoneCount = editing ? (warehouse!.zones ?? 0) : 0;
   const settled = zoneCount > 0;
+  const allocatedArea = editing ? (warehouse!.zonesArea ?? 0) : 0;
   /* Said ONCE, when the field is touched — not standing under all four.
      The same sentence printed four times reads as four problems, and it pushes
      the form apart while saying nothing the user asked. A locked control that
@@ -165,7 +169,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   const lockedNote = () => toast.info(
     'Settled once zones exist',
     zoneCount + (zoneCount === 1 ? ' zone is' : ' zones are')
-      + ' allocated against this warehouse, so its area and location can no longer change.'
+      + ' allocated against this warehouse, so its location can no longer change.'
       + ' Remove the zones first, or raise a new warehouse.',
   );
   const toast = useToast();
@@ -321,7 +325,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
       toast.error('Still loading states', 'Try again in a moment.');
       return;
     }
-    const e = validate(d, hasStates);
+    const e = validate(d, hasStates, allocatedArea);
     if (!e.country && !countryId) e.country = 'Select the country';
     const stateId = hasStates ? states.find(x => x.name === d.state)?.id : undefined;
     if (!e.state && hasStates && !stateId) e.state = 'Select the state';
@@ -456,12 +460,14 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                 value={d.name} onChange={e => { set({ name: e.target.value }); clear('name'); }}
               />
             </Field>
-            <Field label="Warehouse Area (Sq. Ft)" req error={errors.area}>
+            <Field
+              label="Warehouse Area (Sq. Ft)" req error={errors.area}
+              hint={allocatedArea > 0 ? `${fmtSqft(allocatedArea)} Sq. Ft allocated to zones — the area cannot go below this.` : undefined}
+            >
               <div className="whm-suf">
                 <input
-                  className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}${settled ? ' is-locked' : ''}`}
-                  type="number" min={1} placeholder="e.g. 25000"
-                  readOnly={settled} onClick={settled ? lockedNote : undefined}
+                  className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}`}
+                  type="number" min={allocatedArea > 0 ? allocatedArea : 1} placeholder="e.g. 25000"
                   value={d.area} onChange={e => { set({ area: e.target.value }); clear('area'); }}
                 />
                 <span>Sq. Ft</span>
