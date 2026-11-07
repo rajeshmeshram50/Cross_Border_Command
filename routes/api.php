@@ -820,6 +820,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
         // Password Health
         Route::get   ('/health',                            [CredVaultController::class, 'health']);
+        Route::get   ('/health/summary',                    [CredVaultController::class, 'healthSummaryView']);
+        Route::get   ('/health/attention',                  [CredVaultController::class, 'healthAttention']);
 
         // Policies
         Route::get   ('/policies',                          [CredVaultController::class, 'policies']);

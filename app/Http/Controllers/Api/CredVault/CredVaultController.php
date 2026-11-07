@@ -244,8 +244,28 @@ class CredVaultController extends Controller
         $tab = $f['tab'] ?? 'all';
 
         $vault = $vault ?? ($f['vault'] ?? null);
-        // The Critical Vault's team side is the whole branch's; the Normal Vault keeps the reporting line.
-        $base = $this->visibleQuery($u, $vault === 'critical');
+
+        // The hierarchy-filter person, resolved first. Credentials they own (shared by them)
+        // plus ones shared with them or their department (accessible to them).
+        $member = $this->memberFilter($u, $f);
+        $memberShareIds = null;
+        if ($member) {
+            $memberDept = $this->deptOf($member);
+            $memberShareIds = CredentialShare::live()->where('client_id', $u->client_id)
+                ->where(function ($s) use ($member, $memberDept) {
+                    $s->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $member->id));
+                    if ($memberDept) $s->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $memberDept));
+                })->select('credential_id');
+        }
+        // A viewer who oversees the picked person (Vault Admin, branch admin, HOD, or
+        // up the reporting line) sees that person's WHOLE vault, any scope — these are
+        // company credentials. The Critical Vault's team side is the whole branch's;
+        // the Normal Vault keeps the reporting line.
+        $memberFull = $member && $this->managesMember($u, $member);
+        $base = $memberFull
+            ? Credential::where('credvault_credentials.client_id', $u->client_id)
+                ->where(fn ($w) => $w->where('owner_id', $member->id)->orWhereIn('credvault_credentials.id', $memberShareIds))
+            : $this->visibleQuery($u, $vault === 'critical');
         if ($vault) $base->where('vault', $vault);
         if (!empty($f['risk']))  $base->where('risk', $f['risk']);
         if (!empty($f['type']))  $base->where('type', $f['type']);
@@ -255,15 +275,24 @@ class CredVaultController extends Controller
         // The Team-side filters: everything but "mine".
         $teamSide = clone $base;
         if (!empty($f['department_id'])) $teamSide->where('department_id', $f['department_id']);
-        // Picking a person shows that person's own credentials — not everything their reporting line can reach.
-        $member = $this->memberFilter($u, $f);
-        if ($member) $teamSide->where('owner_id', $member->id);
+        // A picked person the viewer does NOT oversee stays bounded by the viewer's own visibility.
+        if ($member && !$memberFull) {
+            $teamSide->where(fn ($w) => $w->where('owner_id', $member->id)
+                ->orWhereIn('credvault_credentials.id', $memberShareIds));
+        }
 
         $sharedIds = $this->sharedWithMeIds($u);
+        // Logins this viewer oversees — their credentials (any scope) belong in the team view.
+        $overseen = $this->overseenUserIds($u);
         $views = [
             'all'    => fn () => (clone $teamSide),
             'mine'   => fn () => (clone $base)->where('owner_id', $u->id),
-            'team'   => fn () => (clone $teamSide)->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
+            // With a person picked, show their set as-is (any scope). Otherwise: team-scope
+            // credentials plus anything owned by the people this viewer oversees.
+            'team'   => fn () => $member ? (clone $teamSide)
+                : (clone $teamSide)
+                    ->where(fn ($w) => $w->where('scope', 'team')->when($overseen, fn ($q) => $q->orWhereIn('owner_id', $overseen)))
+                    ->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
             'shared' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id)->whereIn('credvault_credentials.id', $sharedIds),
             'others' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id),
         ];
@@ -306,7 +335,7 @@ class CredVaultController extends Controller
         }
         if (empty($f['member_id'])) return null;
 
-        return User::where('client_id', $u->client_id)->find($f['member_id'], ['id', 'name', 'designation', 'department_id', 'client_id', 'employee_code', 'user_type'])
+        return User::where('client_id', $u->client_id)->find($f['member_id'], ['id', 'name', 'designation', 'department_id', 'branch_id', 'client_id', 'employee_code', 'user_type'])
             ?? $this->reject('That person is not part of your company.', 'member_id', 404);
     }
 
@@ -1218,7 +1247,6 @@ class CredVaultController extends Controller
 
         $creds  = $this->healthScope($u);
         $issues = collect($this->healthIssues($creds, $pol, $u));
-        $risky  = $issues->pluck('credential.id')->unique();
 
         $tabs = ['all' => $issues->count()];
         foreach (['weak', 'reused', 'twofa', 'rotation', 'shared'] as $t) $tabs[$t] = $issues->where('type', $t)->count();
@@ -1265,34 +1293,171 @@ class CredVaultController extends Controller
             $meta = ['current_page' => $pg, 'per_page' => $per, 'total' => $list->count(), 'last_page' => max(1, (int) ceil($list->count() / $per))];
         }
 
-        $total   = $creds->count();
-        $healthy = $total - $risky->count();
-        $score   = $total ? (int) round($healthy / $total * 100) : 100;
-        $pct     = fn ($n, $of) => $of ? (int) round($n / $of * 100) : 0;
-
         return response()->json([
             'status'  => true,
-            'summary' => [
-                'score'           => $score,
-                'level'           => $score >= 80 ? 'Good' : ($score >= 60 ? 'Fair' : 'At risk'),
-                'checked'         => $total,
-                'with_passwords'  => $creds->where('has_password', true)->count(),
-                'open_issues'     => $issues->count(),
-                'at_risk'         => $risky->count(),
-                'critical_issues' => $issues->where('severity', 'critical')->count(),
-                // "Strong & safe": credentials with no open issue.
-                'safe'            => $healthy,
-                'pct'             => [
-                    'with_passwords'  => $pct($creds->where('has_password', true)->count(), $total),
-                    'at_risk'         => $pct($risky->count(), $total),
-                    'critical_issues' => $pct($issues->where('severity', 'critical')->count(), $issues->count()),
-                    'safe'            => $pct($healthy, $total),
-                ],
-            ],
+            'summary' => $this->healthSummary($creds, $issues, $pol),
             'data'    => $data,
             'tabs'    => $tabs,
             'meta'    => $meta,
         ], 200);
+    }
+
+    /**
+     * GET /credvault/health/summary — the score card and the five issue cards
+     * alone, without the list: how many credentials passed and failed, and of
+     * the failed ("need attention") how many are weak, reused, missing 2FA,
+     * rotation due and over-shared.
+     */
+    public function healthSummaryView(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $pol = Policy::for($u->client_id);
+        $creds = $this->healthScope($u);
+
+        return response()->json(['status' => true, 'data' => $this->healthSummary($creds, collect($this->healthIssues($creds, $pol, $u)), $pol)], 200);
+    }
+
+    /**
+     * GET /credvault/health/attention?type=all|weak|reused|twofa|rotation|shared&q=&page=&per_page=
+     *
+     * The credentials that need attention — one row per credential (the list
+     * on /health is one row per issue), each with every issue it has. type
+     * keeps the credentials with that issue; counts are per credential.
+     */
+    public function healthAttention(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $f = $request->validate($this->listRules(array_merge(['all'], self::HEALTH_TYPES)));
+        $pol = Policy::for($u->client_id);
+        $creds = $this->healthScope($u);
+        $issues = collect($this->healthIssues($creds, $pol, $u));
+
+        $rows = $issues->groupBy('credential.id')->map(function (Collection $list) {
+            $types = $list->pluck('type')->unique()->values()->all();
+            $sev = $list->pluck('severity')->sortBy(fn ($s) => self::SEVERITY_RANK[$s] ?? 9)->first();
+            return [
+                'credential'  => $list->first()['credential'],
+                'can_fix'     => $list->first()['can_fix'],
+                'issue_count' => $list->count(),
+                'types'       => $types,
+                'severity'    => $sev,
+                'issues'      => $list->map(fn ($i) => array_intersect_key($i, array_flip(['type', 'severity', 'issue', 'detail', 'details', 'action'])))->values()->all(),
+            ];
+        })->sortBy(fn ($r) => [self::SEVERITY_RANK[$r['severity']] ?? 9, -$r['issue_count'], $r['credential']['code']])->values();
+
+        $counts = ['all' => $rows->count()];
+        foreach (self::HEALTH_TYPES as $t) $counts[$t] = $rows->filter(fn ($r) => in_array($t, $r['types'], true))->count();
+
+        $tab  = $f['tab'] ?? 'all';
+        $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
+        $list = $rows->when($tab !== 'all', fn ($c) => $c->filter(fn ($r) => in_array($tab, $r['types'], true)))
+            ->when($term !== '', fn ($c) => $c->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
+                $r['credential']['code'], $r['credential']['name'], $r['credential']['type_label'], $r['credential']['owner'],
+                implode(' ', array_column($r['issues'], 'issue')),
+            ])), $term)))
+            ->values();
+        $per = $f['per_page'] ?? self::PAGE_SIZE;
+        $pg  = $f['page'] ?? 1;
+
+        return response()->json([
+            'status' => true,
+            'data'   => $list->slice(($pg - 1) * $per, $per)->values(),
+            'tabs'   => $counts,
+            'meta'   => ['current_page' => $pg, 'per_page' => $per, 'total' => $list->count(), 'last_page' => max(1, (int) ceil($list->count() / $per))],
+        ], 200);
+    }
+
+    protected const HEALTH_TYPES = ['weak', 'reused', 'twofa', 'rotation', 'shared'];
+    protected const SEVERITY_RANK = ['critical' => 0, 'high' => 1, 'medium' => 2];
+
+    /**
+     * The score card and the five cards. Passed = a credential with no open
+     * issue, failed = one with at least one ("need attention"). Each type is
+     * counted per credential and out of the credentials that check applies to:
+     *   weak, reused   — credentials with a password
+     *   twofa          — credentials whose risk level the policy requires 2FA for (2FA not "N/A")
+     *   rotation       — credentials with a password and a rotation period
+     *   shared         — every credential checked
+     * A credential can fail several checks, so the five add up to more than
+     * `failed`; `attention.multiple` is how many fail more than one.
+     */
+    protected function healthSummary(Collection $creds, Collection $issues, array $pol): array
+    {
+        $total   = $creds->count();
+        $risky   = $issues->pluck('credential.id')->unique();
+        $failed  = $risky->count();
+        $passed  = $total - $failed;
+        $score   = $total ? (int) round($passed / $total * 100) : 100;
+        $pct     = fn ($n, $of) => $of ? (int) round($n / $of * 100) : 0;
+        $withPw  = $creds->where('has_password', true);
+        $of = [
+            'weak'     => $withPw->count(),
+            'reused'   => $withPw->count(),
+            'twofa'    => $creds->filter(fn ($c) => $c->twofa !== 'na' && in_array($c->risk, $pol['twofa_risks'], true))->count(),
+            'rotation' => $withPw->filter(fn ($c) => (int) $c->rotation_days > 0)->count(),
+            'shared'   => $total,
+        ];
+        $card = [
+            'weak'     => ['Weak passwords', 'passwords below policy'],
+            'reused'   => ['Reused passwords', 'share a password'],
+            'twofa'    => ['Missing 2FA', 'credentials that need 2FA have it off'],
+            'rotation' => ['Rotation due', 'passwords past or near policy age'],
+            'shared'   => ['Over-shared', 'credentials shared too widely'],
+        ];
+        $perCred = $issues->groupBy('credential.id')->map(fn ($l) => $l->pluck('type')->unique()->count());
+
+        $cards = [];
+        foreach (self::HEALTH_TYPES as $t) {
+            $ofType = $issues->where('type', $t);
+            $n = $ofType->pluck('credential.id')->unique()->count();
+            $cards[$t] = [
+                'key' => $t, 'label' => $card[$t][0],
+                'failed'      => $n,
+                'passed'      => max(0, $of[$t] - $n),
+                'of'          => $of[$t],
+                'pct'         => $pct($n, $of[$t]),
+                'issues'      => $ofType->count(),
+                'critical'    => $ofType->where('severity', 'critical')->count(),
+                'sub'         => "{$n} of {$of[$t]} {$card[$t][1]}",
+                // Share of the credentials that need attention.
+                'pct_of_attention' => $pct($n, $failed),
+            ];
+        }
+
+        return [
+            'score'           => $score,
+            'level'           => $score >= 80 ? 'Good' : ($score >= 60 ? 'Fair' : 'At risk'),
+            'checked'         => $total,
+            'total'           => $total,
+            'passed'          => $passed,
+            'failed'          => $failed,
+            'with_passwords'  => $withPw->count(),
+            'open_issues'     => $issues->count(),
+            'at_risk'         => $failed,
+            'critical_issues' => $issues->where('severity', 'critical')->count(),
+            // "Strong & safe": credentials with no open issue.
+            'safe'            => $passed,
+            'pct'             => [
+                'passed'          => $pct($passed, $total),
+                'failed'          => $pct($failed, $total),
+                'with_passwords'  => $pct($withPw->count(), $total),
+                'at_risk'         => $pct($failed, $total),
+                'critical_issues' => $pct($issues->where('severity', 'critical')->count(), $issues->count()),
+                'safe'            => $pct($passed, $total),
+            ],
+            'attention'       => [
+                'total'      => $failed,
+                'issues'     => $issues->count(),
+                'single'     => $perCred->filter(fn ($n) => $n === 1)->count(),
+                'multiple'   => $perCred->filter(fn ($n) => $n > 1)->count(),
+                'by_type'    => collect($cards)->mapWithKeys(fn ($c, $t) => [$t => $c['failed']])->all(),
+                'label'      => "{$failed} need attention",
+                'note'       => $failed && $perCred->filter(fn ($n) => $n > 1)->count()
+                    ? 'A credential can have more than one issue, so the five counts add up to more than ' . $failed . '.'
+                    : null,
+            ],
+            'cards'           => array_values($cards),
+        ];
     }
 
     /* ═════════════════════════════ POLICIES ═════════════════════════════ */
@@ -4736,9 +4901,14 @@ class CredVaultController extends Controller
         // its company-wide team-scope rule below. (new flow)
         $critBranch = ($branchCritical && !$admin) ? ($branch ?? ($u->branch_id ? (int) $u->branch_id : null)) : null;
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch) {
+        // People this viewer oversees: their whole vault (personal and team) is visible,
+        // as these are company credentials. Reveal stays gated by accessMap, not this list.
+        $overseen = $this->overseenUserIds($u);
+
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch, $overseen) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($critBranch) $w->orWhere(fn ($t) => $t->where('vault', 'critical')->where('credvault_credentials.branch_id', $critBranch));
+            if ($overseen) $w->orWhereIn('owner_id', $overseen);
             if ($admin) {
                 $w->orWhere('scope', 'team');
                 return;
@@ -5054,6 +5224,49 @@ class CredVaultController extends Controller
         return $this->memo("dept:{$u->id}", function () use ($u) {
             $id = $u->department_id ?: $this->employeeOf($u)?->department_id;
             return $id ? (int) $id : null;
+        });
+    }
+
+    /**
+     * Does $u oversee $m? A Vault Admin (client admin), a branch admin over $m's branch,
+     * an HOD of $m's department, or anyone above $m in the reporting line. Such a viewer
+     * may see $m's whole vault through the hierarchy filter — these are company credentials.
+     */
+    protected function managesMember(User $u, User $m): bool
+    {
+        if ((int) $m->id === (int) $u->id) return false;
+        if ($this->isAdmin($u)) return true;
+        $branch = $this->adminBranchOf($u);
+        if ($branch && (int) $m->branch_id === $branch) return true;
+        $mDept = $this->deptOf($m);
+        if ($mDept && in_array($mDept, $this->headedDepts($u), true)) return true;
+
+        return in_array((int) $m->id, $this->downlineIds($u), true);
+    }
+
+    /**
+     * Every login this viewer oversees (never themselves): a Vault Admin sees the whole
+     * company; a branch admin their branch; an HOD their departments; anyone else their
+     * reporting line. Their credentials — personal and team — list in the viewer's Team Vault.
+     */
+    protected function overseenUserIds(User $u): array
+    {
+        return $this->memo("overseen:{$u->id}", function () use ($u) {
+            if ($this->isAdmin($u)) {
+                return User::where('client_id', $u->client_id)->where('id', '!=', $u->id)
+                    ->pluck('id')->map(fn ($i) => (int) $i)->all();
+            }
+            $ids = $this->downlineIds($u);
+            if ($branch = $this->adminBranchOf($u)) {
+                $ids = array_merge($ids, User::where('client_id', $u->client_id)->whereNotIn('user_type', self::ADMIN_TYPES)
+                    ->where('branch_id', $branch)->where('id', '!=', $u->id)->pluck('id')->map(fn ($i) => (int) $i)->all());
+            }
+            if ($heads = $this->headedDepts($u)) {
+                $ids = array_merge($ids, User::where('client_id', $u->client_id)->whereIn('department_id', $heads)
+                    ->where('id', '!=', $u->id)->pluck('id')->map(fn ($i) => (int) $i)->all());
+            }
+
+            return array_values(array_unique(array_map('intval', $ids)));
         });
     }
 
