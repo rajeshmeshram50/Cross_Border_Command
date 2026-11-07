@@ -225,7 +225,7 @@ export default function AccessRequests() {
       />
       <CvCard pane>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
-          search={q} onSearch={setQ} placeholder="Search by request ID, credential, requester or reason..." />
+          search={q} onSearch={setQ} placeholder="Search by request ID, credential, requester, reason or window..." />
         <div id="arListWrap" className="tvc-list">
           <div className="whm-tblwrap">
             <table className="whm-tbl mv-tbl ar-tbl">
@@ -240,7 +240,7 @@ export default function AccessRequests() {
                       <div className="mv-empty__box">
                         <div className="mv-empty__ico"><Svg d={I.all} size={24} /></div>
                         <div className="mv-empty__t">{dq ? 'No requests match your search' : tabDef.empty}</div>
-                        <div className="mv-empty__s">{dq ? 'Try a request ID, credential, person or reason.' : 'Requests raised from the Critical Vault will appear here.'}</div>
+                        <div className="mv-empty__s">{dq ? 'Try a request ID, credential, person, reason or access window.' : 'Requests raised from the Critical Vault will appear here.'}</div>
                       </div>
                     </td>
                   </tr>

@@ -61,7 +61,10 @@ class AccessRequestController extends CredVaultController
             $types = collect(Credential::TYPES)->filter(fn ($x) => str_contains(mb_strtolower($x[0]), mb_strtolower(trim($term))))->keys()->all();
             $people = User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id');
             $deptUsers = $this->usersInDepartmentsLike($u->client_id, $like);
-            $search->where(function ($w) use ($like, $u, $types, $people, $deptUsers) {
+            // Access Window ("15 min", "1 hour", "30"): match duration_minutes; an "h"/"hour" unit means hours.
+            $num = preg_match('/\d+/', $term, $m) ? (int) $m[0] : null;
+            $durMins = $num !== null ? (preg_match('/\b(h|hr|hrs|hour)/i', $term) ? $num * 60 : $num) : null;
+            $search->where(function ($w) use ($like, $u, $types, $people, $deptUsers, $durMins) {
                 $w->whereRaw('lower(code) like ?', [$like])
                   ->orWhereRaw('lower(coalesce(reason, \'\')) like ?', [$like])
                   ->orWhereIn('credential_id', Credential::withTrashed()->where('client_id', $u->client_id)->where(function ($x) use ($like, $types) {
@@ -71,6 +74,7 @@ class AccessRequestController extends CredVaultController
                   ->orWhereIn('requester_id', $people)->orWhereIn('admin_user_id', $people)->orWhereIn('manager_user_id', $people)
                   ->orWhereIn('admin_decided_by', $people);
                 if ($deptUsers) $w->orWhereIn('requester_id', $deptUsers);
+                if ($durMins !== null) $w->orWhere('duration_minutes', $durMins);
             });
         }
 
