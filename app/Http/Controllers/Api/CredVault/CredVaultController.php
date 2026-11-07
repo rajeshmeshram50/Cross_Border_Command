@@ -244,8 +244,28 @@ class CredVaultController extends Controller
         $tab = $f['tab'] ?? 'all';
 
         $vault = $vault ?? ($f['vault'] ?? null);
-        // The Critical Vault's team side is the whole branch's; the Normal Vault keeps the reporting line.
-        $base = $this->visibleQuery($u, $vault === 'critical');
+
+        // The hierarchy-filter person, resolved first. Credentials they own (shared by them)
+        // plus ones shared with them or their department (accessible to them).
+        $member = $this->memberFilter($u, $f);
+        $memberShareIds = null;
+        if ($member) {
+            $memberDept = $this->deptOf($member);
+            $memberShareIds = CredentialShare::live()->where('client_id', $u->client_id)
+                ->where(function ($s) use ($member, $memberDept) {
+                    $s->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $member->id));
+                    if ($memberDept) $s->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $memberDept));
+                })->select('credential_id');
+        }
+        // A viewer who oversees the picked person (Vault Admin, branch admin, HOD, or
+        // up the reporting line) sees that person's WHOLE vault, any scope — these are
+        // company credentials. The Critical Vault's team side is the whole branch's;
+        // the Normal Vault keeps the reporting line.
+        $memberFull = $member && $this->managesMember($u, $member);
+        $base = $memberFull
+            ? Credential::where('credvault_credentials.client_id', $u->client_id)
+                ->where(fn ($w) => $w->where('owner_id', $member->id)->orWhereIn('credvault_credentials.id', $memberShareIds))
+            : $this->visibleQuery($u, $vault === 'critical');
         if ($vault) $base->where('vault', $vault);
         if (!empty($f['risk']))  $base->where('risk', $f['risk']);
         if (!empty($f['type']))  $base->where('type', $f['type']);
@@ -255,15 +275,19 @@ class CredVaultController extends Controller
         // The Team-side filters: everything but "mine".
         $teamSide = clone $base;
         if (!empty($f['department_id'])) $teamSide->where('department_id', $f['department_id']);
-        // Picking a person shows that person's own credentials — not everything their reporting line can reach.
-        $member = $this->memberFilter($u, $f);
-        if ($member) $teamSide->where('owner_id', $member->id);
+        // A picked person the viewer does NOT oversee stays bounded by the viewer's own visibility.
+        if ($member && !$memberFull) {
+            $teamSide->where(fn ($w) => $w->where('owner_id', $member->id)
+                ->orWhereIn('credvault_credentials.id', $memberShareIds));
+        }
 
         $sharedIds = $this->sharedWithMeIds($u);
         $views = [
             'all'    => fn () => (clone $teamSide),
             'mine'   => fn () => (clone $base)->where('owner_id', $u->id),
-            'team'   => fn () => (clone $teamSide)->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
+            // With a person picked, show their set as-is (any scope); otherwise the usual team view.
+            'team'   => fn () => $member ? (clone $teamSide)
+                : (clone $teamSide)->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
             'shared' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id)->whereIn('credvault_credentials.id', $sharedIds),
             'others' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id),
         ];
@@ -306,7 +330,7 @@ class CredVaultController extends Controller
         }
         if (empty($f['member_id'])) return null;
 
-        return User::where('client_id', $u->client_id)->find($f['member_id'], ['id', 'name', 'designation', 'department_id', 'client_id', 'employee_code', 'user_type'])
+        return User::where('client_id', $u->client_id)->find($f['member_id'], ['id', 'name', 'designation', 'department_id', 'branch_id', 'client_id', 'employee_code', 'user_type'])
             ?? $this->reject('That person is not part of your company.', 'member_id', 404);
     }
 
@@ -5047,6 +5071,23 @@ class CredVaultController extends Controller
             $id = $u->department_id ?: $this->employeeOf($u)?->department_id;
             return $id ? (int) $id : null;
         });
+    }
+
+    /**
+     * Does $u oversee $m? A Vault Admin (client admin), a branch admin over $m's branch,
+     * an HOD of $m's department, or anyone above $m in the reporting line. Such a viewer
+     * may see $m's whole vault through the hierarchy filter — these are company credentials.
+     */
+    protected function managesMember(User $u, User $m): bool
+    {
+        if ((int) $m->id === (int) $u->id) return false;
+        if ($this->isAdmin($u)) return true;
+        $branch = $this->adminBranchOf($u);
+        if ($branch && (int) $m->branch_id === $branch) return true;
+        $mDept = $this->deptOf($m);
+        if ($mDept && in_array($mDept, $this->headedDepts($u), true)) return true;
+
+        return in_array((int) $m->id, $this->downlineIds($u), true);
     }
 
     /**
