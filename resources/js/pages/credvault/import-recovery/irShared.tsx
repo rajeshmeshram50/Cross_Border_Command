@@ -150,3 +150,18 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSi
     </IrCard>
   );
 }
+
+/**
+ * The busy veil for the import popups — the same as the Add / Edit credential form's saving overlay:
+ * it covers the whole popup, so nothing (category, samples, tabs, Cancel, ×) can change until the request ends.
+ */
+export function ImportVeil({ label }: { label: string }) {
+  return (
+    <div role="status" aria-live="polite" className="ir-veil">
+      <div className="mapsup-seccard cv-saving ir-veil__card">
+        <span className="cp-spin" />
+        <b className="mapsup-sechead__title">{label}</b>
+      </div>
+    </div>
+  );
+}

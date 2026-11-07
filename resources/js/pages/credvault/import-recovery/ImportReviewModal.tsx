@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError } from '../cvApi';
 import { CvPortal, CvTabsRow, Svg, errMsg } from '../shared';
-import { IR_I } from './irShared';
+import { IR_I, ImportVeil } from './irShared';
 import type { ImportReview } from './irReview';
 
 type Tab = 'accepted' | 'discarded';
@@ -47,6 +47,7 @@ export default function ImportReviewModal({ review, onBack, onExpired, onSaved }
       <div id="crd-host">
         <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box ir-rev-box" role="dialog" aria-modal="true" aria-label="Review the import">
+            {busy && <ImportVeil label={`Saving ${accepted.length} record${accepted.length === 1 ? '' : 's'}…`} />}
             <div className="mapsup-header gp-hd">
               <div className="mapsup-hrow">
                 <div className="mapsup-title-wrap">

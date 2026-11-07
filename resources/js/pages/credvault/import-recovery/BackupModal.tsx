@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type Loose } from '../cvApi';
 import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
-import { IR_I } from './irShared';
+import { IR_I, ImportVeil } from './irShared';
 
 /* Download backup popup — the prototype's irBackupHtml / bkCreate; the file is built and locked on the API
    (a locked backup is an .xlsx with Excel's own password, no zip; a CSV cannot hold a password). */
@@ -52,7 +52,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
   const [lock, setLock] = useState(true);
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
-  const [acct, setAcct] = useState('');
   const [show, setShow] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<CvApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,14 +76,14 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
     try {
       const r = await cvApi.backup({
         format: fmt, scope, include_passwords: withPw, lock: locked,
-        ...(locked ? { password: pw, password_confirmation: pw2 } : withPw ? { account_password: acct } : {}),
+        ...(locked ? { password: pw, password_confirmation: pw2 } : {}),
       });
       const code = r.headers['x-credvault-code'] ?? '';
       const items = Number(r.headers['x-credvault-items'] ?? n ?? 0);
       const withheld = Number(r.headers['x-credvault-withheld'] ?? 0);
       toast.success(`${code ? `${code} · ` : ''}${items} credentials downloaded as ${F[1]}${locked ? ' · password locked' : ''}`,
         withheld ? `${withheld} protected secret${withheld > 1 ? 's were' : ' was'} left out — they open through an unlock, not a file.` : undefined);
-      setPw(''); setPw2(''); setAcct('');
+      setPw(''); setPw2('');
       onDone();
       onClose();
     } catch (e) {
@@ -109,6 +108,7 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
       <div id="crd-host">
         <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box ir-bk-box" role="dialog" aria-modal="true" aria-label="Download backup">
+            {busy && <ImportVeil label={`Preparing your ${F[1]} backup…`} />}
             <div className="mapsup-header gp-hd">
               <div className="mapsup-hrow">
                 <div className="mapsup-title-wrap">
@@ -196,16 +196,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
         ) : (
           <>
             <div className="ix-note is-warn"><Svg d={IR_I.warn} size={13} /><span>{withPw ? 'Without a lock, the passwords in this file can be read by anyone who gets it.' : 'This file has no passwords, but it still lists your accounts and usernames.'}</span></div>
-            {withPw && (
-              <div className="ix-f">
-                <label>Your account password <i>*</i></label>
-                <div className="ix-in">
-                  <input type={show.acct ? 'text' : 'password'} placeholder="Confirm it’s you to download readable passwords" autoComplete="current-password" value={acct} onChange={e => { setAcct(e.target.value); clearErr(); }} />
-                  {eyeBtn('acct')}
-                </div>
-                {ferr('account_password') && <span className="cv-ferr">{ferr('account_password')}</span>}
-              </div>
-            )}
           </>
         )}
         <div className="ir-err">{err?.message ?? ''}</div>
