@@ -207,6 +207,10 @@ const REMARK_OF: Record<Disposition, string> = {
    so a card with flags or a long name still counts as one), and the next
    group's header stays in sight instead of sitting a long list away. */
 const GROUP_CARDS_SHOWN = 4;
+/* Bug #90: a capped group scrolled inside the Pick a Box pane, which scrolls too — two scrollbars
+   side by side. Groups no longer scroll on their own; the pane is the one scroll (the selected card
+   still pins under its sticky group header, through the pane's scroll). Set true to bring it back. */
+const GROUP_SELF_SCROLL = false;
 function BoxGroupList({ count, children }: { count: number; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [cap, setCap] = useState<number | null>(null);
@@ -224,7 +228,7 @@ function BoxGroupList({ count, children }: { count: number; children: ReactNode 
   }, []);
   useEffect(() => {
     const el = ref.current;
-    if (!el || count <= GROUP_CARDS_SHOWN) { setCap(null); return; }
+    if (!el || !GROUP_SELF_SCROLL || count <= GROUP_CARDS_SHOWN) { setCap(null); return; }
     // Measured card to card, not from the list's own box: until it is capped
     // the list is display: contents and has no box of its own. The 3 is the
     // capped list's top padding.

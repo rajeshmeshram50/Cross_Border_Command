@@ -545,3 +545,14 @@
   color: rgba(196, 214, 222, .6) !important; background: rgba(255, 255, 255, .03) !important;
   border-color: rgba(148, 197, 214, .22) !important; opacity: 1 !important;
 }
+
+/* CS-1460 (both themes): the footer buttons — Send request, Back / Cancel, Verify & reveal — are
+   one 40px row at 12.5px. The shared .rv-foot .cp-btn rule ran 13px on 11px 18px (≈43px).
+   Unlock popup only. */
+.cvx .rv-box .rv-foot .cp-btn {
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 18px;
+  font-size: 12.5px;
+  line-height: 1;
+}

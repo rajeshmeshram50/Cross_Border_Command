@@ -303,7 +303,7 @@
   border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 12.5px; /* CS-927: 12.5px, as the rest of the SPI module */
   font-weight: 800;
   white-space: nowrap;
   color: #fff;
@@ -331,6 +331,31 @@
   color: #6f8c9c;
   background: rgba(255, 255, 255, .06);
 }
+
+/* CS-927: while a document opens, the clicked button (aria-busy) and the locked ones (is-hold) keep
+   their own colour — only a button with nothing to open turns grey. Locked = not clickable, nothing more. */
+.iev-btn--view:disabled:is(.is-hold, [aria-busy="true"]) {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
+}
+.iev-btn--dl:disabled:is(.is-hold, [aria-busy="true"]) {
+  color: #fff;
+  background: linear-gradient(135deg, #1e4a63, #0f2e40);
+  box-shadow: 0 3px 10px rgba(15, 46, 64, .32);
+}
+.iev-btn[aria-busy="true"]:disabled { cursor: progress; }
+
+.iev-spin {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-top-color: #fff;
+  animation: iev-spin .8s linear infinite;
+}
+@keyframes iev-spin { to { transform: rotate(360deg); } }
 
 /* ── Foot ─────────────────────────────────────────────────────────────── */
 

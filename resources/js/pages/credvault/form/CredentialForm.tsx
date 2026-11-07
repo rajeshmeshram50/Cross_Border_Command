@@ -189,6 +189,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const wasCritical = detail?.risk === 'critical';
   const inCritical = !!init.critical || wasCritical;
   const addFromCritical = !!init.critical && !detail;
+  // Searchable dropdowns with risk dots: only when the form is opened from the Critical Vault or the
+  // Team Vault. My Vault and Password Health keep the plain list.
+  const richSel = !!init.critical || init.scope === 'team';
   const P = detail?.protection;
   const [prot, setProt] = useState<ProtectionValue>(() => ({
     admin: wasCritical && P ? P.admin : true,
@@ -366,7 +369,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         if (f.kind === 'select') {
           ctl = (
             <CrdSelect id={`crdF_${f.key}`} value={val} onChange={v => setVal(f.key, v)}
-              options={[{ value: '', label: 'Select…' }, ...(f.options ?? []).map(o => ({ value: o, label: o }))]} />
+              options={[{ value: '', label: 'Select…' }, ...(f.options ?? []).map(o => ({ value: o, label: o }))]} rich={richSel} />
           );
         } else if (f.kind === 'textarea') {
           // A masked textarea (Secure Note, Private Key, Seed…) gets the eye and copy buttons (CS-1438) — in the
@@ -490,14 +493,15 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     ),
   });
 
-  const selItem = (k: string, lbl: string, ico: string, req: boolean, value: string, options: CrdOption[], onChange: (v: string) => void, span = 1, lockedSel = false) => ({
+  const selItem = (k: string, lbl: string, ico: string, req: boolean, value: string, options: CrdOption[], onChange: (v: string) => void, span = 1, lockedSel = false,
+    onBlocked?: (o: { value: string; label: string }) => void) => ({
     span,
     render: (style: CSSProperties | undefined) => (
       <div className={ffCls(k)} data-f={k} style={style}>
         <Lbl text={lbl} req={req} />
         <div className="mapsup-inputwrap">
           <span className="mapsup-input-ico"><Svg icon={ico} size={13} /></span>
-          <CrdSelect id={`crdF_${k}`} value={value} options={options} onChange={v => { onChange(v); clr(k); }} disabled={lockedSel} />
+          <CrdSelect id={`crdF_${k}`} value={value} options={options} onChange={v => { onChange(v); clr(k); }} disabled={lockedSel} onBlocked={onBlocked} rich={richSel} />
         </div>
         {lockedSel ? <span className="cv-ferr" style={{ color: '#64748b' }}>{PROTECT_HINT}</span> : <Err msg={errors[k]} />}
       </div>
@@ -669,9 +673,19 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      // Adding from the Critical Vault offers every level, as the Figma (Critical is the default);
-      // elsewhere the form keeps its own vault's levels.
-      meta.risks.filter(r => (addFromCritical ? true : (r.key === 'critical') === inCritical)).map(r => ({ value: r.key, label: r.label, dot: r.key })), v => setRisk(v as Risk), 1, !canProtect),
+      // Adding from the Critical Vault offers every level, as the Figma (Critical is the default).
+      // Editing in the Critical Vault lists every level too, but only Critical can be picked: the API
+      // keeps a Critical Vault credential critical (CredVaultController:3186) and has no move to My Vault.
+      // Elsewhere the form keeps its own vault's levels.
+      meta.risks
+        .filter(r => (addFromCritical || inCritical ? true : r.key !== 'critical'))
+        .map(r => {
+          const locked = inCritical && !addFromCritical && r.key !== 'critical';
+          return { value: r.key, label: r.label, dot: r.key, disabled: locked, disabledReason: locked ? `${r.label} — only in My Vault` : undefined };
+        }), v => setRisk(v as Risk), 1, !canProtect,
+      // The lower levels read as normal rows; a click says why the level stays Critical here.
+      o => toast.warning(`${o.label} risk is for My Vault`,
+        'A Critical Vault credential always stays Critical. To keep it at a lower risk, add it to My Vault instead.')),
   ];
   if (isPw) {
     s3.push(selItem('rotation_days', 'Password Rotation', 'cal', false, rotation,

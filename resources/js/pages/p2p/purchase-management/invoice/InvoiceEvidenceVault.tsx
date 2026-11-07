@@ -69,7 +69,20 @@ export default function InvoiceEvidenceVault({ row, onClose }: {
     const target = doc.url ?? doc.action_url ?? null;
     if (!target || busy) return;
     const preview = mode === 'view';
+    // The tab must open inside the click (or the browser blocks it as a pop-up), before the file is
+    // fetched — so it shows "Opening …" instead of a blank white page while the document loads (CS-927).
     const tab = preview ? window.open('', '_blank') : null;
+    if (tab) {
+      try {
+        tab.document.title = `Opening ${doc.name}…`;
+        tab.document.body.style.cssText = 'margin:0;height:100vh;display:flex;align-items:center;justify-content:center;gap:12px;'
+          + 'font:600 14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0e7490;background:#f4fbfd;';
+        tab.document.body.innerHTML = '<span style="width:18px;height:18px;border-radius:50%;border:2.5px solid #a5e6f1;'
+          + 'border-top-color:#0891b2;animation:s .8s linear infinite"></span><span></span>'
+          + '<style>@keyframes s{to{transform:rotate(360deg)}}</style>';
+        (tab.document.body.children[1] as HTMLElement).textContent = `Opening ${doc.name}…`;
+      } catch { /* a cross-origin blank tab: it just stays blank until the file arrives */ }
+    }
     setBusy(`${key}:${mode}`);
     try {
       const blob = doc.url
@@ -154,17 +167,19 @@ export default function InvoiceEvidenceVault({ row, onClose }: {
                               {' · '}<b style={{ color: tone }}>{statusText}</b>
                             </div>
                           </div>
-                          <button type="button" className="iev-btn iev-btn--view"
-                            disabled={!doc.url || !!busy}
+                          {/* While one document opens, the other buttons are locked but keep their colour
+                              (is-hold); only the clicked one shows the spinner (CS-927). Grey = not available. */}
+                          <button type="button" className={`iev-btn iev-btn--view${doc.url && busy && busy !== `${key}:view` ? ' is-hold' : ''}`}
+                            disabled={!doc.url || !!busy} aria-busy={busy === `${key}:view`}
                             title={doc.url ? `Open ${doc.name}` : doc.action_url ? 'Download it to view this generated document' : why}
                             onClick={() => void open(doc, key, 'view')}>
-                            <IcoEye /> {busy === `${key}:view` ? 'Opening…' : 'View'}
+                            {busy === `${key}:view` ? <span className="iev-spin" aria-hidden /> : <IcoEye />} {busy === `${key}:view` ? 'Opening…' : 'View'}
                           </button>
-                          <button type="button" className="iev-btn iev-btn--dl"
-                            disabled={!canOpen || !!busy}
+                          <button type="button" className={`iev-btn iev-btn--dl${canOpen && busy && busy !== `${key}:download` ? ' is-hold' : ''}`}
+                            disabled={!canOpen || !!busy} aria-busy={busy === `${key}:download`}
                             title={canOpen ? `Download ${doc.name}` : why}
                             onClick={() => void open(doc, key, 'download')}>
-                            <IcoDownload /> {busy === `${key}:download` ? 'Preparing…' : 'Download'}
+                            {busy === `${key}:download` ? <span className="iev-spin" aria-hidden /> : <IcoDownload />} {busy === `${key}:download` ? 'Preparing…' : 'Download'}
                           </button>
                         </div>
                       );

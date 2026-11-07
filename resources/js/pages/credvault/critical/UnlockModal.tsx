@@ -104,9 +104,9 @@ function UnlockSkeleton() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}><Shimmer width={80} height={12} /><Shimmer width={104} height={9} /></div>
         </div>
         <div className="rv-foot__r">
-          <Shimmer width={104} height={44} radius={12} />
-          <Shimmer width={84} height={44} radius={12} />
-          <Shimmer width={240} height={46} radius={12} />
+          <Shimmer width={104} height={40} radius={12} />
+          <Shimmer width={84} height={40} radius={12} />
+          <Shimmer width={240} height={40} radius={12} />
         </div>
       </div>
     </>

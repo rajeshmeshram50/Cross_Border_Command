@@ -545,6 +545,9 @@ export function MasterSelect({
                 {visible.map(opt => (
                   <DropdownItem
                     key={opt.value}
+                    /* The row's value, for callers that style a row by what it is (CredVault's risk dots) —
+                       position breaks as soon as the search filters the list. No effect on its own. */
+                    data-value={opt.value}
                     active={opt.value === currentValue}
                     /* Disabled options (e.g. a product outside the customer's
                        segment) render greyed and can't be selected. When an
