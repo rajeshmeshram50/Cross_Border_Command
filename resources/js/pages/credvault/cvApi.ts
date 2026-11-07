@@ -251,7 +251,8 @@ export interface BinRetention {
 /** Bin items older than a new period: `total` company-wide, `items` (up to 10) from the user's own bin. */
 export interface RetentionImpact {
   days: number; total: number; visible_total: number;
-  items: { id: number; code: string; name: string; type: string; risk: Risk; deleted_at: string; days_in_bin: number }[];
+  /** Every credential the change deletes; in_my_bin false = another person's bin (owner names them). */
+  items: { id: number; code: string; name: string; type: string; risk: Risk; vault?: BinVault; deleted_at: string; days_in_bin: number; in_my_bin?: boolean; owner?: string | null }[];
 }
 
 export interface BinRow {

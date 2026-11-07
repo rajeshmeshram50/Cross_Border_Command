@@ -19124,3 +19124,22 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   opacity: .55;
   cursor: not-allowed;
 }
+
+/* Retention change confirm: a credential from another person's bin carries a small "<name>'s bin" tag. */
+.cvx .rb-impact__who {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-style: normal;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+[data-bs-theme="dark"] .cvx .rb-impact__who {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .1);
+  border-color: rgba(251, 191, 36, .35);
+}
