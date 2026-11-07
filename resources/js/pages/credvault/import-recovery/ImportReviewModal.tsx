@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError } from '../cvApi';
-import { CvPortal, CvTabsRow, Svg, errMsg } from '../shared';
+import { CvPortal, CvTabsRow, StrengthCell, Svg, errMsg } from '../shared';
 import { IR_I, ImportVeil } from './irShared';
 import type { ImportReview } from './irReview';
+
+/** The API sends the strength label; the meter needs its level (Credential::STRENGTH_LABELS). */
+const STR_LEVEL: Record<string, number> = { Weak: 1, Fair: 2, Good: 3, Strong: 4 };
 
 type Tab = 'accepted' | 'discarded';
 
@@ -81,7 +84,7 @@ export default function ImportReviewModal({ review, onBack, onExpired, onSaved }
               <div className="whm-tblwrap">
                 {tab === 'accepted' ? (
                   <table className="whm-tbl mv-tbl">
-                    <colgroup><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '32%' }} /><col style={{ width: '12%' }} /><col style={{ width: '36%' }} /></colgroup>
+                    <colgroup><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '28%' }} /><col style={{ width: '18%' }} /><col style={{ width: '34%' }} /></colgroup>
                     <thead><tr><th>Sr. No</th><th>Sheet Row</th><th className="ir-al">Credential Name</th><th>Strength</th><th>Check</th></tr></thead>
                     <tbody>
                       {accepted.length ? accepted.map((r, i) => (
@@ -89,7 +92,9 @@ export default function ImportReviewModal({ review, onBack, onExpired, onSaved }
                           <td><span className="whm-sr">{i + 1}</span></td>
                           <td><span className="whm-idpill">Row {r.row}</span></td>
                           <td className="ir-al"><b title={r.name}>{r.name}</b></td>
-                          <td>{r.strength ?? <span className="mv-str--na">—</span>}</td>
+                          <td>{r.strength
+                            ? <StrengthCell row={{ has_password: true, strength: r.strength, strength_level: STR_LEVEL[r.strength] ?? 1 }} />
+                            : <span className="znm-flag znm-flag--no" title="This category's main secret is not a password, so it has no strength">No password</span>}</td>
                           <td>
                             <div className="ir-flags">
                               {r.weak && <span className="ir-flag ir-flag--bad">Weak password</span>}

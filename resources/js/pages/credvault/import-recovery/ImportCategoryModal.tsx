@@ -98,6 +98,15 @@ export default function ImportCategoryModal({ initialFile, onClose, onReviewed }
             </div>
 
             <div className="mapsup-body gp-body ir-imp-body">
+              {/* Opening: the categories load first — a shimmer in the popup's own shape until they arrive. */}
+              {!types && !typesErr ? (
+                <div className="ir-cat-shim" role="status" aria-label="Loading categories">
+                  <i className="ir-cat-shim__lbl" />
+                  <i className="ir-cat-shim__sel" />
+                  <i className="ir-cat-shim__hint" />
+                  <i className="ir-cat-shim__drop" />
+                </div>
+              ) : <>
               <div className="ir-cat-f">
                 <label htmlFor="ir-cat">Category <i>*</i></label>
                 <CrdSelect id="ir-cat" value={type} disabled={busy || !types}
@@ -130,6 +139,7 @@ export default function ImportCategoryModal({ initialFile, onClose, onReviewed }
                 <div className="ix-fmts">{FMTS.map(([l, x, ic]) => <span key={l}><Svg d={ic} size={11} />{l} <em>{x}</em></span>)}</div>
               </label>
               {fileErr && <div className="ir-cat-err ir-cat-err--file"><Svg d={IR_I.warn} size={13} /><span>{fileErr}</span></div>}
+              </>}
             </div>
 
             <div className="mapsup-footer">

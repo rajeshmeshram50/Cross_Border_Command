@@ -18994,3 +18994,33 @@
 [data-bs-theme="dark"] .cvx.ph-page .phx-card__hint {
   color: var(--c2);
 }
+
+/* ══ Import by category · opening shimmer while the categories load (the table shimmer's cv-shim animation) ══ */
+.cvx #crd-host .ir-cat-shim {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cvx #crd-host .ir-cat-shim i {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #eef2f7 0%, #e2e8f0 50%, #eef2f7 100%);
+  background-size: 200% 100%;
+  animation: cv-shim 1.2s linear infinite;
+}
+
+.cvx #crd-host .ir-cat-shim__lbl { width: 90px; height: 12px; }
+.cvx #crd-host .ir-cat-shim__sel { width: 100%; height: 44px; }
+.cvx #crd-host .ir-cat-shim__hint { width: 62%; height: 10px; }
+.cvx #crd-host .ir-cat-shim__drop { width: 100%; height: 190px; margin-top: 6px; border-radius: 16px; }
+
+[data-bs-theme="dark"] .cvx #crd-host .ir-cat-shim i {
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, .04) 0%, rgba(34, 211, 238, .12) 50%, rgba(255, 255, 255, .04) 100%);
+}
+
+/* Review popup · Strength: the strength meter sits centred in its column. */
+.cvx #crd-host .ir-rev-list .mv-sg {
+  margin: 0 auto;
+  max-width: 150px;
+}
