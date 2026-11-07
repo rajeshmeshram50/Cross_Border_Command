@@ -194,7 +194,8 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
   if (k === 'cardno') {
     const d = val.replace(/[\s-]/g, '');
     if (!/^\d{12,19}$/.test(d)) return 'Card number must be 12–19 digits';
-    if (!luhnOk(d)) return 'This card number is not valid — check the digits';
+    // Length is fine here — it is the card's checksum (Luhn) that failed, usually a typo.
+    if (!luhnOk(d)) return `This doesn’t look like a real card number — the ${d.length} digits don’t pass the card checksum. Re-check for a typo.`;
   }
   if (k === 'holder') {
     if (!/\p{L}/u.test(val)) return `${f.label} must include letters, not only numbers or symbols`;

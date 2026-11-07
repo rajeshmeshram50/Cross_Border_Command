@@ -873,8 +873,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const firstOf = (e: Record<string, string>) => Object.keys(e)[0];
     if (Object.keys(errs).length) {
       setErrors(errs);
-      jump(firstOf(errs));
-      toast.warning('Please complete the highlighted fields');
+      const first = firstOf(errs);
+      jump(first);
+      // Name the actual reason (e.g. the card checksum) so the toast explains why the save was blocked.
+      const only = Object.keys(errs).length === 1;
+      toast.warning(only ? 'Can’t save yet' : 'Please complete the highlighted fields', errs[first]);
       return;
     }
 
