@@ -36,7 +36,7 @@ const TABS: [string, string, string][] = [
   ['all', 'All Activity', PULSE],
   ['mine', 'My Activity', IC.user],
   ['team', 'Team Activity', IC.users],
-  // Security Alerts tab removed from the page on request; the API's tab=alerts still exists.
+  // No Security Alerts tab on this page (removed on request); the API's tab=alerts is untouched.
 ];
 const RANGES: [string, string][] = [['24h', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All']];
 const SEV_FALLBACK: Record<string, string> = { info: 'Info', warn: 'Warning', critical: 'Critical' };
@@ -273,7 +273,8 @@ export default function AuditLogs() {
             </div>
             <div className="bst-search parch-search whm-main-search">
               <Svg d={IC.search} size={14} stroke="#94a3b8" />
-              <input type="text" value={q} placeholder="Search user, credential, action or event ID..." onChange={e => setQ(e.target.value)} aria-label="Search" autoComplete="off" />
+              <input type="text" value={q} placeholder="Search user, credential, action or event ID..." onChange={e => setQ(e.target.value)} aria-label="Search" autoComplete="off"
+                maxLength={100} /* the API refuses q over 100 chars (422), which emptied the whole list */ />
               {q && <button type="button" className="bst-search-clear" onClick={() => setQ('')} aria-label="Clear search"><Svg d={IC.close} size={13} sw={2.4} /></button>}
             </div>
           </div>

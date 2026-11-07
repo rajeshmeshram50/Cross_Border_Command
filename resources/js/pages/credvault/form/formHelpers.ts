@@ -100,6 +100,53 @@ export function hostError(v: string): string | null {
   return t.split('.').every(l => label.test(l)) ? null : HOST_MSG;
 }
 
+/* ── CS-1456 field formats ─────────────────────────────────────────────────────────────────── */
+
+/** API key / secret: 128 characters at most (CS-1457 #5, as QA asked). The API's own limit is 10,000. */
+const KEY_MAX = 128;
+/**
+ * SSH private key: 64 characters at most (CS-1457 #9, as QA asked). NOTE: a real key is ~400–3,300
+ * characters, so full keys no longer fit; the BEGIN/END block check (privateKeyError) cannot pass
+ * within 64 and is not used while this limit stands. Raise PRIVKEY_MAX to accept real keys again.
+ */
+const PRIVKEY_MAX = 64;
+/** Longest value the input lets a field hold — the type's own max, KEY_MAX for an API key / secret, PRIVKEY_MAX for an SSH key. */
+export const fieldMax = (f: FieldDef): number | undefined =>
+  (f.key === 'apikey' || f.key === 'secret' ? KEY_MAX : f.key === 'privkey' ? PRIVKEY_MAX : f.max ?? undefined);
+
+/** Luhn checksum — every real card number passes it; a mistyped digit fails it. */
+function luhnOk(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = +digits[digits.length - 1 - i];
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/** Account holder / cardholder: a person's or company's name — letters required; digits only beside letters ("3M India"). */
+const HOLDER_RE = /^[\p{L}\p{M}\p{N}\s.'’&,()/-]+$/u;
+
+/**
+ * SSH private key: the whole PEM block — "-----BEGIN … PRIVATE KEY-----", base64 lines (A–Z a–z 0–9 + / =),
+ * optional "Name: value" headers of an encrypted RSA key, then the matching "-----END … PRIVATE KEY-----".
+ * A PuTTY .ppk file ("PuTTY-User-Key-File-2/3: …") is accepted as it is.
+ */
+function privateKeyError(v: string): string | null {
+  const t = v.trim();
+  if (/^PuTTY-User-Key-File-\d+:/.test(t)) return null;
+  const m = t.match(/^-----BEGIN ((?:[A-Z0-9]+ )*)PRIVATE KEY-----\r?\n([\s\S]*?)\r?\n?-----END ((?:[A-Z0-9]+ )*)PRIVATE KEY-----$/);
+  if (!m) return 'Paste the full private key, from -----BEGIN … PRIVATE KEY----- to -----END … PRIVATE KEY-----';
+  if (m[1] !== m[3]) return 'The BEGIN and END lines of the private key do not match';
+  const lines = m[2].split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const body = lines.filter(l => !/^[A-Za-z-]+: [A-Za-z0-9,\- ]+$/.test(l));
+  if (!body.length || body.some(l => !/^[A-Za-z0-9+/=]+$/.test(l))) {
+    return 'The private key can only contain letters, numbers and + / = between its BEGIN and END lines';
+  }
+  return null;
+}
+
 /** crdSave's per-field check — the server repeats these and more. */
 /** `strict` adds the My Vault QA checks (CS-1435): symbols-only text, numbers-only Program Name, Account Number. */
 export function checkField(f: FieldDef, val: string, strict = false): string | null {
@@ -112,7 +159,25 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
   if (f.kind === 'url' && !URL_RE.test(val)) return 'Enter a valid URL';
   if (f.kind === 'email') return emailError(val);
   if (f.kind === 'tel') return phoneError(val);
-  if (k === 'cardno' && !/^\d{12,19}$/.test(val.replace(/[\s-]/g, ''))) return 'Card number must be 12–19 digits';
+  if (k === 'cardno') {
+    const d = val.replace(/[\s-]/g, '');
+    if (!/^\d{12,19}$/.test(d)) return 'Card number must be 12–19 digits';
+    if (!luhnOk(d)) return 'This card number is not valid — check the digits';
+  }
+  if (k === 'holder') {
+    if (!/\p{L}/u.test(val)) return `${f.label} must include letters, not only numbers or symbols`;
+    if (!HOLDER_RE.test(val)) return `${f.label} can only use letters, numbers, spaces and . ' - & , ( ) /`;
+  }
+  if (k === 'apikey' || k === 'secret') {
+    if (/\s/.test(val)) return `${f.label} cannot contain spaces or line breaks`;
+    if (!/^[\x21-\x7E]+$/.test(val)) return `${f.label} can only use standard keyboard characters`;
+    if (val.length > KEY_MAX) return `${f.label} can be at most ${KEY_MAX.toLocaleString('en-IN')} characters`;
+  }
+  if (k === 'privkey') {
+    if (val.length > PRIVKEY_MAX) return `${f.label} can be at most ${PRIVKEY_MAX} characters`;
+    if (!/^[A-Za-z0-9+/=\-\s]+$/.test(val)) return `${f.label} can only contain letters, numbers and + / = -`;
+    return PRIVKEY_MAX >= 400 ? privateKeyError(val) : null;
+  }
   if (k === 'exp' && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(val)) return 'Use MM/YY, e.g. 08/28';
   if (k === 'cvv' && !/^\d{3,4}$/.test(val)) return 'CVV must be 3 or 4 digits';
   if (k === 'ifsc' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(val.toUpperCase())) return 'IFSC must look like ICIC0001234';

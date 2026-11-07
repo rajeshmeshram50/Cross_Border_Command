@@ -1048,8 +1048,8 @@ class CredVaultController extends Controller
     protected function hierarchy(User $u, ?Departments $dep): array
     {
         $branch = $this->teamBranchOf($u);
-        $emps = Employee::where('client_id', $u->client_id)->where('status', 'Active')
-            ->when($branch !== null, fn ($q) => $q->where('branch_id', $branch))
+        $emps = $this->onTeam(Employee::where('employees.client_id', $u->client_id))
+            ->when($branch !== null, fn ($q) => $q->where('employees.branch_id', $branch))
             ->when($dep, fn ($q) => $q->where('department_id', $dep->id), fn ($q) => $q->whereNotNull('department_id'))
             ->with('designation:id,name')
             ->get(['id', 'user_id', 'emp_code', 'first_name', 'last_name', 'display_name', 'department_id', 'designation_id', 'reporting_manager_id', 'reporting_manager_user_id']);
@@ -1153,10 +1153,24 @@ class CredVaultController extends Controller
         return $u->user_type === 'branch_user' ? (int) ($u->branch_id ?? 0) : null;
     }
 
+    /**
+     * Team Details shows only people actually on the team (CS-1447): Active, onboarding finished
+     * (all 6 HR stages — the app-wide rule Announcements and Attendance use), and not exited. The
+     * exit guard mirrors ExitController: a finished exit (Closed / Exited, not rehired) whose
+     * employees.status was never written back still counts as gone.
+     */
+    protected function onTeam(Builder $q): Builder
+    {
+        return $q->where('employees.status', 'Active')
+            ->where('employees.onboarding_stage_completed', '>=', 6)
+            ->whereDoesntHave('exit', fn ($x) => $x->whereNull('rehired_at')
+                ->where(fn ($w) => $w->where('exit_case_status', 'Closed')->orWhere('final_employee_status', 'Exited')));
+    }
+
     protected function levelCounts(int $clientId, ?int $branchId = null): array
     {
         return $this->memo("levels:{$clientId}:" . ($branchId ?? 'all'), function () use ($clientId, $branchId) {
-            $rows = Employee::where('employees.client_id', $clientId)->where('employees.status', 'Active')->whereNotNull('employees.department_id')
+            $rows = $this->onTeam(Employee::where('employees.client_id', $clientId))->whereNotNull('employees.department_id')
                 ->when($branchId !== null, fn ($q) => $q->where('employees.branch_id', $branchId))
                 ->leftJoin('master_designations as d', 'd.id', '=', 'employees.designation_id')
                 ->selectRaw('employees.department_id, d.name as designation, count(*) as n')

@@ -144,7 +144,9 @@ export interface CredentialRow {
   access: { permission: Perm; via: Via } | null; can: Can | null; unlock: UnlockState | null;
   active_shares: number; created_at: string | null; updated_at: string | null;
 }
-export interface DetailField { key: string; label: string; kind: string; value: string | null; masked: boolean; has_value: boolean; attachment_key?: string | null }
+export interface DetailField { key: string; label: string; kind: string; value: string | null; masked: boolean; has_value: boolean; attachment_key?: string | null;
+  /** the type marks it secret (password, key, note …) — sent even when the value comes in plain */
+  secret?: boolean }
 export interface Attachment { key: string; name: string; size: number; mime: string; at: string }
 export interface PlanStep { step: number; key: LockStep; label: string; approver: { id: number | null; name: string; initials: string; role: string } | null; ready: boolean }
 export interface CredentialDetail extends CredentialRow {

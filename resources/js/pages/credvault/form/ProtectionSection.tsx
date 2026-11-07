@@ -122,6 +122,9 @@ export function CodeRow({ ico, title, label, code, onCode, onSubmit, btn, busy, 
 }
 
 /** The QR, setup key and the code check — or the "linked" line once linked. */
+/** The prototype's list of apps that can scan the setup QR code (shown as chips). */
+const AUTH_APPS = ['Google Authenticator', 'Microsoft Authenticator', 'Authy', 'Zoho OneAuth', '1Password'];
+
 export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, verifying }: {
   a: AuthState; onRelink: () => void; onRetry: () => void; onCopyKey: () => void;
   onCode: (c: string) => void; onVerify: () => void; verifying: boolean;
@@ -182,11 +185,16 @@ export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, ver
       </div>
       <div className="cp-auth__steps">
         <div className="cp-auth__title">Link your authenticator app</div>
-        <div className="cp-auth__tag">Works with Google Authenticator, Microsoft Authenticator, Authy and any TOTP app</div>
+        <div className="cp-auth__tag">Works with any authenticator app</div>
+        {/* As the prototype (crdAuthBox): the apps that scan this QR code. */}
+        <div className="k2-apps">
+          {AUTH_APPS.map(n => <span key={n}><Svg d={CP_I.check} size={10} sw={3} />{n}</span>)}
+        </div>
         <ol className="cp-stps">
-          {step(1, 'Open your app', <>Tap <b>+</b> or <b>Add account</b></>)}
-          {step(2, 'Scan the QR code', 'Or enter the setup key manually')}
-          {step(3, 'Enter the 6-digit code', <>Then press <b>Verify &amp; link</b></>)}
+          {step(1, 'Open your authenticator app', <>Tap <b>+</b> or <b>Add account</b></>)}
+          {step(2, 'Scan this QR code', <>Or choose “Enter a setup key” and type the key below</>)}
+          {/* The prototype links on save; the API needs the code first (totp_code), so step 3 stays the verify step. */}
+          {step(3, 'Enter the 6-digit code', <>The app shows a new code for <b>Kryptone</b> every 30 seconds — then press <b>Verify &amp; link</b></>)}
         </ol>
         <div className="cp-keybar">
           <span className="cp-keybar__ico"><Svg d='<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 21 2"/><path d="M17 6l3 3"/>' size={14} /></span>
@@ -194,6 +202,10 @@ export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, ver
           <button type="button" className="cp-keybar__cp" onClick={onCopyKey} title="Copy key">
             <Svg d='<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' size={13} />Copy
           </button>
+        </div>
+        <div className="k2-note">
+          <Svg d={CP_I.users} size={13} />
+          <span><b>Shared with a team?</b> Scan this QR code on the phone of everyone who should be able to open this credential.</span>
         </div>
       </div>
       <div className="cp-vcard" data-f="totp_code">
@@ -223,20 +235,15 @@ export interface GmailState {
 }
 export const GMAIL_EMPTY: GmailState = { token: null, sentTo: '', sending: false, wait: 0, code: '', verifying: false, verified: false, error: '' };
 
-export function TwofaCard({ method, readOnly, authBox, chip, onMethod, gmail, gmailOk, gmailErr, onGmail, gm, onSend, onGmCode, onGmVerify }: {
+export interface TwofaPickerProps {
   method: 'google' | 'email'; readOnly: boolean; authBox: ReactNode;
-  chip: { ok: boolean; text: string };
   onMethod: (m: 'google' | 'email') => void;
   gmail: string; gmailOk: boolean; gmailErr?: string; onGmail: (v: string) => void;
   gm: GmailState; onSend: () => void; onGmCode: (c: string) => void; onGmVerify: () => void;
-}) {
-  const step = (n: number, h: string, t: string) => (
-    <li className="cp-stp"><span className="cp-stp__n">{n}</span><div><b>{h}</b><span>{t}</span></div></li>
-  );
-  const opts: { m: 'google' | 'email'; t: string; d: string; ro: string; ico: string }[] = [
-    { m: 'google', t: 'Authenticator app', d: 'Scan a QR code once — Google / Microsoft Authenticator, Authy …', ro: 'Code from the linked authenticator app', ico: CP_I.phone },
-    { m: 'email', t: 'Gmail', d: 'A 6-digit code is emailed to a Gmail address each time', ro: 'Code emailed to a Gmail address', ico: CP_I.mail },
-  ];
+}
+
+export function TwofaCard({ chip, ...p }: TwofaPickerProps & { chip: { ok: boolean; text: string } }) {
+  const { method, readOnly } = p;
   return (
     <div className="cp-fcard cp-fcard--main" id="cpMainCard">
       <div className="cp-frow cp-frow--main">
@@ -251,6 +258,25 @@ export function TwofaCard({ method, readOnly, authBox, chip, onMethod, gmail, gm
             : <>{chip.ok && <Svg d={CP_I.check} size={11} />}{chip.text}</>}
         </span>
       </div>
+      <TwofaPicker {...p} />
+    </div>
+  );
+}
+
+/**
+ * "How should Kryptone ask for the code? Choose one" — Authenticator app or Gmail, with the chosen
+ * method's setup below. The Login 2FA card's body, and step 3 of Critical Access Protection for the
+ * types that have no 2FA field of their own (Credit Card, Bank Account …), as the prototype.
+ */
+export function TwofaPicker({ method, readOnly, authBox, onMethod, gmail, gmailOk, gmailErr, onGmail, gm, onSend, onGmCode, onGmVerify }: TwofaPickerProps) {
+  const step = (n: number, h: string, t: string) => (
+    <li className="cp-stp"><span className="cp-stp__n">{n}</span><div><b>{h}</b><span>{t}</span></div></li>
+  );
+  const opts: { m: 'google' | 'email'; t: string; d: string; ro: string; ico: string }[] = [
+    { m: 'google', t: 'Authenticator app', d: 'Scan a QR code once — Google / Microsoft Authenticator, Authy …', ro: 'Code from the linked authenticator app', ico: CP_I.phone },
+    { m: 'email', t: 'Gmail', d: 'A 6-digit code is emailed to a Gmail address each time', ro: 'Code emailed to a Gmail address', ico: CP_I.mail },
+  ];
+  return (
       <div className="cp-auth k2-auth">
         <div className={`k2-pick${readOnly ? ' k2-pick--ro' : ''}`}>
           {!readOnly && <div className="k2-pick__t">How should Kryptone ask for the code? Choose one</div>}
@@ -284,7 +310,7 @@ export function TwofaCard({ method, readOnly, authBox, chip, onMethod, gmail, gm
                 <label className="k2-gm__lbl" htmlFor="k2Gmail">Gmail address <i>*</i></label>
                 <div className="mapsup-inputwrap">
                   <span className="mapsup-input-ico"><Svg d={CP_I.mail} size={13} /></span>
-                  <input id="k2Gmail" className="mapsup-finput has-ico" type="email" placeholder="name@gmail.com" autoComplete="off" maxLength={191}
+                  <input id="k2Gmail" className="mapsup-finput has-ico" type="email" placeholder="name@company.com" autoComplete="off" maxLength={191}
                     value={gmail} onChange={e => onGmail(e.target.value)} />
                   {!gm.verified && (
                     <button type="button" className="cp-btn cp-btn--ghost k2-gm__send" onClick={onSend}
@@ -316,7 +342,6 @@ export function TwofaCard({ method, readOnly, authBox, chip, onMethod, gmail, gm
           </div>
         )}
       </div>
-    </div>
   );
 }
 
@@ -325,13 +350,15 @@ export interface ProtectionValue {
 }
 
 /** The three steps. `hasMain`: the type's own 2FA switch stands in for step 3. */
-export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, auth, authBox, errors }: {
+export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, auth, authBox, picker, errors }: {
   v: ProtectionValue; set: (p: Partial<ProtectionValue>) => void;
   policy: { admin: boolean; manager: boolean; otp: boolean };
   hasMain: boolean; twofaOn: boolean;
-  /** step 3's chip when the type's 2FA switch stands in for it — mirrors the 2FA card */
+  /** step 3's chip — mirrors the 2FA card (method-aware: "App linked" / "Gmail verified" …) */
   mainChip: { ok: boolean; text: string };
   auth: AuthState; authBox: ReactNode;
+  /** types with no 2FA field: the same Authenticator-or-Gmail picker as the Login 2FA card */
+  picker?: ReactNode;
   errors: Record<string, string>;
 }) {
   const off = 'Turned off by the CredVault policy — a Vault Admin can allow it under Policies';
@@ -339,7 +366,10 @@ export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, aut
     ? <span className={`cp-chip ${!twofaOn ? 'is-off' : mainChip.ok ? 'is-ok' : 'is-no'}`} id="cpStep3Chip">
         {!twofaOn ? '2FA field is off' : <>{mainChip.ok && <Svg d={CP_I.check} size={11} />}{mainChip.text}</>}
       </span>
-    : (v.otp ? <AuthChip a={auth} id="cpAuthChip" /> : null);
+    : !v.otp ? null
+      : picker
+        ? <span className={`cp-chip ${mainChip.ok ? 'is-ok' : 'is-no'}`} id="cpAuthChip">{mainChip.ok && <Svg d={CP_I.check} size={11} />}{mainChip.text}</span>
+        : <AuthChip a={auth} id="cpAuthChip" />;
 
   return (
     <div className="cp-form mapsup-span-full" style={{ gridColumn: '1/-1' }}>
@@ -358,11 +388,13 @@ export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, aut
           d="Uses the “2FA” field in this form — switch it on and choose an authenticator app or Gmail. A 6-digit code is then needed before this credential opens."
           extra={step3Chip} />
       ) : (
-        <Row n={3} ico={CP_I.phone} t="2FA — Authenticator app"
-          d="A 6-digit code from Google / Microsoft Authenticator is needed before the credential opens. Link the app below."
+        <Row n={3} ico={CP_I.phone} t={picker ? '2FA — Authenticator app or Gmail' : '2FA — Authenticator app'}
+          d={picker
+            ? 'A 6-digit code — from an authenticator app or sent to Gmail — is needed before the credential opens. Choose one below.'
+            : 'A 6-digit code from Google / Microsoft Authenticator is needed before the credential opens. Link the app below.'}
           extra={step3Chip}
           toggle={<StepToggle on={v.otp && policy.otp} disabled={!policy.otp} title={policy.otp ? undefined : off} onChange={x => set({ otp: x })} />}
-          panel={v.otp && policy.otp ? authBox : null} />
+          panel={v.otp && policy.otp ? (picker ?? authBox) : null} />
       )}
       {(errors.lock_admin || errors.lock_admin_user_id || errors.lock_manager_user_id) && (
         <span className="crd-err cv-ferr">{errors.lock_admin || errors.lock_admin_user_id || errors.lock_manager_user_id}</span>

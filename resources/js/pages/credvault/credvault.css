@@ -17697,12 +17697,47 @@
   height: 100%;
 }
 
-/* Critical Vault only: Figma search bar is 665px wide, pinned right; the gap to the tabs is the leftover space. */
+/* Critical Vault only: Figma search bar up to 665px wide, pinned right; the gap to the tabs is the leftover
+   space. flex-basis 0, not 665px — the row wraps, and a 665px basis dropped the search under the tabs. */
 .cvx.cv-page .tvc-top .bst-search.whm-main-search {
-  flex: 0 1 665px;
+  flex: 1 1 0;
+  max-width: 665px;
   min-width: 240px;
   margin-left: auto !important;
 }
+
+/* Critical Vault: a credential with no username (Secure Note, API key …) reads "N/A" in the same grey
+   pill as the Strength and 2FA columns, not a bare dash. CSS-only: the shared column (shared.tsx)
+   renders the dash for every vault, so it is swapped here for this page alone. */
+.cvx.cv-page .mv-user .mv-str--na {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0;
+  line-height: 1;
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.cvx.cv-page .mv-user .mv-str--na::after {
+  content: "N/A";
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .cvx.cv-page .mv-user .mv-str--na {
+  color: var(--tvd-mu);
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .12);
+}
+
+/* Critical Vault footer pager, as My Vault: one divider, pager flush with the card's bottom and sides. */
+.cvx.cv-page .tvc-list > .whm-tblwrap:has(+ .wl-pager) { border-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) { padding-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child { margin-left: -12px !important; margin-right: -12px !important; margin-bottom: 0 !important; }
+.cvx.cv-page .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child { border-radius: 0; }
+.cvx.cv-page .whm-tbl.mv-tbl tbody td.mv-empty { border-bottom: 0 !important; }
 
 /* Critical Vault · Access Status cell and the row's unlock button (prototype cv-acc / cv-lk) */
 .cvx .cv-acc { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
@@ -18092,6 +18127,14 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mv-meter__lbl {
   filter: brightness(1.35);
 }
+
+/* CS-1457 #30: the dark track colour above ([data-bs-theme] .cvx .mv-meter__bars i) ties with the
+   filled-bar rules and comes later, so every bar stayed grey — "Strong" lit up but its bars did not.
+   Re-state the filled bars for dark mode (one class more specific), slightly brighter on the dark card. */
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="1"] .mv-meter__bars i:nth-child(-n+1) { background: #fb7185; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="2"] .mv-meter__bars i:nth-child(-n+2) { background: #fbbf24; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="3"] .mv-meter__bars i:nth-child(-n+3) { background: #38bdf8; }
+[data-bs-theme="dark"] .cvx .mv-meter[data-s="4"] .mv-meter__bars i { background: #34d399; box-shadow: 0 0 6px rgba(52, 211, 153, .45); }
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .crd-att {
   background: rgba(34, 211, 238, .05) !important;
   border-color: rgba(34, 211, 238, .3) !important;
@@ -19286,4 +19329,197 @@
 
 .cvx #crd-host .crd-pw.crd-pw--ta textarea.crd-pw__in {
   padding-right: 84px !important;
+}
+
+/* ══ My Vault View drawer · dark mode (CS UI #37): the header, its buttons and the footer follow the dark theme ══ */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd {
+  background: linear-gradient(120deg, #041f28 0%, #07384a 40%, #0b4f63 75%, #0e6f86 100%);
+  border-bottom: 1px solid rgba(34, 211, 238, .16);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd::after {
+  border-color: rgba(103, 232, 249, .06);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-hd__ico {
+  background: rgba(255, 255, 255, .08) !important;
+  color: #67e8f9 !important;
+  border: 1px solid rgba(103, 232, 249, .28);
+  box-shadow: none !important;
+}
+
+/* Header buttons: tinted glass instead of white blocks. */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn:hover:not(:disabled) {
+  color: #ecfeff;
+  background: rgba(34, 211, 238, .16);
+  border-color: rgba(103, 232, 249, .5);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--p {
+  color: #ecfeff;
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--del {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .1);
+  border-color: rgba(251, 113, 133, .35);
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-btn--del:hover {
+  color: #fff;
+  background: #e11d48;
+  border-color: #e11d48;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-x {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+}
+
+/* Footer Close: an outline on the dark footer, not a white button. */
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-ft .mapsup-footer__btn--ghost.vd-fb {
+  color: #67e8f9 !important;
+  background: rgba(34, 211, 238, .06) !important;
+  border: 1.5px solid rgba(34, 211, 238, .35) !important;
+  box-shadow: none !important;
+}
+
+[data-bs-theme="dark"] .cvx .vd.vd--mv .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
+  color: #ecfeff !important;
+  background: rgba(34, 211, 238, .14) !important;
+}
+
+/* Dark mode · header ghost button (e.g. Generate Password): the same filled teal as the View drawer's Launch (four modules). */
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .cstrip--teal .cstrip__action-btn--ghost {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  color: #ecfeff;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .cstrip--teal .cstrip__action-btn--ghost:hover {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  color: #fff;
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px -6px rgba(8, 145, 178, .6);
+}
+
+/* Critical Vault toolbar: when the row is too narrow for the three tabs and the search side by side
+   (zoom, an open inspector, a laptop with the sidebar out), the search wraps to its own line. It
+   then takes the whole line instead of sitting right-aligned at 665px with a gap before it.
+   A container query, so it follows the row's real width, not the window's. Critical Vault only. */
+.cvx.cv-page .tvc-top { container-type: inline-size; container-name: cvtop; }
+@container cvtop (max-width: 1010px) {
+  .cvx.cv-page .tvc-top .whm-main-search {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+  }
+}
+
+/* ══ Password Health table · dark mode: Issue, Details and Suggested Action had light-mode ink (#0c2c3a) on the dark rows ══ */
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss,
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl b,
+[data-bs-theme="dark"] .cvx.ph-page .ph-ref {
+  color: #e2f3f8;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--weak svg,
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--twofa svg {
+  color: #fb7185;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--reused svg,
+[data-bs-theme="dark"] .cvx.ph-page .ph-iss--rotation svg {
+  color: #fbbf24;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl small {
+  color: #94b4c2;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-dl em.is-bad {
+  color: #fda4af;
+}
+
+[data-bs-theme="dark"] .cvx.ph-page .ph-act {
+  color: #a9c6d2;
+}
+
+/* ══ Password Health table: one alignment per column, header and cells alike.
+   Left — Credential Name, Owner, Issue, Details, Suggested Action / Resolved On.
+   Centre — Sr. No, Credential ID, Severity, Action. ══ */
+.cvx.ph-page .whm-tbl.mv-tbl thead th,
+.cvx.ph-page .whm-tbl.mv-tbl tbody td {
+  text-align: center !important;
+}
+
+.cvx.ph-page .whm-tbl.mv-tbl thead th:is(.ph-th-2, .ph-th-3, .ph-th-4, .ph-th-6, .ph-th-7),
+.cvx.ph-page .whm-tbl.mv-tbl tbody td:is(:nth-child(3), :nth-child(4), :nth-child(5), :nth-child(7), :nth-child(8)) {
+  text-align: left !important;
+}
+
+.cvx.ph-page .whm-tbl.mv-tbl tbody td.mv-empty {
+  text-align: center !important;
+}
+
+.cvx.ph-page .mv-tbl .mv-ownc,
+.cvx.ph-page .mv-tbl .whm-namecell {
+  justify-content: flex-start;
+}
+
+.cvx.ph-page .mv-tbl td:nth-child(6) .znm-flagcell,
+.cvx.ph-page .mv-tbl td:nth-child(9) .whm-acts {
+  justify-content: center;
+}
+
+/* Details: title and explanation start on the same left edge. */
+.cvx.ph-page .mv-tbl .ph-dl {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* ══ Type picker (My Vault) · dark mode: risk badges are tinted on the dark tiles instead of light blocks ══ */
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--low {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .12);
+  border-color: rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--medium {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(251, 191, 36, .35);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--high {
+  color: #fdba74;
+  background: rgba(249, 115, 22, .12);
+  border-color: rgba(251, 146, 60, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk--critical {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .12);
+  border-color: rgba(251, 113, 133, .38);
+}
+
+[data-bs-theme="dark"] .cvx .crd-pickbox:not(.crd-pickbox--cv) .crd-tile__risk i {
+  background: currentColor;
 }

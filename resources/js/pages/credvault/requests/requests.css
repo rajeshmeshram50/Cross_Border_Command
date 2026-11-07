@@ -4,9 +4,20 @@
 .cvx .ar-st__sub.ar-cd{display:inline-flex;align-items:center;gap:4px;color:#047857;font-weight:800;font-variant-numeric:tabular-nums;}
 .cvx .arj .ar-why{margin:0;}
 
-/* Tabs ↔ search: the Figma search bar is 665px wide, pinned right; the gap is whatever is left.
-   On narrow screens it shrinks (down to 240px) before the gap disappears. */
-.cvx.ar-page .tvc-top .bst-search.whm-main-search{flex:0 1 665px;min-width:240px;margin-left:auto !important;}
+/* Tabs ↔ search: the Figma search bar is up to 665px wide, pinned right; the gap is whatever is left.
+   flex-basis 0 (not 665px): the row wraps, and a 665px basis pushed the search under the tabs on
+   narrower screens. Now it grows up to 665px in the space beside the tabs and shrinks to 240px. */
+.cvx.ar-page .tvc-top .bst-search.whm-main-search{flex:1 1 0;max-width:665px;min-width:240px;margin-left:auto !important;}
+
+/* Footer pager, as My Vault / Recycle Bin / Password Health: one divider (the pager's own top
+   border, not the table's bottom border as well), and the pager sits on the card's bottom and side
+   edges instead of floating above the card's 12px bottom padding. */
+.cvx.ar-page .tvc-list > .whm-tblwrap:has(+ .wl-pager){border-bottom:0 !important;}
+.cvx.ar-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child){padding-bottom:0 !important;}
+.cvx.ar-page .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) > .tvc-list:last-child{margin-left:-12px !important;margin-right:-12px !important;margin-bottom:0 !important;}
+.cvx.ar-page .tv-pane__bd.tvc-bd > .tvc-list:last-child > .wl-pager:last-child{border-radius:0;}
+/* Empty table: no row line under the empty message — only the pager's divider remains. */
+.cvx.ar-page .whm-tbl.mv-tbl tbody td.mv-empty{border-bottom:0 !important;}
 
 /* Vault Admin / Reporting Manager cells: one fixed-width block per cell, centred under the header,
    content left-aligned inside it, so every row's avatar sits in the same column. */

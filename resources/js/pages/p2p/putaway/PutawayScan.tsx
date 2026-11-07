@@ -837,6 +837,8 @@ export default function PutawayScan() {
   const slot = task?.location_slot ?? 'shelf';
   const done = task?.status === 'scanned';
   const dest = state.destination;
+  // The prompt points at the box's destination — the deepest level it has.
+  const destLevel = dest?.shelf ? 'shelf' : dest?.rack ? 'rack' : dest?.zone ? 'zone' : null;
 
   /* A finished box gets the whole screen, not a banner above the slots, the
      box details and a scan field. The operator is holding a carton and needs
@@ -1077,30 +1079,43 @@ export default function PutawayScan() {
                  ['SHELF', 'shelf', dest.shelf, dest.shelf ? 'Shelf level' : null]] as const).map(
                 ([label, kind, code, sub]) => {
                   const rung = (task?.chain ?? []).find((c) => c.kind === kind);
-                  const cls = rung?.scanned ? ' is-done' : (kind === task?.next_level ? ' is-next' : '');
+                  const cls = rung?.scanned ? ' is-done' : (kind === destLevel ? ' is-next' : '');
                   return (
                     <div key={kind} className={'pws2-slot' + cls}>
                       <span>{label}</span>
                       <b>{code ?? '—'}</b>
                       <small>{rung?.name ?? sub ?? '—'}</small>
-                      <i>{rung?.scanned ? 'Scanned' : (kind === task?.next_level ? 'Next' : 'Pending')}</i>
+                      <i>{rung?.scanned ? 'Scanned' : (kind === destLevel ? 'Next' : 'Pending')}</i>
                     </div>
                   );
                 })}
             </div>
           )}
 
-          {/* What the handheld is waiting for, in the words the label carries. */}
-          {task?.next_level && !done && (
+          {/* The destination level the operator should head for — the box's
+              last location (shelf), not the first rung of the walk. */}
+          {destLevel && !done && (
             <div className="pws2-next">
               <span>NEXT SCAN</span>
               <b>
-                {LEVEL[task.next_level] ?? task.next_level} QR{' '}
-                {task.next_level === 'zone' ? dest?.zone
-                  : task.next_level === 'rack' ? dest?.rack
+                {LEVEL[destLevel] ?? destLevel} QR{' '}
+                {destLevel === 'zone' ? dest?.zone
+                  : destLevel === 'rack' ? dest?.rack
                   : dest?.shelf}
               </b>
-              <small>{task.step_label}</small>
+              <small>{task?.step_label}</small>
+            </div>
+          )}
+
+          {/* Already placed: say plainly where the box sits now. */}
+          {done && dest?.full && (
+            <div className="pws2-next">
+              <span>CURRENT LOCATION</span>
+              <b>
+                {[dest.zone && `Zone ${dest.zone}`, dest.rack && `Rack ${dest.rack}`, dest.shelf && `Shelf ${dest.shelf}`]
+                  .filter(Boolean).join(' · ')}
+              </b>
+              <small>Where {state.box.box_code} is stored now.</small>
             </div>
           )}
         </div>
