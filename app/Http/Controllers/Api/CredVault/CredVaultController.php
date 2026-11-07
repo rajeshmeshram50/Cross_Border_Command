@@ -282,12 +282,17 @@ class CredVaultController extends Controller
         }
 
         $sharedIds = $this->sharedWithMeIds($u);
+        // Logins this viewer oversees — their credentials (any scope) belong in the team view.
+        $overseen = $this->overseenUserIds($u);
         $views = [
             'all'    => fn () => (clone $teamSide),
             'mine'   => fn () => (clone $base)->where('owner_id', $u->id),
-            // With a person picked, show their set as-is (any scope); otherwise the usual team view.
+            // With a person picked, show their set as-is (any scope). Otherwise: team-scope
+            // credentials plus anything owned by the people this viewer oversees.
             'team'   => fn () => $member ? (clone $teamSide)
-                : (clone $teamSide)->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
+                : (clone $teamSide)
+                    ->where(fn ($w) => $w->where('scope', 'team')->when($overseen, fn ($q) => $q->orWhereIn('owner_id', $overseen)))
+                    ->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $sharedIds),
             'shared' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id)->whereIn('credvault_credentials.id', $sharedIds),
             'others' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id),
         ];
@@ -4888,9 +4893,14 @@ class CredVaultController extends Controller
         // its company-wide team-scope rule below. (new flow)
         $critBranch = ($branchCritical && !$admin) ? ($branch ?? ($u->branch_id ? (int) $u->branch_id : null)) : null;
 
-        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch) {
+        // People this viewer oversees: their whole vault (personal and team) is visible,
+        // as these are company credentials. Reveal stays gated by accessMap, not this list.
+        $overseen = $this->overseenUserIds($u);
+
+        return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch, $overseen) {
             $w->where('owner_id', $u->id)->orWhereIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if ($critBranch) $w->orWhere(fn ($t) => $t->where('vault', 'critical')->where('credvault_credentials.branch_id', $critBranch));
+            if ($overseen) $w->orWhereIn('owner_id', $overseen);
             if ($admin) {
                 $w->orWhere('scope', 'team');
                 return;
@@ -5224,6 +5234,32 @@ class CredVaultController extends Controller
         if ($mDept && in_array($mDept, $this->headedDepts($u), true)) return true;
 
         return in_array((int) $m->id, $this->downlineIds($u), true);
+    }
+
+    /**
+     * Every login this viewer oversees (never themselves): a Vault Admin sees the whole
+     * company; a branch admin their branch; an HOD their departments; anyone else their
+     * reporting line. Their credentials — personal and team — list in the viewer's Team Vault.
+     */
+    protected function overseenUserIds(User $u): array
+    {
+        return $this->memo("overseen:{$u->id}", function () use ($u) {
+            if ($this->isAdmin($u)) {
+                return User::where('client_id', $u->client_id)->where('id', '!=', $u->id)
+                    ->pluck('id')->map(fn ($i) => (int) $i)->all();
+            }
+            $ids = $this->downlineIds($u);
+            if ($branch = $this->adminBranchOf($u)) {
+                $ids = array_merge($ids, User::where('client_id', $u->client_id)->whereNotIn('user_type', self::ADMIN_TYPES)
+                    ->where('branch_id', $branch)->where('id', '!=', $u->id)->pluck('id')->map(fn ($i) => (int) $i)->all());
+            }
+            if ($heads = $this->headedDepts($u)) {
+                $ids = array_merge($ids, User::where('client_id', $u->client_id)->whereIn('department_id', $heads)
+                    ->where('id', '!=', $u->id)->pluck('id')->map(fn ($i) => (int) $i)->all());
+            }
+
+            return array_values(array_unique(array_map('intval', $ids)));
+        });
     }
 
     /**
