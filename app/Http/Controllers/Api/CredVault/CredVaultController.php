@@ -3460,7 +3460,9 @@ class CredVaultController extends Controller
             $c->saveQuietly();
 
             if ($creating) {
-                $this->audit($u, 'create', $c, "{$def['label']} credential added");
+                // CS-1479: a bulk import logs one "importx" summary entry, not a per-row
+                // "credential added" — so the activity log shows the import as one bulk entry.
+                if (!$this->importing) $this->audit($u, 'create', $c, "{$def['label']} credential added");
             } else {
                 $what = array_keys(array_diff_assoc(array_map('strval', $dirtyBefore), array_map('strval', [
                     'name' => $c->name, 'risk' => $c->risk, 'scope' => $c->scope, 'rotation_days' => $c->rotation_days, 'twofa' => $c->twofa,
