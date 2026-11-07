@@ -2870,18 +2870,24 @@ class CredVaultController extends Controller
         // Only what the change newly puts past its period: already-expired items go anyway.
         $hit  = fn (Builder $q) => $this->wherePastRetention($q, $next)->whereNotIn('credvault_credentials.id',
             $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id), $pol)->select('credvault_credentials.id'));
-        $total = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id))->count();
-        $mine  = $hit($this->binQuery($u))->orderBy('deleted_at');
-        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'vault', 'deleted_at']);
+        $all   = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id));
+        $total = (clone $all)->count();
+        $mine  = $hit($this->binQuery($u))->pluck('credvault_credentials.id')->flip();
+        // Every credential the change deletes — the viewer's own bin and other people's — so the confirm lists all of
+        // them, each marked with whose bin it is in (capped, as a guard on a very large bin).
+        $items = (clone $all)->with('owner:id,name')->orderBy('deleted_at')->limit(500)
+            ->get(['credvault_credentials.id', 'code', 'name', 'type', 'risk', 'vault', 'owner_id', 'deleted_at']);
 
         return [
             'days'          => $days,
             'branch_id'     => $branch,
             'total'         => $total,
-            'visible_total' => (clone $mine)->count(),
+            'visible_total' => $mine->count(),
             'items'         => $items->map(fn ($c) => [
                 'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk, 'vault' => $c->vault,
                 'deleted_at' => $c->deleted_at->toIso8601String(), 'days_in_bin' => (int) $c->deleted_at->diffInDays(now()),
+                'in_my_bin' => isset($mine[$c->id]),
+                'owner' => $c->owner_id === $u->id ? 'You' : $c->owner?->name,
             ])->values(),
         ];
     }
@@ -3460,7 +3466,9 @@ class CredVaultController extends Controller
             $c->saveQuietly();
 
             if ($creating) {
-                $this->audit($u, 'create', $c, "{$def['label']} credential added");
+                // CS-1479: a bulk import logs one "importx" summary entry, not a per-row
+                // "credential added" — so the activity log shows the import as one bulk entry.
+                if (!$this->importing) $this->audit($u, 'create', $c, "{$def['label']} credential added");
             } else {
                 $what = array_keys(array_diff_assoc(array_map('strval', $dirtyBefore), array_map('strval', [
                     'name' => $c->name, 'risk' => $c->risk, 'scope' => $c->scope, 'rotation_days' => $c->rotation_days, 'twofa' => $c->twofa,
