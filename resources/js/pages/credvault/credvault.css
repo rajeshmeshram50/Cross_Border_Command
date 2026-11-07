@@ -8233,6 +8233,80 @@
   border: 1px solid rgba(255, 255, 255, .3);
 }
 
+/* Score card: passed / failed and the attention breakdown (Password Health only) */
+.cvx .phx-score .phx-score__t .phx-pf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10.5px;
+}
+
+.cvx .phx-score .phx-score__t .phx-pf span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.cvx .phx-score .phx-score__t .phx-pf b {
+  font-size: 11.5px;
+  letter-spacing: 0;
+}
+
+.cvx .phx-score .phx-score__t .phx-pf .is-pass {
+  background: rgba(16, 185, 129, .28);
+  border: 1px solid rgba(110, 231, 183, .55);
+}
+
+.cvx .phx-score .phx-score__t .phx-pf .is-fail {
+  background: rgba(244, 63, 94, .26);
+  border: 1px solid rgba(253, 164, 175, .55);
+}
+
+.cvx .phx-score .phx-score__t .phx-pf i {
+  font-style: normal;
+  opacity: .8;
+}
+
+.cvx .phx-score .phx-score__t .phx-att {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.cvx .phx-score .phx-score__t .phx-att button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: inherit;
+  background: rgba(255, 255, 255, .1);
+  border: 1px solid rgba(255, 255, 255, .24);
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.cvx .phx-score .phx-score__t .phx-att button b {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: inherit;
+}
+
+.cvx .phx-score .phx-score__t .phx-att button:hover,
+.cvx .phx-score .phx-score__t .phx-att button.is-on {
+  background: rgba(255, 255, 255, .28);
+}
+
 .cvx .phx-card {
   --c1: #0e7490;
   --c2: #22d3ee;

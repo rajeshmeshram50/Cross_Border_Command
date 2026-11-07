@@ -1210,7 +1210,6 @@ class CredVaultController extends Controller
 
         $creds  = $this->healthScope($u);
         $issues = collect($this->healthIssues($creds, $pol, $u));
-        $risky  = $issues->pluck('credential.id')->unique();
 
         $tabs = ['all' => $issues->count()];
         foreach (['weak', 'reused', 'twofa', 'rotation', 'shared'] as $t) $tabs[$t] = $issues->where('type', $t)->count();
@@ -1257,34 +1256,171 @@ class CredVaultController extends Controller
             $meta = ['current_page' => $pg, 'per_page' => $per, 'total' => $list->count(), 'last_page' => max(1, (int) ceil($list->count() / $per))];
         }
 
-        $total   = $creds->count();
-        $healthy = $total - $risky->count();
-        $score   = $total ? (int) round($healthy / $total * 100) : 100;
-        $pct     = fn ($n, $of) => $of ? (int) round($n / $of * 100) : 0;
-
         return response()->json([
             'status'  => true,
-            'summary' => [
-                'score'           => $score,
-                'level'           => $score >= 80 ? 'Good' : ($score >= 60 ? 'Fair' : 'At risk'),
-                'checked'         => $total,
-                'with_passwords'  => $creds->where('has_password', true)->count(),
-                'open_issues'     => $issues->count(),
-                'at_risk'         => $risky->count(),
-                'critical_issues' => $issues->where('severity', 'critical')->count(),
-                // "Strong & safe": credentials with no open issue.
-                'safe'            => $healthy,
-                'pct'             => [
-                    'with_passwords'  => $pct($creds->where('has_password', true)->count(), $total),
-                    'at_risk'         => $pct($risky->count(), $total),
-                    'critical_issues' => $pct($issues->where('severity', 'critical')->count(), $issues->count()),
-                    'safe'            => $pct($healthy, $total),
-                ],
-            ],
+            'summary' => $this->healthSummary($creds, $issues, $pol),
             'data'    => $data,
             'tabs'    => $tabs,
             'meta'    => $meta,
         ], 200);
+    }
+
+    /**
+     * GET /credvault/health/summary — the score card and the five issue cards
+     * alone, without the list: how many credentials passed and failed, and of
+     * the failed ("need attention") how many are weak, reused, missing 2FA,
+     * rotation due and over-shared.
+     */
+    public function healthSummaryView(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $pol = Policy::for($u->client_id);
+        $creds = $this->healthScope($u);
+
+        return response()->json(['status' => true, 'data' => $this->healthSummary($creds, collect($this->healthIssues($creds, $pol, $u)), $pol)], 200);
+    }
+
+    /**
+     * GET /credvault/health/attention?type=all|weak|reused|twofa|rotation|shared&q=&page=&per_page=
+     *
+     * The credentials that need attention — one row per credential (the list
+     * on /health is one row per issue), each with every issue it has. type
+     * keeps the credentials with that issue; counts are per credential.
+     */
+    public function healthAttention(Request $request)
+    {
+        $u = $this->tenantUser($request);
+        $f = $request->validate($this->listRules(array_merge(['all'], self::HEALTH_TYPES)));
+        $pol = Policy::for($u->client_id);
+        $creds = $this->healthScope($u);
+        $issues = collect($this->healthIssues($creds, $pol, $u));
+
+        $rows = $issues->groupBy('credential.id')->map(function (Collection $list) {
+            $types = $list->pluck('type')->unique()->values()->all();
+            $sev = $list->pluck('severity')->sortBy(fn ($s) => self::SEVERITY_RANK[$s] ?? 9)->first();
+            return [
+                'credential'  => $list->first()['credential'],
+                'can_fix'     => $list->first()['can_fix'],
+                'issue_count' => $list->count(),
+                'types'       => $types,
+                'severity'    => $sev,
+                'issues'      => $list->map(fn ($i) => array_intersect_key($i, array_flip(['type', 'severity', 'issue', 'detail', 'details', 'action'])))->values()->all(),
+            ];
+        })->sortBy(fn ($r) => [self::SEVERITY_RANK[$r['severity']] ?? 9, -$r['issue_count'], $r['credential']['code']])->values();
+
+        $counts = ['all' => $rows->count()];
+        foreach (self::HEALTH_TYPES as $t) $counts[$t] = $rows->filter(fn ($r) => in_array($t, $r['types'], true))->count();
+
+        $tab  = $f['tab'] ?? 'all';
+        $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
+        $list = $rows->when($tab !== 'all', fn ($c) => $c->filter(fn ($r) => in_array($tab, $r['types'], true)))
+            ->when($term !== '', fn ($c) => $c->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
+                $r['credential']['code'], $r['credential']['name'], $r['credential']['type_label'], $r['credential']['owner'],
+                implode(' ', array_column($r['issues'], 'issue')),
+            ])), $term)))
+            ->values();
+        $per = $f['per_page'] ?? self::PAGE_SIZE;
+        $pg  = $f['page'] ?? 1;
+
+        return response()->json([
+            'status' => true,
+            'data'   => $list->slice(($pg - 1) * $per, $per)->values(),
+            'tabs'   => $counts,
+            'meta'   => ['current_page' => $pg, 'per_page' => $per, 'total' => $list->count(), 'last_page' => max(1, (int) ceil($list->count() / $per))],
+        ], 200);
+    }
+
+    protected const HEALTH_TYPES = ['weak', 'reused', 'twofa', 'rotation', 'shared'];
+    protected const SEVERITY_RANK = ['critical' => 0, 'high' => 1, 'medium' => 2];
+
+    /**
+     * The score card and the five cards. Passed = a credential with no open
+     * issue, failed = one with at least one ("need attention"). Each type is
+     * counted per credential and out of the credentials that check applies to:
+     *   weak, reused   — credentials with a password
+     *   twofa          — credentials whose risk level the policy requires 2FA for (2FA not "N/A")
+     *   rotation       — credentials with a password and a rotation period
+     *   shared         — every credential checked
+     * A credential can fail several checks, so the five add up to more than
+     * `failed`; `attention.multiple` is how many fail more than one.
+     */
+    protected function healthSummary(Collection $creds, Collection $issues, array $pol): array
+    {
+        $total   = $creds->count();
+        $risky   = $issues->pluck('credential.id')->unique();
+        $failed  = $risky->count();
+        $passed  = $total - $failed;
+        $score   = $total ? (int) round($passed / $total * 100) : 100;
+        $pct     = fn ($n, $of) => $of ? (int) round($n / $of * 100) : 0;
+        $withPw  = $creds->where('has_password', true);
+        $of = [
+            'weak'     => $withPw->count(),
+            'reused'   => $withPw->count(),
+            'twofa'    => $creds->filter(fn ($c) => $c->twofa !== 'na' && in_array($c->risk, $pol['twofa_risks'], true))->count(),
+            'rotation' => $withPw->filter(fn ($c) => (int) $c->rotation_days > 0)->count(),
+            'shared'   => $total,
+        ];
+        $card = [
+            'weak'     => ['Weak passwords', 'passwords below policy'],
+            'reused'   => ['Reused passwords', 'share a password'],
+            'twofa'    => ['Missing 2FA', 'credentials that need 2FA have it off'],
+            'rotation' => ['Rotation due', 'passwords past or near policy age'],
+            'shared'   => ['Over-shared', 'credentials shared too widely'],
+        ];
+        $perCred = $issues->groupBy('credential.id')->map(fn ($l) => $l->pluck('type')->unique()->count());
+
+        $cards = [];
+        foreach (self::HEALTH_TYPES as $t) {
+            $ofType = $issues->where('type', $t);
+            $n = $ofType->pluck('credential.id')->unique()->count();
+            $cards[$t] = [
+                'key' => $t, 'label' => $card[$t][0],
+                'failed'      => $n,
+                'passed'      => max(0, $of[$t] - $n),
+                'of'          => $of[$t],
+                'pct'         => $pct($n, $of[$t]),
+                'issues'      => $ofType->count(),
+                'critical'    => $ofType->where('severity', 'critical')->count(),
+                'sub'         => "{$n} of {$of[$t]} {$card[$t][1]}",
+                // Share of the credentials that need attention.
+                'pct_of_attention' => $pct($n, $failed),
+            ];
+        }
+
+        return [
+            'score'           => $score,
+            'level'           => $score >= 80 ? 'Good' : ($score >= 60 ? 'Fair' : 'At risk'),
+            'checked'         => $total,
+            'total'           => $total,
+            'passed'          => $passed,
+            'failed'          => $failed,
+            'with_passwords'  => $withPw->count(),
+            'open_issues'     => $issues->count(),
+            'at_risk'         => $failed,
+            'critical_issues' => $issues->where('severity', 'critical')->count(),
+            // "Strong & safe": credentials with no open issue.
+            'safe'            => $passed,
+            'pct'             => [
+                'passed'          => $pct($passed, $total),
+                'failed'          => $pct($failed, $total),
+                'with_passwords'  => $pct($withPw->count(), $total),
+                'at_risk'         => $pct($failed, $total),
+                'critical_issues' => $pct($issues->where('severity', 'critical')->count(), $issues->count()),
+                'safe'            => $pct($passed, $total),
+            ],
+            'attention'       => [
+                'total'      => $failed,
+                'issues'     => $issues->count(),
+                'single'     => $perCred->filter(fn ($n) => $n === 1)->count(),
+                'multiple'   => $perCred->filter(fn ($n) => $n > 1)->count(),
+                'by_type'    => collect($cards)->mapWithKeys(fn ($c, $t) => [$t => $c['failed']])->all(),
+                'label'      => "{$failed} need attention",
+                'note'       => $failed && $perCred->filter(fn ($n) => $n > 1)->count()
+                    ? 'A credential can have more than one issue, so the five counts add up to more than ' . $failed . '.'
+                    : null,
+            ],
+            'cards'           => array_values($cards),
+        ];
     }
 
     /* ═════════════════════════════ POLICIES ═════════════════════════════ */

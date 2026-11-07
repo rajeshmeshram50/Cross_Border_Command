@@ -535,6 +535,74 @@ PUT /recycle-bin/retention { "days": 7, "confirm_purge": true }   (Branch Admin)
 
 ---
 
+### Password Health — score card, the five cards, need attention
+
+**Collection:** `docs/CredVault_PasswordHealth.postman_collection.json` (Postman name "Password Health — score card & cards").
+**Code:** `CredVaultController::healthSummary()` (the numbers), `healthSummaryView()`, `healthAttention()`; screen `health/PasswordHealth.tsx`.
+
+**Which credentials are checked:** the ones you own, administer or that are your team's (Vault Admin: every team credential of the company; Branch Admin: the branch's; manager / HOD: their reporting line). Credentials only shared with you are not checked: you cannot fix them.
+
+| # | API | Screen | Returns |
+|---|---|---|---|
+| 1 | `GET /credvault/health/summary` | Score card + the five cards | `data`: the summary below |
+| 2 | `GET /credvault/health/attention?tab=all\|weak\|reused\|twofa\|rotation\|shared&q=&page=&per_page=` | The credentials behind "N need attention" | one row per failing credential, with all its issues; `tabs` (counts per credential), `meta` |
+| 3 | `GET /credvault/health?tab=…` | The issue list | one row per issue; its `summary` is the same as #1 |
+
+#### Score card
+
+| Field | Meaning | On screen |
+|---|---|---|
+| `total` (also `checked`) | credentials checked | "of 53" |
+| `passed` (also `safe`) | credentials with **no** open issue | "35 of 53 credentials are healthy" · **✔ 35 passed** |
+| `failed` (also `at_risk`) | credentials with **at least one** issue | **✘ 18 failed** · "18 need attention" |
+| `score` | passed ÷ total × 100 (100 when nothing is checked) | the ring, "66/100" |
+| `level` | Good (80+) · Fair (60–79) · At risk (under 60) | "Fair" |
+| `pct.passed`, `pct.failed` | percentages of total | |
+| `open_issues` | issues in all (a credential with two issues counts twice) | |
+| `attention.by_type` | of the failed credentials: how many are `weak`, `reused`, `twofa`, `rotation`, `shared` | the chips under "18 need attention": Weak 4 · Reused 4 · Missing 2FA 9 · Rotation due 6 · Over-shared 1 (each chip filters the list) |
+| `attention.single` / `attention.multiple` | failing one check / more than one; **single + multiple = failed** | |
+| `attention.note` | why the five add up to more than `failed` | chip tooltip |
+
+**Why 4 + 4 + 9 + 6 + 1 = 24 and not 18:** one credential can fail several checks (for example a weak password **and** 2FA off). It counts once in `failed` and once in each check it fails. `attention.multiple` says how many credentials do that.
+
+#### The five cards (`cards[]`, in screen order)
+
+| Card | `key` | `failed` (the big number) | `of` — out of | `sub` (the line) |
+|---|---|---|---|---|
+| Weak passwords | `weak` | credentials whose strength is below the policy minimum | credentials with a password | "4 of 34 passwords below policy" |
+| Reused passwords | `reused` | credentials sharing a password with another checked credential | credentials with a password | "4 of 34 share a password" |
+| Missing 2FA | `twofa` | 2FA off on a credential the policy needs it for | credentials at a risk level in Policies → "Two-factor authentication required for", 2FA not N/A | "9 of 29 credentials that need 2FA have it off" |
+| Rotation due | `rotation` | overdue, or due within the warning days | credentials with a password and a rotation period | "6 of 34 passwords past or near policy age" |
+| Over-shared | `shared` | live shares at or over the limit, or Full Access on a critical credential | every credential checked | "1 of 53 credentials shared too widely" |
+
+Each card also has: `passed` (= of − failed), `pct` (failed ÷ of), `issues` (that type's issue rows = its tab count on `/health`), `critical` (of those, critical), `pct_of_attention` (failed ÷ the credentials that need attention).
+
+#### Need attention — `GET /health/attention`
+
+- **Row:** `credential` (id, code, name, type, type_label, owner, scope, url, strength…), `can_fix`, `issue_count`, `types[]`, `severity` (its worst issue), `issues[]` (type, severity, issue, detail, details, action).
+- **Order:** worst severity first, then the most issues, then the credential ID.
+- **Tabs:** `all` = summary `failed`; one count per type = `attention.by_type`.
+- **Search** (`q`): credential ID, name, type, owner and issue text.
+- **Paging:** `page`, `per_page`.
+- **Refusals:** unknown `tab` → 422; no sign-in → 401.
+
+#### Tested (07/11/2026)
+
+- **Suite `cv_health_cards.php`, 64 / 64.** 8 known credentials were added for one employee: one healthy, one weak, two reused with each other, one 2FA off, one rotation overdue, one over-shared (3 shares) and one weak **and** 2FA off. Checked exactly:
+  - total +8, failed +7, passed +1; passed + failed = total;
+  - by_type weak +2 · reused +2 · twofa +2 · rotation +1 · shared +1, and each equals its card;
+  - multiple +1, single +6, single + multiple = failed; open issues +8;
+  - each card's `of`, `passed + failed = of`, `pct` and the "N of M" line; score and level;
+  - `/health/attention`: the 7 failing credentials (not the healthy one), the double-issue row, the reused pair named, severity = worst issue, every type tab = its card, paging 3 / 3 / 1, search;
+  - `/health` returns the same summary, and its tabs equal each card's issues;
+  - a peer does not see the employee's personal credentials;
+  - the same totals hold for the Vault Admin, the Branch Admin, a manager and two employees;
+  - fixing the weak password moves it to passed; fixing one of two issues keeps the credential in failed.
+- **Collection, 17 / 17 requests, 50 Postman tests** (the 3 logins are done in-process), inside a transaction that was rolled back.
+- **Endpoint sweep:** both new endpoints answer for the Vault Admin, the Branch Admin and an employee (108 / 108, 0 server errors).
+
+---
+
 ## 3. The 25 types — payload of each create
 
 The same fields in both vaults, under `fields[…]`. The columns:
