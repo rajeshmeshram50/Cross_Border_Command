@@ -55,8 +55,6 @@ const RING = 2 * Math.PI * 34;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 
-/** The attention breakdown on the score card: of the credentials that failed, how many have each issue. */
-const ATT: [string, string][] = [['weak', 'Weak'], ['reused', 'Reused'], ['twofa', 'Missing 2FA'], ['rotation', 'Rotation due'], ['shared', 'Over-shared']];
 const FILTER_ICO = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
 const CLEAR_ICO = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
 
@@ -72,7 +70,6 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
   const pctOf = (n: number, of: number) => (of ? Math.round(n / of * 100) : 0);
   // The API's per-card numbers (GET /health/summary · cards): credentials failing the check, out of those it applies to.
   const api = (k: string) => ((s?.cards ?? []) as Loose[]).find(c => c.key === k);
-  const by = (s?.attention?.by_type ?? {}) as Record<string, number>;
   const card = (cls: string, ico: string, k: string, l: string, sub: (n: number) => string, fallbackOf: number) => {
     const c = api(k);
     const value = s ? num(c ? c.failed : tabs[k] ?? 0) : 0;
@@ -111,24 +108,7 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
           <small>Vault health score</small>
           <b>{level[0]}</b>
           <span>{s ? `${num(s.passed ?? s.safe)} of ${num(s.total ?? s.checked)} credentials are healthy` : 'Checking your credentials…'}</span>
-          {s && (
-            <div className="phx-pf" aria-label="Passed and failed">
-              <span className="is-pass"><Svg d={PH_I.fixed} size={11} /><b>{num(s.passed ?? s.safe)}</b> passed</span>
-              <span className="is-fail"><Svg d={CLEAR_ICO} size={11} /><b>{num(s.failed ?? s.at_risk)}</b> failed</span>
-              <i>of {num(s.total ?? s.checked)}</i>
-            </div>
-          )}
           <em><Svg d={PH_I.weak} size={11} />{s ? `${num(s.failed ?? s.at_risk)} need attention` : '…'}</em>
-          {s && num(s.failed ?? s.at_risk) > 0 && (
-            <div className="phx-att" title={s.attention?.note ?? undefined}>
-              {ATT.map(([k, l]) => (
-                <button key={k} type="button" data-h40="skip" className={active === k ? 'is-on' : ''} onClick={() => onPick(k)}
-                  title={active === k ? 'Clear filter — show all issues' : `${num(by[k] ?? tabs[k])} of the ${num(s.failed)} need attention: ${l}`}>
-                  <Svg d={PH_I[k]} size={10} />{l}<b>{num(by[k] ?? tabs[k] ?? 0)}</b>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
       {card('teal', PH_I.weak, 'weak', 'Weak passwords', n => `${n} of ${pwN} passwords below policy`, pwN)}
