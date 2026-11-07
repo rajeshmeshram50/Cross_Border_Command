@@ -12,6 +12,8 @@ export interface Warehouse {
   cardName?: string;
   cardUrl?: string;
   zones?: number;
+  /** Sq. Ft the zones already claim — the floor an edit may not go below. */
+  zonesArea?: number;
   racks?: number;
   id: string;
   date: string;
@@ -76,6 +78,7 @@ type WarehouseRow = {
   card_name: string | null;
   card_url: string | null;
   zones_count: number | null;
+  zones_area_sqft?: number | null;
   racks_count: number | null;
   status: number;
   created_at: string | null;
@@ -118,6 +121,7 @@ const toWarehouse = (r: WarehouseRow): Warehouse => ({
   cardName: r.card_name ?? '',
   cardUrl: r.card_url ?? '',
   zones: Number(r.zones_count ?? 0),
+  zonesArea: Number(r.zones_area_sqft ?? 0),
   racks: Number(r.racks_count ?? 0),
   id: r.wh_code || `WH-${String(r.id).padStart(3, '0')}`,
   date: r.created_at ?? '',

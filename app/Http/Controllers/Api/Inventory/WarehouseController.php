@@ -145,6 +145,8 @@ class WarehouseController extends BaseInventoryController
             $warehouse = $this->ownedQuery(Warehouse::query(), $user)
                 ->with(['country:id,name', 'state:id,name'])
                 ->withCount(['zones', 'racks'])
+                // The edit form's floor for the area (CS-939).
+                ->withSum('zones', 'area_sqft')
                 ->findOrFail($id);
 
             $body = $this->row($warehouse) + [
@@ -212,6 +214,7 @@ class WarehouseController extends BaseInventoryController
             $this->guardName($data['wh_name'], $user, $warehouse->branch_id, $warehouse->id);
             $this->guardEmail($data['contact_email'], $user, $warehouse->id);
             $this->guardSettled($warehouse, $data);
+            $this->guardArea($warehouse, $data);
 
             $warehouse->fill($data);
             $warehouse->updated_by = $user->id;
@@ -423,16 +426,15 @@ class WarehouseController extends BaseInventoryController
     /**
      * What a warehouse may no longer change once zones have been built in it.
      *
-     * A zone is allocated AGAINST the warehouse's area — the zone form offers
-     * only what is still free — so shrinking the warehouse afterwards leaves
-     * every zone over-committed and the free figure pinned at nothing. And the
-     * address is not a label: the goods are physically in that city, under that
-     * state's tax code, and the stock does not move because someone edited a
-     * dropdown.
+     * The address is not a label: the goods are physically in that city, under
+     * that state's tax code, and the stock does not move because someone edited
+     * a dropdown. And Own ↔ 3PL would leave the zones under a site that has none.
      *
-     * So the moment the first zone exists these four settle. Everything else —
-     * the name, the contact, the business card, the map link, the status —
-     * stays editable, because none of it is load-bearing.
+     * So the moment the first zone exists these settle. The AREA does not
+     * (CS-939): a site that grows, or was keyed in short, must be correctable —
+     * guardArea() only stops it going below what the zones already claim.
+     * Everything else — the name, the contact, the business card, the map
+     * link, the status — stays editable, because none of it is load-bearing.
      *
      * An EMPTY warehouse is untouched by this: nothing has been built on the
      * old figures, so there is nothing to contradict.
@@ -442,12 +444,6 @@ class WarehouseController extends BaseInventoryController
         if (!$warehouse->zones()->exists()) return;
 
         $changed = [];
-
-        // Compared as a number: '48000' and 48000.0 are the same area.
-        if (array_key_exists('area_sqft', $d)
-            && round((float) $d['area_sqft'], 2) !== round((float) $warehouse->area_sqft, 2)) {
-            $changed[] = 'Warehouse Area';
-        }
 
         // Own ↔ 3PL: a 3PL has nothing beneath it, and zones are already built here.
         if (array_key_exists('wh_type', $d) && $d['wh_type'] !== $warehouse->wh_type) {
@@ -480,6 +476,31 @@ class WarehouseController extends BaseInventoryController
                 . $count . ' zone' . ($count === 1 ? ' is' : 's are') . ' already allocated against it.'
                 . ' Remove the zones first, or raise a new warehouse.',
             'errors'  => ['locked' => $changed],
+        ], 422));
+    }
+
+    /**
+     * The area may move, but never below what the zones already claim — a zone
+     * is allocated AGAINST it, so a smaller figure would leave the zones
+     * over-committed and the free area pinned at nothing (CS-939). Same sum as
+     * InventoryMasterService::freeWarehouseAreaSqft(), so the two agree on what
+     * "allocated" means. The row lock in update() keeps a zone saved meanwhile
+     * from slipping past this.
+     */
+    private function guardArea(Warehouse $warehouse, array $d): void
+    {
+        if (!array_key_exists('area_sqft', $d)) return;
+
+        $allocated = round((float) Zone::where('warehouse_id', $warehouse->id)->sum('area_sqft'), 2);
+        if ($allocated <= 0 || round((float) $d['area_sqft'], 2) >= $allocated) return;
+
+        $count = $warehouse->zones()->count();
+
+        abort(response()->json([
+            'status'  => false,
+            'message' => 'Warehouse Area cannot be less than ' . number_format($allocated, 2) . ' Sq. Ft — '
+                . $count . ' zone' . ($count === 1 ? ' is' : 's are') . ' already allocated that much of it.',
+            'errors'  => ['area_sqft' => ['Warehouse Area cannot be less than the ' . number_format($allocated, 2) . ' Sq. Ft already allocated to zones.']],
         ], 422));
     }
 
