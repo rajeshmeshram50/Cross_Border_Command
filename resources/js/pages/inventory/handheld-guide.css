@@ -166,7 +166,7 @@
 .hhg-toast b { display: block; font-size: 13.5px; font-weight: 700; }
 .hhg-toast small { font-size: 11.5px; opacity: .88; }
 
-.hhg-banner { background: #fdf0d5; border: 1px solid #e8c88a; border-radius: 10px; padding: 9px 11px; font-size: 11.5px; color: #7a4e07; }
+.hhg-banner { background: #fdf0d5; border: 1px solid #e8c88a; border-radius: 10px; padding: 9px 11px; font-size: 11.5px; font-weight: 600; color: #1a1205; }
 
 /* ── Scan field ────────────────────────────────────────────────────────── */
 .hhg-flabel { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
@@ -214,7 +214,7 @@
   height: 50px; border-radius: 10px; background: #0f6e70; color: #fff;
   font-size: 15.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px;
 }
-.hhg-ghost { height: 40px; color: #64798a; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.hhg-ghost { height: 44px; color: #0f1f2b; background: #e9eef0; border: 1px solid #d7e0e3; border-radius: 10px; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
 /* Put-away completed — green success state (screen 7) */
 .hhg-toast--done { background: #16a34a; }

@@ -119,11 +119,11 @@
 
 .pwscan-prompt.is-done { border-color: var(--pw-ok); color: var(--pw-ok); }
 
-/* No-task lookup: an amber notice above the read-only box details. */
+/* No-task lookup: an amber notice (dark text) above the read-only box details. */
 .pwscan-notice {
     margin: 12px 12px 10px; padding: 11px 12px; border-radius: 10px;
-    font-size: 13px; line-height: 1.4;
-    background: rgba(245, 158, 11, .12); border: 1px solid rgba(245, 158, 11, .4); color: #f3c178;
+    font-size: 13px; line-height: 1.4; font-weight: 600;
+    background: #fdf0d5; border: 1px solid #e8c88a; color: #1a1205;
 }
 
 .pwscan-staged {
@@ -1126,11 +1126,14 @@
 .pws2-primary:disabled { opacity: .55; }
 .pws2-ghost {
     display: flex; align-items: center; justify-content: center; gap: 7px;
-    width: 100%; height: 40px;
-    border: 0; background: transparent; color: var(--pw-mute);
+    width: 100%; height: 44px;
+    border: 1px solid var(--pw-line); border-radius: 10px;
+    background: var(--pw-bg); color: var(--pw-text);
     font-family: inherit; font-size: 13.5px; font-weight: 700;
     cursor: pointer;
 }
+.pws2-ghost:active { background: var(--pw-line); }
+.pws2-ghost:disabled { opacity: .55; }
 
 /* ── Pending-tasks sheet ──────────────────────────────────────────────── */
 .pws2-scrim {
