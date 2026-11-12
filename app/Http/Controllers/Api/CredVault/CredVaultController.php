@@ -3855,13 +3855,14 @@ class CredVaultController extends Controller
 
         $byHash = $creds->filter(fn ($c) => $c->has_password && $c->secret_hash)->groupBy('secret_hash');
         $shares = $this->shareBreakdown($creds->pluck('id')->all());
+        $exposure = $this->exposureSinceReset($creds);
 
         $out = [];
         foreach ($creds as $c) {
             $others = $c->has_password && $c->secret_hash
                 ? $byHash[$c->secret_hash]->where('id', '!=', $c->id)->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->values()->all()
                 : [];
-            foreach ($this->issuesOf($c, $pol, $others, $shares[$c->id] ?? []) as $i) {
+            foreach ($this->issuesOf($c, $pol, $others, $shares[$c->id] ?? [], $exposure[$c->id] ?? 0) as $i) {
                 $out[] = $i + [
                     'credential' => $this->issueCredential($c),
                     // Fixing means editing; a team member's copy access cannot.
@@ -3905,14 +3906,14 @@ class CredVaultController extends Controller
                 ->limit(10)->get(['id', 'code', 'name'])->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->all()
             : [];
 
-        return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? []);
+        return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? [], $this->exposureSinceReset(collect([$c]))[$c->id] ?? 0);
     }
 
     /**
      * The prototype's six checks (phIssues), with its wording. `detail` is the
      * one-line text; `details` the parts the Details column draws.
      */
-    protected function issuesOf(Credential $c, array $pol, array $reusedWith, array $shares): array
+    protected function issuesOf(Credential $c, array $pol, array $reusedWith, array $shares, int $exposed = 0): array
     {
         $crit = $c->risk === 'critical';
         $out  = [];
@@ -3950,13 +3951,18 @@ class CredVaultController extends Controller
                 'action' => 'Rotate the password before the due date'];
         }
         $live = array_sum($shares);
-        if ($live >= $pol['overshare_limit'] || ($crit && ($shares['full'] ?? 0) > 0)) {
+        $exposed = max($exposed, $live);
+        if ($exposed >= $pol['overshare_limit'] || ($crit && ($shares['full'] ?? 0) > 0)) {
             $labels = ['use' => 'Use Only', 'view' => 'View', 'copy' => 'Copy', 'full' => 'Full Access'];
             $parts  = collect($labels)->filter(fn ($l, $k) => ($shares[$k] ?? 0) > 0)->map(fn ($l, $k) => $shares[$k] . ' ' . $l)->values()->all();
+            $reset  = $live < $pol['overshare_limit'] && !($crit && ($shares['full'] ?? 0) > 0);
             $out[] = ['type' => 'shared', 'severity' => $crit ? 'high' : 'medium', 'issue' => 'Shared too widely',
-                'detail' => "{$live} active shares" . ($parts ? ' · ' . implode(' · ', $parts) : ''),
-                'details' => ['active_shares' => $live, 'by_permission' => array_intersect_key($shares, $labels)],
-                'action' => 'Review and revoke access that is no longer needed'];
+                'detail' => "{$exposed} " . Str::plural('person', $exposed) . " had the password since it was last changed · {$live} active "
+                    . Str::plural('share', $live) . ($parts ? ' · ' . implode(' · ', $parts) : ''),
+                'details' => ['active_shares' => $live, 'exposed_since_reset' => $exposed, 'needs_reset' => $reset,
+                    'by_permission' => array_intersect_key($shares, $labels)],
+                'action' => $reset ? 'Change the password — people it was shared with may still know it'
+                    : 'Review and revoke access that is no longer needed'];
         }
 
         return $out;
@@ -3979,6 +3985,28 @@ class CredVaultController extends Controller
     protected function liveShareCounts(array $ids): array
     {
         return collect($this->shareBreakdown($ids))->map(fn ($p) => ['n' => array_sum($p), 'full' => $p['full'] ?? 0])->all();
+    }
+
+    /**
+     * [credential_id => recipients] who have had the password since it was last changed: a share still live, or
+     * revoked / expired after the change. Revoking does not unsee a password, so only a new password resets it.
+     */
+    protected function exposureSinceReset(Collection $creds): array
+    {
+        $ids = $creds->pluck('id')->all();
+        if (!$ids) return [];
+        $since = $creds->mapWithKeys(fn ($c) => [$c->id => $c->password_changed_at ?? $c->created_at]);
+
+        $out = [];
+        CredentialShare::whereIn('credential_id', $ids)
+            ->get(['credential_id', 'recipient_type', 'recipient_user_id', 'recipient_department_id', 'revoked_at', 'expires_at'])
+            ->each(function ($s) use (&$out, $since) {
+                $from = $since[$s->credential_id] ?? null;
+                if ($from && (($s->revoked_at && $s->revoked_at->lte($from)) || ($s->expires_at && $s->expires_at->lte($from)))) return;
+                $out[$s->credential_id][$s->recipient_type . ':' . ($s->recipient_user_id ?? $s->recipient_department_id)] = true;
+            });
+
+        return array_map('count', $out);
     }
 
     /** [credential_id => [permission => live shares]] in one query. */

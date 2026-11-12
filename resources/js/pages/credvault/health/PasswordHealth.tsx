@@ -206,7 +206,14 @@ function Detail({ x }: { x: HealthIssue }) {
   if (x.type === 'shared') {
     const by = (d.by_permission ?? {}) as Record<string, number>;
     const parts = Object.keys(PERM_LBL).filter(k => num(by[k]) > 0).map(k => `${by[k]} ${PERM_LBL[k]}`);
-    return <div className="ph-dl"><b>{num(d.active_shares)} active shares</b><small>{parts.join(' · ')}</small></div>;
+    const had = num(d.exposed_since_reset ?? d.active_shares);
+    const live = num(d.active_shares);
+    return (
+      <div className="ph-dl">
+        <b>{had} {had === 1 ? 'person' : 'people'} since the last password change</b>
+        <small>{live} active {live === 1 ? 'share' : 'shares'}{parts.length ? ` · ${parts.join(' · ')}` : ''}{d.needs_reset ? ' · revoked access still knows the password' : ''}</small>
+      </div>
+    );
   }
   return <div className="ph-dl"><small>{x.detail}</small></div>;
 }
@@ -274,7 +281,7 @@ export default function PasswordHealth() {
   };
 
   const fix = (x: HealthIssue) => {
-    if (x.type === 'shared') {
+    if (x.type === 'shared' && !(x.details as Loose)?.needs_reset) {
       // Shared By Me, filtered to this credential (its credential_id filter).
       navigate(`${CV_ROUTES.myVault}?tab=sharedby&credential_id=${x.credential.id}`);
       toast.info(`Showing who has access to ${x.credential.name}`, 'Revoke what is no longer needed.');
