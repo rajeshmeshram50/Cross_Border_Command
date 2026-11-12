@@ -297,7 +297,7 @@ export default function InventoryHandheldGuide() {
             <div className="hhg-phone-in">
               <div className="hhg-sysbar"><span>10:58</span><span>WH-PUNE-01 · 82%</span></div>
               <div className="hhg-appbar">
-                <span className="hhg-logo">K</span>
+                <span className="hhg-logo"><img src="/images/kryptone/k-mark.png" alt="Kryptone" /></span>
                 <span className="hhg-abt"><b>Scan &amp; Verify</b><small>TC27 · 2601352470</small></span>
                 <span className="hhg-bell"><i className="ri-list-check-2" /><em>6</em></span>
               </div>

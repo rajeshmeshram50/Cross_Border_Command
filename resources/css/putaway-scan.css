@@ -952,10 +952,10 @@
 .pws2-logo {
     display: inline-flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; flex-shrink: 0;
-    border-radius: 9px;
-    background: #fff; color: var(--pw-teal);
-    font-size: 17px; font-weight: 800;
+    border-radius: 9px; overflow: hidden;
+    background: #0b0f1a;
 }
+.pws2-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pws2-appbar-t { flex: 1 1 auto; min-width: 0; line-height: 1.15; }
 .pws2-appbar-t b { display: block; font-size: 15.5px; font-weight: 800; }
 .pws2-appbar-t small { display: block; font-size: 10.5px; opacity: .85; text-transform: uppercase; letter-spacing: .04em; }

@@ -1431,7 +1431,7 @@ function AppBar({ device, count, onPending }: {
 }) {
   return (
     <header className="pws2-appbar">
-      <span className="pws2-logo">K</span>
+      <span className="pws2-logo"><img src="/images/kryptone/k-mark.png" alt="Kryptone" /></span>
       <span className="pws2-appbar-t">
         <b>Scan &amp; Verify</b>
         <small>{device.label} · {device.serial}</small>
