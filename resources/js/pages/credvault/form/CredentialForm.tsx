@@ -863,7 +863,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (ex.recovery_key && check('recovery_key') && rkey.trim() && rkey.trim().length < 4) errs.recovery_key = 'The recovery key looks too short';
     if (isPw && T.sec) {
       const pw = vals[T.sec] ?? '';
-      if (pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
+      if (inCritical && pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
     }
     if (canProtect && scope === 'team' && !deptId) {
       toast.warning('Pick a team in Team Vault first', 'A team credential needs a department — open that team in Team Vault and add it there.');
