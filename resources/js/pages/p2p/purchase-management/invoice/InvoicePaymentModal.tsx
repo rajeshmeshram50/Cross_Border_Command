@@ -167,7 +167,13 @@ export default function InvoicePaymentModal({
 
   const approvedRequest = request.status === 'approved';
   const paidHere = releases.reduce((n, r) => n + r.amount, 0);
-  const room = approvedRequest ? Math.max(0, request.approved - paidHere) : 0;
+  // Rounded to paise: float sums left a 0.00x remainder that read as ₹0 but kept Add New Payment live (CS-563).
+  const room = approvedRequest ? Math.max(0, Math.round((request.approved - paidHere) * 100) / 100) : 0;
+  /* CS-563 — nothing more can be released once the invoice itself shows a ₹0
+     balance, whatever is left on this one request. Only adding is blocked:
+     an existing payment can still be corrected. */
+  const docClosed = Math.round(balance * 100) / 100 <= 0;
+  const canAddPayment = approvedRequest && room > 0 && !docClosed;
   const settled = approvedRequest && request.approved > 0 && room <= 0;
   const canEdit = approvedRequest;
   /* CS-932 — how far THIS request has been paid, as on the PO's Make Payment
@@ -304,12 +310,14 @@ export default function InvoicePaymentModal({
               <button
                 type="button"
                 className="cpay-add"
-                disabled={!approvedRequest || room <= 0}
+                disabled={!canAddPayment}
                 onClick={() => setForm(true)}
                 title={!approvedRequest
                   ? (request.status === 'pending'
                     ? 'This request is still awaiting approval — pay once it is approved'
                     : 'This request was declined — nothing can be paid against it')
+                  : docClosed && room > 0
+                    ? 'This invoice is paid in full — its balance is ₹0, nothing more can be released'
                   : room > 0
                     ? 'Record a payment against this request'
                     : 'Fully released — nothing left approved on this request'}

@@ -173,7 +173,8 @@ export default function MakePoPaymentModal({
   const approvedRequest = requestStatus === 'approved';
   const released = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const paidOnRequest = alreadyPaid + released;
-  const room = Math.max(0, approved - paidOnRequest);
+  // Rounded to paise: float sums left a 0.00x remainder that read as ₹0 but kept Add New Payment live (CS-563).
+  const room = Math.max(0, Math.round((approved - paidOnRequest) * 100) / 100);
   /* CS-423 — this is how far THIS request has been paid, so a request settled in full
      reads 100%. Before approval there is nothing to pay against, so it stays at 0. */
   const pct = approved > 0 ? Math.min(100, Math.round((paidOnRequest / approved) * 1000) / 10) : 0;
@@ -185,6 +186,11 @@ export default function MakePoPaymentModal({
   // The row carries the PO's stored paid / balance, which already include these payments.
   const poPaid = row.paid;
   const poBalance = Math.max(0, row.balance);
+  /* CS-563 — nothing more can be released once the PO itself shows a ₹0
+     balance, whatever is left on this one request. Only adding is blocked:
+     an existing payment can still be corrected. */
+  const poClosed = Math.round(poBalance * 100) / 100 <= 0;
+  const canAddPayment = !readOnly && room > 0 && !poClosed;
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -288,12 +294,14 @@ export default function MakePoPaymentModal({
               <button
                 type="button"
                 className="cpay-add"
-                disabled={readOnly || room <= 0}
+                disabled={!canAddPayment}
                 onClick={() => setAdding(true)}
                 title={!approvedRequest
                   ? (requestStatus === 'pending'
                     ? 'This request is still awaiting approval — pay once it is approved'
                     : 'This request was declined — nothing can be paid against it')
+                  : poClosed && room > 0
+                    ? 'This PO is paid in full — its balance is ₹0, nothing more can be released'
                   : room > 0
                     ? 'Record a payment against this request'
                     : 'Fully released — nothing left approved on this request'}
