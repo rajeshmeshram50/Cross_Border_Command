@@ -18,6 +18,8 @@ DirectSpiSupplierPicker.tsx supplier picker (domestic)
 StorageSelectionModal.tsx  storage-type → warehouse → confirm gate
 WarehouseFixModal.tsx      "warehouse can't hold these boxes" switch
 InvoiceForm.tsx            the 4-stage wizard shell
+InvoiceEvidenceVault.tsx   the invoice Evidence Vault modal (row action)
+spi-api.ts                 Axios layer; spiVaultApi (vault + authed file stream), VaultDocument/EvidenceVault types
 steps.tsx                  stage labels + list-page marketing steps
 steps/
   Step1SupplierDetails.tsx
@@ -29,6 +31,8 @@ steps/
 ```
 The separate **handheld** screen: `resources/js/pages/p2p/putaway/PutawayScan.tsx` (routes `/putaway-scan`, `/putaway-scan/:taskId`, `/putaway-scan/s/:scanKey`).
 
+The **supplier** Evidence Vault (Stage-1 Legal Status link) is a different screen: `resources/js/pages/p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal.tsx` → `/segment-uploads/supplier/{id}/vault`. Don't confuse it with the invoice vault.
+
 ### Backend — `app/Http/Controllers/Api/P2p/`
 ```
 SupplierInvoiceController.php     stages 1,2 + completeStage3 + submit + summary/packed-boxes/evidence-vault + payment/zoho
@@ -37,7 +41,10 @@ SpiPutawayController.php          stage 4 storage-type, eligibility, legacy hand
 SpiPutawayAllocationController.php board, locations, assign, confirm-manual
 SpiPutawayTaskController.php      scan-task (Zebra), queue, cancel, activity
 SpiPutawayScanController.php      the handheld device endpoints
+P2pFileController.php             /p2p/files/download — the authenticated vault file stream
+PoPaymentRequestController.php    SPI-scoped payment requests/payments + TDS (money sits on the PO)
 ```
+`P2pVaultService` (`forSpi`/`forPo`) backs both Evidence Vaults; `SegmentDocUploadController@vault` backs the separate **supplier** vault.
 
 ### Models — `app/Models/P2p/` (+ `app/Models/Inventory/`)
 `SupplierInvoice`, `SupplierInvoiceItem`, `SpiBox`, `SpiBoxItem`, `SpiBoxAttachment`, `SpiPutaway`, `SpiPutawayTask`, `Inventory\PutawayActivityLog`.
@@ -92,6 +99,30 @@ Match-type is skeleton-shimmered until the SPI loads (CS-1139). View-only banner
 - `onProgress` / `putawayBoard` feeds the `allPlaced` gate.
 
 ---
+
+## 4a. Stage 2 UI (`Step2InvoiceProducts.tsx`)
+
+The same component renders all four flavours; what changes is the seed and which columns are live (see Technical §6):
+- **With PO** → lines prefilled from `spiApi.poLines(poId)` (3-way if the PO carries a PI, else 2-way); `ProductTable` shows `qty_pi / qty_po / qty_spi`. No Add Product; a line can be removed/restored but not below packed.
+- **Direct + Shipment** → lines fixed to the shipment's PI (2-way, no Add).
+- **Direct, no shipment** → empty grid + **+ Add Product** (`SelectedProducts` picker).
+- Invoice fields (`invoice_no/date`, invoice attachment, optional e-way) + the grid + totals POST together via `spiApi.saveItems` (multipart). Over-bill rows surface a non-blocking warning banner.
+
+## 4b. Stage 3 UI (`Step3BoxPackaging.tsx` + friends)
+
+The screen is driven from the **SPI Box Generation System** table (one row per billed product, `remainingOf = spiQty − packed elsewhere`) and feeds the `BoxDrawer`. Three pack actions map to the three scenarios:
+- `singleBox(line)` → BoxDrawer at **s1**.
+- `applySplit(line)` (a Sub-Box Count) → `MultiBoxPanel` at **s2**; `splitQuantity` across N (≤ `maxSplitBoxes`), `setBoxQty` per box; a 1-box split normalises back to s1.
+- `toggleSelect` ≥2 products → `packSelected` → BoxDrawer at **s3** (mixed carton; `mixedQty`/`setMixedLineQty` per SKU).
+
+`BoxDrawer` collects dims · weights (volumetric shown) · condition · stackable · temperature (`TemperatureModal`) · flags (built-in + custom via `ProductFlagsModal`) · identity (per-box for s1/s2, per-SKU for s3) · remark+note · photos (upload/camera). `validate()` runs client-side (required dims, Net≤Gross, remaining-qty cap, expiry/MFG, non-correct needs a note, extra-only-if-over-billed) before `spiApi.createBox` — the server re-checks via `validateBox`/`guardOverPacking`.
+
+`PackedProducts` lists saved boxes (`openEdit` until allocated; `closePack`/`removeSplitBox` to delete; `BoxStickerModal` to print — which locks the code). `finishStage3` enforces every-unit-boxed then warehouse capability, opening `WarehouseFixModal` on `warehouse_incompatible` before `spiApi.completeStage3`. See Functional §5 (Stage 3) and Technical §3.1.
+
+## 4c. Payment & Evidence Vault UI
+
+- **Payments** are opened from the SPI list / wizard, not a stage: `InvoicePaymentsModal.tsx` (history — `spiApi` → `/payment-requests`) and `InvoicePaymentModal.tsx` ("Make SPI Payment" — `/payment-requests/{req}/payments`). `payment-chips.tsx` renders the `pending_payment_requests` / `approved_unpaid_amount` badges on the row. Money is raised from the invoice but stored on the PO (Technical §7).
+- **Invoice Evidence Vault** → `InvoiceEvidenceVault.tsx` loads `spiVaultApi.vault(id)`, renders `groups → sections → documents`, and streams each file through `spiVaultApi.file(url, preview)` (= `/p2p/files/download`). It branches on `doc.source` (`uploaded/generated/signed/awaited`) to decide which of View/Download are live — never on which URL is null (Technical §8).
 
 ## 5. Backend request flow (end to end)
 
