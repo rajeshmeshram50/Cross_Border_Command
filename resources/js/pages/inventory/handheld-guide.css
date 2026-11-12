@@ -223,6 +223,22 @@
 .hhg-next--done > small { color: #3f6b4e; }
 .hhg-btn--done { background: #16a34a; }
 
+/* Demo — screen QR + the box sticker, side by side on the right */
+.hhg-demo { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
+.hhg-qr { display: flex; align-items: center; gap: 14px; flex: 1 1 240px; padding: 14px; border: 1px solid #d7e3e5; border-radius: 12px; background: #f6fbfc; }
+.hhg-qr img { border-radius: 8px; background: #fff; flex-shrink: 0; }
+.hhg-qr-cap b { display: block; font-size: 13.5px; font-weight: 800; color: #0f6e70; }
+.hhg-qr-cap small { display: block; font-size: 11.5px; color: #5a7378; margin-top: 3px; line-height: 1.4; }
+
+/* The actual box sticker — drawn like a printed label */
+.hhg-sticker { width: 184px; padding: 12px; border: 1.5px solid #0f1720; border-radius: 10px; background: #fff; text-align: center; }
+.hhg-sticker-label { display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 7px; margin-bottom: 9px; }
+.hhg-sticker-label b { font-size: 10px; letter-spacing: .08em; color: #64748b; }
+.hhg-sticker-code { font-size: 18px; font-weight: 800; color: #0f1720; }
+.hhg-sticker img { display: block; margin: 0 auto; }
+.hhg-sticker-sub { font-size: 11px; font-weight: 700; color: #334155; margin-top: 8px; }
+.hhg-sticker-cap { font-size: 10.5px; color: #64748b; margin-top: 4px; line-height: 1.4; }
+
 /* ── Caption ───────────────────────────────────────────────────────────── */
 .hhg-cap { min-width: 0; }
 .hhg-cap h3 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -.01em; }

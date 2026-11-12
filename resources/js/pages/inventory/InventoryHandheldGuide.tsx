@@ -1,7 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import InventoryTabs from './InventoryTabs';
 import '../../../css/inventory-scan.css';
 import './handheld-guide.css';
+
+/* Screens with a live demo on the real handheld (?demo=<key>). Scanning the box
+ * sticker below opens that exact screen on the device. Keys match SCREENS below. */
+const DEMO_SCREENS: Record<string, boolean> = { s2: true, s3: true, s4: true, s6: true, s10: true, s9: true, s11: true };
+
+function DemoSticker({ screen }: { screen: string }) {
+  const [src, setSrc] = useState('');
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/putaway-scan?demo=${screen}` : '';
+  useEffect(() => {
+    let on = true;
+    if (url) QRCode.toDataURL(url, { margin: 1, width: 180, errorCorrectionLevel: 'M' }).then(d => { if (on) setSrc(d); }).catch(() => { if (on) setSrc(''); });
+    return () => { on = false; };
+  }, [url]);
+  if (!src) return null;
+  return (
+    <div className="hhg-demo">
+      <div className="hhg-sticker">
+        <div className="hhg-sticker-label">
+          <b>BOX</b>
+          <span className="hhg-sticker-code">B-001</span>
+        </div>
+        <img src={src} alt={`Box B-001 sticker — scan to open ${screen} on the device`} width={128} height={128} />
+        <div className="hhg-sticker-sub">PUT-B-001 · Mixed Product Box</div>
+        <div className="hhg-sticker-cap">Scan this sticker on the Zebra to open this screen with sample data.</div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * What the Zebra shows, screen by screen.
@@ -543,6 +572,7 @@ export default function InventoryHandheldGuide() {
                 <ul>{note.records.items.map(r => <li key={r}><code>{r}</code></li>)}</ul>
               </div>
             )}
+            {DEMO_SCREENS[key] && <DemoSticker screen={key} />}
           </div>
         </div>
       </div>

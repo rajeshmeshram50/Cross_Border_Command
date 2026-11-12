@@ -1007,6 +1007,7 @@
 }
 .pws2-chip--ok   { background: var(--pw-teal-50); color: var(--pw-teal); }
 .pws2-chip--warn { background: #fef3c7; color: #92400e; }
+.pws2-chip--notask { background: #f59e0b; color: #241700; font-weight: 800; }
 .pws2-chip--bad  { background: #fee2e2; color: #b91c1c; }
 .pws2-more {
     flex-shrink: 0;

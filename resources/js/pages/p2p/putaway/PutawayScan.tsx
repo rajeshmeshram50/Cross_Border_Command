@@ -205,10 +205,63 @@ function writeRun(run: Run | null): void {
   } catch { /* private mode / quota */ }
 }
 
+/* ───────────────── Demo mode (?demo=<screen>) ─────────────────
+ * Renders the REAL screen frozen on static data so the UI can be checked on the
+ * device via the QR codes in the Handheld Screens guide. No server calls and no
+ * navigation: every live effect short-circuits when `demoKey` is set. */
+const DEMO_DEVICE: Device = { id: 1, serial: '2601352470', label: 'WH-PUNE-01', model: 'Zebra TC27', status: 'active', claimed: true };
+const DEMO_TIME = '2026-11-12T10:58:00+05:30';
+const DEMO_PRODUCTS: BoxProduct[] = [
+  { sr: 1, product_id: 1, code: 'SKU-1001', name: 'Amoxicillin 500mg', segment: 'Pharma', brand: 'Acme', generic: 'Amoxicillin', image: null, description: null, hsn: '3004', quantity: 20, uom: 'Box', batch_no: 'BT-2201', lot_no: 'LT-11', serial_no: null, cat_no: 'CT-9', expiry_date: '2027-06-30', remark: 'correct' },
+  { sr: 2, product_id: 2, code: 'SKU-1002', name: 'Saline 0.9% 500ml', segment: 'Fluids', brand: 'Acme', generic: 'NaCl', image: null, description: null, hsn: '3004', quantity: 12, uom: 'Bottle', batch_no: 'BT-2202', lot_no: 'LT-12', serial_no: null, cat_no: 'CT-10', expiry_date: '2028-01-31', remark: 'correct' },
+  { sr: 3, product_id: 3, code: 'SKU-1003', name: 'Surgical Gloves M', segment: 'Consumable', brand: 'Acme', generic: null, image: null, description: null, hsn: '4015', quantity: 50, uom: 'Pair', batch_no: 'BT-2203', lot_no: null, serial_no: null, cat_no: 'CT-11', expiry_date: null, remark: 'correct' },
+  { sr: 4, product_id: 4, code: 'SKU-1004', name: 'Insulin Pen', segment: 'Cold Chain', brand: 'Acme', generic: 'Insulin', image: null, description: null, hsn: '3004', quantity: 6, uom: 'Pen', batch_no: 'BT-2204', lot_no: 'LT-14', serial_no: 'SN-77', cat_no: 'CT-12', expiry_date: '2027-03-15', remark: 'correct' },
+];
+const DEMO_BOX: BoxState = {
+  id: 1, box_code: 'B-001', putaway_code: 'PUT-B-001', spi_code: 'SPI/2026-27/005',
+  scenario: 's3', scenario_label: 'Multiple products → 1 box', condition: 'perfect', is_stackable: true,
+  length_cm: 10, width_cm: 10, height_cm: 10, weight_kg: 1, net_weight_kg: 1, gross_weight_kg: 1, vol_weight_kg: 0.17,
+  temp_min_c: 2, temp_max_c: 8,
+  flags: [{ id: 1, name: 'Hazardous', behaviour: 'warn' }, { id: 2, name: 'Cold Chain', behaviour: 'warn' }],
+  dimensions_cm: '10 x 10 x 10', products: DEMO_PRODUCTS,
+};
+const DEMO_DEST: Destination = { full: 'Zone ZN-A · Rack RK-A1 · Shelf SH-102', warehouse: 'WH-PUNE-01', zone: 'ZN-A', rack: 'RK-A1', shelf: 'SH-102', shelf_id: 102, zone_id: 1 };
+const DEMO_OPEN: QueueRow[] = [
+  { id: 1, task_code: 'ZT-20261024-001', box_code: 'B-001', spi_code: 'SPI/2026-27/005', step: 'scan_box', step_label: 'Scan the box', destination: 'SH-102' },
+  { id: 2, task_code: 'ZT-20261024-002', box_code: 'B-010', spi_code: 'SPI/2026-27/005', step: 'scan_box', step_label: 'Scan the box', destination: 'SH-102' },
+];
+const demoChain = (scanned: boolean) => [
+  { kind: 'zone', id: 1, scanned, name: 'ZN-A' },
+  { kind: 'rack', id: 2, scanned, name: 'RK-A1' },
+  { kind: 'shelf', id: 102, scanned, name: 'SH-102' },
+];
+function demoTask(over: Partial<TaskState>): TaskState {
+  return {
+    id: 1, task_code: 'ZT-20261024-001', status: 'in_progress',
+    step: 'scan_shelf', step_label: 'Scan the shelf SH-102', expected: ['box', 'shelf'], location_slot: 'shelf',
+    chain: demoChain(false), next_level: 'shelf', required_scans: 2, completed_scans: 1, fail_count: 0, attempts_left: 3,
+    box_scan_at: null, box_confirmed_at: null, shelf_scan_at: null, shelf_confirmed_at: null,
+    ready_to_complete: false, last_activity_at: DEMO_TIME, idle_after_minutes: 5, idle_seconds_left: null,
+    ...over,
+  };
+}
+interface DemoScreen { state: State; placed?: { box_code: string; spi_code: string; destination: string; at: string | null; method: string | null; by: string | null }; showProducts?: boolean; }
+const DEMO: Record<string, DemoScreen> = {
+  s2:  { state: { device: DEMO_DEVICE, task: null, box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 6, step: 'scan_box' } },
+  s3:  { state: { device: DEMO_DEVICE, task: demoTask({ box_scan_at: DEMO_TIME, box_confirmed_at: DEMO_TIME }), box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 6 } },
+  s4:  { state: { device: DEMO_DEVICE, task: demoTask({ box_scan_at: DEMO_TIME, box_confirmed_at: DEMO_TIME }), box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 6 }, showProducts: true },
+  s6:  { state: { device: DEMO_DEVICE, task: demoTask({ box_scan_at: DEMO_TIME, box_confirmed_at: DEMO_TIME, shelf_scan_at: DEMO_TIME, shelf_confirmed_at: DEMO_TIME, ready_to_complete: true, completed_scans: 2, step: 'complete', step_label: 'Both matched — press Complete', chain: demoChain(true) }), box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 6 } },
+  s10: { state: { device: DEMO_DEVICE, task: demoTask({ status: 'scanned', box_scan_at: DEMO_TIME, shelf_scan_at: DEMO_TIME, ready_to_complete: true, completed_scans: 2, chain: demoChain(true) }), box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 5 } },
+  s9:  { state: { device: DEMO_DEVICE, task: null, box: DEMO_BOX, destination: DEMO_DEST, open: DEMO_OPEN, count: 5 }, placed: { box_code: 'B-001', spi_code: 'SPI/2026-27/005', destination: 'Zone ZN-A · Rack RK-A1 · Shelf SH-102', at: DEMO_TIME, method: 'manual', by: 'Rajesh Agrotech' } },
+  s11: { state: { device: DEMO_DEVICE, task: null, box: DEMO_BOX, no_task: true, open: DEMO_OPEN, count: 6 } },
+};
+
 export default function PutawayScan() {
   // scanKey = arrived by scanning a label with a phone camera, which opens the
   // URL. taskId = opened from a list. Neither = the handheld's standing page.
   const { taskId, scanKey } = useParams();
+  // Demo: ?demo=<screen> freezes the real UI on static data (no server, no nav).
+  const demoKey = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('demo') : null;
 
   const [state, setState]   = useState<State | null>(null);
   const [error, setError]   = useState<string | null>(null);
@@ -483,6 +536,16 @@ export default function PutawayScan() {
      verifies it and passes the device in), so no token is required here — the
      server refuses with a clear message if the cert does not resolve a device. */
   useEffect(() => {
+    // Demo: freeze the real screen on static data; no session, no navigation.
+    if (demoKey) {
+      const d = DEMO[demoKey];
+      if (d) {
+        setState(d.state);
+        if (d.placed) setPlaced(d.placed);
+        if (d.showProducts) setShowProducts(true);
+      }
+      return;
+    }
     (async () => {
       try {
         /* Landed here BY scanning: feed that label straight in, so the carton
@@ -705,6 +768,7 @@ export default function PutawayScan() {
   }, [value, busy]);
 
   const submitScan = async (raw: string) => {
+    if (demoKey) return;   // demo: the screen is frozen on static data
     const scanned = raw.trim();
     if (!scanned || busy) return;
 
@@ -725,6 +789,7 @@ export default function PutawayScan() {
   };
 
   const act = async (url: string, body: unknown, message: string) => {
+    if (demoKey) return;   // demo: no server actions
     if (busy || !state?.task) return;
 
     setBusy(true);
@@ -934,6 +999,11 @@ export default function PutawayScan() {
               <div><span>Condition</span><b>{state.box.condition ? (CONDITION[state.box.condition] ?? state.box.condition) : '—'}</b></div>
               <div><span>Invoice</span><b>{state.box.spi_code ?? '—'}</b></div>
             </div>
+            <div className="pws2-meta3">
+              <div><span>Dimensions</span><b>{state.box.dimensions_cm ?? '—'}</b></div>
+              <div><span>Net Wt</span><b>{state.box.net_weight_kg != null ? `${state.box.net_weight_kg} kg` : '—'}</b></div>
+              <div><span>Gross Wt</span><b>{state.box.gross_weight_kg != null ? `${state.box.gross_weight_kg} kg` : '—'}</b></div>
+            </div>
             {showProducts && state.box.products.length > 0 && (
               <ul className={'pws2-prods' + (state.box.products.length > 5 ? ' is-scroll' : '')}>
                 {state.box.products.map((pr) => (
@@ -943,17 +1013,37 @@ export default function PutawayScan() {
                       <span className="pws2-prod-n">{pr.name ?? '—'}</span>
                       <span className="pws2-prod-q">{pr.quantity}{pr.uom ? ` ${pr.uom}` : ''}</span>
                     </div>
+                    <div className="pws2-prod-grid">
+                      <div><span>SKU</span><b>{pr.code ?? '—'}</b></div>
+                      <div><span>HSN</span><b>{pr.hsn ?? '—'}</b></div>
+                      <div><span>BATCH</span><b>{pr.batch_no ?? '—'}</b></div>
+                      <div><span>EXPIRY</span><b>{pr.expiry_date ?? '—'}</b></div>
+                      <div><span>SEGMENT</span><b>{pr.segment ?? '—'}</b></div>
+                      <div><span>LOT / SERIAL</span><b>{pr.lot_no ?? pr.serial_no ?? '—'}</b></div>
+                    </div>
+                    {pr.expiry_date && (
+                      <div className="pws2-tags"><span className="pws2-chip pws2-chip--warn">EXPIRY TRACKED</span></div>
+                    )}
+                    <div className="pws2-tags">
+                      <button type="button" className="pws2-ghost" style={{ height: 30, justifyContent: 'flex-start' }}
+                        onClick={() => setProduct(pr)}>
+                        View full detail ›
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-            <div className="pws2-tags"><span className="pws2-chip pws2-chip--warn">NO_TASK</span></div>
+            <div className="pws2-tags"><span className="pws2-chip pws2-chip--notask">NO_TASK</span></div>
           </section>
           <div className="pws2-next">
             <span>WHAT TO DO</span><b>Raise a put-away task, or confirm it by hand</b>
             <small>Details only — this box has no task, so there is no scanning and no Complete here.</small>
           </div>
         </div>
+        {product && (
+          <ProductSheet product={product} boxCode={state.box?.box_code} spiCode={state.box?.spi_code} onClose={() => setProduct(null)} />
+        )}
         {showPending && (
           <div className="pws2-scrim" onClick={() => setShowPending(false)}>
             <div className="pws2-sheet" onClick={(e) => e.stopPropagation()}>
