@@ -110,6 +110,9 @@ interface State {
   // Set when an already-put-away box is re-scanned: show the FULL details
   // screen (box, products, its location), not the minimal Done card. (CS-956 #64)
   already_placed?: boolean;
+  // Set when a box with no open put-away task is scanned: show its details
+  // read-only (no scan field, no Complete) instead of a bare refusal.
+  no_task?: boolean;
   staged_name?: string | null;
   step?: Step;
   step_label?: string;
@@ -375,6 +378,7 @@ export default function PutawayScan() {
         status?: number;
         data?: {
           message?: string; data?: State; reset?: boolean; code?: string; attempts_left?: number | null;
+          notice?: string; no_task?: boolean;
           placed?: { box_code: string; spi_code?: string | null; destination: string; at: string | null; method: string | null; by: string | null };
         };
       };
@@ -413,6 +417,16 @@ export default function PutawayScan() {
       setError(null);
       setNotice(null);
       if (res.data.data) setState(res.data.data);
+
+      return;
+    }
+
+    // No open task: show the box's details read-only, not a refusal. Nothing is placed.
+    if (res?.data?.code === 'no_task' && res.data.data?.box) {
+      setPlaced(null);
+      setError(null);
+      setNotice(res.data.notice ?? null);
+      setState(res.data.data);
 
       return;
     }
@@ -891,6 +905,77 @@ export default function PutawayScan() {
         where={state.destination?.full}
         onNext={() => { writeRun(null); window.location.href = '/putaway-scan'; }}
       />
+    );
+  }
+
+  /* A box scanned with no open task: read-only details — no scan field, no
+     Complete. Raising a task or confirming by hand is a desktop step. */
+  if (state.no_task && state.box) {
+    return (
+      <div className="pwscan">
+        <AppBar device={state.device} count={state.count ?? state.open?.length} onPending={() => setShowPending(true)} />
+        <div className="pws2-body">
+          <div className="pwscan-notice">{notice ?? 'No put-away task for this box. Raise a task, or confirm it by hand.'}</div>
+          <section className="pws2-card">
+            <div className="pws2-card-top">
+              <span className="pws2-kicker">BOX</span>
+              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-chip">{state.box.products.length > 1 ? 'MIXED' : 'SINGLE'}</span>
+              <span className="pws2-sp" />
+              {state.box.products.length > 0 && (
+                <button type="button" className="pws2-more" onClick={() => setShowProducts(v => !v)}>
+                  {showProducts ? 'Show Less' : 'More'}{!showProducts && <b>{state.box.products.length}</b>}
+                </button>
+              )}
+            </div>
+            {state.box.scenario_label && <div className="pws2-name">{state.box.scenario_label}</div>}
+            <div className="pws2-meta3">
+              <div><span>Products</span><b>{state.box.products.length} product{state.box.products.length === 1 ? '' : 's'}</b></div>
+              <div><span>Condition</span><b>{state.box.condition ? (CONDITION[state.box.condition] ?? state.box.condition) : '—'}</b></div>
+              <div><span>Invoice</span><b>{state.box.spi_code ?? '—'}</b></div>
+            </div>
+            {showProducts && state.box.products.length > 0 && (
+              <ul className={'pws2-prods' + (state.box.products.length > 5 ? ' is-scroll' : '')}>
+                {state.box.products.map((pr) => (
+                  <li key={pr.sr} className="pws2-prod">
+                    <div className="pws2-prod-top">
+                      <span className="pws2-prod-sr">{pr.sr}</span>
+                      <span className="pws2-prod-n">{pr.name ?? '—'}</span>
+                      <span className="pws2-prod-q">{pr.quantity}{pr.uom ? ` ${pr.uom}` : ''}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="pws2-tags"><span className="pws2-chip pws2-chip--warn">NO_TASK</span></div>
+          </section>
+          <div className="pws2-next">
+            <span>WHAT TO DO</span><b>Raise a put-away task, or confirm it by hand</b>
+            <small>Details only — this box has no task, so there is no scanning and no Complete here.</small>
+          </div>
+        </div>
+        {showPending && (
+          <div className="pws2-scrim" onClick={() => setShowPending(false)}>
+            <div className="pws2-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="pws2-sheet-head">
+                <span><b>Pending tasks</b><small>{(state.open?.length ?? 0)} box{(state.open?.length ?? 0) === 1 ? '' : 'es'} awaiting verification</small></span>
+                <button type="button" className="pws2-x" onClick={() => setShowPending(false)} aria-label="Close">×</button>
+              </div>
+              <div className="pws2-sheet-body">
+                <ul className="pws2-rows">
+                  {(state.open ?? []).map((t) => (
+                    <TaskRow key={t.id} row={t} current={false}
+                      onPick={() => { writeRun({ task_id: t.id }); window.location.href = `/putaway-scan/${t.id}`; }} />
+                  ))}
+                </ul>
+                {(state.open?.length ?? 0) === 0 && (
+                  <div className="pwscan-attempts" style={{ marginBottom: 0 }}>Nothing else pending</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 

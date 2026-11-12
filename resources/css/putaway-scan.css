@@ -119,6 +119,13 @@
 
 .pwscan-prompt.is-done { border-color: var(--pw-ok); color: var(--pw-ok); }
 
+/* No-task lookup: an amber notice above the read-only box details. */
+.pwscan-notice {
+    margin: 12px 12px 10px; padding: 11px 12px; border-radius: 10px;
+    font-size: 13px; line-height: 1.4;
+    background: rgba(245, 158, 11, .12); border: 1px solid rgba(245, 158, 11, .4); color: #f3c178;
+}
+
 .pwscan-staged {
     margin-bottom: 10px;
     padding: 10px 12px;
