@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../api';
@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
+import DataTable, { type DataTableColumn } from '../components/ui/DataTable';
 import WorklistPager from '../components/ui/WorklistPager';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 
@@ -102,6 +103,69 @@ export default function Inbox() {
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
   const [leaveComment, setLeaveComment] = useState<Record<number, string>>({});
+  // Which leave row is open in the compact decision modal (null = closed), and
+  // which action the row button intended — so that button is focused first.
+  const [leaveReviewId, setLeaveReviewId] = useState<number | null>(null);
+  const [leaveReviewVerdict, setLeaveReviewVerdict] = useState<'approve' | 'reject' | null>(null);
+  const openLeaveReview = (id: number, verdict: 'approve' | 'reject' | null = null) => {
+    setLeaveReviewVerdict(verdict);
+    setLeaveReviewId(id);
+  };
+
+  // Columns for the shared <DataTable> rendering of the leave worklist — the
+  // same component the Leave Approvals page and the Employee list use.
+  const fmtLeaveDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const leaveColumns = useMemo<DataTableColumn<ApiLeaveRequest>[]>(() => [
+    {
+      header: 'Employee', id: 'employee',
+      accessorFn: (r) => r.employee?.display_name || `${r.employee?.first_name ?? ''} ${r.employee?.last_name ?? ''}`.trim(),
+      meta: { width: '24%' },
+      cell: info => {
+        const r = info.row.original; const emp = r.employee;
+        const empName = (emp?.display_name?.trim() || `${emp?.first_name ?? ''} ${emp?.last_name ?? ''}`.trim()) || '—';
+        const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--leave" style={{ width: 28, height: 28, fontSize: 10 }}>{initials}</span>
+            <div className="min-w-0">
+              <div className="ib-name text-truncate">{empName}</div>
+              <div className="ib-sub-meta">{emp?.emp_code || '—'}{emp?.department?.name ? ` · ${emp.department.name}` : ''}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Leave Type', id: 'leave_type', accessorFn: (r) => r.leave_type?.name ?? '',
+      meta: { width: '14%', align: 'center' },
+      cell: info => <span className="ib-pill-leave">{info.row.original.leave_type?.name || 'Leave'}</span>,
+    },
+    {
+      header: 'Dates', id: 'dates', accessorFn: (r) => r.from_date ?? '', meta: { width: '16%' },
+      cell: info => { const r = info.row.original; return <span className="ib-cell-muted text-nowrap">{fmtLeaveDate(r.from_date)} – {fmtLeaveDate(r.to_date)}</span>; },
+    },
+    {
+      header: 'Days', accessorKey: 'days', meta: { width: '7%', align: 'center' },
+      cell: info => <span className="fw-semibold">{Number(info.getValue())}</span>,
+    },
+    {
+      header: 'Reason', id: 'reason', accessorFn: (r) => r.reason ?? '', meta: { width: '19%' },
+      cell: info => <span className="ib-cell-reason ib-cell-muted d-inline-block" title={info.row.original.reason || ''}>{info.row.original.reason || '—'}</span>,
+    },
+    {
+      header: 'Action', id: 'action', enableSorting: false, meta: { width: '14%', align: 'right' },
+      cell: info => {
+        const id = info.row.original.id;
+        return (
+          <div className="d-inline-flex gap-2" onClick={e => e.stopPropagation()}>
+            <button type="button" className="ib-btn-approve ib-btn-sm" onClick={() => openLeaveReview(id, 'approve')}><i className="ri-check-line me-1" />Approve</button>
+            <button type="button" className="ib-btn-reject ib-btn-sm" onClick={() => openLeaveReview(id, 'reject')}><i className="ri-close-line me-1" />Reject</button>
+          </div>
+        );
+      },
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
   type ExpenseApprovalRow = {
     id: number;
     module: 'expense' | 'advance';
@@ -168,7 +232,6 @@ export default function Inbox() {
   // Page cursors (4 entries per page). One cursor per section so a
   // scroll-heavy inbox stays manageable without affecting the others.
   const PAGE_SIZE = 4;
-  const [leavePage,    setLeavePage]    = useState(0);
   const [expensePage,  setExpensePage]  = useState(0);
   const [updatesPage,  setUpdatesPage]  = useState(0);
   const [docsPage,     setDocsPage]     = useState(0);
@@ -342,11 +405,11 @@ export default function Inbox() {
     );
   };
 
-  const actOnLeave = async (id: number, verdict: 'approve' | 'reject') => {
+  const actOnLeave = async (id: number, verdict: 'approve' | 'reject'): Promise<boolean> => {
     const comment = (leaveComment[id] || '').trim();
     if (verdict === 'reject' && !comment) {
       toast.error('Reason required', 'Please add a short comment explaining the rejection.');
-      return;
+      return false;
     }
     setLeaveActing({ id, verdict });
     try {
@@ -361,9 +424,11 @@ export default function Inbox() {
       // of the pending list.
       setLeaveComment(prev => { const next = { ...prev }; delete next[id]; return next; });
       await loadLeaves();
+      return true;
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Action failed';
       toast.error('Could not act on this request', msg);
+      return false;
     } finally {
       setLeaveActing(null);
     }
@@ -578,113 +643,25 @@ export default function Inbox() {
                 </span>
               </div>
 
-              {leaveLoading ? (
-                <div>
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={`leave-shim-${i}`} className="ib-row">
-                      <div className="d-flex align-items-start gap-3 flex-wrap">
-                        <Shimmer width={38} height={38} radius={999} />
-                        <div className="ib-shim-col">
-                          <div className="d-flex align-items-center gap-2">
-                            <Shimmer width={140} height={13} />
-                            <Shimmer width={80} height={11} />
-                          </div>
-                          <div className="d-flex align-items-center gap-2">
-                            <Shimmer width={60} height={18} radius={6} />
-                            <Shimmer width={180} height={11} />
-                          </div>
-                          <div className="ib-decision-row">
-                            <div style={{ flex: '1 1 240px' }}><Shimmer height={36} radius={6} /></div>
-                            <Shimmer width={110} height={36} radius={8} />
-                            <Shimmer width={110} height={36} radius={8} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : leaveRows.length === 0 ? (
-                <div className="ib-empty">
-                  <i className="ri-flight-takeoff-line ib-empty-icon" />
-                  <div className="ib-empty-title">No pending leave requests</div>
-                  <div className="ib-empty-sub">You're all caught up on approvals.</div>
-                </div>
-              ) : (
-                <div>
-                  {paginate(leaveRows, leavePage).map((r) => {
-                    const emp = r.employee;
-                    const empName = emp
-                      ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim())
-                      : '—';
-                    const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0,2).toUpperCase() || '?';
-                    const acting = leaveActing?.id === r.id;
-                    const isApproving = acting && leaveActing?.verdict === 'approve';
-                    const isRejecting = acting && leaveActing?.verdict === 'reject';
-                    const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-                    return (
-                      <div key={r.id} className="ib-row">
-                        <div className="d-flex align-items-start gap-3 flex-wrap">
-                          {/* Avatar */}
-                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--leave">
-                            {initials}
-                          </span>
-                          {/* Body */}
-                          <div className="ib-body-col">
-                            <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <strong className="ib-name">{empName}</strong>
-                              <span className="ib-sub-meta">
-                                {emp?.emp_code || '—'}
-                                {emp?.department?.name ? ` · ${emp.department.name}` : ''}
-                              </span>
-                            </div>
-                            <div className="mt-1 ib-line">
-                              <span className="ib-pill-leave">
-                                {r.leave_type?.name || 'Leave'}
-                              </span>
-                              <span className="ms-2 text-muted">{fmt(r.from_date)} – {fmt(r.to_date)}</span>
-                              <span className="ms-2 fw-semibold">{Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'}</span>
-                            </div>
-                            {r.reason && (
-                              <div className="mt-1 text-muted ib-quote">
-                                <i className="ri-double-quotes-l me-1" />{r.reason}
-                              </div>
-                            )}
-                            {/* Remark + decision share one row at one height, so the
-                                buttons line up with the input they act on (QA #9).
-                                Remark is required when rejecting, optional when approving. */}
-                            <div className="ib-decision-row mt-2">
-                            <input
-                              type="text"
-                              className="form-control ib-remark-input"
-                              placeholder="Add a remark (required for reject, optional for approve)"
-                              value={leaveComment[r.id] || ''}
-                              onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => actOnLeave(r.id, 'approve')}
-                              disabled={acting}
-                              className="ib-btn-approve"
-                            >
-                              {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Accept</>}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => actOnLeave(r.id, 'reject')}
-                              disabled={acting}
-                              className="ib-btn-reject"
-                            >
-                              {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
-                            </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <Pager total={leaveRows.length} page={leavePage} onChange={setLeavePage} />
+              <DataTable<ApiLeaveRequest>
+                data={leaveRows}
+                columns={leaveColumns}
+                serial={{ header: 'SR NO', width: '6%' }}
+                searchable={false}
+                accent="violet"
+                paginate
+                pageSize={PAGE_SIZE}
+                className="ib-leave-dt"
+                loading={leaveLoading}
+                onRowClick={(r) => openLeaveReview(r.id)}
+                emptyMessage={
+                  <>
+                    <i className="ri-flight-takeoff-line d-block mb-2" style={{ fontSize: 30, opacity: 0.4 }} />
+                    <div className="fw-semibold">No pending leave requests</div>
+                    <div className="fs-13 mt-1">You're all caught up on approvals.</div>
+                  </>
+                }
+              />
             </CardBody>
           </Card>
           )}
@@ -1348,6 +1325,70 @@ export default function Inbox() {
           onDone={() => { setReviewItem(null); loadExpenses(); }}
         />
       )}
+
+      {/* Leave Review — the compact table's Review action opens this. Shows the
+          request and takes the decision (remark required on reject). */}
+      {leaveReviewId !== null && (() => {
+        const r = leaveRows.find(x => x.id === leaveReviewId);
+        if (!r) return null;
+        const emp = r.employee;
+        const empName = emp ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim()) : '—';
+        const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+        const acting = leaveActing?.id === r.id;
+        const isApproving = acting && leaveActing?.verdict === 'approve';
+        const isRejecting = acting && leaveActing?.verdict === 'reject';
+        const close = () => { if (!acting) setLeaveReviewId(null); };
+        const decide = async (v: 'approve' | 'reject') => { if (await actOnLeave(r.id, v)) setLeaveReviewId(null); };
+        return (
+          <ModalShell
+            onClose={close}
+            title="Leave Request"
+            subtitle={`${empName} · ${emp?.emp_code || '—'}`}
+            icon="ri-calendar-2-line"
+            gradient="linear-gradient(135deg,#7c5cfc,#a78bfa)"
+          >
+            <div className="inbox-modal-body ib-modal-body">
+              <div className="inbox-form-card ib-form-card">
+                <div className="ib-lr-grid">
+                  <div><span className="ib-lr-k">Leave Type</span><span className="ib-pill-leave">{r.leave_type?.name || 'Leave'}</span></div>
+                  <div><span className="ib-lr-k">Dates</span><span className="ib-lr-v">{fmt(r.from_date)} – {fmt(r.to_date)}</span></div>
+                  <div><span className="ib-lr-k">Days</span><span className="ib-lr-v fw-semibold">{Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'}</span></div>
+                </div>
+                {r.reason && (
+                  <div className="ib-lr-reason"><span className="ib-lr-k">Reason</span><span className="ib-lr-v"><i className="ri-double-quotes-l me-1 text-muted" />{r.reason}</span></div>
+                )}
+              </div>
+
+              <div className="inbox-form-card ib-form-card">
+                <label className="inbox-input-label ib-input-label">Remark</label>
+                <textarea
+                  className="inbox-input ib-input-textarea"
+                  rows={3}
+                  placeholder="Add a remark — optional when approving, REQUIRED when rejecting."
+                  value={leaveComment[r.id] || ''}
+                  onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
+                />
+                <div className="inbox-hint ib-input-hint">Remarks are saved on the request. A rejection returns the leave to the employee with your note.</div>
+              </div>
+            </div>
+            <div className="inbox-modal-footer ib-modal-footer ib-modal-footer--end">
+              {/* The row's Approve / Reject button fixes the action, so the popup
+                  confirms just that one. A plain row click (no verdict) is a
+                  review and still offers both. */}
+              {leaveReviewVerdict !== 'approve' && (
+                <button type="button" className="ib-btn-reject" autoFocus={leaveReviewVerdict === 'reject'} disabled={acting} onClick={() => decide('reject')}>
+                  {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
+                </button>
+              )}
+              {leaveReviewVerdict !== 'reject' && (
+                <button type="button" className="ib-btn-approve" autoFocus={leaveReviewVerdict === 'approve'} disabled={acting} onClick={() => decide('approve')}>
+                  {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Accept</>}
+                </button>
+              )}
+            </div>
+          </ModalShell>
+        );
+      })()}
     </Row>
   );
 }
@@ -1356,10 +1397,10 @@ export default function Inbox() {
     Provides the dark backdrop + click-outside-to-close + gradient header pattern
     so the View and Decision modals share their chrome. */
 function ModalShell({
-  onClose, title, subtitle, hint, gradient, children,
+  onClose, title, subtitle, hint, gradient, children, icon = 'ri-checkbox-circle-line',
 }: {
   onClose: () => void; title: string; subtitle?: string; hint?: string;
-  gradient: string; children: React.ReactNode;
+  gradient: string; children: React.ReactNode; icon?: string;
 }) {
   return (
     <div className="inbox-modal-backdrop ib-modal-backdrop" onClick={onClose}>
@@ -1367,14 +1408,19 @@ function ModalShell({
         style={{ ['--ib-modal-gradient' as any]: gradient }}
         onClick={(e) => e.stopPropagation()}>
         <div className="ib-modal-head">
-          <div className="d-flex align-items-center justify-content-between">
-            <div className="min-w-0">
-              <strong className="ib-modal-title"><i className="ri-checkbox-circle-line me-2" />{title}</strong>
-              {subtitle && <div className="ib-modal-subtitle">{subtitle}</div>}
-              {hint && <div className="ib-modal-hint">{hint}</div>}
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span className="ib-modal-badge d-inline-flex align-items-center justify-content-center flex-shrink-0">
+                <i className={icon} />
+              </span>
+              <div className="min-w-0">
+                <strong className="ib-modal-title">{title}</strong>
+                {subtitle && <div className="ib-modal-subtitle">{subtitle}</div>}
+                {hint && <div className="ib-modal-hint">{hint}</div>}
+              </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close"
-              className="ib-modal-close">
+              className="ib-modal-close flex-shrink-0">
               <i className="ri-close-line" />
             </button>
           </div>

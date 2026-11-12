@@ -869,12 +869,13 @@ class LeaveRequestController extends Controller
                away and someone has to stand in. */
             $row->rm_unavailable = $away;
 
-            // HR can act when the reporting manager is unavailable (Bug 55) —
-            // otherwise leave stays reporting-manager-only.
+            // HR (branch admin / client admin) can decide any pending leave in
+            // their tenant, alongside the reporting manager — matches the Inbox
+            // copy "reporting manager or a branch admin can decide".
             $row->can_act_now = $row->status === 'Pending'
                 && ($user->user_type === 'super_admin'
                     || $this->canActOnLevel($user, $chain, $idx, $row)
-                    || ($isHrScope && $away));
+                    || $isHrScope);
         });
 
         /* `total` is always sent, paged or not, so a caller can show "1–25 of
@@ -1079,10 +1080,11 @@ class LeaveRequestController extends Controller
         // Deadlock escape (Bug 55): if the reporting manager is unavailable (on
         // approved leave, disabled, or unassigned), HR may step in and act so
         // the request doesn't stall under an absent manager.
+        // HR (branch admin / client admin) may decide any pending leave in the
+        // tenant, not only when the reporting manager is away.
         $isHr = in_array($user->user_type, ['client_admin', 'branch_user'], true);
-        $hrCanActRmAway = $isHr && $this->isReportingManagerUnavailable($row);
-        if (!$isApproverForLevel && !$isSuperOverride && !$hrCanActRmAway) {
-            abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager before HR can act.');
+        if (!$isApproverForLevel && !$isSuperOverride && !$isHr) {
+            abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager.');
         }
 
         // LV-11: no one may APPROVE their own leave — not even via the admin

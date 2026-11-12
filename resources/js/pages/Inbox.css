@@ -102,12 +102,61 @@
 }
 .ib-upd-icon { font-size: 18px; }
 
-.ib-name        { font-size: 13.5px; }
+.ib-name        { font-size: 13.5px; font-weight: 600; }
 .ib-name-sm     { font-size: 13px; }
 .ib-sub-meta    { font-size: 11px; color: #6b7280; }
 .ib-line        { font-size: 12.5px; }
 .ib-line-sm     { font-size: 12px; }
 .ib-quote       { font-size: 12px; }
+
+/* Compact leave table (Inbox) — mirrors the Leave Approvals grid so the two
+   read the same, but trimmed to fit the inbox section. */
+.ib-leave-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.ib-leave-table thead th {
+  padding: 9px 12px; text-align: left; white-space: nowrap;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #5a3fd1; background: #f3eeff;
+  border-top: 1px solid rgba(124,92,252,0.15); border-bottom: 1px solid rgba(124,92,252,0.15);
+}
+.ib-leave-table thead th:first-child { border-radius: 8px 0 0 0; }
+.ib-leave-table thead th:last-child  { border-radius: 0 8px 0 0; }
+.ib-leave-table tbody td {
+  padding: 10px 12px; vertical-align: middle;
+  border-bottom: 1px solid var(--vz-border-color, #f1f5f9);
+}
+.ib-leave-table tbody tr:hover { background: rgba(124,92,252,0.04); }
+[data-bs-theme="dark"] .ib-leave-table thead th { background: rgba(124,92,252,0.10); }
+.ib-cell-muted  { color: var(--vz-secondary-color, #6b7280); }
+.ib-cell-reason { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-btn-review {
+  display: inline-flex; align-items: center; padding: 5px 14px; border-radius: 8px;
+  background: #ede9fe; color: #5a3fd1; border: 1px solid #ddd1ff;
+  font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease;
+}
+.ib-btn-review:hover { background: #ddd1ff; }
+[data-bs-theme="dark"] .ib-btn-review {
+  background: rgba(124,92,252,0.18); color: #c4b5fd; border-color: rgba(124,92,252,0.38);
+}
+/* Leave Review modal — labelled details block (matches the app's modal look). */
+.ib-lr-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 14px 28px; }
+.ib-lr-grid > div, .ib-lr-reason { display: flex; flex-direction: column; gap: 3px; }
+.ib-lr-reason { margin-top: 12px; }
+.ib-lr-k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vz-secondary-color, #6b7280); }
+.ib-lr-v { font-size: 13px; }
+.ib-lr-grid .ib-pill-leave { align-self: flex-start; }
+
+/* Compact row action buttons (Approve / Reject) in the leave table. */
+.ib-leave-table .ib-btn-sm {
+  display: inline-flex; align-items: center; padding: 5px 12px;
+  font-size: 11.5px; font-weight: 600; border-radius: 8px;
+}
+/* The pager lives in the table's <tfoot>, so it reads as part of the table
+   rather than the heavy detached band WorklistPager paints by default. */
+.ib-table-foot { padding: 0; }
+.ib-table-foot .wl-pager {
+  margin-top: 0; padding: 10px 12px;
+  background: transparent; border-top: none; border-radius: 0;
+}
 
 .ib-pill-leave {
   padding: 2px 8px; border-radius: 6px;
@@ -305,9 +354,15 @@
   background: #fff; border-radius: 14px; width: 100%; max-width: 880px;
   max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;
 }
-.ib-modal-head { padding: 14px 18px; background: var(--ib-modal-gradient); color: #fff; }
-.ib-modal-title { font-size: 15px; }
-.ib-modal-subtitle { font-size: 11.5px; opacity: 0.9; margin-top: 2px; }
+.ib-modal-head { padding: 16px 18px; background: var(--ib-modal-gradient); color: #fff; }
+/* Icon badge on the left, matching the Add/Edit Employee wizard header. */
+.ib-modal-badge {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: rgba(255,255,255,0.18); backdrop-filter: blur(4px);
+  font-size: 20px; color: #fff;
+}
+.ib-modal-title { font-size: 16.5px; font-weight: 700; letter-spacing: -0.01em; display: block; }
+.ib-modal-subtitle { font-size: 12px; opacity: 0.85; margin-top: 2px; }
 .ib-modal-hint { font-size: 11px; opacity: 0.78; margin-top: 2px; }
 .ib-modal-close {
   background: rgba(255,255,255,0.18); border: 0; color: #fff;
@@ -324,8 +379,7 @@
 .ib-preview--action { min-height: 220px; }
 
 .ib-modal-footer {
-  padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #fff;
-  box-shadow: 0 -3px 10px rgba(15,23,42,0.05);
+  padding: 12px 16px; border-top: 1px solid #eceef1; background: #f9fafb;
   display: flex; gap: 8px; flex-shrink: 0;
 }
 .ib-modal-footer--end { justify-content: flex-end; }
@@ -337,6 +391,9 @@
   margin-top: 14px; padding: 14px; background: #fff;
   border: 1px solid #e5e7eb; border-radius: 10px;
 }
+/* The first card sits against the body's own padding — its margin-top would
+   otherwise stack with that padding into a wide gap below the header. */
+.ib-modal-body > .ib-form-card:first-child { margin-top: 0; }
 .ib-input-label {
   font-size: 10.5px; font-weight: 800; color: #6b7280; letter-spacing: 0.4px;
   text-transform: uppercase; display: block; margin-bottom: 4px;
