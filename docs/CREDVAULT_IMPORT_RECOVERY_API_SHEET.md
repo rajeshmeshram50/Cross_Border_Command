@@ -534,6 +534,25 @@ Sample row 1: Credential Name = Fishing Permit · License Type = Fishing · Lice
 - Each picked valid row is saved **through the category's Add form** (`persistCredential`). It gets a CRD- code, encryption, strength, risk (critical types start at High in My Vault), the policy rotation and a "Credential added" audit entry, exactly as if typed in.
 - A row the form still refuses (e.g. a name that became a duplicate) joins the failed list.
 
+**Speed (CS-1471: "65 seconds to import 50 entries"):** the rows are still saved one by one through the Add form, but the parts repeated for every row are now done once for the whole sheet:
+
+| Per row, before | Now |
+|---|---|
+| Next CRD- code: lock the client row + 2 look-ups | Allocated once under the client lock (held for the whole import), then counted up. Same numbers, in order, no gap; a refused row uses none; a purged code is still never reused. |
+| Duplicate-name check (1 query) | The owner's names of this type read once; each imported name is added as it is saved |
+| Empty attachments update (1 query) | Skipped: a sheet row carries no files (they are attached in the form afterwards) |
+| "Credential added" audit row (1 insert) | All of them in one insert at the end (500 a statement), with the same fields |
+| Re-read the saved credential + its access and shares, for a response the import discards (≈ 5 queries) | Skipped: the import keeps only the code |
+| An extra savepoint around the save | Removed; the save keeps its own, so a refused row still rolls back alone |
+
+| 50 Login rows | Queries | Time (local) |
+|---|---|---|
+| Before | 681 | 1,025 ms |
+| Now | 81 | ≈ 270 ms |
+| 2,000 rows (the maximum), now | 2,029 | ≈ 11 s |
+
+The query count is what costs time on a server whose database is on another machine: every query is a round trip. The Add form itself (one credential at a time) is unchanged.
+
 **Response:**
 - **201** with the history row, `failed_rows` and `imported_codes`.
 - **422** when nothing could be imported.
