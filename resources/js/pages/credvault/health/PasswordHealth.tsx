@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { cvApi, CV_ROUTES, type CredentialDetail, type HealthIssue, type Loose, type PageMeta } from '../cvApi';
@@ -364,7 +365,7 @@ export default function PasswordHealth() {
                       <td>
                         <div className="mv-ownc">
                           <span className="mv-ownc__av">{initials(c.owner)}</span>
-                          <div><b>{c.owner || '—'}</b>{c.scope === 'team' ? <em className="mv-team">Team</em> : c.scope ? <em className="mv-pers">Personal</em> : null}</div>
+                          <div><Tooltip label={c.owner || '—'} disabled={!c.owner}><b className="ph-own">{c.owner || '—'}</b></Tooltip>{c.scope === 'team' ? <em className="mv-team">Team</em> : c.scope ? <em className="mv-pers">Personal</em> : null}</div>
                         </div>
                       </td>
                       <td><span className={`ph-iss ph-iss--${x.type ?? 'weak'}`}><Svg d={PH_I[x.type] ?? PH_I.all} size={12} /><span>{x.issue}</span></span></td>
