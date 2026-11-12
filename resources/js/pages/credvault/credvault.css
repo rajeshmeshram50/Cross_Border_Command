@@ -19249,3 +19249,35 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
 [data-bs-theme="dark"] .cvx .ph-refpop .ph-ref {
   color: #e2f3f8;
 }
+
+/* ══ My Vault · Shared By Me table (#50): one alignment per column, header and cells alike.
+   The main table's position-based rules (cells 3, 5, 6 left) are for My Credentials' columns — here
+   cell 5 is Permission and 6 Shared On, so they were left under centred headers.
+   Left: Credential Name, Shared With. Centre: everything else. ══ */
+.cvx .whm-tbl.mv-tbl.sb-tbl thead th,
+.cvx .whm-tbl.mv-tbl.sb-tbl tbody td {
+  text-align: center !important;
+}
+
+.cvx .whm-tbl.mv-tbl.sb-tbl thead th:is(:nth-child(3), :nth-child(4)),
+.cvx .whm-tbl.mv-tbl.sb-tbl tbody td:is(:nth-child(3), :nth-child(4)) {
+  text-align: left !important;
+}
+
+.cvx .whm-tbl.mv-tbl.sb-tbl tbody td.mv-empty {
+  text-align: center !important;
+}
+
+.cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(4) .mv-ownc,
+.cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(3) .whm-namecell {
+  justify-content: flex-start;
+}
+
+.cvx .whm-tbl.mv-tbl.sb-tbl td:is(:nth-child(2), :nth-child(6), :nth-child(7)) .whm-idcell {
+  align-items: center !important;
+}
+
+.cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(9) .znm-flagcell,
+.cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(10) .whm-acts {
+  justify-content: center;
+}

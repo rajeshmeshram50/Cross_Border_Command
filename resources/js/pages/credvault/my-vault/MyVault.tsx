@@ -187,7 +187,7 @@ export default function MyVault() {
         <div className="tvc-list">
         {tab === 'sharedby' ? (
           <div className="whm-tblwrap">
-            <table className="whm-tbl mv-tbl">
+            <table className="whm-tbl mv-tbl sb-tbl">
               <thead><tr>{SB_COLS.map(c => <th key={c}>{c}</th>)}</tr></thead>
               <tbody>
                 {loading ? <ShimRows cols={SB_COLS.length} rows={6} />
