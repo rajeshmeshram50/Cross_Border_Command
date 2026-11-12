@@ -520,10 +520,10 @@ class SpiPutawayScanController extends Controller
 
             return $this->refuse($task, $device, 'no_task',
                 $row?->zone_id
-                    ? "No scan task for {$named}. It is allocated to {$row->destination} — raise a task, or confirm it by hand."
+                    ? "Couldn't start — no put-away task for {$named}. It is allocated to {$row->destination}; raise a task, or confirm it by hand."
                     // No instruction: allocating is a back-office action, and
                     // the person holding the box cannot do it from here.
-                    : "No put-away initiated for {$named}.{$here}",
+                    : "Couldn't start — no put-away for {$named}.{$here}",
                 $data);
         }
 
