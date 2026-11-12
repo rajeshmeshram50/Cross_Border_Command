@@ -635,7 +635,9 @@ class CredVaultController extends Controller
         $u = $this->tenantUser($request);
         $d = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
 
+        $branch = $this->shareBranchOf($u);
         $users = User::where('client_id', $u->client_id)->where('status', 'active')->where('id', '!=', $u->id)
+            ->when($branch, fn ($q) => $q->where('branch_id', $branch))
             ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'email']))
             ->orderBy('name')->limit(200)->get(['id', 'name', 'email', 'user_type', 'designation']);
 
@@ -707,6 +709,8 @@ class CredVaultController extends Controller
                 ?? $this->reject('That person is not an active user of your company.', 'recipient_id', 404);
             if ($to->id === $c->owner_id) $this->reject('That person owns this credential already.', 'recipient_id');
             if ($to->id === $u->id) $this->reject('You cannot share a credential with yourself.', 'recipient_id');
+            $branch = $this->shareBranchOf($u);
+            if ($branch && (int) $to->branch_id !== $branch) $this->reject("{$to->name} is not in your branch. Share only with people in your branch.", 'recipient_id');
             // Shared With Me: never back to the person who shared it with you.
             if (isset($this->sharedToMeBy($u, $c)[$to->id])) $this->reject("{$to->name} shared this credential with you — it can't be shared back to them.", 'recipient_id');
             $toName  = $to->name;
@@ -5057,6 +5061,13 @@ class CredVaultController extends Controller
         if (!$x) return 'emp';
         if (in_array($x->user_type, self::ADMIN_TYPES, true)) return 'admin';
         return $this->levelOf($this->userInfo([$x->id])[$x->id]['designation'] ?? $x->designation);
+    }
+
+    protected function shareBranchOf(User $u): ?int
+    {
+        if ($this->isAdmin($u)) return null;
+
+        return $u->branch_id ? (int) $u->branch_id : null;
     }
 
     /**

@@ -233,7 +233,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                       {type === 'user' && sharers.length > 0 && !errs.who && (
                         <span className="crd-hint">{sharers.map(s => s.name).join(', ')} shared this with you, so they are not in the list — it can't be shared back.</span>
                       )}
-                      {!options.length && <span className="crd-err cv-ferr" style={{ color: '#64748b' }}>{type === 'team' ? 'No teams with members yet.' : 'No other active users in your company.'}</span>}
+                      {!options.length && <span className="crd-err cv-ferr" style={{ color: '#64748b' }}>{type === 'team' ? 'No teams with members yet.' : 'No other active users in your branch.'}</span>}
                     </div>
                     <div className="sh-note"><Svg icon="shield" size={12} />External sharing is off by policy — use Secure Send or Vendor access for outsiders.</div>
                   </div>
