@@ -531,7 +531,7 @@ class CredVaultController extends Controller
 
         $this->audit($u, $d['action'], $c, $label . ($d['action'] === 'copy' ? ' copied' : ' revealed'),
             ['field' => $field], $c->isProtected() ? 'Critical Vault' : 'My Vault');
-        if ($c->risk === 'critical' && $c->owner_id !== $u->id) {
+        if ($c->isCriticalVault() && $c->owner_id !== $u->id) {
             $this->notify([$c->owner_id], 'critical_revealed', 'Critical credential ' . ($d['action'] === 'copy' ? 'copied' : 'revealed'),
                 "{$u->name} " . ($d['action'] === 'copy' ? 'copied' : 'revealed') . " the {$label} of “{$c->name}”.",
                 ['credential_id' => $c->id, 'url' => '/credentials-vault/critical-vault']);
@@ -688,7 +688,7 @@ class CredVaultController extends Controller
             $capped = $cap;
         }
 
-        if ($c->risk === 'critical') {
+        if ($c->isCriticalVault()) {
             if (!$pol['share_critical']) $this->reject('Sharing critical credentials is turned off in CredVault Policies.', null, 403);
             if ($d['permission'] === 'full') $this->reject('A critical credential cannot be shared with Full Access.', 'permission');
             if (!$until) $this->reject('A critical credential must be shared with an end date.', 'expires_at');
@@ -3368,10 +3368,9 @@ class CredVaultController extends Controller
             : null;
 
         if ($critical) {
-            if (isset($data['risk']) && $data['risk'] !== 'critical') {
-                $this->reject('Everything in the Critical Vault is critical risk. Add it to My Vault for a lower risk level.', 'risk');
-            }
-            $risk = 'critical';
+            // A Critical Vault credential may carry any risk level; the vault (not the risk) drives
+            // its approval + 2-step protection, so a low-risk credential here is still critical.
+            $risk = $data['risk'] ?? ($c->risk ?? 'critical');
         } else {
             if (($data['risk'] ?? null) === 'critical') {
                 $this->reject('Critical credentials are added in the Critical Vault, where they get approvals and 2-step verification.', 'risk');
@@ -5493,13 +5492,13 @@ class CredVaultController extends Controller
     protected function audit(User $u, string $action, ?Credential $c = null, ?string $detail = null, array $meta = [], ?string $module = null): void
     {
         $this->writeAudit($u->client_id, $u->id, $u->branch_id, $action, $c, $detail, $meta,
-            $module ?? ($c ? ($c->risk === 'critical' ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault')) : null));
+            $module ?? ($c ? ($c->isCriticalVault() ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault')) : null));
     }
 
     protected function writeAudit(int $clientId, ?int $userId, ?int $branchId, string $action, ?Credential $c, ?string $detail, array $meta, ?string $module, ?string $severity = null): void
     {
         $severity ??= AuditLog::ACTIONS[$action][1] ?? 'info';
-        if ($c && $c->risk === 'critical' && in_array($action, AuditLog::RAISE_ON_CRITICAL, true)) $severity = 'critical';
+        if ($c && $c->isCriticalVault() && in_array($action, AuditLog::RAISE_ON_CRITICAL, true)) $severity = 'critical';
 
         AuditLog::create([
             'client_id'       => $clientId,
