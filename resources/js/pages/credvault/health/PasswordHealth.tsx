@@ -130,28 +130,35 @@ function RefList({ items }: { items: { id: number; code: string; name: string }[
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const rest = items.slice(REF_SHOWN);
+  const place = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r || r.bottom < 0 || r.top > window.innerHeight) return null;
+    return { top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 300) };
+  };
+  const open = !!pos;
   useEffect(() => {
-    if (!pos) return;
+    if (!open) return;
     const close = (e: Event) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('.ph-refpop') || btn.current?.contains(t)) return;
       setPos(null);
     };
+    const follow = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.ph-refpop')) return;
+      setPos(place());
+    };
     const away = () => setPos(null);
     document.addEventListener('mousedown', close, true);
-    window.addEventListener('scroll', away, true);
+    window.addEventListener('scroll', follow, true);
     window.addEventListener('resize', away);
     return () => {
       document.removeEventListener('mousedown', close, true);
-      window.removeEventListener('scroll', away, true);
+      window.removeEventListener('scroll', follow, true);
       window.removeEventListener('resize', away);
     };
-  }, [pos]);
-  const toggle = () => {
-    if (pos) { setPos(null); return; }
-    const r = btn.current?.getBoundingClientRect();
-    if (r) setPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 300) });
-  };
+  }, [open]);
+  const toggle = () => setPos(pos ? null : place());
   const ref = (o: { id: number; code: string; name: string }) => (
     <span className="ph-ref" key={o.id} title={`${o.code} · ${o.name}`}><i className="whm-idpill">{o.code}</i><span className="ph-ref__n">{o.name}</span></span>
   );
