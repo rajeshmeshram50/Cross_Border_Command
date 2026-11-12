@@ -430,7 +430,8 @@ Payments are always raised and recorded **from the invoice** (the Payment Reques
 ```
 
 - **TDS:** on a Direct SPI, TDS is set on the invoice and **must be saved before** a request can be raised (domestic only; max **40%**); on a PO-backed SPI, TDS lives on the order.
-- **Zoho bill:** only a **Direct SPI owns its own Zoho bill**; a PO-backed bill belongs to the order.
+- **Zoho bill:** only a **Direct SPI owns its own Zoho bill**; a PO-backed bill belongs to the order. The Zoho Books integration itself is built and documented (`docs/integrations/zoho-books/*`): a **With-PO SPI syncs as a Bill through the PO's Zoho Sync (live)**, while the **Direct-SPI standalone bill is planned but not yet wired** (its *Zoho sync* returns a "not wired" 501; the *Zoho tracker* works and says why).
+- **Multi-currency needs the right Zoho plan:** an **international SPI** carries a foreign `currency_code`, so the Zoho Books org must be on a plan that supports multiple currencies (**Professional or higher** — the Standard plan is base-currency only), with that currency enabled. Domestic (INR) sync works on any plan. See the Zoho Books functional doc §5.4.
 - **Cancelling a paid order is a different flow.** Once money has gone to the supplier, the **PO cannot be cancelled directly** — it goes through the **Advance Receipt Refund Adjustment** (its own module), which cancels the PO and **declines every still-pending payment request** on it. That path is **PO-only and has no approval step**; a Direct SPI (no PO) is simply deleted instead.
 
 ### 10.1 The payment rules in brief
