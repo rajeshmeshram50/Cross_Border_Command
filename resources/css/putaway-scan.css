@@ -1224,16 +1224,26 @@
 /* The step banner that is NOT the field prompt — "both matched, press
    Complete" and the like. A card, like everything else on the screen. */
 .pwscan .pwscan-prompt:not(.pwscan-prompt--field) {
-    margin: 0 12px 10px;
+    margin: 14px 12px 10px;
     padding: 11px 12px;
     border-radius: 10px;
     font-size: 14px;
     text-align: left;
 }
+/* Put-away complete: clearly done — green, with a tick, and spaced off the details above. */
 .pwscan .pwscan-prompt.is-done {
-    border-color: var(--pw-teal);
-    background: var(--pw-teal-50);
-    color: var(--pw-teal);
+    border-color: var(--pw-ok);
+    background: rgba(34, 197, 94, .12);
+    color: var(--pw-ok);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pwscan .pwscan-prompt.is-done::before {
+    content: '\2713';
+    font-weight: 900;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .pwscan .pwscan-idle,

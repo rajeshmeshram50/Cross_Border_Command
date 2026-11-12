@@ -15,18 +15,20 @@ import './handheld-guide.css';
  * into being a second, half-working put-away screen.
  */
 
-type Key = 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's7' | 's8' | 's9';
+type Key = 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's10' | 's7' | 's8' | 's9' | 's11';
 
 const SCREENS: Array<{ key: Key; n: number; title: string; sub: string }> = [
-  { key: 's1', n: 1, title: 'Pending tasks',      sub: 'Nothing in hand' },
-  { key: 's2', n: 2, title: 'Scan the box',       sub: 'Contents hidden' },
-  { key: 's3', n: 3, title: 'Box verified',       sub: 'The card opens up' },
-  { key: 's4', n: 4, title: "What's inside",      sub: 'Products expanded' },
-  { key: 's5', n: 5, title: 'Walking the levels', sub: 'Zone, rack, shelf' },
-  { key: 's6', n: 6, title: 'Ready to complete',  sub: 'Both halves matched' },
-  { key: 's7', n: 7, title: 'Queue mid-task',     sub: 'From the badge' },
-  { key: 's8', n: 8, title: 'Box cleared',        sub: 'Scans given back' },
-  { key: 's9', n: 9, title: 'Already put away',   sub: 'Re-scan of a placed box' },
+  { key: 's1',  n: 1,  title: 'Pending tasks',      sub: 'Nothing in hand' },
+  { key: 's2',  n: 2,  title: 'Scan the box',       sub: 'Contents hidden' },
+  { key: 's3',  n: 3,  title: 'Box verified',       sub: 'The card opens up' },
+  { key: 's4',  n: 4,  title: "What's inside",      sub: 'Products expanded' },
+  { key: 's5',  n: 5,  title: 'Walking the levels', sub: 'Zone, rack, shelf' },
+  { key: 's6',  n: 6,  title: 'Ready to complete',  sub: 'Both halves matched' },
+  { key: 's10', n: 7,  title: 'Put-away completed', sub: 'The box is placed' },
+  { key: 's7',  n: 8,  title: 'Queue mid-task',     sub: 'From the badge' },
+  { key: 's8',  n: 9,  title: 'Box cleared',        sub: 'Scans given back' },
+  { key: 's9',  n: 10, title: 'Already put away',   sub: 'Re-scan of a placed box' },
+  { key: 's11', n: 11, title: 'Scanned, no task',   sub: 'Details only, nothing to do' },
 ];
 
 /** The note beside the phone: what this moment is, and why it behaves so. */
@@ -92,6 +94,23 @@ const NOTES: Record<Key, {
       ],
     },
   },
+  s10: {
+    title: 'Put-away completed',
+    lead: 'The box is placed. A green tick confirms it, with the box code and exactly where it now sits — then the handheld moves on to the next box.',
+    points: [
+      'Shown the moment Complete succeeds — the server has recorded the box as placed.',
+      'Green with a tick, so the operator reads "done" at a glance.',
+      'Next box returns to the queue for the following carton.',
+    ],
+    records: {
+      heading: 'What is now true',
+      items: [
+        'The box is placed, with the time, device and the person it acts as.',
+        "The shelf's used weight and free space have moved by this box.",
+        'The task has left the queue; the badge count drops.',
+      ],
+    },
+  },
   s7: {
     title: 'The queue, mid-task',
     lead: 'The badge opens the queue over the current task. The box in hand is marked VIEWING.',
@@ -127,6 +146,23 @@ const NOTES: Record<Key, {
       items: [
         'The completed task is returned in full — box, products and location.',
         'A re-scan only reads state; it never places the box a second time.',
+      ],
+    },
+  },
+  s11: {
+    title: 'Scanned, no task',
+    lead: 'A box with no open put-away task still opens its details when scanned — the operator can read what it is — but there is nothing to scan and no Complete, because placing a box needs a task (or a desktop manual confirm) first.',
+    points: [
+      'Details only: the box and its products, read-only.',
+      'No scan field, no Complete button, and nothing is written to the scan log.',
+      'The notice says what to do next — raise a task, or confirm it by hand.',
+    ],
+    records: {
+      heading: 'Why it cannot be placed here',
+      items: [
+        'A box is placed only into a location reserved for it on the desktop (capacity + lock).',
+        'With no task there is no reserved destination to verify against — so it stays a lookup.',
+        'Reading the box never changes its state; nothing is placed.',
       ],
     },
   },
@@ -376,6 +412,29 @@ export default function InventoryHandheldGuide() {
                   </>
                 )}
 
+                {key === 's10' && (
+                  <>
+                    <div className="hhg-toast hhg-toast--done"><b>Put-away complete ✓</b><small>B-001 is placed — the box is stored</small></div>
+                    <section className="hhg-card">
+                      <BoxHead chip="BOX_SCAN_VERIFIED" tone="ok" />
+                      <div className="hhg-meta3">
+                        <div><span>INVOICE</span><b>SPI/2026-27/005</b></div>
+                        <div><span>STORED AT</span><b>SH-102</b></div>
+                        <div><span>SCANS</span><b>2/2</b></div>
+                      </div>
+                    </section>
+                    <div className="hhg-slots">
+                      <Rung label="ZONE"  code="ZN-A"   sub="General Storage" state="done" />
+                      <Rung label="RACK"  code="RK-A1"  sub="Rack A1"         state="done" />
+                      <Rung label="SHELF" code="SH-102" sub="Level 2"         state="done" />
+                    </div>
+                    <div className="hhg-next hhg-next--done">
+                      <span>✓ PUT-AWAY COMPLETE</span><b>Zone ZN-A · Rack RK-A1 · Shelf SH-102</b>
+                      <small>B-001 is stored here. Scan the next box to continue.</small>
+                    </div>
+                  </>
+                )}
+
                 {key === 's7' && (
                   <>
                     <div className="hhg-sheet-head">
@@ -439,11 +498,36 @@ export default function InventoryHandheldGuide() {
                     </div>
                   </>
                 )}
+
+                {key === 's11' && (
+                  <>
+                    <div className="hhg-banner">No scan task for B-001 — raise a task, or confirm it by hand. Details only.</div>
+                    <section className="hhg-card">
+                      <div className="hhg-card-top">
+                        <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
+                        <Chip>MIXED</Chip><span className="hhg-sp" />
+                        <span className="hhg-more">More <b>4</b></span>
+                      </div>
+                      <div className="hhg-name">Mixed Product Box</div>
+                      <div className="hhg-meta3">
+                        <div><span>PRODUCTS</span><b>4 products</b></div>
+                        <div><span>CONDITION</span><b>Good</b></div>
+                        <div><span>INVOICE</span><b>SPI/2026-27/005</b></div>
+                      </div>
+                      <div className="hhg-tags"><Chip tone="warn">NO_TASK</Chip></div>
+                    </section>
+                    <div className="hhg-next">
+                      <span>WHAT TO DO</span><b>Raise a put-away task, or confirm it by hand</b>
+                      <small>Details only — this box has no task, so there is no scanning and no Complete here.</small>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="hhg-foot">
                 {key === 's6' && <div className="hhg-btn"><i className="ri-checkbox-circle-line" />Complete put-away</div>}
-                {key !== 's9' && <div className="hhg-ghost"><i className="ri-close-line" />Clear box</div>}
+                {key === 's10' && <div className="hhg-btn hhg-btn--done"><i className="ri-arrow-right-line" />Next box</div>}
+                {key !== 's9' && key !== 's10' && key !== 's11' && <div className="hhg-ghost"><i className="ri-close-line" />Clear box</div>}
               </div>
             </div>
           </div>

@@ -215,6 +215,13 @@
 }
 .hhg-ghost { height: 40px; color: #64798a; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
+/* Put-away completed — green success state (screen 7) */
+.hhg-toast--done { background: #16a34a; }
+.hhg-next--done { background: #ecfdf3; border-color: #bbf7d0; }
+.hhg-next--done > span { color: #15803d; }
+.hhg-next--done > small { color: #3f6b4e; }
+.hhg-btn--done { background: #16a34a; }
+
 /* ── Caption ───────────────────────────────────────────────────────────── */
 .hhg-cap { min-width: 0; }
 .hhg-cap h3 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
