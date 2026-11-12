@@ -263,6 +263,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
   const [docsNotice, setDocsNotice] = useState<SupplierDocsNotice | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
+  /* The supplier's documents the server found EXPIRED on the last submit
+     (CS-407 gate). They are uploaded, so the pending count above does not
+     see them; without this the error said "renew it in the Evidence Vault"
+     and the footer offered no way there (#169). Kept for this supplier until
+     a submit goes through. */
+  const [expired, setExpired] = useState<{ vendorId: number; docs: { name: string; expiry: string }[] } | null>(null);
   const [scrutinyFor, setScrutinyFor] = useState<number | null>(null);
   // After the supplier's scrutiny is updated, reload it so the GST check runs again.
   const closeScrutiny = () => {
@@ -295,6 +301,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   /* And the same footer route for the case-to-case paperwork of earlier orders:
      the count is there before the submit is pressed, not only after it fails. */
   const ctcFooter = stage === 2 && !viewOnly && ctcPending.length > 0 && !!vaultTarget?.db_id;
+  const expiredDocs = expired && expired.vendorId === draft.vendorId ? expired.docs : [];
+  const expiredFooter = stage === 2 && !viewOnly && expiredDocs.length > 0 && !!vaultTarget?.db_id;
   // Only an overdue return can be approved past; a stale scrutiny always blocks.
   const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
   const gstCleared = !gst.notice || approval?.status === 'approved';
@@ -509,10 +517,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     try {
       const saved = await [saveStage1, saveStage2, saveStage3][stage]();
       if (saved) {
+        if (isSubmit) setExpired(null);
         setStage(stage + 1);
         setReached((r) => Math.max(r, stage + 1));
       }
     } catch (e) {
+      const docs = e instanceof PoApiError
+        ? (e.data as { expired_documents?: { name: string; expiry: string }[] } | null)?.expired_documents
+        : undefined;
+      if (isSubmit && docs?.length && draft.vendorId) setExpired({ vendorId: draft.vendorId, docs });
       fail(e);
     } finally {
       setSaving(false);
@@ -716,7 +729,16 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             {/* Not shown beside the standard one: that is the stop that comes
                 first, and two "pending" chips at once read as one number split
                 in half. */}
-            {!docsPending && ctcFooter && (
+            {/* Expired paperwork (#169): the submit was refused for it, so the
+                way to renew it is offered right here. */}
+            {!docsPending && expiredFooter && (
+              <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" onClick={() => setVaultOpen(true)} disabled={saving}
+                      title={`Renew in the Evidence Vault: ${expiredDocs.map(d => `${d.name} (expired ${d.expiry})`).join(', ')}`}>
+                <IcoShield /> Evidence Vault
+                <span className="cpf-foot-docs__n">{expiredDocs.length} expired</span>
+              </button>
+            )}
+            {!docsPending && !expiredFooter && ctcFooter && (
               <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" disabled={saving}
                       title="Documents of this supplier's earlier purchase orders are still unsigned"
                       onClick={() => setDocsNotice({
