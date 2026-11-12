@@ -3415,9 +3415,6 @@ class CredVaultController extends Controller
         $isPw    = Credential::secretIsPassword($type);
         $changed = $creating || ($sec && array_key_exists($sec, $inputFields) && $secret !== $c->secret);
         $strength = $isPw ? Credential::strengthOf($secret) : 0;
-        if ($critical && $isPw && $secret !== null && $changed && $strength < $pol['min_strength'] && !$this->importing) {
-            $this->reject('Policy requires a ' . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger password — use the generate button.', "fields.{$sec}");
-        }
 
         $rotation = $isPw ? (array_key_exists('rotation_days', $data) ? $data['rotation_days'] : ($creating ? $pol['rotation_default'] : $c->rotation_days)) : null;
         $twofa = match (true) {
