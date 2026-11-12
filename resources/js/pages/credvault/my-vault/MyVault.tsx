@@ -257,7 +257,7 @@ export default function MyVault() {
           onEdit={id => { setViewId(null); setForm({ credentialId: id }); }}
           onShare={id => { setViewId(null); setShareId(id); }} />
       )}
-      {shareId != null && <ShareModal credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}
+      {shareId != null && <ShareModal saveLock credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}
       {binRow && <BinConfirm row={binRow} lockBusy onClose={() => setBinRow(null)} onDone={() => { setBinRow(null); reload(); }} />}
       {unlockId != null && (
         <UnlockModal credentialId={unlockId} onClose={() => setUnlockId(null)} onChanged={reload}

@@ -19143,3 +19143,21 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   background: rgba(245, 158, 11, .1);
   border-color: rgba(251, 191, 36, .35);
 }
+
+/* Share popup: the picked person already has a live share — saving updates it (#49). */
+.cvx #crd-host .crd-hint.sh-existing {
+  display: block;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .crd-hint.sh-existing {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .1);
+  border-color: rgba(251, 191, 36, .35);
+}

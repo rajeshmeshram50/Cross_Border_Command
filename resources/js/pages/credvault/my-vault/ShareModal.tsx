@@ -12,6 +12,7 @@ export interface ShareModalProps {
   previewRecipients?: () => Promise<{ users: Loose[]; teams: Loose[] }>;
   onClose: () => void;
   onShared?: () => void;
+  saveLock?: boolean;
 }
 
 const PERM_ICO: Record<Perm, string> = {
@@ -79,7 +80,7 @@ function ShareShimmer() {
   );
 }
 
-export default function ShareModal({ credentialId, previewRow, previewRecipients, onClose, onShared }: ShareModalProps) {
+export default function ShareModal({ credentialId, previewRow, previewRecipients, onClose, onShared, saveLock = false }: ShareModalProps) {
   const toast = useToast();
   const { meta, typeOf } = useCvMeta();
   const [cred, setCred] = useState<CredentialDetail | null>(null);
@@ -129,6 +130,8 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
     ? (people?.users ?? []).filter(u => !blocked.has(String(u.id))).map(u => ({ id: String(u.id), label: `${u.name}${u.designation ? ` — ${u.designation}` : u.email ? ` — ${u.email}` : ''}` }))
     : (people?.teams ?? []).map(t => ({ id: String(t.id), label: `${t.name} — Team · ${t.members} members` }))), [people, type, blocked]);
 
+  const existing = useMemo(() => (who ? (cred?.shares ?? []).find(s => s.recipient.type === type && String(s.recipient.id) === who
+    && (s.state === 'active' || s.state === 'soon')) ?? null : null), [cred, type, who]);
   const end = endOf(dur);
   const permDef = meta?.permissions.find(p => p.key === perm);
   const clr = (k: string) => setErrs(p => { if (!p[k]) return p; const n = { ...p }; delete n[k]; return n; });
@@ -185,7 +188,12 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
       <div id="crd-host">
         <div className="mapsup-overlay">
           <div className="mapsup-box crd-box gp-box sh-box" role="dialog" aria-modal="true" aria-busy={busy} aria-label="Share Credential" style={{ position: 'relative' }}>
-            {busy && (
+            {busy && saveLock && (
+              <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">
+                <div className="cv-lock__box"><span className="cv-lock__spin" />{existing ? 'Updating share…' : 'Sharing credential…'}</div>
+              </div>
+            )}
+            {busy && !saveLock && (
               <div role="status" style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'inherit', background: 'rgba(8, 30, 40, .28)', backdropFilter: 'blur(1.5px)', cursor: 'progress' }}>
                 <div className="mapsup-seccard cv-saving" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
                   <span className="cp-spin" />
@@ -230,6 +238,13 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                           placeholder={`Select ${type === 'team' ? 'a team' : 'a person'}…`} onChange={v => { setWho(v); clr('who'); }} />
                       </div>
                       {errs.who && <span className="crd-err cv-ferr">{errs.who}</span>}
+                      {existing && !errs.who && (
+                        <span className="crd-hint sh-existing" role="status">
+                          Already shared with {existing.recipient.name ?? 'them'} — {existing.permission_label}
+                          {existing.expires_at ? `, until ${new Date(existing.expires_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ', no expiry'}.
+                          {' '}Saving updates this share; it does not add a second one.
+                        </span>
+                      )}
                       {type === 'user' && sharers.length > 0 && !errs.who && (
                         <span className="crd-hint">{sharers.map(s => s.name).join(', ')} shared this with you, so they are not in the list — it can't be shared back.</span>
                       )}
@@ -312,7 +327,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
               <div className="mapsup-footer__actions sh-ft" style={{ width: 'auto' }}>
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost" onClick={onClose}>Cancel</button>
                 <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary" onClick={save} disabled={!cred || !meta || busy}>
-                  <Svg icon="share" size={13} />{busy ? 'Sharing…' : 'Share Credential'}
+                  <Svg icon="share" size={13} />{busy ? (existing ? 'Updating…' : 'Sharing…') : existing ? 'Update Share' : 'Share Credential'}
                 </button>
               </div>
             </div>
