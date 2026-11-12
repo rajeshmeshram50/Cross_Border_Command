@@ -4862,6 +4862,14 @@
 }
 .s4-root .s4ra-use:hover { transform: translateY(-1px); box-shadow: 0 14px 24px -10px rgba(5,150,105,.8); }
 .s4-root .s4ra-use.is-on { background: linear-gradient(135deg, #065f46, #047857); }
+/* Saving the chosen location: picking is frozen so the recommended button or
+   a tile cannot swap the spot mid-request. The selected tile keeps full
+   colour so the operator still sees what is being saved. */
+.s4-root .s4ra-use:disabled { cursor: not-allowed; opacity: .55; transform: none; box-shadow: none; }
+.s4-root .s4rl.is-locked .s4cl-sh.is-av,
+.s4-root .s4rl.is-locked .s4cn.is-av { cursor: not-allowed; transform: none; box-shadow: none; }
+.s4-root .s4rl.is-locked .s4cl-sh.is-av:not(.is-on),
+.s4-root .s4rl.is-locked .s4cn.is-av:not(.is-on) { opacity: .5; }
 
 /* ── Section B ── */
 .s4-root .s4rx-bd.s4cl { gap: 10px; }

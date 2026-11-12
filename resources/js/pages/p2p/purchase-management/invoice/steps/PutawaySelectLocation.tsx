@@ -283,7 +283,7 @@ function SkSectionB({ label }: { label: string }) {
   );
 }
 
-export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, warehouse = null }: {
+export default function PutawaySelectLocation({ box, mode, state, spot, onSpot: pickSpot, warehouse = null, locked = false }: {
   box: SelectLocationBox;
   mode: 'rack' | 'norack' | null;
   state: { loading: boolean; data: PutawayLocations | null; error: string | null };
@@ -291,7 +291,12 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
   spot: number | null;
   onSpot: (id: number | null) => void;
   warehouse?: SelectLocationWarehouse | null;
+  /** True while the chosen spot is being saved: the selection is frozen so
+   *  "Use Recommended Spot" or a tile click cannot swap it mid-request. The
+   *  tree stays browsable — only picking is off. */
+  locked?: boolean;
 }) {
+  const onSpot = locked ? () => {} : pickSpot;
   const rec = state.data?.recommended ?? null;
   const need = state.data?.box ?? null;
   const taken = rec !== null && spot === rec.id;
@@ -348,7 +353,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
   }, [spot, state.data]);
 
   if (mode === 'norack') {
-    return <FloorSelect box={box} state={state} spot={spot} onSpot={onSpot} need={need} warehouse={warehouse} />;
+    return <FloorSelect box={box} state={state} spot={spot} onSpot={onSpot} need={need} warehouse={warehouse} locked={locked} />;
   }
 
   const zones = state.data?.zones ?? [];
@@ -371,7 +376,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
         <div
           key={sh.id}
           className={`s4cl-sh is-av${on ? ' is-on' : ''}`}
-          role="radio" tabIndex={0} aria-checked={on}
+          role="radio" tabIndex={locked ? -1 : 0} aria-checked={on} aria-disabled={locked || undefined}
           onClick={() => onSpot(on ? null : sh.id)}
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSpot(on ? null : sh.id); } }}
         >
@@ -422,7 +427,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
   };
 
   return (
-    <div className="s4rl">
+    <div className={`s4rl${locked ? ' is-locked' : ''}`} aria-busy={locked}>
       <WarehouseCard wh={warehouse} />
 
       <div className="s4rl-cols">
@@ -535,6 +540,8 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
               <button
                 type="button"
                 className={`s4ra-use${taken ? ' is-on' : ''}`}
+                disabled={locked}
+                title={locked ? 'Saving the chosen location — please wait' : undefined}
                 onClick={() => onSpot(taken ? null : rec.id)}
               >
                 {taken ? <><IcoCheck />Recommended Spot Selected</> : <><IcoPin />Use Recommended Spot</>}
@@ -696,13 +703,15 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
  * struck through as Not applicable rather than quietly dropped: the operator
  * should see that this placement has no rack, not wonder where it went.
  * ═══════════════════════════════════════════════════════════════════════════ */
-function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
+function FloorSelect({ box, state, spot, onSpot, need, warehouse, locked }: {
   box: SelectLocationBox;
   state: { loading: boolean; data: PutawayLocations | null; error: string | null };
   spot: number | null;
+  /** Already a no-op while locked (the parent swaps it). */
   onSpot: (id: number | null) => void;
   need: PutawayLocations['box'] | null;
   warehouse: SelectLocationWarehouse | null;
+  locked: boolean;
 }) {
   const zones: PutawayFloorZone[] = state.data?.floor ?? [];
   const rec = state.data?.floorPick ?? null;
@@ -734,7 +743,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
         <div
           key={z.id}
           className={`s4cn is-av${on ? ' is-on' : ''}`}
-          role="radio" tabIndex={0} aria-checked={on}
+          role="radio" tabIndex={locked ? -1 : 0} aria-checked={on} aria-disabled={locked || undefined}
           title={`Put ${putId(box.code)} in ${z.code}`}
           onClick={() => onSpot(on ? null : z.id)}
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSpot(on ? null : z.id); } }}
@@ -803,7 +812,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
   const totalArea = zones.reduce((t, z) => t + (z.area_sqft ?? 0), 0);
 
   return (
-    <div className="s4rl">
+    <div className={`s4rl${locked ? ' is-locked' : ''}`} aria-busy={locked}>
       <WarehouseCard wh={warehouse} />
 
       <div className="s4rl-cols">
@@ -913,6 +922,8 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
               </div>
 
               <button type="button" className={`s4ra-use${taken ? ' is-on' : ''}`}
+                disabled={locked}
+                title={locked ? 'Saving the chosen zone — please wait' : undefined}
                 onClick={() => onSpot(taken ? null : rec.id)}>
                 {taken ? <><IcoCheck />Recommended Zone Selected</> : <><IcoPin />Use Recommended Zone</>}
               </button>

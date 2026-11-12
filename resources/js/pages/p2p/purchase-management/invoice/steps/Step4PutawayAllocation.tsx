@@ -2003,7 +2003,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                             b={bx}
                             selected={selected === bx.code}
                             readOnly={readOnly}
-                            onPick={() => setSelected(bx.code)}
+                            onPick={() => { if (!assigning) setSelected(bx.code); }}
                             onSticker={() => setQrFor(bx.code)}
                           />
                         ))}
@@ -2139,8 +2139,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           : box.status === 'draft' ? 'Location allocated'
                           : 'Awaiting putaway',
                       }}
-                      mode={putMode} state={loc} spot={spot} onSpot={boxLocked ? () => {} : setSpot}
+                      mode={putMode} state={loc} spot={spot} onSpot={boxLocked || assigning ? () => {} : setSpot}
                       warehouse={warehouseInfo ?? (warehouse ? { name: warehouse } : null)}
+                      locked={assigning}
                     />
                   ) : lcStep === 2 ? (
                     <PutawayConfirmPlacement
@@ -2217,7 +2218,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <button
                     type="button"
                     className="s4-btn-back"
-                    disabled={lcStep === 0}
+                    disabled={lcStep === 0 || assigning}
                     onClick={() => setLcStep(n => Math.max(0, n - 1))}
                   >
                     <IcoChevL /> Back
@@ -2265,8 +2266,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   >
                     {lcStep >= LIFECYCLE.length - 1
                       ? 'Putaway complete'
+                      : lcStep === 1 && assigning ? 'Saving…'
                       : `Next: ${LIFECYCLE[lcStep + 1].label}`}
-                    <IcoChevR />
+                    {!(lcStep === 1 && assigning) && <IcoChevR />}
                   </button>
                   )}
                 </div>
