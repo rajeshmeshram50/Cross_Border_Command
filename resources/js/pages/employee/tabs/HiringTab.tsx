@@ -156,7 +156,7 @@ export default function HiringTab() {
                   </span>
                   <div>
                     <h6 className="mb-0 fw-bold ep-fs-14">Hiring Requests</h6>
-                    <small className="text-muted ep-fs-115">
+                    <small className="text-muted ep-fs-105">
                       {(() => {
                         const seesAll = ['branch_user', 'client_admin', 'super_admin']
                           .includes(String(authUser?.user_type || ''));
