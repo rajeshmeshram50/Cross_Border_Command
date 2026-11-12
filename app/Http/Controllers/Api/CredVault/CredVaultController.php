@@ -1929,6 +1929,17 @@ class CredVaultController extends Controller
     protected bool $importing = false;
 
     /**
+     * Set while an import by category saves its rows, so a 50-row sheet costs a few
+     * queries a row instead of 14: the next code (allocated once, under the client lock
+     * held for the whole import), the owner's names of this type (the duplicate check),
+     * and the audit rows (written in one insert at the end). persistCredential still
+     * validates every row exactly as the Add form does.
+     *
+     * @var array{prefix:string,next:int,names:array<string,bool>,audit:array<int,array>}|null
+     */
+    protected ?array $importBatch = null;
+
+    /**
      * POST /credvault/imports/preview  (multipart: type, file) — Import by category.
      *
      * type is one of the 25 forms. The file is that type's sheet (the sample's layout): an
@@ -2121,6 +2132,16 @@ class CredVaultController extends Controller
 
         $t = $this->inTransaction('import the credentials', function () use ($u, $d, $payload, $scope, $deptId, $picked, &$failed, &$items, &$weak, &$codes) {
             $this->importing = true;
+            // One code allocation for the whole sheet: nextCode takes the client lock, held
+            // until this transaction ends, so the numbers after it are ours to hand out.
+            $prefix = Credential::VAULT_PREFIX['normal'];
+            $this->importBatch = [
+                'prefix' => $prefix,
+                'next'   => (int) substr($this->nextCode('credvault_credentials', $prefix, $u->client_id), strlen($prefix) + 1),
+                'names'  => Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->where('type', $payload['type'])
+                    ->pluck('name')->mapWithKeys(fn ($n) => [Str::lower(trim((string) $n)) => true])->all(),
+                'audit'  => [],
+            ];
             try {
                 foreach ($payload['rows'] as $row) {
                     if ($row['status'] === 'failed') { $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => $row['errors']]; continue; }
@@ -2130,20 +2151,29 @@ class CredVaultController extends Controller
 
                     $p = $row['payload'] + ['scope' => $scope] + ($deptId ? ['department_id' => $deptId] : []);
                     if ($isDup) $p['name'] = Str::limit($p['name'], 139, '') . ' (imported)';
+                    $auditMark = count($this->importBatch['audit']);
                     try {
-                        $res = DB::transaction(fn () => $this->persistCredential(Request::create('/', 'POST', $p), $u, null, 'normal'));
+                        // persistCredential saves inside its own savepoint, so a refused row rolls back alone.
+                        $res = $this->persistCredential(Request::create('/', 'POST', $p), $u, null, 'normal');
                         $codes[] = $res->getData(true)['data']['code'] ?? null;
+                        $this->importBatch['next']++;
+                        $this->importBatch['names'][Str::lower(trim($p['name']))] = true;
                         $items++;
                         if (in_array('weak', $row['flags'], true)) $weak++;
                     } catch (ValidationException $e) {
+                        array_splice($this->importBatch['audit'], $auditMark);
                         $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => collect($e->errors())->map(fn ($m, $k) => ['field' => str_replace('fields.', '', $k), 'label' => $k, 'message' => $m[0]])->values()->all()];
                     } catch (HttpResponseException $e) {
+                        array_splice($this->importBatch['audit'], $auditMark);
                         $b = $e->getResponse()->getData(true);
                         $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => [['field' => array_key_first($b['errors'] ?? []) ?? 'row', 'label' => '', 'message' => $b['message'] ?? 'Could not be imported.']]];
                     }
                 }
+                // The "credential added" entries, one insert (chunked for a 2,000-row sheet).
+                foreach (array_chunk($this->importBatch['audit'], 500) as $chunk) AuditLog::insert($chunk);
             } finally {
                 $this->importing = false;
+                $this->importBatch = null;
             }
 
             $all = collect($payload['rows']);
@@ -3358,8 +3388,10 @@ class CredVaultController extends Controller
 
         $name = trim($data['name'] ?? $c->name);
         $ownerId = $creating ? $u->id : $c->owner_id;
-        $dup = Credential::where('client_id', $u->client_id)->where('owner_id', $ownerId)->where('type', $type)
-            ->whereRaw('lower(trim(name)) = lower(?)', [$name])->when(!$creating, fn ($q) => $q->where('id', '!=', $c->id))->exists();
+        $dup = $creating && $this->importBatch
+            ? isset($this->importBatch['names'][Str::lower($name)])
+            : Credential::where('client_id', $u->client_id)->where('owner_id', $ownerId)->where('type', $type)
+                ->whereRaw('lower(trim(name)) = lower(?)', [$name])->when(!$creating, fn ($q) => $q->where('id', '!=', $c->id))->exists();
         if ($dup) $this->reject("There is already a {$def['label']} named “{$name}” in this vault.", 'name');
 
         $scope  = $data['scope'] ?? ($c->scope ?? 'personal');
@@ -3431,7 +3463,9 @@ class CredVaultController extends Controller
             if ($creating) {
                 $c = new Credential([
                     'client_id' => $u->client_id, 'branch_id' => $u->branch_id, 'owner_id' => $u->id, 'created_by' => $u->id,
-                    'code' => $this->nextCode('credvault_credentials', Credential::VAULT_PREFIX[$vault], $u->client_id),
+                    'code' => $this->importBatch
+                        ? sprintf('%s-%04d', $this->importBatch['prefix'], $this->importBatch['next'])
+                        : $this->nextCode('credvault_credentials', Credential::VAULT_PREFIX[$vault], $u->client_id),
                     'vault' => $vault, 'type' => $type,
                 ]);
             }
@@ -3465,10 +3499,15 @@ class CredVaultController extends Controller
                 $c->twofa_email = null;
             }
             if (!$method) $c->twofa_linked_at = null;
+            // An imported row carries no files (they are attached in the form afterwards): saved once, no attachments.
+            $noFiles = $creating && $this->importBatch && !$request->allFiles();
+            if ($noFiles) $c->attachments = [];
             $c->save();
 
-            $c->attachments = $this->syncAttachments($request, $c, $def, $data['remove_attachments'] ?? [], $stored);
-            $c->saveQuietly();
+            if (!$noFiles) {
+                $c->attachments = $this->syncAttachments($request, $c, $def, $data['remove_attachments'] ?? [], $stored);
+                $c->saveQuietly();
+            }
 
             if ($creating) {
                 // CS-1479: a bulk import logs one "importx" summary entry, not a per-row
@@ -3502,6 +3541,10 @@ class CredVaultController extends Controller
         }, $stored);
 
         [$c, $resolved, $open] = $result;
+        // An import only needs the code it was saved under — not the full detail the form shows.
+        if ($creating && $this->importBatch) {
+            return response()->json(['status' => true, 'data' => ['id' => $c->id, 'code' => $c->code]], 201);
+        }
         $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
         $body  = $this->detail($fresh, $u, $this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, $c->owner_id === $u->id ? 'owner' : 'admin']);
         if (!$creating) {
@@ -5500,7 +5543,7 @@ class CredVaultController extends Controller
         $severity ??= AuditLog::ACTIONS[$action][1] ?? 'info';
         if ($c && $c->isCriticalVault() && in_array($action, AuditLog::RAISE_ON_CRITICAL, true)) $severity = 'critical';
 
-        AuditLog::create([
+        $row = [
             'client_id'       => $clientId,
             'branch_id'       => $branchId,
             'user_id'         => $userId,
@@ -5515,7 +5558,13 @@ class CredVaultController extends Controller
             'ip'              => request()?->ip(),
             'user_agent'      => Str::limit((string) request()?->userAgent(), 255, ''),
             'created_at'      => now(),
-        ]);
+        ];
+        // During an import by category the rows are written together at the end (runTypedImport).
+        if ($this->importBatch !== null) {
+            $this->importBatch['audit'][] = ['meta' => $row['meta'] === null ? null : json_encode($row['meta'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)] + $row;
+            return;
+        }
+        AuditLog::create($row);
     }
 
     protected function auditRules(): array
