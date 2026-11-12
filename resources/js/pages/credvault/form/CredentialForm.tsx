@@ -186,9 +186,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [code, setCode] = useState(detail?.code ?? '');
   const [wide, setWide] = useState(() => window.innerWidth > 980);
 
-  const wasCritical = detail?.risk === 'critical';
+  // "Critical" follows the VAULT, not the risk level — a Critical Vault credential keeps the
+  // full 2-step + approval flow even at a lower risk (CS: low-risk critical still critical).
+  const wasCritical = detail?.vault === 'critical';
   const inCritical = !!init.critical || wasCritical;
-  const addFromCritical = !!init.critical && !detail;
   // Searchable dropdowns with risk dots: only when the form is opened from the Critical Vault or the
   // Team Vault. My Vault and Password Health keep the plain list.
   const richSel = !!init.critical || init.scope === 'team';
@@ -201,7 +202,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const policyGate = { admin: pol.cp_admin, manager: pol.cp_manager, otp: pol.cp_otp };
 
   const twofaOn = T.twofa ? twofa : toggleField ? vals.twofa === 'yes' : false;
-  const critical = risk === 'critical';
+  // Drive the critical behaviour (2-step setup, protection steps, lock payload) off the vault,
+  // not the selected risk, so Low/Medium/High in the Critical Vault still get the full flow.
+  const critical = inCritical;
   const twofaLocks = critical && hasTwofaSwitch(T);
   const needAuth = critical && canProtect && (twofaLocks ? twofaOn : prot.otp && pol.cp_otp);
   const [auth, setAuth] = useState<AuthState>(() => ({ ...AUTH_EMPTY, linkedOnServer: !!(P?.otp && P?.otp_linked) }));
@@ -678,19 +681,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      // Adding from the Critical Vault offers every level, as the Figma (Critical is the default).
-      // Editing in the Critical Vault lists every level too, but only Critical can be picked: the API
-      // keeps a Critical Vault credential critical (CredVaultController:3186) and has no move to My Vault.
-      // Elsewhere the form keeps its own vault's levels.
+      // The Critical Vault offers every risk level and all are selectable — the vault, not the risk,
+      // keeps the credential critical. My Vault keeps its own levels (no critical).
       meta.risks
-        .filter(r => (addFromCritical || inCritical ? true : r.key !== 'critical'))
-        .map(r => {
-          const locked = inCritical && !addFromCritical && r.key !== 'critical';
-          return { value: r.key, label: r.label, dot: r.key, disabled: locked, disabledReason: locked ? `${r.label} — only in My Vault` : undefined };
-        }), v => setRisk(v as Risk), 1, !canProtect,
-      // The lower levels read as normal rows; a click says why the level stays Critical here.
-      o => toast.warning(`${o.label} risk is for My Vault`,
-        'A Critical Vault credential always stays Critical. To keep it at a lower risk, add it to My Vault instead.')),
+        .filter(r => (inCritical ? true : r.key !== 'critical'))
+        .map(r => ({ value: r.key, label: r.label, dot: r.key })),
+      v => setRisk(v as Risk), 1, !canProtect),
   ];
   if (isPw) {
     s3.push(selItem('rotation_days', 'Password Rotation', 'cal', false, rotation,
@@ -863,7 +859,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     if (ex.recovery_key && check('recovery_key') && rkey.trim() && rkey.trim().length < 4) errs.recovery_key = 'The recovery key looks too short';
     if (isPw && T.sec) {
       const pw = vals[T.sec] ?? '';
-      if (pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
+      if (inCritical && pw && !errs['fields.' + T.sec] && strengthOf(pw) < pol.min_strength) errs['fields.' + T.sec] = policyStrengthMsg(pol);
     }
     if (canProtect && scope === 'team' && !deptId) {
       toast.warning('Pick a team in Team Vault first', 'A team credential needs a department — open that team in Team Vault and add it there.');
@@ -873,8 +869,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const firstOf = (e: Record<string, string>) => Object.keys(e)[0];
     if (Object.keys(errs).length) {
       setErrors(errs);
-      jump(firstOf(errs));
-      toast.warning('Please complete the highlighted fields');
+      const first = firstOf(errs);
+      jump(first);
+      // Name the actual reason (e.g. the card checksum) so the toast explains why the save was blocked.
+      const only = Object.keys(errs).length === 1;
+      toast.warning(only ? 'Can’t save yet' : 'Please complete the highlighted fields', errs[first]);
       return;
     }
 
@@ -1006,12 +1005,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      // The Critical Vault API takes critical risk only (CredVaultController:3149), so a lower level
-      // picked in the Critical Vault's Add form is saved to My Vault.
-      const toMyVault = addFromCritical && !critical;
-      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical && !toMyVault);
-      toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`,
-        toMyVault ? `Saved in My Vault — only critical credentials live in the Critical Vault.` : r.message);
+      // A credential added from the Critical Vault stays in the Critical Vault at any risk level.
+      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
+      toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
       onSaved(r.data);
     } catch (e) {
       if (e instanceof CvApiError && Object.keys(e.errors).length) {
@@ -1110,7 +1106,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           <div className="mapsup-footer__info">
             {editing
               ? <><Svg d='<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"/>' size={12} /> Last updated <b>{updated}</b> · <span>{changedCount ? <b className="crd-chg">{changedCount} field{changedCount === 1 ? '' : 's'} changed</b> : 'No changes yet'}</span></>
-              : <>Adding a <b>{T.label}</b> to {canProtect && scope === 'team' ? 'Team Vault' : 'My Vault'} · fields marked <span style={{ color: '#e11d48', fontWeight: 800 }}>*</span> are required</>}
+              : <>Adding a <b>{T.label}</b> to {inCritical ? 'Critical Vault' : canProtect && scope === 'team' ? 'Team Vault' : 'My Vault'} · fields marked <span style={{ color: '#e11d48', fontWeight: 800 }}>*</span> are required</>}
           </div>
           <div className="mapsup-footer__actions">
             {!editing && onChangeType && (

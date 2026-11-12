@@ -159,28 +159,41 @@
   border-color: rgba(34, 211, 238, .25);
 }
 
+/* The Supplier / Customer / CredVault tab rail, at its standard size: 40px
+   tabs in a 48px rail, 12.5px labels, and a 48px search beside it. */
 .prm-page .ord-list .dt-tabrail.hr-dt {
-  min-height: 46px;
-}
-
-.prm-page .ord-list .dt-tabrail.hr-dt .dt-tab {
-  height: 38px;
-  font-size: 12.5px;
+  min-height: 48px;
+  max-width: 100%;
 }
 
 .prm-page .ord-list .dt-tabrail.hr-dt .dt-tabs .dt-tab {
-  transition: background-color .16s, color .16s, box-shadow .16s, border-color .16s;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 12.5px;
+  /* The active fill is a gradient, which cannot be animated, so it swaps
+     instantly; an animated text colour then ran 160ms behind it — teal text
+     on the teal tab, white text on the pale rail. Switch both at once and
+     animate only the hover. */
+  transition: none;
 }
 
+.prm-page .ord-list .dt-tabrail.hr-dt .dt-tabs .dt-tab.off:hover {
+  transition: background-color .16s, color .16s, box-shadow .16s;
+}
+
+/* Wraps instead of overflowing: four long tabs plus the search do not fit a
+   1280px window (or any window with DevTools docked), so the search moves to
+   its own line rather than the row being clipped. */
 .prm-page .ord-list>.spi-segrow {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .prm-page .ord-list .spi-segrow .spi-search {
-  height: 46px;
-  min-height: 46px;
+  height: 48px;
+  min-height: 48px;
   align-self: center;
-  flex: 1 1 594px;
+  flex: 1 1 320px;
   min-width: 260px;
   max-width: 594px;
   margin-bottom: 0;
@@ -538,8 +551,8 @@
   .prm-page .ord-list .spi-segrow .spi-search {
     flex: 1 1 100%;
     max-width: none;
-    min-height: 46px;
-    height: 46px;
+    min-height: 48px;
+    height: 48px;
     align-self: auto;
   }
 }

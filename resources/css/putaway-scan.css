@@ -119,6 +119,13 @@
 
 .pwscan-prompt.is-done { border-color: var(--pw-ok); color: var(--pw-ok); }
 
+/* No-task lookup: an amber notice (dark text) above the read-only box details. */
+.pwscan-notice {
+    margin: 12px 12px 10px; padding: 11px 12px; border-radius: 10px;
+    font-size: 13px; line-height: 1.4; font-weight: 600;
+    background: #fdf0d5; border: 1px solid #e8c88a; color: #1a1205;
+}
+
 .pwscan-staged {
     margin-bottom: 10px;
     padding: 10px 12px;
@@ -952,10 +959,10 @@
 .pws2-logo {
     display: inline-flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; flex-shrink: 0;
-    border-radius: 9px;
-    background: #fff; color: var(--pw-teal);
-    font-size: 17px; font-weight: 800;
+    border-radius: 9px; overflow: hidden;
+    background: #0b0f1a;
 }
+.pws2-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pws2-appbar-t { flex: 1 1 auto; min-width: 0; line-height: 1.15; }
 .pws2-appbar-t b { display: block; font-size: 15.5px; font-weight: 800; }
 .pws2-appbar-t small { display: block; font-size: 10.5px; opacity: .85; text-transform: uppercase; letter-spacing: .04em; }
@@ -1000,6 +1007,7 @@
 }
 .pws2-chip--ok   { background: var(--pw-teal-50); color: var(--pw-teal); }
 .pws2-chip--warn { background: #fef3c7; color: #92400e; }
+.pws2-chip--notask { background: #f59e0b; color: #241700; font-weight: 800; }
 .pws2-chip--bad  { background: #fee2e2; color: #b91c1c; }
 .pws2-more {
     flex-shrink: 0;
@@ -1118,11 +1126,14 @@
 .pws2-primary:disabled { opacity: .55; }
 .pws2-ghost {
     display: flex; align-items: center; justify-content: center; gap: 7px;
-    width: 100%; height: 40px;
-    border: 0; background: transparent; color: var(--pw-mute);
+    width: 100%; height: 44px;
+    border: 1px solid var(--pw-line); border-radius: 10px;
+    background: var(--pw-bg); color: var(--pw-text);
     font-family: inherit; font-size: 13.5px; font-weight: 700;
     cursor: pointer;
 }
+.pws2-ghost:active { background: var(--pw-line); }
+.pws2-ghost:disabled { opacity: .55; }
 
 /* ── Pending-tasks sheet ──────────────────────────────────────────────── */
 .pws2-scrim {
@@ -1224,16 +1235,26 @@
 /* The step banner that is NOT the field prompt — "both matched, press
    Complete" and the like. A card, like everything else on the screen. */
 .pwscan .pwscan-prompt:not(.pwscan-prompt--field) {
-    margin: 0 12px 10px;
+    margin: 14px 12px 10px;
     padding: 11px 12px;
     border-radius: 10px;
     font-size: 14px;
     text-align: left;
 }
+/* Put-away complete: clearly done — green, with a tick, and spaced off the details above. */
 .pwscan .pwscan-prompt.is-done {
-    border-color: var(--pw-teal);
-    background: var(--pw-teal-50);
-    color: var(--pw-teal);
+    border-color: var(--pw-ok);
+    background: rgba(34, 197, 94, .12);
+    color: var(--pw-ok);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pwscan .pwscan-prompt.is-done::before {
+    content: '\2713';
+    font-weight: 900;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .pwscan .pwscan-idle,

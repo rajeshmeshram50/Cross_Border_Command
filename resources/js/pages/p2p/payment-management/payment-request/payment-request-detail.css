@@ -27,6 +27,18 @@
     width: 50px;
     height: 50px;
   }
+
+  /* The tab rows are scaled by the same zoom, so they get the same
+     compensation as the header buttons: these values render as a 40px tab
+     with a 12.5px label, the list's tab size. */
+  .prd-txtabs .prd-seg__tab {
+    height: 50px;
+    font-size: 15.6px;
+  }
+
+  .prd-subrow .prd-subtab {
+    font-size: 15.6px;
+  }
 }
 
 .prd-shell {
@@ -476,7 +488,7 @@
     flex: 1 1 auto;
     justify-content: center;
     padding: 0 11px;
-    font-size: 11px;
+    font-size: 12.5px;
   }
 
   .prd-cols {
@@ -542,7 +554,7 @@
   justify-content: center;
   gap: 8px;
   min-width: 0;
-  height: 38px;
+  height: 40px;
   padding: 0 14px;
   border: none;
   border-radius: 10px;
@@ -552,12 +564,17 @@
   font-size: 12.5px;
   font-weight: 700;
   color: #4f6f7e;
-  transition: background-color .15s, color .15s;
+  /* No transition on the switch itself: the active gradient cannot be
+     animated and swaps instantly, so an animated colour lagged behind it
+     (grey/teal text on the teal tab, white text on the pale rail). Only the
+     hover eases. */
+  transition: none;
 }
 
-.prd-seg__tab:hover {
+.prd-seg__tab:not(.is-active):hover {
   color: #0e7490;
   background: rgba(8, 145, 178, .06);
+  transition: background-color .15s, color .15s;
 }
 
 .prd-seg__tab.is-active {

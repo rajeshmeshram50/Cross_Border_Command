@@ -333,8 +333,8 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   };
 
   if (warn) {
-    const hidden = warn.total - warn.visible_total;
-    const more = warn.visible_total - warn.items.length;
+    // Every credential the change deletes (GET /recycle-bin/retention?days= · preview.items), oldest first.
+    const rows = warn.items;
     return (
       <ConfirmModal
         icon={IC.bin}
@@ -354,15 +354,13 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
         onClose={() => { if (!busy) setWarn(null); }}
       >
         <div className="rb-impact">
-          {warn.items.map(it => (
+          {rows.map(it => (
             <div key={it.id} className="rb-impact__row">
               <span className="whm-idpill">{it.code}</span>
-              <b title={it.name}>{it.name}</b>
+              <b title={it.name}>{it.name}{it.in_my_bin === false && it.owner && <em className="rb-impact__who">{it.owner}'s bin</em>}</b>
               <small>{it.days_in_bin} {it.days_in_bin === 1 ? 'day' : 'days'} in bin</small>
             </div>
           ))}
-          {more > 0 && <div className="rb-impact__more">+ {more} more in your bin</div>}
-          {hidden > 0 && <div className="rb-impact__more">+ {hidden} from other users' bins in your company</div>}
         </div>
       </ConfirmModal>
     );

@@ -858,17 +858,38 @@
 .spi-dt-field .arf-sk-l { margin:3px 0; }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
-/* Header: title, five reference pills and the two buttons share one row only
-   where they all fit (~1800px). Below that the row used to squeeze and clip
-   (nowrap) or wrap in source order, leaving the buttons riding on the pills
-   row (QA #1). Now it breaks on purpose: title + Evidence Vault / Close on the
-   first row, the pills on a full-width second row. */
-@media (max-width: 1800px) {
+/* Header: title, five reference pills and the two buttons stay on ONE row and
+   compress to fit, rather than the pills dropping to a second row. The title
+   may take two lines, each pill shrinks and truncates its value (full value
+   in the tooltip), and the buttons never shrink. Separators, then the pill
+   icons, give way first as the width runs out. Only below 1100px, where one
+   row cannot hold them, do the pills move to their own full-width row. */
+.arf-form .spi-dt-head-l { flex:0 1 auto; min-width:240px; }
+.arf-form .spi-dt-head-l > div:last-child { min-width:0; }
+.arf-form .spi-dt-head-title {
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+}
+.arf-form .spi-dt-pills { flex:1 1 auto; justify-content:flex-end; }
+.arf-form .spi-dt-pill { flex:0 1 auto; min-width:0; }
+.arf-form .spi-dt-pill-txt { overflow:hidden; }
+.arf-form .spi-dt-pill-lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arf-form .spi-dt-dots { flex-shrink:0; }
+@media (max-width: 1600px) {
+  .arf-form .spi-dt-head { gap:10px; }
+  .arf-form .spi-dt-pills { gap:6px; }
+  .arf-form .spi-dt-dots { display:none; }
+  .arf-form .spi-dt-pill { padding:6px 10px; gap:7px; }
+}
+@media (max-width: 1360px) {
+  .arf-form .spi-dt-pill-ico { display:none; }
+  .arf-form .spi-dt-head-r .spi-dt-divider { display:none; }
+}
+@media (max-width: 1100px) {
   .arf-form .spi-dt-head { flex-wrap:wrap; row-gap:8px; padding-top:9px; padding-bottom:9px; }
   .arf-form .spi-dt-head-l { order:1; flex:1 1 auto; }
   .arf-form .spi-dt-head-r { order:2; margin-left:auto; }
-  .arf-form .spi-dt-head-r .spi-dt-divider { display:none; }
-  .arf-form .spi-dt-pills { order:3; flex:1 1 100%; margin-left:0; flex-wrap:wrap; row-gap:8px; }
+  .arf-form .spi-dt-pills { order:3; flex:1 1 100%; margin-left:0; justify-content:flex-start; }
+  .arf-form .spi-dt-pill { flex:1 1 0; }
 }
 /* spi-dt-grid4 drops to 2 columns at 1100px; spans follow it down. */
 @media (max-width: 1100px) {

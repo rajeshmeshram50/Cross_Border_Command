@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { cvApi, CV_ROUTES, type CredentialDetail, type HealthIssue, type Loose, type PageMeta } from '../cvApi';
@@ -122,6 +124,64 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
 }
 
 /** The Details column (phDetail), read from the issue's structured `details`. */
+const REF_SHOWN = 2;
+
+function RefList({ items }: { items: { id: number; code: string; name: string }[] }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const rest = items.slice(REF_SHOWN);
+  const place = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r || r.bottom < 0 || r.top > window.innerHeight) return null;
+    return { top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 300) };
+  };
+  const open = !!pos;
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.ph-refpop') || btn.current?.contains(t)) return;
+      setPos(null);
+    };
+    const follow = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.ph-refpop')) return;
+      setPos(place());
+    };
+    const away = () => setPos(null);
+    document.addEventListener('mousedown', close, true);
+    window.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', away);
+    return () => {
+      document.removeEventListener('mousedown', close, true);
+      window.removeEventListener('scroll', follow, true);
+      window.removeEventListener('resize', away);
+    };
+  }, [open]);
+  const toggle = () => setPos(pos ? null : place());
+  const ref = (o: { id: number; code: string; name: string }) => (
+    <span className="ph-ref" key={o.id} title={`${o.code} · ${o.name}`}><i className="whm-idpill">{o.code}</i><span className="ph-ref__n">{o.name}</span></span>
+  );
+  return (
+    <>
+      {items.slice(0, REF_SHOWN).map(ref)}
+      {rest.length > 0 && (
+        <button ref={btn} type="button" data-h40="skip" className={`ph-more${pos ? ' is-on' : ''}`} aria-expanded={!!pos}
+          title={`Show the other ${rest.length}`} onClick={toggle}>+{rest.length}</button>
+      )}
+      {pos && createPortal(
+        <div className="cvx">
+          <div className="ph-refpop" role="dialog" aria-label="Same password as" style={{ top: pos.top, left: pos.left }}>
+            <small>Also the same password · {rest.length}</small>
+            {rest.map(ref)}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function Detail({ x }: { x: HealthIssue }) {
   const d = (x.details ?? {}) as Loose;
   const c = x.credential;
@@ -134,7 +194,7 @@ function Detail({ x }: { x: HealthIssue }) {
     return (
       <div className="ph-dl">
         <small>Same password as</small>
-        {same.map(o => <span className="ph-ref" key={o.id}><i className="whm-idpill">{o.code}</i>{o.name}</span>)}
+        <RefList items={same} />
       </div>
     );
   }
@@ -153,7 +213,14 @@ function Detail({ x }: { x: HealthIssue }) {
   if (x.type === 'shared') {
     const by = (d.by_permission ?? {}) as Record<string, number>;
     const parts = Object.keys(PERM_LBL).filter(k => num(by[k]) > 0).map(k => `${by[k]} ${PERM_LBL[k]}`);
-    return <div className="ph-dl"><b>{num(d.active_shares)} active shares</b><small>{parts.join(' · ')}</small></div>;
+    const had = num(d.exposed_since_reset ?? d.active_shares);
+    const live = num(d.active_shares);
+    return (
+      <div className="ph-dl">
+        <b>{had} {had === 1 ? 'person' : 'people'} since the last password change</b>
+        <small>{live} active {live === 1 ? 'share' : 'shares'}{parts.length ? ` · ${parts.join(' · ')}` : ''}{d.needs_reset ? ' · revoked access still knows the password' : ''}</small>
+      </div>
+    );
   }
   return <div className="ph-dl"><small>{x.detail}</small></div>;
 }
@@ -221,7 +288,7 @@ export default function PasswordHealth() {
   };
 
   const fix = (x: HealthIssue) => {
-    if (x.type === 'shared') {
+    if (x.type === 'shared' && !(x.details as Loose)?.needs_reset) {
       // Shared By Me, filtered to this credential (its credential_id filter).
       navigate(`${CV_ROUTES.myVault}?tab=sharedby&credential_id=${x.credential.id}`);
       toast.info(`Showing who has access to ${x.credential.name}`, 'Revoke what is no longer needed.');
@@ -312,7 +379,7 @@ export default function PasswordHealth() {
                       <td>
                         <div className="mv-ownc">
                           <span className="mv-ownc__av">{initials(c.owner)}</span>
-                          <div><b>{c.owner || '—'}</b>{c.scope === 'team' ? <em className="mv-team">Team</em> : c.scope ? <em className="mv-pers">Personal</em> : null}</div>
+                          <div><Tooltip label={c.owner || '—'} disabled={!c.owner}><b className="ph-own">{c.owner || '—'}</b></Tooltip>{c.scope === 'team' ? <em className="mv-team">Team</em> : c.scope ? <em className="mv-pers">Personal</em> : null}</div>
                         </div>
                       </td>
                       <td><span className={`ph-iss ph-iss--${x.type ?? 'weak'}`}><Svg d={PH_I[x.type] ?? PH_I.all} size={12} /><span>{x.issue}</span></span></td>

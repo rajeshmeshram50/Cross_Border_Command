@@ -54,12 +54,13 @@ class DocsGuideController extends Controller
         'integrations' => 'Integrations',
         'saas'         => 'SaaS Platform',
         'p2p'          => 'Procure to Pay (P2P)',
+        'credvault'    => 'CredVault',
     ];
 
     /** Preferred group ordering; unlisted groups fall to the end, alphabetically. */
     private const GROUP_ORDER = [
         'saas', 'masters', 'sales-matrix', 'hrms',
-        'client', 'branch', 'plan', 'payment', 'payroll', 'permission', 'p2p', 'integrations',
+        'client', 'branch', 'plan', 'payment', 'payroll', 'permission', 'p2p', 'credvault', 'integrations',
     ];
 
     private function baseDir(): string

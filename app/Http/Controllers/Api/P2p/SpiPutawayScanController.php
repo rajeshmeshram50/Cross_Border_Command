@@ -498,11 +498,9 @@ class SpiPutawayScanController extends Controller
                     ->whereNotNull('completed_at')->latest('completed_at')->first();
 
                 if ($done) {
-                    $this->log($done, $device, PutawayActivityLog::SCAN_PASSED, [
-                        'box_id' => $box->id,
-                        'meta'   => ['act' => 'lookup', 'slot' => 'box', 'already_placed' => true],
-                    ]);
-
+                    // Re-scanning a box that is already placed is a read-only lookup — it
+                    // must NOT log a "Box scanned" row, or a completed box's timeline fills
+                    // with scans that never moved it. Show the details; write nothing.
                     return response()->json([
                         'status'         => true,
                         'notice'         => "{$box->box_code} of {$spi->code} is already put away.",
@@ -518,13 +516,32 @@ class SpiPutawayScanController extends Controller
 
             $named = "{$box->box_code} of {$spi->code}";
 
-            return $this->refuse($task, $device, 'no_task',
-                $row?->zone_id
-                    ? "No scan task for {$named}. It is allocated to {$row->destination} — raise a task, or confirm it by hand."
-                    // No instruction: allocating is a back-office action, and
-                    // the person holding the box cannot do it from here.
-                    : "No put-away initiated for {$named}.{$here}",
-                $data);
+            /* No open task — nothing to place, but still open the box's details so
+               the operator can read what it is. A read-only lookup: no scan log is
+               written and no state changes. Raising a task or confirming it by hand
+               is a desktop action, not something to do from here. */
+            $allocated = $row?->zone_id ? [
+                'full'  => $row->destination,
+                'zone'  => $row->zone_id ? DB::table('inventory_zones')->where('id', $row->zone_id)->value('code') : null,
+                'rack'  => $row->rack_id ? DB::table('inventory_racks')->where('id', $row->rack_id)->value('code') : null,
+                'shelf' => $row->shelf_id ? $this->nameLocation('shelf', (int) $row->shelf_id) : null,
+            ] : null;
+
+            return response()->json([
+                'status'  => true,
+                'code'    => 'no_task',
+                'no_task' => true,
+                'notice'  => $row?->zone_id
+                    ? "No put-away task for {$named}. It is allocated to {$row->destination} — raise a task, or confirm it by hand."
+                    : "No put-away task for {$named}.{$here} Raise a task, or confirm it by hand.",
+                'data'    => [
+                    'device'    => $this->deviceBody($device),
+                    'task'      => null,
+                    'box'       => $this->boxBody($box, $spi->code),
+                    'no_task'   => true,
+                    'allocated' => $allocated,
+                ],
+            ], 200);
         }
 
         /* Scanning a different box mid-task is a wrong turn, not a new task.
@@ -1382,6 +1399,43 @@ class SpiPutawayScanController extends Controller
     }
 
     /** Everything the scan page draws, in one shape for every endpoint. */
+    /** The box as the handheld reads it — code, scenario, dims, flags, products.
+     *  Shared by the live task state and the no-task lookup, so both agree. */
+    private function boxBody(SpiBox $box, ?string $spiCode): array
+    {
+        return [
+            'id'              => (int) $box->id,
+            'box_code'        => $box->box_code,
+            'putaway_code'    => 'PUT-' . $box->box_code,
+            'spi_code'        => $spiCode,
+            'scenario'        => $box->scenario,
+            'scenario_label'  => match ($box->scenario) {
+                's1' => '1 product → 1 box',
+                's2' => '1 product → multiple boxes',
+                's3' => 'Multiple products → 1 box',
+                default => $box->scenario,
+            },
+            'condition'       => $box->condition,
+            'is_stackable'    => $box->is_stackable === null ? null : (bool) $box->is_stackable,
+            'length_cm'       => $box->length_cm !== null ? (float) $box->length_cm : null,
+            'width_cm'        => $box->width_cm !== null ? (float) $box->width_cm : null,
+            'height_cm'       => $box->height_cm !== null ? (float) $box->height_cm : null,
+            'weight_kg'       => $box->weight_kg !== null ? (float) $box->weight_kg : null,
+            'net_weight_kg'   => $box->net_weight_kg !== null ? (float) $box->net_weight_kg : null,
+            'gross_weight_kg' => $box->gross_weight_kg !== null ? (float) $box->gross_weight_kg : null,
+            'vol_weight_kg'   => $box->length_cm && $box->width_cm && $box->height_cm
+                ? round(((float) $box->length_cm * (float) $box->width_cm * (float) $box->height_cm) / SpiBox::VOLUMETRIC_DIVISOR, 2)
+                : null,
+            'temp_min_c'      => $box->temp_min_c !== null ? (float) $box->temp_min_c : null,
+            'temp_max_c'      => $box->temp_max_c !== null ? (float) $box->temp_max_c : null,
+            'flags'           => $this->boxFlags($box),
+            'dimensions_cm'   => $box->length_cm && $box->width_cm && $box->height_cm
+                ? sprintf('%s x %s x %s', (float) $box->length_cm, (float) $box->width_cm, (float) $box->height_cm)
+                : null,
+            'products'        => $this->boxProducts($box),
+        ];
+    }
+
     private function state(SpiPutawayTask $task, ScanDevice $device): array
     {
         $task->loadMissing(['box.items.invoiceItem', 'invoice:id,code']);
@@ -1420,39 +1474,7 @@ class SpiPutawayScanController extends Controller
                 'issued_at'          => optional($task->issued_at)->toIso8601String(),
                 'expires_at'         => optional($task->expires_at)->toIso8601String(),
             ],
-            'box' => $box ? [
-                'id'              => (int) $box->id,
-                'box_code'        => $box->box_code,
-                'putaway_code'    => 'PUT-' . $box->box_code,
-                'spi_code'        => $task->invoice?->code,
-                'scenario'        => $box->scenario,
-                'scenario_label'  => match ($box->scenario) {
-                    's1' => '1 product → 1 box',
-                    's2' => '1 product → multiple boxes',
-                    's3' => 'Multiple products → 1 box',
-                    default => $box->scenario,
-                },
-                'condition'       => $box->condition,
-                'is_stackable'    => $box->is_stackable === null ? null : (bool) $box->is_stackable,
-                'length_cm'       => $box->length_cm !== null ? (float) $box->length_cm : null,
-                'width_cm'        => $box->width_cm !== null ? (float) $box->width_cm : null,
-                'height_cm'       => $box->height_cm !== null ? (float) $box->height_cm : null,
-                'weight_kg'       => $box->weight_kg !== null ? (float) $box->weight_kg : null,
-                'net_weight_kg'   => $box->net_weight_kg !== null ? (float) $box->net_weight_kg : null,
-                'gross_weight_kg' => $box->gross_weight_kg !== null ? (float) $box->gross_weight_kg : null,
-                /* Volumetric weight, the same divisor the packing screen uses.
-                   Shown because a light, bulky carton is charged on this. */
-                'vol_weight_kg'   => $box->length_cm && $box->width_cm && $box->height_cm
-                    ? round(((float) $box->length_cm * (float) $box->width_cm * (float) $box->height_cm) / SpiBox::VOLUMETRIC_DIVISOR, 2)
-                    : null,
-                'temp_min_c'      => $box->temp_min_c !== null ? (float) $box->temp_min_c : null,
-                'temp_max_c'      => $box->temp_max_c !== null ? (float) $box->temp_max_c : null,
-                'flags'           => $this->boxFlags($box),
-                'dimensions_cm'   => $box->length_cm && $box->width_cm && $box->height_cm
-                    ? sprintf('%s x %s x %s', (float) $box->length_cm, (float) $box->width_cm, (float) $box->height_cm)
-                    : null,
-                'products' => $this->boxProducts($box),
-            ] : null,
+            'box' => $box ? $this->boxBody($box, $task->invoice?->code) : null,
             'destination' => [
                 'full'       => $this->describe($task),
                 'warehouse'  => DB::table('inventory_warehouses')->where('id', $task->warehouse_id)->value('code'),

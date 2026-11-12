@@ -187,7 +187,7 @@ export default function MyVault() {
         <div className="tvc-list">
         {tab === 'sharedby' ? (
           <div className="whm-tblwrap">
-            <table className="whm-tbl mv-tbl">
+            <table className="whm-tbl mv-tbl sb-tbl">
               <thead><tr>{SB_COLS.map(c => <th key={c}>{c}</th>)}</tr></thead>
               <tbody>
                 {loading ? <ShimRows cols={SB_COLS.length} rows={6} />
@@ -257,7 +257,7 @@ export default function MyVault() {
           onEdit={id => { setViewId(null); setForm({ credentialId: id }); }}
           onShare={id => { setViewId(null); setShareId(id); }} />
       )}
-      {shareId != null && <ShareModal credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}
+      {shareId != null && <ShareModal saveLock credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}
       {binRow && <BinConfirm row={binRow} lockBusy onClose={() => setBinRow(null)} onDone={() => { setBinRow(null); reload(); }} />}
       {unlockId != null && (
         <UnlockModal credentialId={unlockId} onClose={() => setUnlockId(null)} onChanged={reload}

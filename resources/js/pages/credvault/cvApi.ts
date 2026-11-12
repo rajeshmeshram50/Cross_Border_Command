@@ -141,7 +141,7 @@ export interface CredentialRow {
   risk: Risk; strength: string | null; strength_level: number; has_password: boolean; twofa: Twofa;
   rotation_days: number | null; next_rotation_due: string | null; rotation_state: 'ok' | 'soon' | 'over' | null;
   protected: boolean; lock_steps: LockStep[];
-  access: { permission: Perm; via: Via } | null; can: Can | null; unlock: UnlockState | null;
+  access: { permission: Perm; via: Via; shared_by?: { id: number; name: string }[] } | null; can: Can | null; unlock: UnlockState | null;
   active_shares: number; created_at: string | null; updated_at: string | null;
 }
 export interface DetailField { key: string; label: string; kind: string; value: string | null; masked: boolean; has_value: boolean; attachment_key?: string | null;
@@ -251,7 +251,8 @@ export interface BinRetention {
 /** Bin items older than a new period: `total` company-wide, `items` (up to 10) from the user's own bin. */
 export interface RetentionImpact {
   days: number; total: number; visible_total: number;
-  items: { id: number; code: string; name: string; type: string; risk: Risk; deleted_at: string; days_in_bin: number }[];
+  /** Every credential the change deletes; in_my_bin false = another person's bin (owner names them). */
+  items: { id: number; code: string; name: string; type: string; risk: Risk; vault?: BinVault; deleted_at: string; days_in_bin: number; in_my_bin?: boolean; owner?: string | null }[];
 }
 
 export interface BinRow {

@@ -531,7 +531,7 @@ class CredVaultController extends Controller
 
         $this->audit($u, $d['action'], $c, $label . ($d['action'] === 'copy' ? ' copied' : ' revealed'),
             ['field' => $field], $c->isProtected() ? 'Critical Vault' : 'My Vault');
-        if ($c->risk === 'critical' && $c->owner_id !== $u->id) {
+        if ($c->isCriticalVault() && $c->owner_id !== $u->id) {
             $this->notify([$c->owner_id], 'critical_revealed', 'Critical credential ' . ($d['action'] === 'copy' ? 'copied' : 'revealed'),
                 "{$u->name} " . ($d['action'] === 'copy' ? 'copied' : 'revealed') . " the {$label} of “{$c->name}”.",
                 ['credential_id' => $c->id, 'url' => '/credentials-vault/critical-vault']);
@@ -635,7 +635,9 @@ class CredVaultController extends Controller
         $u = $this->tenantUser($request);
         $d = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
 
+        $branch = $this->shareBranchOf($u);
         $users = User::where('client_id', $u->client_id)->where('status', 'active')->where('id', '!=', $u->id)
+            ->when($branch, fn ($q) => $q->where('branch_id', $branch))
             ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'email']))
             ->orderBy('name')->limit(200)->get(['id', 'name', 'email', 'user_type', 'designation']);
 
@@ -686,7 +688,7 @@ class CredVaultController extends Controller
             $capped = $cap;
         }
 
-        if ($c->risk === 'critical') {
+        if ($c->isCriticalVault()) {
             if (!$pol['share_critical']) $this->reject('Sharing critical credentials is turned off in CredVault Policies.', null, 403);
             if ($d['permission'] === 'full') $this->reject('A critical credential cannot be shared with Full Access.', 'permission');
             if (!$until) $this->reject('A critical credential must be shared with an end date.', 'expires_at');
@@ -707,6 +709,10 @@ class CredVaultController extends Controller
                 ?? $this->reject('That person is not an active user of your company.', 'recipient_id', 404);
             if ($to->id === $c->owner_id) $this->reject('That person owns this credential already.', 'recipient_id');
             if ($to->id === $u->id) $this->reject('You cannot share a credential with yourself.', 'recipient_id');
+            $branch = $this->shareBranchOf($u);
+            if ($branch && (int) $to->branch_id !== $branch) $this->reject("{$to->name} is not in your branch. Share only with people in your branch.", 'recipient_id');
+            // Shared With Me: never back to the person who shared it with you.
+            if (isset($this->sharedToMeBy($u, $c)[$to->id])) $this->reject("{$to->name} shared this credential with you — it can't be shared back to them.", 'recipient_id');
             $toName  = $to->name;
             $members = collect([$to]);
             $teamSize = null;
@@ -2900,18 +2906,24 @@ class CredVaultController extends Controller
         // Only what the change newly puts past its period: already-expired items go anyway.
         $hit  = fn (Builder $q) => $this->wherePastRetention($q, $next)->whereNotIn('credvault_credentials.id',
             $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id), $pol)->select('credvault_credentials.id'));
-        $total = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id))->count();
-        $mine  = $hit($this->binQuery($u))->orderBy('deleted_at');
-        $items = (clone $mine)->limit(10)->get(['id', 'code', 'name', 'type', 'risk', 'vault', 'deleted_at']);
+        $all   = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id));
+        $total = (clone $all)->count();
+        $mine  = $hit($this->binQuery($u))->pluck('credvault_credentials.id')->flip();
+        // Every credential the change deletes — the viewer's own bin and other people's — so the confirm lists all of
+        // them, each marked with whose bin it is in (capped, as a guard on a very large bin).
+        $items = (clone $all)->with('owner:id,name')->orderBy('deleted_at')->limit(500)
+            ->get(['credvault_credentials.id', 'code', 'name', 'type', 'risk', 'vault', 'owner_id', 'deleted_at']);
 
         return [
             'days'          => $days,
             'branch_id'     => $branch,
             'total'         => $total,
-            'visible_total' => (clone $mine)->count(),
+            'visible_total' => $mine->count(),
             'items'         => $items->map(fn ($c) => [
                 'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'type' => $c->type, 'risk' => $c->risk, 'vault' => $c->vault,
                 'deleted_at' => $c->deleted_at->toIso8601String(), 'days_in_bin' => (int) $c->deleted_at->diffInDays(now()),
+                'in_my_bin' => isset($mine[$c->id]),
+                'owner' => $c->owner_id === $u->id ? 'You' : $c->owner?->name,
             ])->values(),
         ];
     }
@@ -3388,10 +3400,9 @@ class CredVaultController extends Controller
             : null;
 
         if ($critical) {
-            if (isset($data['risk']) && $data['risk'] !== 'critical') {
-                $this->reject('Everything in the Critical Vault is critical risk. Add it to My Vault for a lower risk level.', 'risk');
-            }
-            $risk = 'critical';
+            // A Critical Vault credential may carry any risk level; the vault (not the risk) drives
+            // its approval + 2-step protection, so a low-risk credential here is still critical.
+            $risk = $data['risk'] ?? ($c->risk ?? 'critical');
         } else {
             if (($data['risk'] ?? null) === 'critical') {
                 $this->reject('Critical credentials are added in the Critical Vault, where they get approvals and 2-step verification.', 'risk');
@@ -3404,7 +3415,7 @@ class CredVaultController extends Controller
         $isPw    = Credential::secretIsPassword($type);
         $changed = $creating || ($sec && array_key_exists($sec, $inputFields) && $secret !== $c->secret);
         $strength = $isPw ? Credential::strengthOf($secret) : 0;
-        if ($isPw && $secret !== null && $changed && $strength < $pol['min_strength'] && !$this->importing) {
+        if ($critical && $isPw && $secret !== null && $changed && $strength < $pol['min_strength'] && !$this->importing) {
             $this->reject('Policy requires a ' . Credential::STRENGTH_LABELS[$pol['min_strength']] . ' or stronger password — use the generate button.', "fields.{$sec}");
         }
 
@@ -3499,7 +3510,9 @@ class CredVaultController extends Controller
             }
 
             if ($creating) {
-                $this->audit($u, 'create', $c, "{$def['label']} credential added");
+                // CS-1479: a bulk import logs one "importx" summary entry, not a per-row
+                // "credential added" — so the activity log shows the import as one bulk entry.
+                if (!$this->importing) $this->audit($u, 'create', $c, "{$def['label']} credential added");
             } else {
                 $what = array_keys(array_diff_assoc(array_map('strval', $dirtyBefore), array_map('strval', [
                     'name' => $c->name, 'risk' => $c->risk, 'scope' => $c->scope, 'rotation_days' => $c->rotation_days, 'twofa' => $c->twofa,
@@ -3884,13 +3897,14 @@ class CredVaultController extends Controller
 
         $byHash = $creds->filter(fn ($c) => $c->has_password && $c->secret_hash)->groupBy('secret_hash');
         $shares = $this->shareBreakdown($creds->pluck('id')->all());
+        $exposure = $this->exposureSinceReset($creds);
 
         $out = [];
         foreach ($creds as $c) {
             $others = $c->has_password && $c->secret_hash
                 ? $byHash[$c->secret_hash]->where('id', '!=', $c->id)->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->values()->all()
                 : [];
-            foreach ($this->issuesOf($c, $pol, $others, $shares[$c->id] ?? []) as $i) {
+            foreach ($this->issuesOf($c, $pol, $others, $shares[$c->id] ?? [], $exposure[$c->id] ?? 0) as $i) {
                 $out[] = $i + [
                     'credential' => $this->issueCredential($c),
                     // Fixing means editing; a team member's copy access cannot.
@@ -3934,14 +3948,14 @@ class CredVaultController extends Controller
                 ->limit(10)->get(['id', 'code', 'name'])->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->all()
             : [];
 
-        return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? []);
+        return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? [], $this->exposureSinceReset(collect([$c]))[$c->id] ?? 0);
     }
 
     /**
      * The prototype's six checks (phIssues), with its wording. `detail` is the
      * one-line text; `details` the parts the Details column draws.
      */
-    protected function issuesOf(Credential $c, array $pol, array $reusedWith, array $shares): array
+    protected function issuesOf(Credential $c, array $pol, array $reusedWith, array $shares, int $exposed = 0): array
     {
         $crit = $c->risk === 'critical';
         $out  = [];
@@ -3979,13 +3993,18 @@ class CredVaultController extends Controller
                 'action' => 'Rotate the password before the due date'];
         }
         $live = array_sum($shares);
-        if ($live >= $pol['overshare_limit'] || ($crit && ($shares['full'] ?? 0) > 0)) {
+        $exposed = max($exposed, $live);
+        if ($exposed >= $pol['overshare_limit'] || ($crit && ($shares['full'] ?? 0) > 0)) {
             $labels = ['use' => 'Use Only', 'view' => 'View', 'copy' => 'Copy', 'full' => 'Full Access'];
             $parts  = collect($labels)->filter(fn ($l, $k) => ($shares[$k] ?? 0) > 0)->map(fn ($l, $k) => $shares[$k] . ' ' . $l)->values()->all();
+            $reset  = $live < $pol['overshare_limit'] && !($crit && ($shares['full'] ?? 0) > 0);
             $out[] = ['type' => 'shared', 'severity' => $crit ? 'high' : 'medium', 'issue' => 'Shared too widely',
-                'detail' => "{$live} active shares" . ($parts ? ' · ' . implode(' · ', $parts) : ''),
-                'details' => ['active_shares' => $live, 'by_permission' => array_intersect_key($shares, $labels)],
-                'action' => 'Review and revoke access that is no longer needed'];
+                'detail' => "{$exposed} " . Str::plural('person', $exposed) . " had the password since it was last changed · {$live} active "
+                    . Str::plural('share', $live) . ($parts ? ' · ' . implode(' · ', $parts) : ''),
+                'details' => ['active_shares' => $live, 'exposed_since_reset' => $exposed, 'needs_reset' => $reset,
+                    'by_permission' => array_intersect_key($shares, $labels)],
+                'action' => $reset ? 'Change the password — people it was shared with may still know it'
+                    : 'Review and revoke access that is no longer needed'];
         }
 
         return $out;
@@ -4008,6 +4027,28 @@ class CredVaultController extends Controller
     protected function liveShareCounts(array $ids): array
     {
         return collect($this->shareBreakdown($ids))->map(fn ($p) => ['n' => array_sum($p), 'full' => $p['full'] ?? 0])->all();
+    }
+
+    /**
+     * [credential_id => recipients] who have had the password since it was last changed: a share still live, or
+     * revoked / expired after the change. Revoking does not unsee a password, so only a new password resets it.
+     */
+    protected function exposureSinceReset(Collection $creds): array
+    {
+        $ids = $creds->pluck('id')->all();
+        if (!$ids) return [];
+        $since = $creds->mapWithKeys(fn ($c) => [$c->id => $c->password_changed_at ?? $c->created_at]);
+
+        $out = [];
+        CredentialShare::whereIn('credential_id', $ids)
+            ->get(['credential_id', 'recipient_type', 'recipient_user_id', 'recipient_department_id', 'revoked_at', 'expires_at'])
+            ->each(function ($s) use (&$out, $since) {
+                $from = $since[$s->credential_id] ?? null;
+                if ($from && (($s->revoked_at && $s->revoked_at->lte($from)) || ($s->expires_at && $s->expires_at->lte($from)))) return;
+                $out[$s->credential_id][$s->recipient_type . ':' . ($s->recipient_user_id ?? $s->recipient_department_id)] = true;
+            });
+
+        return array_map('count', $out);
     }
 
     /** [credential_id => [permission => live shares]] in one query. */
@@ -4458,7 +4499,9 @@ class CredVaultController extends Controller
             'rotation_state'    => $rot['state'],
             'protected'         => $steps !== [],
             'lock_steps'        => $steps,
-            'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1]] : null,
+            'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1],
+                // Who shared it with the viewer (live shares to them or their team): the Share popup leaves them out.
+                'shared_by'     => collect($this->sharedToMeBy($u, $c))->map(fn ($name, $id) => ['id' => $id, 'name' => $name])->values()->all()] : null,
             'can'               => $acc ? $this->canFlags($c, $acc) : null,
             'unlock'            => $steps
                 ? ($this->opensDirectly($u, $c) ? ['state' => 'open', 'label' => 'Open — Vault Admin'] : $this->unlockState($req, $steps))
@@ -5090,6 +5133,33 @@ class CredVaultController extends Controller
         return $this->levelOf($this->userInfo([$x->id])[$x->id]['designation'] ?? $x->designation);
     }
 
+    protected function shareBranchOf(User $u): ?int
+    {
+        if ($this->isAdmin($u)) return null;
+
+        return $u->branch_id ? (int) $u->branch_id : null;
+    }
+
+    /**
+     * [user id => name] of the people who shared $c with $u — live shares to $u or to $u's team — so a
+     * Shared With Me credential is never shared back to them. The owner is excluded by the share rules already.
+     */
+    protected function sharedToMeBy(User $u, Credential $c): array
+    {
+        return $this->memo("sharedby:{$u->id}:{$c->id}", function () use ($u, $c) {
+            $dept = $this->deptOf($u);
+
+            return CredentialShare::live()->where('client_id', $u->client_id)->where('credential_id', $c->id)
+                ->where(function ($w) use ($u, $dept) {
+                    $w->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $u->id));
+                    if ($dept) $w->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $dept));
+                })
+                ->whereNotNull('shared_by')->where('shared_by', '!=', $u->id)
+                ->with('sharer:id,name')->get(['id', 'shared_by'])
+                ->mapWithKeys(fn ($s) => [(int) $s->shared_by => $s->sharer?->name ?? 'Someone'])->all();
+        });
+    }
+
     /** Subquery: ids of credentials with a live share to the user or the user's team. */
     protected function sharedWithMeIds(User $u)
     {
@@ -5465,13 +5535,13 @@ class CredVaultController extends Controller
     protected function audit(User $u, string $action, ?Credential $c = null, ?string $detail = null, array $meta = [], ?string $module = null): void
     {
         $this->writeAudit($u->client_id, $u->id, $u->branch_id, $action, $c, $detail, $meta,
-            $module ?? ($c ? ($c->risk === 'critical' ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault')) : null));
+            $module ?? ($c ? ($c->isCriticalVault() ? 'Critical Vault' : ($c->scope === 'team' ? 'Team Vault' : 'My Vault')) : null));
     }
 
     protected function writeAudit(int $clientId, ?int $userId, ?int $branchId, string $action, ?Credential $c, ?string $detail, array $meta, ?string $module, ?string $severity = null): void
     {
         $severity ??= AuditLog::ACTIONS[$action][1] ?? 'info';
-        if ($c && $c->risk === 'critical' && in_array($action, AuditLog::RAISE_ON_CRITICAL, true)) $severity = 'critical';
+        if ($c && $c->isCriticalVault() && in_array($action, AuditLog::RAISE_ON_CRITICAL, true)) $severity = 'critical';
 
         $row = [
             'client_id'       => $clientId,
