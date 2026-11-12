@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
@@ -122,6 +123,57 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
 }
 
 /** The Details column (phDetail), read from the issue's structured `details`. */
+const REF_SHOWN = 2;
+
+function RefList({ items }: { items: { id: number; code: string; name: string }[] }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const rest = items.slice(REF_SHOWN);
+  useEffect(() => {
+    if (!pos) return;
+    const close = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.ph-refpop') || btn.current?.contains(t)) return;
+      setPos(null);
+    };
+    const away = () => setPos(null);
+    document.addEventListener('mousedown', close, true);
+    window.addEventListener('scroll', away, true);
+    window.addEventListener('resize', away);
+    return () => {
+      document.removeEventListener('mousedown', close, true);
+      window.removeEventListener('scroll', away, true);
+      window.removeEventListener('resize', away);
+    };
+  }, [pos]);
+  const toggle = () => {
+    if (pos) { setPos(null); return; }
+    const r = btn.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 300) });
+  };
+  const ref = (o: { id: number; code: string; name: string }) => (
+    <span className="ph-ref" key={o.id} title={`${o.code} · ${o.name}`}><i className="whm-idpill">{o.code}</i><span className="ph-ref__n">{o.name}</span></span>
+  );
+  return (
+    <>
+      {items.slice(0, REF_SHOWN).map(ref)}
+      {rest.length > 0 && (
+        <button ref={btn} type="button" data-h40="skip" className={`ph-more${pos ? ' is-on' : ''}`} aria-expanded={!!pos}
+          title={`Show the other ${rest.length}`} onClick={toggle}>+{rest.length}</button>
+      )}
+      {pos && createPortal(
+        <div className="cvx">
+          <div className="ph-refpop" role="dialog" aria-label="Same password as" style={{ top: pos.top, left: pos.left }}>
+            <small>Also the same password · {rest.length}</small>
+            {rest.map(ref)}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function Detail({ x }: { x: HealthIssue }) {
   const d = (x.details ?? {}) as Loose;
   const c = x.credential;
@@ -134,7 +186,7 @@ function Detail({ x }: { x: HealthIssue }) {
     return (
       <div className="ph-dl">
         <small>Same password as</small>
-        {same.map(o => <span className="ph-ref" key={o.id}><i className="whm-idpill">{o.code}</i>{o.name}</span>)}
+        <RefList items={same} />
       </div>
     );
   }

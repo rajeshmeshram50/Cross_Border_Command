@@ -19161,3 +19161,91 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   background: rgba(245, 158, 11, .1);
   border-color: rgba(251, 191, 36, .35);
 }
+
+/* ══ Password Health · Details column (CS-1496 / CS-1498) ══ */
+/* The strength meter starts at the left edge, under the left-aligned Details header — its own margin centred it. */
+.cvx.ph-page .mv-tbl td:nth-child(7) .mv-sg {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* Reused: the first two credentials, then "+N" opening the rest in a dropdown. */
+.cvx.ph-page .ph-ref {
+  max-width: 230px;
+}
+
+.cvx .ph-ref__n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cvx .ph-more {
+  margin-top: 2px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.6;
+  cursor: pointer;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+}
+
+.cvx .ph-more:hover,
+.cvx .ph-more.is-on {
+  color: #fff;
+  background: #0891b2;
+  border-color: #0891b2;
+}
+
+.cvx .ph-refpop {
+  position: fixed;
+  z-index: 12000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 290px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #cdeaf1;
+  box-shadow: 0 14px 30px rgba(18, 38, 63, .16);
+}
+
+.cvx .ph-refpop small {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6a869c;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.cvx .ph-refpop .ph-ref {
+  max-width: 100%;
+}
+
+[data-bs-theme="dark"] .cvx .ph-more {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .cvx .ph-more:hover,
+[data-bs-theme="dark"] .cvx .ph-more.is-on {
+  color: #0b1a22;
+  background: #22d3ee;
+}
+
+[data-bs-theme="dark"] .cvx .ph-refpop {
+  background: var(--tvd-card, #0f2530);
+  border-color: var(--tvd-line, rgba(34, 211, 238, .2));
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .45);
+}
+
+[data-bs-theme="dark"] .cvx .ph-refpop .ph-ref {
+  color: #e2f3f8;
+}
