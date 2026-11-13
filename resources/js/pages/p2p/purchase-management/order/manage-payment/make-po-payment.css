@@ -698,3 +698,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.cpay-add,
+.cpay-zoho,
+.cpay-fbtn,
+.cpay-act { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }

@@ -142,8 +142,8 @@ export default function MapInvoiceModal({
   // Warm the Stage-1 supplier/vault calls the moment a vendor is chosen (PO or
   // Direct), so the invoice form opens with them already in flight (CS-937).
   useEffect(() => {
-    const vid = mode === 'with-po' ? poPicked?.vendor_id ?? null : direct.supplierId ?? null;
-    if (vid) spiPrefetch.prime(vid);
+    if (mode === 'with-po') spiPrefetch.prime(poPicked?.vendor_id ?? null, poPicked?.id ?? null);
+    else spiPrefetch.prime(direct.supplierId ?? null);
   }, [mode, poPicked, direct.supplierId]);
 
   const [sdxReady, setSdxReady] = useState(false);

@@ -172,7 +172,7 @@ export default function RecycleBin() {
               <button key={v.key} type="button" role="tab" data-h40="skip" aria-selected={vault === v.key}
                 className={`rb-subtab${vault === v.key ? ' is-active' : ''}`} onClick={() => setVault(v.key)}>
                 <Svg d={v.icon} size={14} />{v.label}
-                <span className="rb-subtab-c">{counts?.[v.key]?.[tab as keyof BinCounts] ?? '·'}</span>
+                <span className="rb-subtab-c">{counts?.[v.key]?.[tab as keyof BinCounts] ?? 0}</span>
               </button>
             ))}
           </div>

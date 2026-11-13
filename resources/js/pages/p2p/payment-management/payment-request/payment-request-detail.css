@@ -2116,3 +2116,21 @@ a.prd-fbtn {
 [data-bs-theme="dark"] .prd-rowwin::-webkit-scrollbar-thumb {
   background: rgba(34, 211, 238, .28);
 }
+/* ══ Button size 40 (bug #28): every button in Payment Request Management and its
+   popups stands 40px on screen; icon-only buttons are 40 x 40. The page is zoomed
+   to .8 on 1025-1640px screens, where --p2p-btn is 50px so it still renders 40.
+   The remove-x on an attached file chip is not a button in this sense. */
+@media (min-width: 1025px) and (max-width: 1640px) {
+  .prd-root { --p2p-btn: 50px; }
+}
+.prd-root .prd-act,
+.prd-root .prd-backbtn,
+.prd-root .prd-sup .cpf-vault,
+.prd-rowact,
+.prd-dec__rbtn,
+.ptv-close,
+.ptv-all { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.prd-root .prd-close,
+.prd-fbtn,
+.ptv-hd__x,
+.ptv-btn { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }
