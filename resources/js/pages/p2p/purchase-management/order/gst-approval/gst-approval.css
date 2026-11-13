@@ -564,4 +564,4 @@
    stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
    small remove-x inside file chips are not buttons in this sense and keep their size. */
 .pga-act,
-.pga-btn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.pga-btn { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }

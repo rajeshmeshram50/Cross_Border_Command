@@ -346,5 +346,5 @@
 /* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
    stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
    small remove-x inside file chips are not buttons in this sense and keep their size. */
-.cam-btn { height: 40px; }
-.cam-x { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }
+.cam-btn { height: var(--p2p-btn, 40px); }
+.cam-x { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }

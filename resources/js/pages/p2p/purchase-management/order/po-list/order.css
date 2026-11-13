@@ -1366,5 +1366,5 @@
    small remove-x inside file chips are not buttons in this sense and keep their size. */
 .ord-card .ord-btn,
 .ord-cpo .spi-mdl-cancel,
-.ord-cpo .spi-mdl-confirm { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
-.ord-cpo .spi-mdl-x { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }
+.ord-cpo .spi-mdl-confirm { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.ord-cpo .spi-mdl-x { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }

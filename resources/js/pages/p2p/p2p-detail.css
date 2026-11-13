@@ -1104,4 +1104,4 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
    small remove-x inside file chips are not buttons in this sense and keep their size. */
 .spi-dt-btn-ghost,
 .spi-dt-btn-next,
-.spi-dt-btn-close { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.spi-dt-btn-close { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }

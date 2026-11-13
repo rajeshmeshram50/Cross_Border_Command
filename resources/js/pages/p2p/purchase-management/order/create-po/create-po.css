@@ -2773,10 +2773,10 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-markbtn,
 .cdoc-btn,
 .cdoc-send,
-.cdocn-btn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.cdocn-btn { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
 .cpf-supedit,
 .cgst-x,
 .cdocn-x,
 .cdoc-icobtn,
 .cpf-form .cpd-iconbtn,
-.cpf-form .cpd-addbtn { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }
+.cpf-form .cpd-addbtn { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }

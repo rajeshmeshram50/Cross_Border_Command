@@ -1604,6 +1604,11 @@
 .mpr-card .cpay-add,
 .mpr-card .mpr-tdsbtn,
 .mpr-tdsbtn,
-.mpr-paybtn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.mpr-paybtn { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
 .mpr-hero__close,
-.mpr-viewbtn { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }
+.mpr-viewbtn { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }
+
+/* Zoomed to .8 on 1025-1640px screens: 50px there renders as 40 on screen. */
+@media (min-width: 1025px) and (max-width: 1640px) {
+  .mpr-card.spi-mdl { --p2p-btn: 50px; }
+}

@@ -847,3 +847,10 @@
   color: #cbd5e1;
 }
 
+
+/* ══ Button size 40 (bug #28): every button in Payment Request Management stands 40px;
+   icon-only buttons are 40 x 40. */
+.prm-viewbtn,
+.prm-dc-close { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.prm-reasonbtn,
+.prm-dc-box .srpt-close { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }
