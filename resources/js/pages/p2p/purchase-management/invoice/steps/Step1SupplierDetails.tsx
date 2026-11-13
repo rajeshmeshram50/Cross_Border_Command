@@ -7,7 +7,7 @@ import {
   vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
 import GstNoticeModal, { type GstNotice } from '../../order/create-po/GstNoticeModal';
-import { poLookupApi, type PoDetail, type SupplierOption } from '../../order/api/po-api';
+import { poLookupApi, spiPrefetch, type PoDetail, type SupplierOption } from '../../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { legalFromVault } from '../../order/create-po/supplier-checks';
@@ -178,9 +178,10 @@ export default function Step1SupplierDetails({
     });
     setVendorId(id);
     setVault(vaultTargetOf(fresh));
-    poLookupApi.supplierVault(id)
-      .then(v => set({ vault: v, legal: legalFromVault(v) }))
-      .catch(() => {});
+    // Vault was primed when the supplier was picked in the map modal (CS-937).
+    const primedVault = spiPrefetch.take(id)?.vault;
+    (primedVault ?? poLookupApi.supplierVault(id).catch(() => null))
+      .then(v => set({ vault: v, legal: legalFromVault(v) }));
     return fresh;
   };
 

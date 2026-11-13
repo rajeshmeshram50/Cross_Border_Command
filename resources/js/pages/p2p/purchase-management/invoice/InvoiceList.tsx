@@ -13,7 +13,7 @@ import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import { useServerList } from '../../../../hooks/useServerList';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
-import { PoApiError } from '../order/api/po-api';
+import { PoApiError, spiPrefetch } from '../order/api/po-api';
 import { spiApi, toInvoiceRow } from './spi-api';
 import MapInvoiceModal, { type InvoiceMapChoice } from './MapInvoiceModal';
 import InvoicePaymentsModal from './InvoicePaymentsModal';
@@ -84,6 +84,9 @@ export default function InvoiceList() {
   const confirmMap = useCallback((choice: InvoiceMapChoice) => {
     setMapOpen(false);
     setStorageFor(choice);
+    // Prefetch supplier + vault in the background while the user does Storage
+    // Selection, so Stage 1 opens with the data already in flight (CS-937).
+    spiPrefetch.prime(choice.vendorId);
   }, []);
 
   const [formFor, setFormFor] = useState<InvoiceFormInput | null>(null);

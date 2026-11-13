@@ -17,7 +17,7 @@ import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoicePro
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, today, useInvoiceDraft } from './invoice-draft';
-import { PoApiError, poApi, poLookupApi, type PiLine, type PoDetail } from '../order/api/po-api';
+import { PoApiError, poApi, poLookupApi, spiPrefetch, type PiLine, type PoDetail } from '../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase, vaultTargetOf } from '../order/create-po/supplier-checks';
@@ -323,7 +323,12 @@ export default function InvoiceForm({
             qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
           };
         }
-        const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
+        // Supplier + vault were primed when the PO was picked (CS-937) — await
+        // the in-flight promise instead of a fresh cold call.
+        const primed = spiPrefetch.take(po.vendor_id);
+        const sup = po.vendor_id
+          ? await (primed?.supplier ?? poLookupApi.supplier(po.vendor_id).catch(() => null))
+          : null;
         if (!live) return;
         set(draftFromPo(po, sup));
         setGstApproval(po.gst_approval ?? null);
@@ -374,9 +379,8 @@ export default function InvoiceForm({
         setRemovedLines([]);
 
         if (po.vendor_id) {
-          poLookupApi.supplierVault(po.vendor_id)
-            .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
-            .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
+          (primed?.vault ?? poLookupApi.supplierVault(po.vendor_id).catch(() => null))
+            .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); });
         }
       } catch (e) {
         if (!live) return;
