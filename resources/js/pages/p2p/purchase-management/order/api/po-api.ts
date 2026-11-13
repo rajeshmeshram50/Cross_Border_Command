@@ -212,6 +212,8 @@ export type ShipmentOption = {
   id: number; code: string; shipment_date?: string | null; customer: string | null; consignee: string | null;
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
+  // null = no PI / no lines; else qty still to invoice, and fully_invoiced when 0.
+  pending_qty?: number | null; fully_invoiced?: boolean;
 };
 export type PoProofFile = {
   id: number; amount: number; date: string | null; ref: string;

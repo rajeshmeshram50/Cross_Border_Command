@@ -7,6 +7,10 @@ export interface PickRow {
   title: string;
   sub: string;
   tag?: { text: string; tone: 'goods' | 'ffd' | 'service' };
+  // Right-aligned pill, e.g. a shipment's invoicing status.
+  status?: { text: string; tone: 'pending' | 'done' };
+  // Shown but not pickable, e.g. a shipment whose PI is fully utilized.
+  disabled?: boolean;
 }
 
 const IcoSearch = (
@@ -47,6 +51,10 @@ const TYPE_ICO: Record<'goods' | 'ffd' | 'service', ReactNode> = {
 
 function TypeChip({ tag }: { tag: NonNullable<PickRow['tag']> }) {
   return <span className={`sdx-ptype sdx-ptype--${tag.tone}`}>{TYPE_ICO[tag.tone]}{tag.text}</span>;
+}
+
+function StatusChip({ status }: { status: NonNullable<PickRow['status']> }) {
+  return <span className={`sdx-pstatus sdx-pstatus--${status.tone}`}>{status.text}</span>;
 }
 
 export default function DirectSpiPicker({
@@ -136,6 +144,7 @@ export default function DirectSpiPicker({
               {picked.sub && <small>{picked.sub}</small>}
             </span>
             {picked.tag && <TypeChip tag={picked.tag} />}
+            {picked.status && <StatusChip status={picked.status} />}
           </>
         ) : (
           <span className="sdx-trig__ph">{ico}{placeholder}</span>
@@ -175,13 +184,15 @@ export default function DirectSpiPicker({
               <div className="sdx-pop__none">Nothing matches “{q.trim()}”.</div>
             ) : shown.map(r => {
               const on = r.code === value;
+              const off = !!r.disabled;
               return (
                 <div
                   key={r.code}
                   role="option"
                   aria-selected={on}
-                  className={`sdx-pop__opt${on ? ' is-sel' : ''}`}
-                  onClick={() => { onPick(r.code); setOpen(false); }}
+                  aria-disabled={off}
+                  className={`sdx-pop__opt${on ? ' is-sel' : ''}${off ? ' is-disabled' : ''}`}
+                  onClick={() => { if (off) return; onPick(r.code); setOpen(false); }}
                 >
                   <span className={`sdx-pop__ico${r.tag ? ` sdx-pop__ico--${r.tag.tone}` : ''}`}>{popIco(r)}</span>
                   <span className="sdx-pop__main">
@@ -192,7 +203,8 @@ export default function DirectSpiPicker({
                     {r.sub && <small>{r.sub}</small>}
                   </span>
                   {r.tag && <TypeChip tag={r.tag} />}
-                  <span className="sdx-pop__tick">{IcoTick}</span>
+                  {r.status && <StatusChip status={r.status} />}
+                  {!off && <span className="sdx-pop__tick">{IcoTick}</span>}
                 </div>
               );
             })}

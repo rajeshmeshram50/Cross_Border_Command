@@ -159,9 +159,19 @@ class PoLookupController extends Controller
 
         $q = ShipmentOrder::query()->with(['lead.customer', 'lead.consignee', 'proformaInvoice'])->orderByDesc('id');
         $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
+        $shipments = $q->get();
 
-        $rows = $q->get()->map(function ($s) {
+        // Pending PI qty per shipment, so the picker can badge a shipment whose
+        // PI is already fully invoiced (by POs or earlier Direct SPIs). Uses the
+        // same ordered/billed math the SPI form reads, so the badge and the
+        // form's own pending lines never disagree. Skipped for a super_admin
+        // with no client (the ordered query is single-client).
+        $pendingByPi = $this->pendingQtyByPi($shipments->pluck('proforma_invoice_id')->filter()->unique()->all(), $user->client_id);
+
+        $rows = $shipments->map(function ($s) use ($pendingByPi) {
             $lead = $s->lead;
+            $pid = $s->proforma_invoice_id;
+            $hasPending = $pid !== null && array_key_exists($pid, $pendingByPi);
             return [
                 'id' => $s->id,
                 'code' => $s->shipment_code,
@@ -172,11 +182,41 @@ class PoLookupController extends Controller
                 'consignee' => $lead && $lead->consignee ? $lead->consignee->company_name : null,
                 'opportunity_id' => $s->lead_id,
                 'opportunity_code' => $lead->opp_code ?? null,
-                'proforma_invoice_id' => $s->proforma_invoice_id,
+                'proforma_invoice_id' => $pid,
                 'pi_number' => optional($s->proformaInvoice)->code,
+                // null = no PI / no lines, so the picker shows no badge.
+                'pending_qty' => $hasPending ? round($pendingByPi[$pid], 3) : null,
+                'fully_invoiced' => $hasPending && $pendingByPi[$pid] <= 0,
             ];
         });
         return response()->json(['status' => true, 'data' => $rows]);
+    }
+
+    /**
+     * Sum of still-to-invoice PI quantity per proforma invoice, across the given
+     * PIs. Keyed by proforma_invoice_id; a PI with no items is simply absent.
+     *
+     * @param  array<int>  $piIds
+     * @return array<int,float>
+     */
+    private function pendingQtyByPi(array $piIds, ?int $clientId): array
+    {
+        if (!$piIds || !$clientId) return [];
+        $items = DB::table('proforma_invoice_items')
+            ->whereIn('proforma_invoice_id', $piIds)
+            ->get(['id', 'proforma_invoice_id', 'quantity']);
+        if ($items->isEmpty()) return [];
+
+        $ordered = app(\App\Services\P2p\PurchaseOrderService::class)
+            ->orderedByPiItem($clientId, $items->pluck('id')->all());
+
+        $out = [];
+        foreach ($items as $it) {
+            $pending = max(0, (float) $it->quantity - (float) ($ordered[(int) $it->id] ?? 0));
+            $pid = (int) $it->proforma_invoice_id;
+            $out[$pid] = ($out[$pid] ?? 0) + $pending;
+        }
+        return $out;
     }
 
     private function applyScope($q, $user, ?int $branchFilter = null): void
