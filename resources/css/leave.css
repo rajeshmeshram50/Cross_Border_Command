@@ -369,6 +369,16 @@
   background: var(--vz-card-bg);
   border-color: var(--vz-border-color);
 }
+/* Flush variant: the page hosts a self-framing <DataTable> (its own card), so
+   the shell must not add a second border/background around it. Used by Leave
+   Approvals; the header strip above sits on its own. */
+.lp-shell.lp-shell--flush,
+[data-bs-theme="dark"] .lp-shell.lp-shell--flush {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
 .lp-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; gap: 16px;

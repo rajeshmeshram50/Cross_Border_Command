@@ -7,6 +7,43 @@ Routes live in `routes/api.php`: the `Route::prefix('p2p/spi')` block (~L562–6
 
 ---
 
+## 0. Base, auth & conventions
+
+### 0.1 Base URL & headers
+| | |
+|---|---|
+| Base | `https://<host>/api` (every path below is relative to this) |
+| Auth | `Authorization: Bearer <sanctum_token>` on every route **except** the handheld (`/scan/putaway/*`, device-auth) and `/p2p/spi/sticker-preview` (local-only, no auth) |
+| Content type | `application/json` for JSON bodies; `multipart/form-data` for any request that carries a file (invoice/eway/box photo/payment proof) |
+| Accept | `application/json` — always send it; it makes Laravel return `422` JSON instead of a redirect on validation failure |
+| Branch scope | the SPA's Axios layer appends `?branch_id=<active>` to **GET**s; the server derives `client_id`/`branch_id` from the token and **ignores any in the body** |
+
+### 0.2 Response envelope
+- **Item / write:** `{ "status": true, "data": { … }, "message"?: "…" }`
+- **Collection:** `{ "data": [ … ], "tabs"?: { … }, "meta": { "current_page", "per_page", "total", "last_page" } }`
+- **Failure:** `{ "status": false, "message": "…", "errors"?: { "<field>": ["…"] } }`
+
+### 0.3 HTTP status codes used
+| Code | When |
+|---|---|
+| `200` | read / update ok |
+| `201` | created (SPI draft, box, scan-task, payment) |
+| `401` | missing / expired Sanctum token → SPA force-logout |
+| `403` | **no tenant context** (caller has no `client_id`, e.g. super-admin) |
+| `404` | row not found **within the tenant** (cross-tenant ids read as absent) |
+| `409` | a put-away **location is already locked** by another device (`assign`) |
+| `422` | validation failure, business-rule refusal (fully-invoiced PO, unpacked boxes, `warehouse_incompatible`, UTR clash, GST gate …) |
+| `429` | throttled (handheld `120/min`, device-check `60/min`) |
+| `501` | not wired yet (`/p2p/spi/{id}/zoho-sync`) |
+
+### 0.4 Pagination & filtering
+List endpoints take `page` (1-based) and `per_page` (default per the module, max 100). Collections echo `meta{current_page,per_page,total,last_page}`. Tab-bearing lists also return `tabs{…}` counts in the **same** response (no second call).
+
+### 0.5 Codes you'll see
+`SPI/<FY>/NNN` (invoice, per branch) · `B-NNN` (box, per invoice) · `ZT-YYYYMMDD-NNN` (Zebra task, per branch per day) · `PRQ-NNN` (payment request, a plain running serial) · `ADR/<FY>/<SEQ>` (refund adjustment, PO-level).
+
+---
+
 ## 1. Lookups · List · Detail
 
 | Method | Path | Handler | Purpose | Key params / response |
@@ -168,6 +205,17 @@ Prefix `scan/putaway`, `throttle:120,1`. Device identified by client certificate
 
 > **Cancelling a paid PO is a different module.** A PO with money on it can't be cancelled directly — it goes through the **Advance Receipt Refund Adjustment** (`PoRefundAdjustmentController`, `/p2p/advance-refund-adjustment`, code `ADR/<FY>/<SEQ>`), which cancels the PO and **declines every pending payment request** on it. It has **no approval step** and is a **PO-level** flow — a Direct SPI (no PO) is unwound with `DELETE /p2p/spi/{id}` instead. See `docs/p2p/refund-adjustment/*`.
 
+### 8.1 Zoho Books — what's live, what's planned
+The Zoho Books integration exists (`ZohoBooksService` + `PoZohoService`), fully documented in **`docs/integrations/zoho-books/*`** and **`docs/zoho-books-po-sync/*`**. How an SPI reaches Zoho:
+
+| SPI | Zoho Books target | State |
+|---|---|---|
+| **With-PO SPI** | a **Bill on the linked PO** — synced through the PO's own Zoho Sync (`PoZohoService::syncAll`) | **live** |
+| **Direct SPI** | its **own standalone Bill** (`ownsZohoBill()`) | **planned, not wired** — `POST /p2p/spi/{id}/zoho-sync` returns **501** |
+| SPI payment | Vendor Payment applied to the bill | live (via the PO path) |
+
+`GET /p2p/spi/{id}/zoho-tracker` works in both cases and says *why* there is (not) a bill. So the Zoho **plan is in place**; the only unbuilt piece is the Direct-SPI standalone-bill sync.
+
 ---
 
 ## 9. Common response conventions
@@ -295,19 +343,49 @@ Prefix `scan/putaway`, `throttle:120,1`. Device identified by client certificate
 
 ### 10.5 Payment (raised from the invoice; PO-backed → on the PO, Direct → on the invoice)
 ```jsonc
-// POST /p2p/spi/{id}/payment-requests
+// Step 0 (domestic) — set TDS first · PUT /p2p/spi/{id}/tds
 // Request
-{ "amount": 29500, "note": "full against INV-9981" }
-// 201
-{ "status": true, "data": { "id": 610, "code": "PR/25-26/031", "supplier_invoice_id": 42,
-    "amount": 29500, "status": "pending" } }
+{ "tds_percentage": 2, "tds_amount": 500 }        // either; the other is derived, max 40%
+// 200
+{ "status": true, "data": { "tds_amount": 500, "tds_updated_at": "2026-05-21T10:00:00Z" } }
+// 422 — not set yet, blocking a request
+{ "status": false, "message": "Deduct the TDS on this invoice first — save it (even as 0)…",
+  "errors": { "tds": ["Deduct TDS first."] } }
 ```
 ```jsonc
-// POST /p2p/spi/{id}/payment-requests/{req}/payments   ("Make SPI Payment", multipart with proof)
-// Request (fields; proof_file is a file part)
+// Raise a request · POST /p2p/spi/{id}/payment-requests
+// Request
+{ "payment_type": "advance", "requested_amount": 29500, "reason": "full against INV-9981",
+  "requested_to": 77 }                            // a named approver in the invoice's branch
+// 201
+{ "status": true, "data": { "id": 610, "code": "PRQ-031", "supplier_invoice_id": 42,
+    "requested_amount": 29500, "status": "pending", "requested_to": 77 } }
+// 422 — approver not in the invoice's branch / is a client admin
+{ "status": false, "message": "A request stops at the branch head — choose someone from this branch.",
+  "errors": { "requested_to": ["Choose someone from this branch."] } }
+// 422 — over the balance still open to request
+{ "status": false, "message": "The requested amount exceeds the 12,000.00 still open to request on this invoice.",
+  "errors": { "requested_amount": ["Amount exceeds the balance open to request."] } }
+```
+```jsonc
+// Record a payment · POST /p2p/spi/{id}/payment-requests/{req}/payments   (multipart, proof_file part)
+// Request (the request must be APPROVED first; several payments may sit under one request)
 { "amount": 29500, "bank_name": "HDFC", "utr_cheque_number": "UTR8841", "utr_cheque_date": "2026-05-21" }
 // 201
 { "status": true, "data": { "id": 710, "amount": 29500, "proof_name": "utr.pdf" } }
+// 422 — UTR already used anywhere in the company
+{ "status": false, "message": "UTR / cheque number UTR8841 is already recorded on PO/25-26/004 · PRQ-030…",
+  "errors": { "utr_cheque_number": ["Already recorded."] } }
+```
+```jsonc
+// History popup · GET /p2p/spi/{id}/payment-requests
+{ "status": true, "data": {
+    "spi": { "code": "SPI/25-26/017", "grand_total": 29500, "tds_amount": 500 },
+    "requests_summary": { "pending": 1, "approved_unpaid": 0 },
+    "po": { "code": "PO/25-26/004" },             // null on a Direct SPI
+    "ledger": { "net_payable": 29000, "paid": 0, "balance": 29000 },
+    "requests": [ { "code": "PRQ-031", "status": "pending", "requested_amount": 29500,
+                    "requested_to": 77, "payments": [] } ] } }
 ```
 
 ### 10.6 Handheld scan verdict · `POST /scan/putaway/scan`
@@ -321,3 +399,136 @@ Prefix `scan/putaway`, `throttle:120,1`. Device identified by client certificate
 // 200 — wrong label (no session break; just a verdict)
 { "status": true, "code": "wrong_box", "notice": "That's B-004 — you're placing B-001." }
 ```
+
+### 10.7 List & detail
+```jsonc
+// GET /p2p/spi?po_mode=with_po&shipment_mode=with_shipment&status=draft&q=INV-99&page=1&per_page=10
+{ "data": [
+    { "id": 42, "code": "SPI/25-26/017", "status": "draft", "is_direct": false,
+      "vendor": { "id": 14, "name": "Acme Traders" }, "grand_total": 29500,
+      "boxes_total": 3, "boxes_placed": 1, "putaway_complete": false,
+      "zoho_status": "not_synced", "pending_payment_requests": 1, "approved_unpaid_amount": 0 } ],
+  "tabs": { "with_po": 12, "without_po": 4, "with_shipment": 9, "without_shipment": 7 },
+  "meta": { "current_page": 1, "per_page": 10, "total": 16, "last_page": 2 } }
+```
+```jsonc
+// GET /p2p/spi/{id}
+{ "status": true, "data": {
+    "invoice": { "id": 42, "code": "SPI/25-26/017", "status": "draft", "stage_completed": 2, … },
+    "owns_zoho_bill": false,
+    "match": [ { "supplier_invoice_item_id": 301, "qty_pi": 100, "qty_po": 100, "qty_spi": 100,
+                 "missing_qty": 0, "extra_qty": 0 } ],
+    "packing_summary": [ { "supplier_invoice_item_id": 301, "packed": 100, "pending": 0 } ],
+    "packing_totals": { "packed": 100, "pending": 0 },
+    "putaway": { "mode": "full", "placed": 1, "total": 3, "rows": [ /* SpiPutaway */ ] } } }
+```
+
+### 10.8 GST senior approval (Direct SPI only)
+```jsonc
+// POST /p2p/spi/{id}/gst-approval/request
+// Request
+{ "approver_id": 90, "reason": "last GST return overdue; accepting the risk" }
+// 201
+{ "status": true, "data": { "id": 55, "status": "pending", "approver_id": 90 } }
+// 422 on a PO-backed SPI — the approval belongs to the order
+{ "status": false, "message": "GST approval for this invoice is raised on its purchase order." }
+```
+Stage-1 `blockers[]` reports `gst_blocked` (scrutiny stale — nobody can pass), `gst_approval` (overdue — needs a senior), or `expired_documents`; a Direct-SPI Stage 1 saves its fields even while blocked (`stage_completed` stays 0 until the approval is `approved`).
+
+### 10.9 Storage type & warehouse eligibility
+```jsonc
+// PUT /p2p/spi/{id}/storage-type   (null warehouse_id = Third-Party / summary)
+// Request
+{ "storage_type": "own", "warehouse_id": 3 }
+// 200
+{ "status": true, "data": { "warehouse_id": 3, "mode": "full" } }
+```
+```jsonc
+// GET /p2p/spi/{id}/warehouse-eligibility
+{ "status": true, "data": {
+    "required": ["cold_chain"],                   // capabilities the packed boxes need
+    "warehouses": {
+      "3": { "ok": true,  "missing": [] },
+      "4": { "ok": false, "missing": ["cold_chain"] } } } }
+```
+
+### 10.10 Put-away board & locations
+```jsonc
+// GET /p2p/spi/{id}/putaway/board
+{ "status": true, "data": {
+    "counts": { "pending": 1, "draft": 1, "awaiting_scan": 0, "placed": 1, "remaining": 2 },
+    "steps": [ /* per-status sub-step labels */ ],
+    "boxes": [ { "box_id": 500, "box_code": "B-001", "status": "placed",
+                 "disposition": "ship", "step": 4, "destination": "ZN-A › RK-A1 › SH-102" } ] } }
+```
+```jsonc
+// GET /p2p/spi/{id}/putaway/locations?box_id=500&mode=rack
+{ "status": true, "data": {
+    "recommended": { "shelf_id": 31, "match_pct": 92, "destination": "ZN-A › RK-A1 › SH-102",
+                     "capacity": { "fits": true, "weight_ok": true } },
+    "tree": { "available": [ /* zones › racks › shelves */ ],
+              "fully_utilized": [ … ], "not_eligible": [ { "shelf_id": 40, "reason": "no cold-chain" } ] } } }
+```
+
+### 10.11 Zoho tracker & task cancel
+```jsonc
+// GET /p2p/spi/{id}/zoho-tracker   (says WHY there's no bill rather than an empty state)
+{ "status": true, "data": { "owns_bill": true, "zoho_bill_id": null,
+    "status": "not_synced", "can_retry": true, "reason": "This standalone bill has not been synced yet." } }
+
+// POST /putaway/tasks/{task}/cancel
+// Request
+{ "reason": "mis-picked; redo" }
+// 200 — occupancy stays reserved, the row drops to draft
+{ "status": true, "data": { "task_code": "ZT-20260520-004", "status": "cancelled" } }
+// 422 — too late
+{ "status": false, "message": "Scanning has started on this task — it can no longer be cancelled." }
+```
+
+### 10.12 Handheld — complete & release
+```jsonc
+// POST /scan/putaway/{task}/complete   — the ONLY call that moves stock
+// 200
+{ "status": true, "code": "placed",
+  "data": { "box": { "box_code": "B-001" }, "putaway": { "status": "placed" },
+            "task": { "status": "scanned" } } }
+// 422 — not both slots proved yet
+{ "status": false, "code": "not_ready", "notice": "Scan the shelf before completing." }
+
+// POST /scan/putaway/{task}/release   — "Clear box": give back proved scans, task stays pending
+// 200
+{ "status": true, "code": "released", "data": { "task": { "status": "pending", "completed_scans": 0 } } }
+```
+
+---
+
+## 11. Query-parameter reference
+
+| Endpoint | Params |
+|---|---|
+| `GET /p2p/spi` | `po_mode` (with_po\|without_po) · `shipment_mode` (with_shipment\|without_shipment) · `status` · `vendor_id` · `from` · `to` (invoice-date range) · `q` (code/invoice-no/supplier) · `page` · `per_page` |
+| `GET /p2p/spi/orders/{po}/lines` | `exclude_spi` (omit the current draft's own lines) |
+| `GET /p2p/spi/{id}/boxes/next-codes` | `count` (1–100) |
+| `GET /p2p/spi/{id}/packed-boxes` | `bucket` (all\|ship\|inv\|damaged\|mismatch) · `handling` (haz\|non_haz\|cold) · `search` · `page` · `per_page` |
+| `GET /p2p/spi/{id}/putaway/locations` | `box_id` (req) · `mode` (rack\|norack) |
+| `GET /putaway/tasks` | `status` · `per_page` |
+| `GET /p2p/files/download` | `path` (req) · `mode` (preview\|download) |
+| `GET /p2p/spi/sticker-preview` | `cold` · `haz` · `fragile` · `nostack` · `condition` · `scenario` · `refs` |
+
+---
+
+## 12. Endpoint index (by area)
+
+| Area | Count | Controller(s) |
+|---|---|---|
+| Lookups / list / detail | 4 | `SupplierInvoiceController` |
+| Stage 01 — header + GST approval | 4 | `SupplierInvoiceController`, `PoGstApprovalController` |
+| Stage 02 — items / submit / delete | 3 | `SupplierInvoiceController` |
+| Stage 03 — boxes / stickers / finish | 11 | `SpiBoxController`, `SupplierInvoiceController` |
+| Stage 03/04 read helpers + vault | 3 | `SupplierInvoiceController` (+ `P2pVaultService`) |
+| Stage 04 — put-away / allocation / tasks | 13 | `SpiPutawayController`, `SpiPutawayAllocationController`, `SpiPutawayTaskController` |
+| Handheld (device-auth) | 8 | `SpiPutawayScanController`, `ScanDeviceController` |
+| Payment / TDS / Zoho | 7 | `PoPaymentRequestController`, `SupplierInvoiceController` |
+| Vault file stream + sibling vaults | 3 | `P2pFileController`, `PurchaseOrderDocumentController`, `SegmentDocUploadController` |
+
+> **Not SPI routes but adjacent:** cancelling a paid PO → `PoRefundAdjustmentController` (`/p2p/advance-refund-adjustment`); the supplier compliance vault → `/segment-uploads/supplier/{id}/vault`. Both are documented in their own `docs/p2p/*` sets.

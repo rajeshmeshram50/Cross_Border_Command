@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from './leavePlansApi';
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
-import SearchClear from '../../components/ui/SearchClear';
-import WorklistPager from '../../components/ui/WorklistPager';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
@@ -17,19 +15,6 @@ type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
    default, so bump the suffix if the default ever moves. */
 const PER_PAGE_KEY = 'cbc.hr.leaveApprovals.perPage.v1';
 const PER_PAGE_DEFAULT = 10;
-const PER_PAGE_OPTIONS = [10, 25, 50];
-
-/* Rows that fit between the table's top and the bottom of the viewport, floored
-   at PER_PAGE_DEFAULT. This is a plain <table>, not <DataTable>, so the fit is
-   measured here rather than inherited.
-   Grow-only by design: a tall screen uses the room it has, a short one still
-   gets a full page instead of the three-row page an unfloored fit produces. */
-const ROW_H = 62, THEAD_H = 44, PAGER_H = 46;
-const fitRows = (topPx: number) => {
-  const footer = document.querySelector('footer.footer') as HTMLElement | null;
-  const avail = window.innerHeight - topPx - (footer?.offsetHeight ?? 0) - 24 - THEAD_H - PAGER_H;
-  return Math.max(PER_PAGE_DEFAULT, Math.floor(avail / ROW_H));
-};
 
 /** The remembered MANUAL choice, or null if the user has never made one.
  *  Null is meaningful: it is what licences the auto-fit. Only a deliberate pick
@@ -135,33 +120,9 @@ export default function HrLeaveApprovals() {
   const savedPerPage = useMemo(() => {
     return readPerPage();
   }, []);
+  // DataTable owns the row-fit and paging controls now; the external perPage is
+  // only the page size sent to the server, driven by DataTable's callbacks.
   const [perPage, setPerPage] = useState<number>(savedPerPage ?? PER_PAGE_DEFAULT);
-  /* Auto-fit until the user picks a size. A remembered pick starts it false, so
-     the choice survives the next visit instead of being re-derived over. */
-  const autoFitRef = useRef(savedPerPage === null);
-  const tableRef = useRef<HTMLDivElement | null>(null);
-
-  /* Measure on mount and on a SETTLED resize. Debounced because a drag fires
-     scores of resize events, and each distinct row count is a refetch. */
-  useEffect(() => {
-    let t: number | undefined;
-    const measure = () => {
-      if (!autoFitRef.current) return;
-      const el = tableRef.current;
-      if (!el) return;
-      const fit = fitRows(el.getBoundingClientRect().top);
-      setPerPage(prev => (prev === fit ? prev : fit));
-    };
-    measure();
-    const raf = requestAnimationFrame(measure);
-    const onResize = () => { window.clearTimeout(t); t = window.setTimeout(measure, 180); };
-    window.addEventListener('resize', onResize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.clearTimeout(t);
-      window.removeEventListener('resize', onResize);
-    };
-  }, []);
   const [status, setStatus] = useState<StatusFilter>('Pending');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -287,10 +248,101 @@ export default function HrLeaveApprovals() {
   // search — independent of which tab is open, which the page's rows are not.
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
+  /* Columns for the shared <DataTable> — same component the Employee list uses,
+     so this screen reads like the rest of the app. Widths are percentages and
+     sum to 100 alongside the 4% serial column (4+22+14+16+8+14+12+10). */
+  const columns = useMemo<DataTableColumn<ApiLeaveRequest>[]>(() => [
+    {
+      header: 'Employee',
+      id: 'employee',
+      accessorFn: (r) => r.employee?.display_name || `${r.employee?.first_name ?? ''} ${r.employee?.last_name ?? ''}`.trim(),
+      meta: { width: '22%' },
+      cell: info => {
+        const r = info.row.original;
+        const name = (r.employee?.display_name?.trim() || `${r.employee?.first_name ?? ''} ${r.employee?.last_name ?? ''}`.trim()) || '—';
+        const acc = r.employee ? accentFor(r.employee.id) : '#7c5cfc';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span
+              className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${acc}, ${acc}cc)` }}
+            >
+              {initialsOf(name)}
+            </span>
+            <div className="min-w-0">
+              <div className="fw-semibold text-truncate" style={{ fontSize: 13 }}>{name}</div>
+              <div className="text-muted" style={{ fontSize: 11 }}>{r.employee?.emp_code ?? ''}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Leave Type',
+      id: 'leave_type',
+      accessorFn: (r) => r.leave_type?.name ?? '',
+      meta: { width: '14%', align: 'center' },
+      cell: info => (
+        <span className="rec-pill" style={{ background: typeTone.bg, color: typeTone.fg, fontSize: 11 }}>
+          {info.row.original.leave_type?.name ?? '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Dates',
+      id: 'dates',
+      accessorFn: (r) => r.from_date ?? '',
+      meta: { width: '16%' },
+      cell: info => {
+        const r = info.row.original;
+        return <span className="fs-13">{shortDate(r.from_date)} – {shortDate(r.to_date)}</span>;
+      },
+    },
+    {
+      header: 'Days',
+      accessorKey: 'days',
+      meta: { width: '8%', align: 'center' },
+      cell: info => <span className="fs-13">{Number(info.getValue())}</span>,
+    },
+    {
+      header: 'Requested On',
+      id: 'requested_on',
+      accessorFn: (r) => r.created_at ?? '',
+      meta: { width: '14%', align: 'center' },
+      cell: info => <span className="fs-13 text-muted">{fmtDate(info.row.original.created_at)}</span>,
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '12%', align: 'center' },
+      cell: info => {
+        const tone = statusTone(info.row.original.status);
+        return <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>{info.row.original.status}</span>;
+      },
+    },
+    {
+      header: 'Action',
+      id: 'action',
+      enableSorting: false,
+      meta: { width: '10%', align: 'right' },
+      cell: info => (
+        <button
+          type="button"
+          className="rec-btn-ghost"
+          style={{ fontSize: 12 }}
+          onClick={e => { e.stopPropagation(); openDetail(info.row.original.id); }}
+        >
+          Review
+        </button>
+      ),
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [dark]);
+
   return (
     <Row>
       <Col xs={12}>
-        <div className="lp-shell">
+        <div className="lp-shell lp-shell--flush">
           <div className="frm-cstrip hr-cstrip mb-3">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
@@ -306,186 +358,41 @@ export default function HrLeaveApprovals() {
             </button>
           </div>
 
-          <div className="d-flex align-items-center gap-2 flex-wrap p-3" style={{ background: 'var(--vz-card-bg)', borderBottom: '1px solid var(--vz-border-color)' }}>
-            <div
-              className="d-flex flex-wrap"
-              style={{
-                background: 'var(--vz-secondary-bg)',
-                border: '1px solid var(--vz-border-color)',
-                borderRadius: 10,
-                padding: 4,
-                gap: 4,
-              }}
-            >
-              {/* Every status that counts toward "All" needs its own tab, or the totals don't reconcile. */}
-              {(['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'] as StatusFilter[]).map(s => {
-                const on = status === s;
-                const count = statusCounts[s];
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setStatus(s)}
-                    className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                    style={{
-                      borderRadius: 8,
-                      padding: '7px 14px',
-                      fontSize: 13,
-                      background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                      color: on ? '#fff' : 'var(--vz-secondary-color)',
-                      border: 'none',
-                      boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                    }}
-                  >
-                    {s}
-                    {count !== undefined && count > 0 && (
-                      <span
-                        className="badge rounded-pill"
-                        style={{
-                          fontSize: 11,
-                          background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        }}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="lp-search-box flex-grow-1 ms-auto" style={{ minWidth: 240, maxWidth: 360 }}>
-              <i className="ri-search-line" />
-              <input
-                type="text"
-                autoComplete="off"
-                placeholder="Search by employee name or code..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              <SearchClear show={search} onClear={() => { setSearch(''); }} />
-            </div>
-            <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
-              <i className="ri-refresh-line" />
-            </button>
-          </div>
-
-          <div className="lp-config-table-wrap" style={{ padding: 16 }} ref={tableRef}>
-            <table className="lp-config-table">
-              <thead>
-                <tr>
-                  <th>EMPLOYEE</th>
-                  <th>LEAVE TYPE</th>
-                  <th>DATES</th>
-                  <th style={{ width: 90 }}>DAYS</th>
-                  <th>REQUESTED ON</th>
-                  <th>STATUS</th>
-                  <th style={{ textAlign: 'right' }}>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Shimmer rows, not a centred spinner. The spinner collapsed
-                    the table to a single line, so the surrounding layout jumped
-                    on every filter change and settled again when rows landed.
-                    Placeholder rows hold the table's shape. */}
-                {loading ? (
-                  <ShimmerTableRows rows={8} cols={7} keyPrefix="lv-appr" />
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
-                      <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
-                      <div className="fw-semibold">Nothing to review</div>
-                      <div className="fs-13 mt-1">
-                        {status === 'Pending' ? 'No pending leave requests from your team.' : `No ${status.toLowerCase()} requests.`}
-                      </div>
-                    </td>
-                  </tr>
-                ) : rows.map(r => {
-                  const empName = r.employee
-                    ? (r.employee.display_name?.trim() || `${r.employee.first_name} ${r.employee.last_name ?? ''}`.trim())
-                    : '—';
-                  const tone = statusTone(r.status);
-                  const acc = r.employee ? accentFor(r.employee.id) : '#7c5cfc';
-                  return (
-                    <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(r.id)}>
-                      <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <span
-                            className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                            style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${acc}, ${acc}cc)` }}
-                          >
-                            {initialsOf(empName)}
-                          </span>
-                          <div>
-                            <div className="fw-semibold" style={{ fontSize: 13 }}>{empName}</div>
-                            <div className="text-muted" style={{ fontSize: 11 }}>{r.employee?.emp_code ?? ''}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="rec-pill" style={{ background: typeTone.bg, color: typeTone.fg, fontSize: 11 }}>
-                          {r.leave_type?.name ?? '—'}
-                        </span>
-                      </td>
-                      <td className="fs-13">{shortDate(r.from_date)} – {shortDate(r.to_date)}</td>
-                      <td className="fs-13">{Number(r.days)}</td>
-                      <td className="fs-13 text-muted">{fmtDate(r.created_at)}</td>
-                      <td>
-                        <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
-                          {r.status}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          className="rec-btn-ghost"
-                          onClick={() => openDetail(r.id)}
-                          style={{ fontSize: 12 }}
-                        >
-                          Review
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pager. Shown whenever there is anything to count, which is the
-              gate every other list in the app uses (CLM Segment Master, the
-              Clause/Trade-Document libraries, Suppliers).
-
-              It used to be `total > perPage`, i.e. only once a second page
-              existed. On a screen like Leave Approvals, where two pending
-              requests is a normal day, that meant the footer was never drawn
-              at all and the card just stopped under the last row. The count
-              is information even when it is small — "Showing 1–2 of 2" tells
-              you nothing is hidden — and Rows per page stays usable, so this
-              is not the dead "1/1 + two disabled arrows" the old gate was
-              written to avoid. */}
-          {!loading && total > 0 && (
-            <WorklistPager
-              total={total}
-              page={page}
-              pageSize={perPage}
-              onPage={p => { if (!loading) setPage(p); }}
-              onPageSize={n => {
-                if (loading) return;
-                // A pick ends the auto-fit and is remembered; re-deriving a
-                // size over a deliberate choice is what makes the control
-                // feel broken.
-                autoFitRef.current = false;
-                try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
-                setPerPage(n);
-              }}
-              /* The fitted size is rarely one of the presets (it is whatever
-                 the viewport allows, e.g. 14), and a chooser whose value
-                 matches no option has nothing to show. Fold the current size
-                 in so it always does. */
-              pageSizeOptions={Array.from(new Set([...PER_PAGE_OPTIONS, perPage])).sort((a, b) => a - b)}
-            />
-          )}
+          <DataTable<ApiLeaveRequest>
+            data={rows}
+            columns={columns}
+            serial={{ header: 'Sr No', width: '4%' }}
+            accent="violet"
+            className="hr-dt"
+            loading={loading}
+            onRowClick={(r) => openDetail(r.id)}
+            fitToViewport
+            autoFitRows
+            minAutoRows={10}
+            serverPagination={{
+              total,
+              pageIndex: page - 1,                 // state is 1-based; DataTable counts from 0
+              onPageChange: (idx) => setPage(idx + 1),
+              onPageSizeChange: setPerPage,
+            }}
+            tabs={(['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'] as StatusFilter[]).map(s => ({
+              key: s, label: s, count: statusCounts[s],
+            }))}
+            activeTab={status}
+            onTabChange={(k) => setStatus(k as StatusFilter)}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by employee name or code..."
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
+                <div className="fw-semibold">Nothing to review</div>
+                <div className="fs-13 mt-1">
+                  {status === 'Pending' ? 'No pending leave requests from your team.' : `No ${status.toLowerCase()} requests.`}
+                </div>
+              </>
+            }
+          />
         </div>
       </Col>
 

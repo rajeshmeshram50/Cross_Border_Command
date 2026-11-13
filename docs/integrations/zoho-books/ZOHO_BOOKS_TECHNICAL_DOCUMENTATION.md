@@ -213,6 +213,15 @@ tax in Zoho and hitting retry works immediately — no wait.
 - **Intra-state** (supplier in our home state) → CGST + SGST (half each).
 - **Inter-state** (different state) → a single IGST at the full rate.
 
+**Currency resolution — and its plan dependency.** `resolveCurrencyId(code)` is the sibling
+resolver: it maps an ISO code to Zoho's `currency_id`, and `findOrCreateVendorId` /
+`alignContactCurrency` pin each vendor to its trading currency. **A currency the Zoho
+*organisation* has not enabled cannot be resolved, so an international (foreign-currency)
+sync fails with Zoho's own error** — not an app bug. Enabling more than one currency in
+Zoho Books is a **paid-plan feature (Professional edition or higher; Standard/Free is
+base-currency only)**, so international sync additionally depends on the org's subscription
+plan. Domestic (INR) sync is unaffected. See the functional doc §7.6.
+
 ---
 
 ## 7. Idempotency & Concurrency

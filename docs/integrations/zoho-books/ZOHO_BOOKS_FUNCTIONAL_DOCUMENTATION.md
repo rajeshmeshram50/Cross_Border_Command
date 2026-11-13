@@ -187,7 +187,11 @@ the **un-posted remainder** — so it never double-posts.
  ☐ At least one payment is recorded and cleared
  ☐ GST rates exist in Zoho Books
  ☐ Bank/cash account exists in Zoho Books (for payment sync)
+ ☐ (international / foreign-currency POs) the Zoho Books plan supports multi-currency, and that currency is enabled
 ```
+
+### 5.4 Plan note (international only)
+**International / foreign-currency** orders also require the Zoho Books org to be on a **multi-currency plan (Professional or higher)** with that currency enabled — the Standard/Free plan is base-currency only. Domestic (INR) sync needs no special plan. Full detail in **§7.5**.
 
 ---
 
@@ -268,6 +272,21 @@ International. You don't choose it.
  TDS 2% ₹1,000 → net ₹58,000           → net $5,000
  Zoho bill carries GST + TDS.          Zoho bill carries 0% tax, no deduction.
 ```
+
+### 7.5 Multi-currency needs the right Zoho Books plan
+
+An **international** supplier trades in a **foreign currency** (the PO/SPI carries its own `currency_code` and `exchange_rate`), and **Zoho Books only supports more than one currency on a paid plan**. This is a subscription requirement, not a toggle in our app.
+
+| Zoho Books plan | Currencies | International sync? |
+|---|---|---|
+| **Free / Standard** | **base currency only** (e.g. INR) | ❌ cannot hold a foreign-currency vendor or bill |
+| **Professional and higher** (Professional · Premium · Elite · Ultimate) | **multi-currency** | ✅ works, once the currency is enabled |
+
+- **Domestic (INR) sync works on any plan** that meets the §5 prerequisites — the plan only matters for international orders.
+- The sync reflects this at the API level: it resolves the transaction's currency and pins each vendor to its trading currency. **A currency the Zoho organisation hasn't enabled cannot be resolved, so an international sync fails with Zoho's own error** — the cause is the plan/organisation, not our app.
+- **Action:** to sync international orders, the Zoho Books org must be on **Professional or higher** *and* have each currency enabled under **Settings → Currencies**. Confirm the current edition with the account owner.
+
+> This document states the **capability requirement**, not a price. For the exact edition names and cost, see Zoho Books' published plans.
 
 ---
 
