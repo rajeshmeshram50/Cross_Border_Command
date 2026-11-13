@@ -3018,8 +3018,8 @@
 
 /* The SPI payment popups — Payment Requests History, Raise Request and Record
    Payment — at the same 40px. They are built on the Purchase Order's .mpr-card,
-   whose own scale is 36 (footer) and 34 (TDS button), and the PO screens keep
-   that. The popups portal to <body>, outside .spi-list, so they are picked out
+   which is now 40 as well (bug #28, see the end of manage-payment-requests.css).
+   The popups portal to <body>, outside .spi-list, so they are picked out
    by their title ids instead: all three are "inv-…", which no PO popup uses. */
 .mpr-card[aria-labelledby^="inv-"] .spi-mdl-cancel,
 .mpr-card[aria-labelledby^="inv-"] .spi-mdl-confirm,
@@ -3045,3 +3045,9 @@
   .spi-list .spi-search,
   .spi-list .spi-segrow .spi-search { height: 42px; }
 }
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.spi-mdl-cancel,
+.spi-mdl-confirm { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.spi-mdl-x { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }

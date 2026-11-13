@@ -1595,3 +1595,15 @@
 .inv-mpr-skel--sub { width: 200px; height: 10px; }
 .inv-mpr-skel--sub,
 .inv-mpr-skel--badge { background: linear-gradient(90deg, rgba(255,255,255,.14) 25%, rgba(255,255,255,.30) 50%, rgba(255,255,255,.14) 75%) !important; background-size: 200% 100% !important; opacity: 1; }
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.mpr-card .spi-mdl-cancel,
+.mpr-card .spi-mdl-confirm,
+.mpr-card .cpay-add,
+.mpr-card .mpr-tdsbtn,
+.mpr-tdsbtn,
+.mpr-paybtn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.mpr-hero__close,
+.mpr-viewbtn { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }

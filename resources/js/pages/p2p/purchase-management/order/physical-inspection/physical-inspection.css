@@ -1312,3 +1312,9 @@
 [data-bs-theme="dark"] .pins-wait { background: rgba(15, 23, 42, .86); }
 [data-bs-theme="dark"] .pins-wait__t { color: #e2e8f0; }
 [data-bs-theme="dark"] .pins-wait__s { color: #94a3b8; }
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.pins-btn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.pins-hero__close { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }

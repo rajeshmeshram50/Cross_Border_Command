@@ -144,3 +144,10 @@
 [data-bs-theme="dark"] .pocn-step__n { background: rgba(148, 163, 184, .12); color: #94a3b8; }
 [data-bs-theme="dark"] .pocn-step__now { background: rgba(8, 145, 178, .2); color: #67e8f9; }
 [data-bs-theme="dark"] .pocn-btn--ghost { color: #cbd5e1; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(148, 163, 184, .3); }
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.pocan-btn,
+.pocn-btn { height: 40px; }
+.porec-hd__x { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }

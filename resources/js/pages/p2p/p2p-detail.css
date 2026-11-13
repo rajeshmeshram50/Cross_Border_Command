@@ -1098,3 +1098,10 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] .spi-root .spicfm-msg{color:#9db3c1;}
 [data-bs-theme="dark"] .spi-root .spicfm-chip{background:#0b2028;border-color:#1c4553;color:#67e8f9;}
 [data-bs-theme="dark"] .spi-root .spicfm-btn--ghost{background:#16303b;border-color:#1c4553;color:#9db3c1;}
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.spi-dt-btn-ghost,
+.spi-dt-btn-next,
+.spi-dt-btn-close { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }

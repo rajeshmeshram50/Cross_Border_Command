@@ -2757,3 +2757,26 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
     margin-left: 0;
   }
 }
+
+/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
+   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
+   small remove-x inside file chips are not buttons in this sense and keep their size. */
+.cpf-form .spi-dt-btn-pay,
+.cpf-form .spi-dt-btn-close,
+.cpf-form .spi-dt-btn-ghost,
+.cpf-form .spi-dt-btn-next,
+.cpd-savebar .spi-dt-btn-next,
+.cpf-addbtn,
+.cpf-vault,
+.cgst-btn,
+.cdoc-vault,
+.cdoc-markbtn,
+.cdoc-btn,
+.cdoc-send,
+.cdocn-btn { height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+.cpf-supedit,
+.cgst-x,
+.cdocn-x,
+.cdoc-icobtn,
+.cpf-form .cpd-iconbtn,
+.cpf-form .cpd-addbtn { width: 40px; height: 40px; min-height: 40px; box-sizing: border-box; }
