@@ -276,7 +276,7 @@ export function CvTabsRow({ tabs, active, onTab, search, onSearch, placeholder, 
               {t.icon.startsWith('ri-') ? <i className={t.icon} style={{ fontSize: 15 }} /> : <Svg icon={t.icon} d={t.icon.startsWith('<') ? t.icon : undefined} size={15} />}
             </span>
             <span className="smt-proctype-tab__lbl">{t.label}</span>
-            <span className="bst-tab-c parch-main-c">{t.count ?? '·'}</span>
+            <span className="bst-tab-c parch-main-c">{t.count ?? 0}</span>
           </button>
         ))}
       </div>

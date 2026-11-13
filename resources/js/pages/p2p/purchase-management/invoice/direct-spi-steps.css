@@ -65,6 +65,8 @@
 .sdx-pop__none { padding: 24px 12px; text-align: center; font-size: 12px; font-weight: 600; color: #94a3b8; }
 .sdx-pop__opt { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 12px; cursor: pointer; transition: background .12s; }
 .sdx-pop__opt:hover { background: #f0fbfd; }
+.sdx-pop__opt.is-disabled { cursor: not-allowed; opacity: .55; }
+.sdx-pop__opt.is-disabled:hover { background: transparent; }
 .sdx-pop__opt.is-sel { background: linear-gradient(135deg, #ecfeff, #f5fdff); box-shadow: inset 0 0 0 1.5px #a5e6f1; }
 .sdx-pop__ico {
   width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
@@ -104,6 +106,14 @@
 .sdx-ptype--goods   { color: #0e7490; background: #ecfeff; border: 1px solid #bfeef4; }
 .sdx-ptype--ffd     { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; }
 .sdx-ptype--service { color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; }
+
+.sdx-pstatus {
+  flex-shrink: 0; display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; white-space: nowrap; letter-spacing: .2px;
+}
+.sdx-pstatus--pending { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; }
+.sdx-pstatus--done    { color: #047857; background: #ecfdf5; border: 1px solid #bbf0d6; }
 
 .sdx-linked {
   display: flex; align-items: center; gap: 9px; margin-top: 9px; padding: 9px 12px;
@@ -174,5 +184,7 @@
 [data-bs-theme="dark"] .sdx-ptype--goods { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
 [data-bs-theme="dark"] .sdx-ptype--ffd { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); color: #fcd34d; }
 [data-bs-theme="dark"] .sdx-ptype--service { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.34); color: #c4b5fd; }
+[data-bs-theme="dark"] .sdx-pstatus--pending { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); color: #fcd34d; }
+[data-bs-theme="dark"] .sdx-pstatus--done { background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.34); color: #6ee7b7; }
 .sdx-pop__retry { margin-left: 6px; padding: 0; border: 0; background: none; color: #0e7490; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 [data-bs-theme="dark"] .sdx-pop__retry { color: #67e8f9; }

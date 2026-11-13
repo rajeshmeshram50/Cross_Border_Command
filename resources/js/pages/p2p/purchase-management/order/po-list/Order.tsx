@@ -389,7 +389,7 @@ export function categoryKeyOf(text: string | null): SupplierCategory | null {
   return null;
 }
 
-// SPI / GRN / QA and Zoho are not built on the new PO yet, so they start empty.
+// Mapped SPIs come from the API; GRN / QA are not built on the new PO yet, so they start empty.
 export function toOrderRow(r: PoListRow): OrderRow {
   const catKey = categoryKeyOf(r.supplier_category);
   return {
@@ -416,7 +416,17 @@ export function toOrderRow(r: PoListRow): OrderRow {
     paid: Number(r.paid_amount) || 0,
     balance: Number(r.balance_amount) || 0,
     breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
-    invoices: [],
+    // One line per mapped SPI. GRN / QA are not built yet, so they stay empty and render as a dash.
+    invoices: (r.spis ?? []).map((s): InvoiceLine => {
+      const amount = Number(s.amount) || 0;
+      const paid = Number(s.paid) || 0;
+      return {
+        spi: s.code, spiDate: s.date ?? '',
+        amount, paid, due: Math.max(0, amount - paid),
+        status: paid <= 0 ? 'pending' : paid >= amount ? 'full' : 'partial',
+        grn: '', grnDate: '', qa: '', qaDate: '',
+      };
+    }),
     spis: (r.spis ?? []).map(s => ({ code: s.code, date: s.date ?? '' })),
     // Synced once the PO + bill are in Zoho, every payment is posted to the bill and,
     // on a cancelled PO, the vendor credit and its refunds are there too.
@@ -488,6 +498,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
       </td>
 
       <td className="ord-doc ord-doc--grn">
+        {!line.grn ? <span className="ord-dash">—</span> : (
         <div className="ord-doc__card">
           <DocTop label="GRN" index={index} count={count} id={line.grn} />
           <div className="ord-doc__meta">
@@ -500,9 +511,11 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
             <span className="ord-doc__sub">Against {seqOf(line.spi)}</span>
           </div>
         </div>
+        )}
       </td>
 
       <td className="ord-doc ord-doc--qa">
+        {!line.qa ? <span className="ord-dash">—</span> : (
         <div className="ord-doc__card">
           <DocTop label="QA" index={index} count={count} id={line.qa} />
           <div className="ord-doc__meta">
@@ -515,6 +528,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
             <span className="ord-doc__sub">Against {seqOf(line.grn)}</span>
           </div>
         </div>
+        )}
       </td>
     </>
   );
@@ -1183,16 +1197,20 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, o
                 <b className="ord-doc__paid">{formatMoney(line.paid, row.currency)}</b> paid · <b className="ord-doc__due">{formatMoney(line.due, row.currency)}</b> due
               </span>
             </div>
+            {line.grn && (
             <div className="ord-card__chain">
               <span className="ord-idpill">{line.grn}</span>
               <span className="ord-doc__sub">Received · {formatDate(line.grnDate)}</span>
               <span className="ord-pill ord-pill--received"><span className="ord-pill__dot" />Goods Received</span>
             </div>
+            )}
+            {line.qa && (
             <div className="ord-card__chain">
               <span className="ord-idpill">{line.qa}</span>
               <span className="ord-doc__sub">Inspected · {formatDate(line.qaDate)}</span>
               <span className="ord-pill ord-pill--qa"><span className="ord-pill__dot" />QA Passed</span>
             </div>
+            )}
           </div>
         ))}
       </div>

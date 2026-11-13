@@ -16,6 +16,11 @@ const shipmentRow = (s: ShipmentOption): ShipmentRow => ({
   title: s.customer || s.consignee || '—',
   sub: slashDate(s.shipment_date),
   piNumber: s.pi_number,
+  // Badge the PI's invoicing status; no badge when pending_qty is null (no PI).
+  ...(s.pending_qty == null ? {}
+    : s.fully_invoiced
+      ? { status: { text: 'PI fully utilized', tone: 'done' as const }, disabled: true }
+      : { status: { text: 'PI not fully utilized', tone: 'pending' as const } }),
 });
 
 export function useShipmentRows(enabled = true) {

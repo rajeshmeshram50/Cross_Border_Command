@@ -53,7 +53,7 @@ export type PoLinkRefs = {
   pi_code: string | null; pi_date: string | null;
   customer_name: string | null; opportunity_code: string | null;
   /** SPIs mapped to the order, oldest first. */
-  spis?: { code: string; date: string | null }[];
+  spis?: { id?: number; code: string; date: string | null; status?: string; amount?: number; paid?: number }[];
   /** Quantity still to be invoiced across the order's lines; null when it has none (CS-937). */
   open_qty?: number | null;
   /** Every line already billed on live SPIs — the SPI chooser locks such an order. */
@@ -212,6 +212,8 @@ export type ShipmentOption = {
   id: number; code: string; shipment_date?: string | null; customer: string | null; consignee: string | null;
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
+  // null = no PI / no lines; else qty still to invoice, and fully_invoiced when 0.
+  pending_qty?: number | null; fully_invoiced?: boolean;
 };
 export type PoProofFile = {
   id: number; amount: number; date: string | null; ref: string;
