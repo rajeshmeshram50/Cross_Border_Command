@@ -8572,12 +8572,40 @@
 
 .cvx .rb-ret__note {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 6px;
   margin-bottom: 16px;
   font-size: 11.5px;
+  line-height: 1.5;
   color: #6a869c;
+  text-align: left;
+}
+
+.cvx .dl-modal.rb-ret .dl-actions :is(.dl-cancel, .dl-go) {
+  height: 42px !important;
+  min-height: 42px !important;
+  padding: 0 22px !important;
+  border-radius: 13px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.cvx .dl-modal.rb-ret .dl-text {
+  text-align: left;
+  line-height: 1.55;
+}
+
+.cvx .rb-ret__note svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.cvx .rb-ret__note span {
+  flex: 1;
+  min-width: 0;
 }
 
 .cvx .rb-save {
