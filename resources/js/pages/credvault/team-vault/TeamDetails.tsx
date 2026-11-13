@@ -309,7 +309,12 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
         <>
           <div className="tvo-search">
             <Svg d={TV_IC.search} size={13} sw={2.3} />
-            <input placeholder="Search department or HOD..." value={q} onChange={e => setQ(e.target.value)} aria-label="Search department or HOD" />
+            <input placeholder="Search department or HOD..." value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Escape' && q) setQ(''); }} aria-label="Search department or HOD" />
+            {q && (
+              <button type="button" className="tvo-search__x" onClick={() => setQ('')} title="Clear search" aria-label="Clear search">
+                <Svg d={TV_IC.close} size={11} sw={2.6} />
+              </button>
+            )}
           </div>
           {renderList()}
         </>

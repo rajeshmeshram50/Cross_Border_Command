@@ -40,3 +40,37 @@
 .cvx.tvx-page .tv-pane--r .tvc-list:last-child > .wl-pager:last-child {
   border-radius: 0 !important;
 }
+
+/* Team Details search: clear (x) button, shown only while text is typed */
+.cvx .tvo-search .tvo-search__x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #eef4f7;
+  color: #64748b;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.cvx .tvo-search .tvo-search__x:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.cvx .tvo-search .tvo-search__x:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 1px;
+}
+[data-bs-theme="dark"] .cvx .tvo-search .tvo-search__x {
+  background: rgba(255, 255, 255, .08);
+  color: #94a3b8;
+}
+[data-bs-theme="dark"] .cvx .tvo-search .tvo-search__x:hover {
+  background: rgba(239, 68, 68, .18);
+  color: #fca5a5;
+}
