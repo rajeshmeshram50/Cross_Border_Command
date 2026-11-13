@@ -17,8 +17,7 @@ import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoicePro
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, today, useInvoiceDraft } from './invoice-draft';
-import { PoApiError, poApi, poLookupApi, type PiLine, type PoDetail } from '../order/api/po-api';
-import { toProduct } from '../order/create-po/use-po-lookups';
+import { PoApiError, poApi, poLookupApi, spiPrefetch, type PiLine, type PoDetail } from '../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
 import { gstState, legalFromVault, pendingCaseToCase, vaultTargetOf } from '../order/create-po/supplier-checks';
@@ -276,27 +275,24 @@ export default function InvoiceForm({
               const pi = existing.shipment_order_id
                 ? await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => [])
                 : [];
-              const master = existing.shipment_order_id
-                ? []
-                : await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
-              const byMaster = new Map(master.map(p => [p.id, p]));
+              // Product name/code now come on the item itself (SPI show), so the
+              // whole product catalogue is no longer fetched here (CS-937).
               setLines(existing.items.map(it => {
                 const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
-                const mp = m ? undefined : byMaster.get(it.product_id);
-                const code = m?.product_code ?? mp?.code ?? null;
-                const name = withoutCodePrefix(m?.product_name ?? mp?.name ?? '', code) || formatProductCode(code);
+                const code = m?.product_code ?? it.product_code ?? null;
+                const name = withoutCodePrefix(m?.product_name ?? it.product_name ?? '', code) || formatProductCode(code);
                 return {
                   key: `saved:${it.id}`,
                   spiItemId: it.id,
                   piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
                   productId: it.product_id,
                   code: formatProductCode(code),
-                  hsn: it.hsn_code ?? m?.hsn_code ?? mp?.hsn ?? '',
+                  hsn: it.hsn_code ?? m?.hsn_code ?? '',
                   piName: name, poName: name, spiName: name,
-                  description: it.description ?? m?.description ?? mp?.description ?? '',
+                  description: it.description ?? m?.description ?? '',
                   uom: it.uom ?? undefined,
                   piQty: Number(it.qty_pi ?? m?.pi_quantity) || 0, poQty: 0,
                   spiQty: Number(it.qty_spi) || 0,
@@ -327,7 +323,12 @@ export default function InvoiceForm({
             qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
           };
         }
-        const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
+        // Supplier + vault were primed when the PO was picked (CS-937) — await
+        // the in-flight promise instead of a fresh cold call.
+        const primed = spiPrefetch.take(po.vendor_id);
+        const sup = po.vendor_id
+          ? await (primed?.supplier ?? poLookupApi.supplier(po.vendor_id).catch(() => null))
+          : null;
         if (!live) return;
         set(draftFromPo(po, sup));
         setGstApproval(po.gst_approval ?? null);
@@ -346,21 +347,18 @@ export default function InvoiceForm({
           }
           const extras = existing.items.filter(i => i.po_item_id == null);
           if (extras.length) {
-            const master = await poLookupApi.products().then(r => r.map(toProduct)).catch(() => []);
-            if (!live) return;
-            const byMaster = new Map(master.map(p => [p.id, p]));
+            // Product name/code come on the item itself now — no catalogue fetch (CS-937).
             rows = [...rows, ...extras.map(it => {
-              const mp = byMaster.get(it.product_id);
-              const name = withoutCodePrefix(mp?.name ?? '', mp?.code) || formatProductCode(mp?.code) || (it.description ?? '');
+              const name = withoutCodePrefix(it.product_name ?? '', it.product_code) || formatProductCode(it.product_code) || (it.description ?? '');
               return {
                 key: `saved:${it.id}`,
                 spiItemId: it.id,
                 piItemId: it.pi_item_id ?? null,
                 productId: it.product_id,
-                code: formatProductCode(mp?.code),
-                hsn: it.hsn_code ?? mp?.hsn ?? '',
+                code: formatProductCode(it.product_code),
+                hsn: it.hsn_code ?? '',
                 piName: '', poName: '', spiName: name,
-                description: it.description ?? mp?.description ?? '',
+                description: it.description ?? '',
                 uom: it.uom ?? undefined,
                 piQty: 0, poQty: 0,
                 spiQty: Number(it.qty_spi) || 0,
@@ -381,9 +379,8 @@ export default function InvoiceForm({
         setRemovedLines([]);
 
         if (po.vendor_id) {
-          poLookupApi.supplierVault(po.vendor_id)
-            .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
-            .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
+          (primed?.vault ?? poLookupApi.supplierVault(po.vendor_id).catch(() => null))
+            .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); });
         }
       } catch (e) {
         if (!live) return;

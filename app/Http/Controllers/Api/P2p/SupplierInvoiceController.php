@@ -1916,7 +1916,7 @@ class SupplierInvoiceController extends Controller
             ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
             ->whereIn('p.id', collect($items)->pluck('product_id'))
-            ->get(['p.id', 'p.name', 'p.description', 'p.gst_amount',
+            ->get(['p.id', 'p.name', 'p.product_code', 'p.description', 'p.gst_amount',
                 'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) AS uom')])
             ->keyBy('id');
 
@@ -1949,6 +1949,11 @@ class SupplierInvoiceController extends Controller
                    caller instead. */
                 'pi_item_id'  => $po->pi_item_id ?? ($r['pi_item_id'] ?? null),
                 'product_id'  => $r['product_id'],
+                /* Product name/code resolved from the master here, so the SPI
+                   form no longer loads the whole product catalogue just to label
+                   its own saved lines (CS-937). */
+                'product_name' => $prod->name ?? null,
+                'product_code' => $prod->product_code ?? null,
                 'description' => $po->description ?? $prod->description ?? $prod->name ?? null,
                 /* From the product master, not the payload: the grid shows them
                    but they are the product's own facts, not the supplier's. */

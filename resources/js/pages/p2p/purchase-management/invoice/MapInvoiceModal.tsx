@@ -5,7 +5,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { IcoCheck, IcoChevronR, IcoLink, IcoWarn, IcoX } from '../../icons';
 import { INVOICE_ROWS } from './data';
 import { useToast } from '../../../../contexts/ToastContext';
-import { PoApiError, poApi, type PoListRow } from '../order/api/po-api';
+import { PoApiError, poApi, spiPrefetch, type PoListRow } from '../order/api/po-api';
 import PoPicker from './PoPicker';
 import DirectSpiSetup, {
   DirectSpiSummary, DirectSpiSummarySkeleton, DirectSpiStepsSkeleton,
@@ -139,6 +139,13 @@ export default function MapInvoiceModal({
   const [direct, setDirect] = useState<DirectSpiState>(EMPTY_DIRECT);
   const isDirect = mode === 'without-po';
 
+  // Warm the Stage-1 supplier/vault calls the moment a vendor is chosen (PO or
+  // Direct), so the invoice form opens with them already in flight (CS-937).
+  useEffect(() => {
+    const vid = mode === 'with-po' ? poPicked?.vendor_id ?? null : direct.supplierId ?? null;
+    if (vid) spiPrefetch.prime(vid);
+  }, [mode, poPicked, direct.supplierId]);
+
   const [sdxReady, setSdxReady] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -168,7 +175,7 @@ export default function MapInvoiceModal({
     if (!canConfirm || !mode) { setShowError(true); return; }
     setConfirming(true);
     onConfirm(mode === 'with-po' && poPicked
-      ? { mode, poId: poPicked.id, poNo: poPicked.code, supplier: poPicked.supplier_name ?? undefined }
+      ? { mode, poId: poPicked.id, poNo: poPicked.code, supplier: poPicked.supplier_name ?? undefined, vendorId: poPicked.vendor_id ?? undefined }
       : {
         mode,
         supplier: direct.supplierName ?? supplier,

@@ -439,19 +439,59 @@ export const poLookupApi = {
       params: documentType ? { document_type: documentType } : undefined,
     }), dataOf<SupplierOption[]>),
 
-  supplier: (vendorId: number, refreshCurrencies = false) =>
+  supplier: (vendorId: number, refreshCurrencies = false, signal?: AbortSignal) =>
     call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {
       params: refreshCurrencies ? { refresh_currencies: 1 } : undefined,
+      signal,
     }), dataOf<SupplierDetail>),
 
-  supplierVault: (vendorId: number) =>
-    call('PO supplier vault', () => api.get(`/segment-uploads/supplier/${vendorId}/vault`), dataOf<Record<string, unknown>>),
+  supplierVault: (vendorId: number, signal?: AbortSignal) =>
+    call('PO supplier vault', () => api.get(`/segment-uploads/supplier/${vendorId}/vault`, { signal }), dataOf<Record<string, unknown>>),
 
   products: (perPage = 200) =>
     call('PO products', () => api.get('/products', { params: { lite: 1, per_page: perPage } }), (b) => listOf<Record<string, unknown>>(b)),
 
   master: (slug: string) =>
     call(`PO master ${slug}`, () => api.get(`/master/${slug}`), (b) => listOf<Record<string, unknown>>(b)),
+};
+
+/* SPI create-form prefetch (CS-937).
+ *
+ * The moment a PO is picked we know its vendor, so the supplier detail and the
+ * supplier Evidence Vault are fetched in the BACKGROUND while the user is still
+ * on the Storage Selection step — by the time Stage 1 renders the data is
+ * already in flight (or done), instead of a cold call after the form opens.
+ *
+ * prime() cancels any earlier prime for a DIFFERENT vendor (a mid-flow PO
+ * change aborts the stale requests and starts fresh), and take() hands Stage 1
+ * the in-flight promises to await instead of issuing its own calls. */
+type SpiPrime = {
+  vendorId: number;
+  ctrl: AbortController;
+  supplier: Promise<SupplierDetail | null>;
+  vault: Promise<Record<string, unknown> | null>;
+};
+let spiPrimed: SpiPrime | null = null;
+
+export const spiPrefetch = {
+  prime(vendorId?: number | null) {
+    if (!vendorId) return;
+    if (spiPrimed?.vendorId === vendorId) return;   // already primed for this PO
+    spiPrimed?.ctrl.abort();                         // a different PO — drop the stale calls
+    const ctrl = new AbortController();
+    spiPrimed = {
+      vendorId, ctrl,
+      supplier: poLookupApi.supplier(vendorId, false, ctrl.signal).catch(() => null),
+      vault:    poLookupApi.supplierVault(vendorId, ctrl.signal).catch(() => null),
+    };
+  },
+  take(vendorId?: number | null) {
+    if (vendorId && spiPrimed?.vendorId === vendorId) {
+      return { supplier: spiPrimed.supplier, vault: spiPrimed.vault };
+    }
+    return null;
+  },
+  cancel() { spiPrimed?.ctrl.abort(); spiPrimed = null; },
 };
 
 export type GstApprover = {

@@ -69,7 +69,9 @@ export default function CredentialTable({ rows, startIndex, loading, emptyTitle,
                         <>
                           <ActBtn icon={IC.edit} title="Edit" tone="edit" disabled={!can?.edit} onClick={() => onEdit?.(r)} />
                           {onShare && <ActBtn icon={IC.share} title="Share" disabled={!can?.share} onClick={() => onShare(r)} />}
-                          <ActBtn icon={IC.view} title="View" onClick={() => onView?.(r)} />
+                          <ActBtn icon={IC.view} disabled={r.access === null}
+                            title={r.access === null ? 'Personal credential — only its owner, or someone they share it with, can open it' : 'View'}
+                            onClick={() => onView?.(r)} />
                           <ActBtn icon={IC.copy} title={secretLabels ? `Copy ${secLabel(r.type)}` : 'Copy Password'} disabled={!canCopy} onClick={() => onCopy?.(r)} />
                           <ActBtn icon={IC.del} title={binTitle} tone="danger" disabled={!(can?.delete || can?.remove)} onClick={() => onDelete?.(r)} />
                         </>
