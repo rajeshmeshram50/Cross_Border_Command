@@ -239,12 +239,13 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   const pctPaid = netPayable > 0 ? Math.round((paid / netPayable) * 100) : 0;
   // This SPI's own requests only: the rest of the PO is already in open_to_request.
   const spiCommitted = ownList.reduce((n, q) => n + (q.status === 'pending' ? q.amount : q.status === 'approved' ? q.approved : 0), 0);
+  /* CS-933 — an SPI on a PO is paid against the PO, and the server checks a
+     request from it against the PO's open_to_request only (the SPI just records
+     the link). Capping it here at this SPI's own total made the SPI popup's
+     Open To Request differ from the PO popup's for the same order. */
   const available = direct
     ? Math.max(0, Math.round((netPayable - spiCommitted) * 100) / 100)
-    : Math.max(0, Math.min(
-      poData?.requests_summary.open_to_request ?? 0,
-      Math.round((total - spiCommitted) * 100) / 100,
-    ));
+    : Math.max(0, poData?.requests_summary.open_to_request ?? 0);
 
   const tdsAmount = direct ? ledger?.tds_amount ?? 0 : po?.tds_amount ?? 0;
   const figures: SpiPayFigures = { base, gst, extra, total, paid, balance, pctPaid, tds: tdsAmount };
@@ -449,7 +450,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                   <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
                     value={money(listPaid)} sub={poCode ? `Released across ${poCode} and its SPIs` : `${pctPaid}% of the SPI released`} />
                   <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Open To Request"
-                    value={money(available)} sub={available > 0 ? 'Can still be requested' : 'Nothing left to request'} />
+                    value={money(available)} sub={po
+                      ? (po.complete ? 'PO settled in full' : 'After pending and approved requests')
+                      : available > 0 ? 'Can still be requested' : 'Nothing left to request'} />
                 </div>
               </Box>
 
