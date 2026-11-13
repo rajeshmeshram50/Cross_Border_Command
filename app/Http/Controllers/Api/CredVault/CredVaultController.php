@@ -4268,6 +4268,7 @@ class CredVaultController extends Controller
         return $all->filter(function ($c) use ($acc, $scope, $u) {
             $via = $acc[$c->id][1] ?? null;
             if ($via === 'share' || $via === null) return false;
+            if ($c->scope !== 'team' && $c->owner_id !== $u->id) return false;
             // A backup is the My Vault / Team Vault file: Critical Vault credentials never leave in one.
             if ($c->isCriticalVault()) return false;
             return match ($scope) {
@@ -5233,6 +5234,8 @@ class CredVaultController extends Controller
         // client admin keeps its own team-scope rule, so null here.
         $critBranch = $admin ? null : ($branch ?? ($u->branch_id ? (int) $u->branch_id : null));
         $down   = array_flip($this->downlineIds($u));
+        $overseen = $creds->contains(fn ($c) => $c->scope !== 'team' && $c->vault !== 'critical' && $c->owner_id !== $u->id)
+            ? array_flip($this->overseenUserIds($u)) : [];
         // Heading a department makes one an HOD whatever the HR designation says.
         $myRank = min(self::LEVEL_ORDER[$this->levelOfUser($u)], $heads ? self::LEVEL_ORDER['hod'] : PHP_INT_MAX);
         $owners = $creds->where('scope', 'team')->isNotEmpty() && !$admin
@@ -5261,6 +5264,9 @@ class CredVaultController extends Controller
                     && ((int) $owner->branch_id === $branch || (int) $c->branch_id === $branch)) $best = [self::RANK_FULL, 'branch'];
                 elseif (isset($down[$c->owner_id])) $best = [self::RANK_FULL, 'manager'];
                 elseif ($c->department_id && in_array($c->department_id, $heads, true)) $best = $below ? [self::RANK_FULL, 'hod'] : [self::RANK_COPY, 'team'];
+            }
+            if (!$best && $c->scope !== 'team' && $c->vault !== 'critical' && isset($overseen[$c->owner_id])) {
+                $best = [self::RANK_VIEW, 'oversee'];
             }
             // Critical Vault: anyone in the branch sees every critical credential
             // (personal or team) as View — it lists and opens only through the

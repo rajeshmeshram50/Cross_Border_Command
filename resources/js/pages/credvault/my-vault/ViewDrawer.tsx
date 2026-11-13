@@ -37,6 +37,7 @@ const VIA_LABEL: Record<string, string> = {
   owner: 'Owner · Full control', admin: 'Admin · Team access', branch: 'Branch Admin · Team access', manager: 'Manager · Team access',
   hod: 'HOD · Team access', team: 'Team access', branch_team: 'Branch team · View after approval',
   branch_critical: 'Branch · View after approval', share: 'Shared access',
+  oversee: 'Reporting manager · View only',
 };
 
 const dt = (iso?: string | null) => (iso ? `${fmtDay(iso)}, ${fmtTime(iso)}` : '—');
