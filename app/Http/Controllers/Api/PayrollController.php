@@ -2561,9 +2561,19 @@ class PayrollController extends Controller
                 $scheduled = $calendarBasis ? max(0, $working - (float) ($weekOffDays ?? 0)) : $working;
                 $base = $elapsedWorkingDays !== null ? min($scheduled, $elapsedWorkingDays) : $scheduled;
 
+                /* "Absent" on the Biometric Input table is PURE attendance — a
+                 * scheduled working day on which the employee did NOT physically
+                 * attend: no biometric punch and no approved regularization
+                 * (which stamps the day Present, so it lands in present_days).
+                 *
+                 * LEAVE IS NOT SUBTRACTED. An approved leave still means the
+                 * person was not in the office, so biometrically the day is
+                 * absent; whether it is PAID or UNPAID is decided in the payroll
+                 * run (lop_days / lop_amount), not here. Weekly offs are already
+                 * out of $base and holidays are non-working days, so only those
+                 * two are excluded. */
                 return (float) max(0, $base
                     - (float) $p->present_days
-                    - (float) $p->paid_leave_days
                     - (float) ($holidayDays ?? 0));
             })(),
             'holidayDays' => $holidayDays,
