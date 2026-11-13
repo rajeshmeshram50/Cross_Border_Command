@@ -113,7 +113,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   useEffect(() => {
     if (!cred || !meta) return;
     if (cred.risk === 'critical' && !meta.policy.share_critical) {
-      toast.warning('Sharing critical credentials is turned off in CredVault Policies');
+      toast.warning('Sharing critical credentials is turned off by the CredVault policy');
       closeRef.current();
       return;
     }

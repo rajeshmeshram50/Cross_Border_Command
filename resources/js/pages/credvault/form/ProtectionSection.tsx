@@ -335,7 +335,7 @@ export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, aut
   picker?: ReactNode;
   errors: Record<string, string>;
 }) {
-  const off = 'Turned off by the CredVault policy — a Vault Admin can allow it under Policies';
+  const off = 'Turned off by the CredVault policy';
   const step3Chip = hasMain
     ? <span className={`cp-chip ${!twofaOn ? 'is-off' : mainChip.ok ? 'is-ok' : 'is-no'}`} id="cpStep3Chip">
         {!twofaOn ? '2FA field is off' : <>{mainChip.ok && <Svg d={CP_I.check} size={11} />}{mainChip.text}</>}

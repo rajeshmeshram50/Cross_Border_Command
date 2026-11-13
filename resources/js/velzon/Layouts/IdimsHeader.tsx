@@ -12,42 +12,16 @@ import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api'
 import { useToast } from '../../contexts/ToastContext';
 import logoFallback from '../assets/images/igc-logo.png';
 import NotificationsDrawer, { useUnreadNotifications } from '../../components/NotificationsDrawer';
-// Resolve a lucide icon component by its name (the menu groups carry icon
-// names like 'BarChart3', 'UserSquare', 'Truck'). Falls back to Circle.
-// Was `import * as LucideIcons`, which cannot be tree-shaken: the bundler
-// cannot know which icon a runtime string will name, so all ~1500 of them
-// landed in the entry chunk. menuIcons names the ones the menu uses.
 import { getMenuIcon as getLucide } from '../../layouts/menuIcons';
-
 
 type Leaf = { id: string; label: string; icon?: string };
 
-/**
- * Menu leaves that have no permission slug of their own and ride on another
- * module's grant. Keep this the ONLY list of such aliases — see leafCanView.
- *
- *  · sign_tracker   — a read-only view of the same sign requests as Quotation Vs PI
- *  · hr.devices     — biometric terminals, part of Attendance
- *  · advance_refund — no DB module row; rides on the Purchase Order grant
- *  · p2p.invoice    — the rebuilt supplier purchase invoice, part of the same
- *                     business object, so nobody has to be re-granted anything
- *
- * The last two rode on p2p.po and p2p.spi until those modules were removed with
- * the screens they belonged to; their grants were carried over to p2p.order, so
- * both follow it now and the same people keep access.
- */
 const PERM_ALIAS: Record<string, string> = {
   'sales.sign_tracker': 'sales.quotation_vs_pi',
   'hr.devices': 'hr.attendance',
   'p2p.advance_refund': 'p2p.order',
   'p2p.invoice': 'p2p.order',
-  /* Product Flags has no master of its own yet, so it has no permission row
-     to be granted. It rides on the warehouse grant — the masters it sits
-     with — so it opens for the same people rather than showing locked for a
-     reason that has nothing to do with permissions. */
   'master.product_flags': 'master.warehouse_master',
-  /* CredVault — every screen rides on the one Credentials Vault grant;
-     what each person may do inside is decided by the screens and the API. */
   ...Object.fromEntries(CREDVAULT_GROUPS.flatMap(g => g.children.map(l => [l.id, 'credentials-vault']))),
 };
 
@@ -62,10 +36,7 @@ const ROLE_LABEL: Record<string, string> = {
   employee: 'Employee',
 };
 
-// Short descriptions shown under each dropdown leaf (mirrors the prototype /
-// the modules table). Keep in sync when adding a menu leaf.
 const LEAF_DESC: Record<string, string> = {
-  // Sales Matrix
   'sales.analytics': 'Sales dashboard, Diagnosis View & Resolution Center.',
   'sales.productivity_tracker': 'Manage reminders, meetings & to-do activities.',
   'sales.customers': 'Manage customer master records.',
@@ -74,7 +45,6 @@ const LEAF_DESC: Record<string, string> = {
   'sales.workplace': 'Manage active sales opportunities.',
   'sales.quotation_vs_pi': 'Track quotation & PI conversion history.',
   'sales.sign_tracker': 'Track all documents sent for e-signature.',
-  // Central CLM
   'clm.analytics': 'Track contract KPIs & legal performance.',
   'clm.diagnosis_resolution': 'Diagnose contract risks & drive resolution actions.',
   'clm.regulatory_defense': 'Read-only regulatory defense file repository.',
@@ -94,7 +64,6 @@ const LEAF_DESC: Record<string, string> = {
   'clm.agreements': 'Manage agreement templates & masters.',
   'clm.terms_conditions': 'Manage reusable legal Terms and Conditions structures.',
   'clm.clause_library': 'Manage reusable legal clauses.',
-  // HRMS
   'hr.overview': 'Headcount, joinings, exits & headline KPIs.',
   'hr.pip': 'Performance improvement plans.',
   'hr.reports': 'HR reports & analytics.',
@@ -115,7 +84,6 @@ const LEAF_DESC: Record<string, string> = {
   'master.trigger_point': 'Lifecycle trigger modules.',
   'master.leave_type': 'Leave categories master.',
   'master.leave_plan': 'Leave plans & assignments.',
-  // Procure to Pay (P2P)
   'p2p.analytics': 'Procurement KPIs & insights.',
   'p2p.diagnosis': 'Identify and resolve procurement issues.',
   'p2p.sales_summary': 'Track sourcing performance.',
@@ -129,26 +97,22 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.payment_request': 'Review and action every pending PO payment request.',
   'p2p.advance_refund': 'Adjust refunds against advances already released.',
 
-  /* Inventory Management — the prototype's own wording for each leaf. */
   'master.warehouse_master': 'Set up and manage warehouses.',
   'master.zone_master': 'Define storage zones within each warehouse.',
   'master.racks': 'Configure racks and bin locations in each zone.',
   'master.product_flags': 'Manage handling and storage flags for products.',
 
-  /* CredVault — the prototype's mega-menu wording. */
   'cv.dashboard': 'Overview of every vault, credential count & health.',
   'cv.password_health': 'Spot weak, reused & expiring passwords.',
   'cv.my_vault': 'Your personal logins, notes & secrets.',
   'cv.team_vault': 'Credentials shared within your team.',
   'cv.critical_vault': 'High-risk credentials behind extra approval.',
   'cv.access_requests': 'Approve or reject requests for critical credentials.',
-  'cv.policies': 'Password rules, sharing limits & approvals.',
   'cv.import_recovery': 'Import from other managers and recover vault data.',
   'cv.audit_logs': 'Every view, copy, share & change, time-stamped.',
   'cv.recycle_bin': 'Restore or permanently purge deleted items.',
 };
 
-// Top-level slug → route.
 function topPath(id: string): string {
   switch (id) {
     case 'dashboard':          return '/dashboard';
@@ -165,7 +129,6 @@ function topPath(id: string): string {
   }
 }
 
-// Sales Matrix leaf → route (mirrors LayoutMenuData.salesLeafLink).
 function salesLeafPath(id: string): string {
   switch (id) {
     case 'sales.customers':            return '/sales/customers';
@@ -180,21 +143,15 @@ function salesLeafPath(id: string): string {
   }
 }
 
-// Central CLM leaf → route. URL uses dashes; ids use underscores.
 function clmLeafPath(id: string): string {
   return `/clm/${id.replace(/^clm\./, '').replace(/_/g, '-')}`;
 }
 
-/* Inventory Management leaf → route.
-   Its own /inventory-management/* pages, NOT the /master/* screens the ids
-   are named after. Those are the existing masters carrying existing data;
-   these are being designed fresh, one at a time, and each starts blank. */
 function invLeafPath(id: string): string {
   const slug = id.replace(/^master\./, '').replace(/_/g, '-');
   return `/inventory-management/${slug === 'racks' ? 'rack-master' : slug}`;
 }
 
-/* CredVault leaf → route: /credentials-vault/<screen>. */
 const CV_LEAF_PATH: Record<string, string> = {
   'cv.dashboard': '/credentials-vault/dashboard',
   'cv.password_health': '/credentials-vault/password-health',
@@ -202,15 +159,12 @@ const CV_LEAF_PATH: Record<string, string> = {
   'cv.team_vault': '/credentials-vault/team-vault',
   'cv.critical_vault': '/credentials-vault/critical-vault',
   'cv.access_requests': '/credentials-vault/access-requests',
-  'cv.policies': '/credentials-vault/policies',
   'cv.import_recovery': '/credentials-vault/import-recovery',
   'cv.audit_logs': '/credentials-vault/audit-logs',
   'cv.recycle_bin': '/credentials-vault/recycle-bin',
 };
 const cvLeafPath = (id: string): string => CV_LEAF_PATH[id] ?? '/credentials-vault/dashboard';
 
-// HRMS leaf → route (mirrors LayoutMenuData.hrLeafLink). HR groups also carry
-// a few master.* leaves (Attendance Master Mgmt) that reuse the /master shell.
 function hrLeafPath(id: string): string {
   switch (id) {
     case 'hr.overview':        return '/hr/overview';
@@ -236,15 +190,11 @@ function hrLeafPath(id: string): string {
   }
 }
 
-// Procure to Pay leaf → route. Product reuses the product master, Supplier the
-// vendor master (procurement sources from the existing vendor onboarding).
 function p2pLeafPath(id: string): string {
   switch (id) {
     case 'p2p.product':       return '/products';
     case 'p2p.supplier':      return '/suppliers';
     case 'p2p.sales_summary': return '/sales/p2p-summary';
-    // Under development — each lands on its own dark-mode-aware "Coming soon"
-    // stub (ModuleStubPage) so the title is correct per leaf.
     case 'p2p.analytics':     return '/p2p/analytics';
     case 'p2p.diagnosis':     return '/p2p/diagnosis';
     case 'p2p.bulk_sourcing': return '/p2p/bulk-sourcing';
@@ -261,8 +211,6 @@ type DD = 'sales' | 'clm' | 'hr' | 'p2p' | 'inv' | 'cv';
 
 export default function IdimsHeader() {
   const navigate = useNavigate();
-  /* Re-renders the bar on every navigation, which is what lets it mark the
-     module the current page belongs to. */
   const { pathname } = useLocation();
   const toast = useToast();
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
@@ -278,13 +226,8 @@ export default function IdimsHeader() {
   };
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
-  /* The open button's bottom-left corner, for a dropdown that hangs under it. */
   const [ddAnchor, setDdAnchor] = useState<{ left: number; top: number } | null>(null);
 
-  /* Keeps an anchored panel on screen: placed at the button's left edge it can
-     run off the right on a narrow window, so once it is measurable it is
-     pulled back inside. A callback ref rather than an effect, because the
-     panel mounts and unmounts with the menu. */
   const anchorDd = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
     const w = el.getBoundingClientRect().width;
@@ -298,18 +241,9 @@ export default function IdimsHeader() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isFs, setIsFs] = useState(false);
-  /* The bell opens the notifications drawer rather than jumping to /inbox:
-     what arrived is read here, and a row opens the thing itself (a PO waiting
-     for approval opens its review page). The Inbox is still one click away
-     from the drawer's own footer. */
   const [notifOpen, setNotifOpen] = useState(false);
   const notifCount = useUnreadNotifications();
 
-  /* Live network state for the Stop / Resume button: how many reads are on
-     the wire, and how many the user has stopped and not yet resumed.
-     Subscribing rather than polling — the registry announces on every add,
-     release and park, so the badge is exact rather than up to an interval
-     stale, and an idle app does no work at all. */
   const [net, setNet] = useState({ pending: 0, paused: 0 });
   useEffect(() => onNetworkChange(setNet), []);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -330,7 +264,6 @@ export default function IdimsHeader() {
   const hasGroupView = (prefix: string) =>
     isSuperAdmin || (!planExpired && Object.keys(perms).some(s => s.startsWith(prefix) && perms[s]?.can_view));
 
-  /* ── Logo ── */
   const rawLogo = user?.branch_logo || user?.client_logo || null;
   const logoSrc = rawLogo ? resolveFileUrl(rawLogo) : logoFallback;
   const darkRaw = rawLogo && /\.(png|jpe?g|webp)$/i.test(rawLogo)
@@ -341,25 +274,8 @@ export default function IdimsHeader() {
   useEffect(() => { setLogoDarkMissing(false); }, [rawLogo]);
   const showDarkLogo = theme === 'dark' && !!darkLogoSrc && !logoDarkMissing;
 
-  /* Prefer the screen-sized copy (LogoWebVariantGenerator writes one beside
-     every uploaded logo). Tenants upload print assets — the one on live is
-     9653x3094 / 1.1 MB for a 52px slot, and it is this page's LCP element —
-     while the original has to stay full resolution because the PDF headers
-     embed it.
-
-     The URL comes from the server, which only sends it when the file is
-     really on disk. The header does NOT derive it: deriving meant that on any
-     environment where logos:backfill-web had not run yet, every page load
-     requested a file that was not there, took a 404, and only then fell back
-     to the full logo — the same megabyte plus a wasted round trip.
-
-     It has to come from the SAME source as rawLogo: a branch logo with no
-     variant must fall back to that branch's full logo, never to the client's
-     small one, or the header would quietly show a different company's mark. */
   const rawLogoWeb = (user?.branch_logo ? user?.branch_logo_web : user?.client_logo_web) || null;
 
-  // The dark variant of the small copy sits at the same place in the naming
-  // scheme, and the generator always writes the pair together.
   const darkWebRaw = rawLogoWeb && /-w\.(png|jpe?g|webp)$/i.test(rawLogoWeb)
     ? rawLogoWeb.replace(/-w\.(png|jpe?g|webp)$/i, '-dark-w.png')
     : null;
@@ -371,15 +287,12 @@ export default function IdimsHeader() {
   const webSrc = showDarkLogo ? darkWebRaw : rawLogoWeb;
   const shownLogoSrc = (webSrc && !logoWebMissing) ? resolveFileUrl(webSrc) : fullSrc;
 
-  /* ── Profile photo ── */
   const rawPhoto = user?.user_profile_photo || user?.employee_profile_photo
     || user?.branch_profile_photo || user?.client_profile_photo || null;
   const photoSrc = rawPhoto ? resolveFileUrl(rawPhoto) : null;
 
-  /* ── Branch label ── */
   const branchName = selectedBranch?.name || user?.branch_name || user?.client_name || 'All Branches';
 
-  /* ── Close popovers on outside click / Escape ── */
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
@@ -400,34 +313,6 @@ export default function IdimsHeader() {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
-  /* Freeze the page behind an open mega-dropdown. The panel and its backdrop are
-     position:fixed inside the sticky shell, so they are NOT descendants of the
-     real scroller (.main-content in Layouts/index.tsx) — Chrome declines to
-     chain the wheel out to it, Edge/Firefox scroll it anyway, which slides the
-     page under a viewport-anchored panel (bug #4, cross-browser).
-
-     Two layers, because neither alone covers every engine:
-       1. overflow:hidden on every scrollable box between the panel and the page
-          — kills scrollbar drags and keyboard scrolling (space / PageDown).
-       2. a capture-phase, non-passive wheel/touchmove blocker — Edge still
-          scrolls a locked box in some cases, and preventDefault here is the one
-          thing every engine honours. Events inside the panel are exempt so a
-          tall menu (CLM) can still scroll its own content.
-     The padding-right swap replaces the width each hidden scrollbar gives back,
-     so locking doesn't shift the page sideways.
-
-     Two things make that swap fiddly, and getting either wrong shows up as the
-     page visibly jerking sideways twice per open/close ("the tables shake"):
-       · Velzon ships `.main-content { transition: all .1s ease-out }`
-         (scss/velzon/structure/_vertical.scss). The scrollbar disappears the
-         instant overflow flips — content is a gutter wider RIGHT NOW — while
-         the compensating padding eases in over 100ms. Transitions are pinned
-         off around both edits so the swap lands in a single frame.
-       · The gutter must be ADDED to whatever padding-right the element already
-         carries; assigning the bare gutter wipes a stylesheet padding and then
-         shifts the page for real.
-     The dependency is the boolean, not openDD itself, so moving between two
-     mega-menus doesn't unlock and re-lock (which shifted the page again). */
   const ddLocked = !!openDD;
   useEffect(() => {
     if (!ddLocked) return;
@@ -469,37 +354,18 @@ export default function IdimsHeader() {
       restore.forEach(({ el, overflowY, paddingRight, transition }) => {
         el.style.overflowY = overflowY;
         el.style.paddingRight = paddingRight;
-        // Commit both lines while transitions are still off (reading a layout
-        // property forces the recalc), THEN hand the transition back. Restoring
-        // it in the same batch would re-animate the padding on the way out and
-        // reintroduce the shake on close.
         void el.offsetHeight;
         el.style.transition = transition;
       });
     };
   }, [ddLocked]);
 
-  // Close every open header popover (mega-menu, branch, profile, search, more).
-  // Any in-header control that isn't the popover's own toggle should call this
-  // first — the outside-click handler doesn't fire for clicks INSIDE the
-  // header, so e.g. the profile panel would otherwise stay open when a nav item
-  // or action icon is clicked (bug #49).
   const closeMenus = () => {
     setOpenDD(null); setBranchOpen(false); setProfileOpen(false);
     setSearchOpen(false); setMoreOpen(false); setMoreExpand(null);
   };
   const go = (path: string) => { closeMenus(); setMobileOpen(false); navigate(path); };
 
-  /* A WIDTH change re-flows the nav: items move between the visible row and
-     "More" (see the overflow measurement below). An open panel is positioned
-     from its button's rect at open time, so after the reflow it hangs over the
-     new layout anchored to a button that moved — or that no longer exists,
-     because it collapsed into "More". Nothing recalculates that anchor, so
-     close instead. Closing DevTools is the usual way to hit it (#58).
-
-     Width only, deliberately. On a phone the address bar hiding changes
-     innerHeight on every scroll, and a height-only change does not re-flow the
-     row — reacting to it would shut the menu under the user's finger. */
   useEffect(() => {
     let lastW = window.innerWidth;
     const onResize = () => {
@@ -510,14 +376,8 @@ export default function IdimsHeader() {
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-    // closeMenus only calls setState, which is stable — a first-render closure is fine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  /* One button, two jobs.
-     Paused wins when both counts are non-zero: parked requests are pages
-     frozen mid-load, and unfreezing them matters more than stopping whatever
-     started since. After the resume the button flips straight back to Stop
-     for anything still running. */
   const toggleNetwork = () => {
     if (net.paused) {
       const n = resumeAll();
@@ -540,39 +400,27 @@ export default function IdimsHeader() {
     else document.exitFullscreen?.();
   };
 
-  /* ── Visible top-level nav items in prototype order ── */
   const navItems = useMemo(() => {
     const items: { id: string; label: string; icon: JSX.Element; dd?: DD }[] = [];
     const role = user?.user_type;
     items.push({ id: 'dashboard', label: 'Dashboard', icon: IC.grid });
 
-    // Super-admin runs the SaaS itself — it sees ONLY the platform-management
-    // modules (Clients, Plans, Payments, Master, Permissions), never the
-    // tenant business modules (HRMS / Sales / CLM / P2P / GTS / Inventory).
     if (role === 'super_admin') {
       items.push({ id: 'clients', label: 'Clients', icon: IC.building });
       items.push({ id: 'plans', label: 'Plans', icon: IC.card });
       items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
-      // Dev Tools — permission-gated (super-admin bypasses, so always visible here).
       if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
 
-    // Client-admin manages the tenant account — it sees ONLY the account
-    // modules (Branches, Master, Permissions, My Plan), not the day-to-day
-    // business modules (HRMS / Sales / CLM / P2P / GTS / Inventory) that
-    // branch users and employees operate.
     if (role === 'client_admin') {
       items.push({ id: 'branches', label: 'Branches', icon: IC.branch });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
-      /* CredVault — the client admin is its Vault Admin: access requests and
-         policies are decided there, so the module is in their bar too. */
       items.push({ id: 'credentials-vault', label: 'CredVault', icon: IC.lock, dd: 'cv' });
       items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
-      // Dev Tools — permission-gated (granted per user via the Permissions module).
       if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
@@ -581,18 +429,8 @@ export default function IdimsHeader() {
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
     if (hasGroupView('sales.')) items.push({ id: 'sales', label: 'Sales Matrix', icon: IC.trend, dd: 'sales' });
     if (hasGroupView('clm.')) items.push({ id: 'clm', label: 'CLM', icon: IC.file, dd: 'clm' });
-    // Shared rule (see utils/menuAccess) — parent grant OR any p2p.* leaf.
     if (moduleVisible(perms, 'p2p', isSuperAdmin, planExpired)) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
-    // Shipment 360 — sits directly after P2P because it reports on the
-    // shipment orders that P2P's procurement flow feeds. Direct-link tab,
-    // gated on the developers.shipment permission. The slug stays 'developers'
-    // (→ /developers/shipment) so existing permission grants keep working;
-    // only the visible label changed from the old "Dev Tools".
     if (can('developers.shipment')) items.push({ id: 'developers', label: 'Shipment 360', icon: IC.truck });
-    /* Inventory Management — between P2P and GTS, where the prototype puts
-       it. Its leaves are the warehouse masters, so it is gated on those same
-       grants rather than on a module row of its own: anyone who can already
-       see a warehouse sees the menu, and nobody has to be re-granted. */
     if (INVENTORY_GROUPS.some(g => g.children.some(l => isSuperAdmin
       || (!planExpired && perms[permSlugFor(l.id)]?.can_view)))) {
       items.push({ id: 'inventory-management', label: 'Inventory Management', icon: IC.warehouse, dd: 'inv' });
@@ -600,31 +438,17 @@ export default function IdimsHeader() {
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
-    /* Permissions — every remaining role gets the tab. Branch admins manage
-       their branch's employees; an employee manages the people reporting to
-       them, and only up to the access they hold themselves. Super-admin /
-       client-admin already returned above with their own entry. */
     if (role === 'branch_user' || role === 'employee') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
-    // Dev Tools — kept LAST (permission-gated read-only Zoho inspector).
     if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  /* CredVault opens from its own button in the top row, so the bottom bar (and
-     its overflow measurement) leaves it out. navItems keeps it for the module
-     search, the current-page match and the mobile panel. */
   const cvItem = navItems.find(i => i.id === 'credentials-vault');
   const barItems = useMemo(() => navItems.filter(i => i.id !== 'credentials-vault'), [navItems]);
 
-
-  /* ── Overflow measurement ─────────────────────────────────────────────
-     A hidden "ghost" row renders every nav item at full width so we can
-     measure how many fit on a single line. Anything past that collapses
-     into the "More" dropdown — no horizontal scrolling. Recomputed on
-     resize (ResizeObserver) and whenever the item list changes. */
   useLayoutEffect(() => {
     const compute = () => {
       const box = navItemsRef.current;
@@ -634,7 +458,7 @@ export default function IdimsHeader() {
       const widths = (Array.from(ghost.children) as HTMLElement[]).map(c => c.offsetWidth + 4);
       const total = widths.reduce((a, b) => a + b, 0);
       if (total <= avail) { setVisibleCount(widths.length); return; }
-      const MORE_W = 104; // reserve room for the "More" button
+      const MORE_W = 104;
       let used = 0, count = 0;
       for (const w of widths) {
         if (used + w <= avail - MORE_W) { used += w; count++; } else break;
@@ -651,7 +475,6 @@ export default function IdimsHeader() {
   const visibleNav = barItems.slice(0, visibleCount);
   const overflowNav = barItems.slice(visibleCount);
 
-  /* ── Mega-menu column layouts ── */
   const salesCols: Group[][] = useMemo(
     () => (SALES_GROUPS as Group[]).map(g => [g]),
     [],
@@ -667,27 +490,17 @@ export default function IdimsHeader() {
     ];
   }, [clmGroups]);
   const hrGroups = HR_GROUPS as unknown as Group[];
-  // One group per column so every HR sub-module sits side-by-side in a single
-  // row (like CLM), instead of being stacked two-per-column.
   const hrCols: Group[][] = useMemo(() => {
     const order = ['hr.command', 'hr.core', 'hr.time_pay', 'hr.documents', 'master.attendance'];
     return order.map(id => hrGroups.filter(g => g.id === id)).filter(c => c.length);
   }, [hrGroups]);
 
-  // P2P has no per-leaf permission slugs — the whole module is gated by
-  // can('p2p'), so every leaf shows whenever P2P is accessible. Four-column
-  // layout mirrors the Figma: Intelligence Hub · Master Management ·
-  // Procurement Management · Purchase Management. Leaves without their own page
-  // yet are wired (in p2pLeafPath) to the P2P hub until those screens ship.
-  // One group per column (shared P2P_GROUPS drives the sidebar too).
   const p2pCols: Group[][] = useMemo(() => P2P_GROUPS.map(g => [g as unknown as Group]), []);
 
-  /* One column, as the prototype draws it. */
   const invCols: Group[][] = useMemo(
     () => INVENTORY_GROUPS.map(g => [g as unknown as Group]), [],
   );
 
-  /* CredVault — three columns, one group each, as the prototype draws them. */
   const cvCols: Group[][] = useMemo(() => CREDVAULT_GROUPS.map(g => [g as unknown as Group]), []);
 
   const colsFor = (dd: DD): Group[][] =>
@@ -706,25 +519,10 @@ export default function IdimsHeader() {
           : kind === 'inv' ? invLeafPath(id)
             : clmLeafPath(id);
 
-  /* ── Which module the page on screen belongs to ─────────────────────────
-     The nav used to mark a button only while its own menu was open, so the
-     moment you picked something out of CLM and the menu closed, nothing in
-     the bar said you were still inside CLM.
-
-     Derived from the paths the dropdown itself links to — `topPath` for the
-     button and `leafPath` for every leaf under it — so a module that gains a
-     page is matched by the same table that navigates to it, with nothing to
-     keep in step by hand.
-
-     Longest match wins: '/master' and '/master/products' are both real
-     entries, and the shorter one must not claim the longer one's page. A
-     path matches its own children too ('/clm/ctc/41' is still CLM), which is
-     what makes a detail screen keep its module marked. */
   const currentTopId = useMemo(() => {
     let bestId: string | null = null;
     let bestLen = 0;
     const consider = (id: string, path: string) => {
-      // '/' would match every page; a leaf with no page yet has nothing to own.
       if (!path || path === '/') return;
       if (pathname !== path && !pathname.startsWith(`${path}/`)) return;
       if (path.length <= bestLen) return;
@@ -741,12 +539,6 @@ export default function IdimsHeader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, navItems]);
 
-  /* ── Search index — modules + sub-modules only ──────────────────────────
-     Flattens the accessible top-level nav items and their dropdown leaves
-     into a single searchable list. Permission gating mirrors the menu render
-     (super-admin sees all; P2P leaves follow the module-level can('p2p')
-     grant; every other leaf needs perms[id].can_view). The header search
-     intentionally covers ONLY modules/sub-modules — no parties/documents. */
   type SearchEntry = { id: string; label: string; parent?: string; path: string; icon: JSX.Element };
   const searchIndex = useMemo(() => {
     const out: SearchEntry[] = [];
@@ -755,9 +547,6 @@ export default function IdimsHeader() {
       if (item.dd) {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
-            // Same alias map the menu uses, so a leaf that is enabled in the
-            // dropdown is also findable in search. PERM_ALIAS carries every
-            // case the inline checks used to spell out, Advance Refund included.
             const visible = isSuperAdmin || !!perms[permSlugFor(leaf.id)]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
@@ -784,14 +573,6 @@ export default function IdimsHeader() {
     go(path);
   };
 
-  // A leaf is visible when the user can_view its slug (super-admin sees all).
-  //
-  // Some leaves have no permission slug of their own and ride on another
-  // module's grant. The map is the single list of those — it used to be a
-  // ternary chain here AND a separate one-case ternary in the search index
-  // below, so Sign Document Tracker and Biometric Devices were correctly
-  // enabled in the menu but silently missing from search for anyone who was
-  // not a super-admin. One map, read by both.
   const leafCanView = (leaf: Leaf): boolean => {
     if (isSuperAdmin) return true;
     if (leaf.id.startsWith('cv.') && user?.user_type === 'client_admin') return true;
@@ -799,8 +580,6 @@ export default function IdimsHeader() {
   };
 
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string, variant = '') => {
-    // Show EVERY module. The ones the user has no permission for render disabled
-    // (greyed + non-clickable) rather than being hidden (updated QA requirement).
     const enabled = leafCanView(leaf);
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
@@ -823,8 +602,6 @@ export default function IdimsHeader() {
   };
 
   const renderCol = (groups: Group[], kind: DD, accent: string, bg: string, key?: number) => {
-    // First column items render large (like the prototype's Command Center);
-    // the remaining columns render compact.
     const variant = key === 0 ? 'idims-dd-item-lg' : 'idims-dd-item-sm';
     return (
       <div key={key} className="idims-dd-col" style={{ borderTop: `3px solid ${accent}` }}>
@@ -840,9 +617,6 @@ export default function IdimsHeader() {
     );
   };
 
-  /* CredVault mega-menu — the prototype's buildCredVault(): a Quick Actions
-     row on top (each opens its screen with the action already started), then
-     Vault Analytics · Vault Management · Vault Administration & Security. */
   const CV_QUICK: { label: string; path: string; icon: string }[] = [
     { label: 'Add Credential', path: '/credentials-vault/my-vault?action=add', icon: 'Plus' },
     { label: 'Add Critical Credential', path: '/credentials-vault/critical-vault?action=add', icon: 'ShieldAlert' },
@@ -879,7 +653,6 @@ export default function IdimsHeader() {
     );
   };
 
-  // Smaller nested leaf (the Agreements children under "Without Shipment ID").
   const renderClmChild = (leaf: Leaf, accent: string, bg: string) => {
     const enabled = isSuperAdmin || !!perms[leaf.id]?.can_view;
     const Icon = getLucide(leaf.icon);
@@ -898,15 +671,11 @@ export default function IdimsHeader() {
     );
   };
 
-  // CLM mega-menu — matches the prototype: 3 sections (Command Center,
-  // Operations, Master Management); Operations + Master Management each split
-  // into two sub-columns with sub-headers, and Without-Shipment-ID nests the
-  // Agreements leaves under Case to Case.
   const renderClmMega = () => {
     const g = (id: string) => clmGroups.find(x => x.id === id);
-    const P = '#7C3AED', PB = '#F5F3FF';   // Command Center
-    const S = '#0EA5E9', SB = '#F0F9FF';   // Operations
-    const T = '#0D9488', TB = '#F0FDFA';   // Master Management
+    const P = '#7C3AED', PB = '#F5F3FF';
+    const S = '#0EA5E9', SB = '#F0F9FF';
+    const T = '#0D9488', TB = '#F0FDFA';
 
     const cmd = g('clm.command');
     const ow = g('clm.ops_with');
@@ -919,16 +688,12 @@ export default function IdimsHeader() {
     const subHead = (label: string, color: string) =>
       <div className="idims-clm-subhead" style={{ color, borderColor: color }}><span className="dd-sl-dot" style={{ background: color }} />{label}</div>;
 
-    // Every column + leaf always renders; permission-less leaves render disabled
-    // (renderLeaf / renderClmChild handle the greyed, non-clickable state).
     return (
       <div className="idims-clm-grid">
-        {/* Command Center */}
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${P}` }}>
           <div className="idims-dd-section-label" style={{ color: P }}><span className="dd-sl-dot" style={{ background: P }} />CLM Command Center</div>
           {cmd?.children.map(l => renderLeaf(l, 'clm', P, PB, 'idims-dd-item-lg'))}
         </div>
-        {/* Operations */}
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${S}` }}>
           <div className="idims-dd-section-label" style={{ color: S }}><span className="dd-sl-dot" style={{ background: S }} />CLM Operations</div>
           <div className="idims-clm-sub">
@@ -945,7 +710,6 @@ export default function IdimsHeader() {
             </div>
           </div>
         </div>
-        {/* Master Management */}
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${T}` }}>
           <div className="idims-dd-section-label" style={{ color: T }}><span className="dd-sl-dot" style={{ background: T }} />CLM Master Management</div>
           <div className="idims-clm-sub">
@@ -963,9 +727,6 @@ export default function IdimsHeader() {
     );
   };
 
-  // In brand mode, expose the tenant primary colour as a CSS var so the
-  // .idims-brand rules can use it for hover / active accents (replacing the
-  // default violet). Topbar stays white — only the accent colour changes.
   const brandVars = tenantThemeEnabled
     ? ({ '--bp': user?.primary_color || '#6D28D9' } as React.CSSProperties)
     : undefined;
@@ -974,30 +735,12 @@ export default function IdimsHeader() {
     <div ref={rootRef} style={brandVars}
       className={`idims-shell ${theme === 'dark' ? 'idims-dark' : ''} ${tenantThemeEnabled ? 'idims-brand' : ''}`}>
       <style>{IDIMS_CSS}</style>
-      {/* Blurred backdrop behind an open mega-dropdown (page content only —
-          the nav bar + dropdown stack above it). Click to close. */}
       {openDD && <div className="idims-dd-backdrop" onClick={() => setOpenDD(null)} />}
       <nav className="idims-nav">
         <div className="idims-logo" onClick={() => go('/dashboard')}>
-          {/* This image is the page's LCP element on every screen — it is the
-              largest thing painted — so it is marked high priority. Without it
-              the browser discovers it at its default priority, behind the
-              stylesheet and the scripts, and it is already late: the src comes
-              from the signed-in user (branch_logo / client_logo), so it cannot
-              even be requested until the auth call has returned.
-
-              decoding="async" keeps the decode off the main thread. That
-              matters here because a tenant can upload anything: the logo in
-              use on live is 9653x3094, which is 30 megapixels to decode for a
-              52px slot, and decoding it synchronously blocks the first
-              interaction as well as the paint. */}
           <img className="idims-logo-full" src={shownLogoSrc} alt="logo"
             fetchPriority="high" decoding="async"
             onError={() => {
-              // Two fallbacks, in order: drop the screen-sized variant for the
-              // full file, and only then (dark mode) drop the dark logo for the
-              // light one. Without the first test a missing "-w" in dark mode
-              // would skip straight to the light logo on a dark nav.
               if (!logoWebMissing) setLogoWebMissing(true);
               else if (showDarkLogo) setLogoDarkMissing(true);
             }} />
@@ -1005,9 +748,7 @@ export default function IdimsHeader() {
         <div className="idims-divider" />
         <div className="idims-nav-stack">
 
-          {/* ── Row 1 ── */}
           <div className="idims-nav-row idims-row-top">
-            {/* Hamburger — only visible ≤1024px; toggles the mobile nav panel. */}
             <button type="button" className="idims-hamburger" aria-label="Menu"
               onClick={() => { setProfileOpen(false); setSearchOpen(false); setMobileOpen(o => !o); }}>
               {mobileOpen ? IC.close : IC.menu}
@@ -1065,7 +806,6 @@ export default function IdimsHeader() {
                 </div>
               )}
 
-              {/* Default / Brand theme switch */}
               <div className="idims-theme-switch" title="Switch brand theme">
                 <span className="idims-theme-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
                 <button type="button" className="idims-theme-toggle" aria-label="Toggle brand theme"
@@ -1073,10 +813,6 @@ export default function IdimsHeader() {
               </div>
 
               <div className="idims-actions">
-                {/* Stop / Resume loading. Always rendered — appearing only while
-                    busy would shift the whole icon row every time a page
-                    loads, and the user could never find it to click in time.
-                    It sits disabled and muted when there is nothing to do. */}
                 <button
                   type="button"
                   className={`idims-action-btn idims-stop-btn${net.paused ? ' is-paused' : net.pending ? ' is-busy' : ''}`}
@@ -1107,8 +843,6 @@ export default function IdimsHeader() {
                     {IC.clock}
                   </button>
                 )}
-                {/* Email (Gmail) button is hidden for employee logins — only
-                    branch/client users (and admins) get it. */}
                 {!isEmployee && (
                   <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
                     {IC.mail}
@@ -1117,9 +851,6 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn" title="Notifications"
                   onClick={() => { closeMenus(); setNotifOpen(true); }}>
                   {IC.bell}
-                  {/* Unread only, in red. A count that stayed on the bell after
-                      everything was read gave nothing to act on; the point of the
-                      badge is that something is waiting. */}
                   {notifCount.count > 0 && (
                     <span className="idims-action-count"
                           title={`${notifCount.count} unread notification${notifCount.count === 1 ? '' : 's'}`}>
@@ -1133,7 +864,6 @@ export default function IdimsHeader() {
               </div>
               <span className="idims-action-sep" />
 
-              {/* Profile */}
               <div className="idims-profile-wrap">
                 <button type="button" className="idims-profile-icon" title="Profile" onClick={() => { setOpenDD(null); setBranchOpen(false); setMoreOpen(false); setProfileOpen(o => !o); }}>
                   {photoSrc
@@ -1151,9 +881,6 @@ export default function IdimsHeader() {
                     </div>
                     <div className="idims-profile-head-info">
                       <div className="idims-profile-head-name">{user?.name || 'User'}</div>
-                      {/* Show the employee's HR designation (HOD / Team Leader / …)
-                          when the login is linked to an employee; otherwise fall
-                          back to the generic user-type label. */}
                       <span className="idims-profile-head-badge">{IC.shield}{user?.employee_designation || ROLE_LABEL[user?.user_type || ''] || 'User'}</span>
                       {user?.user_type === 'branch_user' && (
                         <span className="idims-profile-head-badge ceo">Director / CEO</span>
@@ -1178,10 +905,6 @@ export default function IdimsHeader() {
                       <span className="idims-profile-item-ico" style={{ background: 'linear-gradient(135deg,#38BDF8,#0284C7)' }}>{IC.book}</span>
                       <span className="idims-profile-item-label">Documentation Guide</span>{IC.chevR}
                     </button>
-                    {/* Opens the Velzon theme customizer. It used to have its own
-                        floating gear in the bottom-right corner, which covered the
-                        pagination arrows on every list page — RightSidebar listens
-                        for this event instead of owning a trigger of its own. */}
                     <button type="button" className="idims-profile-item" onClick={() => { setProfileOpen(false); window.dispatchEvent(new Event('idims:open-theme-customizer')); }}>
                       <span className="idims-profile-item-ico" style={{ background: 'linear-gradient(135deg,#F0ABFC,#C026D3)' }}>{IC.palette}</span>
                       <span className="idims-profile-item-label">Theme Customizer</span>{IC.chevR}
@@ -1197,10 +920,7 @@ export default function IdimsHeader() {
             </div>
           </div>
 
-          {/* ── Row 2: nav items ── */}
           <div className="idims-nav-row idims-row-bottom">
-            {/* Hidden ghost row — measures every item's natural width so the
-                overflow calc knows how many fit before collapsing to "More". */}
             <div className="idims-nav-ghost" ref={navGhostRef} aria-hidden="true">
               {barItems.map(item => (
                 <span className="idims-nav-btn" key={item.id}>
@@ -1218,11 +938,6 @@ export default function IdimsHeader() {
                       aria-current={currentTopId === item.id ? 'page' : undefined}
                       onClick={(e) => {
                         setBranchOpen(false); setProfileOpen(false); setMoreOpen(false);
-                        /* Where the button is, for the menus that hang under
-                           it rather than centring on the screen. Taken here
-                           because the panel is `position: fixed` — it escapes
-                           the nav's own box, so it cannot be placed by CSS
-                           alone. */
                         const r = e.currentTarget.getBoundingClientRect();
                         setDdAnchor({ left: Math.round(r.left), top: Math.round(r.bottom + 8) });
                         setOpenDD(o => o === item.dd ? null : item.dd!);
@@ -1233,10 +948,6 @@ export default function IdimsHeader() {
                     {openDD === item.dd && (
                       <div
                         className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}${item.dd === 'inv' ? ' idims-dd-inv' : ''}`}
-                        /* The wide mega-menus span most of the screen, so they
-                           centre on it. A narrow one centred that way floats in
-                           the middle with nothing above it — it hangs under its
-                           own button instead. */
                         ref={item.dd === 'inv' ? anchorDd : undefined}
                         style={item.dd === 'inv' && ddAnchor
                           ? { left: ddAnchor.left, top: ddAnchor.top, transform: 'none' }
@@ -1246,15 +957,9 @@ export default function IdimsHeader() {
                         <div className="idims-dd-inner">
                           {item.dd === 'clm' ? renderClmMega() : item.dd === 'cv' ? renderCvMega() : (
                             (() => {
-                              // P2P carries its own Figma palette; other mega-menus
-                              // cycle the shared accent set. Every column always renders;
-                              // permission-less leaves render disabled (renderLeaf).
                               const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
                               const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
                               const allCols = colsFor(item.dd!);
-                              // P2P's last column (Purchase Management) holds the longest
-                              // label — "Supplier Purchase Invoice (SPI)" — so give it a bit
-                              // more width than the others so it doesn't crowd/clip (QA).
                               const gridTpl = item.dd === 'p2p' && allCols.length > 1
                                 ? `repeat(${allCols.length - 1}, 1fr) 1.22fr`
                                 : `repeat(${allCols.length || 1}, 1fr)`;
@@ -1279,12 +984,8 @@ export default function IdimsHeader() {
                 )
               ))}
 
-              {/* Overflow "More" dropdown — holds items that don't fit. */}
               {overflowNav.length > 0 && (
                 <div className="idims-dd-wrap idims-more-wrap">
-                  {/* A module that did not fit the bar still has to be findable:
-                      when the current page belongs to one of the overflow
-                      items, More carries the mark on its behalf. */}
                   <button type="button"
                     className={`idims-nav-btn ${moreOpen ? 'dd-open' : ''} ${overflowNav.some(i => i.id === currentTopId) ? 'is-current' : ''}`}
                     onClick={() => { setBranchOpen(false); setProfileOpen(false); setOpenDD(null); setMoreOpen(o => !o); }}>
@@ -1337,7 +1038,6 @@ export default function IdimsHeader() {
         </div>
       </nav>
 
-      {/* ── Mobile nav panel (≤1024px) ── */}
       {mobileOpen && (
         <>
           <div className="idims-mob-backdrop" onClick={() => setMobileOpen(false)} />
@@ -1387,10 +1087,8 @@ export default function IdimsHeader() {
         </>
       )}
 
-      {/* What arrived, and the way into it. */}
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} onCountChange={notifCount.refresh} />
 
-      {/* Logout confirm modal */}
       {logoutOpen && (
         <div className="idims-logout-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setLogoutOpen(false); }}>
           <div className="idims-logout-modal" role="dialog" aria-modal="true">
@@ -1410,13 +1108,9 @@ export default function IdimsHeader() {
 
 const COL_ACCENT = ['#7C3AED', '#0EA5E9', '#0D9488', '#7C3AED', '#0EA5E9', '#0D9488'];
 const COL_BG = ['#F5F3FF', '#F0F9FF', '#F0FDFA', '#F5F3FF', '#F0F9FF', '#F0FDFA'];
-// P2P uses its own per-column palette to match the Figma: Intelligence Hub &
-// Master Management in violet, Procurement Management in amber, Purchase
-// Management in teal.
 const P2P_ACCENT = ['#7C3AED', '#7C3AED', '#F59E0B', '#0D9488'];
 const P2P_BG = ['#F5F3FF', '#F5F3FF', '#FFFBEB', '#F0FDFA'];
 
-/* ── Inline SVG icon set (named IC to avoid clashing with lucide imports) ── */
 const IC = {
   grid: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zm0 10h8v8h-8v-8zM3 13h8v8H3v-8z" /></svg>,
   wrench: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z" /></svg>,
@@ -1435,9 +1129,6 @@ const IC = {
   branch: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>,
   more: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>,
   globe: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" /></svg>,
-  /* Inventory Management. Deliberately NOT the cube: that is Inventory
-     Management System sitting a few items along, and the two are different
-     systems. This is the prototype's own warehouse glyph. */
   warehouse: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21V9l9-6 9 6v12" /><path d="M9 21v-7h6v7" /><line x1="3" y1="21" x2="21" y2="21" /></svg>,
   box: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M12 1.95l9.05 4.52v11.06L12 22.05l-9.05-4.52V6.47L12 1.95zm0 2.24L5.66 7.36 12 10.53l6.34-3.17L12 4.19zM4.95 9.03v7.25L11 19.3v-7.25L4.95 9.03zm14.1 0L13 12.05v7.25l6.05-3.02V9.03z" /></svg>,
   db: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C7.58 2 4 3.57 4 5.5S7.58 9 12 9s8-1.57 8-3.5S16.42 2 12 2zM4 7.97v4.53C4 14.43 7.58 16 12 16s8-1.57 8-3.5V7.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13zm0 7v3.53C4 20.43 7.58 22 12 22s8-1.57 8-3.5V14.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13z" /></svg>,
@@ -1467,7 +1158,6 @@ const IC = {
   palette: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a9 9 0 1 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.24-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8z" /><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" /><circle cx="11" cy="7.5" r="1.2" fill="currentColor" /><circle cx="15.5" cy="9" r="1.2" fill="currentColor" /></svg>,
 };
 
-/* ── Scoped CSS (ported from the IDIMS prototype, header only) ── */
 const IDIMS_CSS = `
 /* The shell carries the sticky (not the nav): its containing block is the
    full-height #layout-wrapper, so it pins to the top across the whole page.
