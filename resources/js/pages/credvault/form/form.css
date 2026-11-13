@@ -111,6 +111,9 @@
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .cp-chip.is-ok,
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .k2-opt__sel { color: #6ee7b7 !important; background: rgba(16, 185, 129, .12) !important; border: 1px solid rgba(16, 185, 129, .38) !important; }
 
+.cvx #crd-host .crd-pickbox .mapsup-footer__info { display: inline-flex !important; align-items: center; gap: 7px; white-space: nowrap; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cvx #crd-host .crd-pickbox .mapsup-footer__info svg { flex: none; display: block; }
+
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .mapsup-footer__info { color: #8fb3c2 !important; background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }
 
 .cvx .cp-fcard--main { margin-top: 14px; }
