@@ -522,6 +522,23 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     if (open || past || !live) return null;
     const rows = steps.filter((k): k is 'admin' | 'manager' => k !== 'otp' && stageStatus(k) === 'done');
     if (!rows.length) return null;
+    /* The Vault Admin is also the requester's reporting manager: their one
+       approval covered both steps, so it reads as ONE line naming both roles —
+       two lines with the same name read as if they had approved twice. */
+    const adminBy = live.admin?.decided_by?.id, managerBy = live.manager?.decided_by?.id;
+    if (rows.length === 2 && adminBy != null && adminBy === managerBy) {
+      return (
+        <div className="rv-oklist">
+          <div className="rv-ok-row rv-ok-row--same">
+            <Svg d={CP_I.check} size={13} />
+            <span className="rv-ok-same">
+              <span>Step 1 &amp; Step 2 approved by <b>{deciderName('admin', live)}</b> at {fmtTime(decidedAt('admin'))} · {live.duration_minutes} min window</span>
+              <small>{deciderName('admin', live)} is both your Vault Admin and your Reporting Manager, so one approval was enough.</small>
+            </span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="rv-oklist">
         {rows.map(k => (

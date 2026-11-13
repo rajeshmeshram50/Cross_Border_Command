@@ -3770,20 +3770,33 @@ class CredVaultController extends Controller
                 // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
                 if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
-                // When the reporting manager IS the Vault Admin (the branch admin
-                // most employees report to), the same person gives both approvals
-                // — two separate, audited actions, by design. (not two people)
             } else {
                 $this->reject('This request has no approval waiting.', null, 409);
             }
 
-            $role = $stage === 'admin' ? 'Vault Admin' : 'Manager';
+            /* When the Vault Admin approving is ALSO the requester's reporting
+               manager (the branch admin most employees report to), one approval
+               covers both steps: the request goes straight on to 2FA (or unlocks)
+               instead of coming back to the same person a second time. Both
+               steps are still recorded as decided, by them, at this moment. */
+            $both = $approve && $stage === 'admin' && $r->manager_required
+                && (int) $r->manager_user_id === (int) $u->id && $r->manager_status !== 'approved';
+
+            $role = $both ? 'Vault Admin & Manager' : ($stage === 'admin' ? 'Vault Admin' : 'Manager');
             $r->fill([
                 "{$stage}_status"     => $approve ? 'approved' : 'rejected',
                 "{$stage}_decided_by" => $u->id,
                 "{$stage}_decided_at" => now(),
                 "{$stage}_note"       => $note,
             ]);
+            if ($both) {
+                $r->fill([
+                    'manager_status'     => 'approved',
+                    'manager_decided_by' => $u->id,
+                    'manager_decided_at' => now(),
+                    'manager_note'       => $note,
+                ]);
+            }
             // The manager stage is no longer opened automatically — the requester forwards it (raise-manager).
 
             $extra = ['request_id' => $r->id, 'credential_id' => $r->credential_id, 'url' => '/credentials-vault/critical-vault'];
@@ -4699,8 +4712,8 @@ class CredVaultController extends Controller
 
         $canDecide = $r->status === 'pending' && $r->requester_id !== $u->id && (
             ($stage === 'admin' && $this->canApproveAdmin($u, $r))
-            // Manager step: the manager decides — even if they are also the Vault
-            // Admin who approved step 1 (RM = branch admin). Two separate actions.
+            // Manager step: the manager decides. When the manager IS the Vault Admin
+            // who approved step 1, that approval already covered this step (decide()).
             || ($stage === 'manager' && $r->manager_user_id === $u->id)
         );
         $display = match (true) {
