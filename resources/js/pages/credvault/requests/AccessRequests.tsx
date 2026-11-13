@@ -179,7 +179,7 @@ export default function AccessRequests() {
     } finally { setBusy(x.id, false); }
   };
 
-  const cvTabs: CvTab[] = TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs[t.key] ?? null }));
+  const cvTabs: CvTab[] = TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs[t.key] ?? 0 }));
   const start = (meta.current_page - 1) * meta.per_page;
   const tabDef = TABS.find(t => t.key === tab) ?? TABS[0];
 

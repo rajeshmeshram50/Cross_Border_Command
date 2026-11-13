@@ -192,7 +192,7 @@ export default function TeamVault() {
           </div>
           <div className="tv-pane__bd tvc-bd" ref={bdRef}>
             <CvTabsRow
-              tabs={TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: tabs[t.k] }))}
+              tabs={TABS.map(t => ({ key: t.k, label: t.l, icon: t.i, count: tabs[t.k] ?? 0 }))}
               active={tab} onTab={k => { setTab(k as Tab); setPage(1); }}
               search={q} onSearch={setQ} placeholder="Search by credential ID, name, category, username or owner..." />
 

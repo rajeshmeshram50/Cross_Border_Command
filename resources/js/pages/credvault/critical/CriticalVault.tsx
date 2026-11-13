@@ -193,7 +193,7 @@ export default function CriticalVault() {
       />
 
       <CvCard pane>
-        <CvTabsRow tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs ? tabs[t.api] ?? 0 : null }))}
+        <CvTabsRow tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs?.[t.api] ?? 0 }))}
           active={tab} onTab={k => setTab(k as TabKey)} search={q} onSearch={setQ}
           placeholder="Search by credential ID, name, category, username or owner..." />
 
