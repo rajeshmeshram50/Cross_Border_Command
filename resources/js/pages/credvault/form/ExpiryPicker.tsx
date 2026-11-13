@@ -5,17 +5,11 @@ import { Svg } from '../shared';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const POPUP_W = 260;
 
-/** "08/28" → { m: 7, y: 2028 }, or null when it is not a full MM/YY. */
 function parse(v: string): { m: number; y: number } | null {
   const r = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(v.trim());
   return r ? { m: Number(r[1]) - 1, y: 2000 + Number(r[2]) } : null;
 }
 
-/**
- * Credit Card "Expiry (MM/YY)": the text box stays typeable, and the calendar icon opens a month /
- * year picker (the app's date-picker popup look) that writes MM/YY. Months before the current one
- * are off — a card's expiry is never in the past.
- */
 export default function ExpiryPicker({ id, value, placeholder, className, onChange, onBlur }: {
   id?: string; value: string; placeholder?: string; className: string;
   onChange: (v: string) => void; onBlur?: () => void;

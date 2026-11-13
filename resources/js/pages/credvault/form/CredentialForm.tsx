@@ -31,36 +31,28 @@ function normKey(k: string): string {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-/** A YYYY-MM-DD day moved by n days, in the same format. */
 const shiftDay = (iso: string, n: number) => {
   const [y, m, d] = iso.split('-').map(Number);
   const t = new Date(y, m - 1, d + n);
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 };
 const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-/** Today 18 years ago (YYYY-MM-DD): the latest Date of Birth an adult can have. 29 Feb falls back to 28 Feb. */
 const adultCutoff = () => {
   const t = new Date();
   const d = new Date(t.getFullYear() - 18, t.getMonth(), t.getDate());
   if (d.getMonth() !== t.getMonth()) d.setDate(0);
   return isoOf(d);
 };
-/** Date of Birth (CS-1437): not today or later, and at least 18 years ago. */
 const dobError = (v: string) =>
   !ISO_DAY.test(v) ? null
     : v >= isoOf(new Date()) ? 'Date of birth cannot be today or a future date'
     : v > adultCutoff() ? 'You must be at least 18 years old' : null;
 
-/** Date of Expiry on or before Date of Issue is a clash (both YYYY-MM-DD, which compare as text). */
 const expiryError = (issue: string, expiry: string) =>
   ISO_DAY.test(issue) && ISO_DAY.test(expiry) && expiry <= issue
     ? (expiry === issue ? 'Date of Expiry cannot be the same as the Date of Issue' : 'Date of Expiry must be later than the Date of Issue')
     : null;
 
-/**
- * ID-number rules (CS-1437, My Vault): Driver License number, and the SSN / Aadhaar / PAN number by its ID Type.
- * Each has a typing filter (`clean`), a length cap and a check. Spaces are separators and are not counted.
- */
 type IdRule = { clean: (raw: string) => string; max: number; numeric?: boolean; ph?: string; error: (v: string) => string | null };
 const oneSpace = (s: string) => s.replace(/^ +/, '').replace(/ {2,}/g, ' ');
 const ID_RULES: Record<string, IdRule> = {
@@ -122,9 +114,6 @@ function Section({ ico, title, sub, items, wide, after }: {
   );
 }
 
-/* The 2FA "Gmail" inbox can be any real mailbox (dev@inhpl.com, a team inbox…), not only
-   @gmail.com: the API sends the code to whatever passes email:rfc. Same check as every other
-   email field in the form. */
 const OTP_EMAIL_MSG = 'Enter a valid email address, e.g. name@company.com';
 const otpEmailOk = (v: string) => !!v.trim() && !emailError(v);
 const PROTECT_HINT ='Only the owner or a Vault Admin can change this.';
@@ -186,12 +175,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [code, setCode] = useState(detail?.code ?? '');
   const [wide, setWide] = useState(() => window.innerWidth > 980);
 
-  // "Critical" follows the VAULT, not the risk level — a Critical Vault credential keeps the
-  // full 2-step + approval flow even at a lower risk (CS: low-risk critical still critical).
   const wasCritical = detail?.vault === 'critical';
   const inCritical = !!init.critical || wasCritical;
-  // Searchable dropdowns with risk dots: only when the form is opened from the Critical Vault or the
-  // Team Vault. My Vault and Password Health keep the plain list.
   const richSel = !!init.critical || init.scope === 'team';
   const P = detail?.protection;
   const [prot, setProt] = useState<ProtectionValue>(() => ({
@@ -202,8 +187,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const policyGate = { admin: pol.cp_admin, manager: pol.cp_manager, otp: pol.cp_otp };
 
   const twofaOn = T.twofa ? twofa : toggleField ? vals.twofa === 'yes' : false;
-  // Drive the critical behaviour (2-step setup, protection steps, lock payload) off the vault,
-  // not the selected risk, so Low/Medium/High in the Critical Vault still get the full flow.
   const critical = inCritical;
   const twofaLocks = critical && hasTwofaSwitch(T);
   const needAuth = critical && canProtect && (twofaLocks ? twofaOn : prot.otp && pol.cp_otp);
@@ -291,23 +274,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const span = fieldSpan(f);
     const had = !!dField.get(f.key)?.has_value || locked;
     const keep = editing && f.secret && had;
-    // Driver License / Aadhaar / PAN number (CS-1437): its own characters only — the rest are dropped as typed.
-    // CS-1456: the Critical Vault runs the same field checks as My Vault (they were My-Vault-only).
     const idRule = idRuleFor(T.key, f.key, vals.idtype);
     const ph = keep ? KEEP : (idRule?.ph ?? f.placeholder ?? '');
     const cls = `mapsup-finput has-ico${f.mono ? ' crd-mono' : ''}`;
     const baseCls = span === 4 ? ' mapsup-span-full' : span === 2 ? ' crd-span2' : '';
     const val = vals[f.key] ?? '';
     const onText = (raw: string) => {
-      // Account Number keeps digits only: letters, spaces and symbols are dropped as they are typed or pasted.
       const v = f.key === 'acno' ? raw.replace(/\D/g, '').slice(0, 18)
-        // Card Number (CS-1456 #1): digits only, up to 19 — the spaces it is shown with are not stored, so
-        // they no longer eat into the 19-character limit (a 19-digit card could not be typed with them).
         : f.key === 'cardno' ? raw.replace(/\D/g, '').slice(0, 19)
         : idRule ? idRule.clean(raw)
-        // CS-1457 #12 / #14: Hostname / IP and the certificate domain drop _ and symbols as they are typed.
         : f.key === 'host' ? HOST_CHARS(raw)
-        // CS-1456 #2: Account Holder / Cardholder take no digits — they are dropped as typed or pasted.
         : f.key === 'holder' ? HOLDER_CHARS(raw)
         : f.key === 'domain' && T.key === 'cert' ? DOMAIN_CHARS(raw)
         : f.kind === 'tel' ? PHONE_CHARS(raw) : f.upper ? raw.toUpperCase() : raw;
@@ -324,7 +300,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         : idRule ? idRule.error(v) : null;
       if (m) setErrors(e => ({ ...e, [k]: m }));
     };
-    // The asterisk stays in Edit too (CS-1436): a saved secret or file still counts, so leaving it blank keeps it.
     const req = f.required && (!inCritical || !(editing && had && (f.secret || f.kind === 'file')));
 
     return {
@@ -380,8 +355,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               options={[{ value: '', label: 'Select…' }, ...(f.options ?? []).map(o => ({ value: o, label: o }))]} rich={richSel} />
           );
         } else if (f.kind === 'textarea') {
-          // A masked textarea (Secure Note, Private Key, Seed…) gets the eye and copy buttons (CS-1438) — in the
-          // Critical Vault too: typing into dots with no way to check them hid the note from its own author.
           const eye = !!f.secret;
           const vis = eye && shown.has(f.key);
           if (eye) wrapCls += ' crd-pw crd-pw--ta';
@@ -407,7 +380,7 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             <>
               <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
                 value={f.key === 'cardno' ? val.replace(/(\d{4})(?=\d)/g, '$1 ') : val} placeholder={ph}
-                maxLength={f.key === 'acno' ? 18 : f.key === 'cardno' ? 23 /* 19 digits + 4 group spaces */ : idRule ? idRule.max : fieldMax(f)} autoComplete="new-password"
+                maxLength={f.key === 'acno' ? 18 : f.key === 'cardno' ? 23 : idRule ? idRule.max : fieldMax(f)} autoComplete="new-password"
                 inputMode={f.key === 'acno' || f.key === 'cardno' || idRule?.numeric ? 'numeric' : undefined}
                 onBlur={onLeave}
                 onChange={e => { onText(e.target.value); if (generated.has(f.key)) setGenerated(g => { const n = new Set(g); n.delete(f.key); return n; }); }} />
@@ -440,13 +413,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             );
           }
         } else if (f.kind === 'date') {
-          // Date of Issue → Date of Expiry (Passport, CS-1437): expiry must fall after issue, so each picker
-          // greys out the other side's days and a clash is flagged at once. My Vault only.
           const paired = !inCritical && T.fields.some(x => x.key === 'issue') && T.fields.some(x => x.key === 'expiry')
             && (f.key === 'issue' || f.key === 'expiry');
           const other = paired ? vals[f.key === 'issue' ? 'expiry' : 'issue'] ?? '' : '';
           const bound = ISO_DAY.test(other) ? shiftDay(other, f.key === 'issue' ? -1 : 1) : undefined;
-          // Date of Birth (CS-1437): 18 or older, so the latest day is today 18 years ago — Today and later are greyed out.
           const dob = !inCritical && f.key === 'dob';
           ctl = <MasterDatePicker value={val} placeholder={ph || 'Select date'} invalid={!!errors[k]} popupClassName="crd-cal"
             minDate={paired && f.key === 'expiry' ? bound : undefined}
@@ -460,7 +430,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
               if (m) setErrors(e => ({ ...e, 'fields.expiry': m })); else clr('fields.expiry');
             }} />;
         } else if (f.key === 'exp' && !inCritical) {
-          // Credit Card expiry (MM/YY): typeable, and its calendar icon opens a month / year picker.
           ctl = <ExpiryPicker id={`crdF_${f.key}`} className={cls} value={val} placeholder={ph} onChange={onText} onBlur={onLeave} />;
         } else {
           ctl = (
@@ -569,8 +538,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             maxLength={type === 'tel' ? 16 : 191} inputMode={type === 'tel' ? 'tel' : 'email'}
             onChange={e => {
               let v = type === 'tel' ? PHONE_CHARS(e.target.value) : e.target.value;
-              // My Vault: spaces alone are not a value (no "Edited", no Update) — a phone can't start with or double a
-              // space, and an email holds none at all.
               v = type === 'tel' ? v.replace(/^\s+/, '').replace(/\s{2,}/g, ' ') : v.replace(/\s/g, '');
               set(v);
               const m = errors[k] && v.trim() ? (type === 'tel' ? phoneError(v) : emailError(v)) : null;
@@ -681,8 +648,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const nSec = 1 + (T.twofa ? 1 : 0) + (isPw ? 1 : 0);
   const s3 = [
     selItem('risk', 'Risk Level', 'shield', true, risk,
-      // The Critical Vault offers every risk level and all are selectable — the vault, not the risk,
-      // keeps the credential critical. My Vault keeps its own levels (no critical).
       meta.risks
         .filter(r => (inCritical ? true : r.key !== 'critical'))
         .map(r => ({ value: r.key, label: r.label, dot: r.key })),
@@ -730,7 +695,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   secBits.push('remark');
   const secSub = secBits.slice(0, -1).join(', ').replace(/^./, c => c.toUpperCase()) + ' and ' + secBits[secBits.length - 1] + ' for this ' + T.label.toLowerCase();
 
-  // POST two-step/google/verify — the save sends the same code again as totp_code.
   const verifyCode = async (): Promise<boolean> => {
     const c6 = auth.code.replace(/\s/g, '');
     if (!auth.secret) return false;
@@ -749,7 +713,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     clr('totp_code');
     return true;
   };
-  // POST two-step/email/send, then two-step/email/verify — the save sends the token as email_otp_token.
   const sendGmailCode = async () => {
     if (!gmailOk) { setErrors(e => ({ ...e, twofa_email: OTP_EMAIL_MSG })); return; }
     setGm(g => ({ ...g, sending: true, error: '' }));
@@ -789,13 +752,10 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       onRetry={fetchSecret}
       onCopyKey={() => { if (auth.secret) copyText(auth.secret).then(() => toast.success('Setup key copied')).catch(() => toast.error('Could not copy')); }} />
   );
-  // The 2FA card sits under the section that holds the type's 2FA switch.
   const twofaReadOnly = editing && auth.linkedOnServer;
   const twofaChip = method === 'email'
     ? { ok: gm.verified, text: gm.verified ? 'Gmail verified' : gm.token ? 'Enter the code' : 'Gmail needed' }
     : { ok: authLinked(auth), text: authLinked(auth) ? 'App linked' : 'Scan to link' };
-  // One Authenticator-or-Gmail picker: the Login-style 2FA card (types with a 2FA field) and
-  // step 3 of Critical Access Protection (types without one) both use it, so every type offers Gmail.
   const pickerProps = {
     method, readOnly: twofaReadOnly, authBox,
     onMethod: (m: 'google' | 'email') => { setMethod(m); clr('twofa_email'); },
@@ -817,7 +777,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     const check = (k: string) => !editing || changed(k);
     if (!name.trim()) errs.name = 'Enter a name for this credential';
     else if (name.trim().length < 2) errs.name = 'The name needs at least 2 characters';
-    // A name of symbols only (e.g. "@@@###") names nothing: it needs at least one letter or digit (any script).
     else if (!/[\p{L}\p{N}]/u.test(name)) errs.name = 'The name must include at least one letter or number';
     if (!risk) errs.risk = 'Select the risk level';
     T.fields.forEach(f => {
@@ -837,16 +796,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       }
       const m = checkField(f, v, true);
       if (m) errs[k] = m;
-      // Login → Username (CS-1434): a single letter is not a username — at least 3 characters (an email passes).
       else if (T.key === 'login' && f.key === 'username' && [...v].length < 3) errs[k] = 'Username must be at least 3 characters';
-      // Driver License / Aadhaar / PAN number (CS-1437).
       else if (idRuleFor(T.key, f.key, vals.idtype)) {
         const e = idRuleFor(T.key, f.key, vals.idtype)!.error(v);
         if (e) errs[k] = e;
       }
-      // Date of Birth: 18 or older (CS-1437).
       else if (f.key === 'dob' && dobError(v)) errs[k] = dobError(v)!;
-      // Date of Expiry must be later than Date of Issue (CS-1437).
       else if (f.key === 'expiry' && T.fields.some(x => x.key === 'issue')) {
         const e = expiryError((vals.issue ?? '').trim(), v);
         if (e) errs[k] = e;
@@ -867,7 +822,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
       setErrors(errs);
       const first = firstOf(errs);
       jump(first);
-      // Name the actual reason (e.g. the card checksum) so the toast explains why the save was blocked.
       const only = Object.keys(errs).length === 1;
       toast.warning(only ? 'Can’t save yet' : 'Please complete the highlighted fields', errs[first]);
       return;
@@ -904,7 +858,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         bodyRef.current?.querySelector('.k2-code')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
-      // The save checks the code again; a code older than ~25 s may have rolled over.
       if (Date.now() - verifiedAt.current > 25000) {
         setAuth(a => ({ ...a, verified: false, code: '', error: 'That code has expired. Enter the current 6-digit code from your app, then save again.' }));
         toast.warning('Enter a fresh authenticator code to save');
@@ -956,21 +909,16 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         put('lock_admin', lockAdmin);
         put('lock_manager', lockManager);
         put('lock_otp', lockOtp);
-        // Approvers are resolved when access is requested — Vault Admin = the
-        // branch's Branch Admin (common), manager = the requester's own
-        // reporting manager (individual). The form pins no specific person.
         put('lock_admin_user_id', null, 'lock_admin');
         put('lock_manager_user_id', null, 'lock_manager');
       }
     }
     if (sendTotp && auth.secret) {
-      // As the Postman add: the method is named, not left for the server to infer from the secret.
       body.twofa_method = 'google';
       body.totp_secret = auth.secret;
       body.totp_code = auth.code.replace(/\s/g, '');
     }
     if (sendGmail) {
-      // As the Postman "Create server · email 2-step": method, inbox and the verified token.
       body.twofa_method = 'email';
       body.twofa_email = gmail.trim().toLowerCase();
       body.email_otp_token = gm.token;
@@ -1001,7 +949,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      // A credential added from the Critical Vault stays in the Critical Vault at any risk level.
       const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
       toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
       onSaved(r.data);
@@ -1010,7 +957,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
         const mapped: Record<string, string> = {};
         Object.entries(e.errors).forEach(([k, m]) => { const n = normKey(k); if (!mapped[n]) mapped[n] = m[0]; });
         if (mapped.totp_code) setAuth(a => ({ ...a, verified: false, error: mapped.totp_code }));
-        // A used-up or expired email token: send a fresh code.
         if (mapped.email_otp_code) setGm(g => ({ ...g, verified: false, code: '', error: mapped.email_otp_code }));
         setErrors(mapped);
         const first = firstOf(mapped);
@@ -1035,7 +981,6 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     <div className="mapsup-overlay">
       <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}
         style={{ position: 'relative' }}>
-        {/* My Vault: the Customer form's save lock — a blurred sheet, a big ring and the word under it, no card. */}
         {saving && !inCritical && (
           <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">
             <div className="cv-lock__box"><span className="cv-lock__spin" />{editing ? 'Updating…' : 'Saving…'}</div>

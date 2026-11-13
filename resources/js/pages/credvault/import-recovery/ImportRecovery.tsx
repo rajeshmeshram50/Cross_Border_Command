@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, type PageMeta, type TransferRow } from '../cvApi';
-import { CvCard, CvPage, CvStrip, CvTabsRow, Svg, errMsg } from '../shared';
+import { CvCard, CvPage, CvStrip, CvTabsRow, Svg, errMsg, useDebounced } from '../shared';
 import BackupModal, { type BackupInfo } from './BackupModal';
 import ImportModal from './ImportModal';
 import { HistoryCard, IR_I } from './irShared';
-
-/* CredVault · Import & Recovery — the prototype's importRecoveryBody: bulk import into My Vault, and backups. */
 
 type Tab = 'import' | 'backup';
 interface Hist { rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; page: number }
@@ -16,10 +14,8 @@ const EMPTY: Hist = { rows: [], meta: null, loading: true, error: '', page: 1 };
 export default function ImportRecovery() {
   const [params] = useSearchParams();
   const navKey = useLocation().key;
-  // ?tab= picks the tab on mount and whenever it changes (header quick actions while already here); otherwise the tab lives in state.
   const qTab = params.get('tab');
   const [tab, setTab] = useState<Tab>(() => (qTab === 'backup' ? 'backup' : 'import'));
-  // Keyed on the navigation too, so the same quick action re-selects its tab after a manual switch.
   useEffect(() => { if (qTab === 'import' || qTab === 'backup') setTab(qTab); }, [qTab, navKey]);
   const [imp, setImp] = useState<Hist>(EMPTY);
   const [bk, setBk] = useState<Hist>(EMPTY);
@@ -29,24 +25,26 @@ export default function ImportRecovery() {
   const [qBk, setQBk] = useState('');
   const [backingUp, setBackingUp] = useState(false);
   const toast = useToast();
-  // One request id per list, so a slow older page can't overwrite a newer one.
   const impSeq = useRef(0);
   const bkSeq = useRef(0);
-  // Rows per page of each history table (the pager's select); kept in refs so the loaders stay stable.
   const impPer = useRef(10);
   const bkPer = useRef(10);
+  const dq = useDebounced(q.trim());
+  const dqBk = useDebounced(qBk.trim());
+  const impQ = useRef('');
+  const bkQ = useRef('');
 
   const loadImports = useCallback((page: number) => {
     const my = ++impSeq.current;
     setImp(h => ({ ...h, loading: true, page }));
-    cvApi.imports(page, impPer.current)
+    cvApi.imports(page, impPer.current, impQ.current)
       .then(r => { if (my === impSeq.current) setImp({ rows: r.data, meta: r.meta, loading: false, error: '', page }); })
       .catch(e => { if (my === impSeq.current) setImp(h => ({ ...h, loading: false, error: errMsg(e) })); });
   }, []);
   const loadBackups = useCallback((page: number) => {
     const my = ++bkSeq.current;
     setBk(h => ({ ...h, loading: true, page }));
-    cvApi.backups(false, page, bkPer.current)
+    cvApi.backups(false, page, bkPer.current, bkQ.current)
       .then(r => {
         if (my !== bkSeq.current) return;
         setBk({ rows: r.data, meta: r.meta, loading: false, error: '', page });
@@ -55,9 +53,9 @@ export default function ImportRecovery() {
       .catch(e => { if (my === bkSeq.current) setBk(h => ({ ...h, loading: false, error: errMsg(e) })); });
   }, []);
 
-  useEffect(() => { loadImports(1); loadBackups(1); }, [loadImports, loadBackups]);
+  useEffect(() => { impQ.current = dq; loadImports(1); }, [dq, loadImports]);
+  useEffect(() => { bkQ.current = dqBk; loadBackups(1); }, [dqBk, loadBackups]);
 
-  /* POST /imports saved the rows: close every popup, show the server's message, reload the history. */
   const saved = (message: string) => {
     setImporting(false);
     setTab('import');
@@ -65,18 +63,6 @@ export default function ImportRecovery() {
     loadImports(1);
   };
 
-  /* Search filters the history rows on screen (the loaded page). */
-  const term = q.trim().toLowerCase();
-  const impRows = term
-    ? imp.rows.filter(h => [h.code, h.file_name, h.source, h.format_label, h.by, h.scope_label].some(v => (v ?? '').toLowerCase().includes(term)))
-    : imp.rows;
-  const impMeta: PageMeta | null = imp.meta && term ? { ...imp.meta, total: impRows.length, current_page: 1, last_page: 1 } : imp.meta;
-  const termBk = qBk.trim().toLowerCase();
-  const bkRows = termBk
-    ? bk.rows.filter(h => [h.code, h.format_label, h.scope_label, h.by, h.file_name, h.status === 'failed' ? 'failed' : 'downloaded', h.locked ? 'password locked' : 'not locked']
-      .some(v => (v ?? '').toLowerCase().includes(termBk)))
-    : bk.rows;
-  const bkMeta: PageMeta | null = bk.meta && termBk ? { ...bk.meta, total: bkRows.length, current_page: 1, last_page: 1 } : bk.meta;
   const isImport = tab === 'import';
 
   return (
@@ -104,12 +90,12 @@ export default function ImportRecovery() {
           )} />
         <div className="ir-body is-fill">
           <div style={{ display: isImport ? 'contents' : 'none' }}>
-            <HistoryCard kind="import" rows={impRows} meta={impMeta}
+            <HistoryCard kind="import" rows={imp.rows} meta={imp.meta} searching={!!dq}
               loading={imp.loading} error={imp.error} onPage={loadImports}
               onPageSize={n => { impPer.current = n; loadImports(1); }} />
           </div>
           <div style={{ display: isImport ? 'none' : 'contents' }}>
-            <HistoryCard kind="backup" rows={bkRows} meta={bkMeta} loading={bk.loading} error={bk.error} onPage={loadBackups}
+            <HistoryCard kind="backup" rows={bk.rows} meta={bk.meta} searching={!!dqBk} loading={bk.loading} error={bk.error} onPage={loadBackups}
               onPageSize={n => { bkPer.current = n; loadBackups(1); }} />
           </div>
         </div>

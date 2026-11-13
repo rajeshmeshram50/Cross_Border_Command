@@ -4,9 +4,6 @@ import { cvApi, CvApiError, type Loose } from '../cvApi';
 import { CvPortal, Svg, errMsg, useCvMeta } from '../shared';
 import { IR_I, ImportVeil } from './irShared';
 
-/* Download backup popup — the prototype's irBackupHtml / bkCreate; the file is built and locked on the API
-   (a locked backup is an .xlsx with Excel's own password, no zip; a CSV cannot hold a password). */
-
 type Fmt = 'xlsx' | 'csv';
 type Scope = 'mine' | 'team' | 'all';
 const FMTS: [Fmt, string, string, string, string][] = [
@@ -21,7 +18,6 @@ const SCOPES: [Scope, string, string, string][] = [
 const LV = ['none', 'weak', 'fair', 'good', 'strong'];
 const LBL = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
-/** A quick 0–4 score for the meter; the API enforces the real minimum (8 characters). */
 function pwScore(p: string): number {
   if (!p) return 0;
   let s = 0;
@@ -38,9 +34,7 @@ export interface BackupInfo { scopes: Loose[]; columns: Loose | null; lock_note:
 
 export default function BackupModal({ info, infoError = '', infoLoading = false, onRetry, onDone, onClose }: {
   info: BackupInfo | null;
-  /** Set when GET /backups failed before any backup options arrived — Download stays off until a retry succeeds. */
   infoError?: string; infoLoading?: boolean; onRetry?: () => void;
-  /** After every attempt (failed ones are recorded too) — refreshes the history. */
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -57,7 +51,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
   const [busy, setBusy] = useState(false);
 
   const F = FMTS.find(f => f[0] === fmt)!;
-  // Only Excel can carry a password; a CSV is always downloaded unlocked.
   const canLock = fmt === 'xlsx';
   const locked = lock && canLock;
   const countOf = (k: Scope): number | null => {
@@ -65,7 +58,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
     return s ? Number(s.count) : null;
   };
   const n = countOf(scope);
-  // CS-1474 / 1475 / 1476: an empty vault says so — inline under the vault cards and on Download — instead of a dead button.
   const scopeLabel = SCOPES.find(x => x[0] === scope)?.[1] ?? 'this vault';
   const emptyMsg = n === 0 ? `0 credentials found in ${scopeLabel} — there is nothing to download. Choose another vault.` : null;
   const score = pwScore(pw);
@@ -95,7 +87,7 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
       if (ae.field('password_confirmation')) ae.message = 'The two passwords don’t match. This attempt was recorded.';
       setErr(ae);
       setBusy(false);
-      onDone(); // failed attempts are recorded in the history too
+      onDone();
     }
   };
   const close = () => { if (!busy) onClose(); };
@@ -128,8 +120,6 @@ export default function BackupModal({ info, infoError = '', infoLoading = false,
               </div>
             </div>
 
-            {/* Its own <form> with a hidden username box: when a saved password is picked for the backup
-                password, the browser fills that login's email in here — not into the page's search box. */}
             <form className="mapsup-body gp-body ir-imp-body ir-bk-body" autoComplete="off" noValidate onSubmit={e => e.preventDefault()}>
         <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" className="ir-ac-trap" />
         {sec(1, 'Choose a format', 'The file type you want to download')}

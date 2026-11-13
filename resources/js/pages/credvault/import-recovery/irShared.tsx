@@ -3,8 +3,6 @@ import type { PageMeta, TransferRow } from '../cvApi';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { Svg, bytes, fmtDay, fmtTime, initials } from '../shared';
 
-/* Import & Recovery — the prototype's IR_I icons, irCard and irHistHtml. */
-
 export const IR_I = {
   up: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
   down: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
@@ -29,7 +27,6 @@ export const IR_I = {
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
 };
 
-/** Icon for a file format key or label. */
 export function fmtIcon(f?: string | null): string {
   const k = String(f ?? '').toLowerCase();
   if (k === 'json') return IR_I.code;
@@ -71,11 +68,9 @@ type Col = [label: string, align: 'c' | 'l', width: number];
 const IMPORT_COLS: Col[] = [['Sr. No', 'c', 64], ['Import ID', 'c', 105], ['Imported On', 'c', 120], ['Imported By', 'l', 190], ['File', 'l', 210], ['Format', 'c', 100], ['Imported', 'c', 90], ['Skipped', 'c', 85], ['Weak', 'c', 80], ['Duplicates', 'c', 95]];
 const BACKUP_COLS: Col[] = [['Sr. No', 'c', 64], ['Backup ID', 'c', 105], ['Downloaded On', 'c', 125], ['Downloaded By', 'l', 190], ['Format', 'c', 100], ['Scope', 'c', 110], ['Items', 'c', 75], ['Size', 'c', 80], ['Protection', 'c', 150], ['Status', 'c', 110]];
 
-/** The history card under each tab (irHistHtml), with paging from the API. */
-export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSize }: {
+export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSize, searching }: {
   kind: 'import' | 'backup'; rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; onPage: (p: number) => void;
-  /** Shows the pager's "Rows per page" select. */
-  onPageSize?: (n: number) => void;
+  onPageSize?: (n: number) => void; searching?: boolean;
 }) {
   const head = kind === 'import' ? IMPORT_COLS : BACKUP_COLS;
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
@@ -90,8 +85,8 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSi
     body = (
       <tr><td colSpan={10} className="mv-empty"><div className="mv-empty__box">
         <div className="mv-empty__ico"><Svg d={error ? IR_I.warn : IR_I.hist} size={24} /></div>
-        <div className="mv-empty__t">{error ? 'Could not load the history' : 'Nothing here yet'}</div>
-        <div className="mv-empty__s">{error || (kind === 'import' ? 'Imports you run will be listed here.' : 'Backups you download will be listed here.')}</div>
+        <div className="mv-empty__t">{error ? 'Could not load the history' : searching ? 'No matching records' : 'Nothing here yet'}</div>
+        <div className="mv-empty__s">{error || (searching ? 'Nothing matches your search. Try a different word or clear the search.' : kind === 'import' ? 'Imports you run will be listed here.' : 'Backups you download will be listed here.')}</div>
       </div></td></tr>
     );
   } else if (kind === 'import') {
@@ -151,10 +146,6 @@ export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSi
   );
 }
 
-/**
- * The busy veil for the import popups — the same as the Add / Edit credential form's saving overlay:
- * it covers the whole popup, so nothing (category, samples, tabs, Cancel, ×) can change until the request ends.
- */
 export function ImportVeil({ label }: { label: string }) {
   return (
     <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">

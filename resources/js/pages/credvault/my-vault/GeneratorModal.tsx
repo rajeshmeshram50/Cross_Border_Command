@@ -6,7 +6,6 @@ import {
   type GenOpts, type Generated,
 } from '../generator';
 
-/** CredVault · Generate Password popup — made on the device, never sent anywhere. onUse → "Use in New Credential". */
 export interface GeneratorModalProps {
   onClose: () => void;
   onUse?: (password: string) => void;
@@ -18,7 +17,6 @@ const SLIDERS = 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M1
 const CLIPBOARD_CLEAR_SECONDS = 30;
 const SETS: BoolKey[] = ['upper', 'lower', 'numbers', 'symbols'];
 
-/** The meter class and fill for a D34 level — no score is shown (D5). */
 function levelOf(level: number): [string, number] {
   switch (level) {
     case 4: return ['strong', 100];
@@ -28,7 +26,6 @@ function levelOf(level: number): [string, number] {
   }
 }
 
-/** Digits and symbols tinted (gp-n / gp-s); a passphrase may break after each separator. */
 function Colored({ value, phrase }: { value: string; phrase: boolean }) {
   return (
     <>
@@ -51,7 +48,6 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
   const [res, setRes] = useState<Generated | null>(null);
   const seq = useRef(0);
 
-  // A new value replaces the old one; the old one is not kept (GP-V06).
   const generate = useCallback(async (x: GenOpts) => {
     const n = ++seq.current;
     try {
@@ -62,7 +58,6 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
     }
   }, [toast, digitForced]);
 
-  // Regenerate on every option change; the slider is debounced so dragging makes one value.
   useEffect(() => {
     const t = setTimeout(() => generate(o), 120);
     return () => clearTimeout(t);
@@ -74,7 +69,6 @@ export default function GeneratorModal({ onClose, onUse }: GeneratorModalProps) 
   const pct = ((v - min) / (max - min)) * 100;
   const [lvCls, lvPct] = levelOf(res?.level ?? 0);
 
-  /** Why a toggle can't be turned off, or null when it can (GP-V01, GP-V03). */
   const blockedOff = (k: BoolKey): string | null => {
     if (phrase) return k === 'addNumber' && digitForced ? `Always on — the policy minimum is ${minLabel}` : null;
     if (!SETS.includes(k) || !o[k]) return null;

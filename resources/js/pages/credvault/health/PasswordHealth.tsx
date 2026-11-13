@@ -14,12 +14,6 @@ import ViewDrawer from '../my-vault/ViewDrawer';
 import GeneratorModal from '../my-vault/GeneratorModal';
 import './health.css';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault · Password Health — weak, reused and overdue passwords, missing
- * 2FA and over-shared credentials, with a one-click Fix (prototype:
- * passwordHealthBody / phSummaryHtml / phListHtml / phFix).
- * ───────────────────────────────────────────────────────────────────────── */
-
 const PH_I: Record<string, string> = {
   all: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   weak: '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
@@ -39,7 +33,6 @@ const ICO = {
 };
 
 const TABS: [string, string][] = [['all', 'All Issues'], ['weak', 'Weak'], ['reused', 'Reused'], ['twofa', '2FA Off'], ['rotation', 'Rotation Due'], ['shared', 'Over-shared']];
-/** Fixed severity per issue type — not raised or lowered by the credential's risk level. */
 const SEV_BY_TYPE: Record<string, 'critical' | 'high' | 'medium'> = { weak: 'critical', reused: 'high', twofa: 'medium', rotation: 'critical', shared: 'medium' };
 const CARD_LBL: Record<string, string> = { weak: 'Weak passwords', reused: 'Reused passwords', twofa: 'Missing 2FA', rotation: 'Rotation due', shared: 'Over-shared' };
 const FIX_LBL: Record<string, string> = {
@@ -60,17 +53,12 @@ const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 const FILTER_ICO = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
 const CLEAR_ICO = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
 
-/**
- * The score ring + five issue cards (phSummaryHtml). Each card is one issue type — Weak, Reused, Missing 2FA,
- * Rotation due, Over-shared — and filters the list to that tab; clicking the active card clears it (phCardFilter).
- */
 function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<string, number>; active: string; onPick: (k: string) => void }) {
   const score = num(s?.score ?? 0);
   const level = s ? (score >= 80 ? ['Good', 'is-good'] : score >= 60 ? ['Fair', 'is-fair'] : ['At risk', 'is-bad']) : ['—', 'is-good'];
   const pwN = s ? num(s.with_passwords) : 0;
   const all = s ? num(s.checked) : 0;
   const pctOf = (n: number, of: number) => (of ? Math.round(n / of * 100) : 0);
-  // The API's per-card numbers (GET /health/summary · cards): credentials failing the check, out of those it applies to.
   const api = (k: string) => ((s?.cards ?? []) as Loose[]).find(c => c.key === k);
   const card = (cls: string, ico: string, k: string, l: string, sub: (n: number) => string, fallbackOf: number) => {
     const c = api(k);
@@ -115,7 +103,6 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
       </div>
       {card('teal', PH_I.weak, 'weak', 'Weak passwords', n => `${n} of ${pwN} passwords below policy`, pwN)}
       {card('sky', PH_I.reused, 'reused', 'Reused passwords', n => `${n} of ${pwN} share a password`, pwN)}
-      {/* Each card's "of" and line come from the API; the fallbacks cover an older API. */}
       {card('amber', PH_I.twofa, 'twofa', 'Missing 2FA', n => `${n} of ${all} credentials without 2FA`, all)}
       {card('rose', PH_I.rotation, 'rotation', 'Rotation due', n => `${n} of ${pwN} passwords past policy age`, pwN)}
       {card('green', PH_I.shared, 'shared', 'Over-shared', n => `${n} of ${all} credentials shared too widely`, all)}
@@ -123,7 +110,6 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
   );
 }
 
-/** The Details column (phDetail), read from the issue's structured `details`. */
 const REF_SHOWN = 2;
 
 function RefList({ items }: { items: { id: number; code: string; name: string }[] }) {
@@ -249,7 +235,6 @@ export default function PasswordHealth() {
   const seq = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  /** A summary card filters the list to its issue type; the active card clears it (phCardFilter). */
   const pickCard = (k: string) => {
     const next = tab === k ? 'all' : k;
     setTab(next); setPage(1);
@@ -289,7 +274,6 @@ export default function PasswordHealth() {
 
   const fix = (x: HealthIssue) => {
     if (x.type === 'shared' && !(x.details as Loose)?.needs_reset) {
-      // Shared By Me, filtered to this credential (its credential_id filter).
       navigate(`${CV_ROUTES.myVault}?tab=sharedby&credential_id=${x.credential.id}`);
       toast.info(`Showing who has access to ${x.credential.name}`, 'Revoke what is no longer needed.');
       return;
@@ -360,7 +344,6 @@ export default function PasswordHealth() {
                 ) : rows.map((x, i) => {
                   const c = x.credential;
                   const T = typeOf(c.type);
-                  // Severity is fixed per issue type, whatever the credential (Weak / Rotation critical, Reused high, 2FA / Over-shared medium).
                   const sev = SEV_BY_TYPE[x.type] ?? x.severity;
                   const urlIco = c.url && /^https?:|\.[a-z]{2,}/i.test(c.url) ? 'globe' : 'tag';
                   return (

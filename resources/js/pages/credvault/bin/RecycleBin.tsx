@@ -295,7 +295,6 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   const canChange = v ? v.can_change : listCanChange;
   const opts = useMemo(() => (v?.options.length ? v.options : options), [v, options]);
   const locked = fixed || !canChange;
-  // CS-1493: the popup opens before GET /recycle-bin/retention answers — a shimmer until it does.
   const loading = !ret && !loadErr;
 
   const [warn, setWarn] = useState<RetentionImpact | null>(null);
@@ -333,7 +332,6 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   };
 
   if (warn) {
-    // Every credential the change deletes (GET /recycle-bin/retention?days= · preview.items), oldest first.
     const rows = warn.items;
     return (
       <ConfirmModal
@@ -392,11 +390,11 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
                 onClick={() => { if (!locked) setD(o); }}><b>{o}</b><small>days</small></button>
             ))}
           </div>
-          <div className="rb-ret__note"><Svg d={I_INFO} size={12} />{fixed
+          <div className="rb-ret__note"><Svg d={I_INFO} size={12} /><span>{fixed
             ? `The Critical Vault keeps binned items a fixed ${current} days. This period cannot be changed.`
             : loadErr ? loadErr
               : !canChange ? 'Only a Vault Admin (client admin or Branch Admin) can change the retention period.'
-                : (ret?.note ?? 'Items already older than the new period are deleted right away.')}</div>
+                : (ret?.note ?? 'Items already older than the new period are deleted right away.')}</span></div>
           </>}
           <div className="dl-actions">
             <button type="button" data-h40="skip" className="dl-cancel" disabled={busy} onClick={onClose}>Cancel</button>

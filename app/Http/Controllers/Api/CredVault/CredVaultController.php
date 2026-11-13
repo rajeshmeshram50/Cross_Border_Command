@@ -4401,10 +4401,12 @@ class CredVaultController extends Controller
     protected function transferHistory(Request $request, string $kind)
     {
         $u = $this->tenantUser($request);
-        $f = $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], 'mine' => ['nullable', 'boolean']]);
+        $f = $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], 'mine' => ['nullable', 'boolean'],
+            'q' => ['nullable', 'string', 'max:100']]);
 
         $page = Transfer::where('client_id', $u->client_id)->where('kind', $kind)
             ->when(!$this->isAdmin($u) || ($f['mine'] ?? false), fn ($q) => $q->where('user_id', $u->id))
+            ->when(trim((string) ($f['q'] ?? '')) !== '', fn ($q) => $this->transferSearch($q, $kind, $f['q']))
             ->with('user:id,name')->orderByDesc('id')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $this->userInfo(collect($page->items())->pluck('user_id')->unique()->all());
@@ -4898,6 +4900,31 @@ class CredVaultController extends Controller
             'detail'         => $e->detail,
             'ip'             => $e->ip,
         ];
+    }
+
+    protected function transferSearch(Builder $q, string $kind, string $term): Builder
+    {
+        $t = mb_strtolower(trim($term));
+        $like = $this->likeTerm($term);
+        $hit = fn (array $labels) => array_keys(array_filter($labels, fn ($l) => str_contains(mb_strtolower($l), $t)));
+        $formats = $hit(Transfer::FORMAT_LABELS);
+        $scopes = $hit(Transfer::SCOPE_LABELS);
+        $types = $kind === 'import' ? $hit(collect(array_keys(Credential::TYPES))->mapWithKeys(fn ($k) => [$k => Credential::typeDef($k)['label'] ?? $k])->all()) : [];
+        $done = $kind === 'import' ? 'imported' : 'downloaded';
+
+        return $q->where(function ($w) use ($like, $formats, $scopes, $types, $t, $done, $kind) {
+            foreach (['code', 'file_name', 'source'] as $col) $w->orWhereRaw("lower(coalesce(credvault_transfers.{$col}, '')) like ?", [$like]);
+            $w->orWhereHas('user', fn ($x) => $x->whereRaw("lower(coalesce(name, '')) like ?", [$like]));
+            if ($formats) $w->orWhereIn('format', $formats);
+            if ($scopes) $w->orWhereIn('scope', $scopes);
+            if ($types) $w->orWhereIn('credential_type', $types);
+            if (str_contains('failed', $t)) $w->orWhere('status', 'failed');
+            if (str_contains($done, $t)) $w->orWhere('status', '!=', 'failed');
+            if ($kind === 'backup') {
+                if (str_contains('password locked', $t)) $w->orWhere('locked', true);
+                if (str_contains('not locked', $t)) $w->orWhere('locked', false);
+            }
+        });
     }
 
     protected function transferRow(Transfer $t, ?User $u = null): array

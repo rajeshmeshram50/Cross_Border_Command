@@ -9,11 +9,6 @@ export const TYPE_COLOR: Record<string, string> = {
 };
 export const typeColor = (k: string) => TYPE_COLOR[k] ?? '#0891b2';
 
-/**
- * The password strength criteria (D34) — Credential::strengthOf() decides the same way:
- * Strong (4) 12+ characters with letters, numbers and a special character; Good (3) 8+
- * with all three; anything else Fair (2), which counts as weak. A space is not special.
- */
 export function strengthOf(pw: string): number {
   if (!pw) return 0;
   const mixed = /\p{L}/u.test(pw) && /\p{N}/u.test(pw) && /[^\p{L}\p{N}\s]/u.test(pw);
@@ -22,22 +17,15 @@ export function strengthOf(pw: string): number {
 }
 export const STR_LBL = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
-/** Whether the type's main secret is a password — rotation and strength apply to it. */
 export const secretIsPassword = (T: TypeDef) => !!T.sec && T.fields.some(f => f.key === T.sec && f.kind === 'password');
-/** Login, email, bank, crypto, passkey (a top-level 2FA switch) and Password (its own 2FA toggle field). */
 export const hasTwofaSwitch = (T: TypeDef) => T.twofa || T.fields.some(f => f.key === 'twofa' && f.kind === 'toggle');
 
-/** A password/secret field shows at most two columns wide, as crdField narrowed it. */
 export function fieldSpan(f: FieldDef): number {
   let span = f.span || 1;
   if ((f.kind === 'password' || f.kind === 'secret') && span === 2 && f.key !== 'seed') span = 1;
   return span === 3 ? 4 : span;
 }
 
-/**
- * crdFillRows: stretch the last field of an incomplete row so every row
- * spans all four columns. Returns the span to use for each item.
- */
 export function fillRows(spans: number[]): number[] {
   const out = [...spans];
   let used = 0;
@@ -51,7 +39,6 @@ export function fillRows(spans: number[]): number[] {
   return out;
 }
 
-// host: localhost, a dotted domain, or an IPv4 — each with an optional scheme and port.
 const URL_RE = /^(https?:\/\/)?(localhost|[\w.-]+\.[a-z]{2,}|\d{1,3}(\.\d{1,3}){3})(:\d+)?([/?#]|$)/i;
 const EMAIL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9_%+-])?@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 export const PHONE_RE = /^\+?[\d\s()-]{10,16}$/;
@@ -79,10 +66,8 @@ export function emailError(v: string): string | null {
 
 const HOST_MSG = 'Enter a valid hostname, domain or IP address, e.g. prod.example.com or 10.0.1.25';
 
-/** Host (SSH Key, Database, Server): a hostname / domain, an IPv4 or an IPv6 address — no scheme, path, spaces or symbols. */
 export function hostError(v: string): string | null {
   const t = v.trim();
-  // Digits and dots only is meant as an IPv4: four octets of 0–255.
   if (/^[\d.]+$/.test(t)) {
     const o = t.split('.');
     return o.length === 4 && o.every(x => /^\d{1,3}$/.test(x) && +x <= 255) ? null : HOST_MSG;
@@ -94,28 +79,19 @@ export function hostError(v: string): string | null {
     if (groups.some(g => !/^[0-9a-f]{1,4}$/i.test(g))) return HOST_MSG;
     return (parts.length === 2 ? groups.length < 8 : groups.length === 8) ? null : HOST_MSG;
   }
-  // Hostname: dot-separated labels of letters, digits and hyphens (1–63 each, no hyphen at either end), 253 at most.
   if (t.length > 253) return HOST_MSG;
   const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
   return t.split('.').every(l => label.test(l)) ? null : HOST_MSG;
 }
 
-/* ── CS-1457 #12 / #14 / #16: Development & IT fields ───────────────────────────────────────── */
-
-/** Longest hostname / domain name DNS allows. */
 export const HOST_MAX = 253;
-/** Certificate → Issued By: an X.509 name attribute is 64 characters at most (CS-1457 #14). */
 export const ISSUER_MAX = 64;
-/** Software License → License Key: 4,096 characters at most (CS-1457 #16). */
 export const LKEY_MAX = 4096;
 
-/** Host (Hostname / IP): only what a hostname, IPv4 or IPv6 can hold — letters, digits, . - and : (no _ or symbols). */
 export const HOST_CHARS = (raw: string) => raw.replace(/[^A-Za-z0-9.:-]/g, '').slice(0, HOST_MAX);
-/** Certificate domain: a hostname's characters plus the * of a wildcard (*.example.com). */
 export const DOMAIN_CHARS = (raw: string) => raw.replace(/[^A-Za-z0-9.*-]/g, '').slice(0, HOST_MAX);
 
 const DOMAIN_MSG = 'Enter a valid domain, e.g. inorbvict.com or *.inorbvict.com';
-/** Certificate → Domain / Common Name: a domain name, optionally a wildcard "*." in front; 253 at most. */
 export function domainError(v: string): string | null {
   const t = v.trim();
   if (t.length > HOST_MAX) return `Domain can be at most ${HOST_MAX} characters`;
@@ -123,28 +99,17 @@ export function domainError(v: string): string | null {
   if (name.includes('*')) return 'A wildcard can only be "*." at the very start, e.g. *.inorbvict.com';
   const labels = name.split('.');
   const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
-  // A domain has at least two labels, and the last one (the TLD) is not only digits.
   if (labels.length < 2 || !labels.every(l => label.test(l)) || /^\d+$/.test(labels[labels.length - 1])) return DOMAIN_MSG;
   return null;
 }
 
-/* ── CS-1456 field formats ─────────────────────────────────────────────────────────────────── */
-
-/** API key / secret: 128 characters at most (CS-1457 #5, as QA asked). The API's own limit is 10,000. */
 const KEY_MAX = 128;
-/**
- * SSH private key: 64 characters at most (CS-1457 #9, as QA asked). NOTE: a real key is ~400–3,300
- * characters, so full keys no longer fit; the BEGIN/END block check (privateKeyError) cannot pass
- * within 64 and is not used while this limit stands. Raise PRIVKEY_MAX to accept real keys again.
- */
 const PRIVKEY_MAX = 64;
-/** Longest value the input lets a field hold — the type's own max, KEY_MAX for an API key / secret, PRIVKEY_MAX for an SSH key. */
 export const fieldMax = (f: FieldDef): number | undefined =>
   (f.key === 'apikey' || f.key === 'secret' ? KEY_MAX : f.key === 'privkey' ? PRIVKEY_MAX
     : f.key === 'lkey' ? LKEY_MAX : f.key === 'host' || f.key === 'domain' ? HOST_MAX : f.key === 'issuer' ? ISSUER_MAX
     : f.max ?? undefined);
 
-/** Luhn checksum — every real card number passes it; a mistyped digit fails it. */
 function luhnOk(digits: string): boolean {
   let sum = 0;
   for (let i = 0; i < digits.length; i++) {
@@ -155,16 +120,9 @@ function luhnOk(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-/** Account holder / cardholder: a person's or company's name — letters, no digits (CS-1456 #2, as QA asked). */
 const HOLDER_RE = /^[\p{L}\p{M}\s.'’&,()/-]+$/u;
-/** The same name's characters while typing: digits and other symbols are dropped. */
 export const HOLDER_CHARS = (raw: string) => raw.replace(/[^\p{L}\p{M}\s.'’&,()/-]/gu, '');
 
-/**
- * SSH private key: the whole PEM block — "-----BEGIN … PRIVATE KEY-----", base64 lines (A–Z a–z 0–9 + / =),
- * optional "Name: value" headers of an encrypted RSA key, then the matching "-----END … PRIVATE KEY-----".
- * A PuTTY .ppk file ("PuTTY-User-Key-File-2/3: …") is accepted as it is.
- */
 function privateKeyError(v: string): string | null {
   const t = v.trim();
   if (/^PuTTY-User-Key-File-\d+:/.test(t)) return null;
@@ -179,14 +137,10 @@ function privateKeyError(v: string): string | null {
   return null;
 }
 
-/** crdSave's per-field check — the server repeats these and more. */
-/** `strict` adds the My Vault QA checks (CS-1435): symbols-only text, numbers-only Program Name, Account Number. */
 export function checkField(f: FieldDef, val: string, strict = false): string | null {
   const k = f.key;
-  // A text field of symbols only (e.g. "@@@###", Member ID) holds nothing: it needs a letter or a digit.
   if (strict && k === 'host') return hostError(val);
   if (strict && f.kind === 'text' && !/[\p{L}\p{N}]/u.test(val)) return `${f.label} must include at least one letter or number`;
-  // Rewards → Program Name is a name: digits alone (e.g. "123456") are not one.
   if (strict && k === 'program' && !/\p{L}/u.test(val)) return 'Program name must include letters, not only numbers';
   if (f.kind === 'url' && !URL_RE.test(val)) return 'Enter a valid URL';
   if (f.kind === 'email') return emailError(val);
@@ -194,7 +148,6 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
   if (k === 'cardno') {
     const d = val.replace(/[\s-]/g, '');
     if (!/^\d{12,19}$/.test(d)) return 'Card number must be 12–19 digits';
-    // Length is fine here — it is the card's checksum (Luhn) that failed, usually a typo.
     if (!luhnOk(d)) return `This doesn’t look like a real card number — the ${d.length} digits don’t pass the card checksum. Re-check for a typo.`;
   }
   if (k === 'holder') {
@@ -218,7 +171,6 @@ export function checkField(f: FieldDef, val: string, strict = false): string | n
   if (k === 'exp' && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(val)) return 'Use MM/YY, e.g. 08/28';
   if (k === 'cvv' && !/^\d{3,4}$/.test(val)) return 'CVV must be 3 or 4 digits';
   if (k === 'ifsc' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(val.toUpperCase())) return 'IFSC must look like ICIC0001234';
-  // Bank Account → Account Number: digits only, 9–18 of them (the range Indian bank account numbers use).
   if (strict && k === 'acno' && !/^\d{9,18}$/.test(val)) return /\D/.test(val) ? 'Account number must contain digits only' : 'Account number must be 9–18 digits';
   if (k === 'port' && !(+val > 0 && +val < 65536)) return 'Port must be between 1 and 65535';
   return null;
@@ -228,8 +180,6 @@ export const isEmail = (v: string) => EMAIL_RE.test(v);
 export function policyStrengthMsg(pol: Policy): string {
   return `Policy requires ${pol.min_strength === 4 ? 'a Strong' : `a ${STR_LBL[pol.min_strength]} or stronger`} password — use the generate button`;
 }
-
-/* ══ TOTP (RFC 6238, SHA-1, 6 digits, 30 s) — the prototype's cpVerify, so "Verify & link" answers at once ══ */
 
 function base32(secret: string): ArrayBuffer {
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -256,7 +206,6 @@ async function totpAt(secret: string, counter: number): Promise<string> {
   const n = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
   return String(n % 1_000_000).padStart(6, '0');
 }
-
 
 export async function verifyTotp(secret: string, code: string): Promise<boolean | null> {
   if (!/^\d{6}$/.test(code)) return false;

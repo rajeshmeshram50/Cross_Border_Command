@@ -9,10 +9,6 @@ import { buildReview, type ImportReview } from './irReview';
 const FMTS: [string, string, string][] = [['Excel', '.xlsx', IR_I.sheet], ['CSV', '.csv', IR_I.file]];
 const EXTS = ['xlsx', 'csv'];
 
-/**
- * Import by category: GET /imports/types fills the dropdown; the chosen category's sheet goes to
- * POST /imports/preview { type, file }, which checks every row as that category's Add form does.
- */
 export default function ImportCategoryModal({ initialFile, onClose, onReviewed }: {
   initialFile?: File | null; onClose: () => void; onReviewed: (review: ImportReview) => void;
 }) {
@@ -98,7 +94,6 @@ export default function ImportCategoryModal({ initialFile, onClose, onReviewed }
             </div>
 
             <div className="mapsup-body gp-body ir-imp-body">
-              {/* Opening: the categories load first — a shimmer in the popup's own shape until they arrive. */}
               {!types && !typesErr ? (
                 <div className="ir-cat-shim" role="status" aria-label="Loading categories">
                   <i className="ir-cat-shim__lbl" />
