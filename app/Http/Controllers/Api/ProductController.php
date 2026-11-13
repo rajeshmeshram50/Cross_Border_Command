@@ -500,8 +500,11 @@ class ProductController extends Controller
          * its own total while the other tab is open — and shipping them here
          * saves the page a second round trip to stats() on every filter
          * change. stats() stays for callers that only want the numbers. */
-        $mappedCount = (clone $query)->has('vendorMaps')->count();
-        $zeroCount   = (clone $query)->doesntHave('vendorMaps')->count();
+        /* The vendor-map tab badges are for the Products page only. A `lite`
+           lookup (e.g. the SPI form's product picker) never shows them, so the
+           two has/doesntHave COUNT subqueries are skipped there (CS-937). */
+        $mappedCount = $lite ? 0 : (clone $query)->has('vendorMaps')->count();
+        $zeroCount   = $lite ? 0 : (clone $query)->doesntHave('vendorMaps')->count();
 
         $query = $this->applySupplierTab($query, $request);
 

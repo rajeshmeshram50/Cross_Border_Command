@@ -144,6 +144,7 @@ function toFormData(body: Record<string, unknown>, files: Record<string, File | 
 export type SpiDetailItem = SpiSavedItem & {
   qty_spi: string; rate: string; extra_qty: string | null;
   pi_item_id?: number | null; description?: string | null; hsn_code?: string | null; uom?: string | null;
+  product_name?: string | null; product_code?: string | null;
   qty_pi?: string | null; gst_pct?: string | null;
 };
 
