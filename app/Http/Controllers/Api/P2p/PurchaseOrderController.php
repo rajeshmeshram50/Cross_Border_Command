@@ -1509,8 +1509,15 @@ class PurchaseOrderController extends Controller
         $poIds = $pos->pluck('id')->all();
         $spis  = $poIds ? DB::table('p2p_supplier_invoices')->whereIn('purchase_order_id', $poIds)
             ->whereNull('deleted_at')->where('status', '!=', SupplierInvoice::STATUS_CANCELLED)
-            ->orderBy('id')->get(['purchase_order_id', 'code', 'invoice_date', 'created_at'])
+            ->orderBy('id')->get(['id', 'purchase_order_id', 'code', 'invoice_date', 'created_at', 'grand_total', 'tds_amount', 'status'])
             ->groupBy('purchase_order_id') : collect();
+        // What has been released against each SPI: approved payment requests linked to it.
+        $spiIds  = $spis->flatten(1)->pluck('id')->all();
+        $spiPaid = $spiIds ? DB::table('p2p_po_payment_requests')->whereIn('supplier_invoice_id', $spiIds)
+            ->where('status', 'approved')
+            ->groupBy('supplier_invoice_id')
+            ->selectRaw('supplier_invoice_id, SUM(COALESCE(paid_amount, approved_amount, 0)) AS paid')
+            ->pluck('paid', 'supplier_invoice_id') : collect();
         $openQty = $this->openQtyByPo($poIds);
         $out = [];
         foreach ($pos as $po) {
@@ -1524,8 +1531,12 @@ class PurchaseOrderController extends Controller
                 'opportunity_code' => $pi->opp_code ?? null,
                 'pi_date'          => isset($pi->created_at) ? substr((string) $pi->created_at, 0, 10) : null,
                 'spis'             => ($spis->get($po->id) ?? collect())->map(fn ($s) => [
-                    'code' => $s->code,
-                    'date' => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
+                    'id'     => (int) $s->id,
+                    'code'   => $s->code,
+                    'date'   => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
+                    'status' => $s->status,
+                    'amount' => max(0, (float) $s->grand_total - (float) $s->tds_amount),
+                    'paid'   => (float) ($spiPaid[$s->id] ?? 0),
                 ])->values()->all(),
                 /* CS-937 — what is still to be invoiced on the order, summed
                    over its lines, so the SPI chooser can lock an order whose
