@@ -295,7 +295,6 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   const canChange = v ? v.can_change : listCanChange;
   const opts = useMemo(() => (v?.options.length ? v.options : options), [v, options]);
   const locked = fixed || !canChange;
-  // CS-1493: the popup opens before GET /recycle-bin/retention answers — a shimmer until it does.
   const loading = !ret && !loadErr;
 
   const [warn, setWarn] = useState<RetentionImpact | null>(null);
@@ -333,7 +332,6 @@ function RetentionModal({ vault, current: listDays, options, fixed: listFixed, c
   };
 
   if (warn) {
-    // Every credential the change deletes (GET /recycle-bin/retention?days= · preview.items), oldest first.
     const rows = warn.items;
     return (
       <ConfirmModal

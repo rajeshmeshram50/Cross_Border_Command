@@ -19,7 +19,6 @@ export interface CredentialFormProps {
 
 const SAMPLE_PW = ['', 'tally123', 'tallycloud2026', 'Tally@2026', 'Tq#9vL!m2Rx$8wPz'];
 
-
 function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
   const loose = row as unknown as Record<string, unknown>;
   return {
@@ -35,7 +34,6 @@ function previewDetail(row: CredentialRow, T: TypeDef): CredentialDetail {
     }),
     recovery: { reg_email: null, reg_phone: null, has_recovery_key: false },
     notes: null, attachments: [],
-    // A dummy critical row: its protection switches follow its lock steps.
     protection: row.risk === 'critical' ? {
       admin: row.lock_steps.includes('admin'), admin_user: null,
       manager: row.lock_steps.includes('manager'), manager_user: null,

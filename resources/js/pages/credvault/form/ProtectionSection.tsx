@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { Svg } from '../shared';
-
-
 export const CP_I = {
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   admin: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
@@ -14,8 +12,6 @@ export const CP_I = {
   mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
 };
 
-
-/** One "Required / Off" switch of the protection steps. */
 function StepToggle({ on, onChange, disabled, title }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string }) {
   return (
     <label className={`crd-tg${on ? ' is-on' : ''}`} title={title}
@@ -44,11 +40,8 @@ function Row({ n, ico, t, d, extra, toggle, panel }: { n: number; ico: string; t
 
 export interface AuthState {
   secret: string | null; display: string; uri: string; loading: boolean; failed: string | null;
-  /** linked already on the server (edit) and not being re-linked */
   linkedOnServer: boolean;
-  /** a fresh secret whose code checked out in the browser — sent on save */
   verified: boolean;
-  /** six positions, a space where no digit is typed yet */
   code: string;
   error: string;
 }
@@ -65,7 +58,6 @@ export function AuthChip({ a, id }: { a: AuthState; id?: string }) {
   );
 }
 
-/** The six digit boxes, with paste, arrows, Backspace and Enter. */
 function Digits({ code, onCode, onEnter, bad }: { code: string; onCode: (c: string) => void; onEnter: () => void; bad: boolean }) {
   const digs = useRef<(HTMLInputElement | null)[]>([]);
   const arr = code.padEnd(6, ' ').slice(0, 6).split('');
@@ -102,7 +94,6 @@ function Digits({ code, onCode, onEnter, bad }: { code: string; onCode: (c: stri
   );
 }
 
-/** Six digit boxes and a button in one bar — the Gmail code check before the save links 2FA. */
 export function CodeRow({ ico, title, label, code, onCode, onSubmit, btn, busy, error }: {
   ico: string; title: string; label: ReactNode; code: string; onCode: (c: string) => void; onSubmit: () => void; btn: string; busy?: boolean; error?: string;
 }) {
@@ -121,8 +112,6 @@ export function CodeRow({ ico, title, label, code, onCode, onSubmit, btn, busy, 
   );
 }
 
-/** The QR, setup key and the code check — or the "linked" line once linked. */
-/** The prototype's list of apps that can scan the setup QR code (shown as chips). */
 const AUTH_APPS = ['Google Authenticator', 'Microsoft Authenticator', 'Authy', 'Zoho OneAuth', '1Password'];
 
 export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, verifying }: {
@@ -186,14 +175,12 @@ export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, ver
       <div className="cp-auth__steps">
         <div className="cp-auth__title">Link your authenticator app</div>
         <div className="cp-auth__tag">Works with any authenticator app</div>
-        {/* As the prototype (crdAuthBox): the apps that scan this QR code. */}
         <div className="k2-apps">
           {AUTH_APPS.map(n => <span key={n}><Svg d={CP_I.check} size={10} sw={3} />{n}</span>)}
         </div>
         <ol className="cp-stps">
           {step(1, 'Open your authenticator app', <>Tap <b>+</b> or <b>Add account</b></>)}
           {step(2, 'Scan this QR code', <>Or choose “Enter a setup key” and type the key below</>)}
-          {/* The prototype links on save; the API needs the code first (totp_code), so step 3 stays the verify step. */}
           {step(3, 'Enter the 6-digit code', <>The app shows a new code for <b>Kryptone</b> every 30 seconds — then press <b>Verify &amp; link</b></>)}
         </ol>
         <div className="cp-keybar">
@@ -224,12 +211,7 @@ export function AuthBox({ a, onRelink, onRetry, onCopyKey, onCode, onVerify, ver
   );
 }
 
-/**
- * "Two-factor authentication on Kryptone" — under the 2FA switch of a critical credential.
- * The method is chosen when the credential is added; on edit a linked method is shown read-only.
- */
 export interface GmailState {
-  /** from POST two-step/email/send; the save sends it as email_otp_token once verified */
   token: string | null; sentTo: string; sending: boolean; wait: number;
   code: string; verifying: boolean; verified: boolean; error: string;
 }
@@ -263,11 +245,6 @@ export function TwofaCard({ chip, ...p }: TwofaPickerProps & { chip: { ok: boole
   );
 }
 
-/**
- * "How should Kryptone ask for the code? Choose one" — Authenticator app or Gmail, with the chosen
- * method's setup below. The Login 2FA card's body, and step 3 of Critical Access Protection for the
- * types that have no 2FA field of their own (Credit Card, Bank Account …), as the prototype.
- */
 export function TwofaPicker({ method, readOnly, authBox, onMethod, gmail, gmailOk, gmailErr, onGmail, gm, onSend, onGmCode, onGmVerify }: TwofaPickerProps) {
   const step = (n: number, h: string, t: string) => (
     <li className="cp-stp"><span className="cp-stp__n">{n}</span><div><b>{h}</b><span>{t}</span></div></li>
@@ -349,15 +326,12 @@ export interface ProtectionValue {
   admin: boolean; manager: boolean; otp: boolean;
 }
 
-/** The three steps. `hasMain`: the type's own 2FA switch stands in for step 3. */
 export function ProtectionBody({ v, set, policy, hasMain, twofaOn, mainChip, auth, authBox, picker, errors }: {
   v: ProtectionValue; set: (p: Partial<ProtectionValue>) => void;
   policy: { admin: boolean; manager: boolean; otp: boolean };
   hasMain: boolean; twofaOn: boolean;
-  /** step 3's chip — mirrors the 2FA card (method-aware: "App linked" / "Gmail verified" …) */
   mainChip: { ok: boolean; text: string };
   auth: AuthState; authBox: ReactNode;
-  /** types with no 2FA field: the same Authenticator-or-Gmail picker as the Login 2FA card */
   picker?: ReactNode;
   errors: Record<string, string>;
 }) {
