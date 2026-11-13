@@ -129,7 +129,7 @@ export default function RecycleBin() {
         sub={`Credentials moved to the bin stay here for ${days} days — restore them anytime, or delete them permanently.`}
         actions={
           <StripBtn icon={IC.bin} onClick={() => setAsk({ kind: 'empty' })} disabled={empty || !canEmpty}
-            title={summary && !purgeAllowed ? 'Permanent delete is turned off in CredVault Policies'
+            title={summary && !purgeAllowed ? 'Permanent delete is turned off by the CredVault policy'
               : summary && !canEmpty ? (summary.is_bin_admin ? 'Only the Branch Admin can empty the Critical Vault bin' : 'Only a Vault Admin (client admin or Branch Admin) can empty the bin') : undefined}>Empty Bin</StripBtn>
         } />
 

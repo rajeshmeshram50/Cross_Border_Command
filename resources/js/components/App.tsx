@@ -137,14 +137,12 @@ const PutawayScan = lazyPage(() => import('../pages/p2p/putaway/PutawayScan'));
 const InventoryScanDevices = lazyPage(() => import('../pages/inventory/InventoryScanDevices'));
 const InventoryScanLog = lazyPage(() => import('../pages/inventory/InventoryScanLog'));
 const InventoryHandheldGuide = lazyPage(() => import('../pages/inventory/InventoryHandheldGuide'));
-// CredVault — the ten screens of the Kryptone CredVault prototype.
 const CvDashboard = lazyPage(() => import('../pages/credvault/dashboard/VaultDashboard'));
 const CvHealth = lazyPage(() => import('../pages/credvault/health/PasswordHealth'));
 const CvMyVault = lazyPage(() => import('../pages/credvault/my-vault/MyVault'));
 const CvTeamVault = lazyPage(() => import('../pages/credvault/team-vault/TeamVault'));
 const CvCritical = lazyPage(() => import('../pages/credvault/critical/CriticalVault'));
 const CvRequests = lazyPage(() => import('../pages/credvault/requests/AccessRequests'));
-const CvPolicies = lazyPage(() => import('../pages/credvault/policies/Policies'));
 const CvImportRecovery = lazyPage(() => import('../pages/credvault/import-recovery/ImportRecovery'));
 const CvAudit = lazyPage(() => import('../pages/credvault/audit/AuditLogs'));
 const CvBin = lazyPage(() => import('../pages/credvault/bin/RecycleBin'));
@@ -158,13 +156,6 @@ function RouteFallback() {
     <div
       style={{
         padding: 24,
-        /* 420ms, not 180. Every lazy route that fetches on mount shows two
-           skeletons in a row: this one while the chunk downloads, then the
-           page's own while its data loads. They are different shapes, so it
-           reads as the shimmer running twice (QA 83, Case to Case → Track).
-           A chunk usually arrives well inside 420ms, so this one stays
-           invisible and the page's own skeleton is the only one seen; a
-           genuinely slow chunk still gets feedback. */
         animation: 'cbcRouteFallbackIn 0s linear 420ms forwards',
         opacity: 0,
       }}
@@ -193,8 +184,6 @@ function RouteFallback() {
   );
 }
 
-/* Landing pages worth warming. Deliberately a short list: prefetching all 114
-   routes would cost more than it saves. */
 const PREFETCH_PATHS = [
   '/hr/attendance', '/hr/employees', '/hr/recruitment', '/hr/leave',
   '/hr/leave-plans', '/hr/exit-management', '/hr/document-templates',
@@ -566,12 +555,6 @@ function AuthRoutes() {
   );
 }
 
-/* The splash plays over the page instead of in place of it. It used to be
-   rendered alone for its full 2.4 s, so the page's code and API calls only
-   started after it — every refresh paid that wait on top of the load (QA #13).
-   Now the page loads underneath while the same animation plays on top.
-   The callback is stable on purpose: SplashLoader restarts its timers when
-   onComplete changes, and the page re-rendering beneath must not do that. */
 function DashboardRoutes({ user }: { user: any }) {
   const [splashDone, setSplashDone] = useState(false);
   const finishSplash = useCallback(() => setSplashDone(true), []);
@@ -737,7 +720,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/sales/sign-tracker" element={<SalesSignTracker />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               <Route path="/p2p" element={<SalesP2PSummary />} />
-              {/* CredVault — the module opens on its Vault Dashboard, as the prototype does. */}
               <Route path="/credentials-vault" element={<Navigate to="/credentials-vault/dashboard" replace />} />
               <Route path="/credentials-vault/dashboard" element={<CvDashboard />} />
               <Route path="/credentials-vault/password-health" element={<CvHealth />} />
@@ -745,7 +727,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/credentials-vault/team-vault" element={<CvTeamVault />} />
               <Route path="/credentials-vault/critical-vault" element={<CvCritical />} />
               <Route path="/credentials-vault/access-requests" element={<CvRequests />} />
-              <Route path="/credentials-vault/policies" element={<CvPolicies />} />
               <Route path="/credentials-vault/import-recovery" element={<CvImportRecovery />} />
               <Route path="/credentials-vault/audit-logs" element={<CvAudit />} />
               <Route path="/credentials-vault/recycle-bin" element={<CvBin />} />
@@ -756,7 +737,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/inventory/stickers" element={<InventoryStickers />} />
               <Route path="/inventory/devices" element={<InventoryScanDevices />} />
               <Route path="/inventory/scan-log" element={<InventoryScanLog />} />
-              {/* What the Zebra shows, for anyone who will not hold one. */}
               <Route path="/inventory/handheld-guide" element={<InventoryHandheldGuide />} />
               <Route path="/p2p/analytics" element={<ModuleStubPage />} />
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
@@ -808,8 +788,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
-              {/* Both behind the same flag: the queue is attendance data, so
-                 it has no meaning on a build where attendance is off. */}
               {FEATURE_FLAGS.hrAttendance && (
                 <>
                   <Route path="/hr/attendance" element={<HrAttendance />} />
@@ -848,9 +826,6 @@ function Router() {
   const { user } = useAuth();
   const location = useLocation();
 
-  /* Warm the landing chunks while the browser is idle, so clicking a module
-     resolves from memory instead of waiting on a request. Only the routes this
-     user may open — prefetching a module they cannot reach is pure waste. */
   useEffect(() => {
     if (!user) return;
     startIdlePrefetch(PREFETCH_PATHS.filter((p) => canAccessPath(p, user)));
@@ -929,7 +904,6 @@ export default function App() {
                 </BrowserRouter>
                 <CookieBanner />
                 <IdleTimeout />
-                {/* Draws every native `title` in the app as the app's own pill. */}
                 <NativeTitleTooltips />
               </SettingsProvider>
             </AuthProvider>

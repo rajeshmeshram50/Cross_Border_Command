@@ -1,59 +1,14 @@
 import type { MenuItem, MenuGroup, UserRole } from './types';
 
-/**
- * Feature flags — flip these on/off without touching menu or route plumbing.
- * Lifecycle: keep a feature `false` while it's in build/QA, flip to `true`
- * when ready to expose to users. The flag controls BOTH the sidebar entry
- * (filtered in HR_GROUPS below) and the React route (in components/App.tsx).
- *
- * When a feature is disabled:
- *   - Menu item is hidden from the sidebar
- *   - Direct URL navigation falls back to the dashboard
- */
 export const FEATURE_FLAGS = {
-  hrAttendance: true,    // HR · Time & Pay · Attendance
+  hrAttendance: true,
 };
 
-/* Idle auto-logout window — ONE source of truth.
- *
- * This was previously hardcoded in four places and every one of them had
- * drifted: the Settings toggle promised "30 min", IdleTimeout's own comment
- * and its toast said "2 hours", and the constant it actually used was FIVE
- * hours. A user who turned the setting on got a fifth of the protection the
- * label offered, and nothing in the code contradicted the wrong labels.
- *
- * So the number and the words people read are derived from the same value
- * here. Change SESSION_TIMEOUT_HOURS and the timer, the toggle label, the
- * description and the sign-out toast all follow.
- *
- * Matches SESSION_LIFETIME=120 (minutes) in .env, which governs Laravel's
- * session for the web routes. NOTE that Sanctum tokens are separate and do
- * not expire (config/sanctum.php → 'expiration' => null); this timer is what
- * actually ends an idle session in the SPA. */
-/* EPF wage ceiling — PF is 12% of basic, capped at this for PF type Statutory.
- *
- * The single source for every screen that quotes it: Salary Setup, the Employee
- * form, Onboarding and the shared salaryBreakup helper. The SERVER's copy is
- * PayrollService::PF_WAGE_CEILING — the two are not linked by anything but this
- * comment, so moving one means moving the other, or a screen will quote a
- * figure the payslip does not use.
- *
- * Raised from 15,000 to 25,000 in Oct 2026 by business decision; the statutory
- * EPF figure is 15,000 and this is the company's own, higher ceiling.
- */
 export const PF_WAGE_CEILING = 25000;
 export const PF_RATE = 0.12;
-/** "₹25,000" — for labels, so the number is never typed out by hand. */
 export const PF_WAGE_CEILING_LABEL = `₹${PF_WAGE_CEILING.toLocaleString('en-IN')}`;
-/** "₹3,000" — the most PF can be under the ceiling. */
 export const PF_MAX_LABEL = `₹${Math.round(PF_WAGE_CEILING * PF_RATE).toLocaleString('en-IN')}`;
 
-/* The PF Type choice, for the three screens that offer it: the Employee
-   compensation form, the Salary Structure modal and Onboarding Stage 1. All
-   three used to spell their own options, and Onboarding's said plain
-   "Statutory" / "Standard" while the other two explained themselves — the same
-   field reading differently depending on where you met it (#146). The cap
-   comes off PF_WAGE_CEILING, so the label cannot be left behind the number. */
 export const PF_TYPE_OPTIONS = [
   { value: 'Statutory', label: `Statutory (₹${Math.round(PF_WAGE_CEILING / 1000)}k cap)` },
   { value: 'Standard',  label: 'Standard (full basic)' },
@@ -63,9 +18,6 @@ export const SESSION_TIMEOUT_HOURS = 2;
 export const SESSION_TIMEOUT_MS    = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 export const SESSION_TIMEOUT_LABEL = `${SESSION_TIMEOUT_HOURS} hours`;
 
-// Masters the super admin actually uses. Tenant-scoped masters (everything
-// else) stay available to client/branch users via the standard per-module
-// permission flags in `perms[id].can_view`.
 export const SUPER_ADMIN_MASTERS: ReadonlySet<string> = new Set([
   'master.organization_types',
   'master.countries',
@@ -195,20 +147,6 @@ export const MASTER_GROUPS: MenuGroup[] = [
   },
 ];
 
-/**
- * Inventory Management — the prototype's own module, one "Inventory Master"
- * column sitting between P2P and GTS in the nav.
- *
- * Not the same thing as Inventory Management System, which is a separate
- * system with its own put-away, sticker and scanning screens.
- *
- * The leaves keep their `master.*` ids on purpose. Those ids are the
- * permission slugs AND the master keys the generic master page is routed by,
- * so a warehouse already granted to someone stays granted and no new row,
- * route or alias is needed — the entries are a second way in to pages the
- * Master module already holds, which is how HRMS already carries the
- * attendance masters.
- */
 export const INVENTORY_GROUPS: MenuGroup[] = [
   {
     id: 'inv.master',
@@ -218,20 +156,11 @@ export const INVENTORY_GROUPS: MenuGroup[] = [
       { id: 'master.warehouse_master', icon: 'Warehouse', label: 'Warehouse Master' },
       { id: 'master.zone_master', icon: 'Grid3x3', label: 'Zone Master' },
       { id: 'master.racks', icon: 'Rows3', label: 'Rack Master' },
-      /* In the design, not yet in the app: there is no product-flags master,
-         so it has no permission row and renders disabled, the way every other
-         unbuilt leaf in this nav does. */
       { id: 'master.product_flags', icon: 'Flag', label: 'Product Flags Master' },
     ],
   },
 ];
 
-/**
- * CredVault — the prototype's mega-menu: Vault Analytics · Vault Management ·
- * Vault Administration & Security. Every leaf rides on the one
- * `credentials-vault` grant (see PERM_ALIAS in IdimsHeader); the screens and
- * the API decide what each person may do inside.
- */
 export const CREDVAULT_GROUPS: MenuGroup[] = [
   {
     id: 'cv.analytics',
@@ -258,7 +187,6 @@ export const CREDVAULT_GROUPS: MenuGroup[] = [
     icon: 'ShieldCheck',
     children: [
       { id: 'cv.access_requests', icon: 'UserCheck', label: 'Access Request Management' },
-      { id: 'cv.policies', icon: 'ShieldCheck', label: 'CredVault Policies' },
       { id: 'cv.import_recovery', icon: 'DatabaseBackup', label: 'Import & Recovery' },
       { id: 'cv.audit_logs', icon: 'FileText', label: 'Audit Logs' },
       { id: 'cv.recycle_bin', icon: 'Trash2', label: 'Recycle Bin' },
@@ -309,28 +237,12 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'FileText',
     children: [
       { id: 'hr.broadcast', icon: 'Megaphone', label: 'Broadcast Centre' },
-      // Document Templates — role-based document templates (Offer Letter,
-      // NDA, etc) with lifecycle triggers (sourced from trigger_point master)
-      // + signing workflows + Tiptap web editor / MS Word DOCX round-trip.
       { id: 'hr.doc_templates', icon: 'FileText', label: 'Document Templates' },
-      // Custom Fields — variables defined here are NOT in employee data; the
-      // template engine prompts for them manually at generation time.
       { id: 'hr.custom_fields', icon: 'Star', label: 'Custom Fields' },
-      /* Trigger Point Master is not listed. Its three rows are global, and
-         which one applies is decided in code (HrDocumentSignatureController
-         ::inferTriggerKeyword matches onboarding / exit / employee), so a
-         fourth one added here would tag templates nothing ever fetches. The
-         table and the template form's dropdown stay; only the invitation to
-         add rows is gone. */
     ],
   },
 ];
 
-// Sales Matrix sidebar — branch-and-below only. Super admin and client admin
-// hold the perms purely as granters (so they can cascade down to branches);
-// the sidebar entry is gated to branch_user / employee so the menu never
-// surfaces for the granter roles. Inside the group, per-leaf visibility still
-// follows perms[id].can_view (Sidebar.canView).
 export const SALES_GROUPS: MenuGroup[] = [
   {
     id: 'sales.insights',
@@ -339,8 +251,6 @@ export const SALES_GROUPS: MenuGroup[] = [
     children: [
       { id: 'sales.analytics', icon: 'BarChart3', label: 'Sales Analytics' },
       { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
-      /* Procure to Pay (P2P) Summary was promoted to its own top-level
-       * module (slug `p2p`); it no longer lives under Sales Insights. */
     ],
   },
   {
@@ -357,27 +267,13 @@ export const SALES_GROUPS: MenuGroup[] = [
     id: 'sales.operations',
     label: 'Sales Matrix Operations',
     icon: 'Activity',
-    /* Per product call (Vedant, 22-May-26): keep only two leaves under
-     * Sales Matrix Operations — My Workplace and Quotation Vs PI History.
-     * Lead Distribution / Lead Detail / Enquiries / Leads Details were
-     * moved out / superseded by other modules, so we drop them from the
-     * sidebar to avoid dead nav entries. Their pages still exist on
-     * disk and are reachable by direct URL; only the menu surface is
-     * trimmed here. */
     children: [
       { id: 'sales.workplace', icon: 'Activity', label: 'My Workplace' },
       { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
-      // NOTE: Sign Document Tracker is intentionally NOT a nav-menu leaf —
-      // it's an internal-only tool reached via the top-right header button
-      // (see IdimsHeader). The route /sales/sign-tracker still exists.
     ],
   },
 ];
 
-// Procure to Pay (P2P) tree — four logical clusters that drive BOTH the
-// horizontal header mega-menu (IdimsHeader) and the vertical sidebar
-// (LayoutMenuData), so the two stay in sync. Leaf ids match the seeded module
-// slugs (p2p.analytics, …) so permissions line up.
 export const P2P_GROUPS: MenuGroup[] = [
   {
     id: 'p2p.intelligence',
@@ -412,25 +308,14 @@ export const P2P_GROUPS: MenuGroup[] = [
     label: 'Purchase Management',
     icon: 'FileText',
     children: [
-      /* The slug stays `p2p.order` so existing grants keep working; only the
-         label changed, now that the screen it was distinguished from is gone
-         along with SPI and Debit Note. */
       { id: 'p2p.order', icon: 'FileText', label: 'Purchase Order' },
-      /* The rebuilt supplier purchase invoice. It rode on the SPI grant while
-         that screen existed; with SPI gone it rides on Purchase Order instead
-         (see PERM_ALIAS in IdimsHeader), so it still needs no module row. */
       { id: 'p2p.invoice', icon: 'Receipt', label: 'Supplier Purchase Invoice (Temporary Putaway)' },
-      // Temporary placement under Purchase Management until the P2P nav redesign lands.
       { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
       { id: 'p2p.advance_refund', icon: 'FileInput', label: 'Advance Receipt Refund Adjustment' },
     ],
   },
 ];
 
-// Central CLM tree — mirrors the SalesMatrix_v4_9 CLM landing page.
-// The sidebar flattens the legacy two-level visual into a single nesting
-// level (one MenuGroup per logical cluster); the labels keep the legacy
-// dotted prefix so the user recognises the original layout.
 export const CLM_GROUPS: MenuGroup[] = [
   {
     id: 'clm.command',
@@ -488,14 +373,8 @@ export const CLM_GROUPS: MenuGroup[] = [
   },
 ];
 
-// Role alias — keeps menu-item declarations readable. Covers every tenant
-// user type plus super_admin, so any item declared with this role list is
-// visible to everyone (visibility within the group is then narrowed by
-// per-module permission flags inside Sidebar.canView).
 const ALL_TENANT_ROLES: UserRole[] = ['super_admin', 'client_admin', 'client_user', 'branch_user', 'employee'];
 
-/* Developers — operational tooling. Currently just the Shipment (Business
- * Task) list; grows as more dev/ops pages ship. */
 export const DEVELOPERS_GROUPS: MenuGroup[] = [
   {
     id: 'developers.ops',
@@ -516,37 +395,19 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['super_admin'] },
   { id: 'plans', icon: 'CreditCard', label: 'Plans', roles: ['super_admin'] },
   { id: 'payments', icon: 'IndianRupee', label: 'Payments', roles: ['super_admin'] },
-  // [Integration Subscriptions] Parked pending R&D on usage/health tracking.
-  // Re-enable this menu item (and the route + schedule + api routes) when ready.
-  // { id: 'integrations', icon: 'CalendarClock', label: 'Integrations', roles: ['super_admin'] },
 
   { id: '', section: 'OPERATIONS', label: '', icon: '', roles: ['client_admin'] },
   { id: 'branches', icon: 'GitBranch', label: 'Branches', roles: ['client_admin'] },
-  // Legacy top-level "Employees" menu was removed — HR > Employees (under
-  // the HR group) is the single source of truth now.
 
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['client_admin'] },
   { id: 'my-plan', icon: 'CreditCard', label: 'My Plan', roles: ['client_admin'] },
 
-  // "MASTER DATA" header removed by request — these modules now sit under the
-  // MAIN section above. ACCESS CONTROL + SYSTEM headers remain further down.
-  // Credentials Vault — top-level module. No dedicated page yet (renders a
-  // permission-gated stub); surfaces for any tenant role that holds
-  // can_view, granted from the Permissions sheet like every other module.
   { id: 'credentials-vault', icon: 'KeyRound', label: 'Credentials Vault', roles: ALL_TENANT_ROLES },
-  // Project Navigator — top-level module (stub for now).
   { id: 'project-navigator', icon: 'Compass', label: 'Project Navigator', roles: ALL_TENANT_ROLES },
   {
     id: 'hr',
     icon: 'Users',
     label: 'HRMS',
-    // Branch users + employees — super_admin and client_admin manage at the
-    // tenant level (Clients / Plans / Settings) and don't need the day-to-day
-    // employee / leave / payroll menus, so the sidebar entry is hidden for
-    // them (direct URLs still work). Employees see HRMS only when a branch
-    // admin has granted them can_view on at least one hr.* leaf: hasAnyHrView()
-    // gates the group and buildHrSubItems() filters to the granted leaves —
-    // identical to how the Sales Matrix and CLM groups already work.
     roles: ['branch_user', 'employee'],
     groups: HR_GROUPS,
   },
@@ -554,11 +415,6 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 'sales',
     icon: 'TrendingUp',
     label: 'Sales Matrix',
-    // Branch + employee only — super_admin and client_admin hold the perm
-    // rows purely so they can cascade-grant down (super_admin → client_admin
-    // → branch_user → employee, enforced in PermissionController), but
-    // neither role works inside Sales Matrix. Hiding the entry here matches
-    // the product call: granters don't get a menu they'd never use.
     roles: ['branch_user', 'employee'],
     groups: SALES_GROUPS,
   },
@@ -566,20 +422,10 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 'clm',
     icon: 'FileText',
     label: 'CLM',
-    // Same role gate as Sales Matrix — operational module surfaces only on
-    // branch_user + employee; the higher tiers grant down. Per-leaf
-    // visibility flows from `perms[id].can_view` in Sidebar.canView, so
-    // branch admins decide which CLM modules each employee sees.
     roles: ['branch_user', 'employee'],
     groups: CLM_GROUPS,
   },
-  // Procure to Pay (P2P) — promoted from a Sales Insights leaf to its own
-  // top-level module. Links to the existing P2P Summary page.
   { id: 'p2p', icon: 'ShoppingBag', label: 'Procure to Pay (P2P)', roles: ALL_TENANT_ROLES },
-  // Shipment 360 — sits directly after P2P because it reports on the shipment
-  // orders that P2P's procurement flow feeds. The slug stays 'developers'
-  // (→ /developers/shipment) so existing permission grants and the routeAccess
-  // rule keep working; only the visible label changed from the old "Dev Tools".
   {
     id: 'developers',
     icon: 'Truck',
@@ -587,9 +433,7 @@ export const MENU_ITEMS: MenuItem[] = [
     roles: ALL_TENANT_ROLES,
     groups: DEVELOPERS_GROUPS,
   },
-  // GTS (E-Docs) — top-level module (stub for now).
   { id: 'gts', icon: 'Globe', label: 'GTS (E-Docs)', roles: ALL_TENANT_ROLES },
-  // Inventory Management System — top-level module (stub for now).
   { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
   {
     id: 'master',
@@ -599,22 +443,8 @@ export const MENU_ITEMS: MenuItem[] = [
     groups: MASTER_GROUPS,
   },
 
-  // NOTE: standalone "Products" and "Suppliers" sidebar entries were removed —
-  // they now live under Procure to Pay (P2P) → Master Management (Product
-  // Management / Supplier Management), mirroring the header mega-menu. The
-  // /products and /suppliers routes still exist and are reached from there.
-
-  // Face-driven attendance — only employees punch in. The signed-in admin /
-  // branch user has no Employee row to clock in for; surfaced ONLY to the
-  // employee role so admins don't see a dead-end menu entry.
   { id: 'clock-in', icon: 'CalendarCheck', label: 'Clock-In', roles: ['employee'] },
 
-  /* Permissions panel — visible to EVERY role, because granting is delegated
-     down the reporting line: a manager configures the people under them. The
-     role no longer decides whether you see the page, only who appears in its
-     picker (PermissionController::manageableUsers) and how much you may hand
-     out (never more than you hold). An employee with no reports sees the page
-     with an empty picker, which is a clearer answer than a hidden menu. */
   { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user', 'employee'] },
 
   { id: 'settings', icon: 'Settings', label: 'Settings', roles: ['super_admin'] },

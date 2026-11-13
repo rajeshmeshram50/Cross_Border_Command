@@ -1,15 +1,6 @@
 import axios from 'axios';
 import api from '../../api';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CredVault API client — one typed function per endpoint of
- * /api/credvault (CredVaultController). docs/CREDVAULT_API_SHEET.md is the
- * contract: every screen of the prototype maps to the calls below.
- *
- * Refusals come back as { status:false, message, errors? }; CvApiError keeps
- * both so a form can put each message on its own field.
- * ───────────────────────────────────────────────────────────────────────── */
-
 export class CvApiError extends Error {
   status: number;
   errors: Record<string, string[]>;
@@ -22,7 +13,6 @@ export class CvApiError extends Error {
     this.code = code;
     this.data = data;
   }
-  /** The first message for a field, for the input under it. */
   field(name: string): string | undefined {
     return this.errors[name]?.[0];
   }
@@ -37,7 +27,6 @@ function toError(e: unknown): CvApiError {
 }
 
 type Q = Record<string, string | number | boolean | null | undefined>;
-/** The viewer's IANA timezone — day-based screens (dashboard, audit ranges) count in it, not in the server's UTC. */
 const viewerTz = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const clean = (q?: Q) => Object.fromEntries(Object.entries(q ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== ''));
 
@@ -54,7 +43,6 @@ async function send<T>(method: 'post' | 'put' | 'delete', path: string, body?: u
   } catch (e) { throw toError(e); }
 }
 
-/** A file from the API (export, backup, sample): saved to the user's device. */
 export interface CvDownload { name: string; size: number; headers: Record<string, string> }
 async function download(method: 'get' | 'post', path: string, body?: unknown, params?: Q): Promise<CvDownload> {
   try {
@@ -74,7 +62,6 @@ async function download(method: 'get' | 'post', path: string, body?: unknown, pa
     Object.entries(r.headers).forEach(([k, v]) => { headers[k.toLowerCase()] = String(v); });
     return { name, size: blob.size, headers };
   } catch (e) {
-    // The body of a refused download is a JSON blob — read it back for the message.
     if (axios.isAxiosError(e) && e.response?.data instanceof Blob) {
       try {
         const d = JSON.parse(await e.response.data.text());
@@ -84,8 +71,6 @@ async function download(method: 'get' | 'post', path: string, body?: unknown, pa
     throw toError(e);
   }
 }
-
-/* ══════════════════════════════ TYPES ══════════════════════════════ */
 
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
 export type Twofa = 'yes' | 'no' | 'na';
@@ -119,7 +104,6 @@ export interface Meta {
   audit_actions: { key: string; label: string; severity: string; verb: string }[];
   file_types: { attachments: string[]; file_fields: string[]; max_mb: number; max_attachments: number };
   policy: Policy;
-  /** Recycle Bin retention per vault; the Critical Vault's is fixed. */
   bin_days?: { normal: number; critical: number };
   me: { id: number; name: string; is_vault_admin: boolean; department_id: number | null; manager_user_id: number | null };
 }
@@ -145,7 +129,6 @@ export interface CredentialRow {
   active_shares: number; created_at: string | null; updated_at: string | null;
 }
 export interface DetailField { key: string; label: string; kind: string; value: string | null; masked: boolean; has_value: boolean; attachment_key?: string | null;
-  /** the type marks it secret (password, key, note …) — sent even when the value comes in plain */
   secret?: boolean }
 export interface Attachment { key: string; name: string; size: number; mime: string; at: string }
 export interface PlanStep { step: number; key: LockStep; label: string; approver: { id: number | null; name: string; initials: string; role: string } | null; ready: boolean }
@@ -199,7 +182,6 @@ export interface HealthIssue {
 
 export interface Policy {
   min_strength: number; rotation_default: number | null; rotation_warn: number;
-  /** No longer policies (D32) — the generator's own defaults apply. Kept optional for older servers. */
   gen_length?: number; gen_symbols?: boolean;
   twofa_risks: Risk[]; share_critical: boolean; share_max_days: number; share_reason: boolean; overshare_limit: number;
   cp_admin: boolean; cp_admin_user_id: number | null; cp_manager: boolean; cp_otp: boolean; cp_max_minutes: number;
@@ -213,16 +195,13 @@ export interface AuditEvent {
   action: string; label: string; verb: string; severity: 'info' | 'warn' | 'critical'; severity_label: string;
   credential: { id: number; code: string | null; name: string | null; risk: Risk | null; type: string | null } | null;
   target: string; module: string | null; detail: string | null; ip: string | null;
-  /** The viewer's calendar day / time (sent in `tz`): "2026-11-05", "14:32", "07s". */
   date?: string; time?: string; seconds?: string;
 }
 
-/** GET /audit-logs `groups[]`: one timeline day heading, counted over the whole filtered view (every page). */
 export interface AuditGroup {
   date: string; date_display: string; label: string; heading: string; events: number; events_label: string;
 }
 
-/** What an export takes from the table: the tab and the table's filters. */
 export type ExportSelection = { tab: 'mine' | 'team'; department_id?: number | null; q?: string };
 
 export interface TransferRow {
@@ -236,7 +215,6 @@ export interface TransferRow {
 export type BinVault = 'normal' | 'critical';
 export type BinCounts = Record<'all' | 'mine' | 'team' | 'soon', number>;
 
-/** GET /recycle-bin/retention — the Change period popup's data: one period for both vaults, per branch. */
 export interface BinRetention {
   days?: number;
   scope?: 'branch' | 'company';
@@ -244,14 +222,11 @@ export interface BinRetention {
   normal: { days: number; options: number[]; can_change: boolean };
   critical: { days: number; options: number[]; can_change: boolean; fixed: boolean };
   note: string;
-  /** Only with ?days= — what that period would delete right away. */
   preview?: RetentionImpact;
 }
 
-/** Bin items older than a new period: `total` company-wide, `items` (up to 10) from the user's own bin. */
 export interface RetentionImpact {
   days: number; total: number; visible_total: number;
-  /** Every credential the change deletes; in_my_bin false = another person's bin (owner names them). */
   items: { id: number; code: string; name: string; type: string; risk: Risk; vault?: BinVault; deleted_at: string; days_in_bin: number; in_my_bin?: boolean; owner?: string | null }[];
 }
 
@@ -268,7 +243,6 @@ export interface ImportPreviewRow {
   flags: ('invalid' | 'nopw' | 'dup' | 'dupfile' | 'weak')[]; dup_of: { id: number; code: string; name: string } | null;
   ok: boolean; ready: boolean; selected: boolean; has_password: boolean;
 }
-/** GET /imports/types — one of the 25 categories the import screen offers. */
 export interface ImportType {
   key: string; label: string; group: string; icon: string; sheet: string;
   columns: { key: string; header: string; label: string; required: boolean; kind: string; options?: string[]; hint?: string }[];
@@ -276,7 +250,6 @@ export interface ImportType {
 }
 
 export interface TypedImportError { field: string; label: string; message: string }
-/** A row of POST /imports/preview with `type`: checked as that category's Add form checks it. No secret comes back. */
 export interface TypedImportRow {
   index: number; row: number; name: string; status: 'valid' | 'failed'; errors: TypedImportError[];
   flags: ('dup' | 'dupfile' | 'weak')[]; notes: string[]; strength: string | null;
@@ -297,18 +270,14 @@ export interface ImportPreview {
   rows: ImportPreviewRow[];
 }
 
-/* Free-form payloads (dashboard, team hierarchy, policy insights) are typed loosely: the screens read named keys. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Loose = Record<string, any>;
-
-/* ══════════════════════════════ CALLS ══════════════════════════════ */
 
 let metaCache: Promise<Meta> | null = null;
 
 const vaultPath = (critical: boolean) => (critical ? '/critical-vault' : '/normal-vault');
 
 export const cvApi = {
-  /* Setup */
   meta: (fresh = false): Promise<Meta> => {
     if (!metaCache || fresh) metaCache = get<{ data: Meta }>('/meta').then(r => r.data).catch(e => { metaCache = null; throw e; });
     return metaCache;
@@ -318,16 +287,13 @@ export const cvApi = {
   verifyAuthenticator: (secret: string, code: string) => send<{ message: string; data: { method: 'google'; verified: boolean } }>('post', '/critical-vault/two-step/google/verify', { secret, code }),
   emailSetupSend: (email: string, label?: string) => send<{ message: string; data: { token: string; sent_to: string; expires_in: number; resend_in: number } }>('post', '/critical-vault/two-step/email/send', { email, label }).then(r => r.data),
   emailSetupVerify: (token: string, code: string) => send<{ message: string; data: { token: string; email: string; sent_to: string } }>('post', '/critical-vault/two-step/email/verify', { token, code }).then(r => r.data),
-  /** The server-side generator (Postman / integrations). The dialog and ↻ generate on the device — see generator.ts. */
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
-  /* Credentials */
   list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', q),
   vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, q),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
-  /** JSON, or FormData when files go with it (sent as POST — PHP reads no multipart PUT). */
   create: (body: Loose | FormData, critical = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials`, body),
   update: (id: number, body: Loose | FormData, critical = false) => (body instanceof FormData
     ? send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials/${id}`, body)
@@ -338,18 +304,15 @@ export const cvApi = {
   activity: (id: number, page = 1) => get<{ data: AuditEvent[]; meta: PageMeta }>(`/credentials/${id}/activity`, { page }),
   attachment: (id: number, key: string) => download('get', `/credentials/${id}/attachments/${key}`),
 
-  /* Sharing */
   recipients: (q?: string) => get<{ data: { users: Loose[]; teams: Loose[] } }>('/share-recipients', { q }).then(r => r.data),
   share: (id: number, body: Loose) => send<{ data: ShareRow & { mail?: ShareMail }; message: string }>('post', `/credentials/${id}/shares`, body),
   sharedByMe: (q: Q) => get<ListResponse<ShareRow>>('/shares', q),
   revoke: (shareId: number) => send<{ data: ShareRow; message: string }>('delete', `/shares/${shareId}`),
 
-  /* Team Vault */
   departments: (q?: string) => get<{ data: Loose }>('/team/departments', { q }).then(r => r.data),
   department: (id: number) => get<{ data: Loose }>(`/team/departments/${id}`).then(r => r.data),
   organisation: () => get<{ data: Loose }>('/team/organisation').then(r => r.data),
 
-  /* Access requests */
   requestAccess: (credId: number, body: { reason?: string; duration_minutes?: number }) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/credentials/${credId}/access-requests`, body),
   requests: (q: Q) => get<ListResponse<AccessRequestRow>>('/critical-vault/access-requests', q),
   request: (id: number) => get<{ data: AccessRequestRow }>(`/critical-vault/access-requests/${id}`).then(r => r.data),
@@ -361,22 +324,12 @@ export const cvApi = {
   verifyOtp: (id: number, code: string) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/verify-otp`, { code }),
   lock: (id: number) => send<{ data: AccessRequestRow; message: string }>('post', `/critical-vault/access-requests/${id}/lock`, {}),
 
-  /* Password Health */
   health: (q: Q) => get<{ data: HealthIssue[]; tabs: Record<string, number>; meta: PageMeta; summary: Loose }>('/health', q),
 
-  /* Policies */
-  policies: () => get<{ data: Loose }>('/policies').then(r => r.data),
-  savePolicies: (changes: Partial<Policy>) => send<{ message: string; data: { settings: Policy; changed: string[]; purged?: number; warnings: Loose[] } }>('put', '/policies', changes),
-  resetPolicies: () => send<{ message: string; data: { settings: Policy; changed: string[] } }>('post', '/policies/reset', {}),
-  policyHistory: (page = 1) => get<{ data: Loose[]; stats: Loose; meta: PageMeta }>('/policies/history', { page }),
-
-  /* Audit */
   audit: (q: Q) => get<{ data: AuditEvent[]; groups?: AuditGroup[]; tabs: Record<string, number>; meta: PageMeta; summary: Loose }>('/audit-logs', { ...q, tz: viewerTz() }),
   auditExport: (q: Q) => download('get', '/audit-logs/export', undefined, { ...q, tz: viewerTz() }),
 
-  /* Import & Recovery */
   importSample: (format: 'xlsx' | 'csv', type?: string) => download('get', '/imports/sample', undefined, { format, type }),
-  /* Import by category: the 25 categories, then one category's sheet checked row by row. */
   importTypes: () => get<{ data: ImportType[]; meta: { formats: Record<string, string>; max_rows: number; max_mb: number } }>('/imports/types'),
   importPreviewTyped: (type: string, file: File) => {
     const fd = new FormData(); fd.append('type', type); fd.append('file', file);
@@ -394,7 +347,6 @@ export const cvApi = {
   exportRun: (body: Loose) => download('post', '/exports', body),
   exports: (page = 1) => get<{ data: TransferRow[]; meta: PageMeta }>('/exports', { page }),
 
-  /* Recycle Bin */
   bin: (q: Q) => get<ListResponse<BinRow> & { summary: Loose; purged: number; counts: Record<BinVault | 'total', BinCounts> }>('/recycle-bin', q),
   restore: (id: number) => send<{ message: string }>('post', `/recycle-bin/${id}/restore`, {}),
   purge: (id: number) => send<{ message: string }>('delete', `/recycle-bin/${id}`, { confirm: true }),
@@ -404,7 +356,6 @@ export const cvApi = {
   emptyBin: (vault: BinVault | 'all' = 'all') => send<{ message: string }>('delete', '/recycle-bin', { confirm: true, vault }),
 };
 
-/** Routes of the ten screens — the menu, the quick actions and cross-screen links use these. */
 export const CV_ROUTES = {
   dashboard: '/credentials-vault/dashboard',
   health: '/credentials-vault/password-health',
@@ -412,7 +363,6 @@ export const CV_ROUTES = {
   teamVault: '/credentials-vault/team-vault',
   critical: '/credentials-vault/critical-vault',
   requests: '/credentials-vault/access-requests',
-  policies: '/credentials-vault/policies',
   importRecovery: '/credentials-vault/import-recovery',
   audit: '/credentials-vault/audit-logs',
   bin: '/credentials-vault/recycle-bin',

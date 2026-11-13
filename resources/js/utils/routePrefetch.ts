@@ -1,22 +1,3 @@
-/* Fetch a route's chunks BEFORE the click, so Suspense never suspends.
- *
- * Every route is lazyPage(() => import(...)), so its code does not exist in the
- * browser until it is clicked — and on the server a request costs ~1s whatever
- * its size, so /hr/attendance (3 chunks) waited ~3s and SalesMatrixDetail (50)
- * far longer, with RouteFallback's skeleton standing in. The skeleton is not
- * the problem; the gap is.
- *
- * ES modules are cached by specifier, so the import() below and the one inside
- * lazyPage are ONE request. Run it first and React.lazy resolves from memory —
- * the fallback never paints. One call also covers a route's whole static graph,
- * which is why the heavy CLM/Sales pages benefit most: they have 50 static
- * imports and no dynamic ones.
- */
-
-/* Route path -> the SAME import specifier App.tsx uses. It has to match
-   character for character or Vite treats it as a second module, so this block
-   is GENERATED from App.tsx rather than typed. To regenerate after adding
-   routes, see the snippet in FRONTEND_IMPORTS.md. */
 const ROUTES: Record<string, () => Promise<unknown>> = {
   '/branches/users':                        () => import('../pages/UsersPage'),
   '/clients/users':                         () => import('../pages/UsersPage'),
@@ -48,7 +29,6 @@ const ROUTES: Record<string, () => Promise<unknown>> = {
   '/credentials-vault/team-vault':          () => import('../pages/credvault/team-vault/TeamVault'),
   '/credentials-vault/critical-vault':      () => import('../pages/credvault/critical/CriticalVault'),
   '/credentials-vault/access-requests':     () => import('../pages/credvault/requests/AccessRequests'),
-  '/credentials-vault/policies':            () => import('../pages/credvault/policies/Policies'),
   '/credentials-vault/import-recovery':     () => import('../pages/credvault/import-recovery/ImportRecovery'),
   '/credentials-vault/audit-logs':          () => import('../pages/credvault/audit/AuditLogs'),
   '/credentials-vault/recycle-bin':         () => import('../pages/credvault/bin/RecycleBin'),
@@ -120,15 +100,6 @@ const ROUTES: Record<string, () => Promise<unknown>> = {
   '/suppliers':                             () => import('../pages/p2p/p2p-master-management/supplier-management/Vendors'),
 };
 
-/* Routes whose path carries a parameter. The PARAM does not change the chunk —
-   /employee/1 and /employee/2 are one module — so they prefetch like any other
-   route, they just cannot be looked up by exact string.
- *
- * /master/:slug and /clm/:slug matter most: those are whole menu sections, so
- * without this every one of the ~50 master links and every CLM link silently
- * missed. Scan landings (/s/:key, /ps/:scanKey, /putaway-scan/:taskId) and the
- * public /onboarding/:token are left out — they are reached from a QR code or
- * an emailed link, never from the nav. */
 const PATTERNS: [RegExp, string, () => Promise<unknown>][] = [
   [/^\/master\/[^/]+$/,                      'master',        () => import('../pages/master/MasterPage')],
   [/^\/clm\/[^/]+$/,                         'clm',           () => import('../pages/clm/shared/ClmStubPage')],
@@ -140,17 +111,12 @@ const PATTERNS: [RegExp, string, () => Promise<unknown>][] = [
   [/^\/sales\/matrix\/[^/]+\/stage\/[^/]+$/, 'salesMatrix',   () => import('../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail')],
 ];
 
-/* Prefetched or in flight. import() dedupes anyway; this skips the bookkeeping
-   and keeps the idle walk from re-queueing what it already did. Patterns are
-   recorded under their own name, not the path, so /master/countries warming
-   MasterPage also settles /master/states. */
 const done = new Set<string>();
 
-/** True when prefetching would compete with the page the user is actually on. */
 function networkIsCheap(): boolean {
   try {
     const c = (navigator as any)?.connection;
-    if (!c) return true;                       // unknown — assume fine
+    if (!c) return true;
     if (c.saveData) return false;
     return !/(^|-)2g$/.test(String(c.effectiveType || ''));
   } catch {
@@ -158,12 +124,10 @@ function networkIsCheap(): boolean {
   }
 }
 
-/** Warm one route. Safe to call repeatedly and on paths we do not know. */
 export function prefetchRoute(path?: string | null): void {
   if (!path) return;
   const clean = path.split('?')[0].split('#')[0].replace(/\/+$/, '') || '/';
 
-  // Exact path first, then the parameterised ones.
   let key = clean;
   let load = ROUTES[clean];
   if (!load) {
@@ -174,24 +138,14 @@ export function prefetchRoute(path?: string | null): void {
   }
   if (done.has(key)) return;
   done.add(key);
-  // A failed prefetch must stay invisible — the click still loads it normally.
   try { void load().catch(() => { done.delete(key); }); } catch { done.delete(key); }
 }
 
-/* Safari has no requestIdleCallback (our floor is safari16.4), so fall back to
-   a timeout — later than ideal, still long before the user clicks. */
 const whenIdle: (fn: () => void) => void =
   typeof window !== 'undefined' && 'requestIdleCallback' in window
     ? (fn) => (window as any).requestIdleCallback(fn, { timeout: 4000 })
     : (fn) => window.setTimeout(fn, 1200);
 
-/**
- * Walk the landing pages during idle time, one per slot.
- *
- * One at a time on purpose: firing fourteen imports at once would contend with
- * the API calls the current screen is still making, which is the problem this
- * is meant to remove.
- */
 export function startIdlePrefetch(paths?: string[]): void {
   if (typeof window === 'undefined' || !networkIsCheap()) return;
   const queue = (paths?.length ? paths : Object.keys(ROUTES))
@@ -207,21 +161,12 @@ export function startIdlePrefetch(paths?: string[]): void {
   whenIdle(step);
 }
 
-/**
- * Warm a whole menu group — what a click on a parent nav item means.
- *
- * Clicking "HRMS" only expands the submenu, and a parent item's link is "/#",
- * so the per-link hover never fires for it. But the click is a clear signal
- * about where the user is going, so queue that group's leaves through the same
- * idle walk: one at a time, lowest priority, unknown paths ignored.
- */
 export function prefetchGroup(items?: { link?: string | null }[] | null): void {
   if (!items?.length) return;
   startIdlePrefetch(
     items.map((i) => i?.link || '').filter((l) => l && l !== '/#'),
   );
 }
-/** Paths this build can prefetch — used to skip work on unknown links. */
 export const isPrefetchable = (path?: string | null): boolean => {
   if (!path) return false;
   const clean = path.split('?')[0].split('#')[0].replace(/\/+$/, '') || '/';
