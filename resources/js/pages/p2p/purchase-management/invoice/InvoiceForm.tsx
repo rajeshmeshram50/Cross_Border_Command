@@ -313,19 +313,21 @@ export default function InvoiceForm({
           }
           return;
         }
-        const [po, openLines] = await Promise.all([
-          poApi.show(poId),
+        // PO detail + supplier + vault were primed when the PO was picked
+        // (CS-937) — await those in-flight promises instead of cold calls. A
+        // primed PO that failed/aborted (null) falls back to a fresh fetch.
+        const primed = spiPrefetch.takePo(poId);
+        const [primedPo, openLines] = await Promise.all([
+          primed?.po ?? poApi.show(poId),
           spiApi.poLines(poId, existing?.id).catch(() => []),
         ]);
+        const po = primedPo ?? await poApi.show(poId);
         const open: Record<number, SpiPoOpen> = {};
         for (const l of openLines) {
           open[l.po_item_id] = {
             qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
           };
         }
-        // Supplier + vault were primed when the PO was picked (CS-937) — await
-        // the in-flight promise instead of a fresh cold call.
-        const primed = spiPrefetch.take(po.vendor_id);
         const sup = po.vendor_id
           ? await (primed?.supplier ?? poLookupApi.supplier(po.vendor_id).catch(() => null))
           : null;

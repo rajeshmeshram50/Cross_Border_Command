@@ -288,8 +288,8 @@ export const poApi = {
       return { rows: body?.data ?? [], meta: body?.meta ?? null };
     }),
 
-  show: (id: number) =>
-    call('PO detail', () => api.get(`/p2p/orders/${id}`), dataOf<PoDetail>),
+  show: (id: number, signal?: AbortSignal) =>
+    call('PO detail', () => api.get(`/p2p/orders/${id}`, { signal }), dataOf<PoDetail>),
 
   create: (body: PoStage1Body) =>
     call('PO create (Stage 01)', () => api.post('/p2p/orders', body), dataOf<PoDetail>),
@@ -459,37 +459,50 @@ export const poLookupApi = {
 
 /* SPI create-form prefetch (CS-937).
  *
- * The moment a PO is picked we know its vendor, so the supplier detail and the
- * supplier Evidence Vault are fetched in the BACKGROUND while the user is still
- * on the Storage Selection step — by the time Stage 1 renders the data is
- * already in flight (or done), instead of a cold call after the form opens.
+ * The moment a PO (or Direct supplier) is picked we know the vendor, and for a
+ * PO its id too — so the PO detail, the supplier detail and the supplier
+ * Evidence Vault are fetched in the BACKGROUND while the user is still on the
+ * Storage Selection step. By the time Stage 1 renders the data is already in
+ * flight (or done), instead of a cold call after the form opens.
  *
- * prime() cancels any earlier prime for a DIFFERENT vendor (a mid-flow PO
- * change aborts the stale requests and starts fresh), and take() hands Stage 1
- * the in-flight promises to await instead of issuing its own calls. */
+ * prime() cancels any earlier prime for a DIFFERENT PO/vendor (a mid-flow
+ * change aborts the stale requests and starts fresh). take()/takePo() hand the
+ * form the in-flight promises to await instead of issuing their own calls. */
 type SpiPrime = {
   vendorId: number;
+  poId: number | null;
   ctrl: AbortController;
   supplier: Promise<SupplierDetail | null>;
   vault: Promise<Record<string, unknown> | null>;
+  po: Promise<PoDetail | null> | null;
 };
 let spiPrimed: SpiPrime | null = null;
 
 export const spiPrefetch = {
-  prime(vendorId?: number | null) {
+  prime(vendorId?: number | null, poId?: number | null) {
     if (!vendorId) return;
-    if (spiPrimed?.vendorId === vendorId) return;   // already primed for this PO
-    spiPrimed?.ctrl.abort();                         // a different PO — drop the stale calls
+    const pid = poId ?? null;
+    if (spiPrimed?.vendorId === vendorId && spiPrimed?.poId === pid) return;  // already primed
+    spiPrimed?.ctrl.abort();                         // a different PO/vendor — drop the stale calls
     const ctrl = new AbortController();
     spiPrimed = {
-      vendorId, ctrl,
+      vendorId, poId: pid, ctrl,
       supplier: poLookupApi.supplier(vendorId, false, ctrl.signal).catch(() => null),
       vault:    poLookupApi.supplierVault(vendorId, ctrl.signal).catch(() => null),
+      po:       pid ? poApi.show(pid, ctrl.signal).catch(() => null) : null,
     };
   },
+  /** By vendor — the Direct SPI flow, which has no PO. */
   take(vendorId?: number | null) {
     if (vendorId && spiPrimed?.vendorId === vendorId) {
       return { supplier: spiPrimed.supplier, vault: spiPrimed.vault };
+    }
+    return null;
+  },
+  /** By PO — the With-PO flow, which knows the PO id before the vendor. */
+  takePo(poId?: number | null) {
+    if (poId && spiPrimed?.poId === poId) {
+      return { supplier: spiPrimed.supplier, vault: spiPrimed.vault, po: spiPrimed.po };
     }
     return null;
   },
