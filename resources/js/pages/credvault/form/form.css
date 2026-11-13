@@ -89,6 +89,14 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search input { color: #e2f4f8; }
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
 
+/* The hover arrow sits absolute at the tile's top-right (24px, 8px in), over
+   the title row — a long title pushed the New chip under it ("TOTP / 2FA Se…"
+   with the arrow on "New"). The row keeps that corner free at all times, so
+   the title truncates before the chip and nothing moves when the arrow fades in.
+   Only tiles that carry a New chip: a tile without one keeps its full title
+   width, exactly as before. Critical Vault picker only. */
+.cvx .crd-pickbox--cv .crd-tile--c:has(.crd-tile__new) .crd-tile__row { padding-right: 26px; }
+
 /* Critical Vault type picker · dark mode. Scoped to crd-pickbox--cv so My Vault's picker is untouched.
    Tiles, their icon chips and the risk / count / New badges lose the light-theme white fills. */
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile.crd-tile--c { background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }

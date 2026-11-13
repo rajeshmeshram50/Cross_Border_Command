@@ -7,7 +7,7 @@ import { typeColor } from './formHelpers';
 
 const gid = (g: string) => 'crdG_' + g.replace(/[^a-z]/gi, '');
 
-/** `critical`: the Critical Vault's picker, as the Figma — no 2FA chip, no hover arrow. */
+/** `critical`: the Critical Vault's picker — no 2FA chip; the hover arrow shows as in My Vault. */
 function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPick: (k: string) => void; critical: boolean }) {
   const n = t.fields.length;
   return (
@@ -26,7 +26,7 @@ function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPic
           <span className="crd-tile__n">{n} field{n === 1 ? '' : 's'}</span>
         </span>
       </span>
-      {!critical && <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>}
+      <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>
     </button>
   );
 }
