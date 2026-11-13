@@ -789,27 +789,27 @@ export default function InvoiceForm({
     return list;
   }, [fetchBoxCodes]);
 
-  useEffect(() => {
-    if (!spiId) return;
-    let live = true;
-    spiApi.putawayBoard(spiId)
-      .then(b => { if (live) setPutaway({ placed: b.counts.placed, total: b.counts.total }); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [spiId]);
-
+  // Boxes + putaway board load once the SPI reaches packing (Stage >= 1).
+  // No standalone board fetch - reloadBoxes sets putaway, and Stage 4 reports
+  // live counts via onProgress - so the board is not fetched three times.
   useEffect(() => {
     if (stage < 1 || !spiId) return;
     let live = true;
     setBoxesLoading(true);
-    Promise.all([
-      reloadBoxes(spiId),
-      spiApi.productFlags(spiBranchId).then(f => { if (live) setFlagMaster(f); }).catch(() => {}),
-    ])
+    reloadBoxes(spiId)
       .catch(e => { if (live) toast.error('Could not load the boxes', e instanceof PoApiError ? e.firstError : 'Please try again.'); })
       .finally(() => { if (live) setBoxesLoading(false); });
     return () => { live = false; };
-  }, [stage, spiId, spiBranchId, reloadBoxes, toast]);
+  }, [stage, spiId, reloadBoxes, toast]);
+
+  // Product flags are keyed on the branch, not the stage - kept off the boxes
+  // effect so a late-resolving branch id cannot refetch the 25 kB box list.
+  useEffect(() => {
+    if (stage < 1 || !spiBranchId) return;
+    let live = true;
+    spiApi.productFlags(spiBranchId).then(f => { if (live) setFlagMaster(f); }).catch(() => {});
+    return () => { live = false; };
+  }, [stage, spiBranchId]);
 
   const boxLinesRef = useRef(boxLines);
   boxLinesRef.current = boxLines;
