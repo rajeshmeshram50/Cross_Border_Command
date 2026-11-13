@@ -84,9 +84,9 @@ export default function InvoiceList() {
   const confirmMap = useCallback((choice: InvoiceMapChoice) => {
     setMapOpen(false);
     setStorageFor(choice);
-    // Prefetch supplier + vault in the background while the user does Storage
-    // Selection, so Stage 1 opens with the data already in flight (CS-937).
-    spiPrefetch.prime(choice.vendorId);
+    // Prefetch PO + supplier + vault in the background while the user does
+    // Storage Selection, so Stage 1 opens with the data already in flight.
+    spiPrefetch.prime(choice.vendorId, choice.poId);
   }, []);
 
   const [formFor, setFormFor] = useState<InvoiceFormInput | null>(null);
