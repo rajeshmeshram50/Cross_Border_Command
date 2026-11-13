@@ -1,0 +1,62 @@
+/* Area unit picker (area-unit.tsx): the app's MasterSelect dressed as the
+   teal suffix box of .whm-suf, so the closed field still reads "Sq. Ft"
+   beside the figure, and the open list is the same menu every other
+   dropdown in these forms uses. Scoped to .iam-areaunit only.
+
+   The box matches the old static chip exactly — same 42px height, 1.5px
+   #e6eef3 border with no left edge (the input's right edge is the divider),
+   0 12px 12px 0 corners and #ecfeff fill — so input and unit read as ONE
+   field. Opening it only deepens the fill; a cyan ring on the suffix alone
+   would outline half a field. */
+
+.iam-areaunit { display: flex; flex: 0 0 92px; width: 92px; }
+/* MasterSelect's own outer <div ref={wrapRef}> is a flex item here and would
+   shrink to its text (~79px), leaving a strip of the 92px box empty so the
+   field ended short of the ones below it. It fills the box instead. */
+.iam-areaunit > div { display: flex; flex: 1 1 auto; min-width: 0; }
+.iam-areaunit .master-select-wrap { display: flex; width: 100%; }
+.iam-areaunit .master-select-toggle { width: 100%; }
+.whm-addmdl .iam-areaunit .master-select-toggle {
+  height: 42px;
+  padding: 0 10px 0 12px;
+  border: 1.5px solid #e6eef3;
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: none;
+}
+.whm-addmdl .iam-areaunit .master-select-value { color: inherit; justify-content: flex-start; }
+.whm-addmdl .iam-areaunit .master-select-chev { margin-left: 4px; font-size: 16px; color: #0e7490; }
+.whm-addmdl .iam-areaunit .master-select-toggle:hover:not(:disabled) {
+  background: #cffafe;
+  border-color: #e6eef3;
+  box-shadow: none;
+}
+.whm-addmdl .iam-areaunit .master-select-wrap.show .master-select-toggle {
+  background: #cffafe;
+  border-color: #e6eef3 !important;
+  box-shadow: none !important;
+}
+.whm-addmdl .iam-areaunit .master-select-wrap.show .master-select-chev { color: #0e7490; }
+.whm-addmdl .iam-areaunit .master-select-toggle:focus-visible { outline: 2px solid #22d3ee; outline-offset: -2px; }
+
+/* The input beside it gives up its right corners, as with the old chip. */
+.whm-addmdl .whm-suf:has(> .iam-areaunit) .spi-dt-inp { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+/* A read-only (AUTO) area box with the picker beside it — Rack form. */
+.whm-suf > .whm-auto { flex: 1 1 auto; min-width: 0; }
+
+[data-bs-theme="dark"] .whm-addmdl .iam-areaunit .master-select-toggle,
+[data-bs-theme="dark"] .whm-addmdl .iam-areaunit .master-select-wrap.show .master-select-toggle {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .22) !important;
+}
+[data-bs-theme="dark"] .whm-addmdl .iam-areaunit .master-select-chev { color: #67e8f9; }
+[data-bs-theme="dark"] .whm-addmdl .iam-areaunit .master-select-toggle:hover:not(:disabled),
+[data-bs-theme="dark"] .whm-addmdl .iam-areaunit .master-select-wrap.show .master-select-toggle {
+  background: rgba(34, 211, 238, .16);
+}

@@ -7,11 +7,13 @@ import '../../p2p/purchase-management/order/create-po/create-po.css';
 import '../warehouse/warehouse-master.css';
 import './zone-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
+import { AreaUnitPicker, AREA_DP, AREA_FOR, AREA_LABEL, SQFT_PER, areaNum as inUnitNum, areaText, convertTyped, type AreaUnit } from '../area-unit';
 import {
   ZoneApiError, zoneApi,
   uniqueLabels,
   type Zone, type ZonePayload, type ZoneStorage, type ZoneType, type ZoneWarehouse,
 } from './zone-data';
+import { blockNonNumericKeys } from '../rack/rack-data';
 
 const PURPOSES = [
   'Extra Quantity', 'Damaged Quantity', 'Mismatch Products', 'Shipment Dispatch Quantity', 'Other',
@@ -29,14 +31,14 @@ const TEMP_PRESETS = [
   { k: 'Deep Frozen', min: -40, max: -25 },
 ];
 
-const WAREHOUSE_LABEL = (id: string, name: string) => `${id} · ${name}`;
+const WAREHOUSE_LABEL = (id: string, name: string) => `${id} Â· ${name}`;
 
 /* How much of a name an option row can hold beside its code chip and its
    ownership badge. An ellipsis takes the rest; the tooltip carries the whole. */
 const NAME_MAX = 20;
-const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
+const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}â€¦` : s);
 
-/* An option label is "WH-001 · Mumbai Central Warehouse". The list draws the
+/* An option label is "WH-001 Â· Mumbai Central Warehouse". The list draws the
    id as a chip and the name beside it, so the two are split here: the label
    itself stays the value, which keeps the stored draft, the tooltip and the
    search over it unchanged. The name is taken as whatever follows the id, not
@@ -46,7 +48,7 @@ function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string)
   const names: Record<string, string> = {};
   for (const row of rows) {
     const label = labelOf(row);
-    const head = `${row.id} · `;
+    const head = `${row.id} Â· `;
     codes[label] = row.id;
     names[label] = truncate(label.startsWith(head) ? label.slice(head.length) : label, NAME_MAX);
   }
@@ -54,14 +56,12 @@ function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string)
 }
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
-const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
 const SQFT_PER_SQM = 10.7639;
-/* One unit set across Zone / Rack / Shelf (CS-940/941/942): Cm · Metres · Feet. Each unit's
+/* One unit set across Zone / Rack / Shelf (CS-940/941/942): Cm Â· Metres Â· Feet. Each unit's
    size in metres; the API stores zone dimensions in metres, so any unit is converted on save. */
 const M_PER: Record<'cm' | 'm' | 'ft', number> = { cm: 0.01, m: 1, ft: 0.3048 };
 const UNIT_LABEL: Record<'cm' | 'm' | 'ft', string> = { cm: 'Cm', m: 'Metres', ft: 'Feet' };
-
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -106,6 +106,7 @@ const IcoInfo = () => Ico(
 );
 
 type Unit = 'cm' | 'm' | 'ft';
+
 
 interface Draft {
   wh: string;
@@ -165,7 +166,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   const toast = useToast();
   useScrollLock(true, '.znm-addmdl');
 
-  /* Active own warehouses — a 3PL holds no zones — plus, on an edit, the one
+  /* Active own warehouses â€” a 3PL holds no zones â€” plus, on an edit, the one
      the zone is already in even if it has since been switched off. Without
      it `picked` came back empty and Save silently did nothing. */
   const activeWarehouses = useMemo(
@@ -195,7 +196,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [activeWarehouses, whLabels]);
   /* A long warehouse name squeezed the ownership badge against the right edge
      of the option and left the name itself unreadable. The name is cut at 20
-     characters for the list row only — the closed field and the hover tooltip
+     characters for the list row only â€” the closed field and the hover tooltip
      both keep it whole. Built from the same labels the options are, so a
      label the uniqueness pass changed still matches its own entry. */
   const whList = useMemo(() => split(activeWarehouses, w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name)),
@@ -230,6 +231,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [zoneWarehouse]);
 
   const [unit, setUnit] = useState<Unit>('m');
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>('sqft');
   const [saving, setSaving] = useState(false);
   const [temp, setTemp] = useState<{ min: number; max: number } | null>(zone?.tempRange ?? null);
   const [tempOpen, setTempOpen] = useState(false);
@@ -258,7 +260,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     return () => { live = false; };
   }, [editing]);
 
-  const id = editing ? zone!.id : (nextCode ?? 'Loading…');
+  const id = editing ? zone!.id : (nextCode ?? 'Loadingâ€¦');
   const picked = activeWarehouses.find(w => whLabels.get(w.apiId) === d.wh);
   const type: ZoneType | '' = d.type === TYPE_LABEL.rack ? 'rack' : d.type === TYPE_LABEL.norack ? 'norack' : '';
   const noRack = type === 'norack';
@@ -272,13 +274,13 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [d.len, d.wid, d.ht, d.use]);
 
   const areaFromFloor = noRack && d.storage === 'regular' && calc.area > 0;
-  const derivedArea = String(Math.round(calc.area * M_PER[unit] * M_PER[unit] * SQFT_PER_SQM));
+  const derivedArea = String(round(calc.area * M_PER[unit] * M_PER[unit] * SQFT_PER_SQM / SQFT_PER[areaUnit], AREA_DP[areaUnit]));
 
   /* A measured floor IS the zone's area, so it is written into the draft
      rather than only displayed over it.
      Before this there were two areas: the one the field showed and the one
      `d.area` held. They agreed while the floor was being measured and parted
-     company the moment the zone type changed — the field fell back to a
+     company the moment the zone type changed â€” the field fell back to a
      `d.area` that had not been updated in between, so the same zone showed one
      number as a rack zone and another as a floor zone, with nothing edited. */
   useEffect(() => {
@@ -287,7 +289,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
 
   const shownArea = d.area;
   /* Sq. ft still free in the picked warehouse (CS-940 #11). On an edit the
-     zone's own area is given back — it is being replaced, not added — the
+     zone's own area is given back â€” it is being replaced, not added â€” the
      same exclusion the server's freeWarehouseAreaSqft() makes. */
   const freeArea = picked
     ? Math.max(0, picked.area - picked.used + (zone && zone.warehouseId === picked.apiId ? Number(zone.area) || 0 : 0))
@@ -295,29 +297,41 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   /* Live against the typed area (CS-940 #14): what is left after this zone,
      and the over-size message as soon as the figure stops fitting rather
      than only on Save. */
-  const typedArea = Number(shownArea);
+  const typedArea = Number(shownArea) * SQFT_PER[areaUnit];
   const leftAfter = picked && typedArea > 0 ? freeArea - typedArea : NaN;
+  // A sq-ft figure shown in the picked unit, e.g. 401 Sq. Ft â†’ "37.25 Sq. M".
+  const inArea = (sqft: number) => areaText(sqft, areaUnit);
+  const inAreaNum = (sqft: number) => inUnitNum(sqft, areaUnit);
   const liveAreaErr = picked && leftAfter < 0
-    ? `Exceeds the free area by ${inWhole.format(-leftAfter)} Sq. Ft — only ${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft is still free in ${picked.id}`
+    ? `Exceeds the free area by ${inArea(-leftAfter)} â€” only ${inAreaNum(freeArea)} of ${inArea(picked.area)} is still free in ${picked.id}`
     : '';
+  /* Switching the unit converts the figure already typed, so the zone keeps
+     its size; a floor-measured area is re-derived by the effect above. */
+  const changeAreaUnit = (next: AreaUnit) => {
+    if (!areaFromFloor) set({ area: convertTyped(d.area, areaUnit, next) });
+    setAreaUnit(next);
+  };
 
-  // The "≈" hint under each figure: feet for cm / m, metres for feet.
+  // The "â‰ˆ" hint under each figure: feet for cm / m, metres for feet.
   const other: Unit = unit === 'ft' ? 'm' : 'ft';
   const k = M_PER[unit] / M_PER[other];
   const fmt = (v: number, dp = 2) =>
-    (Number.isFinite(v) ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: dp }).format(v) : '—');
+    (Number.isFinite(v) ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: dp }).format(v) : 'â€”');
+  /* The "â‰ˆ" figure: whole numbers once it is large, decimals while small, so
+     a 308 cmÂ² floor reads "â‰ˆ 0.33 ftÂ²" and not "â‰ˆ 0 ftÂ²". */
+  const approx = (v: number) => fmt(v, Math.abs(v) >= 100 ? 0 : 2);
 
   const save = async () => {
     if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
     if (!d.wh || !picked) e.wh = 'Select the warehouse';
     if (!d.name.trim()) e.name = 'Enter the zone name';
-    const areaNum = Number(shownArea);
+    const areaNum = Number(shownArea) * SQFT_PER[areaUnit];
     /* Checked here against the free area the list last reported, so the user
        hears it before Save; the server re-checks under a lock and still has
        the final word ("Only 3,500 Sq. Ft is still free"). */
-    if (!(areaNum > 0)) e.area = 'Enter the zone area in square feet';
-    else if (picked && areaNum > freeArea) e.area = `Only ${inWhole.format(freeArea)} Sq. Ft is still free in ${picked.id}`;
+    if (!(areaNum > 0)) e.area = 'Enter the zone area';
+    else if (picked && areaNum > freeArea) e.area = `Only ${inArea(freeArea)} is still free in ${picked.id}`;
     if (!d.type) e.type = 'Select the zone type';
     if (noRack) {
       if (!d.storage) e.storage = 'Choose Refrigerator Storage or Regular Storage';
@@ -378,7 +392,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
       const saved = editing && zone!.apiId
         ? await zoneApi.update(zone!.apiId, payload)
         : await zoneApi.create(payload);
-      toast.success(editing ? `${saved.id} · ${saved.name} updated` : `${saved.id} · ${saved.name} added to ${picked.id}`);
+      toast.success(editing ? `${saved.id} Â· ${saved.name} updated` : `${saved.id} Â· ${saved.name} added to ${picked.id}`);
       onSaved?.(saved);
       onClose();
     } catch (err) {
@@ -410,12 +424,12 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
 
   return createPortal(
     /* No backdrop-click close. The form holds unsaved input, and a stray
-       click outside it must not throw that away — the dialog closes only
+       click outside it must not throw that away â€” the dialog closes only
        through the X or Cancel. */
     <div className="spi-mdl-backdrop whm-backdrop">
       <div
         /* `whm-page` carries the shared toggle style, which is scoped to it
-           and so never reached this portalled dialog — the Cold Chain and
+           and so never reached this portalled dialog â€” the Cold Chain and
            Hazardous switches were rendering as bare buttons, leaving the two
            flags as plain boxes of text. */
         className="spi-mdl whm-addmdl znm-addmdl whm-page"
@@ -431,7 +445,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
           <div className="whm-saving" role="status" aria-live="polite">
             <span className="whm-saving__box">
               <span className="whm-saving__spin" aria-hidden />
-              {editing ? 'Updating…' : 'Saving…'}
+              {editing ? 'Updatingâ€¦' : 'Savingâ€¦'}
             </span>
           </div>
         )}
@@ -448,7 +462,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             </div>
           </div>
           <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
-            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
+            disabled={saving} title={saving ? 'Saving â€” please wait' : undefined}><IcoX /></button>
         </div>
 
         {/* inert, not only the sheet above: the Warehouse and Zone Type
@@ -477,8 +491,8 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             </Field>
             <AutoField label="Warehouse Type"
               value={picked ? (picked.type === 'own' ? 'Own Warehouse' : 'Third Party (3PL)') : ''} />
-            <AutoField label="Warehouse Area (Sq. Ft)"
-              value={picked ? inWhole.format(picked.area) : ''} />
+            <AutoField label={`Warehouse Area (${AREA_LABEL[areaUnit]})`}
+              value={picked ? inAreaNum(picked.area) : ''} />
             <AutoField label="Location"
               value={picked ? [picked.city, picked.state].filter(Boolean).join(', ') : ''} />
           </Card>
@@ -493,27 +507,28 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             <Field label="Zone Name" req error={errors.name}>
               <input
                 className={`spi-dt-inp${errors.name ? ' is-invalid' : ''}`}
-                placeholder="e.g. Zone A – Fast Movers" maxLength={80}
+                placeholder="e.g. Zone A â€“ Fast Movers" maxLength={80}
                 value={d.name} onChange={e => { set({ name: e.target.value }); clear('name'); }}
               />
             </Field>
             <Field
-              label="Zone Area (Sq. Ft)" req error={liveAreaErr || errors.area}
+              label={`Zone Area (${AREA_LABEL[areaUnit]})`} req error={liveAreaErr || errors.area}
               hint={!picked
                 ? 'Must fit within the warehouse area'
                 : Number.isFinite(leftAfter)
-                  ? `${areaFromFloor ? 'From the measured floor area · ' : ''}${inWhole.format(leftAfter)} of ${inWhole.format(picked.area)} Sq. Ft will remain free in ${picked.id}`
-                  : `${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft still free in ${picked.id}`}
+                  ? `${areaFromFloor ? 'From the measured floor area Â· ' : ''}${inAreaNum(leftAfter)} of ${inArea(picked.area)} will remain free in ${picked.id}`
+                  : `${inAreaNum(freeArea)} of ${inArea(picked.area)} still free in ${picked.id}`}
             >
               <div className="whm-suf">
                 <input
                   className={`spi-dt-inp${liveAreaErr || errors.area ? ' is-invalid' : ''}`}
-                  type="number" min={1} placeholder="e.g. 5000"
+                  type="number" min={0} step="any" placeholder={areaUnit === 'sqm' ? 'e.g. 465' : areaUnit === 'sqcm' ? 'e.g. 4,64,500' : 'e.g. 5000'}
                   readOnly={areaFromFloor}
+                  onKeyDown={blockNonNumericKeys}
                   value={shownArea}
                   onChange={e => { set({ area: e.target.value }); clear('area'); }}
                 />
-                <span>Sq. Ft</span>
+                <AreaUnitPicker value={areaUnit} onChange={u => { changeAreaUnit(u); clear('area'); }} />
               </div>
             </Field>
             <Field label="Zone Type" req error={errors.type}>
@@ -574,11 +589,11 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                   <div className="znm-sub">
                     <div className="znm-sub__hd">
                       <i className="znm-sub__bar" />Zone Dimensions &amp; Capacity
-                      <span className="znm-sub__tag">Floor storage · no racks</span>
+                      <span className="znm-sub__tag">Floor storage Â· no racks</span>
                       <div className="znm-unit" role="group" aria-label="Unit">
                         {(['cm', 'm', 'ft'] as Unit[]).map(u => (
                           <button key={u} type="button" className={unit === u ? 'is-on' : undefined}
-                            onClick={() => setUnit(u)}>
+                            onClick={() => { setUnit(u); if (AREA_FOR[u] !== areaUnit) changeAreaUnit(AREA_FOR[u]); clear('area'); }}>
                             {UNIT_LABEL[u]}
                           </button>
                         ))}
@@ -595,6 +610,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                             <input
                               className={`spi-dt-inp${errors[key] ? ' is-invalid' : ''}`}
                               type="number" min={0} step="0.01" placeholder={ph}
+                              onKeyDown={blockNonNumericKeys}
                               value={d[key]}
                               onChange={e => { set({ [key]: e.target.value } as Partial<Draft>); clear(key); }}
                             />
@@ -618,19 +634,19 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                     <div className="znm-calc">
                       <Kpi
                         label="Floor Area"
-                        value={calc.area > 0 ? `${fmt(calc.area)} ${unit}²` : '—'}
-                        sub={calc.area > 0 ? `≈ ${fmt(calc.area * k * k, 0)} ${other}²` : 'Length × Width'}
+                        value={calc.area > 0 ? `${fmt(calc.area)} ${unit}Â²` : 'â€”'}
+                        sub={calc.area > 0 ? `â‰ˆ ${approx(calc.area * k * k)} ${other}Â²` : 'Length Ã— Width'}
                       />
                       <Kpi
                         label="Volume"
-                        value={calc.vol > 0 ? `${fmt(calc.vol)} ${unit}³` : '—'}
-                        sub={calc.vol > 0 ? `≈ ${fmt(calc.vol * k * k * k, 0)} ${other}³` : 'Floor area × Height'}
+                        value={calc.vol > 0 ? `${fmt(calc.vol)} ${unit}Â³` : 'â€”'}
+                        sub={calc.vol > 0 ? `â‰ˆ ${approx(calc.vol * k * k * k)} ${other}Â³` : 'Floor area Ã— Height'}
                       />
                       <Kpi
                         hi
                         label="Usable Volume"
-                        value={calc.uvol > 0 ? `${fmt(calc.uvol)} ${unit}³` : '—'}
-                        sub={calc.uvol > 0 ? `at ${fmt(calc.U, 0)}% usable floor` : 'Volume × Usable floor %'}
+                        value={calc.uvol > 0 ? `${fmt(calc.uvol)} ${unit}Â³` : 'â€”'}
+                        sub={calc.uvol > 0 ? `at ${fmt(calc.U, 0)}% usable floor` : 'Volume Ã— Usable floor %'}
                       />
                     </div>
                   </div>
@@ -657,7 +673,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                 <span className="znm-tg__st">
                   {d.cold ? 'Allowed' : 'Not Allowed'}
                   {d.cold && temp && (
-                    <span className="znm-tg__rng">{signed(temp.min)} to {signed(temp.max)} °C</span>
+                    <span className="znm-tg__rng">{signed(temp.min)} to {signed(temp.max)} Â°C</span>
                   )}
                 </span>
                 {d.cold && (
@@ -680,8 +696,8 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               </div>
             </Field>
 
-            {/* Two columns, as the design has it: the row is Cold Chain ·
-                Hazardous · Purpose and fills its four. At one column the
+            {/* Two columns, as the design has it: the row is Cold Chain Â·
+                Hazardous Â· Purpose and fills its four. At one column the
                 purpose sat beside an empty fourth, and a zone purpose is the
                 longest text on the row. */}
             <Field label="Zone Purpose" req error={errors.purpose} wide>
@@ -718,7 +734,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
               {saving ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
-              {saving ? 'Saving…' : editing ? 'Update Zone' : 'Save Zone'}
+              {saving ? 'Savingâ€¦' : editing ? 'Update Zone' : 'Save Zone'}
             </button>
           </div>
         </div>
@@ -802,13 +818,13 @@ function TemperatureSheet({ value, onCancel, onSave }: {
       setErr('Enter both a minimum and a maximum.');
       return;
     }
-    if (nMin < -80 || nMax > 60) { setErr('Temperatures must be between -80 and +60 °C.'); return; }
+    if (nMin < -80 || nMax > 60) { setErr('Temperatures must be between -80 and +60 Â°C.'); return; }
     if (nMin >= nMax) { setErr('The minimum must be lower than the maximum.'); return; }
     onSave({ min: nMin, max: nMax });
   };
 
   return (
-    /* No backdrop-click close — the range popover closes only through its
+    /* No backdrop-click close â€” the range popover closes only through its
        X or Cancel, same as the dialog behind it. */
     <div className="znm-tp-ov">
       <div className="znm-tp" role="dialog" aria-modal="true" aria-labelledby="znm-tp-title">
@@ -833,7 +849,7 @@ function TemperatureSheet({ value, onCancel, onSave }: {
                   className={`znm-tp__pre${preset?.k === p.k ? ' is-on' : ''}`}
                   onClick={() => { setMin(String(p.min)); setMax(String(p.max)); setErr(''); }}
                 >
-                  <b>{p.k}</b> {p.min}…{p.max}°C
+                  <b>{p.k}</b> {p.min}â€¦{p.max}Â°C
                 </button>
               ))}
             </div>
@@ -844,14 +860,14 @@ function TemperatureSheet({ value, onCancel, onSave }: {
               <IcoThermo />
               <input type="number" step="0.5" placeholder="Min" value={min}
                 onChange={e => { setMin(e.target.value); setErr(''); }} aria-label="Minimum temperature" />
-              <span>°C</span>
+              <span>Â°C</span>
             </label>
             <span className="znm-tp__to">to</span>
             <label className="znm-tp__fld">
               <IcoThermo />
               <input type="number" step="0.5" placeholder="Max" value={max}
                 onChange={e => { setMax(e.target.value); setErr(''); }} aria-label="Maximum temperature" />
-              <span>°C</span>
+              <span>Â°C</span>
             </label>
           </div>
 

@@ -9,6 +9,7 @@ import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
 import './warehouse-master.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
+import { AreaUnitPicker, AREA_LABEL, areaText, convertTyped, fromSqft, toSqft, type AreaUnit } from '../area-unit';
 import {
   WarehouseApiError, warehouseApi,
   type LookupOption, type Warehouse, type WarehousePayload, type WarehouseType,
@@ -98,16 +99,18 @@ const FIELD_LABEL: Record<keyof Draft, string> = {
   contact: 'Contact Person', mobile: 'Mobile Number', email: 'Email', card: 'Attachment',
 };
 
-const fmtSqft = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-function validate(d: Draft, hasStates: boolean, minArea = 0): Partial<Record<keyof Draft, string>> {
+function validate(d: Draft, hasStates: boolean, minArea = 0, u: AreaUnit = 'sqft'): Partial<Record<keyof Draft, string>> {
   const e: Partial<Record<keyof Draft, string>> = {};
   const india = d.country === 'India';
   if (!d.type) e.type = 'Select the warehouse type';
   if (!d.name.trim()) e.name = 'Enter the warehouse name';
-  if (!(Number(d.area) > 0)) e.area = 'Enter the area in square feet';
+  // d.area is in the picked unit; minArea (zones' total) is in sq ft.
+  const sqft = toSqft(Number(d.area), u);
+  if (!(sqft > 0)) e.area = 'Enter the warehouse area';
   // CS-939: the area may grow or shrink, but not below what the zones hold.
-  else if (minArea > 0 && Number(d.area) < minArea) e.area = `Area cannot be less than ${fmtSqft(minArea)} Sq. Ft already allocated to zones`;
+  // Compared at the unit's own rounding, so the shown minimum itself passes.
+  else if (minArea > 0 && Number(d.area) < (u === 'sqft' ? minArea : fromSqft(minArea, u))) e.area = `Area cannot be less than ${areaText(minArea, u)} already allocated to zones`;
   if (!d.address.trim()) e.address = 'Enter the warehouse address';
   if (!d.country) e.country = 'Select the country';
   if (!d.state.trim()) e.state = hasStates ? 'Select the state' : 'Enter the state';
@@ -185,6 +188,12 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     }
     : EMPTY));
   const set = (p: Partial<Draft>) => setD(prev => ({ ...prev, ...p }));
+  // The unit d.area is typed in; an existing warehouse opens in Sq. Ft, as stored.
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>('sqft');
+  const changeAreaUnit = (next: AreaUnit) => {
+    setD(prev => ({ ...prev, area: convertTyped(prev.area, areaUnit, next) }));
+    setAreaUnit(next);
+  };
 
   const [cardFile, setCardFile] = useState<File | null>(null);
   /* CS-939: an attachment could be removed but never looked at. Two cases
@@ -325,7 +334,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
       toast.error('Still loading states', 'Try again in a moment.');
       return;
     }
-    const e = validate(d, hasStates, allocatedArea);
+    const e = validate(d, hasStates, allocatedArea, areaUnit);
     if (!e.country && !countryId) e.country = 'Select the country';
     const stateId = hasStates ? states.find(x => x.name === d.state)?.id : undefined;
     if (!e.state && hasStates && !stateId) e.state = 'Select the state';
@@ -343,7 +352,12 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     const payload: WarehousePayload = {
       wh_name: d.name.trim(),
       wh_type: d.type === TYPE_LABEL.tpl ? 'tpl' : 'own',
-      area_sqft: Number(d.area),
+      // Always sent in sq ft; an area at the zones' minimum sends that exact figure.
+      area_sqft: areaUnit === 'sqft'
+        ? Number(d.area)
+        : allocatedArea > 0 && Number(d.area) === fromSqft(allocatedArea, areaUnit)
+          ? allocatedArea
+          : Math.round(toSqft(Number(d.area), areaUnit) * 100) / 100,
       address: d.address.trim(),
       country_id: countryId!,
       state_id: stateId ?? null,
@@ -461,16 +475,17 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
               />
             </Field>
             <Field
-              label="Warehouse Area (Sq. Ft)" req error={errors.area}
-              hint={allocatedArea > 0 ? `${fmtSqft(allocatedArea)} Sq. Ft allocated to zones — the area cannot go below this.` : undefined}
+              label={`Warehouse Area (${AREA_LABEL[areaUnit]})`} req error={errors.area}
+              hint={allocatedArea > 0 ? `${areaText(allocatedArea, areaUnit)} allocated to zones — the area cannot go below this.` : undefined}
             >
               <div className="whm-suf">
                 <input
                   className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}`}
-                  type="number" min={allocatedArea > 0 ? allocatedArea : 1} placeholder="e.g. 25000"
+                  type="number" min={0} step="any"
+                  placeholder={areaUnit === 'sqm' ? 'e.g. 2,320' : areaUnit === 'sqcm' ? 'e.g. 2,32,25,000' : 'e.g. 25000'}
                   value={d.area} onChange={e => { set({ area: e.target.value }); clear('area'); }}
                 />
-                <span>Sq. Ft</span>
+                <AreaUnitPicker value={areaUnit} onChange={u => { changeAreaUnit(u); clear('area'); }} />
               </div>
             </Field>
           </Card>

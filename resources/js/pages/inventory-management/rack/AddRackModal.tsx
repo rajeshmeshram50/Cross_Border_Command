@@ -8,6 +8,7 @@ import '../warehouse/warehouse-master.css';
 import '../zone/zone-form.css';
 import './rack-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
+import { AreaUnitPicker, AREA_FOR, AREA_LABEL, areaNum, type AreaUnit } from '../area-unit';
 import {
   InventoryApiError, blockNonNumericKeys, rackApi, type InventoryLookups, type Rack, type RackPayload,
 } from './rack-data';
@@ -36,7 +37,6 @@ function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string)
 }
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
-const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
 const SQFT_PER_SQM = 10.7639;
 
@@ -157,6 +157,11 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   }, [activeWarehouses, whLabels]);
 
   const [unit, setUnit] = useState<Unit>(rack?.dims.unit ?? 'cm');
+  /* Display units for the two read-only area boxes (stored in sq ft). They
+     start at the square of the rack's own unit and follow it when it changes;
+     each box's picker can still set it on its own. */
+  const [whUnit, setWhUnit] = useState<AreaUnit>(() => AREA_FOR[rack?.dims.unit ?? 'cm']);
+  const [zoneUnit, setZoneUnit] = useState<AreaUnit>(() => AREA_FOR[rack?.dims.unit ?? 'cm']);
   const [d, setD] = useState<Draft>(() => {
     if (!rack) return EMPTY;
     return {
@@ -230,6 +235,8 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     };
     setD(s => ({ ...s, len: conv(s.len), wid: conv(s.wid), ht: conv(s.ht) }));
     setUnit(next);
+    setWhUnit(AREA_FOR[next]);
+    setZoneUnit(AREA_FOR[next]);
   };
 
   const save = async () => {
@@ -350,8 +357,9 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
             </Field>
             <AutoField label="Warehouse Type" from="warehouse"
               value={picked ? (picked.type === 'own' ? 'Own Warehouse' : 'Third Party (3PL)') : ''} />
-            <AutoField label="Warehouse Area (Sq. Ft)" from="warehouse"
-              value={picked ? inWhole.format(picked.area) : ''} />
+            <AutoField label={`Warehouse Area (${AREA_LABEL[whUnit]})`} from="warehouse"
+              value={picked ? areaNum(picked.area, whUnit) : ''}
+              unit={<AreaUnitPicker value={whUnit} onChange={setWhUnit} />} />
             <AutoField label="Location" from="warehouse"
               value={picked ? [picked.city, picked.state, picked.pin].filter(Boolean).join(', ') : ''} />
           </Card>
@@ -375,8 +383,9 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
                 onChange={v => { set({ zone: v, cold: false, haz: false }); clear('zone'); }}
               />
             </Field>
-            <AutoField label="Zone Area (Sq. Ft)" from="zone"
-              value={zone ? inWhole.format(zone.area) : ''} />
+            <AutoField label={`Zone Area (${AREA_LABEL[zoneUnit]})`} from="zone"
+              value={zone ? areaNum(zone.area, zoneUnit) : ''}
+              unit={<AreaUnitPicker value={zoneUnit} onChange={setZoneUnit} />} />
             <AutoField label="Cold Chain" from="zone"
               value={zone ? (zone.cold
                 ? `Allowed${zone.tempRange ? ` · ${signed(zone.tempRange.min)} to ${signed(zone.tempRange.max)} °C` : ''}`
@@ -496,13 +505,20 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   );
 }
 
-function AutoField({ label, value, from }: { label: string; value: string; from: 'warehouse' | 'zone' }) {
+function AutoField({ label, value, from, unit }: {
+  label: string; value: string; from: 'warehouse' | 'zone';
+  /** A unit picker drawn as the suffix box (the area fields). */
+  unit?: ReactNode;
+}) {
+  const box = (
+    <div className={`whm-auto znm-auto whm-auto--text${value ? ' is-filled' : ''}`}>
+      <input className="spi-dt-inp" value={value} placeholder={`Fetched from ${from}`} readOnly tabIndex={-1} />
+      <span className="whm-auto__tag">AUTO</span>
+    </div>
+  );
   return (
     <Field label={label}>
-      <div className={`whm-auto znm-auto whm-auto--text${value ? ' is-filled' : ''}`}>
-        <input className="spi-dt-inp" value={value} placeholder={`Fetched from ${from}`} readOnly tabIndex={-1} />
-        <span className="whm-auto__tag">AUTO</span>
-      </div>
+      {unit ? <div className="whm-suf">{box}{unit}</div> : box}
     </Field>
   );
 }

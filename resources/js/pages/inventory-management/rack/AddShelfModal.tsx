@@ -10,6 +10,7 @@ import './rack-form.css';
 import './shelf-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
 import { InventoryApiError, blockNonNumericKeys, type Rack } from './rack-data';
+import { AreaUnitPicker, AREA_FOR, AREA_LABEL, areaNum, type AreaUnit } from '../area-unit';
 import { SHELF_PURPOSES, SHELF_TYPES, shelfApi, type Shelf, type ShelfPayload } from './shelf-data';
 
 const PURPOSES = SHELF_PURPOSES;
@@ -103,6 +104,8 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
 
   const [saving, setSaving] = useState(false);
   const [unit, setUnit] = useState<Unit>(shelf?.dims.unit ?? 'cm');
+  // Rack Area's display unit (stored in sq ft): the square of the shelf's unit, following it.
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>(() => AREA_FOR[shelf?.dims.unit ?? 'cm']);
   const [d, setD] = useState<Draft>(() => (shelf ? {
     level: String(shelf.level),
     name: shelf.name,
@@ -157,6 +160,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
     };
     setD(s => ({ ...s, len: conv(s.len), wid: conv(s.wid), ht: conv(s.ht) }));
     setUnit(to);
+    setAreaUnit(AREA_FOR[to]);
   };
 
   const rackDims = r.dims;
@@ -295,8 +299,9 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
                 <AutoField label="Width" value={`${nf(rackDims.width)} ${ru}`} />
                 <AutoField label="Height" value={`${nf(rackDims.height)} ${ru}`} />
                 <AutoField
-                  label="Rack Area"
-                  value={`${nf(rackDims.area)} ${ru}² (≈ ${nf(r.areaSqft)} Sq. Ft)`}
+                  label={`Rack Area (${AREA_LABEL[areaUnit]})`}
+                  value={areaNum(r.areaSqft, areaUnit)}
+                  unit={<AreaUnitPicker value={areaUnit} onChange={setAreaUnit} />}
                 />
               </div>
             </div>
@@ -487,13 +492,20 @@ function Card({ icon, title, five, children }: {
   );
 }
 
-function AutoField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function AutoField({ label, value, mono, unit }: {
+  label: string; value: string; mono?: boolean;
+  /** A unit picker drawn as the suffix box (Rack Area). */
+  unit?: ReactNode;
+}) {
+  const box = (
+    <div className={`whm-auto znm-auto is-filled${mono ? '' : ' whm-auto--text'}`}>
+      <input className="spi-dt-inp" value={value} readOnly tabIndex={-1} />
+      <span className="whm-auto__tag">AUTO</span>
+    </div>
+  );
   return (
     <Field label={label}>
-      <div className={`whm-auto znm-auto is-filled${mono ? '' : ' whm-auto--text'}`}>
-        <input className="spi-dt-inp" value={value} readOnly tabIndex={-1} />
-        <span className="whm-auto__tag">AUTO</span>
-      </div>
+      {unit ? <div className="whm-suf">{box}{unit}</div> : box}
     </Field>
   );
 }

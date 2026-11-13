@@ -125,7 +125,10 @@ const toRack = (r: RackRow): Rack => {
       : null,
     haz: Number(r.hazardous) === 1,
     dims: { unit, length, width, height, area: Math.round(length * width * 1e4) / 1e4 },
-    areaSqft: num(r.area_sqft),
+    /* The stored figure, or — where a row was saved without one (it read
+       "≈ 0 Sq. Ft" beside a 36,000 cm² rack) — the same sum the server's
+       Rack::areaSqft() makes from the dimensions. */
+    areaSqft: num(r.area_sqft) || Math.round(length * width * (unit === 'm' ? 10.7639 : 10.7639 / 10000) * 100) / 100,
     heightCm: r.height_cm != null ? num(r.height_cm) : height * (unit === 'm' ? 100 : 1),
     shelves: num(r.shelves_count),
     capacityKg: num(r.capacity_kg),
