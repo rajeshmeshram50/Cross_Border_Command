@@ -19,3 +19,24 @@
   background: #0891b2 !important;
   border-color: #0891b2 !important;
 }
+
+/* Credentials card: the table and its "Showing 1–7" footer run to the card's
+   edges, as in My Vault. The card body's 8px padding left them floating 9px
+   inside the card on the left, right and bottom, with the footer's own rounded
+   corners drawn as a second box inside the card's. The shared My Vault rule
+   (credvault.css, .myv-page …) skips split layouts and cancels 12px, so Team
+   Vault has its own. The card's 16px corners and overflow:hidden clip it. */
+.cvx.tvx-page .tv-pane--r .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) {
+  padding-bottom: 0 !important;
+}
+.cvx.tvx-page .tv-pane--r .tv-pane__bd.tvc-bd > .tvc-list:last-child:has(> .wl-pager:last-child) {
+  margin-left: -8px !important;
+  margin-right: -8px !important;
+}
+/* One divider above the footer: its own top border, not the table's as well. */
+.cvx.tvx-page .tv-pane--r .tvc-list > .whm-tblwrap:has(+ .wl-pager) {
+  border-bottom: 0 !important;
+}
+.cvx.tvx-page .tv-pane--r .tvc-list:last-child > .wl-pager:last-child {
+  border-radius: 0 !important;
+}
