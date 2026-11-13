@@ -123,7 +123,6 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // Shared With Me: the person who shared it with you (and its owner) is not offered — it can't go back to them.
   const sharers = cred?.access?.shared_by ?? [];
   const blocked = useMemo(() => new Set([cred?.owner?.id, ...(cred?.access?.shared_by ?? []).map(s => s.id)].filter(Boolean).map(String)), [cred]);
   const options = useMemo(() => (type === 'user'

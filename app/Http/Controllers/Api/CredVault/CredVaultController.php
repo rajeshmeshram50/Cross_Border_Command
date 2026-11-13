@@ -3770,20 +3770,33 @@ class CredVaultController extends Controller
                 // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
                 if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
-                // When the reporting manager IS the Vault Admin (the branch admin
-                // most employees report to), the same person gives both approvals
-                // — two separate, audited actions, by design. (not two people)
             } else {
                 $this->reject('This request has no approval waiting.', null, 409);
             }
 
-            $role = $stage === 'admin' ? 'Vault Admin' : 'Manager';
+            /* When the Vault Admin approving is ALSO the requester's reporting
+               manager (the branch admin most employees report to), one approval
+               covers both steps: the request goes straight on to 2FA (or unlocks)
+               instead of coming back to the same person a second time. Both
+               steps are still recorded as decided, by them, at this moment. */
+            $both = $approve && $stage === 'admin' && $r->manager_required
+                && (int) $r->manager_user_id === (int) $u->id && $r->manager_status !== 'approved';
+
+            $role = $both ? 'Vault Admin & Manager' : ($stage === 'admin' ? 'Vault Admin' : 'Manager');
             $r->fill([
                 "{$stage}_status"     => $approve ? 'approved' : 'rejected',
                 "{$stage}_decided_by" => $u->id,
                 "{$stage}_decided_at" => now(),
                 "{$stage}_note"       => $note,
             ]);
+            if ($both) {
+                $r->fill([
+                    'manager_status'     => 'approved',
+                    'manager_decided_by' => $u->id,
+                    'manager_decided_at' => now(),
+                    'manager_note'       => $note,
+                ]);
+            }
             // The manager stage is no longer opened automatically — the requester forwards it (raise-manager).
 
             $extra = ['request_id' => $r->id, 'credential_id' => $r->credential_id, 'url' => '/credentials-vault/critical-vault'];
@@ -4388,10 +4401,12 @@ class CredVaultController extends Controller
     protected function transferHistory(Request $request, string $kind)
     {
         $u = $this->tenantUser($request);
-        $f = $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], 'mine' => ['nullable', 'boolean']]);
+        $f = $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], 'mine' => ['nullable', 'boolean'],
+            'q' => ['nullable', 'string', 'max:100']]);
 
         $page = Transfer::where('client_id', $u->client_id)->where('kind', $kind)
             ->when(!$this->isAdmin($u) || ($f['mine'] ?? false), fn ($q) => $q->where('user_id', $u->id))
+            ->when(trim((string) ($f['q'] ?? '')) !== '', fn ($q) => $this->transferSearch($q, $kind, $f['q']))
             ->with('user:id,name')->orderByDesc('id')
             ->paginate($f['per_page'] ?? self::PAGE_SIZE, ['*'], 'page', $f['page'] ?? 1);
         $this->userInfo(collect($page->items())->pluck('user_id')->unique()->all());
@@ -4699,8 +4714,8 @@ class CredVaultController extends Controller
 
         $canDecide = $r->status === 'pending' && $r->requester_id !== $u->id && (
             ($stage === 'admin' && $this->canApproveAdmin($u, $r))
-            // Manager step: the manager decides — even if they are also the Vault
-            // Admin who approved step 1 (RM = branch admin). Two separate actions.
+            // Manager step: the manager decides. When the manager IS the Vault Admin
+            // who approved step 1, that approval already covered this step (decide()).
             || ($stage === 'manager' && $r->manager_user_id === $u->id)
         );
         $display = match (true) {
@@ -4885,6 +4900,31 @@ class CredVaultController extends Controller
             'detail'         => $e->detail,
             'ip'             => $e->ip,
         ];
+    }
+
+    protected function transferSearch(Builder $q, string $kind, string $term): Builder
+    {
+        $t = mb_strtolower(trim($term));
+        $like = $this->likeTerm($term);
+        $hit = fn (array $labels) => array_keys(array_filter($labels, fn ($l) => str_contains(mb_strtolower($l), $t)));
+        $formats = $hit(Transfer::FORMAT_LABELS);
+        $scopes = $hit(Transfer::SCOPE_LABELS);
+        $types = $kind === 'import' ? $hit(collect(array_keys(Credential::TYPES))->mapWithKeys(fn ($k) => [$k => Credential::typeDef($k)['label'] ?? $k])->all()) : [];
+        $done = $kind === 'import' ? 'imported' : 'downloaded';
+
+        return $q->where(function ($w) use ($like, $formats, $scopes, $types, $t, $done, $kind) {
+            foreach (['code', 'file_name', 'source'] as $col) $w->orWhereRaw("lower(coalesce(credvault_transfers.{$col}, '')) like ?", [$like]);
+            $w->orWhereHas('user', fn ($x) => $x->whereRaw("lower(coalesce(name, '')) like ?", [$like]));
+            if ($formats) $w->orWhereIn('format', $formats);
+            if ($scopes) $w->orWhereIn('scope', $scopes);
+            if ($types) $w->orWhereIn('credential_type', $types);
+            if (str_contains('failed', $t)) $w->orWhere('status', 'failed');
+            if (str_contains($done, $t)) $w->orWhere('status', '!=', 'failed');
+            if ($kind === 'backup') {
+                if (str_contains('password locked', $t)) $w->orWhere('locked', true);
+                if (str_contains('not locked', $t)) $w->orWhere('locked', false);
+            }
+        });
     }
 
     protected function transferRow(Transfer $t, ?User $u = null): array

@@ -5,19 +5,12 @@ import { CvPortal, CvTabsRow, StrengthCell, Svg, errMsg } from '../shared';
 import { IR_I, ImportVeil } from './irShared';
 import type { ImportReview } from './irReview';
 
-/** The API sends the strength label; the meter needs its level (Credential::STRENGTH_LABELS). */
 const STR_LEVEL: Record<string, number> = { Weak: 1, Fair: 2, Good: 3, Strong: 4 };
 
 type Tab = 'accepted' | 'discarded';
 
-/**
- * Review of one category's sheet (POST /imports/preview with type). Save sends the accepted rows to
- * POST /imports { token, rows, duplicates: 'skip' }, where each row is saved through the category's
- * Add form — a row that form still refuses comes back as failed in the history.
- */
 export default function ImportReviewModal({ review, onBack, onExpired, onSaved }: {
   review: ImportReview; onBack: () => void;
-  /** The preview's token expired or was used: the file has to be uploaded again. */
   onExpired: () => void;
   onSaved: (message: string) => void;
 }) {

@@ -38,7 +38,6 @@
     font-size: 14px;
 }
 
-/* A credential whose details are locked: editing keeps every field it does not touch. */
 .cvx .cv-form-note {
     display: flex;
     align-items: flex-start;
@@ -57,7 +56,6 @@
     margin-top: 2px;
 }
 
-/* Risk pill beside the close button in the form header. */
 .cvx .crd-hbtns .znm-flag {
     white-space: nowrap;
 }
@@ -67,9 +65,6 @@
     cursor: pointer;
 }
 
-/* Critical Vault type picker: the Figma's white search bar in the header.
-   The right side takes the free space (crd-phd__r) so the search can reach its 460px. */
-/* The Figma's popup size: 1320px wide (the shared 1440px crd-box width must not reach it), height to its content. */
 .cvx #crd-host .crd-box.crd-pickbox--cv { width: min(1320px, calc(100vw - 32px)) !important; height: auto !important; max-height: calc(100vh - 40px); }
 .cvx .crd-pickbox--cv .mapsup-hrow { gap: 18px; }
 .cvx .crd-pickbox--cv .mapsup-title-wrap { flex: 0 1 auto; }
@@ -89,8 +84,8 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search input { color: #e2f4f8; }
 [data-bs-theme="dark"] .cvx .crd-pickbox--cv .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
 
-/* Critical Vault type picker · dark mode. Scoped to crd-pickbox--cv so My Vault's picker is untouched.
-   Tiles, their icon chips and the risk / count / New badges lose the light-theme white fills. */
+.cvx .crd-pickbox--cv .crd-tile--c:has(.crd-tile__new) .crd-tile__row { padding-right: 26px; }
+
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile.crd-tile--c { background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile.crd-tile--c:hover { background: rgba(34, 211, 238, .07) !important; border-color: rgba(34, 211, 238, .5) !important; box-shadow: 0 0 0 3px rgba(34, 211, 238, .12), 0 12px 24px -14px rgba(0, 0, 0, .7) !important; }
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile--c .crd-tile__ico { color: #67e8f9 !important; background: rgba(34, 211, 238, .12) !important; border-color: rgba(34, 211, 238, .3) !important; }
@@ -107,8 +102,6 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-tile__risk--critical i { background: #fb7185 !important; }
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-nav__b:not(.is-on) .crd-nav__c { color: #67e8f9 !important; background: rgba(34, 211, 238, .1) !important; border-color: rgba(34, 211, 238, .3) !important; }
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .crd-nav__tip svg { color: #67e8f9; }
-/* Critical Vault Add / Edit form · dark mode. #crd-host gets crd-host--cv only when opened from Critical Vault,
-   so My Vault's form keeps its look. Header chips + the 2FA "selected" badges lose their white fills. */
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-box .crd-hicon { color: #fff !important; background: rgba(8, 30, 40, .32) !important; border: 1px solid rgba(255, 255, 255, .35) !important; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15) !important; }
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-box .crd-hicon svg { color: #fff !important; }
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-edit-id { color: #fff !important; background: rgba(8, 30, 40, .32) !important; border: 1px solid rgba(255, 255, 255, .4) !important; }
@@ -118,9 +111,11 @@
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .cp-chip.is-ok,
 [data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .k2-opt__sel { color: #6ee7b7 !important; background: rgba(16, 185, 129, .12) !important; border: 1px solid rgba(16, 185, 129, .38) !important; }
 
+.cvx #crd-host .crd-pickbox .mapsup-footer__info { display: inline-flex !important; align-items: center; gap: 7px; white-space: nowrap; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cvx #crd-host .crd-pickbox .mapsup-footer__info svg { flex: none; display: block; }
+
 [data-bs-theme="dark"] .cvx #crd-host .crd-pickbox--cv .mapsup-footer__info { color: #8fb3c2 !important; background: rgba(255, 255, 255, .03) !important; border-color: rgba(34, 211, 238, .16) !important; }
 
-/* "Two-factor authentication on Kryptone" card under the 2FA switch (prototype k2-*). */
 .cvx .cp-fcard--main { margin-top: 14px; }
 .cvx .cp-frow--main { grid-template-columns: 36px minmax(0, 1fr) auto; }
 .cvx .cp-auth.k2-auth { display: block; }
@@ -165,7 +160,6 @@
 .cvx .k2-gm__ok { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 11px; font-size: 11.5px; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
 .cvx .k2-gm__ok b { color: #065f46; }
 
-/* The 6-digit check the API needs before the save links 2FA. */
 .cvx .k2-code { margin-top: 10px; padding: 7px 8px 7px 10px; border-radius: 12px; background: #fff; border: 1px solid #cdeaf2; box-shadow: 0 2px 8px rgba(8, 145, 178, .07); }
 .cvx .k2-code.has-err { border-color: #fecaca; }
 .cvx .k2-code__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -206,9 +200,6 @@
     border-color: rgba(34, 211, 238, .3) !important;
     color: #67e8f9 !important;
 }
-/* Risk Level list (CrdSelect with `dot` options): a coloured risk dot ahead of each level and a
-   tick on the picked one, as the Figma. The list is portalled to <body>, so it is reached by its
-   own class; each dot follows the row's data-value, so it stays right while the search filters. */
 .master-select-menu.crd-dots .master-select-item {
   display: flex !important;
   align-items: center;
@@ -241,8 +232,6 @@
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='1' stop-color='%230891b2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='10' cy='10' r='10' fill='url(%23g)'/%3E%3Cpath d='M6 10.4l2.6 2.6L14.2 7.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-bs-theme="dark"] .master-select-menu.crd-dots .master-select-item.active { border-color: rgba(34, 211, 238, .35); }
-/* Critical Vault Edit: Low / Medium / High stay in the list as normal rows (MasterSelect fades a
-   disabled row inline); a click explains, through a toast, that the level stays Critical here. */
 .master-select-menu.crd-dots .master-select-item[aria-disabled="true"] {
   opacity: 1 !important;
   cursor: pointer !important;

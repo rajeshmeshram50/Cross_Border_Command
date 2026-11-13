@@ -3,15 +3,10 @@ import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, type CredentialRow } from '../cvApi';
 import { ConfirmModal, CvPortal, errMsg, Svg, useCvMeta } from '../shared';
 
-/**
- * CredVault · "Move to Recycle Bin" (own credential) / "Remove from your
- * vault?" (shared with you) confirm. Calls the API itself; onDone after.
- */
 export interface BinConfirmProps {
   row: Pick<CredentialRow, 'id' | 'code' | 'name' | 'type' | 'type_label' | 'url' | 'risk' | 'scope' | 'access' | 'active_shares'>;
   onClose: () => void;
   onDone: () => void;
-  /** My Vault (CS-1445): lock Cancel / × while the move runs and show a spinner. */
   lockBusy?: boolean;
 }
 
@@ -40,7 +35,6 @@ export default function BinConfirm({ row, onClose, onDone, lockBusy = false }: B
     }
   };
 
-  // Shared with you: the short "Remove from your vault?" dialog — the owner's copy stays.
   if (shared) {
     return (
       <CvPortal onClose={onClose}>
@@ -68,7 +62,6 @@ export default function BinConfirm({ row, onClose, onDone, lockBusy = false }: B
     );
   }
 
-  // Each vault keeps its own bin retention: the Normal Vault's from Policies, the Critical Vault's fixed.
   const critical = row.risk === 'critical';
   const days = (critical ? meta?.bin_days?.critical : meta?.bin_days?.normal) ?? meta?.policy.bin_days ?? 30;
   const until = new Date(Date.now() + days * 864e5).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });

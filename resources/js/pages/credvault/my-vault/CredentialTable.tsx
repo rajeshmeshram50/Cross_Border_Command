@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import type { CredentialRow } from '../cvApi';
-import {
-  ActBtn, CategoryCell, EmptyRow, IC, IdCell, NameCell, OwnerCell, RiskFlag, ShimCredRows, StrengthCell, Svg, TwofaCell,
+import {ActBtn, CategoryCell, EmptyRow, IC, IdCell, NameCell, OwnerCell, RiskFlag, ShimCredRows, StrengthCell, Svg, TwofaCell,
   UpdatedCell, useCvMeta,
 } from '../shared';
 
@@ -12,18 +11,14 @@ export interface CredentialTableProps {
   emptyTitle: string;
   emptySub: string;
   onAdd?: () => void;
-  /** The row buttons below are the default; `actions` replaces them (Critical Vault: Edit, Unlock, Bin). */
   onEdit?: (row: CredentialRow) => void;
   onShare?: (row: CredentialRow) => void;
   onView?: (row: CredentialRow) => void;
   onCopy?: (row: CredentialRow) => void;
   onDelete?: (row: CredentialRow) => void;
   actions?: (row: CredentialRow) => ReactNode;
-  /** One more column before Action (Critical Vault: Access Status). */
   extra?: { header: string; cell: (row: CredentialRow) => ReactNode };
-  /** Critical Vault: the ID column shows the CCRD code. */
   critical?: boolean;
-  /** Copy tooltip names the type's main secret ("Copy API Key") — My Vault only; the other vaults keep "Copy Password". */
   secretLabels?: boolean;
 }
 
@@ -34,7 +29,6 @@ const COLS = ['Sr. No', 'Credential ID', 'Credential Name', 'Category', 'Usernam
 
 export default function CredentialTable({ rows, startIndex, loading, emptyTitle, emptySub, onAdd, onEdit, onShare, onView, onCopy, onDelete, actions, extra, critical = false, secretLabels = false }: CredentialTableProps) {
   const { typeOf } = useCvMeta();
-  /** The type's main secret by its own label — "API Key", "Private Key", "Card Number"… — not always "Password". */
   const secLabel = (type: string) => {
     const t = typeOf(type);
     return t?.fields.find(f => f.key === t.sec)?.label ?? 'Password';

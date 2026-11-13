@@ -5,8 +5,6 @@ import UnlockModal from '../critical/UnlockModal';
 import { bytes, cap, ConfirmModal, copyText, CvPortal, errMsg, fmtDay, fmtTime, IC, Svg, useCvMeta } from '../shared';
 import BinConfirm from './BinConfirm';
 
-
-/** The calls the drawer makes; the live API unless a page on dummy data hands in its own. */
 export type ViewSource = Pick<typeof cvApi, 'show' | 'activity' | 'reveal' | 'event' | 'attachment'>;
 
 export interface ViewDrawerProps {
@@ -16,8 +14,6 @@ export interface ViewDrawerProps {
   onEdit?: (id: number) => void;
   onShare?: (id: number) => void;
   source?: ViewSource;
-  /** My Vault and Password Health only: copy toasts and tooltips name the field ("API Key copied", CS-1444)
-   *  and Launch shows for every risk level (CS-1442). Off for Team Vault and Critical Vault. */
   fieldLabels?: boolean;
 }
 
@@ -32,7 +28,6 @@ const I = {
   shieldOk: 'M9 12l2 2 4-4M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   eyeOff: 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22',
 };
-/** Timeline icon for an audit action. */
 const ACT_ICO: Record<string, string> = {
   view: 'eye', reveal: 'eye', copy: 'copy', launch: I.launch, share: 'share', revoke: 'share',
   create: 'plus', update: I.edit, edit: I.edit, bin: I.bin, restore: 'M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10',
@@ -50,7 +45,6 @@ const fileKind = (n: string) => {
   const e = (n.split('.').pop() || '').toLowerCase();
   return /^(png|jpe?g|gif|webp)$/.test(e) ? 'img' : e === 'pdf' ? 'pdf' : /^(xlsx?|csv)$/.test(e) ? 'xls' : 'doc';
 };
-/** A launchable website, as the prototype's check: a URL or a bare domain, no spaces or wildcards. */
 const launchUrl = (u?: string | null) =>
   u && /^(https?:\/\/|[\w-]+(\.[\w-]+)+(\/|$))/i.test(u) && !/\s/.test(u) && !u.includes('*') ? (/^https?:/i.test(u) ? u : `https://${u}`) : '';
 
@@ -66,7 +60,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const [failed, setFailed] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [shown, setShown] = useState<Record<string, string>>({});
-  /** Critical credential secrets that came in plain: which ones the viewer has unhidden in the drawer. */
   const [peek, setPeek] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const [acts, setActs] = useState<{ rows: AuditEvent[]; meta: PageMeta | null; loading: boolean }>({ rows: [], meta: null, loading: true });
@@ -77,7 +70,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const actSeq = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // A refresh (page 1) supersedes any page still in flight, so "Load more" can't append onto fresh rows.
   const loadActivity = useCallback(async (page = 1) => {
     const seq = ++actSeq.current;
     setActs(a => ({ ...a, loading: true }));
@@ -109,7 +101,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     const t = timers.current;
     return () => { Object.values(t).forEach(clearTimeout); clearTimeout(closeTimer.current); };
   }, []);
-  // Slide in once there is something to show.
   useEffect(() => {
     if (!d || d.locked) return;
     const f = requestAnimationFrame(() => setOpen(true));
@@ -162,8 +153,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const secF: DetailField | undefined = fields.find(f => f.key === T?.sec && f.masked) ?? fields.find(f => f.masked);
   const hasSec = !!secF?.has_value;
   const url = launchUrl(d.url);
-  // Launch opens the credential's website, else its first saved link (e.g. Endpoint URL, Router Admin URL).
-  // It is shown for every risk level; with nothing to open it stays, disabled, and says why.
   const launchTo = url || fields.map(f => (f.kind === 'url' && !f.masked ? launchUrl(f.value) : '')).find(Boolean) || '';
   const launchRisky = d.risk === 'high' || d.risk === 'critical';
   const shared = d.access?.via === 'share';
@@ -174,7 +163,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const hasXt = !!extras && (extras.reg_email || extras.reg_phone || extras.recovery_key || extras.attachments);
   const permLabel = meta?.permissions.find(p => p.key === d.access?.permission)?.label ?? cap(d.access?.permission);
 
-  /* ── reveal & copy ── */
   const hideLater = (key: string, secs: number) => {
     clearTimeout(timers.current[key]);
     timers.current[key] = setTimeout(() => setShown(s => { const n = { ...s }; delete n[key]; return n; }), secs * 1000);
@@ -196,13 +184,11 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     try {
       const r = await api.reveal(d.id, 'copy', key);
       await copyText(r.value, r.clear_clipboard_after);
-      // Names the copied field ("API Key copied", "Passphrase copied"), from the server's label for it.
       if (fieldLabels) toast.success(`${r.label} copied`, r.clear_clipboard_after ? `The clipboard clears in ${r.clear_clipboard_after} seconds.` : undefined);
       else toast.success('Copied to clipboard', r.clear_clipboard_after ? `${r.label} · clears in ${r.clear_clipboard_after}s` : r.label);
       loadActivity(1);
     } catch (e) { lockedErr(e); }
   };
-  /** A plain value; `field` logs it as "Field copied" when it is one of the credential's fields. */
   const copyPlain = async (value: string, field?: string, label?: string) => {
     try {
       await copyText(value);
@@ -215,7 +201,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     window.open(launchTo, '_blank', 'noopener,noreferrer');
     api.event(d.id, 'launch').then(() => loadActivity(1)).catch(() => {});
   };
-  /** High and Critical risk ask first; Low and Medium open at once. */
   const launch = () => { if (launchRisky) setLaunchAsk(true); else openLaunch(); };
   const download = async (key: string) => {
     try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
@@ -235,7 +220,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     </div>
   );
 
-  /** One type field's value cell, for the Details tab. */
   const fieldValue = (f: DetailField) => {
     if (f.masked) {
       return (
@@ -247,8 +231,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       );
     }
     const v = f.value ?? '';
-    // Critical credential, already opened: the API sends its secrets (Secure Note, key …) in plain. They
-    // still start hidden, with an eye to show them and copy beside it — not printed out on open.
     if (crit && f.secret && f.kind !== 'file' && v) {
       const on = peek.has(f.key);
       return (
@@ -284,7 +266,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     );
   };
 
-  /* ── header ── */
   const hdr = (
     <div className="vd-hd">
       <div className="vd-hd__bg" />
@@ -304,7 +285,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       </div>
       <div className="vd-acts">
         {fieldLabels ? (
-          // My Vault / Password Health (CS-1442): Launch for every risk level, High / Critical ask first.
           <button type="button" data-h40="skip" className="vd-btn vd-btn--p" disabled={!launchTo} onClick={launch}
             title={launchTo ? `Open ${launchTo}${launchRisky ? ' (asks first — ' + cap(d.risk) + ' risk)' : ''}` : `No website or link is saved for this ${d.type_label}`}>
             <Svg icon={I.launch} size={14} />Launch
@@ -345,7 +325,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
     ['activity', 'Activity', I.clock, acts.meta?.total ?? null],
   ];
 
-  /* ── panes ── */
   let body: ReactNode;
   if (tab === 'overview') {
     const pct = d.strength_level * 25;
@@ -460,7 +439,6 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
         {shares.length ? shares.map(s => (
           <div className="vd-person" key={s.id}>
             <span className="mv-ownc__av">{s.recipient.type === 'team' ? <Svg icon="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0 .01" size={13} /> : s.recipient.initials}</span>
-            {/* Branch leads — the leaf of the hierarchy — then the user with access. */}
             <div>
               <b>{s.recipient.branch ?? s.recipient.name}</b>
               <small>

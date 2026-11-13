@@ -1,7 +1,5 @@
 import type { ImportType, TypedImportError, TypedImportPreview } from '../cvApi';
 
-/* Import by category: the server's preview of one category's sheet, split for the review popup. */
-
 export interface AcceptedRow { index: number; row: number; name: string; strength: string | null; weak: boolean; notes: string[] }
 export interface DiscardedRow { row: number; name: string; reasons: TypedImportError[] }
 export interface ImportReview {
@@ -9,11 +7,6 @@ export interface ImportReview {
   accepted: AcceptedRow[]; discarded: DiscardedRow[]; ignoredColumns: string[];
 }
 
-/**
- * Accepted = the rows POST /imports will save: valid and not a duplicate (the preview's `selected`).
- * Discarded = the rows that failed a check (with the server's reasons), and the valid rows that are
- * duplicates — POST /imports skips those with duplicates: 'skip'.
- */
 export function buildReview(category: ImportType, p: TypedImportPreview): ImportReview {
   const accepted: AcceptedRow[] = [];
   const discarded: DiscardedRow[] = [];

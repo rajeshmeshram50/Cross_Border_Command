@@ -3,11 +3,8 @@ import type { Meta, TypeDef } from '../cvApi';
 import { Svg, cap } from '../shared';
 import { typeColor } from './formHelpers';
 
-/* Step 1 of Add Credential — "What would you like to add?" (crdOpenPicker). */
-
 const gid = (g: string) => 'crdG_' + g.replace(/[^a-z]/gi, '');
 
-/** `critical`: the Critical Vault's picker, as the Figma — no 2FA chip, no hover arrow. */
 function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPick: (k: string) => void; critical: boolean }) {
   const n = t.fields.length;
   return (
@@ -26,7 +23,7 @@ function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPic
           <span className="crd-tile__n">{n} field{n === 1 ? '' : 's'}</span>
         </span>
       </span>
-      {!critical && <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>}
+      <span className="crd-tile__go"><Svg d='<path d="M5 12h14M13 6l6 6-6 6"/>' size={13} sw={2.6} /></span>
     </button>
   );
 }
@@ -68,7 +65,6 @@ export default function TypePicker({ meta, critical = false, onPick, onClose }: 
     setNav(id);
   };
 
-  // crdSpy: the category the list is scrolled to lights up in the side nav.
   const spy = () => {
     const b = body.current;
     if (!b) return;

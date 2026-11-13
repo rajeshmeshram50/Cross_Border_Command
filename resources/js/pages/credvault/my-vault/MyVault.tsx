@@ -218,7 +218,7 @@ export default function MyVault() {
                               : <><b className="mv-upd-d">No expiry</b><span className="whm-iddate">Until revoked</span></>}
                           </div>
                         </td>
-                        <td><span className="mv-user" title={s.reason ?? undefined}>{s.reason ?? '—'}</span></td>
+                        <td><span className="mv-user sb-reason" title={s.reason ?? undefined}>{s.reason ?? '—'}</span></td>
                         <td><div className="znm-flagcell"><span className={`znm-flag ${STATE_FLAG[s.state]}`}><i />{STATE_LABEL[s.state]}</span></div></td>
                         <td>
                           <div className="whm-acts">
