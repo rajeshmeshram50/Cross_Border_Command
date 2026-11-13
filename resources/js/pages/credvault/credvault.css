@@ -1345,8 +1345,8 @@
   padding: 0 8px 0 16px;
   height: 48px;
   border-radius: 14px;
-  color: #a5f3fc;
-  background: rgba(255, 255, 255, .1);
+  color: #0891b2;
+  background: rgba(255, 255, 255, .95);
   border: 1.5px solid rgba(255, 255, 255, .2);
   transition: all .15s;
 }
@@ -1378,7 +1378,6 @@
   font-family: inherit;
   font-size: 11px;
   font-weight: 800;
-  color: #cffafe;
   background: rgba(255, 255, 255, .12);
   border: 1px solid rgba(255, 255, 255, .22);
   border-radius: 7px;
@@ -1407,13 +1406,13 @@
   background: rgba(255, 255, 255, .24);
 }
 
-.cvx .crd-pickbox--cv .crd-search__clear {
+.cvx .crd-pickbox .crd-search__clear {
   color: #0891b2;
   background: #ecfeff;
   border-color: #a5f3fc;
 }
 
-.cvx .crd-pickbox--cv .crd-search__clear:hover {
+.cvx .crd-pickbox .crd-search__clear:hover {
   color: #0e7490;
   background: #cffafe;
 }
