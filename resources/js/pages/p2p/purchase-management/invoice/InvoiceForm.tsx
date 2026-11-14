@@ -314,9 +314,17 @@ export default function InvoiceForm({
           return;
         }
         // PO detail + supplier + vault were primed when the PO was picked
-        // (CS-937) — await those in-flight promises instead of cold calls. A
-        // primed PO that failed/aborted (null) falls back to a fresh fetch.
+        // (CS-937). On reopen there is no prime, but the SPI detail already told
+        // us the vendor — so supplier + vault run IN PARALLEL with the PO fetch
+        // instead of after it. The reopen chain stops being show -> po ->
+        // supplier (additive) and becomes show -> max(po, supplier).
         const primed = spiPrefetch.takePo(poId);
+        const knownVendor = existing?.vendor_id ?? null;
+        const supPromise = primed?.supplier
+          ?? (knownVendor ? poLookupApi.supplier(knownVendor).catch(() => null) : null);
+        const vaultPromise = primed?.vault
+          ?? (knownVendor ? poLookupApi.supplierVault(knownVendor).catch(() => null) : null);
+
         const [primedPo, openLines] = await Promise.all([
           primed?.po ?? poApi.show(poId),
           spiApi.poLines(poId, existing?.id).catch(() => []),
@@ -328,9 +336,10 @@ export default function InvoiceForm({
             qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
           };
         }
-        const sup = po.vendor_id
-          ? await (primed?.supplier ?? poLookupApi.supplier(po.vendor_id).catch(() => null))
-          : null;
+        // Falls back to the PO's vendor only when the SPI detail had none (a
+        // fresh create straight from a PO, where knownVendor is null).
+        const sup = await (supPromise
+          ?? (po.vendor_id ? poLookupApi.supplier(po.vendor_id).catch(() => null) : Promise.resolve(null)));
         if (!live) return;
         set(draftFromPo(po, sup));
         setGstApproval(po.gst_approval ?? null);
@@ -381,7 +390,7 @@ export default function InvoiceForm({
         setRemovedLines([]);
 
         if (po.vendor_id) {
-          (primed?.vault ?? poLookupApi.supplierVault(po.vendor_id).catch(() => null))
+          (vaultPromise ?? poLookupApi.supplierVault(po.vendor_id).catch(() => null))
             .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); });
         }
       } catch (e) {
