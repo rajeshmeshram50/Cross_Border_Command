@@ -48,6 +48,7 @@ class MasterController extends Controller
         'customer_classifications' => \App\Models\Masters\CustomerClassifications::class,
         'vendor_types' => \App\Models\Masters\VendorTypes::class,
         'vendor_behaviour' => \App\Models\Masters\VendorBehaviour::class,
+        'supplier_category' => \App\Models\Masters\SupplierCategory::class,
         'applicable_types' => \App\Models\Masters\ApplicableTypes::class,
         'license_name' => \App\Models\Masters\LicenseName::class,
         'risk_levels' => \App\Models\Masters\RiskLevels::class,
@@ -105,10 +106,10 @@ class MasterController extends Controller
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'level', 't' => 'select', 'r' => true, 'opts' => ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee']], ['n' => 'reports_to_id', 't' => 'select', 'ref' => 'designations'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'kpis' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'role_id', 't' => 'select', 'r' => true, 'ref' => 'roles'], ['n' => 'target_type', 't' => 'select', 'r' => true, 'opts' => ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating']], ['n' => 'priority', 't' => 'select', 'r' => true, 'opts' => ['Critical', 'High', 'Medium', 'Low']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         // `uEach` (not `uFields`) — entity_name and CIN must EACH be
-// independently unique (case-insensitive). Composite uniqueness
-// would have allowed "TesT" + CIN-A and "Test" + CIN-B as separate
-// rows because the combination differs; users expect the name and
-// CIN to each be globally unique within the tenant scope.
+        // independently unique (case-insensitive). Composite uniqueness
+        // would have allowed "TesT" + CIN-A and "Test" + CIN-B as separate
+        // rows because the combination differs; users expect the name and
+        // CIN to each be globally unique within the tenant scope.
         'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text', 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'iso_code']],
         'states' => ['fields' => [['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'country_id']],
         'state_codes' => ['fields' => [['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'state_code', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state_id', 'state_code']],
@@ -166,7 +167,7 @@ class MasterController extends Controller
         'asset_categories' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'depreciation_rate', 't' => 'number'], ['n' => 'useful_life_years', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         // `uEach` — expense category code and name each independently unique.
         'expense_category' => ['fields' => [['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'monthly_limit', 't' => 'number'], ['n' => 'yearly_limit', 't' => 'number'], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['code', 'name'], 'tenantScoped' => true],
-        'payment_terms' =>['fields' => [['n' => 'term_code', 't' => 'text', 'r' => true], ['n' => 'term_name', 't' => 'text', 'r' => true], ['n' => 'credit_days', 't' => 'number', 'r' => true], ['n' => 'advance_pct', 't' => 'number'], ['n' => 'payment_type', 't' => 'select', 'r' => true, 'opts' => ['Full Advance', 'Partial Advance', 'Credit', 'Milestone-Based', 'COD']], ['n' => 'milestone_desc', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['term_code', 'term_name']],
+        'payment_terms' => ['fields' => [['n' => 'term_code', 't' => 'text', 'r' => true], ['n' => 'term_name', 't' => 'text', 'r' => true], ['n' => 'credit_days', 't' => 'number', 'r' => true], ['n' => 'advance_pct', 't' => 'number'], ['n' => 'payment_type', 't' => 'select', 'r' => true, 'opts' => ['Full Advance', 'Partial Advance', 'Credit', 'Milestone-Based', 'COD']], ['n' => 'milestone_desc', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['term_code', 'term_name']],
         'approval_authority' => ['fields' => [['n' => 'role_name', 't' => 'text', 'r' => true], ['n' => 'module_scope', 't' => 'select', 'r' => true, 'opts' => ['Purchase Order', 'Payment', 'VTI', 'GRN', 'All']], ['n' => 'min_value', 't' => 'number'], ['n' => 'max_value', 't' => 'number', 'r' => true], ['n' => 'currency', 't' => 'select', 'opts' => ['INR', 'USD', 'EUR', 'GBP']], ['n' => 'escalate_to', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['role_name', 'module_scope']],
         'procurement_category' => ['fields' => [['n' => 'cat_code', 't' => 'text', 'r' => true], ['n' => 'cat_name', 't' => 'text', 'r' => true], ['n' => 'match_logic', 't' => 'select', 'r' => true, 'opts' => ['3-Way Match (PO+VTI+GRN)', '2-Way Match (PO+VTI)', '4-Way Match (PO+VTI+GRN+QC)']], ['n' => 'grn_required', 't' => 'select', 'r' => true, 'opts' => ['Yes — Physical Receipt', 'Yes — Service Confirmation', 'No']], ['n' => 'gst_applicable', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No', 'Reverse Charge']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['cat_code', 'cat_name']],
         'sourcing_type' => ['fields' => [['n' => 'type_code', 't' => 'text', 'r' => true], ['n' => 'type_name', 't' => 'text', 'r' => true], ['n' => 'quotation_required', 't' => 'select', 'r' => true, 'opts' => ['Mandatory — Min 3 Quotes', 'Mandatory — Min 1 Quote', 'Optional', 'Not Required']], ['n' => 'approval_required', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'urgency_flag', 't' => 'select', 'opts' => ['Normal', 'Urgent', 'Emergency']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['type_code', 'type_name']],
@@ -176,15 +177,15 @@ class MasterController extends Controller
         'exchange_rate_log' => ['fields' => [['n' => 'currency_code', 't' => 'text', 'r' => true], ['n' => 'currency_name', 't' => 'text'], ['n' => 'rate_vs_inr', 't' => 'number', 'r' => true], ['n' => 'effective_date', 't' => 'date', 'r' => true], ['n' => 'rate_source', 't' => 'select', 'r' => true, 'opts' => ['RBI Reference Rate', 'Bank Rate', 'Agreed Rate', 'Custom']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Superseded']]], 'uFields' => ['currency_code', 'effective_date']],
         'goods_service_flag' => ['fields' => [['n' => 'flag_code', 't' => 'text', 'r' => true], ['n' => 'flag_name', 't' => 'text', 'r' => true], ['n' => 'grn_screen', 't' => 'select', 'r' => true, 'opts' => ['Physical Receipt — Qty + Batch + Warehouse', 'Service Completion — Date + Proof Doc', 'Mixed — Partial Goods + Service']], ['n' => 'evidence_type', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['flag_code', 'flag_name']],
         // `uEach` — vendor company name, mobile, and email each must be
-// independently unique (case-insensitive on name + email). Prevents
-// "ABC Corp" / "abc corp" duplicates across the directory.
-'vendor_directory' => ['fields' => [['n' => 'vendor_company_name', 't' => 'textarea', 'r' => true, 'maxLen' => 512], ['n' => 'contact_person', 't' => 'text', 'r' => true], ['n' => 'mobile_number', 't' => 'text', 'r' => true], ['n' => 'email_id', 't' => 'email', 'r' => true], ['n' => 'segment_id', 't' => 'select', 'r' => true, 'ref' => 'segments'], ['n' => 'address', 't' => 'text', 'r' => true], ['n' => 'country', 't' => 'select', 'r' => true, 'opts' => ['India', 'USA', 'UAE', 'UK', 'Germany', 'Australia', 'Singapore', 'Other']], ['n' => 'state', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'mapping_mode', 't' => 'select', 'r' => true, 'opts' => ['Map from Vendor Master', 'Map New Vendor']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['vendor_company_name', 'mobile_number', 'email_id']],
+        // independently unique (case-insensitive on name + email). Prevents
+        // "ABC Corp" / "abc corp" duplicates across the directory.
+        'vendor_directory' => ['fields' => [['n' => 'vendor_company_name', 't' => 'textarea', 'r' => true, 'maxLen' => 512], ['n' => 'contact_person', 't' => 'text', 'r' => true], ['n' => 'mobile_number', 't' => 'text', 'r' => true], ['n' => 'email_id', 't' => 'email', 'r' => true], ['n' => 'segment_id', 't' => 'select', 'r' => true, 'ref' => 'segments'], ['n' => 'address', 't' => 'text', 'r' => true], ['n' => 'country', 't' => 'select', 'r' => true, 'opts' => ['India', 'USA', 'UAE', 'UK', 'Germany', 'Australia', 'Singapore', 'Other']], ['n' => 'state', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'mapping_mode', 't' => 'select', 'r' => true, 'opts' => ['Map from Vendor Master', 'Map New Vendor']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['vendor_company_name', 'mobile_number', 'email_id']],
         'warehouse_master' => ['fields' => [['n' => 'wh_id', 't' => 'text', 'r' => true], ['n' => 'wh_name', 't' => 'text', 'r' => true], ['n' => 'wh_type', 't' => 'select', 'r' => true, 'opts' => ['Own Warehouse', 'Third Party Warehouse']], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'state', 't' => 'text'], ['n' => 'pincode', 't' => 'text'], ['n' => 'contact_person', 't' => 'text'], ['n' => 'contact_phone', 't' => 'text'], ['n' => 'area_sqft', 't' => 'number'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['wh_id', 'wh_name']],
         'zone_master' => ['fields' => [['n' => 'zone_id', 't' => 'text', 'r' => true], ['n' => 'zone_name', 't' => 'text', 'r' => true], ['n' => 'zone_type', 't' => 'select', 'r' => true, 'opts' => ['Storage Zone', 'Cold Chain Zone', 'Hazardous Zone', 'Dispatch Zone', 'Holding Zone', 'QC Hold Zone', 'Overflow Zone', 'Blocked Zone', 'Regulated Zone']], ['n' => 'warehouse', 't' => 'select', 'r' => true, 'ref' => 'warehouse_master'], ['n' => 'purpose', 't' => 'textarea'], ['n' => 'cold_chain', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'hazardous', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['zone_id', 'zone_name']],
         // `uEach` — code and name each independently unique (case-insensitive).
-'rack_type_master' => ['fields' => [['n' => 'type_code', 't' => 'text', 'r' => true], ['n' => 'type_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'suitable_for', 't' => 'select', 'opts' => ['General Inventory', 'Cold Chain', 'Hazardous', 'Heavy Duty', 'Retail', 'Pharma', 'All Types']], ['n' => 'max_load_per_shelf', 't' => 'number'], ['n' => 'typical_shelves', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['type_code', 'type_name']],
+        'rack_type_master' => ['fields' => [['n' => 'type_code', 't' => 'text', 'r' => true], ['n' => 'type_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'suitable_for', 't' => 'select', 'opts' => ['General Inventory', 'Cold Chain', 'Hazardous', 'Heavy Duty', 'Retail', 'Pharma', 'All Types']], ['n' => 'max_load_per_shelf', 't' => 'number'], ['n' => 'typical_shelves', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['type_code', 'type_name']],
         // `uEach` — code and name each independently unique (case-insensitive).
-'temp_class_master' => ['fields' => [['n' => 'class_code', 't' => 'text', 'r' => true], ['n' => 'class_name', 't' => 'text', 'r' => true], ['n' => 'temp_range_min', 't' => 'number'], ['n' => 'temp_range_max', 't' => 'number'], ['n' => 'description', 't' => 'textarea'], ['n' => 'requires_monitoring', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'alert_threshold', 't' => 'number'], ['n' => 'suitable_products', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['class_code', 'class_name']],
+        'temp_class_master' => ['fields' => [['n' => 'class_code', 't' => 'text', 'r' => true], ['n' => 'class_name', 't' => 'text', 'r' => true], ['n' => 'temp_range_min', 't' => 'number'], ['n' => 'temp_range_max', 't' => 'number'], ['n' => 'description', 't' => 'textarea'], ['n' => 'requires_monitoring', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'alert_threshold', 't' => 'number'], ['n' => 'suitable_products', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['class_code', 'class_name']],
         'racks' => ['fields' => [['n' => 'whType', 't' => 'select', 'r' => true, 'opts' => ['Own Warehouse', 'Third Party Warehouse']], ['n' => 'warehouse', 't' => 'select', 'r' => true, 'ref' => 'warehouse_master'], ['n' => 'zone', 't' => 'select', 'r' => true, 'ref' => 'zone_master'], ['n' => 'rackName', 't' => 'text', 'r' => true], ['n' => 'rackType', 't' => 'select', 'r' => true, 'ref' => 'rack_type_master'], ['n' => 'rackStatus', 't' => 'select', 'r' => true, 'opts' => ['Partially Filled', 'Full', 'Blocked', 'Reserved', 'Under Maintenance', 'Empty']], ['n' => 'tempClass', 't' => 'select', 'ref' => 'temp_class_master'], ['n' => 'shelves', 't' => 'number'], ['n' => 'maxWeight', 't' => 'number'], ['n' => 'maxVolume', 't' => 'number']], 'uFields' => ['rackName']],
         'shelf_master' => ['fields' => [['n' => 'rack_ref', 't' => 'select', 'r' => true, 'ref' => 'racks'], ['n' => 'shelf_name', 't' => 'text', 'r' => true], ['n' => 'level_no', 't' => 'number', 'r' => true], ['n' => 'shelf_type', 't' => 'select', 'r' => true, 'opts' => ['Standard Shelf', 'Cold Shelf', 'Heavy Duty Shelf', 'Cantilever Shelf', 'Mesh Shelf', 'Wire Deck Shelf']], ['n' => 'max_weight', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Available', 'Partially Used', 'Full', 'Blocked', 'Under Maintenance']]], 'uFields' => ['shelf_name']],
         'digital_twin' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -200,7 +201,21 @@ class MasterController extends Controller
         // Rule 9 — Professional Tax bands. Uniqueness is the whole band, not the
         // state: a state legitimately has many rows (one per gross slab), and a
         // gendered state such as Maharashtra has parallel male/female ladders.
+
         'pt_slabs' => ['fields' => [['n' => 'state', 't' => 'text', 'r' => true], ['n' => 'gender', 't' => 'select', 'r' => true, 'opts' => ['any', 'male', 'female']], ['n' => 'min_gross', 't' => 'number', 'r' => true, 'min' => 0], ['n' => 'max_gross', 't' => 'number', 'min' => 0], ['n' => 'amount', 't' => 'number', 'r' => true, 'min' => 0], ['n' => 'feb_amount', 't' => 'number', 'min' => 0], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state', 'gender', 'min_gross']],
+        'supplier_category' => [
+            'fields' => [
+                ['n' => 'name', 't' => 'text', 'r' => true, 'maxLen' => 100],
+                ['n' => 'supplier_service', 't' => 'select', 'r' => true, 'opts' => ['self', 'other']],
+                ['n' => 'supplier_type', 't' => 'text', 'maxLen' => 100],
+
+                // Using 'number' so the backend validates it as 0 or 1
+                ['n' => 'status', 't' => 'number', 'r' => true, 'min' => 0, 'max' => 1],
+            ],
+            // 'uEach' ensures the name is unique per (client_id + branch_id)
+            'uEach' => ['name'],
+            'tenantScoped' => true
+        ],
     ];
 
     /**
@@ -266,7 +281,7 @@ class MasterController extends Controller
                 // call, which is what made the master pages crawl (bug #16/#21).
                 $stat = $q->selectRaw(
                     "COUNT(*) AS total, "
-                    . "SUM(CASE WHEN LOWER(TRIM(status)) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
+                        . "SUM(CASE WHEN LOWER(TRIM(status)) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
                 )->first();
                 $total  = (int) ($stat->total ?? 0);
                 $active = (int) ($stat->active ?? 0);
@@ -304,7 +319,7 @@ class MasterController extends Controller
     public function bulk(Request $request)
     {
         $keys = collect(explode(',', (string) $request->query('keys')))
-            ->map(fn ($k) => trim($k))
+            ->map(fn($k) => trim($k))
             ->filter()
             ->unique()
             // Bounded: the parameter comes from the URL, and each key is a
@@ -367,7 +382,7 @@ class MasterController extends Controller
          * select() would otherwise take whatever it was handed.
          */
         $requestedFields = collect(explode(',', (string) $request->query('fields')))
-            ->map(fn ($f) => trim($f))
+            ->map(fn($f) => trim($f))
             ->filter()
             ->values();
         $slim = $requestedFields->isNotEmpty();
@@ -415,7 +430,7 @@ class MasterController extends Controller
         if ($countryId = $request->integer('country_id')) {
             $schema = self::SCHEMAS[$slug] ?? ['fields' => []];
             $hasCountryId = collect($schema['fields'] ?? [])
-                ->contains(fn ($f) => ($f['n'] ?? null) === 'country_id');
+                ->contains(fn($f) => ($f['n'] ?? null) === 'country_id');
             if ($hasCountryId) {
                 $q->where('country_id', $countryId);
             }
@@ -444,8 +459,8 @@ class MasterController extends Controller
              * the raw fragment. Masters with no label-ish column at all are
              * left exactly as they were. */
             if ($requestedFields->contains('name') && !$columns->contains('name')) {
-                $label = $columns->first(fn ($c) => str_ends_with($c, '_name'))
-                    ?? $columns->first(fn ($c) => in_array($c, ['title', 'label'], true));
+                $label = $columns->first(fn($c) => str_ends_with($c, '_name'))
+                    ?? $columns->first(fn($c) => in_array($c, ['title', 'label'], true));
                 if ($label) {
                     $select[] = \Illuminate\Support\Facades\DB::raw(
                         '"' . $label . '" as name'
@@ -473,11 +488,11 @@ class MasterController extends Controller
          * the paginator so the {data} items keep their *_name fields. */
         if ($request->has('per_page') || $request->has('page')) {
             $page = $this->paginateMaster($q, $request, ['*']);
-            $page->getCollection()->transform(fn ($r) => $this->withOwnership($r));
+            $page->getCollection()->transform(fn($r) => $this->withOwnership($r));
             return response()->json($page);
         }
 
-        return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));
+        return response()->json($q->get()->map(fn($r) => $this->withOwnership($r)));
     }
 
     public function show(Request $request, string $slug, $id)
@@ -729,9 +744,9 @@ class MasterController extends Controller
                 ->withTrashed()
                 ->where(function ($w) {
                     $w->whereNull('status')
-                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                        ->orWhereNotIn('status', ['Resigned', 'Terminated']);
                 })
-                ->when($row->client_id, fn ($x) => $x->where('client_id', $row->client_id))
+                ->when($row->client_id, fn($x) => $x->where('client_id', $row->client_id))
                 ->get(['id', 'display_name', 'emp_code', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])
                 /* Compared in PHP, not with whereJsonContains: multipart form
                    posts store the "other assets" ids as STRINGS (["3"]), so a
@@ -750,7 +765,7 @@ class MasterController extends Controller
 
             if ($holders->isNotEmpty()) {
                 $names = $holders->take(3)
-                    ->map(fn ($e) => $e->display_name ?: $e->emp_code ?: ('Employee #' . $e->id))
+                    ->map(fn($e) => $e->display_name ?: $e->emp_code ?: ('Employee #' . $e->id))
                     ->implode(', ');
                 $more = $holders->count() - min(3, $holders->count());
                 return response()->json([
@@ -944,7 +959,10 @@ class MasterController extends Controller
             // path takes its place. Wrapped in try/catch — a missing
             // file mustn't block the save.
             if ($row && !empty($row->{$targetCol})) {
-                try { \Illuminate\Support\Facades\Storage::disk('public')->delete($row->{$targetCol}); } catch (\Throwable $e) {}
+                try {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($row->{$targetCol});
+                } catch (\Throwable $e) {
+                }
             }
 
             $path = $uploaded->store("master/{$slug}", 'public');
@@ -1170,14 +1188,15 @@ class MasterController extends Controller
             // TEXT fields skip the case-sensitive Rule::unique here and run
             // through the LOWER() block below so "India" and "india" collide.
             // Numeric / reference-id uFields keep the exact Rule::unique check.
-            if (!$isComposite
+            if (
+                !$isComposite
                 && in_array($f['n'], $uFields, true)
                 && !in_array($f['n'], $singleTextUFields, true)
             ) {
                 $rule = $applyTenantScope(Rule::unique($table, $f['n']));
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
-            } 
+            }
             // `uEach` (independent per-field uniqueness) is checked AFTER
             // this loop using a case-INSENSITIVE comparison, so "india" and
             // "India" are treated as the same value. Skip the standard
@@ -1318,7 +1337,7 @@ class MasterController extends Controller
                 // Spell out the combination that clashed — "already exists"
                 // alone sends the user hunting through a list that is sliced
                 // by exactly these columns.
-                $human = fn (string $c) => ucfirst(str_replace('_', ' ', preg_replace('/_id$/', '', $c)));
+                $human = fn(string $c) => ucfirst(str_replace('_', ' ', preg_replace('/_id$/', '', $c)));
                 $ctx = [];
                 foreach (array_slice($uFields, 1) as $col) {
                     $val = $validated[$col] ?? null;

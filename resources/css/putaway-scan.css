@@ -356,21 +356,22 @@
 
 @keyframes pwscan-pop { from { transform: scale(0); } 60% { transform: scale(1.12); } }
 
-.pwscan-done-card h2 { margin: 0 0 14px; font-size: 24px; color: #15803d; }
+.pwscan-done-card h2 {
+    margin: 0 0 12px;
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 23px; font-weight: 800; letter-spacing: -.01em; color: #15803d;
+}
 
 .pwscan-done-box {
-    margin: 0 0 4px;
-    font-size: 30px;
-    font-weight: 700;
-    color: #0f1f2b;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    margin: 0 0 8px;
+    font-family: ui-monospace, monospace;
+    font-size: 28px; font-weight: 800; letter-spacing: .01em; color: #0f1f2b;
 }
 
 .pwscan-done-where {
     margin: 0 0 22px;
-    font-size: 14px;
-    color: #64798a;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: ui-monospace, monospace;
+    font-size: 13px; font-weight: 600; line-height: 1.5; color: #64798a;
     word-break: break-word;
 }
 
