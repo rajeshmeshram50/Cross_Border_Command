@@ -92,7 +92,7 @@ function Summary({ s, tabs, active, onPick }: { s: Loose | null; tabs: Record<st
             <circle cx="40" cy="40" r="34" className="phx-ring__bg" />
             <circle cx="40" cy="40" r="34" className="phx-ring__fg" style={{ strokeDasharray: RING.toFixed(1), strokeDashoffset: ((1 - score / 100) * RING).toFixed(1) }} />
           </svg>
-          <div><b>{s ? score : '—'}</b><small>/100</small></div>
+          <div className={s && score >= 100 ? 'is-full' : undefined}><b>{s ? score : '—'}</b><small>/100</small></div>
         </div>
         <div className="phx-score__t">
           <small>Vault health score</small>
