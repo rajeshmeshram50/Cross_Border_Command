@@ -971,28 +971,46 @@ class SupplierInvoiceController extends Controller
 
     /* ══════════════════════════ ZOHO ══════════════════════════ */
 
-    /** POST /p2p/spi/{id}/zoho-sync — only a standalone invoice creates its own bill. */
+    /**
+     * POST /p2p/spi/{id}/zoho-sync
+     *   With-PO SPI  → runs the PO's whole chain (PO → bill → payments). If the
+     *                  PO was never synced, this is where it gets created.
+     *   Direct SPI   → creates the invoice's own bill and posts its payments.
+     */
     public function zohoSync(Request $request, int $id)
     {
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $spi = $this->findSpi($id);
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
+            $zoho = app(\App\Services\P2p\PoZohoService::class);
 
-            if (!$spi->ownsZohoBill()) {
-                $po = $spi->purchaseOrder;
-
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => "This invoice is against {$po?->code} — its Zoho bill belongs to the purchase order.",
-                ], 422));
+            try {
+                if (!$spi->ownsZohoBill()) {
+                    // The bill belongs to the PO — sync it end to end (creating it if missing).
+                    $po = $spi->purchaseOrder;
+                    if (!$po) {
+                        abort(response()->json(['status' => false, 'message' => 'This invoice has no purchase order to sync.'], 422));
+                    }
+                    $result  = $zoho->syncAll($po, $user->id);
+                    $message = 'Synced to Zoho Books — ' . $zoho->summary($result) . '.';
+                } else {
+                    $result  = $zoho->syncSpi($spi, $user->id);
+                    $parts   = ['bill ' . ($result['bill_number'] ?: '—')];
+                    if (($result['pushed'] ?? 0) > 0) {
+                        $parts[] = $result['pushed'] . ' payment(s) of ₹' . number_format((float) $result['applied'], 2);
+                    }
+                    $message = 'Synced to Zoho Books — ' . implode(', ', $parts) . '.';
+                }
+            } catch (\RuntimeException $e) {
+                // Zoho saying no is an answer, not a server failure.
+                abort(response()->json(['status' => false, 'message' => $e->getMessage()], 422));
             }
 
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Zoho sync for standalone invoices is not wired up yet.',
-            ], 501));
+            DB::commit();
+
+            return response()->json(['status' => true, 'message' => $message, 'data' => $result], 200);
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;

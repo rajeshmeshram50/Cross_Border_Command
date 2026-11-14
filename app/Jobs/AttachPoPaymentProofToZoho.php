@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\P2p\PoPayment;
 use App\Models\P2p\PurchaseOrder;
+use App\Models\P2p\SupplierInvoice;
 use App\Services\ZohoBooksService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,8 +42,12 @@ class AttachPoPaymentProofToZoho implements ShouldQueue
         $pay = PoPayment::withoutGlobalScope('tenant')->find($this->paymentId);
         if (!$pay || empty($pay->zoho_payment_id) || empty($pay->proof_path)) return;
 
-        $po = PurchaseOrder::withoutGlobalScope('tenant')->find($pay->purchase_order_id);
-        if (!$po || empty($po->zoho_bill_id)) return;
+        // The bill lives on the PO for a PO-backed payment, or on the invoice
+        // itself for a Direct SPI payment (no purchase order).
+        $billId = $pay->purchase_order_id
+            ? PurchaseOrder::withoutGlobalScope('tenant')->find($pay->purchase_order_id)?->zoho_bill_id
+            : SupplierInvoice::withoutGlobalScope('tenant')->find($pay->supplier_invoice_id)?->zoho_bill_id;
+        if (empty($billId)) return;
 
         $books = app(ZohoBooksService::class);
         if (!$books->isConfigured()) return;
@@ -58,7 +63,7 @@ class AttachPoPaymentProofToZoho implements ShouldQueue
         $filename = 'PAY-' . $pay->id . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', $name);
 
         try {
-            $books->attachToBill((string) $po->zoho_bill_id, $disk->get($pay->proof_path), $filename);
+            $books->attachToBill((string) $billId, $disk->get($pay->proof_path), $filename);
         } catch (\Throwable $e) {
             Log::warning('Zoho attach payment proof to bill failed', ['payment' => $pay->id, 'err' => $e->getMessage()]);
             throw new \RuntimeException('Zoho attachment failed for PO payment ' . $pay->id, 0, $e);

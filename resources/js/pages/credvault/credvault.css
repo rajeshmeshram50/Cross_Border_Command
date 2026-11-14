@@ -8180,6 +8180,19 @@
   opacity: .75;
 }
 
+.cvx .phx-ring>div.is-full {
+  padding-top: 30px;
+}
+
+.cvx .phx-ring>div.is-full b {
+  font-size: 19px;
+  letter-spacing: -.6px;
+}
+
+.cvx .phx-ring>div.is-full small {
+  font-size: 8.5px;
+}
+
 .cvx .phx-score__t {
   position: relative;
   z-index: 1;

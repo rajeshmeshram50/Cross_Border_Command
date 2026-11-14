@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import InventoryTabs from './InventoryTabs';
 import '../../../css/inventory-scan.css';
@@ -209,7 +209,7 @@ const FACTS: Array<[string, string]> = [
 
 /* ── The phone's own pieces, so each screen reads as markup not plumbing ── */
 
-const Chip = ({ tone, children }: { tone?: 'ok' | 'warn'; children: React.ReactNode }) => (
+const Chip = ({ tone, children }: { tone?: 'ok' | 'warn' | 'placed'; children: React.ReactNode }) => (
   <span className={'hhg-chip' + (tone ? ' is-' + tone : '')}>{children}</span>
 );
 
@@ -222,10 +222,11 @@ const Rung = ({ label, code, sub, state }: {
   </div>
 );
 
-const Task = ({ code, dest, task, state, current }: {
-  code: string; dest: string; task: string; state: string; current?: boolean;
+const Task = ({ code, spi, dest, task, state, current }: {
+  code: string; spi: string; dest: string; task: string; state: string; current?: boolean;
 }) => (
   <div className={'hhg-row' + (current ? ' is-current' : '')}>
+    <small className="hhg-row-spi"><i className="ri-file-list-3-line" aria-hidden />{spi}</small>
     <div className="hhg-row-top">
       <span className="hhg-row-code">{code}</span>
       {current && <Chip tone="ok">VIEWING</Chip>}
@@ -256,12 +257,85 @@ const Product = ({ sr, name, qty, sku, hsn, batch, expiry }: {
   </div>
 );
 
-const BoxHead = ({ chip, tone }: { chip: string; tone: 'ok' | 'warn' }) => (
-  <div className="hhg-card-top">
-    <span className="hhg-kick">BOX</span>
-    <span className="hhg-code">B-001</span>
-    <span className="hhg-sp" />
-    <Chip tone={tone}>{chip}</Chip>
+const SPI_CODE = 'SPI/2026-27/005';
+
+/* Box card header — two columns: the SPI id over the box id on the left, the
+   More (or status) control centred on the right. */
+const BoxHead = ({ chip, tone, more }: { chip?: string | null; tone?: 'ok' | 'warn'; more?: ReactNode }) => (
+  <div className="hhg-boxhead">
+    <div className="hhg-boxhead-l">
+      <div className="hhg-spi"><span>SPI ID</span><b>{SPI_CODE}</b></div>
+      <div className="hhg-card-top">
+        <span className="hhg-kick">BOX</span>
+        <span className="hhg-code">PUT-B-001</span>
+        {chip && <Chip tone={tone}>{chip}</Chip>}
+      </div>
+    </div>
+    {more && <div className="hhg-boxhead-r">{more}</div>}
+  </div>
+);
+
+/* How to fire the scan on the device — the right-side key. */
+const ScanHint = () => (
+  <div className="hhg-scanhint">
+    <i className="ri-qr-scan-2-line" aria-hidden />
+    <span>Press the <b>scan key on the right side</b> of the device to scan the QR.</span>
+  </div>
+);
+
+/* The batch pill under the box card — the SPI id and this box's position in it.
+   Tapping it lists every box task in the SPI. */
+const BatchPill = ({ count, onOpen }: { count: string; onOpen: () => void }) => (
+  <button type="button" className="hhg-pill hhg-pill--btn" onClick={onOpen}>
+    {SPI_CODE} · {count} <i className="ri-arrow-right-s-line" aria-hidden />
+  </button>
+);
+
+const BoxLi = ({ code, desc, status, tone, note, viewing, boxQr, shelfQr }: {
+  code: string; desc: string; status: string; tone: 'ok' | 'warn' | 'placed'; note: string;
+  viewing?: boolean; boxQr?: boolean; shelfQr?: boolean;
+}) => {
+  const done = (boxQr ? 1 : 0) + (shelfQr ? 1 : 0);
+  return (
+    <li className={'hhg-boxli' + (viewing ? ' is-viewing' : '')}>
+      <div className="hhg-boxli-top">
+        <span className="hhg-boxli-code">{code}</span>
+        {viewing && <span className="hhg-boxli-view">VIEWING</span>}
+        <span className="hhg-sp" />
+        <Chip tone={tone}>{status}</Chip>
+      </div>
+      <small className="hhg-boxli-desc">{desc}</small>
+      {/* Scan progress — Box QR then Shelf QR, like the Zebra Open Tasks board. */}
+      <div className="hhg-boxli-scan">
+        <span className={'hhg-qr' + (boxQr ? ' is-on' : '')}>{boxQr ? '✓' : '○'} Box QR</span>
+        <span className={'hhg-qr' + (shelfQr ? ' is-on' : '')}>{shelfQr ? '✓' : '○'} Shelf QR</span>
+        <span className="hhg-sp" />
+        <span className={'hhg-boxli-count' + (done === 2 ? ' is-full' : '')}>{done}/2</span>
+      </div>
+      <small className="hhg-boxli-note">{note}</small>
+    </li>
+  );
+};
+
+/* All the SPI's box tasks — pending and completed — as a sheet over the screen,
+   opened from the batch pill. */
+const BoxesSheet = ({ onClose }: { onClose: () => void }) => (
+  <div className="hhg-scrim" onClick={onClose}>
+    <div className="hhg-sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="hhg-sheet-head">
+        <span><b>Boxes in {SPI_CODE}</b></span>
+        <button type="button" className="hhg-x hhg-x--btn" onClick={onClose} aria-label="Close">✕</button>
+      </div>
+      <div className="hhg-sheet-body">
+        <ul className="hhg-boxlist">
+          <BoxLi code="PUT-B-01" desc="Paracetamol 500 mg Tablets · 120 Strip" status="PLACED" tone="placed" note="Placed at SH-101" boxQr shelfQr />
+          <BoxLi code="PUT-B-02" desc="Mixed Product Box · 4 products" status="BOX_SCAN_VERIFIED" tone="ok" note="Box scanned — awaiting shelf" viewing boxQr />
+          <BoxLi code="PUT-B-07" desc="Acetone, 1 L bottles · 24 Bottle" status="PENDING_DEVICE_SCAN" tone="warn" note="Not scanned — awaiting operator" />
+          <BoxLi code="PUT-B-05" desc="Amoxicillin 250 mg Capsules · 200 Strip" status="PLACED" tone="placed" note="Placed at SH-101" boxQr shelfQr />
+        </ul>
+        <p className="hhg-sheet-note">Opening a box shows its details only. It is not marked as scanned or placed, and each box keeps its own scans.</p>
+      </div>
+    </div>
   </div>
 );
 
@@ -274,6 +348,7 @@ const Waiting = ({ label }: { label: string }) => (
 
 export default function InventoryHandheldGuide() {
   const [key, setKey] = useState<Key>('s1');
+  const [showBoxes, setShowBoxes] = useState(false);
   const note = NOTES[key];
 
   return (
@@ -329,6 +404,7 @@ export default function InventoryHandheldGuide() {
                 <span className="hhg-logo"><img src="/images/kryptone/k-mark.png" alt="Kryptone" /></span>
                 <span className="hhg-abt"><b>Scan &amp; Verify</b><small>TC27 · 2601352470</small></span>
                 <span className="hhg-bell"><i className="ri-list-check-2" /><em>6</em></span>
+                <span className="hhg-bell hhg-bell--x" title="Clear box"><i className="ri-close-line" /></span>
               </div>
 
               <div className="hhg-body">
@@ -336,10 +412,10 @@ export default function InventoryHandheldGuide() {
                   <>
                     <div className="hhg-sheet-head"><span><b>Pending tasks</b><small>6 boxes awaiting verification</small></span></div>
                     <div className="hhg-rows">
-                      <Task code="B-001" dest="SH-102" task="ZT-20261024-001" state="Not scanned" />
-                      <Task code="B-010" dest="SH-102" task="ZT-20261024-002" state="Not scanned" />
-                      <Task code="B-003" dest="RK-A1"  task="ZT-20261024-003" state="Not scanned" />
-                      <Task code="B-007" dest="RK-A1"  task="ZT-20261024-004" state="Not scanned" />
+                      <Task code="PUT-B-001" spi="SPI/2026-27/005" dest="SH-102" task="ZT-20261024-001" state="Not scanned" />
+                      <Task code="PUT-B-010" spi="SPI/2026-27/005" dest="SH-102" task="ZT-20261024-002" state="Not scanned" />
+                      <Task code="PUT-B-003" spi="SPI/2026-27/016" dest="RK-A1"  task="ZT-20261024-003" state="Not scanned" />
+                      <Task code="PUT-B-007" spi="SPI/2026-27/016" dest="RK-A1"  task="ZT-20261024-004" state="Not scanned" />
                     </div>
                   </>
                 )}
@@ -355,7 +431,7 @@ export default function InventoryHandheldGuide() {
                       </div>
                     </section>
                     <div className="hhg-next">
-                      <span>NEXT SCAN</span><b>Box QR B-001</b>
+                      <span>NEXT SCAN</span><b>Box QR PUT-B-001</b>
                       <small>Scan the label on the carton to confirm it is this one. Its contents open once the box is verified.</small>
                     </div>
                     <Waiting label="SCAN THE BOX" />
@@ -366,11 +442,7 @@ export default function InventoryHandheldGuide() {
                   <>
                     <div className="hhg-toast"><b>Box scanned successfully</b><small>Now scan the shelf SH-102</small></div>
                     <section className="hhg-card">
-                      <div className="hhg-card-top">
-                        <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
-                        <Chip>MIXED</Chip><span className="hhg-sp" />
-                        <span className="hhg-more">More <b>4</b></span>
-                      </div>
+                      <BoxHead chip="MIXED" more={<span className="hhg-more">More <b>4</b></span>} />
                       <div className="hhg-name">Mixed Product Box</div>
                       <div className="hhg-meta3">
                         <div><span>PRODUCTS</span><b>4 products</b></div>
@@ -379,7 +451,7 @@ export default function InventoryHandheldGuide() {
                       </div>
                       <div className="hhg-tags">
                         <Chip tone="ok">BOX_SCAN_VERIFIED</Chip>
-                        <span className="hhg-pill">ZT-…001 · 1/2</span>
+                        <BatchPill count="2/4" onOpen={() => setShowBoxes(true)} />
                       </div>
                     </section>
                     <div className="hhg-slots">
@@ -391,16 +463,13 @@ export default function InventoryHandheldGuide() {
                       <span>NEXT SCAN</span><b>Shelf QR SH-102</b>
                       <small>The box's destination — the last level of its address. Scanning it places the box and ticks the zone and rack above. A zone-only box reads Zone QR instead.</small>
                     </div>
+                    <ScanHint />
                   </>
                 )}
 
                 {key === 's4' && (
                   <section className="hhg-card">
-                    <div className="hhg-card-top">
-                      <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
-                      <Chip>MIXED</Chip><span className="hhg-sp" />
-                      <span className="hhg-more">Show Less</span>
-                    </div>
+                    <BoxHead chip="MIXED" more={<span className="hhg-more">Show Less</span>} />
                     <div style={{ marginTop: 9 }}>
                       <Product sr={1} name="Cetirizine 10 mg Tablets" qty="40 Strip"
                         sku="PRD-10418" hsn="3004" batch="CTZ2408B" expiry="05/2027" />
@@ -422,6 +491,7 @@ export default function InventoryHandheldGuide() {
                       <span>NEXT SCAN</span><b>Shelf QR SH-102</b>
                       <small>The destination. Scanning it finishes the put-away and ticks the rack above at the same time.</small>
                     </div>
+                    <ScanHint />
                     <Waiting label="SCAN THE ZONE / RACK / SHELF" />
                   </>
                 )}
@@ -436,7 +506,7 @@ export default function InventoryHandheldGuide() {
                     </div>
                     <section className="hhg-card">
                       <BoxHead chip="BOX_SCAN_VERIFIED" tone="ok" />
-                      <div className="hhg-tags"><span className="hhg-pill">ZT-…001 · 2/2</span></div>
+                      <div className="hhg-tags"><BatchPill count="2/4" onOpen={() => setShowBoxes(true)} /></div>
                     </section>
                   </>
                 )}
@@ -471,9 +541,9 @@ export default function InventoryHandheldGuide() {
                       <span className="hhg-x">✕</span>
                     </div>
                     <div className="hhg-rows">
-                      <Task code="B-001" dest="SH-102" task="ZT-20261024-001" state="Box scanned" current />
-                      <Task code="B-010" dest="SH-102" task="ZT-20261024-002" state="Not scanned" />
-                      <Task code="B-003" dest="RK-A1"  task="ZT-20261024-003" state="Not scanned" />
+                      <Task code="PUT-B-001" spi="SPI/2026-27/005" dest="SH-102" task="ZT-20261024-001" state="Box scanned" current />
+                      <Task code="PUT-B-010" spi="SPI/2026-27/005" dest="SH-102" task="ZT-20261024-002" state="Not scanned" />
+                      <Task code="PUT-B-003" spi="SPI/2026-27/016" dest="RK-A1"  task="ZT-20261024-003" state="Not scanned" />
                     </div>
                   </>
                 )}
@@ -490,7 +560,7 @@ export default function InventoryHandheldGuide() {
                       </div>
                     </section>
                     <div className="hhg-next">
-                      <span>NEXT SCAN</span><b>Box QR B-001</b>
+                      <span>NEXT SCAN</span><b>Box QR PUT-B-001</b>
                       <small>Scan the label on the carton to confirm it is this one.</small>
                     </div>
                   </>
@@ -500,11 +570,7 @@ export default function InventoryHandheldGuide() {
                   <>
                     <div className="hhg-toast"><b>B-001 is already put away</b><small>Placed at SH-102 · nothing left to scan</small></div>
                     <section className="hhg-card">
-                      <div className="hhg-card-top">
-                        <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
-                        <Chip>MIXED</Chip><span className="hhg-sp" />
-                        <span className="hhg-more">More <b>4</b></span>
-                      </div>
+                      <BoxHead chip="MIXED" more={<span className="hhg-more">More <b>4</b></span>} />
                       <div className="hhg-name">Mixed Product Box</div>
                       <div className="hhg-meta3">
                         <div><span>PRODUCTS</span><b>4 products</b></div>
@@ -513,7 +579,7 @@ export default function InventoryHandheldGuide() {
                       </div>
                       <div className="hhg-tags">
                         <Chip tone="ok">BOX_SCAN_VERIFIED</Chip>
-                        <span className="hhg-pill">ZT-…001 · 2/2</span>
+                        <BatchPill count="2/4" onOpen={() => setShowBoxes(true)} />
                       </div>
                     </section>
                     <div className="hhg-slots">
@@ -532,11 +598,7 @@ export default function InventoryHandheldGuide() {
                   <>
                     <div className="hhg-banner">No scan task for B-001 — raise a task, or confirm it by hand. Details only.</div>
                     <section className="hhg-card">
-                      <div className="hhg-card-top">
-                        <span className="hhg-kick">BOX</span><span className="hhg-code">B-001</span>
-                        <Chip>MIXED</Chip><span className="hhg-sp" />
-                        <span className="hhg-more">More <b>4</b></span>
-                      </div>
+                      <BoxHead chip="MIXED" more={<span className="hhg-more">More <b>4</b></span>} />
                       <div className="hhg-name">Mixed Product Box</div>
                       <div className="hhg-meta3">
                         <div><span>PRODUCTS</span><b>4 products</b></div>
@@ -553,11 +615,15 @@ export default function InventoryHandheldGuide() {
                 )}
               </div>
 
-              <div className="hhg-foot">
-                {key === 's6' && <div className="hhg-btn"><i className="ri-checkbox-circle-line" />Complete put-away</div>}
-                {key === 's10' && <div className="hhg-btn hhg-btn--done"><i className="ri-arrow-right-line" />Next box</div>}
-                {key !== 's9' && key !== 's10' && key !== 's11' && <div className="hhg-ghost"><i className="ri-close-line" />Clear box</div>}
-              </div>
+              {/* Clear box is the header ✕ now; the foot only carries the primary action. */}
+              {(key === 's6' || key === 's10') && (
+                <div className="hhg-foot">
+                  {key === 's6' && <div className="hhg-btn"><i className="ri-checkbox-circle-line" />Complete put-away</div>}
+                  {key === 's10' && <div className="hhg-btn hhg-btn--done"><i className="ri-arrow-right-line" />Next box</div>}
+                </div>
+              )}
+
+              {showBoxes && <BoxesSheet onClose={() => setShowBoxes(false)} />}
             </div>
           </div>
 

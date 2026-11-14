@@ -117,6 +117,7 @@ Route::middleware('throttle:60,1')->post('/scan/device-check', [\App\Http\Contro
 Route::middleware('throttle:120,1')->prefix('scan/putaway')->group(function () {
     Route::post('/session',         [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'session']);
     Route::post('/scan',            [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'scan']);
+    Route::get ('/{task}/boxes',    [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'spiBoxes'])->whereNumber('task');
     Route::get ('/{task}',          [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'show'])->whereNumber('task');
     Route::post('/{task}/confirm',  [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'confirm'])->whereNumber('task');
     Route::post('/{task}/complete', [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'complete'])->whereNumber('task');
