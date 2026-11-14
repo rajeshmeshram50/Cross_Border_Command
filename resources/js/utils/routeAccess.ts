@@ -122,6 +122,8 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/analytics': 'p2p.analytics',
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
+  // New Sourcing Management Tracker (design build) — same grant as Bulk Sourcing.
+  '/p2p/sourcing-tracker': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
   /* Inventory Management. Each page is gated on the master it is replacing,
      so the people who can already see that master keep seeing it here and

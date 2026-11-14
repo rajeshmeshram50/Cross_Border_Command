@@ -73,6 +73,7 @@ const ROUTES: Record<string, () => Promise<unknown>> = {
   '/p2p/analytics':                         () => import('../pages/ModuleStubPage'),
   '/p2p/bulk-sourcing':                     () => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'),
   '/p2p/case-to-case':                      () => import('../pages/ModuleStubPage'),
+  '/p2p/sourcing-tracker':                  () => import('../pages/p2p/procurement-management/sourcing-tracker/SourcingTracker'),
   '/p2p/diagnosis':                         () => import('../pages/ModuleStubPage'),
   '/p2p/order':                             () => import('../pages/p2p/purchase-management/order/po-list/Order'),
   '/p2p/payment-request':                   () => import('../pages/p2p/payment-management/payment-request/PaymentRequestManagement'),

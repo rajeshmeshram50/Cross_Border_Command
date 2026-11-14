@@ -1,0 +1,308 @@
+/* Product Clarity popup (Add / Edit clarity) — Figma class names (astp-*, ast-tabs).
+   Svatantra file: motha popup cha CSS nasla tari ha barobar disto. Dark = [data-bs-theme="dark"]. */
+
+.astp-overlay {
+    --p-bg: #fff;
+    --p-text: #0f172a;
+    --p-muted: #6b8594;
+    --p-ph: #9bb1bd;
+    --p-soft: #f6fafc;
+    --p-soft-bd: #e0edf2;
+    --p-input: #fff;
+    --p-input-bd: #d3e5ec;
+    --p-brand-ink: #0e7490;
+    --p-hover: #ecfeff;
+    --p-ghost-bd: #bfe6ef;
+    --p-err: #e11d48;
+
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8, 25, 38, .5);
+    backdrop-filter: blur(5px);
+}
+
+[data-bs-theme="dark"] .astp-overlay {
+    --p-bg: #0b1922;
+    --p-text: #e2e8f0;
+    --p-muted: #8fb1bf;
+    --p-ph: #5f7d8b;
+    --p-soft: #0c1c24;
+    --p-soft-bd: rgba(34, 211, 238, .16);
+    --p-input: #0b1a22;
+    --p-input-bd: rgba(34, 211, 238, .26);
+    --p-brand-ink: #67e8f9;
+    --p-hover: rgba(34, 211, 238, .1);
+    --p-ghost-bd: rgba(34, 211, 238, .32);
+    --p-err: #fb7185;
+    color-scheme: dark;
+}
+
+.astp-overlay,
+.astp-overlay *,
+.astp-overlay *::before,
+.astp-overlay *::after {
+    box-sizing: border-box;
+}
+
+.astp-overlay button,
+.astp-overlay input,
+.astp-overlay textarea {
+    font-family: inherit;
+    margin: 0;
+}
+
+.astp-pop {
+    width: 100%;
+    max-width: 440px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--p-bg);
+    color: var(--p-text);
+    border-radius: 16px;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    box-shadow: 0 28px 70px rgba(8, 40, 60, .42);
+    animation: astp-in .26s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes astp-in {
+    0% {
+        opacity: 0;
+        transform: translateY(18px) scale(.985);
+    }
+
+    100% {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.astp-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    color: #fff;
+    background: linear-gradient(105deg, #0a7c9c 0%, #0f9ab8 45%, #36c9e0 100%);
+}
+
+.astp-head-ico {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, .2);
+    border: 1px solid rgba(255, 255, 255, .38);
+    border-radius: 10px;
+}
+
+.astp-head-txt {
+    flex: 1;
+    min-width: 0;
+}
+
+.astp-title {
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.astp-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: .95;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.astp-close {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    color: #fff;
+    cursor: pointer;
+    background: rgba(255, 255, 255, .2);
+    border: 1px solid rgba(255, 255, 255, .38);
+    border-radius: 10px;
+}
+
+.astp-close:hover {
+    background: rgba(255, 255, 255, .32);
+}
+
+.astp-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px;
+}
+
+.ast-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.ast-tab {
+    height: 36px;
+    padding: 0 16px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--p-muted);
+    background: var(--p-bg);
+    border: 1.5px solid var(--p-soft-bd);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.ast-tab:hover {
+    background: var(--p-hover);
+}
+
+.ast-tab.is-active {
+    color: var(--p-brand-ink);
+    background: var(--p-hover);
+    border-color: #22d3ee;
+}
+
+.astp-text {
+    display: block;
+    width: 100%;
+    min-height: 98px;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--p-text);
+    background: var(--p-soft);
+    border: 1.5px solid var(--p-input-bd);
+    border-radius: 12px;
+    outline: 0;
+    resize: vertical;
+}
+
+.astp-text::placeholder,
+.astp-inp::placeholder {
+    color: var(--p-ph);
+}
+
+.astp-text:focus,
+.astp-inp:focus {
+    border-color: #22d3ee;
+    background: var(--p-input);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .18);
+}
+
+.astp-inp {
+    display: block;
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--p-text);
+    background: var(--p-soft);
+    border: 1.5px solid var(--p-input-bd);
+    border-radius: 11px;
+    outline: 0;
+}
+
+.astp-inp.has-err {
+    border-color: #f43f5e;
+}
+
+.astp-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 22px 14px;
+    color: var(--p-brand-ink);
+    background: var(--p-soft);
+    border: 1.5px dashed var(--p-ghost-bd);
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.astp-drop:hover {
+    background: var(--p-hover);
+}
+
+.astp-drop b {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--p-text);
+    word-break: break-all;
+}
+
+.astp-drop small {
+    font-size: 11px;
+    color: var(--p-muted);
+}
+
+.astp-drop.has-file {
+    border-style: solid;
+    background: var(--p-hover);
+}
+
+.astp-err {
+    margin-top: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--p-err);
+}
+
+.astp-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    margin-top: 14px;
+}
+
+.astp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    padding: 0 20px;
+    font-size: 13px;
+    font-weight: 800;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.astp-btn--ghost {
+    color: var(--p-text);
+    background: var(--p-bg);
+    border: 1.5px solid var(--p-input-bd);
+}
+
+.astp-btn--ghost:hover {
+    background: var(--p-hover);
+}
+
+.astp-btn--primary {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
+    box-shadow: 0 6px 16px rgba(8, 145, 178, .32);
+}
+
+.astp-btn--primary:hover {
+    box-shadow: 0 10px 22px rgba(8, 145, 178, .4);
+}

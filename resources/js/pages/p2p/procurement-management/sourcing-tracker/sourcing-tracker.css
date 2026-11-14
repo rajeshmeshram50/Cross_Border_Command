@@ -1,0 +1,1266 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Sourcing Management Tracker — list page. DESIGN BUILD.
+ *
+ * Every number here is the Figma's own: taken from the computed styles of the
+ * Figma prototype (Kryptone_Service Master.html → Sourcing Management
+ * Tracker) rendered at 1920px, so the page matches it pixel for pixel.
+ * Everything is scoped to .sct-page; nothing here touches another screen.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* The page fills the screen below the menu; the table scrolls inside the card. */
+.page-content:has(> .container-fluid > .sct-page) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.page-content:has(> .container-fluid > .sct-page)>.container-fluid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sct-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.sct-page button {
+  font-family: inherit;
+}
+
+/* ── Banner ─────────────────────────────────────────────────────────────── */
+.sct-strip {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 58px;
+  padding: 0 20px;
+  box-sizing: border-box;
+  border: 1px solid #9ce1ee;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .85), 0 8px 28px rgba(6, 182, 212, .2), 0 2px 8px rgba(0, 0, 0, .06);
+}
+
+.sct-strip__accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 16px 0 0 16px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490);
+}
+
+.sct-strip__glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(at 10% 50%, rgba(103, 232, 249, .45) 0%, transparent 50%),
+    radial-gradient(at 90% 50%, rgba(34, 211, 238, .28) 0%, transparent 55%);
+}
+
+.sct-strip__sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  pointer-events: none;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .5), transparent);
+}
+
+.sct-strip__left {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-left: 10px;
+}
+
+.sct-strip__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sct-strip__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, .25), 0 4px 14px rgba(8, 145, 178, .45);
+}
+
+.sct-strip__dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 2px solid #e8fbfd;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4ade80, #22c55e);
+  box-shadow: 0 2px 4px rgba(34, 197, 94, .4);
+}
+
+.sct-strip__title {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+  line-height: 1.2;
+  color: #0c4a6e;
+}
+
+.sct-strip__sub {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 13px;
+  color: #0e7490;
+  opacity: .85;
+}
+
+.sct-strip__right {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sct-strip__btn {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .24px;
+  line-height: 12px;
+  color: #fff;
+  white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  box-shadow: 0 4px 16px rgba(8, 145, 178, .5), 0 1px 3px rgba(14, 116, 144, .3), inset 0 1px 0 rgba(255, 255, 255, .2);
+  transition: transform .14s, box-shadow .14s, background .14s;
+}
+
+.sct-strip__btn:hover {
+  transform: translateY(-1.5px);
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%);
+  box-shadow: 0 8px 24px rgba(8, 145, 178, .6), 0 2px 6px rgba(14, 116, 144, .35), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+.sct-strip__btn-sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  pointer-events: none;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
+}
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+.sct-card {
+  flex: 1 1 auto;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d6eef5;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px -10px rgba(6, 182, 212, .16), inset 0 0 0 1px rgba(255, 255, 255, .6);
+}
+
+/* Main tabs + search */
+.sct-mainrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.sct-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* House toolbar: a 48px rail (3px padding + 1px border round a 40px tab),
+     the same height as the search beside it. */
+  height: 48px;
+  padding: 3px;
+  box-sizing: border-box;
+  border: 1px solid #e3edf1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbfc, #eff5f8);
+  box-shadow: inset 0 1px 3px rgba(15, 58, 77, .05);
+}
+
+.sct-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 18px 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  color: #5f7d8b;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+
+.sct-tab:not(.is-active):hover {
+  color: #0e7490;
+  background: rgba(255, 255, 255, .7);
+}
+
+.sct-tab.is-active {
+  color: #fff;
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+.sct-tab__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
+  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
+}
+
+.sct-tab.is-active .sct-tab__ico {
+  background: rgba(255, 255, 255, .24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
+}
+
+.sct-tab__c {
+  margin-left: 4px;
+  padding: 1px 7px;
+  border: 1px solid #bdf0f7;
+  border-radius: 999px;
+  background: #e0fbff;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  line-height: 12px;
+  color: #0e7490;
+}
+
+.sct-tab.is-active .sct-tab__c {
+  color: #fff;
+  background: rgba(255, 255, 255, .25);
+  border-color: rgba(255, 255, 255, .4);
+}
+
+.sct-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 560px;
+  min-width: 260px;
+  height: 48px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border: 1px solid #d4f3f9;
+  border-radius: 13px;
+  background: #f7fdfe;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.sct-search:focus-within {
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.sct-search>svg {
+  flex-shrink: 0;
+  color: #0891b2;
+}
+
+.sct-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0f3a4d;
+}
+
+.sct-search input::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.sct-search__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #eef4f7;
+  color: #7c93a3;
+  cursor: pointer;
+}
+
+.sct-search__clear:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Sub-tabs (underline) */
+/* Above the table area, so the active tab's underline sits ON the table's
+   1px top border (as the Figma draws it) instead of under the sticky head. */
+.sct-subrow {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  padding: 0 20px;
+  background: #fff;
+}
+
+.sct-subtabs {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.sct-subtab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -.1px;
+  color: #94a3b8;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s;
+}
+
+.sct-subtab:hover {
+  color: #0891b2;
+}
+
+.sct-subtab.is-active {
+  color: #0c4a6e;
+}
+
+.sct-subtab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1.5px;
+  height: 2.5px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(90deg, #22d3ee, #0891b2);
+}
+
+.sct-subtab__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.sct-subtab.is-active .sct-subtab__ico {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .5);
+}
+
+.sct-subtab__c {
+  padding: 3px 9px;
+  border: 1px solid #dde6ea;
+  border-radius: 999px;
+  background: #eef3f5;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .51px;
+  line-height: 11px;
+  color: #84a0ab;
+}
+
+.sct-subtab.is-active .sct-subtab__c {
+  color: #0e7490;
+  border-color: #67e8f9;
+  background: linear-gradient(135deg, #d0fbff, #a8f1fa);
+  box-shadow: 0 2px 6px -1px rgba(8, 145, 178, .32);
+}
+
+/* ── Table (CSS grid, like the Figma) ───────────────────────────────────── */
+.sct-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid #e2eef3;
+  overscroll-behavior: contain;
+}
+
+.sct-scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+/* Mouse ignored while scrolling (class set by the page for 150ms), so rows
+   gliding under the pointer do not fire hovers. Child combinator on purpose:
+   toggling the class restyles only this one element, never the whole page. */
+.sct-scroll.is-scrolling>[role="table"] {
+  pointer-events: none;
+}
+
+.sct-scroll::-webkit-scrollbar-thumb {
+  background: #bfe3ec;
+  border-radius: 8px;
+}
+
+/* At 1920px the flexible tracks come out 250 / 250 / 300 / 300, the Figma's. */
+.sct-row {
+  display: grid;
+  grid-template-columns:
+    40px 106px 120px 110px minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr) 96px minmax(210px, 1.2fr) 210px;
+  gap: 8px;
+  align-items: center;
+  min-width: 1482px;
+  padding: 5px 14px;
+  border-bottom: 1px solid #eff5f8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sct-row:not(.sct-row--head):hover {
+  background: #f6fdfe;
+}
+
+.sct-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 9px 14px;
+  background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .425px;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: #6b8a97;
+}
+
+.sct-row>span {
+  min-width: 0;
+}
+
+.sct-c {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.sct-sr {
+  font-size: 12px;
+  font-weight: 800;
+  color: #7c93a3;
+}
+
+.sct-idcell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sct-idpill {
+  padding: 3px 7px;
+  border: 1px solid #c4eef5;
+  border-radius: 7px;
+  background: #f0fdff;
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1px;
+  line-height: 15px;
+  color: #0e7490;
+}
+
+.sct-idcell__date {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1px;
+  line-height: 15px;
+  color: #4f6b78;
+}
+
+.sct-srcs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sct-src {
+  padding: 3px 8px;
+  border: 1px solid #bdf0f7;
+  border-radius: 999px;
+  background: #e0fbff;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .095px;
+  line-height: 14.25px;
+  color: #0e7490;
+  white-space: nowrap;
+}
+
+.sct-src--manual {
+  color: #7c3aed;
+  background: #f3edff;
+  border-color: #ddd0fb;
+}
+
+.sct-tat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.sct-tat__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #0d9488;
+}
+
+.sct-tat--atrisk .sct-tat__date {
+  color: #b45309;
+}
+
+.sct-tat--overdue .sct-tat__date {
+  color: #dc2626;
+}
+
+.sct-tat__overdue {
+  padding: 1px 7px;
+  border: 1px solid #fecaca;
+  border-radius: 20px;
+  background: #fef2f2;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .4px;
+  line-height: 11.9px;
+  text-transform: uppercase;
+  color: #dc2626;
+}
+
+.sct-person {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sct-av {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 2px 5px -1px rgba(8, 145, 178, .4);
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.sct-person__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.sct-prod {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  max-width: 100%;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sct-prod__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.sct-prod:hover .sct-prod__name {
+  color: #0e7490;
+}
+
+.sct-prod__more {
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 2px 5px -1px rgba(8, 145, 178, .45);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+  color: #fff;
+}
+
+.sct-pcount {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 40%, #16a34a 75%, #15803d 100%);
+  box-shadow: 0 4px 10px -2px rgba(21, 128, 61, .5), inset 0 1px 0 rgba(255, 255, 255, .25);
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* 200px as the Figma, narrowing with its column on smaller screens. */
+.sct-prog {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.sct-prog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sct-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid #a5f3fc;
+  border-radius: 999px;
+  background: #cffafe;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .19px;
+  line-height: 14.25px;
+  color: #0e7490;
+}
+
+.sct-st--done {
+  color: #15803d;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.sct-st__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sct-prog__pct {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+  color: #0891b2;
+}
+
+.sct-prog__pct.is-done {
+  color: #16a34a;
+}
+
+.sct-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6eef2;
+}
+
+.sct-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22d3ee, #0891b2);
+  box-shadow: 0 1px 3px -1px rgba(8, 145, 178, .4);
+}
+
+.sct-bar.is-done .sct-bar__fill {
+  background: linear-gradient(90deg, #4ade80, #16a34a);
+  box-shadow: 0 1px 3px -1px rgba(22, 163, 74, .4);
+}
+
+.sct-legend {
+  display: flex;
+  gap: 12px;
+}
+
+.sct-lg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 14.25px;
+}
+
+.sct-lg i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.sct-lg--done {
+  color: #16a34a;
+}
+
+.sct-lg--done i {
+  background: linear-gradient(90deg, #22d3ee, #0891b2);
+}
+
+.sct-lg--pend {
+  color: #ea7a0c;
+}
+
+.sct-lg--pend i {
+  background: #f59e0b;
+}
+
+.sct-lg--pend.is-zero {
+  color: #aab8c5;
+}
+
+.sct-lg--pend.is-zero i {
+  background: #d4dde4;
+}
+
+.sct-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sct-edit,
+.sct-report {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  cursor: pointer;
+  transition: transform .14s, box-shadow .14s, filter .14s;
+}
+
+.sct-edit {
+  width: 40px;
+  padding: 0;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8, 145, 178, .65), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+.sct-report {
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1px;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+.sct-edit:hover,
+.sct-report:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.07);
+  box-shadow: 0 8px 20px -4px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+/* Empty state */
+.sct-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 100%;
+  padding: 40px 20px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.sct-empty__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 6px;
+  border-radius: 14px;
+  background: #ecfbfe;
+  box-shadow: inset 0 0 0 1px #cdeef6;
+  color: #0891b2;
+}
+
+.sct-empty b {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0c4a6e;
+}
+
+.sct-empty span {
+  max-width: 430px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+/* ── Pager: the app's shared WorklistPager (teal) ─────────────────────────
+   Only fitted into the card here: no gap above it, square bottom corners
+   (the card rounds them), and 40px controls like the other P2P lists. */
+.sct-page .wl-pager {
+  flex-shrink: 0;
+  margin-top: 0;
+  border-radius: 0;
+}
+
+.sct-page .tc-wl-btn {
+  width: 40px;
+  height: 40px;
+}
+
+.sct-page .tc-wl-rows,
+.sct-page .tc-wl-info,
+.sct-page .tc-wl-range {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.sct-page .tc-wl-rows-btn {
+  height: 100%;
+}
+
+/* ── Dark mode (the Figma is light-only; this keeps the page readable) ─── */
+[data-bs-theme="dark"] .sct-page {
+  color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .sct-strip {
+  border-color: rgba(34, 211, 238, .3);
+  background: linear-gradient(110deg, #0b2530, #0c2f3b 55%, #0e3a47);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
+}
+
+[data-bs-theme="dark"] .sct-strip__sheen {
+  opacity: .15;
+}
+
+[data-bs-theme="dark"] .sct-strip__glow {
+  opacity: .35;
+}
+
+[data-bs-theme="dark"] .sct-strip__title {
+  color: #e0f7fb;
+}
+
+[data-bs-theme="dark"] .sct-strip__sub {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .sct-card,
+[data-bs-theme="dark"] .sct-mainrow,
+[data-bs-theme="dark"] .sct-subrow {
+  background: #0b1922;
+  border-color: rgba(34, 211, 238, .18);
+}
+
+[data-bs-theme="dark"] .sct-tabs {
+  background: rgba(6, 182, 212, .08);
+  border-color: rgba(34, 211, 238, .2);
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .sct-tab {
+  color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .sct-tab:not(.is-active):hover {
+  background: rgba(34, 211, 238, .08);
+}
+
+[data-bs-theme="dark"] .sct-tab__c {
+  color: #7dd3fc;
+  background: rgba(34, 211, 238, .14);
+  border-color: rgba(34, 211, 238, .3);
+}
+
+[data-bs-theme="dark"] .sct-search {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+}
+
+[data-bs-theme="dark"] .sct-search input {
+  color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .sct-search__clear {
+  background: rgba(255, 255, 255, .08);
+  color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .sct-subtab {
+  color: #64748b;
+}
+
+[data-bs-theme="dark"] .sct-subtab.is-active {
+  color: #e0f7fb;
+}
+
+[data-bs-theme="dark"] .sct-subtab__ico {
+  background: rgba(255, 255, 255, .06);
+  color: #64748b;
+}
+
+[data-bs-theme="dark"] .sct-subtab__c {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+  color: #7f9aa6;
+}
+
+[data-bs-theme="dark"] .sct-row {
+  border-bottom-color: rgba(148, 163, 184, .1);
+}
+
+/* The card's white inner shine is a light-mode touch; on a dark card it drew
+   a white line down both sides of the table. */
+[data-bs-theme="dark"] .sct-card {
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, .5);
+}
+
+/* A dark scrollbar, so the table's edge does not show a light track. */
+[data-bs-theme="dark"] .sct-scroll {
+  border-top-color: rgba(148, 163, 184, .14);
+  scrollbar-color: rgba(34, 211, 238, .28) transparent;
+}
+
+[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, .28);
+}
+
+[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-bs-theme="dark"] .sct-row:not(.sct-row--head):hover {
+  background: rgba(34, 211, 238, .05);
+}
+
+[data-bs-theme="dark"] .sct-row--head {
+  background: linear-gradient(180deg, #0e2a35, #0c2530);
+  color: #7fb3c4;
+}
+
+[data-bs-theme="dark"] .sct-idpill {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .3);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .sct-idcell__date {
+  color: #7f9aa6;
+}
+
+[data-bs-theme="dark"] .sct-src {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .3);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .sct-src--manual {
+  background: rgba(167, 139, 250, .12);
+  border-color: rgba(167, 139, 250, .3);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .sct-person__name,
+[data-bs-theme="dark"] .sct-prod__name {
+  color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .sct-tat__date {
+  color: #2dd4bf;
+}
+
+[data-bs-theme="dark"] .sct-tat--overdue .sct-tat__date {
+  color: #f87171;
+}
+
+[data-bs-theme="dark"] .sct-tat__overdue {
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .3);
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .sct-bar {
+  background: rgba(255, 255, 255, .08);
+}
+
+[data-bs-theme="dark"] .sct-st {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .sct-st--done {
+  background: rgba(34, 197, 94, .14);
+  border-color: rgba(34, 197, 94, .3);
+  color: #4ade80;
+}
+
+[data-bs-theme="dark"] .sct-empty b {
+  color: #e2e8f0;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────
+   1. The Action column is pinned to the right edge of the table, so Edit and
+      Sourcing Target Report stay on screen whenever the table scrolls sideways.
+   2. Below 1600px the columns tighten so the whole table fits a 1280px
+      laptop without scrolling sideways.
+   3. Tablet / phone: the search drops under the tabs, the tabs share the
+      width, the sub-tabs scroll sideways, and the banner buttons stack. */
+.sct-row> :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -5px 0;
+  padding: 5px 0;
+  background: #fff;
+}
+
+.sct-row--head> :last-child {
+  margin: -9px 0;
+  padding: 9px 0;
+  background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
+}
+
+.sct-row:not(.sct-row--head):hover> :last-child {
+  background: #f6fdfe;
+}
+
+[data-bs-theme="dark"] .sct-row> :last-child {
+  background: #0b1922;
+}
+
+[data-bs-theme="dark"] .sct-row--head> :last-child {
+  background: linear-gradient(180deg, #0e2a35, #0c2530);
+}
+
+[data-bs-theme="dark"] .sct-row:not(.sct-row--head):hover> :last-child {
+  background: #0f2129;
+}
+
+
+@media (max-width: 1600px) {
+  .sct-row {
+    grid-template-columns:
+      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 210px;
+    gap: 6px;
+    min-width: 1230px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .sct-mainrow {
+    flex-wrap: wrap;
+  }
+
+  .sct-search {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .sct-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .sct-strip__right .sct-strip__btn {
+    flex: 1 1 0;
+  }
+
+  .sct-mainrow {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .sct-tabs {
+    width: 100%;
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .sct-tab {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 40px;
+    padding: 6px 12px 6px 6px;
+    white-space: normal;
+    text-align: left;
+    line-height: 1.25;
+  }
+
+  .sct-subrow {
+    height: auto;
+    min-height: 40px;
+    padding: 0 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sct-subrow::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sct-subtab {
+    flex-shrink: 0;
+    min-height: 40px;
+  }
+
+  /* The row scrolls here, so the underline sits inside it instead of 1.5px below. */
+  .sct-subtab.is-active::after {
+    bottom: 0;
+  }
+
+  /* The pinned Action column shrinks to two 40px icon buttons. */
+  .sct-row {
+    grid-template-columns:
+      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 96px;
+    min-width: 1116px;
+  }
+
+  .sct-report {
+    width: 40px;
+    padding: 0;
+  }
+
+  .sct-report__lbl {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .sct-strip__right {
+    flex-direction: column;
+  }
+
+  .sct-strip__right .sct-strip__btn {
+    width: 100%;
+    flex: none;
+  }
+
+  .sct-strip__sub {
+    line-height: 1.35;
+  }
+}

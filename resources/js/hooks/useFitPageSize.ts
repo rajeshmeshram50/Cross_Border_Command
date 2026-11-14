@@ -10,7 +10,9 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
  */
 export function useFitPageSize(
   scrollRef: RefObject<HTMLElement | null>,
-  { min = 10, rowSelector = 'tbody tr', enabled = true, deps = [] as unknown[] } = {},
+  // headSelector: the header row to subtract — `thead` for a <table>; a grid
+  // table (no <table>) passes its own header row's selector.
+  { min = 10, rowSelector = 'tbody tr', headSelector = 'thead', enabled = true, deps = [] as unknown[] } = {},
 ): [number, (n: number) => void, () => void] {
   const [size, setSize] = useState(min);
   const auto = useRef(true);
@@ -23,7 +25,7 @@ export function useFitPageSize(
       if (!auto.current || !el) return;
       const row = el.querySelector<HTMLElement>(rowSelector)?.offsetHeight;
       if (!row) return;   // no real row yet — measured again once data arrives
-      const head = el.querySelector<HTMLElement>('thead')?.offsetHeight ?? 0;
+      const head = el.querySelector<HTMLElement>(headSelector)?.offsetHeight ?? 0;
       const n = Math.min(50, Math.max(min, Math.floor((el.clientHeight - head) / row)));   // server caps at 50
       setSize((prev) => (prev === n ? prev : n));
     };
@@ -36,7 +38,7 @@ export function useFitPageSize(
     window.addEventListener('resize', onResize);
     return () => { window.removeEventListener('resize', onResize); window.clearTimeout(t); cancelAnimationFrame(raf); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, min, rowSelector, ...deps]);
+  }, [enabled, min, rowSelector, headSelector, ...deps]);
 
   // The user's own pick sticks; the screen no longer resizes the page for them.
   const choose = useCallback((n: number) => { auto.current = false; setSize(n); }, []);

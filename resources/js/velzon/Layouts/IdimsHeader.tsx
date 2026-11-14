@@ -21,6 +21,7 @@ const PERM_ALIAS: Record<string, string> = {
   'hr.devices': 'hr.attendance',
   'p2p.advance_refund': 'p2p.order',
   'p2p.invoice': 'p2p.order',
+  'p2p.sourcing_tracker': 'p2p.bulk_sourcing',
   'master.product_flags': 'master.warehouse_master',
   ...Object.fromEntries(CREDVAULT_GROUPS.flatMap(g => g.children.map(l => [l.id, 'credentials-vault']))),
 };
@@ -90,6 +91,7 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.product': 'Manage products & sourcing readiness.',
   'p2p.supplier': 'Manage supplier onboarding & compliance.',
   'p2p.bulk_sourcing': 'Manage bulk sourcing requests.',
+  'p2p.sourcing_tracker': 'Assign sourcing targets and manage Requests for Quotation (RFQs).',
   'p2p.case_to_case': 'Manage request-based sourcing.',
   'p2p.order': 'Create & track purchase orders.',
   'p2p.invoice': 'Capture supplier invoices, match against POs, and track payment.',
@@ -198,6 +200,7 @@ function p2pLeafPath(id: string): string {
     case 'p2p.analytics':     return '/p2p/analytics';
     case 'p2p.diagnosis':     return '/p2p/diagnosis';
     case 'p2p.bulk_sourcing': return '/p2p/bulk-sourcing';
+    case 'p2p.sourcing_tracker': return '/p2p/sourcing-tracker';
     case 'p2p.case_to_case':  return '/p2p/case-to-case';
     case 'p2p.invoice':       return '/p2p/supplier-purchase-invoice';
     case 'p2p.order':         return '/p2p/order';
