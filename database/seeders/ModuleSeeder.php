@@ -109,6 +109,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Vendor Types',            'slug' => 'master.vendor_types',             'icon' => 'Store',        'description' => 'Supplier categories'],
                 ['name' => 'Vendor Behaviour',        'slug' => 'master.vendor_behaviour',         'icon' => 'Activity',     'description' => 'Performance tags for vendors'],
                 ['name' => 'Applicable Parties',      'slug' => 'master.applicable_types',         'icon' => 'Users2',       'description' => 'Buyer, consignee, notify party roles'],
+                ['name' => 'Supplier Category',      'slug' => 'master.supplier_category',         'icon' => 'Users2',       'description' => 'Buyer, consignee, notify party roles'],
             ],
             'master.legal' => [
                 ['name' => 'License Types',          'slug' => 'master.license_name',             'icon' => 'FileBadge',     'description' => 'Import/export license categories'],
