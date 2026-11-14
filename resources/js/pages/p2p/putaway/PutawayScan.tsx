@@ -118,6 +118,9 @@ interface State {
   step_label?: string;
 }
 
+interface SpiBoxRow { box_code: string | null; status: string; box_qr: boolean; shelf_qr: boolean; destination: string | null; }
+interface SpiBoxesBody { spi_code: string | null; count: number; placed: number; boxes: SpiBoxRow[]; }
+
 /**
  * The key enrollment writes (putAwayStore.setDeviceToken). It must be read,
  * not chosen: /s/enroll installs the credential under this name, and a page
@@ -230,6 +233,15 @@ const DEMO_OPEN: QueueRow[] = [
   { id: 1, task_code: 'ZT-20261024-001', box_code: 'B-001', spi_code: 'SPI/2026-27/005', step: 'scan_box', step_label: 'Scan the box', destination: 'SH-102' },
   { id: 2, task_code: 'ZT-20261024-002', box_code: 'B-010', spi_code: 'SPI/2026-27/005', step: 'scan_box', step_label: 'Scan the box', destination: 'SH-102' },
 ];
+const DEMO_SPI_BOXES: SpiBoxesBody = {
+  spi_code: 'SPI/2026-27/005', count: 4, placed: 1,
+  boxes: [
+    { box_code: 'B-001', status: 'placed', box_qr: true, shelf_qr: true, destination: 'SH-101' },
+    { box_code: 'B-002', status: 'box_scanned', box_qr: true, shelf_qr: false, destination: 'SH-102' },
+    { box_code: 'B-007', status: 'pending', box_qr: false, shelf_qr: false, destination: 'RK-A1' },
+    { box_code: 'B-010', status: 'pending', box_qr: false, shelf_qr: false, destination: 'SH-102' },
+  ],
+};
 const demoChain = (scanned: boolean) => [
   { kind: 'zone', id: 1, scanned, name: 'ZN-A' },
   { kind: 'rack', id: 2, scanned, name: 'RK-A1' },
@@ -294,6 +306,13 @@ export default function PutawayScan() {
      hands and a new screen loses the box header they are checking against. */
   const [showProducts, setShowProducts] = useState(false);
   const [showPending, setShowPending] = useState(false);
+  // Tapping Scan highlights the "press the scan key" hint for a moment.
+  const [scanArmed, setScanArmed] = useState(false);
+  // Live SPI box progress (placed / total) shown on the card's pill.
+  const [spiProgress, setSpiProgress] = useState<{ placed: number; count: number } | null>(null);
+  // The per-SPI box sheet the card's SPI pill opens (vs the device-wide queue).
+  const [spiBoxes, setSpiBoxes] = useState<SpiBoxesBody | null>(null);
+  const [spiBoxesBusy, setSpiBoxesBusy] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   // Which rungs were already proved before the last scan, to tell a scan that
@@ -767,6 +786,20 @@ export default function PutawayScan() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, busy]);
 
+  /* Live SPI progress for the card pill — re-read whenever a scan lands or the
+     box is placed, so "placed / total" moves in real time. */
+  useEffect(() => {
+    const id = state?.task?.id;
+    if (demoKey) { setSpiProgress({ placed: 1, count: 4 }); return; }
+    if (!id) { setSpiProgress(null); return; }
+    let live = true;
+    call('get', `/scan/putaway/${id}/boxes`)
+      .then(({ data }) => { if (live) setSpiProgress({ placed: data.data.placed, count: data.data.count }); })
+      .catch(() => { /* leave the task-count fallback */ });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.task?.id, state?.task?.completed_scans, state?.task?.status]);
+
   const submitScan = async (raw: string) => {
     if (demoKey) return;   // demo: the screen is frozen on static data
     const scanned = raw.trim();
@@ -798,6 +831,37 @@ export default function PutawayScan() {
       apply(data.data, message);
     } catch (e) { fail(e); }
     finally { setBusy(false); }
+  };
+
+  /* Clear box (now the header ✕): hand any open task back and return to the
+     queue. Leaving is not refusable — the carton is already down. */
+  const clearBox = async () => {
+    if (demoKey) return;
+    const t = state?.task;
+    if (t) { try { await call('post', `/scan/putaway/${t.id}/release`, {}); } catch { /* already down */ } }
+    writeRun(null);
+    window.location.href = INDEX_PATH;
+  };
+
+  /* Tapping Scan focuses the hidden field (no keypad — inputMode=none) and
+     flashes the "press the scan key" hint so the operator uses the trigger. */
+  const armScan = () => {
+    inputRef.current?.focus();
+    setScanArmed(true);
+    window.setTimeout(() => setScanArmed(false), 1800);
+  };
+
+  /* Every box in the current task's SPI — for the sheet the SPI pill opens. */
+  const openSpiBoxes = async () => {
+    const taskId = state?.task?.id;
+    if (!taskId || spiBoxesBusy) return;
+    if (demoKey) { setSpiBoxes(DEMO_SPI_BOXES); return; }
+    setSpiBoxesBusy(true);
+    try {
+      const { data } = await call('get', `/scan/putaway/${taskId}/boxes`);
+      setSpiBoxes(data.data as SpiBoxesBody);
+    } catch (e) { fail(e); }
+    finally { setSpiBoxesBusy(false); }
   };
 
   if (blocked) {
@@ -895,25 +959,37 @@ export default function PutawayScan() {
 
         <div className="pwscan-attempts">or scan any box to start</div>
 
-        <form className="pwscan-form" onSubmit={(e) => { e.preventDefault(); void submitScan(value); }}>
+        {/* Hidden, focused field catches the device trigger; the visible action
+            is the fixed Scan Box button, like the rest of the flow. */}
+        <form className="pwscan-sform" onSubmit={(e) => { e.preventDefault(); void submitScan(value); }}>
           <input
             ref={inputRef}
-            className="pwscan-input"
+            className="pwscan-input pwscan-input--hidden"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Scan a label…"
+            inputMode="none"
             autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             disabled={busy}
+            aria-hidden tabIndex={-1}
           />
-          <button type="submit" className="pwscan-btn" disabled={busy || !value.trim()}>Enter</button>
         </form>
+
+        <div className={'pws2-scanhint' + (scanArmed ? ' is-armed' : '')} style={{ margin: '0 12px' }}>
+          <i className="ri-qr-scan-2-line" aria-hidden />
+          <span>Scan the QR by pressing the <b>scan key on the right side</b> of the device.</span>
+        </div>
+
+        <div className="pws2-foot">
+          <button type="button" className="pws2-primary" disabled={busy} onClick={armScan}>
+            <i className="ri-qr-scan-2-line" />Scan Box
+          </button>
+        </div>
       </div>
     );
   }
 
   const task = state.task;
   const step = (task?.step ?? state.step ?? 'scan_box') as Step;
-  const slot = task?.location_slot ?? 'shelf';
   const done = task?.status === 'scanned';
   const dest = state.destination;
   // The prompt points at the box's destination — the deepest level it has.
@@ -935,27 +1011,26 @@ export default function PutawayScan() {
      label sits with it: that is where the operator is looking. */
   const scanForm = (
     <>
-    {/* The refusal belongs here, beside the field it is about — at the top of
-        the page it sits off-screen behind the box details. */}
     {error && <div className="pwscan-alert pwscan-alert--bad">{error}</div>}
-
-    <div className="pwscan-prompt pwscan-prompt--field">
-      {step === 'scan_box' ? 'Scan the box' : 'Scan the zone / rack / shelf'}
-    </div>
-    <form className="pwscan-form" onSubmit={(e) => { e.preventDefault(); void submitScan(value); }}>
+    {/* The field is hidden but focused, so the device trigger types into it.
+        The visible action is the fixed Scan button in the foot. */}
+    <form className="pwscan-sform" onSubmit={(e) => { e.preventDefault(); void submitScan(value); }}>
       <input
         ref={inputRef}
-        className="pwscan-input"
+        className="pwscan-input pwscan-input--hidden"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder={step === 'scan_box' ? 'Scan the box label…' : `Scan the ${slot} label…`}
+        // Keeps the field focused for the hardware scanner but shows NO soft
+        // keyboard — the operator uses the physical trigger, not the keypad.
+        inputMode="none"
         autoComplete="off"
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
         disabled={busy}
+        aria-hidden
+        tabIndex={-1}
       />
-      <button type="submit" className="pwscan-btn" disabled={busy || !value.trim()}>Enter</button>
     </form>
     </>
   );
@@ -978,13 +1053,16 @@ export default function PutawayScan() {
   if (state.no_task && state.box) {
     return (
       <div className="pwscan">
-        <AppBar device={state.device} count={state.count ?? state.open?.length} onPending={() => setShowPending(true)} />
+        <AppBar device={state.device} count={state.count ?? state.open?.length} onPending={() => setShowPending(true)} onClear={clearBox} />
         <div className="pws2-body">
           <div className="pwscan-notice">{notice ?? 'No put-away task for this box. Raise a task, or confirm it by hand.'}</div>
           <section className="pws2-card">
+            {state.box.spi_code && (
+              <div className="pws2-spi"><span>SPI</span><b>{state.box.spi_code}</b></div>
+            )}
             <div className="pws2-card-top">
               <span className="pws2-kicker">BOX</span>
-              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-code">{putId(state.box.box_code)}</span>
               <span className="pws2-chip">{state.box.products.length > 1 ? 'MIXED' : 'SINGLE'}</span>
               <span className="pws2-sp" />
               {state.box.products.length > 0 && (
@@ -1041,6 +1119,7 @@ export default function PutawayScan() {
             <small>Details only — this box has no task, so there is no scanning and no Complete here.</small>
           </div>
         </div>
+        {/* Clear box is the header ✕ now (no foot). */}
         {product && (
           <ProductSheet product={product} boxCode={state.box?.box_code} spiCode={state.box?.spi_code} onClose={() => setProduct(null)} />
         )}
@@ -1088,6 +1167,7 @@ export default function PutawayScan() {
         device={state.device}
         count={state.count ?? state.open?.length}
         onPending={() => setShowPending(true)}
+        onClear={!done && task ? clearBox : undefined}
       />
 
       {/* The last minute of the idle window, and only that. A counter running
@@ -1135,7 +1215,7 @@ export default function PutawayScan() {
           <section className="pws2-card">
             <div className="pws2-card-top">
               <span className="pws2-kicker">BOX</span>
-              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-code">{putId(state.box.box_code)}</span>
               <span className="pws2-sp" />
               <span className="pws2-chip pws2-chip--warn">PENDING_DEVICE_SCAN</span>
             </div>
@@ -1148,11 +1228,15 @@ export default function PutawayScan() {
 
           <div className="pws2-next">
             <span>NEXT SCAN</span>
-            <b>Box QR {state.box.box_code}</b>
+            <b>Box QR {putId(state.box.box_code)}</b>
             <small>
               Scan the label on the carton to confirm it is this one. Its
               contents open once the box is verified.
             </small>
+          </div>
+          <div className={"pws2-scanhint" + (scanArmed ? " is-armed" : "")}>
+            <i className="ri-qr-scan-2-line" aria-hidden />
+            <span>Scan the QR by pressing the <b>scan key on the right side</b> of the device.</span>
           </div>
         </div>
       )}
@@ -1160,13 +1244,20 @@ export default function PutawayScan() {
       {state.box && !!task?.box_scan_at && (
         <div className="pws2-body">
           <section className="pws2-card">
-            <div className="pws2-card-top">
-              <span className="pws2-kicker">BOX</span>
-              <span className="pws2-code">{state.box.box_code}</span>
-              <span className="pws2-chip">
-                {state.box.products.length > 1 ? 'MIXED' : 'SINGLE'}
-              </span>
-              <span className="pws2-sp" />
+            {/* Two columns: SPI id over the box id on the left, More centred right. */}
+            <div className="pws2-boxhead">
+              <div className="pws2-boxhead-l">
+                {state.box.spi_code && (
+                  <div className="pws2-spi"><span>SPI ID</span><b>{state.box.spi_code}</b></div>
+                )}
+                <div className="pws2-card-top">
+                  <span className="pws2-kicker">BOX</span>
+                  <span className="pws2-code">{putId(state.box.box_code)}</span>
+                  <span className="pws2-chip">
+                    {state.box.products.length > 1 ? 'MIXED' : 'SINGLE'}
+                  </span>
+                </div>
+              </div>
               {state.box.products.length > 0 && (
                 <button type="button" className="pws2-more" onClick={() => setShowProducts(v => !v)}>
                   {showProducts ? 'Show Less' : 'More'}
@@ -1239,9 +1330,13 @@ export default function PutawayScan() {
                 </span>
               ))}
               {task && (
-                <span className="pws2-taskpill">
-                  {task.task_code} · {task.completed_scans}/{task.required_scans}
-                </span>
+                <button type="button" className="pws2-taskpill pws2-taskpill--btn"
+                  onClick={openSpiBoxes} disabled={spiBoxesBusy}>
+                  {state.box.spi_code ?? task.task_code} · {spiProgress
+                    ? `${spiProgress.placed}/${spiProgress.count}`
+                    : `${task.completed_scans}/${task.required_scans}`}
+                  <i className="ri-arrow-right-s-line" aria-hidden />
+                </button>
               )}
             </div>
           </section>
@@ -1279,6 +1374,12 @@ export default function PutawayScan() {
                   : dest?.shelf}
               </b>
               <small>{task?.step_label}</small>
+            </div>
+          )}
+          {destLevel && !done && (
+            <div className={"pws2-scanhint" + (scanArmed ? " is-armed" : "")}>
+              <i className="ri-qr-scan-2-line" aria-hidden />
+              <span>Scan the QR by pressing the <b>scan key on the right side</b> of the device.</span>
             </div>
           )}
 
@@ -1528,23 +1629,22 @@ export default function PutawayScan() {
           above scrolls under it. Complete only appears when the server says
           the task may be completed; Clear box is always available, because
           picking up the wrong carton is the common mistake. */}
-      {!done && task && (
+      {/* Clear box is the header ✕ now. The fixed foot carries the primary
+          action: Scan while a scan is pending, Complete once both halves match.
+          The Scan button just focuses the hidden field — the device trigger
+          fires the beam. */}
+      {!done && (task?.ready_to_complete || step.startsWith('scan')) && (
         <div className="pws2-foot">
-          {task.ready_to_complete && (
+          {task?.ready_to_complete ? (
             <button type="button" className="pws2-primary" disabled={busy}
               onClick={() => act(`/scan/putaway/${task.id}/complete`, {}, 'Put-away complete.')}>
               <i className="ri-checkbox-circle-line" />Complete put-away
             </button>
+          ) : (
+            <button type="button" className="pws2-primary" disabled={busy} onClick={armScan}>
+              <i className="ri-qr-scan-2-line" />{step === 'scan_box' ? 'Scan Box' : 'Scan Location'}
+            </button>
           )}
-          <button type="button" className="pws2-ghost" disabled={busy}
-            onClick={async () => {
-              try { await call('post', `/scan/putaway/${task.id}/release`, {}); }
-              catch { /* Leaving is not refusable — the carton is already down. */ }
-              writeRun(null);
-              window.location.href = INDEX_PATH;
-            }}>
-            <i className="ri-close-line" />Clear box
-          </button>
         </div>
       )}
 
@@ -1585,6 +1685,50 @@ export default function PutawayScan() {
           </div>
         </div>
       )}
+
+      {/* The current box's SPI — every box in it and where each one is, from the
+          server. Opening a box here is read-only; it changes nothing. */}
+      {spiBoxes && (
+        <div className="pws2-scrim" onClick={() => setSpiBoxes(null)}>
+          <div className="pws2-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="pws2-sheet-head">
+              <span>
+                <b>Boxes in {spiBoxes.spi_code ?? '—'}</b>
+                <small>{spiBoxes.placed} of {spiBoxes.count} placed</small>
+              </span>
+              <button type="button" className="pws2-x" onClick={() => setSpiBoxes(null)} aria-label="Close">×</button>
+            </div>
+            <div className="pws2-sheet-body">
+              <ul className="pws2-rows">
+                {spiBoxes.boxes.map((b, i) => {
+                  const done = (b.box_qr ? 1 : 0) + (b.shelf_qr ? 1 : 0);
+                  const chip = b.status === 'placed' ? 'PLACED' : b.status === 'box_scanned' ? 'BOX_SCAN_VERIFIED' : 'PENDING_DEVICE_SCAN';
+                  const cls = b.status === 'placed' ? 'pws2-chip--placed' : b.status === 'box_scanned' ? 'pws2-chip--ok' : 'pws2-chip--warn';
+                  return (
+                    <li key={b.box_code ?? i}>
+                      <div className="pws2-row pws2-row--read">
+                        <span className="pws2-row-top">
+                          <span className="pws2-row-code">{b.box_code ? putId(b.box_code) : '—'}</span>
+                          <span className="pws2-sp" />
+                          <span className={'pws2-chip ' + cls}>{chip}</span>
+                        </span>
+                        {b.destination && <small className="pws2-row-sub">{b.destination}</small>}
+                        <span className="pws2-row-scan">
+                          <span className={'pws2-qr' + (b.box_qr ? ' is-on' : '')}>{b.box_qr ? '✓' : '○'} Box QR</span>
+                          <span className={'pws2-qr' + (b.shelf_qr ? ' is-on' : '')}>{b.shelf_qr ? '✓' : '○'} Shelf QR</span>
+                          <span className="pws2-sp" />
+                          <span className={'pws2-row-count' + (done === 2 ? ' is-full' : '')}>{done}/2</span>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="pws2-sheet-note">Every box in this invoice. Opening one shows its details only — it is not marked scanned or placed here.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1599,10 +1743,11 @@ export default function PutawayScan() {
  * from the floor — enrolment installs the credential and the server owns
  * every threshold — so a gear would open nothing.
  */
-function AppBar({ device, count, onPending }: {
+function AppBar({ device, count, onPending, onClear }: {
   device: { label: string; serial: string };
   count?: number;
   onPending?: () => void;
+  onClear?: () => void;
 }) {
   return (
     <header className="pws2-appbar">
@@ -1617,20 +1762,30 @@ function AppBar({ device, count, onPending }: {
           {!!count && count > 0 && <span className="pws2-badge">{count}</span>}
         </button>
       )}
+      {onClear && (
+        <button type="button" className="pws2-iconbtn pws2-iconbtn--clear" onClick={onClear} aria-label="Clear box" title="Clear box">
+          <i className="ri-close-line" />
+        </button>
+      )}
     </header>
   );
 }
 
 /** One task, as the sheet and the index page both draw it. */
+/** Box id in the system's PUT-B-00x form, used everywhere a box is named. */
+const putId = (code: string) => (/^PUT-/i.test(code) ? code : `PUT-${code}`);
+
 function TaskRow({ row, current, onPick }: { row: QueueRow; current?: boolean; onPick: () => void }) {
-  const state = current ? 'Box scanned'
-    : row.started ? 'In progress'
-    : 'Not scanned';
+  // Scan progress from the real step: box QR first, then shelf QR.
+  const boxQr = current || row.step === 'scan_shelf' || row.step === 'complete';
+  const shelfQr = row.step === 'complete';
+  const done = (boxQr ? 1 : 0) + (shelfQr ? 1 : 0);
   return (
     <li>
       <button type="button" className={'pws2-row' + (current ? ' is-current' : '')} onClick={onPick}>
+        {row.spi_code && <small className="pws2-row-spi"><i className="ri-file-list-3-line" aria-hidden />{row.spi_code}</small>}
         <span className="pws2-row-top">
-          <span className="pws2-row-code">{row.box_code ?? `Task ${row.id}`}</span>
+          <span className="pws2-row-code">{row.box_code ? putId(row.box_code) : `Task ${row.id}`}</span>
           {current && <span className="pws2-chip pws2-chip--ok">VIEWING</span>}
           <span className="pws2-sp" />
           <span className={'pws2-chip ' + (current ? 'pws2-chip--ok' : 'pws2-chip--warn')}>
@@ -1638,7 +1793,12 @@ function TaskRow({ row, current, onPick }: { row: QueueRow; current?: boolean; o
           </span>
         </span>
         <small className="pws2-row-sub">{row.destination} · {row.task_code}</small>
-        <small className="pws2-row-state">{state}</small>
+        <span className="pws2-row-scan">
+          <span className={'pws2-qr' + (boxQr ? ' is-on' : '')}>{boxQr ? '✓' : '○'} Box QR</span>
+          <span className={'pws2-qr' + (shelfQr ? ' is-on' : '')}>{shelfQr ? '✓' : '○'} Shelf QR</span>
+          <span className="pws2-sp" />
+          <span className={'pws2-row-count' + (done === 2 ? ' is-full' : '')}>{done}/2</span>
+        </span>
       </button>
     </li>
   );
@@ -1650,7 +1810,7 @@ function Done({ box, where, onNext }: { box?: string; where?: string; onNext: ()
       <div className="pwscan-done-card">
         <div className="pwscan-done-mark">✓</div>
         <h2>Put-away complete</h2>
-        <p className="pwscan-done-box">{box}</p>
+        <p className="pwscan-done-box">{box ? putId(box) : ''}</p>
         <p className="pwscan-done-where">{where}</p>
         <button className="pwscan-btn pwscan-btn--go" onClick={onNext}>Next box</button>
       </div>

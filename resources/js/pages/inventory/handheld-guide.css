@@ -65,6 +65,7 @@
 /* Fixed light palette: the handheld's own screen, which does not follow the
    desktop theme any more than a photograph of it would. */
 .hhg-phone-in {
+  position: relative;
   border-radius: 21px; overflow: hidden;
   background: #e9eef0; color: #0f1f2b;
   font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -87,6 +88,8 @@
 .hhg-abt b { display: block; font-size: 15.5px; font-weight: 800; }
 .hhg-abt small { display: block; font-size: 10.5px; letter-spacing: .04em; opacity: .86; text-transform: uppercase; }
 .hhg-bell { position: relative; width: 34px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+/* Clear box ✕ — a bordered button so it reads as an action. */
+.hhg-bell--x { width: 32px; height: 32px; border: 1.5px solid rgba(255,255,255,.55); border-radius: 9px; background: rgba(255,255,255,.08); font-size: 17px; cursor: pointer; }
 .hhg-bell em {
   position: absolute; top: -2px; right: -2px; min-width: 17px; height: 17px; padding: 0 4px;
   border-radius: 999px; background: #f59e0b; color: #35220a;
@@ -108,6 +111,49 @@
 .hhg-body::-webkit-scrollbar { width: 0; height: 0; }
 
 .hhg-card { background: #fff; border: 1px solid #d7e0e3; border-radius: 12px; padding: 11px 12px; }
+/* Scanner beam — a teal line + glow sweeps the box card once when it mounts,
+   right after the box is scanned. */
+.hhg-card { position: relative; }
+.hhg-scan {
+  position: absolute; inset: 0; z-index: 2;
+  overflow: hidden; border-radius: 12px; pointer-events: none;
+}
+.hhg-scan::before, .hhg-scan::after {
+  content: ''; position: absolute; left: 0; right: 0;
+  animation: hhg-scan-sweep 950ms cubic-bezier(.4, 0, .2, 1) both;
+}
+.hhg-scan::before { top: 0; height: 2px; background: #0f6e70; box-shadow: 0 0 12px 2px rgba(15, 110, 112, .55); }
+.hhg-scan::after  { top: 0; height: 64px; background: linear-gradient(180deg, rgba(15, 110, 112, .16), rgba(15, 110, 112, 0)); }
+@keyframes hhg-scan-sweep {
+  0%   { top: -66px; opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .hhg-scan { display: none; } }
+
+/* Box header: SPI over BOX on the left, the More control centred on the right. */
+.hhg-boxhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hhg-boxhead-l { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hhg-boxhead-r { flex-shrink: 0; display: flex; align-items: center; }
+
+/* SPI id — a proper badge, first row of the left column. */
+.hhg-spi {
+  display: inline-flex; align-items: center; gap: 6px;
+  align-self: flex-start;
+  padding: 3px 10px; border-radius: 999px;
+  background: #e6f4f4; border: 1px solid #bfe3e6;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
+  color: #0f6e70; text-transform: uppercase;
+  animation: hhg-spi-in .34s cubic-bezier(.2, .9, .25, 1) both;
+}
+.hhg-spi b { font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em; text-transform: none; color: #0f1f2b; }
+@keyframes hhg-spi-in {
+  from { opacity: 0; transform: translateY(-7px) scale(.95); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .hhg-spi { animation: none; } }
+
 .hhg-card-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hhg-kick { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #64798a; }
 .hhg-code { font-family: ui-monospace, monospace; font-size: 17px; font-weight: 800; }
@@ -118,8 +164,9 @@
   font-size: 9.5px; font-weight: 800; letter-spacing: .05em; padding: 3px 7px;
   border-radius: 5px; background: #eef2f4; color: #4a5c6b; white-space: nowrap;
 }
-.hhg-chip.is-ok   { background: #e6f4f4; color: #0f6e70; }
-.hhg-chip.is-warn { background: #fdf0d5; color: #8a5a08; }
+.hhg-chip.is-ok     { background: #e6f4f4; color: #0f6e70; }
+.hhg-chip.is-warn   { background: #fdf0d5; color: #8a5a08; }
+.hhg-chip.is-placed { background: #dcfce7; color: #15803d; }
 
 .hhg-more {
   font-size: 12px; font-weight: 800; color: #0f6e70; background: #fff;
@@ -140,6 +187,55 @@
   margin-left: auto; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
   border: 1px solid #d7e0e3; border-radius: 999px; padding: 3px 9px; background: #fff;
 }
+/* Tappable batch pill — opens the SPI's box list. */
+.hhg-pill--btn {
+  display: inline-flex; align-items: center; gap: 2px; cursor: pointer;
+  color: #0f6e70; border-color: #bfe3e6;
+}
+.hhg-pill--btn:hover { background: #f0fbfb; border-color: #0f6e70; }
+.hhg-pill--btn i { font-size: 15px; line-height: 1; }
+
+/* ── Boxes-in-SPI sheet (over the phone screen) ─────────────────────────── */
+.hhg-scrim {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; align-items: flex-end;
+  background: rgba(8, 26, 32, .42);
+  animation: hhg-scrim-in .18s ease both;
+}
+@keyframes hhg-scrim-in { from { opacity: 0; } }
+.hhg-sheet {
+  width: 100%; max-height: 82%;
+  display: flex; flex-direction: column;
+  background: #fff; border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 30px rgba(8, 26, 32, .28);
+  animation: hhg-sheet-up .24s cubic-bezier(.2, .9, .25, 1) both;
+}
+@keyframes hhg-sheet-up { from { transform: translateY(100%); } }
+.hhg-sheet .hhg-sheet-head { padding: 14px 16px; align-items: center; }
+.hhg-x--btn { background: none; border: 0; cursor: pointer; padding: 2px 4px; }
+.hhg-sheet-body { padding: 12px 16px 18px; overflow-y: auto; }
+.hhg-boxlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.hhg-boxli { border: 1px solid #d7e0e3; border-radius: 11px; padding: 11px 12px; }
+.hhg-boxli.is-viewing { border-color: #0f6e70; box-shadow: inset 0 0 0 1px #0f6e70; }
+.hhg-boxli-top { display: flex; align-items: center; gap: 8px; }
+.hhg-boxli-code { font-family: ui-monospace, monospace; font-size: 14px; font-weight: 800; color: #0f1f2b; }
+.hhg-boxli-view { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
+.hhg-boxli-desc { display: block; font-size: 11.5px; color: #45596a; margin-top: 5px; }
+.hhg-boxli-scan { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.hhg-qr {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+  padding: 3px 8px; border-radius: 999px;
+  background: #f1f5f6; border: 1px solid #d7e0e3; color: #64798a;
+}
+.hhg-qr.is-on { background: #dcfce7; border-color: #a7e3bd; color: #15803d; }
+.hhg-boxli-count {
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; color: #8a5a08;
+  background: #fdf0d5; border-radius: 999px; padding: 2px 8px;
+}
+.hhg-boxli-count.is-full { color: #15803d; background: #dcfce7; }
+.hhg-boxli-note { display: block; font-size: 11px; font-weight: 600; color: #64798a; margin-top: 6px; }
+.hhg-sheet-note { margin: 14px 0 0; font-size: 11px; color: #64798a; line-height: 1.45; }
 
 /* ── Zone / rack / shelf ───────────────────────────────────────────────── */
 .hhg-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -157,16 +253,28 @@
 .hhg-slot.is-next > i { color: #8a5a08; }
 
 /* ── Next scan, toast, banner ──────────────────────────────────────────── */
-.hhg-next { background: #eef8f9; border: 1px solid #bfe3e6; border-radius: 10px; padding: 10px 11px; }
+.hhg-next { background: #eef8f9; border: 1px solid #bfe3e6; border-radius: 10px; padding: 10px 12px; }
 .hhg-next > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
 .hhg-next > b { display: block; font-size: 14.5px; font-weight: 800; margin-top: 3px; }
 .hhg-next > small { display: block; font-size: 11px; color: #3f5d63; margin-top: 3px; line-height: 1.35; }
+
+/* Scan hint — how to fire the scan on the device. Big enough to read at a
+   glance across the floor. */
+.hhg-scanhint {
+  display: flex; align-items: center; gap: 11px;
+  margin-top: 10px; padding: 12px;
+  border-radius: 12px;
+  background: #e6f4f4; border: 1.5px dashed #0f6e70;
+  font-size: 13px; font-weight: 600; color: #0f1f2b; line-height: 1.4;
+}
+.hhg-scanhint i { font-size: 26px; line-height: 1; color: #0f6e70; flex-shrink: 0; }
+.hhg-scanhint b { color: #0f6e70; font-weight: 800; }
 
 .hhg-toast { background: #0f6e70; color: #fff; border-radius: 10px; padding: 9px 12px; }
 .hhg-toast b { display: block; font-size: 13.5px; font-weight: 700; }
 .hhg-toast small { font-size: 11.5px; opacity: .88; }
 
-.hhg-banner { background: #fdf0d5; border: 1px solid #e8c88a; border-radius: 10px; padding: 9px 11px; font-size: 11.5px; font-weight: 600; color: #1a1205; }
+.hhg-banner { background: #fdf0d5; border: 1px solid #e8c88a; border-radius: 10px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; color: #1a1205; }
 
 /* ── Scan field ────────────────────────────────────────────────────────── */
 .hhg-flabel { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
@@ -200,6 +308,12 @@
 .hhg-row.is-current { background: #e6f4f4; border-color: #0f6e70; }
 .hhg-row-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .hhg-row-code { font-family: ui-monospace, monospace; font-size: 14px; font-weight: 800; }
+.hhg-row-spi {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; color: #0f6e70;
+  margin-bottom: 6px;
+}
+.hhg-row-spi i { font-size: 13px; }
 .hhg-row-sub { display: block; font-size: 11px; color: #64798a; margin-top: 2px; }
 .hhg-row-state { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
 

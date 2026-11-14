@@ -91,6 +91,48 @@ class SpiPutawayScanController extends Controller
         ]], 200);
     }
 
+    /**
+     * GET /scan/putaway/{task}/boxes — every box in this task's SPI, with its
+     * put-away status and Box-QR/Shelf-QR progress. Powers the per-SPI sheet
+     * the box card's SPI pill opens (as opposed to the device-wide queue).
+     */
+    public function spiBoxes(Request $request, int $taskId)
+    {
+        $device = $this->device($request);
+
+        $task = SpiPutawayTask::where('client_id', $device->client_id)->find($taskId);
+        if (!$task) abort(response()->json(['status' => false, 'message' => 'Task not found.'], 404));
+
+        $invoice = SupplierInvoice::find($task->supplier_invoice_id);
+
+        $boxes = SpiPutaway::where('client_id', $device->client_id)
+            ->where('supplier_invoice_id', $task->supplier_invoice_id)
+            ->with('box:id,box_code')
+            ->orderBy('id')
+            ->get()
+            ->map(function (SpiPutaway $p) {
+                $placed  = $p->status === SpiPutaway::PLACED;
+                $boxQr   = $placed || $p->box_scanned_at !== null;
+                $shelfQr = $placed || $p->shelf_scanned_at !== null;
+
+                return [
+                    'box_code'    => $p->box?->box_code,
+                    // placed · box_scanned · pending — what the sheet's chip reads.
+                    'status'      => $placed ? 'placed' : ($boxQr ? 'box_scanned' : 'pending'),
+                    'box_qr'      => $boxQr,
+                    'shelf_qr'    => $shelfQr,
+                    'destination' => $p->destination,
+                ];
+            })->values();
+
+        return response()->json(['status' => true, 'data' => [
+            'spi_code' => $invoice?->code,
+            'count'    => $boxes->count(),
+            'placed'   => $boxes->where('status', 'placed')->count(),
+            'boxes'    => $boxes,
+        ]], 200);
+    }
+
     /** GET /scan/putaway/{task} — the current state, for a page refresh. */
     public function show(Request $request, int $taskId)
     {

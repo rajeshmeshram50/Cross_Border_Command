@@ -188,6 +188,8 @@
 
 @media (prefers-reduced-motion: reduce) {
     .pwscan-idle { animation: none; }
+    .pws2-spi { animation: none; }
+    .pws2-scan { display: none; }
 }
 
 .pwscan-attempts {
@@ -200,6 +202,14 @@
 /* ── scan input ────────────────────────────────────────────────────────── */
 
 .pwscan-form { display: flex; gap: 8px; margin-bottom: 14px; }
+
+/* The scan field is hidden but kept focused, so the device trigger types into
+   it. The visible action is the fixed "Scan" button in the foot. */
+.pwscan-sform { display: block; }
+.pwscan-input--hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    opacity: 0; overflow: hidden; border: 0; pointer-events: none;
+}
 
 .pwscan-input {
     flex: 1 1 auto;
@@ -310,7 +320,7 @@
     place-items: center;
     padding: 24px;
     box-sizing: border-box;
-    background: var(--pw-bg, #0b1220);
+    background: #e9eef0;
     font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
     animation: pwscan-in .22s ease-out;
 }
@@ -322,10 +332,11 @@
     max-width: 420px;
     padding: 34px 26px 26px;
     text-align: center;
-    color: #e8edf7;
-    background: #151e31;
-    border: 1px solid #22c55e;
+    color: #0f1f2b;
+    background: #fff;
+    border: 1px solid #bbe6cb;
     border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(8, 26, 32, .08);
 }
 
 .pwscan-done-mark {
@@ -336,8 +347,8 @@
     place-items: center;
     font-size: 44px;
     font-weight: 700;
-    color: #06230f;
-    background: #22c55e;
+    color: #fff;
+    background: #16a34a;
     border-radius: 50%;
     /* A ring that settles, so the eye lands on it from across an aisle. */
     animation: pwscan-pop .45s cubic-bezier(.2, 1.4, .4, 1);
@@ -345,19 +356,20 @@
 
 @keyframes pwscan-pop { from { transform: scale(0); } 60% { transform: scale(1.12); } }
 
-.pwscan-done-card h2 { margin: 0 0 14px; font-size: 24px; color: #22c55e; }
+.pwscan-done-card h2 { margin: 0 0 14px; font-size: 24px; color: #15803d; }
 
 .pwscan-done-box {
     margin: 0 0 4px;
     font-size: 30px;
     font-weight: 700;
+    color: #0f1f2b;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 .pwscan-done-where {
     margin: 0 0 22px;
     font-size: 14px;
-    color: #8d9cb8;
+    color: #64798a;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     word-break: break-word;
 }
@@ -975,6 +987,14 @@
     font-size: 19px; cursor: pointer;
 }
 .pws2-iconbtn:active { background: rgba(255,255,255,.16); }
+/* Clear box ✕ — a bordered button so it reads as an action, not plain text. */
+.pws2-iconbtn--clear {
+    width: 32px; height: 32px;
+    border: 1.5px solid rgba(255,255,255,.55);
+    background: rgba(255,255,255,.08);
+    font-size: 17px;
+}
+.pws2-iconbtn--clear:active { background: rgba(255,255,255,.22); }
 .pws2-badge {
     position: absolute; top: -2px; right: -2px;
     min-width: 17px; height: 17px; padding: 0 4px;
@@ -994,6 +1014,49 @@
     background: var(--pw-card);
     padding: 11px 12px;
 }
+/* Scanner beam — a teal line + glow sweeps the box card once on mount, right
+   after the box verifies. */
+.pws2-card { position: relative; }
+.pws2-scan {
+    position: absolute; inset: 0; z-index: 2;
+    overflow: hidden; border-radius: 12px; pointer-events: none;
+}
+.pws2-scan::before, .pws2-scan::after {
+    content: ''; position: absolute; left: 0; right: 0;
+    animation: pws2-scan-sweep 950ms cubic-bezier(.4, 0, .2, 1) both;
+}
+.pws2-scan::before { top: 0; height: 2px; background: var(--pw-teal); box-shadow: 0 0 12px 2px rgba(15, 110, 112, .55); }
+.pws2-scan::after  { top: 0; height: 64px; background: linear-gradient(180deg, rgba(15, 110, 112, .16), rgba(15, 110, 112, 0)); }
+@keyframes pws2-scan-sweep {
+    0%   { top: -66px; opacity: 0; }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+}
+
+/* Box header: SPI over BOX on the left, More centred on the right. */
+.pws2-boxhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pws2-boxhead-l { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* SPI id — a proper badge, first row of the left column. */
+.pws2-spi {
+    display: inline-flex; align-items: center; gap: 6px;
+    align-self: flex-start;
+    padding: 3px 10px; border-radius: 999px;
+    background: var(--pw-teal-50); border: 1px solid #bfe3e6;
+    font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
+    color: var(--pw-teal); text-transform: uppercase;
+    animation: pws2-spi-in .34s cubic-bezier(.2, .9, .25, 1) both;
+}
+.pws2-spi b {
+    font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
+    text-transform: none; color: var(--pw-text);
+}
+@keyframes pws2-spi-in {
+    from { opacity: 0; transform: translateY(-7px) scale(.95); }
+    to   { opacity: 1; transform: none; }
+}
+
 .pws2-card-top { display: flex; align-items: center; gap: 8px; }
 .pws2-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: var(--pw-mute); }
 .pws2-code { font-size: 17px; font-weight: 800; letter-spacing: .01em; font-family: ui-monospace, monospace; }
@@ -1005,8 +1068,9 @@
     font-size: 9.5px; font-weight: 800; letter-spacing: .05em;
     background: #eef2f4; color: #4a5c6b;
 }
-.pws2-chip--ok   { background: var(--pw-teal-50); color: var(--pw-teal); }
-.pws2-chip--warn { background: #fef3c7; color: #92400e; }
+.pws2-chip--ok     { background: var(--pw-teal-50); color: var(--pw-teal); }
+.pws2-chip--warn   { background: #fef3c7; color: #92400e; }
+.pws2-chip--placed { background: #dcfce7; color: #15803d; }
 .pws2-chip--notask { background: #f59e0b; color: #241700; font-weight: 800; }
 .pws2-chip--bad  { background: #fee2e2; color: #b91c1c; }
 .pws2-more {
@@ -1036,13 +1100,17 @@
 
 .pws2-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .pws2-taskpill {
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 4px;
     margin-left: auto;
-    height: 24px; padding: 0 9px;
+    height: 24px; padding: 0 6px 0 9px;
     border: 1px solid var(--pw-line); border-radius: 999px;
     background: #fff; color: var(--pw-text);
     font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
 }
+/* Tappable — opens the pending-tasks sheet for this SPI. */
+.pws2-taskpill--btn { cursor: pointer; color: var(--pw-teal); border-color: #bfe3e6; }
+.pws2-taskpill--btn:active { background: var(--pw-teal-50); }
+.pws2-taskpill--btn i { font-size: 15px; line-height: 1; }
 
 /* ── Products, expanded under the card ────────────────────────────────── */
 .pws2-prods { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -1099,11 +1167,35 @@
 /* ── Next scan ────────────────────────────────────────────────────────── */
 .pws2-next {
     border: 1px solid #bfe3e6; border-radius: 10px;
-    background: #eef8f9; padding: 10px 11px;
+    background: #eef8f9; padding: 10px 12px;
 }
 .pws2-next > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: var(--pw-teal); }
 .pws2-next > b { display: block; font-size: 14.5px; font-weight: 800; margin-top: 3px; }
 .pws2-next > small { display: block; font-size: 11px; color: #3f5d63; margin-top: 3px; line-height: 1.35; }
+
+/* Scan hint — how to fire the scan on the device. Big enough to read at a
+   glance across the floor. */
+.pws2-scanhint {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 10px; padding: 18px 16px; min-height: 68px;
+    border-radius: 13px;
+    background: var(--pw-teal-50); border: 1.5px dashed var(--pw-teal);
+    font-size: 13.5px; font-weight: 600; color: var(--pw-text); line-height: 1.45;
+}
+.pws2-scanhint i { font-size: 26px; line-height: 1; color: var(--pw-teal); flex-shrink: 0; }
+.pws2-scanhint b { color: var(--pw-teal); font-weight: 800; }
+/* Flash when Scan is tapped — draws the eye to "press the scan key". */
+.pws2-scanhint.is-armed {
+    border-style: solid; background: #d7f0f0;
+    animation: pws2-hint-pulse 1.8s ease both;
+}
+.pws2-scanhint.is-armed i { animation: pws2-hint-bob 1.8s ease both; }
+@keyframes pws2-hint-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(15, 110, 112, .35); }
+    40% { box-shadow: 0 0 0 5px rgba(15, 110, 112, .18); }
+    100% { box-shadow: 0 0 0 0 rgba(15, 110, 112, 0); }
+}
+@keyframes pws2-hint-bob { 0%, 100% { transform: none; } 30% { transform: scale(1.18); } }
 
 /* ── Sticky foot ──────────────────────────────────────────────────────── */
 .pws2-foot {
@@ -1172,11 +1264,30 @@
     font-family: inherit; color: inherit; cursor: pointer;
 }
 .pws2-row:active { background: #f3f7f8; }
+.pws2-row--read { cursor: default; }
+.pws2-row--read:active { background: var(--pw-card); }
 .pws2-row.is-current { border-color: var(--pw-teal); background: var(--pw-teal-50); }
+.pws2-sheet-note { margin: 12px 2px 0; font-size: 11px; color: var(--pw-mute); line-height: 1.45; }
 .pws2-row-top { display: flex; align-items: center; gap: 8px; }
 .pws2-row-code { font-size: 14px; font-weight: 800; font-family: ui-monospace, monospace; }
+.pws2-row-spi { display: inline-flex; align-items: center; gap: 4px; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; color: var(--pw-teal); margin-bottom: 6px; }
+.pws2-row-spi i { font-size: 13px; }
 .pws2-row-sub { display: block; font-size: 11px; color: var(--pw-mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pws2-row-state { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+.pws2-row-state { display: none; }
+/* Box QR / Shelf QR scan progress, like the guide. */
+.pws2-row-scan { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.pws2-qr {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+    padding: 3px 8px; border-radius: 999px;
+    background: #f1f5f6; border: 1px solid #d7e0e3; color: #64798a;
+}
+.pws2-qr.is-on { background: #dcfce7; border-color: #a7e3bd; color: #15803d; }
+.pws2-row-count {
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800;
+    color: #8a5a08; background: #fdf0d5; border-radius: 999px; padding: 2px 8px;
+}
+.pws2-row-count.is-full { color: #15803d; background: #dcfce7; }
 
 /* ── The scan field, in the light skin ────────────────────────────────────
  *

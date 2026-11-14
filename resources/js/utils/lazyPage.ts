@@ -56,10 +56,45 @@ const RELOAD_COOLDOWN_MS = 10_000;
  * fires marginally earlier on desktop, which widens the window in which we
  * correctly recognise the navigation. */
 let unloading = false;
+
+/** Reload once to pick up the fresh build; refuse to loop inside the cooldown.
+ *  Returns true when it has taken ownership (reloading, or already leaving). */
+function reloadForStaleChunk(): boolean {
+  // Navigating away cancels module fetches — don't stamp, don't reload.
+  if (unloading) return true;
+  let last = 0;
+  try { last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0) || 0; } catch { /* no storage */ }
+  if (Date.now() - last > RELOAD_COOLDOWN_MS) {
+    try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch { /* no storage */ }
+    window.location.reload();
+    return true;
+  }
+  return false;
+}
+
+const STALE_CHUNK_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Failed to load module script|ChunkLoadError|Unable to preload (CSS|module)/i;
+
 if (typeof window !== 'undefined') {
   const markUnloading = () => { unloading = true; };
   window.addEventListener('pagehide', markUnloading);
   window.addEventListener('beforeunload', markUnloading);
+
+  /* Vite routes EVERY dynamic import through its preload helper, which fires
+     this event on failure — so this catches stale chunks loaded by plain
+     React.lazy()/import() too, not only the lazyPage() routes below (e.g. the
+     InvoiceEvidenceVault modal lazy-loaded inside InvoiceList). preventDefault
+     stops Vite rethrowing it into the tree; the reload makes it moot. */
+  window.addEventListener('vite:preloadError', (e) => {
+    if (reloadForStaleChunk()) e.preventDefault();
+  });
+
+  /* A belt-and-braces net for dynamic-import rejections that never reached a
+     boundary (an await in an event handler, a non-Vite import). Same cooldown,
+     so it can never fight the handlers above into a loop. */
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason as { name?: string; message?: string } | undefined;
+    if (STALE_CHUNK_RE.test(`${r?.name ?? ''} ${r?.message ?? ''}`)) reloadForStaleChunk();
+  });
 }
 
 // `ComponentType<any>` mirrors React.lazy's own declaration. Narrowing it
@@ -73,24 +108,10 @@ export function lazyPage<T extends ComponentType<any>>(
 ) {
   return lazy(() =>
     factory().catch((err: unknown) => {
-      // Navigating away cancels module fetches — see the note on `unloading`.
-      // Return without reloading AND without stamping the cooldown, so a real
-      // chunk failure moments later is still allowed its one retry.
-      if (unloading) return new Promise<{ default: T }>(() => { });
-
-      let last = 0;
-      // Private-browsing and blocked-storage modes throw on access, and a
-      // failed read must not turn a recoverable chunk error into a hard crash.
-      try { last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0) || 0; } catch { /* no storage */ }
-
-      if (Date.now() - last > RELOAD_COOLDOWN_MS) {
-        try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch { /* no storage */ }
-        window.location.reload();
-        // Deliberately never settles: the navigation is already underway and
-        // resolving/rejecting here would render a flash of the wrong UI first.
-        return new Promise<{ default: T }>(() => { });
-      }
-
+      // Reload once to pick up the fresh build. When it takes ownership the
+      // navigation is already underway, so never settle — resolving/rejecting
+      // here would flash the wrong UI first.
+      if (reloadForStaleChunk()) return new Promise<{ default: T }>(() => { });
       // Already retried — this is not a stale build. Let it surface.
       throw err;
     }),
