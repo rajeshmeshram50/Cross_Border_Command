@@ -10,6 +10,7 @@ use App\Models\P2p\PoPayment;
 use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PoRefundRecovery;
 use App\Models\P2p\PurchaseOrder;
+use App\Models\P2p\SupplierInvoice;
 use App\Models\Vendor;
 use App\Services\P2p\VendorCurrencyGuard;
 use App\Services\ZohoBooksService;
@@ -88,7 +89,11 @@ class PoZohoService
         if (empty($po->zoho_bill_id)) $this->assertSyncable($po);
 
         $problems = [];
-        try { $this->assertHsnCodes($po); } catch (\Throwable $e) { $problems[] = $this->clean($e); }
+        try {
+            $this->assertHsnCodes($po);
+        } catch (\Throwable $e) {
+            $problems[] = $this->clean($e);
+        }
         $international = $po->document_type === 'international';
         $inter = false;
         try {
@@ -99,11 +104,14 @@ class PoZohoService
 
         // Every GST rate the lines carry has to exist in Zoho, on the right side.
         if (!$international && !$problems) {
-            $rates = $po->items()->get()->pluck('gst_pct')->map(fn ($v) => round((float) $v, 2))
-                ->filter(fn ($v) => $v > 0)->unique()->values();
+            $rates = $po->items()->get()->pluck('gst_pct')->map(fn($v) => round((float) $v, 2))
+                ->filter(fn($v) => $v > 0)->unique()->values();
             foreach ($rates as $rate) {
-                try { $this->books->resolveTaxId($rate, $inter); }
-                catch (\Throwable $e) { $problems[] = $this->clean($e); }
+                try {
+                    $this->books->resolveTaxId($rate, $inter);
+                } catch (\Throwable $e) {
+                    $problems[] = $this->clean($e);
+                }
             }
         }
 
@@ -112,8 +120,11 @@ class PoZohoService
 
         // The credit line carries the org's 0% rate; a refund needs an account to land in.
         if ($adj && !$problems) {
-            try { $this->books->resolveTaxId(0.0, $inter); }
-            catch (\Throwable $e) { $problems[] = 'The vendor credit needs a 0% rate: ' . $this->clean($e); }
+            try {
+                $this->books->resolveTaxId(0.0, $inter);
+            } catch (\Throwable $e) {
+                $problems[] = 'The vendor credit needs a 0% rate: ' . $this->clean($e);
+            }
         }
         $needsBank = $po->payments()->withoutGlobalScope('tenant')->whereColumn('zoho_applied_amount', '<', 'amount')->exists()
             || ($adj && $adj->recoveries()->whereNull('zoho_refund_id')->exists());
@@ -138,39 +149,72 @@ class PoZohoService
     {
         $step = function (string $key, string $title, string $sub, bool $done, ?string $ref, $at, ?string $note, ?string $error, ?float $amount = null, array $items = []) {
             return [
-                'key' => $key, 'title' => $title, 'sub' => $sub,
+                'key' => $key,
+                'title' => $title,
+                'sub' => $sub,
                 'state' => $error ? 'failed' : ($done ? 'done' : 'pending'),
-                'ref' => $ref ?: null, 'at' => $at?->toIso8601String(),
-                'note' => $note, 'amount' => $amount, 'items' => $items, 'error' => $error,
+                'ref' => $ref ?: null,
+                'at' => $at?->toIso8601String(),
+                'note' => $note,
+                'amount' => $amount,
+                'items' => $items,
+                'error' => $error,
             ];
         };
         // Each payment / refund as its own line, so a part-posted step says which one is missing.
-        $line = fn (string $label, float $amount, bool $done, ?string $ref, $at, ?string $error) => [
-            'label' => $label, 'amount' => $amount,
+        $line = fn(string $label, float $amount, bool $done, ?string $ref, $at, ?string $error) => [
+            'label' => $label,
+            'amount' => $amount,
             'state' => $error ? 'failed' : ($done ? 'done' : 'pending'),
-            'ref' => $ref ?: null, 'at' => $at?->toIso8601String(), 'error' => $error,
+            'ref' => $ref ?: null,
+            'at' => $at?->toIso8601String(),
+            'error' => $error,
         ];
 
         $payments = PoPayment::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)->orderBy('id')->get();
-        $posted   = $payments->filter(fn ($p) => (float) $p->zoho_applied_amount > 0);
-        $payError = $payments->firstWhere(fn ($p) => !empty($p->zoho_error))?->zoho_error;
+        $posted   = $payments->filter(fn($p) => (float) $p->zoho_applied_amount > 0);
+        $payError = $payments->firstWhere(fn($p) => !empty($p->zoho_error))?->zoho_error;
 
         $steps = [
-            $step('purchase_order', 'Purchase Order Created', 'The PO itself, raised in Zoho Books',
-                !empty($po->zoho_purchaseorder_id), $po->zoho_purchaseorder_id, $po->zoho_synced_at, null,
-                empty($po->zoho_purchaseorder_id) ? $po->zoho_error : null),
-            $step('bill', 'Bill Created', 'The purchase order converted to a bill',
-                !empty($po->zoho_bill_id), $po->zoho_bill_number ?: $po->zoho_bill_id, $po->zoho_synced_at, null, null),
-            $step('payments', 'PO Payment Completed', 'Every payment released, posted against the bill',
+            $step(
+                'purchase_order',
+                'Purchase Order Created',
+                'The PO itself, raised in Zoho Books',
+                !empty($po->zoho_purchaseorder_id),
+                $po->zoho_purchaseorder_id,
+                $po->zoho_synced_at,
+                null,
+                empty($po->zoho_purchaseorder_id) ? $po->zoho_error : null
+            ),
+            $step(
+                'bill',
+                'Bill Created',
+                'The purchase order converted to a bill',
+                !empty($po->zoho_bill_id),
+                $po->zoho_bill_number ?: $po->zoho_bill_id,
+                $po->zoho_synced_at,
+                null,
+                null
+            ),
+            $step(
+                'payments',
+                'PO Payment Completed',
+                'Every payment released, posted against the bill',
                 $payments->isNotEmpty() && $posted->count() === $payments->count(),
-                null, $posted->max('zoho_synced_at'),
+                null,
+                $posted->max('zoho_synced_at'),
                 $payments->isEmpty() ? 'No payment released yet' : $posted->count() . ' of ' . $payments->count() . ' posted',
-                $payError, $payments->isEmpty() ? null : (float) $posted->sum('zoho_applied_amount'),
-                $payments->map(fn ($p) => $line(
+                $payError,
+                $payments->isEmpty() ? null : (float) $posted->sum('zoho_applied_amount'),
+                $payments->map(fn($p) => $line(
                     $p->utr_cheque_number ? 'UTR ' . $p->utr_cheque_number : ($p->bank_name ?: 'Payment #' . $p->id),
-                    (float) $p->amount, (float) $p->zoho_applied_amount > 0, $p->zoho_payment_id,
-                    $p->zoho_synced_at ?: $p->utr_cheque_date, $p->zoho_error,
-                ))->all()),
+                    (float) $p->amount,
+                    (float) $p->zoho_applied_amount > 0,
+                    $p->zoho_payment_id,
+                    $p->zoho_synced_at ?: $p->utr_cheque_date,
+                    $p->zoho_error,
+                ))->all()
+            ),
         ];
 
         // A cancelled PO carries two more steps: what is owed back, and what came back.
@@ -179,23 +223,39 @@ class PoZohoService
             ->latest('id')->first();
         if ($adj) {
             $recs = $adj->recoveries()->withoutGlobalScope('tenant')->where('client_id', $adj->client_id)->orderBy('id')->get();
-            $refunded = $recs->filter(fn ($r) => !empty($r->zoho_refund_id));
-            $steps[] = $step('vendor_credit', 'Vendor Credit Created', 'The amount the supplier owes back, as a credit note',
-                !empty($adj->zoho_vendorcredit_id), $adj->zoho_vendorcredit_number ?: $adj->zoho_vendorcredit_id,
-                $adj->zoho_synced_at, $adj->zoho_vendorcredit_number === $adj->code ? null : $adj->code, $adj->zoho_error);
-            $steps[] = $step('refunds', 'Refund Received', 'Each recovery, refunded against the vendor credit',
-                $recs->isNotEmpty() && $refunded->count() === $recs->count(), null, $refunded->max('zoho_synced_at'),
+            $refunded = $recs->filter(fn($r) => !empty($r->zoho_refund_id));
+            $steps[] = $step(
+                'vendor_credit',
+                'Vendor Credit Created',
+                'The amount the supplier owes back, as a credit note',
+                !empty($adj->zoho_vendorcredit_id),
+                $adj->zoho_vendorcredit_number ?: $adj->zoho_vendorcredit_id,
+                $adj->zoho_synced_at,
+                $adj->zoho_vendorcredit_number === $adj->code ? null : $adj->code,
+                $adj->zoho_error
+            );
+            $steps[] = $step(
+                'refunds',
+                'Refund Received',
+                'Each recovery, refunded against the vendor credit',
+                $recs->isNotEmpty() && $refunded->count() === $recs->count(),
+                null,
+                $refunded->max('zoho_synced_at'),
                 $recs->isEmpty() ? 'No refund recorded yet' : $refunded->count() . ' of ' . $recs->count() . ' refunded',
-                $recs->firstWhere(fn ($r) => !empty($r->zoho_error))?->zoho_error,
+                $recs->firstWhere(fn($r) => !empty($r->zoho_error))?->zoho_error,
                 $recs->isEmpty() ? null : (float) $refunded->sum('amount'),
-                $recs->map(fn ($r) => $line(
+                $recs->map(fn($r) => $line(
                     $r->reference_no ? 'Ref ' . $r->reference_no : 'Recovery #' . $r->id,
-                    (float) $r->amount, !empty($r->zoho_refund_id), $r->zoho_refund_id,
-                    $r->zoho_synced_at ?: $r->recovered_date, $r->zoho_error,
-                ))->all());
+                    (float) $r->amount,
+                    !empty($r->zoho_refund_id),
+                    $r->zoho_refund_id,
+                    $r->zoho_synced_at ?: $r->recovered_date,
+                    $r->zoho_error,
+                ))->all()
+            );
         }
 
-        $done = count(array_filter($steps, fn ($x) => $x['state'] === 'done'));
+        $done = count(array_filter($steps, fn($x) => $x['state'] === 'done'));
         return [
             'po_code'   => $po->code,
             'currency'  => $po->currency_code ?: 'INR',
@@ -244,10 +304,13 @@ class PoZohoService
                 if ($zohoPoId === '') {
                     $created = $this->books->createPurchaseOrder($this->poPayload($po, $ctx));
                     $zohoPoId = $createdPo = (string) $created['purchaseorder_id'];
-                    $poLineIds = collect($created['line_items'] ?? [])->pluck('line_item_id')->map(fn ($x) => (string) $x)->all();
+                    $poLineIds = collect($created['line_items'] ?? [])->pluck('line_item_id')->map(fn($x) => (string) $x)->all();
                     // A draft Zoho PO cannot be billed.
-                    try { $this->books->markPurchaseOrderOpen($zohoPoId); }
-                    catch (\Throwable $e) { Log::warning('P2P Zoho: mark PO open failed', ['po' => $po->id, 'err' => $e->getMessage()]); }
+                    try {
+                        $this->books->markPurchaseOrderOpen($zohoPoId);
+                    } catch (\Throwable $e) {
+                        Log::warning('P2P Zoho: mark PO open failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+                    }
                 }
 
                 $bill = $this->books->createBill($this->billPayload($po, $ctx, $poLineIds));
@@ -268,12 +331,14 @@ class PoZohoService
                    contact's currency change once it carries transactions. */
                 if ($po->vendor_id) {
                     app(VendorCurrencyGuard::class)->rememberZohoCurrency(
-                        (int) $po->client_id, (int) $po->vendor_id, (string) ($po->currency_code ?: 'INR'),
+                        (int) $po->client_id,
+                        (int) $po->vendor_id,
+                        (string) ($po->currency_code ?: 'INR'),
                     );
                 }
             } catch (\Throwable $e) {
-                if ($createdBill) $this->quietly(fn () => $this->books->deleteBill($createdBill), 'bill delete');
-                if ($createdPo) $this->quietly(fn () => $this->books->deletePurchaseOrder($createdPo), 'PO delete');
+                if ($createdBill) $this->quietly(fn() => $this->books->deleteBill($createdBill), 'bill delete');
+                if ($createdPo) $this->quietly(fn() => $this->books->deletePurchaseOrder($createdPo), 'PO delete');
                 $po->forceFill(['zoho_status' => 'failed', 'zoho_error' => $e->getMessage()])->save();
                 throw new RuntimeException($this->clean($e));
             }
@@ -285,8 +350,11 @@ class PoZohoService
 
             // Payments are best-effort: the bill stays even if one fails, and the row shows why.
             $pay = ['pushed' => 0, 'applied' => 0.0];
-            try { $pay = $this->postPayments($po->fresh()); }
-            catch (\Throwable $e) { Log::warning('P2P Zoho: payment posting after bill failed', ['po' => $po->id, 'err' => $e->getMessage()]); }
+            try {
+                $pay = $this->postPayments($po->fresh());
+            } catch (\Throwable $e) {
+                Log::warning('P2P Zoho: payment posting after bill failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+            }
 
             return ['bill_number' => (string) $po->zoho_bill_number, 'already' => false] + $pay;
         });
@@ -305,7 +373,7 @@ class PoZohoService
 
         $payments = PoPayment::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)
             ->whereColumn('zoho_applied_amount', '<', 'amount')
-            ->when($onlyPaymentId, fn ($q) => $q->where('id', $onlyPaymentId))
+            ->when($onlyPaymentId, fn($q) => $q->where('id', $onlyPaymentId))
             ->orderBy('id')->get();
         if ($payments->isEmpty()) return $result;
 
@@ -353,6 +421,281 @@ class PoZohoService
             $result['applied'] = round($result['applied'] + $amt, 2);
         }
         return $result;
+    }
+
+    /* ══════════════════════════ DIRECT SPI (no PO) ══════════════════════════ */
+
+    /**
+     * A standalone (Direct) supplier invoice has no purchase order, so it carries
+     * its OWN Zoho bill — created straight from the invoice's line items — and its
+     * payments post against that bill. Same shape as the PO flow (idempotent,
+     * locked, compensating delete), minus the PO/convert-from linkage.
+     *
+     * @return array{bill_number:string, already:bool, pushed:int, applied:float}
+     */
+    public function syncSpi(SupplierInvoice $spi, ?int $userId): array
+    {
+        $this->assertConfigured();
+        return $this->withLock('zoho:p2p:spi:' . $spi->id, function () use ($spi, $userId) {
+            $spi->refresh();
+            if (!empty($spi->zoho_bill_id)) {
+                $pay = $this->postSpiPayments($spi);
+                return ['bill_number' => (string) ($spi->zoho_bill_number ?: $spi->zoho_bill_id), 'already' => true] + $pay;
+            }
+            $this->assertSpiSyncable($spi);
+            $this->assertSpiHsnCodes($spi);
+
+            $createdBill = null;
+            try {
+                $ctx = $this->spiContext($spi);
+                $bill = $this->books->createBill($this->spiBillPayload($spi, $ctx));
+                $createdBill = (string) $bill['bill_id'];
+
+                $spi->forceFill([
+                    'zoho_status'      => 'synced',
+                    'zoho_bill_id'     => $createdBill,
+                    'zoho_bill_number' => (string) ($bill['bill_number'] ?? $spi->code),
+                    'zoho_synced_at'   => now(),
+                    'zoho_error'       => null,
+                    'updated_by'       => $userId ?? $spi->updated_by,
+                ])->save();
+
+                if ($spi->vendor_id) {
+                    app(VendorCurrencyGuard::class)->rememberZohoCurrency(
+                        (int) $spi->client_id,
+                        (int) $spi->vendor_id,
+                        (string) ($spi->currency_code ?: 'INR'),
+                    );
+                }
+            } catch (\Throwable $e) {
+                if ($createdBill) $this->quietly(fn() => $this->books->deleteBill($createdBill), 'spi bill delete');
+                $spi->forceFill(['zoho_status' => 'failed', 'zoho_error' => $e->getMessage()])->save();
+                throw new RuntimeException($this->clean($e));
+            }
+
+            $pay = ['pushed' => 0, 'applied' => 0.0];
+            try {
+                $pay = $this->postSpiPayments($spi->fresh());
+            } catch (\Throwable $e) {
+                Log::warning('P2P Zoho: SPI payment posting after bill failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
+            }
+
+            return ['bill_number' => (string) $spi->zoho_bill_number, 'already' => false] + $pay;
+        });
+    }
+
+    /**
+     * Post the Direct SPI's unposted payments as vendor payments against its bill.
+     * Direct-SPI payments are PoPayment rows carrying supplier_invoice_id with NO
+     * purchase_order_id. Idempotent via zoho_applied_amount, capped at the balance.
+     *
+     * @return array{pushed:int, applied:float}
+     */
+    public function postSpiPayments(SupplierInvoice $spi): array
+    {
+        $result = ['pushed' => 0, 'applied' => 0.0];
+        if (empty($spi->zoho_bill_id)) return $result;
+
+        $payments = PoPayment::withoutGlobalScope('tenant')
+            ->where('supplier_invoice_id', $spi->id)
+            ->whereNull('purchase_order_id')
+            ->whereColumn('zoho_applied_amount', '<', 'amount')
+            ->orderBy('id')->get();
+        if ($payments->isEmpty()) return $result;
+
+        if (!$this->books->resolvePaidThroughAccountId(null)) {
+            throw new RuntimeException('Zoho Books has no bank or cash account to pay from — add one in Zoho, then sync the payments.');
+        }
+        $ctx = $this->spiContext($spi);
+        $remaining = round((float) ($this->books->getBill((string) $spi->zoho_bill_id)['balance'] ?? 0), 2);
+
+        foreach ($payments as $p) {
+            $amt = round(min((float) $p->amount - (float) $p->zoho_applied_amount, $remaining), 2);
+            if ($amt <= 0.005) continue;
+            $date = optional($p->utr_cheque_date)->toDateString() ?: optional($p->created_at)->toDateString() ?: now()->toDateString();
+            $payload = [
+                'vendor_id'               => $ctx['vendor_id'],
+                'payment_mode'            => 'banktransfer',
+                'amount'                  => $amt,
+                'date'                    => $date,
+                'paid_through_account_id' => $this->books->resolvePaidThroughAccountId($p->bank_name),
+                'bills'                   => [['bill_id' => (string) $spi->zoho_bill_id, 'amount_applied' => $amt]],
+                'description'             => implode(' · ', array_filter(['SPI ' . $spi->code, $p->bank_name ? 'Bank: ' . $p->bank_name : null])),
+            ];
+            if ($p->utr_cheque_number) $payload['reference_number'] = (string) $p->utr_cheque_number;
+            if ($ctx['exchange_rate']) $payload['exchange_rate'] = $ctx['exchange_rate'];
+
+            try {
+                $zpay = $this->books->recordVendorPayment($payload);
+            } catch (\Throwable $e) {
+                $p->forceFill(['zoho_sync_status' => 'failed', 'zoho_error' => $this->clean($e)])->saveQuietly();
+                throw new RuntimeException($this->clean($e));
+            }
+            $p->forceFill([
+                'zoho_payment_id'     => (string) ($zpay['payment_id'] ?? $p->zoho_payment_id),
+                'zoho_applied_amount' => round((float) $p->zoho_applied_amount + $amt, 2),
+                'zoho_sync_status'    => 'synced',
+                'zoho_synced_at'      => now(),
+                'zoho_error'          => null,
+            ])->saveQuietly();
+
+            if (!empty($p->proof_path)) AttachPoPaymentProofToZoho::dispatch($p->id);
+
+            $remaining = round($remaining - $amt, 2);
+            $result['pushed']++;
+            $result['applied'] = round($result['applied'] + $amt, 2);
+        }
+        return $result;
+    }
+
+    private function assertSpiSyncable(SupplierInvoice $spi): void
+    {
+        if (!$spi->vendor_id) throw new RuntimeException('Attach a supplier to this invoice before syncing to Zoho Books.');
+        if ($spi->status === 'draft') throw new RuntimeException('Complete the invoice before syncing it to Zoho Books.');
+        if (!$spi->items()->exists()) throw new RuntimeException('Add at least one product line before syncing to Zoho Books.');
+        if ($spi->document_type !== 'international' && !$spi->tds_updated_at) {
+            throw new RuntimeException('Deduct the TDS on this invoice first (0% if none applies) — the bill amount depends on it.');
+        }
+        $hasPayment = PoPayment::withoutGlobalScope('tenant')
+            ->where('supplier_invoice_id', $spi->id)->whereNull('purchase_order_id')->exists();
+        if (!$hasPayment) {
+            throw new RuntimeException('Record at least one payment before syncing to Zoho Books.');
+        }
+    }
+
+    /** Zoho vendor, GST registration, intra/inter state and currency for a Direct SPI. */
+    private function spiContext(SupplierInvoice $spi): array
+    {
+        $vendor = Vendor::withTrashed()->with('primaryAddress')->findOrFail($spi->vendor_id);
+        $gstin = ($vendor->gst_number ?: null)
+            ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+        $stateCode = optional($vendor->primaryAddress)->state_code;
+        $orgState = $this->books->orgStateCode();
+        $party = ZohoBooksService::normStateCode($stateCode);
+        $ccyId = $this->books->resolveCurrencyId($spi->currency_code);
+
+        return [
+            'vendor_id'     => $this->books->findOrCreateVendorId($vendor, $gstin, $stateCode, $spi->currency_code),
+            'registered'    => (bool) $gstin,
+            'inter_state'   => $party !== null && $party !== ZohoBooksService::normStateCode($orgState),
+            'currency_id'   => $ccyId,
+            'exchange_rate' => ($ccyId && (float) $spi->exchange_rate > 0) ? (float) $spi->exchange_rate : null,
+        ];
+    }
+
+    /** The SPI's items as Zoho bill lines — billed quantity (qty_spi) at its rate/GST. */
+
+    private function spiLines(SupplierInvoice $spi, array $ctx): array
+    {
+        $items = $spi->items()->get();
+
+        $meta = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $items->pluck('product_id')->filter()->unique()->all())
+            ->get(['p.id', 'p.name', 'p.product_code', 'u.short_code', 'u.title', 'h.hsn_code'])
+            ->keyBy('id');
+
+        return $items->values()->map(function ($it) use ($ctx, $meta) {
+            $m = $meta[(int) $it->product_id] ?? null;
+            $name = (string) ($m->name ?? $m->product_code ?? 'Item');
+
+            $gst = round((float) $it->gst_pct, 2);
+
+            // Validate supplier GST registration.
+            if ($gst > 0 && !$ctx['registered']) {
+                throw new RuntimeException(
+                    "Supplier GSTIN is missing, but product {$name} has GST of {$gst}%. Verify supplier GST details."
+                );
+            }
+
+            // Resolve the applicable Zoho tax, including 0% where configured.
+            $taxId = $this->books->resolveTaxId(
+                $gst,
+                (bool) $ctx['inter_state']
+            );
+
+            if (!$taxId) {
+                throw new RuntimeException(
+                    "Zoho Books tax mapping not found for {$gst}% GST on product {$name}."
+                );
+            }
+
+            $desc = trim(implode(' · ', array_filter([
+                (string) ($m->product_code ?? ''),
+                trim((string) $it->description)
+            ])));
+
+            $line = [
+                'item_id' => $this->books->findOrCreateItemId(
+                    $name,
+                    (float) $it->rate,
+                    $taxId,
+                    $it->product_id,
+                    $gst
+                ),
+                'name'        => $name,
+                'description' => mb_substr($desc, 0, 5500),
+                'rate'        => (float) $it->rate,
+                'quantity'    => (float) $it->qty_spi,
+                'tax_id'      => $taxId,
+            ];
+
+            $hsn = (string) ($it->hsn_code ?: ($m->hsn_code ?? ''));
+
+            if ($hsn !== '') {
+                $line['hsn_or_sac'] = $hsn;
+            }
+
+            $unit = $it->uom ?: ($m ? ($m->short_code ?: $m->title) : null);
+
+            if ($unit) {
+                $line['unit'] = (string) $unit;
+            }
+
+            return $line;
+        })->all();
+    }
+
+
+    private function spiBillPayload(SupplierInvoice $spi, array $ctx): array
+    {
+        $payload = [
+            'vendor_id'        => $ctx['vendor_id'],
+            // The supplier's own invoice number is the bill number; our code is the ref.
+            'bill_number'      => (string) ($spi->invoice_no ?: $spi->code),
+            'date'             => optional($spi->invoice_date)->toDateString() ?: now()->toDateString(),
+            'reference_number' => (string) $spi->code,
+            'line_items'       => $this->spiLines($spi, $ctx),
+        ];
+        // TDS carried as a deduction, so the bill equals the net payable (same as the PO bill).
+        $tds = ($spi->tds_updated_at && (float) $spi->tds_amount > 0) ? round((float) $spi->tds_amount, 2) : 0.0;
+        if ($tds > 0) {
+            $payload['adjustment'] = -$tds;
+            $payload['adjustment_description'] = 'less TDS ₹' . number_format($tds, 2);
+        }
+        return $this->withCurrency($payload, $ctx);
+    }
+
+    /** Same HSN rule as the PO, named per product so a refusal is actionable. */
+    private function assertSpiHsnCodes(SupplierInvoice $spi): void
+    {
+        $bad = DB::table('p2p_supplier_invoice_items as i')
+            ->join('products as p', 'p.id', '=', 'i.product_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->where('i.supplier_invoice_id', $spi->id)
+            ->whereNull('i.deleted_at')
+            ->whereNotNull('h.hsn_code')
+            ->whereRaw("h.hsn_code <> '' AND (h.hsn_code !~ '^[0-9]+$' OR LENGTH(h.hsn_code) > 8)")
+            ->distinct()
+            ->get(['p.product_code', 'p.name', 'h.hsn_code']);
+        if ($bad->isEmpty()) return;
+
+        $named = $bad->map(fn($r) => trim(($r->product_code ? $r->product_code . ' ' : '') . $r->name)
+            . ' (HSN ' . $r->hsn_code . ')')->implode(', ');
+        throw new RuntimeException(
+            'Zoho Books accepts an HSN of digits only, up to 8. Fix it in the Product master, then sync again — ' . $named . '.'
+        );
     }
 
     /* ══════════════════════════ REFUND: VENDOR CREDIT ══════════════════════════ */
@@ -489,8 +832,8 @@ class PoZohoService
                 if ($open + 0.005 < $amount) {
                     throw new RuntimeException(
                         'Vendor credit ' . ($adj->zoho_vendorcredit_number ?: $adj->code) . ' has only ₹' . number_format($open, 2)
-                        . ' left in Zoho Books but this refund is ₹' . number_format($amount, 2)
-                        . ' — it was applied to a bill there. Un-apply it in Zoho (Bill → Credits Applied), then sync again.'
+                            . ' left in Zoho Books but this refund is ₹' . number_format($amount, 2)
+                            . ' — it was applied to a bill there. Un-apply it in Zoho (Bill → Credits Applied), then sync again.'
                     );
                 }
                 $po = PurchaseOrder::withoutGlobalScope('tenant')->find($rec->purchase_order_id);
@@ -676,8 +1019,11 @@ class PoZohoService
            that names no tax ("Specify either a Tax or Tax Exemption or Reverse Charge"),
            so the org's own 0% rate carries it — it adds nothing to the credit. */
         $zeroTax = null;
-        try { $zeroTax = $this->books->resolveTaxId(0.0, (bool) $ctx['inter_state']); }
-        catch (\Throwable $e) { Log::warning('P2P Zoho: no 0% tax for the vendor credit', ['err' => $e->getMessage()]); }
+        try {
+            $zeroTax = $this->books->resolveTaxId(0.0, (bool) $ctx['inter_state']);
+        } catch (\Throwable $e) {
+            Log::warning('P2P Zoho: no 0% tax for the vendor credit', ['err' => $e->getMessage()]);
+        }
 
         $line = [
             'item_id'     => $this->books->findOrCreateItemId(self::CREDIT_ITEM, $paid, $zeroTax, null, 0.0),
@@ -731,7 +1077,7 @@ class PoZohoService
             ->get(['p.product_code', 'p.name', 'h.hsn_code']);
         if ($bad->isEmpty()) return;
 
-        $named = $bad->map(fn ($r) => trim(($r->product_code ? $r->product_code . ' ' : '') . $r->name)
+        $named = $bad->map(fn($r) => trim(($r->product_code ? $r->product_code . ' ' : '') . $r->name)
             . ' (HSN ' . $r->hsn_code . ')')->implode(', ');
         throw new RuntimeException(
             'Zoho Books accepts an HSN of digits only, up to 8. Fix it in the Product master, then sync again — ' . $named . '.'
@@ -750,12 +1096,20 @@ class PoZohoService
     {
         $lock = Cache::lock($key, 120);
         if (!$lock->get()) throw new RuntimeException('A Zoho sync for this record is already running — try again in a moment.');
-        try { return $work(); } finally { $lock->release(); }
+        try {
+            return $work();
+        } finally {
+            $lock->release();
+        }
     }
 
     private function quietly(callable $fn, string $what): void
     {
-        try { $fn(); } catch (\Throwable $e) { Log::warning("P2P Zoho reverse: {$what} failed", ['err' => $e->getMessage()]); }
+        try {
+            $fn();
+        } catch (\Throwable $e) {
+            Log::warning("P2P Zoho reverse: {$what} failed", ['err' => $e->getMessage()]);
+        }
     }
 
     private function clean(\Throwable $e): string
