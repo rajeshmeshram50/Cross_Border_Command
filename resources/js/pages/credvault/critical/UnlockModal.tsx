@@ -130,20 +130,24 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   const [digits, setDigits] = useState<string[]>(blank);
   const [otpErr, setOtpErr] = useState('');
   const [otpBad, setOtpBad] = useState(false);
+  // The code was accepted: never show the empty code boxes again while Reveal loads.
+  const [otpOk, setOtpOk] = useState(false);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const hideTimers = useRef<Record<string, number>>({});
   const relocked = useRef(false);
   const loadSeq = useRef(0);
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false): Promise<CredentialDetail | null> => {
     const seq = ++loadSeq.current;
     try {
       const x = await cvData.show(credentialId);
-      if (seq !== loadSeq.current) return;   // a newer load (or poll) owns the state
+      if (seq !== loadSeq.current) return null;   // a newer load (or poll) owns the state
       setD(x);
       setLoadErr(null);
+      return x;
     } catch (e) {
       if (!silent && seq === loadSeq.current) setLoadErr(errMsg(e));
+      return null;
     }
   }, [credentialId]);
 
@@ -218,6 +222,8 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
 
   // Leaving a stage behind returns the view to where the request now stands.
   useEffect(() => { setViewSel(null); }, [cur]);
+  // Once past the code stage, the verified flag and the typed code are spent.
+  useEffect(() => { if (cur !== 'otp') { setOtpOk(false); setDigits(blank()); } }, [cur]);
   const view: Stage = viewSel && order.indexOf(viewSel) >= 0 && order.indexOf(viewSel) <= ci ? viewSel : cur;
   const past = view !== cur;
 
@@ -294,8 +300,10 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     try {
       const body = plan?.asks_reason ? { reason: reason.trim(), duration_minutes: dur ?? undefined } : {};
       await cvData.requestAccess(d.id, body);
-      onPending?.({ state: 'pending', label: 'Approval pending', stage: k,
-        waiting_for: { name: approverName(k), role: k === 'admin' ? 'Vault Admin' : 'Manager' } });
+      onPending?.({
+        state: 'pending', label: 'Approval pending', stage: k,
+        waiting_for: { name: approverName(k), role: k === 'admin' ? 'Vault Admin' : 'Manager' }
+      });
       toast.success(`Request sent to ${approverName(k)}`);
       await load(true);
     } catch (e) {
@@ -312,8 +320,10 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     setBusy(true);
     try {
       await cvData.raiseManager(live.id);
-      onPending?.({ state: 'pending', label: 'Approval pending', stage: 'manager',
-        waiting_for: { name: approverName('manager'), role: 'Manager' } });
+      onPending?.({
+        state: 'pending', label: 'Approval pending', stage: 'manager',
+        waiting_for: { name: approverName('manager'), role: 'Manager' }
+      });
       toast.success(`Forwarded to ${approverName('manager')}`);
       await load(true);
     } catch (e) {
@@ -362,13 +372,13 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
   }
   // Reaching the Gmail stage sends the first code once; Resend is there for another.
   useEffect(() => {
-    if (cur !== 'otp' || !isMail || !live?.can.send_otp || autoSent.current === live.id) return;
+    if (cur !== 'otp' || otpOk || !isMail || !live?.can.send_otp || autoSent.current === live.id) return;
     sendMailCode();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, isMail, live?.id, live?.can.send_otp]);
+  }, [cur, otpOk, isMail, live?.id, live?.can.send_otp]);
 
   async function verify() {
-    if (!d || busy) return;
+    if (!d || busy || otpOk) return;
     const code = digits.join('');
     if (code.length !== 6) { setOtpErr(isMail ? 'Enter the 6-digit code from the email.' : 'Enter the 6-digit code from your authenticator app.'); return; }
     setBusy(true);
@@ -380,8 +390,14 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
       const r = await cvData.verifyOtp(reqId, code);
       toast.success(`${d.name} unlocked for ${r.data.duration_minutes} min`);
       relocked.current = false;
-      setDigits(blank());
-      await load(true);
+      setOtpOk(true);
+      // Move on to Reveal; if the first reload is lost or still reads the old stage, try again
+      // briefly instead of dropping back to the empty code boxes.
+      for (let i = 0; i < 3; i++) {
+        const x = await load(true);
+        if (x?.unlock?.state === 'open') break;
+        await new Promise(res => setTimeout(res, 800));
+      }
     } catch (e) {
       if (e instanceof CvApiError && e.status === 423) {
         toast.warning('Too many wrong codes — request access again');
@@ -443,7 +459,7 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
         await copyText(r.value, r.clear_clipboard_after);
       } else {
         await copyText(value ?? '');
-        cvData.event(d.id, 'copy', key).catch(() => {});
+        cvData.event(d.id, 'copy', key).catch(() => { });
       }
       toast.success('Copied to clipboard');
     } catch (e) {
@@ -682,6 +698,31 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
 
   function otpPane() {
     const left3 = live?.otp?.attempts_left;
+    if (otpOk) {
+      return (
+        <>
+          <div className="rv-hd">
+            <span className="rv-eyebrow">{eyebrow('otp', isMail ? 'Gmail' : 'Authenticator')}</span>
+            <h4>Code verified</h4>
+            <p>Your code was accepted. Opening the credential…</p>
+          </div>
+          <div className="rv-otp is-one">
+            <div className="rv-otp__one">
+              <div className="cp-vcard">
+                <div className="cp-vcard__hd">
+                  <span className="cp-vcard__ico"><Svg d={CP_I.check} size={16} /></span>
+                  <div><b>Verified</b><span>{isMail ? 'Gmail code accepted' : 'Authenticator code accepted'}</span></div>
+                </div>
+                <div className="cp-digs-wrap is-busy" aria-busy="true">
+                  <OtpDigits value={digits} onChange={() => { }} onEnter={() => { }} autoFocus={false} />
+                </div>
+                <div className="cp-vcard__ft"><span className="cp-spin cp-spin--sm" /> Loading the reveal step…</div>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    }
     if (isMail) {
       const to = mail.sentTo || live?.otp?.sent_to || plan?.otp_sent_to || 'the Gmail set for this credential';
       const sendLbl = mail.sending ? 'Sending…' : mail.wait > 0 ? `Resend in ${mail.wait}s` : mail.sentTo ? 'Resend code' : 'Send code';
@@ -700,7 +741,9 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
                   <span className="cp-vcard__ico"><Svg d={CP_I.mail} size={16} /></span>
                   <div><b>Enter the code</b><span>{mail.sentTo ? `Sent to ${mail.sentTo}` : 'Press Send code to get one'}</span></div>
                 </div>
-                <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
+                <div className={`cp-digs-wrap${busy ? ' is-busy' : ''}`} aria-busy={busy || undefined}>
+                  <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
+                </div>
                 <div className="cp-err cp-err--c" id="cpFormErr">{otpErr}</div>
                 <button type="button" className="cp-btn cp-btn--ghost cp-btn--block" onClick={sendMailCode}
                   disabled={mail.sending || mail.wait > 0 || busy}>
@@ -739,15 +782,15 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
             </div>
           )}
           <div className={setup ? 'rv-otp__box rv-otp__code' : 'rv-otp__one'}>
-          <div className="cp-vcard">
-            <div className="cp-vcard__hd">
-              <span className="cp-vcard__ico"><Svg d={CP_I.phone} size={16} /></span>
-              <div><b>Enter your OTP</b><span>6-digit code from your authenticator app</span></div>
+            <div className="cp-vcard">
+              <div className="cp-vcard__hd">
+                <span className="cp-vcard__ico"><Svg d={CP_I.phone} size={16} /></span>
+                <div><b>Enter your OTP</b><span>6-digit code from your authenticator app</span></div>
+              </div>
+              <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
+              <div className="cp-err cp-err--c" id="cpFormErr">{otpErr}</div>
+              <div className="cp-vcard__ft"><Svg d={CP_I.clock} size={11} />Codes refresh every 30 seconds{left3 !== undefined && left3 < 3 ? ` · ${left3} attempt${left3 === 1 ? '' : 's'} left` : ''}</div>
             </div>
-            <OtpDigits value={digits} bad={otpBad} onChange={v => { setDigits(v); if (otpErr) setOtpErr(''); }} onEnter={verify} />
-            <div className="cp-err cp-err--c" id="cpFormErr">{otpErr}</div>
-            <div className="cp-vcard__ft"><Svg d={CP_I.clock} size={11} />Codes refresh every 30 seconds{left3 !== undefined && left3 < 3 ? ` · ${left3} attempt${left3 === 1 ? '' : 's'} left` : ''}</div>
-          </div>
           </div>
         </div>
       </>
@@ -843,14 +886,36 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
     const vk = steps[vidx];
     let prim: ReactNode = null;
     if (!past && cur !== 'done') {
-      if (cur === 'otp') {
-        prim = <button type="button" className="cp-btn cp-btn--pri" onClick={verify} disabled={busy}><Svg d={CP_I.lock} size={13} /> {busy ? 'Verifying…' : 'Verify & reveal'}</button>;
+      if (cur === 'otp' && otpOk) {
+        prim = (
+          <button type="button" className="cp-btn cp-btn--pri" disabled aria-busy="true">
+            <span className="cp-spin cp-spin--sm" /> Opening…
+          </button>
+        );
+      } else if (cur === 'otp') {
+        prim = (
+          <button type="button" className="cp-btn cp-btn--pri" onClick={verify} disabled={busy} aria-busy={busy || undefined}>
+            {busy ? <><span className="cp-spin cp-spin--sm" /> Verifying…</> : <><Svg d={CP_I.lock} size={13} /> Verify & reveal</>}
+          </button>
+        );
       } else if (cur === 'manager' && unlock.needs_forward) {
-        prim = <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy}><Svg d={CP_I.send} size={13} /> {busy ? 'Sending…' : `Send to ${approverName('manager')}`}</button>;
+        prim = (
+          <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy} aria-busy={busy || undefined}>
+            {busy
+              ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
+              : <><Svg d={CP_I.send} size={13} /> {`Send to ${approverName('manager')}`}</>}
+          </button>
+        );
       } else if (stageStatus(cur) === 'pend') {
         prim = <button type="button" className="cp-btn cp-btn--pri is-wait" disabled><span className="cp-spin cp-spin--sm" /> Waiting for {approverName(cur)}…</button>;
       } else {
-        prim = <button type="button" className="cp-btn cp-btn--pri" onClick={() => send(cur)} disabled={busy}><Svg d={CP_I.send} size={13} /> {busy ? 'Sending…' : `Send request to ${approverName(cur)}`}</button>;
+        prim = (
+          <button type="button" className="cp-btn cp-btn--pri" onClick={() => send(cur)} disabled={busy} aria-busy={busy || undefined}>
+            {busy
+              ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
+              : <><Svg d={CP_I.send} size={13} /> {`Send request to ${approverName(cur)}`}</>}
+          </button>
+        );
       }
     }
     return (

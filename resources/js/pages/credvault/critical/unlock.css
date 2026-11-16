@@ -581,3 +581,22 @@
   border-top-color: #dc2626;
 }
 .cvx .rv-box .cp-btn--bad:disabled { cursor: progress; opacity: .85; }
+
+/* Verify in progress: the code boxes are locked and read as such, both themes. */
+.cvx .rv-box .cp-digs-wrap.is-busy {
+  opacity: .6;
+  pointer-events: none;
+  cursor: progress;
+}
+.cvx .rv-box .cp-digs-wrap.is-busy .cp-d {
+  caret-color: transparent;
+}
+
+/* Verify & reveal: keep the button's colour while it spins (the base disabled style fades it). */
+.cvx .rv-box .rv-foot .cp-btn--pri[aria-busy="true"]:disabled {
+  opacity: 1;
+  cursor: progress;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

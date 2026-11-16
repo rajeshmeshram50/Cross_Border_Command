@@ -169,6 +169,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const [attRemoved, setAttRemoved] = useState<string[]>([]);
   const [shown, setShown] = useState<Set<string>>(() => new Set(prefillKey ? [prefillKey] : []));
   const [generated, setGenerated] = useState<Set<string>>(() => new Set(prefillKey ? [prefillKey] : []));
+  // Critical Vault: bumps on every Generate click so the spin + field flash replay each time.
+  const [genTick, setGenTick] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -378,7 +380,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
           wrapCls += ' crd-pw';
           ctl = (
             <>
-              <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'} className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}`}
+              <input id={`crdF_${f.key}`} type={vis ? 'text' : 'password'}
+                className={`${cls} crd-pw__in${f.kind === 'password' ? ' crd-pw__in--3' : ''}${f.kind === 'password' && inCritical && genTick ? ` crd-gen-flash${genTick % 2}` : ''}`}
                 value={f.key === 'cardno' ? val.replace(/(\d{4})(?=\d)/g, '$1 ') : val} placeholder={ph}
                 maxLength={f.key === 'acno' ? 18 : f.key === 'cardno' ? 23 : idRule ? idRule.max : fieldMax(f)} autoComplete="new-password"
                 inputMode={f.key === 'acno' || f.key === 'cardno' || idRule?.numeric ? 'numeric' : undefined}
@@ -396,8 +399,12 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
                       setVal(f.key, quickPassword());
                       setShown(s => new Set(s).add(f.key));
                       setGenerated(g => new Set(g).add(f.key));
+                      if (inCritical) { setGenTick(t => t + 1); toast.success('New strong password generated'); }
                     }}>
-                    <Svg icon="gen" size={14} sw={2.4} />
+                    {inCritical
+                      // keyed so the spin restarts on every click
+                      ? <span key={genTick} className={`crd-gen-ico${genTick ? ' is-spin' : ''}`}><Svg icon="gen" size={14} sw={2.4} /></span>
+                      : <Svg icon="gen" size={14} sw={2.4} />}
                   </button>
                 )}
               </span>
@@ -756,8 +763,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
   const twofaChip = method === 'email'
     ? { ok: gm.verified, text: gm.verified ? 'Gmail verified' : gm.token ? 'Enter the code' : 'Gmail needed' }
     : { ok: authLinked(auth), text: authLinked(auth) ? 'App linked' : 'Scan to link' };
+  // Critical Vault: once the chosen method's code is verified, the Authenticator / Gmail choice freezes.
+  // Changing the Gmail address or re-linking the app clears the verification, which unfreezes it.
+  const twofaLocked = critical && !twofaReadOnly && (method === 'email' ? gm.verified : auth.verified);
   const pickerProps = {
-    method, readOnly: twofaReadOnly, authBox,
+    method, readOnly: twofaReadOnly, locked: twofaLocked, authBox,
     onMethod: (m: 'google' | 'email') => { setMethod(m); clr('twofa_email'); },
     gmail, gmailOk, gmailErr: errors.twofa_email,
     onGmail: (v: string) => { setGmail(v); setGm(GMAIL_EMPTY); if (otpEmailOk(v)) clr('twofa_email'); },

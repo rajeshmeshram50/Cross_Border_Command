@@ -219,6 +219,8 @@ export const GMAIL_EMPTY: GmailState = { token: null, sentTo: '', sending: false
 
 export interface TwofaPickerProps {
   method: 'google' | 'email'; readOnly: boolean; authBox: ReactNode;
+  /** The chosen method's code is verified: freeze the choice (as in read-only), keep its details below. */
+  locked?: boolean;
   onMethod: (m: 'google' | 'email') => void;
   gmail: string; gmailOk: boolean; gmailErr?: string; onGmail: (v: string) => void;
   gm: GmailState; onSend: () => void; onGmCode: (c: string) => void; onGmVerify: () => void;
@@ -245,7 +247,8 @@ export function TwofaCard({ chip, ...p }: TwofaPickerProps & { chip: { ok: boole
   );
 }
 
-export function TwofaPicker({ method, readOnly, authBox, onMethod, gmail, gmailOk, gmailErr, onGmail, gm, onSend, onGmCode, onGmVerify }: TwofaPickerProps) {
+export function TwofaPicker({ method, readOnly, locked, authBox, onMethod, gmail, gmailOk, gmailErr, onGmail, gm, onSend, onGmCode, onGmVerify }: TwofaPickerProps) {
+  const frozen = readOnly || !!locked;
   const step = (n: number, h: string, t: string) => (
     <li className="cp-stp"><span className="cp-stp__n">{n}</span><div><b>{h}</b><span>{t}</span></div></li>
   );
@@ -255,19 +258,20 @@ export function TwofaPicker({ method, readOnly, authBox, onMethod, gmail, gmailO
   ];
   return (
       <div className="cp-auth k2-auth">
-        <div className={`k2-pick${readOnly ? ' k2-pick--ro' : ''}`}>
-          {!readOnly && <div className="k2-pick__t">How should Kryptone ask for the code? Choose one</div>}
+        <div className={`k2-pick${frozen ? ' k2-pick--ro' : ''}`}>
+          {!frozen && <div className="k2-pick__t">How should Kryptone ask for the code? Choose one</div>}
           <div className="k2-pick__g" role="radiogroup">
             {opts.map(o => {
               const on = o.m === method;
               return (
-                <button key={o.m} type="button" data-h40="skip" role="radio" aria-checked={on} disabled={readOnly}
-                  onClick={() => { if (!on) onMethod(o.m); }}
-                  className={`k2-opt${on ? ' is-on' : ''}${readOnly ? ' k2-opt--ro' : ''}${readOnly && !on ? ' is-off' : ''}`}>
+                <button key={o.m} type="button" data-h40="skip" role="radio" aria-checked={on} disabled={frozen}
+                  onClick={() => { if (!on && !frozen) onMethod(o.m); }}
+                  title={locked && !on ? `Locked — ${method === 'email' ? 'Gmail' : 'the authenticator app'} is already verified` : undefined}
+                  className={`k2-opt${on ? ' is-on' : ''}${frozen ? ' k2-opt--ro' : ''}${frozen && !on ? ' is-off' : ''}`}>
                   <span className="k2-opt__r" />
                   <span className="k2-opt__i"><Svg d={o.ico} size={16} /></span>
-                  <span className="k2-opt__t"><b>{o.t}</b><small>{readOnly ? o.ro : o.d}</small></span>
-                  {readOnly && on && <span className="k2-opt__sel"><Svg d={CP_I.check} size={11} />Selected</span>}
+                  <span className="k2-opt__t"><b>{o.t}</b><small>{frozen ? o.ro : o.d}</small></span>
+                  {frozen && on && <span className="k2-opt__sel"><Svg d={CP_I.check} size={11} />Selected</span>}
                 </button>
               );
             })}

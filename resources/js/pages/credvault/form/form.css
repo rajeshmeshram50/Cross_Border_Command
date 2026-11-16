@@ -246,3 +246,62 @@
   box-shadow: 0 10px 22px -8px rgba(8, 145, 178, .65) !important;
   transform: translateY(-1px);
 }
+
+/* Critical Vault only: every dropdown arrow sits in a small cyan tile (Figma), as on the Risk Level field. */
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle { padding-right: 7px; }
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: #0891b2;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  border-radius: 8px;
+  transition: transform .2s ease, background .15s ease, border-color .15s ease;
+}
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev { background: #cffafe; border-color: #67e8f9; }
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-wrap.show .master-select-chev { color: #0891b2; background: #cffafe; border-color: #22d3ee; transform: rotate(180deg); }
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:disabled .master-select-chev { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-chev { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev,
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-wrap.show .master-select-chev { color: #a5f3fc; background: rgba(34, 211, 238, .2); border-color: rgba(34, 211, 238, .5); }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:disabled .master-select-chev { color: #5f7d8b; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .1); }
+
+/* Critical Vault only: Generate password gives clear click feedback.
+   No spin on hover (it hid the click); a full spin + press on click, and the field flashes cyan. */
+.cvx #crd-host.crd-host--cv .crd-pw__b--gen:hover svg { transform: none; }
+.cvx #crd-host.crd-host--cv .crd-pw__b--gen:active { transform: scale(.88) !important; }
+.cvx #crd-host.crd-host--cv .crd-gen-ico { display: grid; place-items: center; }
+.cvx #crd-host.crd-host--cv .crd-gen-ico.is-spin { animation: crd-gen-spin .55s cubic-bezier(.3, 1.3, .5, 1); }
+@keyframes crd-gen-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+/* two identical keyframes, alternated per click, so the flash replays every time */
+.cvx #crd-host.crd-host--cv .crd-pw__in.crd-gen-flash0 { animation: crd-gen-flash0 .7s ease-out; }
+.cvx #crd-host.crd-host--cv .crd-pw__in.crd-gen-flash1 { animation: crd-gen-flash1 .7s ease-out; }
+@keyframes crd-gen-flash0 { 0% { background-color: #cffafe; box-shadow: 0 0 0 4px rgba(34, 211, 238, .35); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
+@keyframes crd-gen-flash1 { 0% { background-color: #cffafe; box-shadow: 0 0 0 4px rgba(34, 211, 238, .35); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-pw__in.crd-gen-flash0 { animation-name: crd-gen-flash0-dk; }
+[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-pw__in.crd-gen-flash1 { animation-name: crd-gen-flash1-dk; }
+@keyframes crd-gen-flash0-dk { 0% { background-color: rgba(34, 211, 238, .22); box-shadow: 0 0 0 4px rgba(34, 211, 238, .3); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
+@keyframes crd-gen-flash1-dk { 0% { background-color: rgba(34, 211, 238, .22); box-shadow: 0 0 0 4px rgba(34, 211, 238, .3); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .cvx #crd-host.crd-host--cv .crd-gen-ico.is-spin,
+  .cvx #crd-host.crd-host--cv .crd-pw__in[class*="crd-gen-flash"] { animation: none; }
+}
+
+/* Critical Vault only: the font glyph sat off-centre in the tile, so the chevron is drawn
+   with an SVG mask instead (it takes the tile's colour via currentColor and centres exactly). */
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev { font-size: 0; }
+.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
