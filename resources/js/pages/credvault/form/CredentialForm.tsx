@@ -983,13 +983,21 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
   const typeItems = T.fields.map(fieldItem);
   const l = T.label.toLowerCase();
+  // Critical Vault: a type already named "... Credentials" (e.g. "API Credentials") must not
+  // become "API Credentials Credentials", and the subtitle keeps acronyms and the right article
+  // ("Save an API credential", not "Save a api credentials").
+  const endsInCred = /\bcredentials?$/i.test(T.label);
+  const formNoun = inCritical && endsInCred ? T.label : `${T.label} Credentials`;
+  const subNoun = T.label.replace(/\bcredentials$/i, 'credential')
+    .split(' ').map(w => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase())).join(' ');
+  const subPhrase = inCritical ? `${/^[aeiou]/i.test(subNoun) ? 'an' : 'a'} ${subNoun}` : `a ${l}`;
   const updated = detail?.updated_at
     ? new Date(detail.updated_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '—';
 
   return (
     <div className="mapsup-overlay">
-      <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${T.label} Credentials`}
+      <div className="mapsup-box crd-box" role="dialog" aria-modal="true" aria-busy={saving} aria-label={`${editing ? 'Edit' : 'Add'} ${formNoun}`}
         style={{ position: 'relative' }}>
         {saving && !inCritical && (
           <div role="status" aria-live="polite" aria-busy="true" className="cv-lock">
@@ -1009,11 +1017,11 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
             <div className="mapsup-title-wrap">
               <div className="mapsup-hicon crd-hicon" style={{ '--tc': typeColor(T.key) } as CSSProperties}><Svg icon={T.icon} size={20} /></div>
               <div className="mapsup-title-block">
-                <h3 className="mapsup-title">{editing ? 'Edit ' : 'Add '}{T.label} Credentials</h3>
+                <h3 className="mapsup-title">{editing ? 'Edit ' : 'Add '}{formNoun}</h3>
                 <p className="mapsup-sub">
                   {editing
                     ? <>Update <b>{detail!.name}</b> <span className="crd-edit-id">{detail!.code}</span> — every field is pre-filled, change only what you need.</>
-                    : <>Save a {l} securely in your vault with its details, risk level and remark.</>}
+                    : <>Save {subPhrase} securely in your vault with its details, risk level and remark.</>}
                 </p>
               </div>
             </div>

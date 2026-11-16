@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { Shimmer } from '../../../components/ui/Shimmer';
+import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import { CvApiError, type AccessRequestRow, type CredentialDetail, type LockStep, type UnlockState } from '../cvApi';
 import { CvPortal, IC, Svg, copyText, errMsg, fmtTime, initials, mmss, useCvMeta, useNow } from '../shared';
 import OtpDigits from './OtpDigits';
 import { cvData, type OtpSetup } from './cvData';
 import './unlock.css';
+
+/** An approver name longer than this ends in "…" in the footer button; the full name is in the tooltip. */
+const NAME_MAX = 25;
+const shortName = (n: string) => (n.length > NAME_MAX ? `${n.slice(0, NAME_MAX).trimEnd()}…` : n);
 
 /**
  * CredVault · Critical Access Protection unlock modal — the stepper
@@ -899,22 +904,38 @@ export default function UnlockModal({ credentialId, onClose, onChanged, onFullDe
           </button>
         );
       } else if (cur === 'manager' && unlock.needs_forward) {
+        const who = approverName('manager');
         prim = (
-          <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy} aria-busy={busy || undefined}>
-            {busy
-              ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
-              : <><Svg d={CP_I.send} size={13} /> {`Send to ${approverName('manager')}`}</>}
-          </button>
+          <Tooltip label={`Send to ${who}`} disabled={who.length <= NAME_MAX}>
+            <button type="button" className="cp-btn cp-btn--pri" onClick={forward} disabled={busy} aria-busy={busy || undefined} aria-label={`Send to ${who}`}>
+              {busy
+                ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
+                : <><Svg d={CP_I.send} size={13} /> {`Send to ${shortName(who)}`}</>}
+            </button>
+          </Tooltip>
         );
       } else if (stageStatus(cur) === 'pend') {
-        prim = <button type="button" className="cp-btn cp-btn--pri is-wait" disabled><span className="cp-spin cp-spin--sm" /> Waiting for {approverName(cur)}…</button>;
-      } else {
+        const who = approverName(cur);
+        // A disabled button gets no hover, so the tooltip sits on a wrapper.
         prim = (
-          <button type="button" className="cp-btn cp-btn--pri" onClick={() => send(cur)} disabled={busy} aria-busy={busy || undefined}>
-            {busy
-              ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
-              : <><Svg d={CP_I.send} size={13} /> {`Send request to ${approverName(cur)}`}</>}
-          </button>
+          <Tooltip label={`Waiting for ${who}`} disabled={who.length <= NAME_MAX}>
+            <span style={{ display: 'inline-flex' }}>
+              <button type="button" className="cp-btn cp-btn--pri is-wait" disabled aria-label={`Waiting for ${who}`}>
+                <span className="cp-spin cp-spin--sm" /> Waiting for {shortName(who)}…
+              </button>
+            </span>
+          </Tooltip>
+        );
+      } else {
+        const who = approverName(cur);
+        prim = (
+          <Tooltip label={`Send request to ${who}`} disabled={who.length <= NAME_MAX}>
+            <button type="button" className="cp-btn cp-btn--pri" onClick={() => send(cur)} disabled={busy} aria-busy={busy || undefined} aria-label={`Send request to ${who}`}>
+              {busy
+                ? <><span className="cp-spin cp-spin--sm" /> Sending…</>
+                : <><Svg d={CP_I.send} size={13} /> {`Send request to ${shortName(who)}`}</>}
+            </button>
+          </Tooltip>
         );
       }
     }
