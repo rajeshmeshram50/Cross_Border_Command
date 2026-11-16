@@ -249,8 +249,12 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
   /* ── One department / the organisation ── */
   const renderDept = (d: OpenDept) => {
     const isAdm = d.key === 'admin';
-    const cnt = tree?.cnt ?? {};
+    // Until the tree arrives, the department card's own counts stand in, so the hero never shows a placeholder dot.
+    const listDept: Loose | undefined = isAdm ? undefined : departments.find(x => x.id === d.key);
+    const cnt: LevelCounts = tree?.cnt ?? (listDept ? toCounts(listDept.levels) : {});
     const lvls = LV_ORDER.filter(l => cnt[l]);
+    const totalMembers = tree?.total ?? (isAdm ? (scoped ? (branch?.length ?? 0) : (list?.admin?.members ?? 0)) : (listDept?.members ?? 0));
+    const levelCount = lvls.length;
     return (
       <>
         <div className="tvx-hero">
@@ -263,14 +267,14 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
           <div className="tvx-hero__stats">
             {isAdm ? (
               <>
-                <span><b>{tree?.total ?? '·'}</b>Members</span>
-                <span><b>{scoped ? scopedDeptCount : (stats?.departments ?? list?.admin?.departments ?? '·')}</b>Departments</span>
-                <span><b>{scoped ? (tree?.cnt?.hod ?? 0) : (list?.admin?.hods ?? stats?.hods ?? '·')}</b>HODs</span>
+                <span><b>{totalMembers}</b>Members</span>
+                <span><b>{scoped ? scopedDeptCount : (stats?.departments ?? list?.admin?.departments ?? 0)}</b>Departments</span>
+                <span><b>{scoped ? (tree?.cnt?.hod ?? 0) : (list?.admin?.hods ?? stats?.hods ?? 0)}</b>HODs</span>
               </>
             ) : (
               <>
-                <span><b>{tree?.total ?? '·'}</b>Members</span>
-                <span><b>{tree ? lvls.length : '·'}</b>Levels</span>
+                <span><b>{totalMembers}</b>Members</span>
+                <span><b>{levelCount}</b>Levels</span>
                 <span><b>{stats?.teams ?? cnt.tl ?? 0}</b>Teams</span>
               </>
             )}

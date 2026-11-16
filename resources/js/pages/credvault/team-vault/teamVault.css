@@ -33,6 +33,7 @@
   margin-left: -8px !important;
   margin-right: -8px !important;
 }
+
 /* One divider above the footer: its own top border, not the table's as well. */
 .cvx.tvx-page .tv-pane--r .tvc-list > .whm-tblwrap:has(+ .wl-pager) {
   border-bottom: 0 !important;
@@ -40,7 +41,9 @@
 .cvx.tvx-page .tv-pane--r .tvc-list:last-child > .wl-pager:last-child {
   border-radius: 0 !important;
 }
-
+.cvx.tvx-page .tv-pane--r .tvc-list > .wl-pager {
+  margin-top: 0 !important;
+}
 /* Team Details search: clear (x) button, shown only while text is typed */
 .cvx .tvo-search .tvo-search__x {
   flex: 0 0 auto;

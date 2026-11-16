@@ -5861,7 +5861,10 @@
 .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .tvc-list > .whm-tblwrap:has(+ .wl-pager) {
   border-bottom: 0 !important;
 }
-
+/* CredVault modules with the footer pager: the footer sits flush under the table, no gap above it. */
+.cvx:is(.tvx-page, .cv-page, .myv-page, .rb-page, .ir-page, .ph-page) .tvc-list > .wl-pager {
+  margin-top: 0 !important;
+}
 /* In those four modules, a card that ends with its list's footer pager: the footer sits on
    the card's bottom edge — no white strip of the card's 12px bottom padding under it. */
 .cvx:is(.myv-page, .rb-page, .ir-page, .ph-page) .tv-pane__bd.tvc-bd:has(> .tvc-list:last-child > .wl-pager:last-child) {
