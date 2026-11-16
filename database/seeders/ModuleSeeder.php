@@ -22,7 +22,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
             ['name' => 'Master',      'slug' => 'master',      'icon' => 'Database',    'sort_order' => 8,  'is_default' => false, 'description' => 'Master data control center'],
             ['name' => 'HRMS',        'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
-            ['name' => 'Sales Matrix','slug' => 'sales',       'icon' => 'TrendingUp',  'sort_order' => 10, 'is_default' => false, 'description' => 'Sales insights, customer masters & opportunity operations'],
+            ['name' => 'Sales Matrix', 'slug' => 'sales',       'icon' => 'TrendingUp',  'sort_order' => 10, 'is_default' => false, 'description' => 'Sales insights, customer masters & opportunity operations'],
             ['name' => 'CLM',         'slug' => 'clm',         'icon' => 'FileText',    'sort_order' => 11, 'is_default' => false, 'description' => 'Contract Lifecycle Management — operations, masters & analytics'],
             ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 12, 'is_default' => false, 'description' => 'System settings'],
             ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 13, 'is_default' => true],
@@ -75,7 +75,7 @@ class ModuleSeeder extends Seeder
         // Slugs are prefixed with `master.` so they don't collide with existing top-level slugs.
         $leaves = [
             'master.identity' => [
-                ['name' => 'Organization Types','slug' => 'master.organization_types','icon' => 'Building',       'description' => 'Client organization categories (Business, Sports, NGO…)'],
+                ['name' => 'Organization Types', 'slug' => 'master.organization_types', 'icon' => 'Building',       'description' => 'Client organization categories (Business, Sports, NGO…)'],
                 ['name' => 'Company Details',   'slug' => 'master.company',           'icon' => 'Building',       'description' => 'Legal identity: GSTIN, PAN, IEC'],
                 ['name' => 'Bank Accounts',     'slug' => 'master.bank_accounts',     'icon' => 'Landmark',       'description' => 'Bank registry for export (SWIFT + AD code)'],
                 ['name' => 'Departments',       'slug' => 'master.departments',       'icon' => 'Building2',      'description' => 'Organizational units for staff assignment'],
@@ -91,7 +91,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'State Codes',       'slug' => 'master.state_codes',       'icon' => 'Hash',           'description' => '2-digit GST state codes'],
                 ['name' => 'Address Types',     'slug' => 'master.address_types',     'icon' => 'Home',           'description' => 'Billing, shipping, registered address tags'],
                 ['name' => 'Ports of Loading',  'slug' => 'master.port_of_loading',   'icon' => 'Anchor',         'description' => 'Origin ports on shipping bills'],
-                ['name' => 'Ports of Discharge','slug' => 'master.port_of_discharge', 'icon' => 'Ship',           'description' => 'Destination ports on packing lists'],
+                ['name' => 'Ports of Discharge', 'slug' => 'master.port_of_discharge', 'icon' => 'Ship',           'description' => 'Destination ports on packing lists'],
             ],
             'master.trade' => [
                 ['name' => 'Segments',              'slug' => 'master.segments',            'icon' => 'Target',        'description' => 'Business segments for orders & products'],
@@ -105,10 +105,11 @@ class ModuleSeeder extends Seeder
             ],
             'master.party' => [
                 ['name' => 'Customer Types',          'slug' => 'master.customer_types',           'icon' => 'UserSquare',   'description' => 'Classify buyers: domestic/export'],
-                ['name' => 'Customer Classifications','slug' => 'master.customer_classifications', 'icon' => 'Award',        'description' => 'Tier labels for credit & discount'],
+                ['name' => 'Customer Classifications', 'slug' => 'master.customer_classifications', 'icon' => 'Award',        'description' => 'Tier labels for credit & discount'],
                 ['name' => 'Vendor Types',            'slug' => 'master.vendor_types',             'icon' => 'Store',        'description' => 'Supplier categories'],
                 ['name' => 'Vendor Behaviour',        'slug' => 'master.vendor_behaviour',         'icon' => 'Activity',     'description' => 'Performance tags for vendors'],
                 ['name' => 'Applicable Parties',      'slug' => 'master.applicable_types',         'icon' => 'Users2',       'description' => 'Buyer, consignee, notify party roles'],
+                ['name' => 'Supplier Category',      'slug' => 'master.supplier_category',         'icon' => 'Users2',       'description' => 'Buyer, consignee, notify party roles'],
             ],
             'master.legal' => [
                 ['name' => 'License Types',          'slug' => 'master.license_name',             'icon' => 'FileBadge',     'description' => 'Import/export license categories'],
@@ -228,7 +229,7 @@ class ModuleSeeder extends Seeder
             ],
             'hr.time_pay' => [
                 ['name' => 'Payroll',            'slug' => 'hr.payroll',            'icon' => 'IndianRupee',  'description' => 'Salary processing, payslips, statutory'],
-                ['name' => 'Attendance',         'slug' => 'hr.attendance',         'icon' => 'CalendarCheck','description' => 'Daily attendance & shift tracking'],
+                ['name' => 'Attendance',         'slug' => 'hr.attendance',         'icon' => 'CalendarCheck', 'description' => 'Daily attendance & shift tracking'],
                 ['name' => 'Leave',              'slug' => 'hr.leave',              'icon' => 'CalendarOff',  'description' => 'Leave requests, balance & policy'],
                 ['name' => 'Holiday',            'slug' => 'hr.holiday',            'icon' => 'CalendarDays', 'description' => 'Company holiday calendar'],
                 ['name' => 'Expense Management', 'slug' => 'hr.expense',            'icon' => 'Receipt',      'description' => 'Reimbursable expenses & approvals'],
@@ -295,7 +296,7 @@ class ModuleSeeder extends Seeder
         $salesCategories = [
             ['name' => 'Sales Insights & Productivity', 'slug' => 'sales.insights',  'icon' => 'BarChart3', 'description' => 'Sales analytics, productivity tracker & P2P summary'],
             ['name' => 'Sales Core (Masters)',          'slug' => 'sales.core',      'icon' => 'Database',  'description' => 'Customer, consignee & lead acknowledgement masters'],
-            ['name' => 'Sales Matrix Operations',       'slug' => 'sales.operations','icon' => 'Activity',  'description' => 'My Workplace & quotation/PI tracking'],
+            ['name' => 'Sales Matrix Operations',       'slug' => 'sales.operations', 'icon' => 'Activity',  'description' => 'My Workplace & quotation/PI tracking'],
         ];
 
         $salesCatIds = [];
@@ -310,7 +311,7 @@ class ModuleSeeder extends Seeder
         $salesLeaves = [
             'sales.insights' => [
                 ['name' => 'Sales Analytics',          'slug' => 'sales.analytics',            'icon' => 'BarChart3',     'description' => 'Sales dashboard, diagnosis & resolution center'],
-                ['name' => 'Productivity Tracker',     'slug' => 'sales.productivity_tracker', 'icon' => 'ClipboardCheck','description' => 'Manage reminders, meetings & to-do activities'],
+                ['name' => 'Productivity Tracker',     'slug' => 'sales.productivity_tracker', 'icon' => 'ClipboardCheck', 'description' => 'Manage reminders, meetings & to-do activities'],
                 ['name' => 'Procure to Pay (P2P) Summary', 'slug' => 'sales.p2p_summary',      'icon' => 'ShoppingBag',   'description' => 'Track opportunity-wise product sourcing summary'],
                 ['name' => 'Diagnosis',                'slug' => 'sales.diagnosis',            'icon' => 'Stethoscope',   'description' => 'Diagnose sales pipeline issues by branch & rep'],
                 ['name' => 'Resolution Center',        'slug' => 'sales.resolution_center',    'icon' => 'Wrench',        'description' => 'Track and resolve flagged sales blockers'],
@@ -324,8 +325,8 @@ class ModuleSeeder extends Seeder
             'sales.operations' => [
                 ['name' => 'My Workplace',             'slug' => 'sales.workplace',        'icon' => 'Activity',    'description' => 'Manage active sales opportunities'],
                 ['name' => 'Quotation Vs PI History',  'slug' => 'sales.quotation_vs_pi',  'icon' => 'FileText',    'description' => 'Track quotation & PI conversion history'],
-                ['name' => 'Sign Document Tracker',    'slug' => 'sales.sign_tracker',     'icon' => 'ClipboardCheck','description' => 'Track all documents sent for e-signature'],
-                ['name' => 'Lead Distribution',        'slug' => 'sales.lead_distribution','icon' => 'Share2',      'description' => 'Distribute and reassign opportunity leads'],
+                ['name' => 'Sign Document Tracker',    'slug' => 'sales.sign_tracker',     'icon' => 'ClipboardCheck', 'description' => 'Track all documents sent for e-signature'],
+                ['name' => 'Lead Distribution',        'slug' => 'sales.lead_distribution', 'icon' => 'Share2',      'description' => 'Distribute and reassign opportunity leads'],
                 ['name' => 'Lead Detail',              'slug' => 'sales.lead_detail',      'icon' => 'FileSearch',  'description' => 'Full opportunity detail view'],
                 ['name' => 'Enquiries',                'slug' => 'sales.enquiries',        'icon' => 'Mail',        'description' => 'Inbound enquiries log & triage'],
                 ['name' => 'Leads Details',            'slug' => 'sales.leads_details',    'icon' => 'ListChecks',  'description' => 'Per-salesperson leads drill-down'],
@@ -458,6 +459,7 @@ class ModuleSeeder extends Seeder
             'p2p.master' => [
                 ['name' => 'Product Management',  'slug' => 'p2p.product',  'icon' => 'Tag',      'description' => 'Manage products & sourcing readiness'],
                 ['name' => 'Supplier Management', 'slug' => 'p2p.supplier', 'icon' => 'UserPlus', 'description' => 'Manage supplier onboarding & compliance'],
+                ['name' => 'Service Management',  'slug' => 'p2p.service',  'icon' => 'Wrench',   'description' => 'Manage services & service catalogue'],
             ],
             'p2p.procurement' => [
                 ['name' => 'Bulk Sourcing Management',           'slug' => 'p2p.bulk_sourcing', 'icon' => 'Activity', 'description' => 'Manage bulk sourcing requests'],
@@ -495,19 +497,25 @@ class ModuleSeeder extends Seeder
         $devCat = Module::updateOrCreate(
             ['slug' => 'developers.ops'],
             [
-                'name' => 'Operations', 'icon' => 'Truck',
+                'name' => 'Operations',
+                'icon' => 'Truck',
                 'description' => 'Business Task (Shipment) operations',
-                'parent_id' => $developers->id, 'sort_order' => 1,
-                'is_active' => true, 'is_default' => false,
+                'parent_id' => $developers->id,
+                'sort_order' => 1,
+                'is_active' => true,
+                'is_default' => false,
             ]
         );
         $devShip = Module::updateOrCreate(
             ['slug' => 'developers.shipment'],
             [
-                'name' => 'Shipment', 'icon' => 'Truck',
+                'name' => 'Shipment',
+                'icon' => 'Truck',
                 'description' => 'Business Task list — all shipment orders',
-                'parent_id' => $devCat->id, 'sort_order' => 1,
-                'is_active' => true, 'is_default' => false,
+                'parent_id' => $devCat->id,
+                'sort_order' => 1,
+                'is_active' => true,
+                'is_default' => false,
             ]
         );
         // Top-level Developers parent is opt-in too.
