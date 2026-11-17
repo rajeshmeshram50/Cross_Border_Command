@@ -7,8 +7,6 @@ import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
 import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
 import './MasterDashboard.css';
-// Shared master card-strip styling (.dsn-page-strip) — reused so the
-// overview header matches the per-master page headers (Legal Entities, etc.).
 import '../../css/master.css';
 
 type CountEntry = { active: number; inactive: number; total: number };
@@ -149,9 +147,6 @@ export default function MasterDashboard() {
       .filter(g => g.children.length > 0);
   }, [groups, q, hasSearch]);
 
-  // Per-master active/inactive/total record counts. Each leaf's count is
-  // streamed into state the moment its API call resolves — so the UI fills
-  // in progressively instead of waiting for all 50 endpoints to finish.
   const [counts, setCounts] = useState<Record<string, CountEntry>>({});
   const [pending, setPending] = useState<Set<string>>(new Set());
 
@@ -167,15 +162,6 @@ export default function MasterDashboard() {
     setCounts({});
     setPending(new Set(allLeaves.map(l => l.id)));
 
-    // Single batch round-trip — the backend (GET /api/master-counts) returns
-    // active/inactive/total for every master the user can view, all at once.
-    // Previously this page fired ~50 parallel requests and queued them behind
-    // the browser's per-host limit, leaving the last cards stuck on "Loading"
-    // long after the first ones painted. With the batch endpoint every card
-    // flips together in a single tick.
-    //
-    // If the batch endpoint is unavailable (older backend, transient 5xx),
-    // fall back to per-card fetches so the page degrades gracefully.
     const runBatch = async () => {
       try {
         const res = await api.get('/master-counts');
@@ -286,13 +272,10 @@ export default function MasterDashboard() {
   return (
     <>
     <style>{`
-      /* Force white card surface in light theme; auto-flip in dark theme */
       .master-surface { background: #ffffff; }
       [data-bs-theme="dark"] .master-surface { background: #1c2531; }
       @keyframes mc-spin { to { transform: rotate(360deg); } }
 
-      /* Header strip — same shape/parts as the Clients (.cl-cstrip) header:
-         white container, 1px violet border, left accent strip, violet icon. */
       .ms-cstrip {
         position: relative; overflow: hidden;
         display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
@@ -318,15 +301,6 @@ export default function MasterDashboard() {
       }
       .ms-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
       .ms-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
-      /* Search, in the strip rather than on a band of its own below the KPIs.
-         A full-width bar across the page had nothing to line up with — it was
-         the only element on the page that was neither a card nor a column, so
-         it read as a seam. In the strip it sits against the Back button at the
-         shared 42px.
-         Geometry is .dt-search's, verbatim: 42px tall, radius 11, 38px of left
-         padding for a 16px icon inset 14px. It cannot BE .dt-search — that
-         class lives in DataTable.css and carries the table's accent tokens —
-         but every number here is the same one. */
       .ms-cstrip-search {
         position: relative; z-index: 1;
         display: flex; align-items: center; gap: 10px;
@@ -380,9 +354,7 @@ export default function MasterDashboard() {
       [data-bs-theme="dark"] .ms-cstrip-back:hover { background: rgba(124,58,237,.14); }
     `}</style>
     <div>
-      {/* ── Page Header ── card-strip styled to match the per-master page
-          headers (Legal Entities, etc.): gradient icon + title on the left,
-          a pill "Back" button on the right. */}
+      {}
       <div className="ms-cstrip mb-3">
         <span className="ms-cstrip-accent" />
         <div className="ms-cstrip-left">
@@ -392,8 +364,7 @@ export default function MasterDashboard() {
             <div className="ms-cstrip-sub">Manage every master — companies, geography, trade, parties and more.</div>
           </div>
         </div>
-        {/* Search lives here, not on its own full-width band under the KPIs —
-            see .ms-cstrip-search for why. */}
+        {}
         <div className="ms-cstrip-search">
           <i className="ri-search-line" />
           <input
@@ -415,8 +386,7 @@ export default function MasterDashboard() {
           )}
         </div>
 
-        {/* Back — history.back() when there's a prior entry, otherwise
-            /dashboard so a direct-link visit still has somewhere to go. */}
+        {}
         <button
           type="button"
           className="ms-cstrip-back"
@@ -430,7 +400,7 @@ export default function MasterDashboard() {
         </button>
       </div>
 
-      {/* ── KPI Stat Cards ── */}
+      {}
    <Row className="g-3 mb-3">
   {STAT_CARDS.map((sc, i) => (
     <Col key={sc.label} xl={3} md={6} xs={12}>
@@ -522,12 +492,7 @@ export default function MasterDashboard() {
   ))}
 </Row>
 
-      {/* The search bar used to sit here, full width across the page. It is in
-          the header strip now — it was the only element on the page that was
-          neither a card nor a column, so it read as a seam between the KPIs and
-          the groups. */}
-
-      {/* No results */}
+      {}
       {hasSearch && filteredGroups.length === 0 && (
         <div style={{ background: 'var(--vz-card-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 12, padding: '28px 20px', textAlign: 'center' }}>
           <i className="ri-search-eye-line" style={{ fontSize: 28, color: 'var(--vz-secondary-color)', display: 'block', marginBottom: 6 }} />
@@ -535,7 +500,7 @@ export default function MasterDashboard() {
         </div>
       )}
 
-      {/* ── Category Sections ── */}
+      {}
       {filteredGroups.map(group => {
         const s = CATEGORY_STYLES[group.id] || { color: '#405189', icon: 'ri-folder-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)' };
         const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
@@ -543,7 +508,7 @@ export default function MasterDashboard() {
         return (
           <div key={group.id} style={{ marginBottom: 8 }}>
 
-            {/* ── Category Header — single white row, clickable to toggle ── */}
+            {}
             <div
               className="master-surface"
               style={{
@@ -562,15 +527,15 @@ export default function MasterDashboard() {
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 12px ${s.color}22`; }}
               onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}
             >
-              {/* Gradient accent strip */}
+              {}
               <div style={{ width: 4, height: 28, borderRadius: 4, background: s.gradient, flexShrink: 0 }} />
 
-              {/* Icon chip */}
+              {}
               <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className={s.icon} style={{ color: s.color, fontSize: 15 }} />
               </div>
 
-              {/* Title + count badge */}
+              {}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.2 }}>
                   {group.label}
@@ -580,7 +545,7 @@ export default function MasterDashboard() {
                 </span>
               </div>
 
-              {/* Right-corner arrow — icon only, in category color */}
+              {}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); toggle(group.id); }}
@@ -601,12 +566,8 @@ export default function MasterDashboard() {
               </button>
             </div>
 
-            {/* ── Expanded master cards ── */}
-            {/* gx-3 keeps the 16px horizontal gutter; gy-2 sets an 8px
-                vertical gutter between wrapped card rows. marginTop:0
-                cancels the row's default negative top margin so the first
-                card row also sits 8px under the strip — equal spacing all
-                round (strip→cards and row→row). */}
+            {}
+            {}
             {!isCollapsed && (
               <Row className="gx-3 gy-2" style={{ marginTop: 0 }}>
                 {group.children.map(leaf => (
@@ -630,13 +591,10 @@ export default function MasterDashboard() {
   );
 }
 
-/* ── MasterCard ─────────────────────────────────────────────── */
 function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: CategoryStyle; onClick: () => void; count?: CountEntry; loading?: boolean }) {
   const activeCount = count?.active ?? 0;
   const inactiveCount = count?.inactive ?? 0;
   const totalCount = count?.total ?? 0;
-  // Card-level "Active/Inactive" badge in the header reflects whether this
-  // master has any active records (when at least one record exists).
   const headerStatus: 'active' | 'inactive' | 'empty' | 'loading' =
     loading && !count ? 'loading'
     : totalCount === 0 ? 'empty'
@@ -660,13 +618,13 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
         el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
-      {/* Left gradient strip */}
+      {}
       <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: s.gradient }} />
 
-      {/* Soft glow */}
+      {}
       <div style={{ position: 'absolute', top: -36, right: -36, width: 110, height: 110, borderRadius: '50%', background: `radial-gradient(circle,${s.color}10 0%,transparent 70%)`, pointerEvents: 'none' }} />
 
-      {/* Row 1: icon + title + status */}
+      {}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 9, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: s.gradient, boxShadow: `0 3px 10px ${s.color}33`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -676,7 +634,7 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
             {leaf.label}
           </h6>
         </div>
-        {/* Header status badge — shows the master's overall record state */}
+        {}
         {(() => {
           const cfg = headerStatus === 'active'
             ? { bg: '#0ab39c18', fg: '#0ab39c', dot: '#0ab39c', text: 'Active' }
@@ -694,12 +652,12 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
         })()}
       </div>
 
-      {/* Row 2: Description */}
+      {}
       <p style={{ margin: '0 0 12px 0', paddingLeft: 46, fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.55, flexGrow: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
         {leafDescription(leaf)}
       </p>
 
-      {/* Row 3: Counts + Manage */}
+      {}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 9, borderTop: '1px solid var(--vz-border-color)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
