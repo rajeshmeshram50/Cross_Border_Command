@@ -247,9 +247,9 @@
   transform: translateY(-1px);
 }
 
-/* Critical Vault only: every dropdown arrow sits in a small cyan tile (Figma), as on the Risk Level field. */
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle { padding-right: 7px; }
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev {
+/* Every dropdown arrow sits in a small cyan tile (Figma), as on the Risk Level field — My Vault and Critical Vault forms. */
+.cvx #crd-host .crd-ms .master-select-toggle { padding-right: 7px; }
+.cvx #crd-host .crd-ms .master-select-chev {
   flex: none;
   display: grid;
   place-items: center;
@@ -264,13 +264,13 @@
   border-radius: 8px;
   transition: transform .2s ease, background .15s ease, border-color .15s ease;
 }
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev { background: #cffafe; border-color: #67e8f9; }
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-wrap.show .master-select-chev { color: #0891b2; background: #cffafe; border-color: #22d3ee; transform: rotate(180deg); }
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:disabled .master-select-chev { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
-[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-chev { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
-[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev,
-[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-wrap.show .master-select-chev { color: #a5f3fc; background: rgba(34, 211, 238, .2); border-color: rgba(34, 211, 238, .5); }
-[data-bs-theme="dark"] .cvx #crd-host.crd-host--cv .crd-ms .master-select-toggle:disabled .master-select-chev { color: #5f7d8b; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .1); }
+.cvx #crd-host .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev { background: #cffafe; border-color: #67e8f9; }
+.cvx #crd-host .crd-ms .master-select-wrap.show .master-select-chev { color: #0891b2; background: #cffafe; border-color: #22d3ee; transform: rotate(180deg); }
+.cvx #crd-host .crd-ms .master-select-toggle:disabled .master-select-chev { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-chev { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-toggle:hover:not(:disabled) .master-select-chev,
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-wrap.show .master-select-chev { color: #a5f3fc; background: rgba(34, 211, 238, .2); border-color: rgba(34, 211, 238, .5); }
+[data-bs-theme="dark"] .cvx #crd-host .crd-ms .master-select-toggle:disabled .master-select-chev { color: #5f7d8b; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .1); }
 
 /* Critical Vault only: Generate password gives clear click feedback.
    No spin on hover (it hid the click); a full spin + press on click, and the field flashes cyan. */
@@ -293,10 +293,10 @@
   .cvx #crd-host.crd-host--cv .crd-pw__in[class*="crd-gen-flash"] { animation: none; }
 }
 
-/* Critical Vault only: the font glyph sat off-centre in the tile, so the chevron is drawn
+/* The font glyph sat off-centre in the tile, so the chevron is drawn
    with an SVG mask instead (it takes the tile's colour via currentColor and centres exactly). */
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev { font-size: 0; }
-.cvx #crd-host.crd-host--cv .crd-ms .master-select-chev::before {
+.cvx #crd-host .crd-ms .master-select-chev { font-size: 0; }
+.cvx #crd-host .crd-ms .master-select-chev::before {
   content: '';
   display: block;
   width: 14px;

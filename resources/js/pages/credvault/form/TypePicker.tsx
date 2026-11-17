@@ -14,7 +14,6 @@ function Tile({ t, group, onPick, critical }: { t: TypeDef; group: string; onPic
       <span className="crd-tile__b">
         <span className="crd-tile__row">
           <span className="crd-tile__l">{t.label}</span>
-          {t.twofa && !critical && <span className="crd-tile__new" title="Supports a 2FA authenticator lock">2FA</span>}
           {t.is_new && <span className="crd-tile__new">New</span>}
         </span>
         <span className="crd-tile__d">{t.description}</span>

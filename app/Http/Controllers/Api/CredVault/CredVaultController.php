@@ -3387,12 +3387,9 @@ class CredVaultController extends Controller
         }
 
         $name = trim($data['name'] ?? $c->name);
-        $ownerId = $creating ? $u->id : $c->owner_id;
-        $dup = $creating && $this->importBatch
-            ? isset($this->importBatch['names'][Str::lower($name)])
-            : Credential::where('client_id', $u->client_id)->where('owner_id', $ownerId)->where('type', $type)
-                ->whereRaw('lower(trim(name)) = lower(?)', [$name])->when(!$creating, fn ($q) => $q->where('id', '!=', $c->id))->exists();
-        if ($dup) $this->reject("There is already a {$def['label']} named “{$name}” in this vault.", 'name');
+        if ($creating && $this->importBatch && isset($this->importBatch['names'][Str::lower($name)])) {
+            $this->reject("There is already a {$def['label']} named “{$name}” in this vault.", 'name');
+        }
 
         $scope  = $data['scope'] ?? ($c->scope ?? 'personal');
         $deptId = $scope === 'team'

@@ -4232,6 +4232,43 @@
   height: 100% !important;
 }
 
+.cvx #crd-host .sh-box .sh-date .master-datepicker-wrap {
+  min-width: 170px;
+}
+
+.cvx #crd-host .sh-box .sh-date .master-datepicker-toggle {
+  min-height: 40px;
+  padding: 0 10px 0 13px !important;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #0c2c3a;
+  background: #fff;
+  border: 1.5px solid #b9e3ec !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px rgba(8, 145, 178, .06);
+}
+
+.cvx #crd-host .sh-box .sh-date .master-datepicker-toggle:hover {
+  border-color: #67e8f9 !important;
+  box-shadow: 0 2px 6px rgba(8, 145, 178, .1);
+}
+
+.cvx #crd-host .sh-box .sh-date .master-datepicker-toggle.open {
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, .16) !important;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .sh-box .sh-date .master-datepicker-toggle {
+  background: #0f2530;
+  border-color: rgba(34, 211, 238, .28) !important;
+  color: #e2f4f8;
+}
+
+[data-bs-theme="dark"] .cvx #crd-host .sh-box .sh-date .master-datepicker-toggle:hover,
+[data-bs-theme="dark"] .cvx #crd-host .sh-box .sh-date .master-datepicker-toggle.open {
+  border-color: rgba(34, 211, 238, .55) !important;
+}
+
 .cvx #crd-host .sh-box .sh-exp {
   margin-top: auto !important;
   padding: 10px 12px !important;
@@ -19336,4 +19373,9 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
 .cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(9) .znm-flagcell,
 .cvx .whm-tbl.mv-tbl.sb-tbl td:nth-child(10) .whm-acts {
   justify-content: center;
+}
+
+.cvx #crd-host .sh-box .sh-date .master-datepicker-wrap.invalid .master-datepicker-toggle {
+  border-color: #f43f5e !important;
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, .12) !important;
 }

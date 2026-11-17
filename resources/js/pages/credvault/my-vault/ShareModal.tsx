@@ -281,7 +281,7 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
                         })}
                       </div>
                       <div className="sh-date">
-                        <MasterDatePicker value={dur.startsWith('date:') ? dur.slice(5) : ''} minDate={isoDay(new Date(Date.now() + 864e5))}
+                        <MasterDatePicker popupClassName="crd-cal" value={dur.startsWith('date:') ? dur.slice(5) : ''} minDate={isoDay(new Date(Date.now() + 864e5))}
                           placeholder="Pick an end date" invalid={!!errs.dur} onChange={v => { if (v) { setDur(`date:${v}`); clr('dur'); } }} />
                       </div>
                     </div>
