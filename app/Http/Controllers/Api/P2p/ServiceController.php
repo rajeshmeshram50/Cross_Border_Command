@@ -30,35 +30,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * P2P · Service Management (Kryptone "Service Master").
- *
- *   List page      GET    /p2p/services                 tabs = service_type, sub-tabs = classification
- *   Add / Edit     POST   /p2p/services/step/core       Stage 1 — Service Core Information (multipart)
- *                  PUT    /p2p/services/{id}/step/suppliers   Stage 2 — Map Service Suppliers + submit
- *   Map Supplier   GET|POST /p2p/services/{id}/suppliers, PATCH …/suppliers/{map}, PATCH …/suppliers/{map}/status
- *                  Domestic (₹ + GST) or International (currency × exchange rate, no GST)
- *   Active/Inactive PATCH  /p2p/services/{id}/status      (nothing in this module is deleted)
- *
- * Dropdown masters come from GET /p2p/services/master-bundle; the "+" (add new)
- * buttons beside them use the generic master API (POST /master/{slug}), and
- * "+ Add new supplier" uses the existing supplier wizard (/vendors/step/…).
- */
 class ServiceController extends Controller
 {
     private const IMAGE_MIMES      = 'jpg,jpeg,png,webp';
     private const ATTACHMENT_MIMES = 'pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png,webp';
 
-    /* ══════════════════════════════════════════════════════════════════
-     * Scoping & permissions
-     * ══════════════════════════════════════════════════════════════════ */
-
-    /**
-     * Services are a SHARED branch catalogue, same as products: every employee
-     * sees globals + client-level + their own branch's rows; other roles use the
-     * standard creator hierarchy. The BranchSwitcher narrowing is opt-in (list
-     * only) so show/update never 404 because another branch is being viewed.
-     */
     private function scoped(Request $request, bool $applyBranchFilter = false, bool $withTrashed = false)
     {
         $query = $withTrashed ? Service::withTrashed() : Service::query();
@@ -79,7 +55,6 @@ class ServiceController extends Controller
         return $this->scoped($request)->findOrFail($id);
     }
 
-    /** Branch staff may edit their branch's services; everyone else follows the hierarchy. */
     private function editDenial($user, Service $service, string $action = 'edit'): ?string
     {
         if ($user && ($user->user_type ?? null) === 'employee'
@@ -95,7 +70,6 @@ class ServiceController extends Controller
         return response()->json(['message' => $message], 403);
     }
 
-    /** A master row exists, is active and is visible to the user. */
     private function masterQuery(string $modelClass, $user)
     {
         return $modelClass::query()
@@ -108,14 +82,6 @@ class ServiceController extends Controller
         return config('filesystems.documents') ?: config('filesystems.default', 'public');
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * Codes
-     * ══════════════════════════════════════════════════════════════════ */
-
-    /**
-     * Next SVC-### for the branch. Codes run per (client, branch) and include
-     * soft-deleted rows so a deleted service never hands its code back.
-     */
     private function nextCode(?int $clientId, ?int $branchId): string
     {
         $q = Service::withTrashed();
@@ -131,15 +97,10 @@ class ServiceController extends Controller
         return 'SVC-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * GET /p2p/services/master-bundle
-     * Everything the "Add Service" chooser, the Stage-1 form and the Map
-     * Supplier popup need, in one cached response.
-     * ══════════════════════════════════════════════════════════════════ */
     public function masterBundle(Request $request)
     {
         $user = $request->user();
-        $key  = MasterBundleCache::key('service:master-bundle:v2', $user?->id);   // v2 = supplier origin + currencies
+        $key  = MasterBundleCache::key('service:master-bundle:v2', $user?->id);
 
         $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user) {
             $active = fn (string $cls, array $cols) => $this->masterQuery($cls, $user)->orderBy('id')->get($cols);
@@ -159,7 +120,7 @@ class ServiceController extends Controller
                 'haz_types'           => Service::HAZ_TYPES,
                 'contract_options'    => [['value' => true, 'label' => 'Required'], ['value' => false, 'label' => 'Not Required']],
                 'service_categories'  => $active(ServiceCategory::class, ['id', 'name', 'service_type', 'classification']),
-                // The shared Segments master (same list products use).
+
                 'segments'            => $active(Segments::class, ['id', 'name']),
                 'hsn_codes'           => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
                 'uom'                 => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
@@ -169,12 +130,12 @@ class ServiceController extends Controller
                 'departments'         => $active(Departments::class, ['id', 'name', 'code']),
                 'gst_percentage'      => $active(GstPercentage::class, ['id', 'percentage']),
                 'vendors'             => $vendors,
-                // Map Supplier step 1 — Domestic (₹ + GST) or International (currency, no GST).
+
                 'supplier_origins'    => [
                     ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
                     ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
                 ],
-                // International price: currency + default exchange rate (₹ per unit).
+
                 'currencies'          => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
                     ->reject(fn ($c) => strtoupper((string) $c->code) === 'INR')->values(),
             ];
@@ -183,7 +144,6 @@ class ServiceController extends Controller
         return response()->json($bundle);
     }
 
-    /** The type → classification tree in list form, for the chooser and the tabs. */
     private function taxonomy(): array
     {
         $out = [];
@@ -197,7 +157,7 @@ class ServiceController extends Controller
                 'label'       => $t['label'],
                 'short'       => $t['short'],
                 'description' => $t['description'],
-                // Soft / Digital has no sub-type, so the chooser goes straight to the form.
+
                 'pick_classification' => !empty($t['classifications']),
                 'classifications'     => $classes,
             ];
@@ -205,20 +165,12 @@ class ServiceController extends Controller
         return $out;
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * GET /p2p/services/next-code — preview of the code the next save gets.
-     * ══════════════════════════════════════════════════════════════════ */
     public function nextCodePreview(Request $request)
     {
         $user = $request->user();
         return response()->json(['code' => $this->nextCode($user->client_id, $user->branch_id)]);
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * GET /p2p/services/stats — tab + sub-tab badges.
-     * Counted on the scoped catalogue WITHOUT the search box, matching the
-     * design (badges keep their totals while searching).
-     * ══════════════════════════════════════════════════════════════════ */
     public function stats(Request $request)
     {
         return response()->json($this->tabCounts($request));
@@ -246,11 +198,6 @@ class ServiceController extends Controller
         return $counts;
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * GET /p2p/services
-     * Query: service_type, classification, q, status, supplier=mapped|zero,
-     *        sort=recent|oldest|name, per_page (≤200), page
-     * ══════════════════════════════════════════════════════════════════ */
     public function index(Request $request)
     {
         $request->validate([
@@ -321,7 +268,6 @@ class ServiceController extends Controller
         return response()->json($page->toArray() + ['counts' => $this->tabCounts($request)]);
     }
 
-    /** One list row — the columns of all three tabs, flattened. */
     private function listRow(Service $s): array
     {
         return [
@@ -348,14 +294,11 @@ class ServiceController extends Controller
             'step_completed'       => $s->step_completed,
             'primary_image'        => $s->primaryImage?->file_path,
             'suppliers_count'      => (int) $s->suppliers_count,
-            // Tooltip on the "Mapped Suppliers" badge.
+
             'supplier_names'       => $s->activeSuppliers->map(fn ($m) => $m->vendor?->company_name)->filter()->values(),
         ];
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * GET /p2p/services/{id} — everything the Edit form + detail need.
-     * ══════════════════════════════════════════════════════════════════ */
     public function show(Request $request, int $id)
     {
         return response()->json($this->detail($this->findService($request, $id)));
@@ -387,17 +330,16 @@ class ServiceController extends Controller
         $data['suppliers'] = $service->suppliers->map(fn ($m) => $this->supplierRow($m))->values();
         $active = $service->suppliers->where('status', 'active');
         $data['suppliers_summary'] = [
-            'count'               => $active->count(),          // the "Mapped Suppliers" badge
+            'count'               => $active->count(),
             'domestic_count'      => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
             'international_count' => $active->where('origin', SupplierPricing::INTERNATIONAL)->count(),
             'inactive_count'      => $service->suppliers->count() - $active->count(),
-            // ₹ value of every active supplier (international at its exchange rate).
+
             'total_amount'        => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
         ];
         return $data;
     }
 
-    /** Relations vendorCard() reads (primary address with state + country). */
     private const VENDOR_WITH = [
         'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
         'primaryAddress.state:id,name',
@@ -405,11 +347,6 @@ class ServiceController extends Controller
         'vendorType:id,name',
     ];
 
-    /**
-     * A vendor as the Map Supplier popup shows it (auto-filled fields).
-     * origin: International when its primary address is outside India, else
-     * Domestic — the popup lists only suppliers of the chosen origin.
-     */
     private function vendorCard(Vendor $v): array
     {
         $addr    = $v->primaryAddress;
@@ -425,13 +362,12 @@ class ServiceController extends Controller
             'state'          => $addr?->state?->name ?? ($addr?->state_code ?: null),
             'gst_state_code' => $addr?->state_code ?: null,
             'city'           => $addr?->city,
-            'currency'       => SupplierPricing::currencyFor($country),   // suggested currency for International
+            'currency'       => SupplierPricing::currencyFor($country),
             'contact_person' => $addr?->contact_name,
             'contact_no'     => $addr?->contact_no,
         ];
     }
 
-    /** One row of the "Mapped Service Suppliers" table. */
     private function supplierRow(ServiceSupplier $m): array
     {
         $card = $m->vendor ? $this->vendorCard($m->vendor) : ['id' => $m->vendor_id];
@@ -441,38 +377,24 @@ class ServiceController extends Controller
             'vendor_code'    => $card['vendor_code'] ?? null,
             'vendor_name'    => $card['company_name'] ?? null,
             'supplier_type'  => $card['supplier_type'] ?? null,
-            'origin'         => $m->origin ?: SupplierPricing::DOMESTIC,   // Supplier Origin column
+            'origin'         => $m->origin ?: SupplierPricing::DOMESTIC,
             'country'        => $card['country'] ?? null,
             'state'          => $card['state'] ?? null,
             'city'           => $card['city'] ?? null,
             'contact_person' => $card['contact_person'] ?? null,
             'currency'       => $m->currency_code ?: 'INR',
-            'price'          => (float) $m->price,                         // in `currency`
-            'exchange_rate'  => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,   // ₹ per unit (international)
-            'gst_percentage' => (float) $m->gst_percentage,                // 0 = "No GST" for international
+            'price'          => (float) $m->price,
+            'exchange_rate'  => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,
+            'gst_percentage' => (float) $m->gst_percentage,
             'gst_amount'     => (float) $m->gst_amount,
-            'total_amount'   => (float) $m->total_amount,                  // Total Service Cost, in `currency`
-            'inr_amount'     => (float) ($m->inr_amount ?? $m->total_amount),   // ≈ ₹ value
+            'total_amount'   => (float) $m->total_amount,
+            'inr_amount'     => (float) ($m->inr_amount ?? $m->total_amount),
             'remarks'        => $m->remarks,
             'status'         => $m->status ?? 'active',
             'mapped_at'      => $m->created_at,
         ];
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * POST /p2p/services/step/core  (multipart/form-data)
-     * Stage 1 — Service Core Information. Without `id` it creates a draft
-     * service and allocates its code; with `id` it updates that service.
-     * Changing service_type is allowed ("Change Type"): columns the new type
-     * doesn't own are cleared, and images go when it stops being Self-Consumable.
-     *
-     * Files:
-     *   primary_image_file        replaces the primary image (Self-Consumable)
-     *   secondary_image_files[]   appended secondary images
-     *   remove_image_ids[]        image ids to delete
-     *   attachment_files[]        appended attachments (any type)
-     *   remove_attachment_ids[]   attachment ids to delete
-     * ══════════════════════════════════════════════════════════════════ */
     public function storeCore(Request $request)
     {
         $user = $request->user();
@@ -486,7 +408,6 @@ class ServiceController extends Controller
 
         $data = $this->validateCore($request, $service);
 
-        // Self-Consumable needs a primary image — checked before any file is stored.
         if ($data['service_type'] === Service::TYPE_SELF && !$request->hasFile('primary_image_file')) {
             $removing = array_map('intval', (array) $request->input('remove_image_ids', []));
             $keepsOne = $service && $service->service_type === Service::TYPE_SELF
@@ -499,8 +420,6 @@ class ServiceController extends Controller
         $service = DB::transaction(function () use ($request, $user, $service, $data) {
             $isNew = !$service;
             if ($isNew) {
-                // One code allocation at a time per branch (the unique index is
-                // the backstop; this keeps concurrent creates from colliding).
                 DB::select('SELECT pg_advisory_xact_lock(?)', [crc32('p2p_services:' . $user->client_id . ':' . $user->branch_id)]);
                 $service = new Service([
                     'client_id'  => $user->client_id,
@@ -511,7 +430,6 @@ class ServiceController extends Controller
                 $service->status = 'draft';
             }
 
-            // Clear every type-specific column the (possibly new) type doesn't own.
             $owned = Service::TYPE_FIELDS[$data['service_type']];
             foreach (Service::SWITCHABLE_FIELDS as $col) {
                 if (!in_array($col, $owned, true)) {
@@ -536,7 +454,6 @@ class ServiceController extends Controller
         return response()->json($this->detail($service->fresh()), $request->filled('id') ? 200 : 201);
     }
 
-    /** Multipart sends everything as strings — normalise toggles and blanks first. */
     private function normaliseCoreInput(Request $request): void
     {
         $merge = [];
@@ -622,7 +539,6 @@ class ServiceController extends Controller
         $data = $request->validate($rules);
         $errors = [];
 
-        // Category must belong to this type (and, for Other, to the picked classification).
         if (array_key_exists('category_id', $data)) {
             $cat = $this->masterQuery(ServiceCategory::class, $user)->whereKey($data['category_id'])
                 ->where('service_type', $type)->first();
@@ -631,12 +547,10 @@ class ServiceController extends Controller
             }
         }
 
-        // Soft / Digital has no sub-type.
         if ($type === Service::TYPE_SOFT) {
             $data['classification'] = null;
         }
 
-        // Segment comes from the shared Segments master (same list as products).
         if (array_key_exists('segment_id', $data)
             && !$this->masterQuery(Segments::class, $user)->whereKey($data['segment_id'])->exists()) {
             $errors['segment_id'] = ['The selected segment is invalid or inactive.'];
@@ -654,7 +568,6 @@ class ServiceController extends Controller
     {
         $disk = $this->disk();
 
-        // Not a Self-Consumable service any more → its images go.
         $remove = $service->service_type === Service::TYPE_SELF
             ? $service->images()->whereIn('id', (array) $request->input('remove_image_ids', []))->get()
             : $service->images()->get();
@@ -699,7 +612,6 @@ class ServiceController extends Controller
         }
     }
 
-    /** Store under a random folder so the original filename survives (it is what downloads show). */
     private function fileRow(UploadedFile $file, string $dir, string $disk, Service $service): array
     {
         $original = $file->getClientOriginalName() ?: 'file';
@@ -718,12 +630,6 @@ class ServiceController extends Controller
         }
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * PUT /p2p/services/{id}/step/suppliers
-     * Stage 2 — the whole "Mapped Service Suppliers" list (full replace) and
-     * submit. The service becomes active. An empty list is allowed, as in the
-     * design (the list then shows 0 mapped suppliers).
-     * ══════════════════════════════════════════════════════════════════ */
     public function storeSuppliers(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
@@ -742,7 +648,6 @@ class ServiceController extends Controller
 
         $this->assertVendorsVisible($request, array_column($data['suppliers'], 'vendor_id'), 'suppliers');
 
-        // Price every row first, so one bad row fails the submit before anything is saved.
         $priced = [];
         foreach ($data['suppliers'] as $i => $row) {
             $priced[$i] = $this->priceFields($request, $row, $service, "suppliers.$i.");
@@ -758,7 +663,7 @@ class ServiceController extends Controller
                 $map->fill($amounts + ['remarks' => $row['remarks'] ?? null, 'status' => 'active', 'updated_by' => $userId])->save();
                 $keep[] = $map->id;
             }
-            // Suppliers left out of the list are switched inactive, never deleted.
+
             $service->suppliers()->whereNotIn('id', $keep ?: [0])->where('status', 'active')
                 ->update(['status' => 'inactive', 'updated_by' => $userId, 'updated_at' => now()]);
 
@@ -771,11 +676,6 @@ class ServiceController extends Controller
         return response()->json($this->detail($service->fresh()));
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * Map Supplier (list-row action + Stage-2 popup), one row at a time.
-     * ══════════════════════════════════════════════════════════════════ */
-
-    /** GET /p2p/services/{id}/suppliers */
     public function suppliers(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
@@ -787,7 +687,6 @@ class ServiceController extends Controller
         ]);
     }
 
-    /** POST /p2p/services/{id}/suppliers — map one supplier. */
     public function storeSupplier(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
@@ -795,11 +694,11 @@ class ServiceController extends Controller
 
         $data = $request->validate([
             'vendor_id'      => 'required|integer',
-            'origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],   // default: from the supplier's country
+            'origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'price'          => 'required|numeric|gt:0',
-            'gst_percentage' => 'nullable|numeric|min:0|max:100',                   // domestic
-            'currency'       => 'nullable|string|size:3|alpha',                     // international
-            'exchange_rate'  => 'nullable|numeric|gt:0',                            // international, ₹ per unit
+            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'currency'       => 'nullable|string|size:3|alpha',
+            'exchange_rate'  => 'nullable|numeric|gt:0',
             'remarks'        => 'nullable|string|max:1000',
         ], $this->priceMessages());
         $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
@@ -815,7 +714,6 @@ class ServiceController extends Controller
             'status'  => 'active',
         ];
 
-        // A previously de-activated mapping is switched back on with the new price.
         if ($existing) {
             $existing->fill($fields + ['updated_by' => $userId])->save();
             return response()->json($this->supplierRowFresh($existing));
@@ -825,7 +723,6 @@ class ServiceController extends Controller
         return response()->json($this->supplierRowFresh($map), 201);
     }
 
-    /** PATCH /p2p/services/{id}/suppliers/{mapId} — change price / GST / remarks. */
     public function updateSupplier(Request $request, int $id, int $mapId)
     {
         $service = $this->findService($request, $id);
@@ -840,7 +737,6 @@ class ServiceController extends Controller
             'remarks'        => 'sometimes|nullable|string|max:1000',
         ], $this->priceMessages());
 
-        // The origin stays as mapped (it follows the supplier's country).
         $amounts = $this->priceFields($request, [
             'vendor_id'      => $map->vendor_id,
             'origin'         => $map->origin ?: SupplierPricing::DOMESTIC,
@@ -856,11 +752,6 @@ class ServiceController extends Controller
         return response()->json($this->supplierRowFresh($map));
     }
 
-    /**
-     * PATCH /p2p/services/{id}/suppliers/{mapId}/status  { "status": "active" | "inactive" }
-     * Mappings are never deleted — an inactive one drops out of the
-     * "Mapped Suppliers" count and stays in the history.
-     */
     public function updateSupplierStatus(Request $request, int $id, int $mapId)
     {
         $service = $this->findService($request, $id);
@@ -875,13 +766,6 @@ class ServiceController extends Controller
         ]);
     }
 
-    /**
-     * The price columns of one mapping (Map Supplier step 2).
-     *   Domestic      price in ₹ + GST % (default: the service's GST %, else 18)
-     *   International price in `currency` (default: the supplier country's),
-     *                 `exchange_rate` ₹ per unit (default: Currency master), no GST
-     * The origin defaults to the supplier's country and must match it.
-     */
     private function priceFields(Request $request, array $in, Service $service, string $prefix = ''): array
     {
         $vendor = Vendor::query()->with(self::VENDOR_WITH)->find($in['vendor_id']);
@@ -913,7 +797,7 @@ class ServiceController extends Controller
         $gst = isset($in['gst_percentage']) && $in['gst_percentage'] !== ''
             ? (float) $in['gst_percentage']
             : ($service->gst_percentage !== null ? (float) $service->gst_percentage : 18.0);
-        // The service table keeps price, GST %, GST amount and total (no CGST / SGST split).
+
         return array_intersect_key(
             SupplierPricing::domestic((float) $in['price'], $gst),
             array_flip(['origin', 'currency_code', 'exchange_rate', 'price', 'gst_percentage', 'gst_amount', 'total_amount', 'inr_amount'])
@@ -944,7 +828,6 @@ class ServiceController extends Controller
         return $this->supplierRow($map);
     }
 
-    /** Every vendor id must be one the user can see in the supplier book. */
     private function assertVendorsVisible(Request $request, array $ids, string $field): void
     {
         $ids = array_values(array_unique(array_map('intval', $ids)));
@@ -956,12 +839,6 @@ class ServiceController extends Controller
         }
     }
 
-    /* ══════════════════════════════════════════════════════════════════
-     * PATCH /p2p/services/{id}/status  { "status": "active" | "inactive" }
-     * Services are never deleted — the row action switches them inactive
-     * (and back). A draft (Stage 2 not submitted yet) can be made inactive,
-     * but only becomes active through the Stage-2 submit.
-     * ══════════════════════════════════════════════════════════════════ */
     public function updateStatus(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
