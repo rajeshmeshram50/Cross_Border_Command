@@ -77,7 +77,7 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.vendor_types':            'Supplier categories for procurement rules',
   'master.vendor_behaviour':        'Performance tags used in purchase order workflows',
   'master.applicable_types':        'Who appears on documents — Customer, Consignee, Notify Party',
-  'master.service_categories':       'Classify services as Self-Consumable or Other Service by type',
+  'master.service_categories':       'Service categories for Soft / Digital & Other Operational services',
   'master.license_name':            'Import/export license categories per product or market',
   'master.risk_levels':             'Risk severity tags for vendor & shipment screening',
   'master.document_type':           'Document categories for upload & linking (Invoice, COA, SDS)',
@@ -193,9 +193,8 @@ export default function MasterDashboard() {
             const slug = leaf.id.replace('master.', '');
             const cfg = getMasterConfig(slug);
             const url = cfg ? masterEndpoint(cfg) : `/master/${slug}`;
-            const records: any[] = cfg?.local
-              ? (cfg.data || [])
-              : await api.get(url).then(res => (Array.isArray(res.data) ? res.data : (res.data?.data || [])));
+            const res = await api.get(url);
+            const records: any[] = Array.isArray(res.data) ? res.data : (res.data?.data || []);
             let active = 0, inactive = 0;
             for (const r of records) {
               const s = String(r?.status ?? '').toLowerCase().trim();

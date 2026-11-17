@@ -61,7 +61,8 @@ export type MasterConfig = {
   desc: string;
   cat: string;
   endpoint?: string;
-  local?: boolean;
+  noDelete?: boolean;
+  inUseStatusOnly?: boolean;
   fields: FieldDef[];
   cols: string[];
   colL: string[];
@@ -934,20 +935,21 @@ const C: Record<string, MasterConfig> = {
   service_categories: {
     key: 'service_categories', slug: 'service_categories', title: 'Service Category', titleSingular: 'Service Category',
     icon: 'ri-price-tag-3-line', iconColor: 'success', iconBg: 'success',
-    desc: 'Classify services by service type for service procurement',
+    desc: 'Service categories for Soft / Digital and Other Operational services',
     cat: 'Party & Classification',
-    local: true,
+    noDelete: true,
+    inUseStatusOnly: true,
     fields: [
-      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Professional Services' },
+      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Software Licence' },
       {
         n: 'service_type', l: 'Select Service', t: 'select', r: true,
         opts: [
-          { value: 'self', label: 'Self-Consumable Service' },
-          { value: 'other', label: 'Other Service' },
+          { value: 'soft_digital', label: 'Soft / Digital Service' },
+          { value: 'other_operational', label: 'Other Operational Service' },
         ],
       },
       {
-        n: 'service_class', l: 'Select Type', t: 'select', r: true,
+        n: 'classification', l: 'Select Type', t: 'select', r: true,
         opts: [
           { value: 'professional', label: 'Professional' },
           { value: 'utility', label: 'Utility' },
@@ -955,35 +957,22 @@ const C: Record<string, MasterConfig> = {
           { value: 'maintenance', label: 'Maintenance' },
           { value: 'outsourcing', label: 'Outsourcing' },
         ],
-        showWhen: { field: 'service_type', equals: 'other' },
+        showWhen: { field: 'service_type', equals: 'other_operational' },
       },
       {
         n: 'status', l: 'Status', t: 'select', r: true,
-        opts: [{ value: '1', label: 'Active' }, { value: '0', label: 'Inactive' }],
+        opts: ['Active', 'Inactive'],
       },
     ],
-    cols: ['name', 'service_type', 'service_class', 'status'],
+    cols: ['name', 'service_type', 'classification', 'status'],
     colL: ['Service Category Name', 'Select Service', 'Select Type', 'Status'],
-    uFields: ['name'],
-    data: [
-      { id: 1, name: 'Lab Consumables', service_type: 'self', service_class: null, status: '1' },
-      { id: 2, name: 'Medical Consumables', service_type: 'self', service_class: null, status: '1' },
-      { id: 3, name: 'IT Hardware', service_type: 'self', service_class: null, status: '1' },
-      { id: 4, name: 'Office Consumables', service_type: 'self', service_class: null, status: '1' },
-      { id: 5, name: 'Housekeeping Supplies', service_type: 'self', service_class: null, status: '0' },
-      { id: 6, name: 'Legal & Compliance', service_type: 'other', service_class: 'professional', status: '1' },
-      { id: 7, name: 'Audit & Accounting', service_type: 'other', service_class: 'professional', status: '1' },
-      { id: 8, name: 'Electricity & Power', service_type: 'other', service_class: 'utility', status: '1' },
-      { id: 9, name: 'Internet & Telecom', service_type: 'other', service_class: 'utility', status: '1' },
-      { id: 10, name: 'Housekeeping & Security', service_type: 'other', service_class: 'facility', status: '1' },
-      { id: 11, name: 'Equipment AMC', service_type: 'other', service_class: 'maintenance', status: '1' },
-      { id: 12, name: 'Courier & Transportation', service_type: 'other', service_class: 'outsourcing', status: '0' },
-    ],
+    uFields: ['name', 'service_type', 'classification'],
+    data: [],
     wtd: [
       { icon: 'ri-price-tag-3-line', title: 'Name the Category', desc: 'Give the service category a clear name' },
-      { icon: 'ri-list-check-2', title: 'Select Service', desc: 'Choose self-consumable or other service' },
-      { icon: 'ri-list-check-2', title: 'Select Service Type', desc: 'For other services, choose the applicable type' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Choose whether the category is active' },
+      { icon: 'ri-list-check-2', title: 'Select Service', desc: 'Choose Soft / Digital or Other Operational' },
+      { icon: 'ri-list-check-2', title: 'Select Service Type', desc: 'For Other Operational, choose the applicable type' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Inactive categories stop appearing in the service form' },
     ],
   },
 

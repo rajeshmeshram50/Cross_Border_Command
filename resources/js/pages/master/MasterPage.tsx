@@ -17,12 +17,6 @@ import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
 import '../../../css/master.css';
 
-const LOCAL_ROWS: Record<string, any[]> = {};
-const localRows = (cfg: MasterConfig): any[] => {
-  if (!LOCAL_ROWS[cfg.slug]) LOCAL_ROWS[cfg.slug] = (cfg.data || []).map(r => ({ ...r }));
-  return LOCAL_ROWS[cfg.slug];
-};
-
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -61,10 +55,10 @@ function MasterPageInner({
     view:   isSuperAdmin || !!modulePerm?.can_view,
     add:    !cfg.lockedFixed && (isSuperAdmin || !!modulePerm?.can_add),
     edit:   isSuperAdmin || !!modulePerm?.can_edit,
-    delete: isSuperAdmin || !!modulePerm?.can_delete,
+    delete: !cfg.noDelete && (isSuperAdmin || !!modulePerm?.can_delete),
     export: isSuperAdmin || !!modulePerm?.can_export,
     import: isSuperAdmin || !!modulePerm?.can_import,
-  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import, cfg.lockedFixed]);
+  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import, cfg.lockedFixed, cfg.noDelete]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -196,12 +190,6 @@ function MasterPageInner({
     setRecords([]);
     setApiAutogen({});
 
-    if (cfg.local) {
-      setRecords([...localRows(cfg)]);
-      setLoading(false);
-      return () => { aborted = true; };
-    }
-
     const loadRecords = serverPaged
       ? api.get(masterEndpoint(cfg), {
           params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined },
@@ -223,10 +211,10 @@ function MasterPageInner({
   }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
+  const statusOnlyEdit = !!cfg.inUseStatusOnly && !!editing?.in_use;
 
   const tenantScopedRecords = useMemo(() => {
     if (!user) return [];
-    if (cfg.local) return records;
     const eq = (a: any, b: any) => String(a ?? '') === String(b ?? '');
     if (user.user_type === 'super_admin') {
       return records.filter(r => r.client_id == null && r.branch_id == null);
@@ -238,7 +226,7 @@ function MasterPageInner({
       return records.filter(r => eq(r.client_id, user.client_id) && eq(r.branch_id, user.branch_id));
     }
     return records;
-  }, [records, user, cfg.local]);
+  }, [records, user]);
 
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
@@ -557,6 +545,7 @@ function MasterPageInner({
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
       if (f.auto) continue;
+      if (statusOnlyEdit && f.n !== 'status') continue;
       if (f.t === 'sublist') {
         if (f.r && (!sublistValues[f.n] || sublistValues[f.n].length === 0)) {
           errs[f.n] = `Please add at least one ${f.subSingular || f.l}.`;
@@ -667,7 +656,7 @@ function MasterPageInner({
       }
     }
 
-    if (cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
+    if (!statusOnlyEdit && cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
       const labelOf = (u: string) => cfg.fields.find(ff => ff.n === u)?.l || u;
       if (cfg.uFields.length > 1) {
         const vals = cfg.uFields.map(u => String(fd.get(u) ?? '').trim());
@@ -683,7 +672,9 @@ function MasterPageInner({
             const ctx = cfg.uFields.slice(1).map((u, i) => {
               const f = cfg.fields.find(ff => ff.n === u);
               const raw = vals[i + 1];
-              const shown = raw ? (f?.ref ? resolveRefLabel(f.ref, f.refL, raw) : raw) : '—';
+              const shown = raw
+                ? (f?.ref ? resolveRefLabel(f.ref, f.refL, raw) : (normalizeOpts(f?.opts).find(o => o.value === raw)?.label ?? raw))
+                : '—';
               return `${labelOf(u)}: ${shown}`;
             });
             errs[first] = ctx.length
@@ -798,24 +789,6 @@ function MasterPageInner({
       }
     }
 
-    if (cfg.local) {
-      const store = localRows(cfg);
-      if (editingId != null) {
-        const updated = { ...store.find(r => r.id === editingId), ...payload, id: editingId };
-        LOCAL_ROWS[cfg.slug] = store.map(r => r.id === editingId ? updated : r);
-        setRecords(prev => prev.map(r => r.id === editingId ? updated : r));
-        toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
-      } else {
-        const id = store.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
-        const created = { ...payload, id };
-        LOCAL_ROWS[cfg.slug] = [created, ...store];
-        setRecords(prev => [created, ...prev]);
-        toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
-      }
-      setModalOpen(false);
-      return;
-    }
-
     savingRef.current = true;
     setSaving(true);
     try {
@@ -830,7 +803,7 @@ function MasterPageInner({
         }
       }
 
-      let body: any = payload;
+      let body: any = statusOnlyEdit ? { status: payload.status } : payload;
       let headers: any = undefined;
       if (filesToUpload.length > 0) {
         const out = new FormData();
@@ -901,14 +874,6 @@ function MasterPageInner({
     const label = deleteLabel(deleteTarget);
     if (deleteTarget.id == null) {
       toast.error('Cannot delete', 'This record is missing an identifier. Refresh the page and try again.');
-      setDeleteOpen(false);
-      setDeleteTarget(null);
-      return;
-    }
-    if (cfg.local) {
-      LOCAL_ROWS[cfg.slug] = localRows(cfg).filter(r => r.id !== deleteTarget.id);
-      setRecords(prev => prev.filter(r => r.id !== deleteTarget.id));
-      toast.success('Deleted', `"${label}" removed successfully`);
       setDeleteOpen(false);
       setDeleteTarget(null);
       return;
@@ -1199,6 +1164,11 @@ function MasterPageInner({
       );
     }
 
+    if (f?.t === 'select' && f.opts?.some(o => typeof o !== 'string')) {
+      const opt = normalizeOpts(f.opts).find(o => o.value === String(raw));
+      if (opt) return <span className="text-body">{opt.label}</span>;
+    }
+
     const txt = String(raw);
     const MAX = 24;
     if (txt.length <= MAX) {
@@ -1357,6 +1327,7 @@ function MasterPageInner({
         const inUseRow = !!row?.in_use;
         const editTooltip   = isSystemRow ? 'System-managed — cannot be edited'
                             : blockedByRank ? `Cannot edit — created by ${whoLabel}`
+                            : inUseRow && cfg.inUseStatusOnly ? 'In use by a service — only the status can be changed'
                             : 'Edit';
         const deleteTooltip = isSystemRow ? 'System-managed — cannot be deleted'
                             : blockedByRank ? `Cannot delete — created by ${whoLabel}`
@@ -2020,7 +1991,7 @@ function MasterPageInner({
                           : [String(f.showWhen.equals)];
                         return need.includes(cur);
                       })
-                      .map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
+                      .map((f, i) => renderField(f, i, editing, viewOnly || (statusOnlyEdit && f.n !== 'status'), refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
                   </Row>
                 </div>
               );
