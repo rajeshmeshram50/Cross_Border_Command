@@ -431,14 +431,17 @@ function MasterPageInner({
   // — without this, the conditional inputs would always start hidden.
   const seedRadioValues = (row?: any) => {
     const next: Record<string, string> = {};
+    const conditionalSources = new Set(
+      cfg.fields.flatMap(f => f.showWhen ? [f.showWhen.field] : []),
+    );
     for (const f of cfg.fields) {
-      if (f.t !== 'radio') continue;
+      if (f.t !== 'radio' && !conditionalSources.has(f.n)) continue;
       const v = row?.[f.n];
       if (v != null && v !== '') {
         next[f.n] = String(v);
       } else {
         const first = normalizeOpts(f.opts)[0]?.value;
-        if (first != null) next[f.n] = String(first);
+        if (first != null && (f.t === 'radio' || f.t === 'select')) next[f.n] = String(first);
       }
     }
     setRadioValues(next);
@@ -3899,15 +3902,18 @@ export function renderField(
     if (f.noneLabel) {
       options = [{ value: '', label: f.noneLabel }, ...options];
     }
+    const selectDefault = typeof defaultVal === 'boolean' ? (defaultVal ? '1' : '0') : defaultVal;
     input = (
       <MasterSelect
         name={f.n}
-        defaultValue={defaultVal || (f.r ? (options[0]?.value ?? '') : '')}
+        defaultValue={selectDefault != null && String(selectDefault) !== ''
+          ? String(selectDefault)
+          : (f.r ? (options[0]?.value ?? '') : '')}
         options={options}
         placeholder={f.noneLabel || 'Select…'}
         disabled={viewOnly}
         invalid={!!err}
-        onChange={onFieldChange}
+        onChange={(v) => { onFieldChange(); onRadioChange(f.n, v); }}
       />
     );
   } else if (f.t === 'radio') {

@@ -98,6 +98,7 @@ export type MasterConfig = {
   desc: string;
   cat: string;
   endpoint?: string;        // custom REST endpoint prefix (default: `/master/${slug}`)
+  local?: boolean;
   fields: FieldDef[];
   cols: string[];
   colL: string[];
@@ -143,6 +144,15 @@ export type MasterConfig = {
 };
 
 /** Turn opts (string | {value,label}) into uniform {value,label} pairs for rendering. */
+export const shouldShowField = (field: FieldDef, formData: Record<string, any>): boolean => {
+  if (!field.showWhen) return true;
+  const current = formData[field.showWhen.field];
+  const expected = field.showWhen.equals;
+  return Array.isArray(expected)
+    ? expected.includes(current)
+    : current === expected;
+};
+
 export function normalizeOpts(opts: FieldOption[] | undefined): { value: string; label: string }[] {
   return (opts || []).map(o => typeof o === 'string' ? { value: o, label: o } : o);
 }
@@ -1061,6 +1071,62 @@ const C: Record<string, MasterConfig> = {
   },
 
   // ---------- LEGAL & COMPLIANCE ----------
+  service_categories: {
+    key: 'service_categories', slug: 'service_categories', title: 'Service Category', titleSingular: 'Service Category',
+    icon: 'ri-price-tag-3-line', iconColor: 'success', iconBg: 'success',
+    desc: 'Classify services by service type for service procurement',
+    cat: 'Party & Classification',
+    local: true,
+    fields: [
+      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Professional Services' },
+      {
+        n: 'service_type', l: 'Select Service', t: 'select', r: true,
+        opts: [
+          { value: 'self', label: 'Self-Consumable Service' },
+          { value: 'other', label: 'Other Service' },
+        ],
+      },
+      {
+        n: 'service_class', l: 'Select Type', t: 'select', r: true,
+        opts: [
+          { value: 'professional', label: 'Professional' },
+          { value: 'utility', label: 'Utility' },
+          { value: 'facility', label: 'Facility' },
+          { value: 'maintenance', label: 'Maintenance' },
+          { value: 'outsourcing', label: 'Outsourcing' },
+        ],
+        showWhen: { field: 'service_type', equals: 'other' },
+      },
+      {
+        n: 'status', l: 'Status', t: 'select', r: true,
+        opts: [{ value: '1', label: 'Active' }, { value: '0', label: 'Inactive' }],
+      },
+    ],
+    cols: ['name', 'service_type', 'service_class', 'status'],
+    colL: ['Service Category Name', 'Select Service', 'Select Type', 'Status'],
+    uFields: ['name'],
+    data: [
+      { id: 1, name: 'Lab Consumables', service_type: 'self', service_class: null, status: '1' },
+      { id: 2, name: 'Medical Consumables', service_type: 'self', service_class: null, status: '1' },
+      { id: 3, name: 'IT Hardware', service_type: 'self', service_class: null, status: '1' },
+      { id: 4, name: 'Office Consumables', service_type: 'self', service_class: null, status: '1' },
+      { id: 5, name: 'Housekeeping Supplies', service_type: 'self', service_class: null, status: '0' },
+      { id: 6, name: 'Legal & Compliance', service_type: 'other', service_class: 'professional', status: '1' },
+      { id: 7, name: 'Audit & Accounting', service_type: 'other', service_class: 'professional', status: '1' },
+      { id: 8, name: 'Electricity & Power', service_type: 'other', service_class: 'utility', status: '1' },
+      { id: 9, name: 'Internet & Telecom', service_type: 'other', service_class: 'utility', status: '1' },
+      { id: 10, name: 'Housekeeping & Security', service_type: 'other', service_class: 'facility', status: '1' },
+      { id: 11, name: 'Equipment AMC', service_type: 'other', service_class: 'maintenance', status: '1' },
+      { id: 12, name: 'Courier & Transportation', service_type: 'other', service_class: 'outsourcing', status: '0' },
+    ],
+    wtd: [
+      { icon: 'ri-price-tag-3-line', title: 'Name the Category', desc: 'Give the service category a clear name' },
+      { icon: 'ri-list-check-2', title: 'Select Service', desc: 'Choose self-consumable or other service' },
+      { icon: 'ri-list-check-2', title: 'Select Service Type', desc: 'For other services, choose the applicable type' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Choose whether the category is active' },
+    ],
+  },
+
   license_name: {
     key: 'license_name', slug: 'license_name', title: 'License Types', titleSingular: 'License Type',
     icon: 'ri-file-shield-2-line', iconColor: 'danger', iconBg: 'danger',
