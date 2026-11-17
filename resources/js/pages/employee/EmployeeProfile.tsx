@@ -2163,7 +2163,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const advancesFetch = useRef({ key: '', at: 0, busy: false });
   /** When the last focus/visibility resync ran — see the resync effect. */
   const lastResync = useRef(0);
-  const expenseKey = `${profileEmpCode ?? ''}|${profileEmpIdNum ?? ''}|${isOwnProfile ? 1 : 0}`;
+  /* The employee these tabs are ABOUT, as a real primary key.
+     profileEmpIdNum is only set when the route slug happens to be all
+     digits; the HR list links with the encrypted id, so on a colleague's
+     profile it is null and the old fallback sent that encrypted blob as
+     `employee_code`, which matches no row. empDetail was fetched BY the
+     slug, so its id is the resolved one. (QA #64) */
+  const profileEmployeeId: number | null =
+    (empDetail?.id != null ? Number(empDetail.id) : null) ?? profileEmpIdNum;
+  /* The id is in the key, so the fetch re-runs once the record resolves —
+     without it the first attempt (id still null) would be cached as fresh. */
+  const expenseKey = `${profileEmpCode ?? ''}|${profileEmployeeId ?? ''}|${isOwnProfile ? 1 : 0}`;
 
   const refreshClaims = async (opts?: { force?: boolean }) => {
     if (tab !== 'expense' || !profileEmpCode) return;
@@ -2177,8 +2187,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       const mineRes = await api.get('/expense-claims', {
         params: {
           scope: 'mine',
-          ...(profileEmpIdNum !== null
-            ? { employee_id: profileEmpIdNum }
+          ...(profileEmployeeId !== null
+            ? { employee_id: profileEmployeeId }
             : { employee_code: profileEmpCode }),
         },
       });
@@ -2203,7 +2213,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     refreshClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   // ── Advance Requests — same shape as the expense-claim lists above.
   // `apiAdvances` = the profile owner's advances (mine scope, optionally
@@ -2235,8 +2245,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       const mineRes = await api.get('/advance-requests', {
         params: {
           scope: 'mine',
-          ...(profileEmpIdNum !== null
-            ? { employee_id: profileEmpIdNum }
+          ...(profileEmployeeId !== null
+            ? { employee_id: profileEmployeeId }
             : { employee_code: profileEmpCode }),
         },
       });
@@ -2257,7 +2267,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     refreshAdvances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   /* Documents this employee's CURRENT department + designation call for.
    *
@@ -2373,7 +2383,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       document.removeEventListener('visibilitychange', catchUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   /** Dispatcher for inline Approve / Reject buttons on advance-request
    *  rows. Same shape as `actOnClaim`, just a different REST collection. */

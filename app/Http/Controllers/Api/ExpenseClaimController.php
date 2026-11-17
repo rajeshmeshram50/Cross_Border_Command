@@ -120,19 +120,21 @@ class ExpenseClaimController extends Controller
                their OWN claims under that colleague's name (QA #64).
 
                It is honoured now, but only for a viewer entitled to read that
-               employee — the same tiers the team scope below trusts — so a
-               branch peer still cannot read another's claims by sending an id.
-               An unentitled id falls back to the viewer's own rows rather than
-               erroring: the tab is a read, not an assertion of access. */
+               employee: an admin tier, the employee's reporting line, or a
+               holder of the hr.expense grant — which is what "has HRMS
+               access" means for someone reaching a colleague from the HR
+               employee list. Anyone else gets an empty list, never their
+               own rows under that colleague's name. */
             $myEmployeeId = $this->currentEmployeeId($user);
             $targetEmployeeId = $myEmployeeId;
-            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId
-                && $this->mayReadEmployeeClaims($user, $employeeIdFilter, $myEmployeeId)) {
-                $targetEmployeeId = $employeeIdFilter;
-            } elseif (!$myEmployeeId) {
-                // super_admin / client_admin with no personal employee row —
-                // without a filter there is nothing of "their own" to show.
-                $targetEmployeeId = $employeeIdFilter;
+            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId) {
+                /* Someone ELSE's profile. Entitled viewers get that employee;
+                   everyone else gets NOTHING — never the viewer's own rows,
+                   which is what put one person's claims under another
+                   person's name in the first place. -1 matches no employee. */
+                $targetEmployeeId = $this->mayReadEmployeeClaims($user, $employeeIdFilter, $myEmployeeId)
+                    ? $employeeIdFilter
+                    : -1;
             }
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
@@ -1415,6 +1417,40 @@ class ExpenseClaimController extends Controller
      * downstream reports. Kept as one rule so the Employee Profile's Expense tab
      * and the My Team queue cannot disagree about who may look at whom.
      */
+    /**
+     * Does this user hold the hr.expense VIEW grant?
+     *
+     * The non-aborting twin of guardHrPermission(), which this controller
+     * already uses for writes. Memoised: the entitlement is asked once per
+     * request but the module lookup would otherwise repeat.
+     */
+    /** Keyed by user id, NOT a single flag. A bare flag caches the first
+     *  caller's answer and hands it to the next one — an entitlement leak
+     *  the moment a controller instance serves two users, which is exactly
+     *  what happens outside the per-request lifecycle (a job, a test, a
+     *  console command). Caught by probing two viewers on one instance. */
+    private array $hrExpenseView = [];
+
+    private function hasHrExpenseView($user): bool
+    {
+        if (!$user) return false;
+        $uid = (int) $user->id;
+        if (array_key_exists($uid, $this->hrExpenseView)) return $this->hrExpenseView[$uid];
+
+        $moduleId = Module::where('slug', 'hr.expense')->value('id');
+        if (!$moduleId) {
+            /* The module was never seeded. Falling open here would hand every
+               employee the whole tenant's claims, so it falls CLOSED — the
+               reporting-line path above still works. */
+            return $this->hrExpenseView[$uid] = false;
+        }
+
+        return $this->hrExpenseView[$uid] = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+    }
+
     private function mayReadEmployeeClaims($user, int $targetEmployeeId, ?int $myEmployeeId): bool
     {
         if (!$user) return false;
@@ -1437,8 +1473,22 @@ class ExpenseClaimController extends Controller
                 || (int) $target->branch_id === (int) $user->branch_id;
         }
 
-        // Employee tier: only their own downstream, direct or indirect.
-        return in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true);
+        /* Employee tier. Two ways in:
+           - their own downstream, direct or indirect (a manager), or
+           - the hr.expense grant, which is what "has HRMS access" means:
+             it is the module that governs this very data, and it is how
+             an HR employee reaches a colleague from the employee list.
+           Branch stays enforced either way — every branch is an isolated
+           peer, so a grant does not reach across one. */
+        if (in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true)) {
+            return true;
+        }
+        if ($this->hasHrExpenseView($user)) {
+            return $target->branch_id === null
+                || $user->branch_id === null
+                || (int) $target->branch_id === (int) $user->branch_id;
+        }
+        return false;
     }
 
     /**

@@ -72,11 +72,14 @@ class AdvanceRequestController extends Controller
                under somebody else's name (QA #64). */
             $myEmployeeId = $this->currentEmployeeId($user);
             $targetEmployeeId = $myEmployeeId;
-            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId
-                && $this->mayReadEmployeeAdvances($user, $employeeIdFilter, $myEmployeeId)) {
-                $targetEmployeeId = $employeeIdFilter;
-            } elseif (!$myEmployeeId) {
-                $targetEmployeeId = $employeeIdFilter;
+            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId) {
+                /* Someone ELSE's profile. Entitled viewers get that employee;
+                   everyone else gets NOTHING — never the viewer's own rows,
+                   which is what put one person's advances under another
+                   person's name in the first place. -1 matches no employee. */
+                $targetEmployeeId = $this->mayReadEmployeeAdvances($user, $employeeIdFilter, $myEmployeeId)
+                    ? $employeeIdFilter
+                    : -1;
             }
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
@@ -660,6 +663,40 @@ class AdvanceRequestController extends Controller
     /** May this user read ANOTHER employee's advances? Same rule as
      *  ExpenseClaimController::mayReadEmployeeClaims — admin tiers inside their
      *  tenant scope, everyone else only their own downstream reports. */
+    /**
+     * Does this user hold the hr.expense VIEW grant?
+     *
+     * The non-aborting twin of guardHrPermission(), which this controller
+     * already uses for writes. Memoised: the entitlement is asked once per
+     * request but the module lookup would otherwise repeat.
+     */
+    /** Keyed by user id, NOT a single flag. A bare flag caches the first
+     *  caller's answer and hands it to the next one — an entitlement leak
+     *  the moment a controller instance serves two users, which is exactly
+     *  what happens outside the per-request lifecycle (a job, a test, a
+     *  console command). Caught by probing two viewers on one instance. */
+    private array $hrExpenseView = [];
+
+    private function hasHrExpenseView($user): bool
+    {
+        if (!$user) return false;
+        $uid = (int) $user->id;
+        if (array_key_exists($uid, $this->hrExpenseView)) return $this->hrExpenseView[$uid];
+
+        $moduleId = Module::where('slug', 'hr.expense')->value('id');
+        if (!$moduleId) {
+            /* The module was never seeded. Falling open here would hand every
+               employee the whole tenant's claims, so it falls CLOSED — the
+               reporting-line path above still works. */
+            return $this->hrExpenseView[$uid] = false;
+        }
+
+        return $this->hrExpenseView[$uid] = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+    }
+
     private function mayReadEmployeeAdvances($user, int $targetEmployeeId, ?int $myEmployeeId): bool
     {
         if (!$user) return false;
@@ -679,7 +716,22 @@ class AdvanceRequestController extends Controller
             return $target->branch_id === null
                 || (int) $target->branch_id === (int) $user->branch_id;
         }
-        return in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true);
+        /* Employee tier. Two ways in:
+           - their own downstream, direct or indirect (a manager), or
+           - the hr.expense grant, which is what "has HRMS access" means:
+             it is the module that governs this very data, and it is how
+             an HR employee reaches a colleague from the employee list.
+           Branch stays enforced either way — every branch is an isolated
+           peer, so a grant does not reach across one. */
+        if (in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true)) {
+            return true;
+        }
+        if ($this->hasHrExpenseView($user)) {
+            return $target->branch_id === null
+                || $user->branch_id === null
+                || (int) $target->branch_id === (int) $user->branch_id;
+        }
+        return false;
     }
 
     private function currentEmployeeId($user): ?int
