@@ -463,10 +463,10 @@
 .sct-row {
   display: grid;
   grid-template-columns:
-    40px 106px 120px 110px minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr) 96px minmax(210px, 1.2fr) 224px;
+    40px 106px 120px 110px minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr) 96px minmax(210px, 1.2fr) 244px;
   gap: 8px;
   align-items: center;
-  min-width: 1496px;
+  min-width: 1516px;
   padding: 5px 14px;
   border-bottom: 1px solid #eff5f8;
   font-size: 11px;
@@ -812,8 +812,11 @@
   gap: 6px;
 }
 
+/* The Action column (244px) fits Edit + "Sourcing Target Report" whole: 40 + 6 + about 190.
+   A narrower window scrolls the table sideways instead of pushing the buttons over Progress. */
 .sct-edit,
 .sct-report {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1125,9 +1128,9 @@
 @media (max-width: 1600px) {
   .sct-row {
     grid-template-columns:
-      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 210px;
+      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 244px;
     gap: 6px;
-    min-width: 1230px;
+    min-width: 1264px;
     padding-left: 12px;
     padding-right: 12px;
   }
