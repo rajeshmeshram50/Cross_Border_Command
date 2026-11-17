@@ -3,7 +3,7 @@ import {
   Col, Row, Button, Input, Label, Spinner,
   Badge, Modal, ModalBody, ModalFooter, Form, FormFeedback,
 } from 'reactstrap';
-import BusyOverlay from '../../components/ui/BusyOverlay';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import BusyLabel from '../../components/ui/BusyLabel';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -407,7 +407,7 @@ export default function HrBiometricDevices() {
           </div>
         </div>
         <Form onSubmit={handleSave}>
-          <BusyOverlay busy={saving} label={editId ? 'Updating…' : 'Saving…'}>
+          {saving && <FullPageLoader label={editId ? 'Updating…' : 'Saving…'} />}
           <ModalBody className="p-3">
             <Row className="g-2">
               <Col md={6}>
@@ -497,7 +497,6 @@ export default function HrBiometricDevices() {
               </Col>
             </Row>
           </ModalBody>
-          </BusyOverlay>
           {/* Right-aligned, like every other modal footer in the app.
               `justify-content-center` left the actions floating mid-footer (QA #1).
               py-3, not pb-3: setting only the bottom left the buttons riding
@@ -594,7 +593,7 @@ export default function HrBiometricDevices() {
           </div>
         </div>
         <Form onSubmit={doImport}>
-          <BusyOverlay busy={importing} label="Importing…">
+          {importing && <FullPageLoader label="Importing…" />}
           <ModalBody className="p-4">
             <Row className="g-3">
               <Col md={12}>
@@ -653,7 +652,6 @@ export default function HrBiometricDevices() {
               )}
             </Row>
           </ModalBody>
-          </BusyOverlay>
           {/* Right-aligned, like every other modal footer in the app.
               `justify-content-center` left the actions floating mid-footer (QA #1).
               py-3, not pb-3: setting only the bottom left the buttons riding

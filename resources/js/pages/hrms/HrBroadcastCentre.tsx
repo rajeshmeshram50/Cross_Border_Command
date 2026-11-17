@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
-import BusyOverlay from '../../components/ui/BusyOverlay';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import BusyLabel from '../../components/ui/BusyLabel';
 import { MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -867,8 +867,8 @@ function CreateAnnouncementModal({
 
       contentClassName="rec-form-content border-0 brd-wizard"
     >
+      {!!saving && <FullPageLoader label={saving === 'publish' ? 'Publishing…' : 'Saving…'} />}
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-      <BusyOverlay busy={!!saving} label={saving === 'publish' ? 'Publishing…' : 'Saving…'}>
 
         <div className="brd-wizard-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1119,7 +1119,6 @@ function CreateAnnouncementModal({
             )}
           </div>
         </div>
-      </BusyOverlay>
       </ModalBody>
     </Modal>
   );

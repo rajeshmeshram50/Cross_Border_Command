@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
-import BusyOverlay from './ui/BusyOverlay';
+import FullPageLoader from './ui/FullPageLoader';
 import BusyLabel from './ui/BusyLabel';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -706,6 +706,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     .split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
 
   return (
+    <>
+    {saving && <FullPageLoader label="Saving…" />}
     <Modal
       isOpen={open}
       toggle={onClose}
@@ -751,7 +753,6 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <span>Loading the current structure…</span>
           </div>
         ) : (
-          <BusyOverlay busy={saving} label="Saving…">
           <div className="ssm-body">
             <div className="ssm-section">
               <div className="ssm-section-head">
@@ -1002,7 +1003,6 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
               />
             </div>
           </div>
-          </BusyOverlay>
         )}
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
@@ -1024,6 +1024,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         )}
       </ModalBody>
     </Modal>
+    </>
   );
 }
 
