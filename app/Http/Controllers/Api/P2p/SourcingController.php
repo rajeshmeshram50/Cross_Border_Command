@@ -87,8 +87,12 @@ class SourcingController extends Controller
             'createdBy' => $t->created_by_name ?: '—',
             'assignee'  => $t->assignee_name ?: '—',
             'products'  => $total,
-            'completed' => $done,
+            'completed' => $done,          // = "Mapped Suppliers" column (products with ≥1 supplier)
             'overdue'   => $overdue,
+            // Sourcing Management Tracker columns.
+            'pending'         => $total - $done,
+            'progress'        => $total > 0 ? (int) round($done * 100 / $total) : 0,
+            'progressStatus'  => $isComplete ? 'Completed' : 'In Progress',
         ];
     }
 
