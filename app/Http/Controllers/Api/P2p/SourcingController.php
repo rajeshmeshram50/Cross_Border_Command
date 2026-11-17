@@ -146,6 +146,7 @@ class SourcingController extends Controller
         $request->validate([
             'tab'      => 'required|in:all,created,assigned',
             'q'        => 'nullable|string|max:100',
+            'status'   => 'nullable|in:In Progress,Completed,Overdue',
             'page'     => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
@@ -166,6 +167,9 @@ class SourcingController extends Controller
                 $r['id'], $r['source'], implode(' ', $r['sources']), $r['createdBy'], $r['assignee'],
                 $r['progressStatus'], $r['overdue'] ? 'overdue' : '', $r['_names'],
             ])), $q));
+        }
+        if ($status = $request->query('status')) {
+            $rows = $rows->filter(fn($r) => $status === 'Overdue' ? $r['overdue'] : $r['progressStatus'] === $status);
         }
 
         $perPage = (int) $request->query('per_page', 10);
