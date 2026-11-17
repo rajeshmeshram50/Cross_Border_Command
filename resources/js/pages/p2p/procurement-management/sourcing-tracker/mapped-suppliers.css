@@ -1,0 +1,695 @@
+/* Mapped Suppliers popup (Figma). The design matches Bulk Sourcing's Mapped Suppliers popup; its
+   rules were copied here under this module's own .stsv-* names (bulk-sourcing.css is global and
+   uses .sv-*, so sharing class names would let either module restyle the other). */
+
+.stsv-ref-val.cyan {
+    color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .stsv-card-name {
+    color: #e2faff;
+}
+
+[data-bs-theme="dark"] .stsv-sec-label {
+    color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .stsv-card:hover {
+    border-color: rgba(34,211,238,.4);
+}
+
+[data-bs-theme="dark"] .stsv-contact-val {
+    color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .stsv-footer-note {
+    color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .stsv-box {
+    background: #0e1b24;
+}
+
+[data-bs-theme="dark"] .stsv-card-idx {
+    background: rgba(34,211,238,.1);
+    border-color: rgba(34,211,238,.3);
+    color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .stsv-card-tag.id {
+    background: rgba(34,211,238,.12);
+    border-color: rgba(34,211,238,.3);
+    color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .stsv-empty-title {
+    color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .stsv-close-btn {
+    background: rgba(255,255,255,.05);
+    border-color: rgba(255,255,255,.12);
+    color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .stsv-close-btn:hover {
+    background: rgba(255,255,255,.1);
+    /* the light hover sets dark ink + grey border — keep the text readable on dark */
+    color: #f1f5f9;
+    border-color: rgba(255,255,255,.24);
+}
+
+/* Section and contact icon tiles: the light cyan gradient had no dark version. */
+[data-bs-theme="dark"] .stsv-sec-title-icon,
+[data-bs-theme="dark"] .stsv-contact-ico,
+[data-bs-theme="dark"] .stsv-empty-icon {
+    background: rgba(34,211,238,.14);
+    color: #67e8f9;
+    box-shadow: inset 0 0 0 1px rgba(34,211,238,.28);
+}
+
+.stsv-ref-val.amber {
+    color: #fcd34d;
+}
+
+.stsv-ref-val.green {
+    color: #6ee7b7;
+}
+
+.stsv-htitle-block,
+.stsv-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.stsv-overlay {
+    position: fixed;
+    inset: 0;
+    /* Above the report (1200), like Map Supplier (3000) — and BELOW the app Tooltip (260000) and the
+       MasterSelect menu, so tooltips show on top. Bulk Sourcing's 10000001 hid every tooltip. */
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4,14,32,.78);
+    backdrop-filter: blur(14px);
+    padding: 24px;
+    box-sizing: border-box;
+    font-family: var(--font-sans);
+}
+
+.stsv-box {
+    width: 100%;
+    max-width: 820px;
+    max-height: 90vh;
+    border-radius: 24px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    box-shadow: 0 40px 100px rgba(8,145,178,.28),0 12px 32px rgba(15,23,42,.22),0 0 0 1px rgba(8,145,178,.12);
+}
+
+.stsv-header {
+    background: linear-gradient(135deg,#082f49 0%,#0c4a6e 40%,#0369a1 75%,#0891b2 100%);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.stsv-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse 80% 60% at 95% -5%, rgba(34,211,238,.22) 0%, transparent 55%),radial-gradient(ellipse 50% 80% at 0% 110%, rgba(14,116,144,.3) 0%, transparent 50%);
+}
+
+.stsv-hbar {
+    height: 3.5px;
+    background: linear-gradient(90deg,#22d3ee 0%,#0891b2 50%,#22d3ee 100%);
+}
+
+.stsv-htop {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 22px 24px 14px;
+    position: relative;
+    z-index: 1;
+}
+
+.stsv-hicon-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,.12);
+    border: 1.5px solid rgba(255,255,255,.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    /* the header icon draws in currentColor: white on the teal header, in light and dark */
+    color: rgba(255,255,255,.92);
+}
+
+.stsv-htitle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5px;
+    flex-wrap: wrap;
+}
+
+.stsv-htitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -.3px;
+    line-height: 1.15;
+}
+
+.stsv-hpill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.28);
+    color: rgba(255,255,255,.92);
+    border-radius: 7px;
+    padding: 4px 11px;
+    white-space: nowrap;
+}
+
+.stsv-hsub {
+    font-size: 12px;
+    color: rgba(255,255,255,.6);
+    font-weight: 500;
+}
+
+.stsv-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    background: rgba(255,255,255,.1);
+    border: 1.5px solid rgba(255,255,255,.18);
+    color: rgba(255,255,255,.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all .15s;
+}
+
+.stsv-close:hover {
+    background: rgba(255,255,255,.2);
+    color: #fff;
+    border-color: rgba(255,255,255,.35);
+}
+
+.stsv-refs {
+    display: grid;
+    grid-template-columns: repeat(6,1fr);
+    gap: 8px;
+    padding: 0 24px 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.stsv-ref {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 12px;
+    padding: 10px 14px;
+    min-width: 0;
+}
+
+.stsv-ref-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: rgba(255,255,255,.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stsv-ref-val {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stsv-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    background: #f0f9ff;
+}
+
+[data-bs-theme="dark"] .stsv-body {
+    background: #0d1922;
+}
+
+.stsv-sec-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.stsv-sec-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stsv-sec-title-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg,#cffafe,#a5f3fc);
+    color: #0891b2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(8,145,178,.2);
+}
+
+.stsv-sec-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: #0369a1;
+}
+
+.stsv-count-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(135deg,#22d3ee,#0891b2);
+    color: #fff;
+    border-radius: 20px;
+    padding: 5px 14px;
+    box-shadow: 0 4px 12px rgba(8,145,178,.35);
+}
+
+.stsv-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.stsv-card {
+    background: #fff;
+    border: 1.5px solid #e0f2fe;
+    border-radius: 18px;
+    padding: 20px 22px 20px 26px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s,box-shadow .2s,transform .2s;
+    box-shadow: 0 2px 12px rgba(8,145,178,.07);
+}
+
+[data-bs-theme="dark"] .stsv-card {
+    background: #13242e;
+    border-color: rgba(34,211,238,.16);
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+}
+
+.stsv-card:hover {
+    border-color: #7dd3fc;
+    box-shadow: 0 8px 28px rgba(8,145,178,.16);
+    transform: translateY(-1px);
+}
+
+.stsv-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg,#22d3ee 0%,#0891b2 100%);
+    border-radius: 4px 0 0 4px;
+}
+
+.stsv-card-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+/* Convert to Supplier (Figma .stsv-card-convert-btn): purple, New Supplier cards only.
+   40px / 12.5px like every text button in the module. */
+.stsv-card-convert-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
+    height: 40px;
+    padding: 0 16px;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
+    border: none;
+    border-radius: 9px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
+    transition: filter .15s, transform .15s, box-shadow .15s;
+}
+
+.stsv-card-convert-btn:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(124, 58, 237, .45);
+}
+
+.stsv-card-convert-btn:active {
+    transform: translateY(0);
+}
+
+.stsv-card-convert-btn svg {
+    flex: none;
+}
+
+.stsv-card-idx {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background: #f0f9ff;
+    border: 1.5px solid #bae6fd;
+    color: #0891b2;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stsv-card-av {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg,#22d3ee,#0369a1);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(8,145,178,.4);
+    letter-spacing: -.5px;
+}
+
+.stsv-card-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0c4a6e;
+    letter-spacing: -.25px;
+    margin-bottom: 7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stsv-card-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.stsv-card-tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid;
+}
+
+.stsv-card-tag.id {
+    background: #e0f7fa;
+    color: #0891b2;
+    border-color: #a5f3fc;
+    font-family: ui-monospace,monospace;
+}
+
+.stsv-card-tag.seg {
+    background: #f0fdf4;
+    color: #15803d;
+    border-color: #bbf7d0;
+}
+
+[data-bs-theme="dark"] .stsv-card-tag.seg {
+    background: rgba(34,197,94,.16);
+    border-color: rgba(74,222,128,.3);
+    color: #86efac;
+}
+
+.stsv-card-tag.src {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fde68a;
+}
+
+[data-bs-theme="dark"] .stsv-card-tag.src {
+    background: rgba(245,158,11,.16);
+    border-color: rgba(253,224,71,.3);
+    color: #fcd34d;
+}
+
+.stsv-card-contacts {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: 10px;
+}
+
+.stsv-contact-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #f8fafc;
+    border: 1.5px solid #e0f2fe;
+    border-radius: 12px;
+    padding: 11px 14px;
+    transition: border-color .15s,background .15s;
+}
+
+[data-bs-theme="dark"] .stsv-contact-item {
+    background: rgba(255,255,255,.03);
+    border-color: rgba(255,255,255,.08);
+}
+
+.stsv-contact-item:hover {
+    background: #f0f9ff;
+    border-color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .stsv-contact-item:hover {
+    background: rgba(34,211,238,.06);
+    border-color: rgba(34,211,238,.3);
+}
+
+.stsv-contact-ico {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg,#e0f7fa,#b2ebf2);
+    color: #0891b2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(8,145,178,.15);
+}
+
+.stsv-contact-text {
+    min-width: 0;
+}
+
+.stsv-contact-lbl {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #94a3b8;
+    margin-bottom: 3px;
+}
+
+.stsv-contact-val {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stsv-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 48px 24px;
+    text-align: center;
+}
+
+.stsv-empty-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 18px;
+    background: linear-gradient(135deg,#e0f7fa,#b2ebf2);
+    color: #0891b2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(8,145,178,.2);
+}
+
+.stsv-empty-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.stsv-empty-sub {
+    font-size: 12.5px;
+    color: #94a3b8;
+    font-weight: 500;
+    max-width: 280px;
+    line-height: 1.5;
+}
+
+.stsv-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: #fff;
+    border-top: 1.5px solid #e0f2fe;
+    flex-shrink: 0;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+[data-bs-theme="dark"] .stsv-footer {
+    background: #0e1b24;
+    border-top-color: rgba(255,255,255,.06);
+}
+
+.stsv-footer-note {
+    font-size: 11.5px;
+    color: #64748b;
+    font-weight: 600;
+    /* "N suppliers mapped to <long product name>" stays on one line and never pushes the
+       Close / Add Supplier buttons: it ends in "…" with the full text in the tooltip. */
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stsv-footer-actions {
+    flex: none;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.stsv-close-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #475569;
+    background: #f1f5f9;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 11px;
+    height: 40px; /* every text button in the module is 40px */
+    padding: 0 20px;
+    cursor: pointer;
+    transition: all .15s;
+}
+
+.stsv-close-btn:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+    border-color: #cbd5e1;
+}
+
+.stsv-footer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg,#22d3ee 0%,#0891b2 100%);
+    border: none;
+    border-radius: 11px;
+    height: 40px; /* every text button in the module is 40px */
+    padding: 0 22px;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(8,145,178,.4);
+    transition: all .18s;
+}
+
+.stsv-footer-btn:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(8,145,178,.5);
+}
+
+/* Phones: two info tiles per row, contacts stacked; the popup fills the screen. These come after
+   the base rules, so they win without !important. */
+@media (max-width: 680px) {
+    .stsv-refs {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stsv-card-contacts {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .stsv-overlay {
+        padding: 8px;
+    }
+
+    .stsv-box {
+        width: 100%;
+        max-width: 100%;
+        max-height: 94vh;
+        border-radius: 14px;
+    }
+}
