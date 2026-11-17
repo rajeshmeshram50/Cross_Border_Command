@@ -19,6 +19,7 @@ use App\Models\P2p\ServiceSupplier;
 use App\Models\Vendor;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
+use App\Support\SupplierPricing;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -136,18 +137,14 @@ class ServiceController extends Controller
     public function masterBundle(Request $request)
     {
         $user = $request->user();
-        $key  = MasterBundleCache::key('service:master-bundle', $user?->id);
+        $key  = MasterBundleCache::key('service:master-bundle:v2', $user?->id);   // v2 = supplier origin + currencies
 
         $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user) {
             $active = fn (string $cls, array $cols) => $this->masterQuery($cls, $user)->orderBy('id')->get($cols);
 
             $vendors = Vendor::query()
                 ->forUser($user)
-                ->with([
-                    'primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email,designation',
-                    'primaryAddress.state:id,name',
-                    'vendorType:id,name',
-                ])
+                ->with(self::VENDOR_WITH)
                 ->orderByDesc('id')
                 ->get(['id', 'vendor_code', 'company_name', 'status', 'vendor_type_id'])
                 ->map(fn ($v) => $this->vendorCard($v))
@@ -170,6 +167,11 @@ class ServiceController extends Controller
                 'departments'         => $active(Departments::class, ['id', 'name', 'code']),
                 'gst_percentage'      => $active(GstPercentage::class, ['id', 'percentage']),
                 'vendors'             => $vendors,
+                // Map Supplier step 1 — Domestic (₹ + GST) or International (currency, no GST).
+                'supplier_origins'    => [
+                    ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
+                    ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
+                ],
             ];
         });
 
@@ -371,32 +373,53 @@ class ServiceController extends Controller
             'suppliers'   => fn ($q) => $q->orderBy('id'),
             'suppliers.vendor' => fn ($q) => $q->select('id', 'vendor_code', 'company_name', 'vendor_type_id', 'status'),
             'suppliers.vendor.vendorType:id,name',
-            'suppliers.vendor.primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email',
+            'suppliers.vendor.primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email',
             'suppliers.vendor.primaryAddress.state:id,name',
+            'suppliers.vendor.primaryAddress.country:id,name',
         ]);
 
         $data = $service->toArray();
         $data['suppliers'] = $service->suppliers->map(fn ($m) => $this->supplierRow($m))->values();
         $active = $service->suppliers->where('status', 'active');
         $data['suppliers_summary'] = [
-            'count'          => $active->count(),          // the "Mapped Suppliers" badge
-            'inactive_count' => $service->suppliers->count() - $active->count(),
-            'total_amount'   => round((float) $active->sum('total_amount'), 2),
+            'count'               => $active->count(),          // the "Mapped Suppliers" badge
+            'domestic_count'      => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
+            'inactive_count'      => $service->suppliers->count() - $active->count(),
+            // ₹ value of every active supplier (international at its exchange rate).
+            'total_amount'        => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
         ];
         return $data;
     }
 
-    /** A vendor as the Map Supplier popup shows it (auto-filled fields). */
+    /** Relations vendorCard() reads (primary address with state + country). */
+    private const VENDOR_WITH = [
+        'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
+        'primaryAddress.state:id,name',
+        'primaryAddress.country:id,name',
+        'vendorType:id,name',
+    ];
+
+    /**
+     * A vendor as the Map Supplier popup shows it (auto-filled fields).
+     * origin: International when its primary address is outside India, else
+     * Domestic — the popup lists only suppliers of the chosen origin.
+     */
     private function vendorCard(Vendor $v): array
     {
-        $addr = $v->primaryAddress;
+        $addr    = $v->primaryAddress;
+        $country = $addr?->country?->name;
         return [
             'id'             => $v->id,
             'vendor_code'    => $v->vendor_code,
             'company_name'   => $v->company_name,
             'status'         => $v->status,
             'supplier_type'  => $v->vendorType?->name,
+            'origin'         => SupplierPricing::originOf($country),
+            'country'        => $country ?: 'India',
             'state'          => $addr?->state?->name ?? ($addr?->state_code ?: null),
+            'gst_state_code' => $addr?->state_code ?: null,
+            'city'           => $addr?->city,
+            'currency'       => SupplierPricing::currencyFor($country),   // suggested currency for International
             'contact_person' => $addr?->contact_name,
             'contact_no'     => $addr?->contact_no,
         ];
@@ -412,12 +435,17 @@ class ServiceController extends Controller
             'vendor_code'    => $card['vendor_code'] ?? null,
             'vendor_name'    => $card['company_name'] ?? null,
             'supplier_type'  => $card['supplier_type'] ?? null,
+            'origin'         => $m->origin ?: SupplierPricing::DOMESTIC,   // Supplier Origin column
+            'country'        => $card['country'] ?? null,
             'state'          => $card['state'] ?? null,
+            'city'           => $card['city'] ?? null,
             'contact_person' => $card['contact_person'] ?? null,
-            'price'          => (float) $m->price,
-            'gst_percentage' => (float) $m->gst_percentage,
+            'currency'       => $m->currency_code ?: 'INR',
+            'price'          => (float) $m->price,                         // in `currency`
+            'gst_percentage' => (float) $m->gst_percentage,                // 0 = "No GST" for international
             'gst_amount'     => (float) $m->gst_amount,
-            'total_amount'   => (float) $m->total_amount,
+            'total_amount'   => (float) $m->total_amount,                  // Total Service Cost, in `currency`
+            'inr_amount'     => (float) ($m->inr_amount ?? $m->total_amount),   // ≈ ₹ value
             'remarks'        => $m->remarks,
             'status'         => $m->status ?? 'active',
             'mapped_at'      => $m->created_at,
@@ -697,18 +725,25 @@ class ServiceController extends Controller
         $data = $request->validate([
             'suppliers'                  => 'present|array',
             'suppliers.*.vendor_id'      => 'required|integer|distinct',
+            'suppliers.*.origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'suppliers.*.price'          => 'required|numeric|gt:0',
-            'suppliers.*.gst_percentage' => 'required|numeric|min:0|max:100',
+            'suppliers.*.gst_percentage' => 'nullable|numeric|min:0|max:100',
             'suppliers.*.remarks'        => 'nullable|string|max:1000',
-        ]);
+        ], $this->priceMessages());
 
         $this->assertVendorsVisible($request, array_column($data['suppliers'], 'vendor_id'), 'suppliers');
 
-        DB::transaction(function () use ($service, $data, $request) {
+        // Price every row first, so one bad row fails the submit before anything is saved.
+        $priced = [];
+        foreach ($data['suppliers'] as $i => $row) {
+            $priced[$i] = $this->priceFields($request, $row, $service, "suppliers.$i.");
+        }
+
+        DB::transaction(function () use ($service, $data, $priced, $request) {
             $userId = $request->user()?->id;
             $keep   = [];
-            foreach ($data['suppliers'] as $row) {
-                $amounts = ServiceSupplier::amounts((float) $row['price'], (float) $row['gst_percentage']);
+            foreach ($data['suppliers'] as $i => $row) {
+                $amounts = $priced[$i];
                 $map = ServiceSupplier::firstOrNew(['service_id' => $service->id, 'vendor_id' => $row['vendor_id']]);
                 if (!$map->exists) $map->created_by = $userId;
                 $map->fill($amounts + ['remarks' => $row['remarks'] ?? null, 'status' => 'active', 'updated_by' => $userId])->save();
@@ -751,10 +786,11 @@ class ServiceController extends Controller
 
         $data = $request->validate([
             'vendor_id'      => 'required|integer',
+            'origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],   // default: from the supplier's country
             'price'          => 'required|numeric|gt:0',
-            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'gst_percentage' => 'nullable|numeric|min:0|max:100',                   // domestic
             'remarks'        => 'nullable|string|max:1000',
-        ]);
+        ], $this->priceMessages());
         $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
 
         $existing = $service->suppliers()->where('vendor_id', $data['vendor_id'])->first();
@@ -762,9 +798,8 @@ class ServiceController extends Controller
             throw ValidationException::withMessages(['vendor_id' => ['This supplier is already mapped to the service.']]);
         }
 
-        $gst    = $data['gst_percentage'] ?? ($service->gst_percentage !== null ? (float) $service->gst_percentage : 18.0);
         $userId = $request->user()?->id;
-        $fields = ServiceSupplier::amounts((float) $data['price'], (float) $gst) + [
+        $fields = $this->priceFields($request, $data, $service) + [
             'remarks' => $data['remarks'] ?? null,
             'status'  => 'active',
         ];
@@ -790,12 +825,15 @@ class ServiceController extends Controller
             'price'          => 'sometimes|required|numeric|gt:0',
             'gst_percentage' => 'sometimes|required|numeric|min:0|max:100',
             'remarks'        => 'sometimes|nullable|string|max:1000',
-        ]);
+        ], $this->priceMessages());
 
-        $amounts = ServiceSupplier::amounts(
-            (float) ($data['price'] ?? $map->price),
-            (float) ($data['gst_percentage'] ?? $map->gst_percentage)
-        );
+        // The origin stays as mapped (it follows the supplier's country).
+        $amounts = $this->priceFields($request, [
+            'vendor_id'      => $map->vendor_id,
+            'origin'         => $map->origin ?: SupplierPricing::DOMESTIC,
+            'price'          => $data['price'] ?? $map->price,
+            'gst_percentage' => $data['gst_percentage'] ?? $map->gst_percentage,
+        ], $service);
         $map->fill($amounts + ['updated_by' => $request->user()?->id]);
         if (array_key_exists('remarks', $data)) $map->remarks = $data['remarks'];
         $map->save();
@@ -822,13 +860,53 @@ class ServiceController extends Controller
         ]);
     }
 
+    /**
+     * The price columns of one mapping (Map Supplier step 2).
+     *   Domestic      price in ₹ + GST % (default: the service's GST %, else 18)
+     * The origin defaults to the supplier's country and must match it.
+     */
+    private function priceFields(Request $request, array $in, Service $service, string $prefix = ''): array
+    {
+        $vendor = Vendor::query()->with(self::VENDOR_WITH)->find($in['vendor_id']);
+        $card   = $vendor ? $this->vendorCard($vendor) : ['origin' => SupplierPricing::DOMESTIC, 'country' => null, 'currency' => 'INR'];
+        $origin = $in['origin'] ?? $card['origin'];
+
+        if ($origin !== $card['origin']) {
+            throw ValidationException::withMessages([$prefix . 'origin' => [
+                $origin === SupplierPricing::INTERNATIONAL
+                    ? 'This supplier is based in India — map it as a Domestic supplier.'
+                    : 'This supplier is based in ' . ($card['country'] ?: 'another country') . ' — map it as an International supplier.',
+            ]]);
+        }
+
+        $gst = isset($in['gst_percentage']) && $in['gst_percentage'] !== ''
+            ? (float) $in['gst_percentage']
+            : ($service->gst_percentage !== null ? (float) $service->gst_percentage : 18.0);
+        // The service table keeps price, GST %, GST amount and total (no CGST / SGST split).
+        return array_intersect_key(
+            SupplierPricing::domestic((float) $in['price'], $gst),
+            array_flip(['origin', 'currency_code', 'exchange_rate', 'price', 'gst_percentage', 'gst_amount', 'total_amount', 'inr_amount'])
+        );
+    }
+
+    private function priceMessages(): array
+    {
+        return [
+            'price.required'             => "Enter the supplier's price.",
+            'price.gt'                   => 'The price must be more than 0.',
+            'suppliers.*.price.required' => "Enter the supplier's price.",
+            'suppliers.*.price.gt'       => 'The price must be more than 0.',
+        ];
+    }
+
     private function supplierRowFresh(ServiceSupplier $map): array
     {
         $map->load([
             'vendor:id,vendor_code,company_name,vendor_type_id,status',
             'vendor.vendorType:id,name',
-            'vendor.primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email',
+            'vendor.primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email',
             'vendor.primaryAddress.state:id,name',
+            'vendor.primaryAddress.country:id,name',
         ]);
         return $this->supplierRow($map);
     }
