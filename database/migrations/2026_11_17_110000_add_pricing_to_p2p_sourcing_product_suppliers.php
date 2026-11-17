@@ -4,15 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Sourcing Management Tracker → Map Supplier Directory: each mapped supplier
- * now carries its quoted price.
- *   Domestic      ₹ unit price (excl. GST) + GST rate, GST type
- *                 (intra = CGST + SGST, inter = IGST), price valid till
- *   International unit price in the supplier's currency, exchange rate
- *                 (₹ per unit), no GST, ₹ equivalent
- * Rows mapped before this change keep NULL prices ("Price & GST not mapped").
- */
 return new class extends Migration
 {
     private const T = 'p2p_sourcing_product_suppliers';
@@ -25,7 +16,7 @@ return new class extends Migration
             if ($add('currency_code'))    $table->string('currency_code', 8)->nullable()->after('origin');
             if ($add('price'))            $table->decimal('price', 14, 2)->nullable();
             if ($add('gst_percentage'))   $table->decimal('gst_percentage', 5, 2)->nullable();
-            if ($add('gst_type'))         $table->string('gst_type', 8)->nullable();     // intra | inter | none
+            if ($add('gst_type'))         $table->string('gst_type', 8)->nullable();
             if ($add('cgst_amount'))      $table->decimal('cgst_amount', 14, 2)->nullable();
             if ($add('sgst_amount'))      $table->decimal('sgst_amount', 14, 2)->nullable();
             if ($add('igst_amount'))      $table->decimal('igst_amount', 14, 2)->nullable();

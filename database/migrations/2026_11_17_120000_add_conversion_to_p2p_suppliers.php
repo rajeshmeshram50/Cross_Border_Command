@@ -4,11 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * "Convert to Supplier": a New Supplier from the Map Supplier Directory is
- * registered in the Supplier Master (vendors) through the normal Add Supplier
- * form, then linked here. Its sourcing mappings then point at that vendor.
- */
 return new class extends Migration
 {
     public function up(): void

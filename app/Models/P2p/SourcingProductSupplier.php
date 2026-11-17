@@ -6,9 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * P2P · Bulk Sourcing — a supplier mapped to a sourcing product.
- */
 class SourcingProductSupplier extends Model
 {
     use SoftDeletes;
@@ -19,7 +16,7 @@ class SourcingProductSupplier extends Model
         'sourcing_product_id', 'supplier_id', 'source',
         'name', 'segment', 'contact', 'mobile', 'email',
         'gmaps', 'address', 'country', 'state', 'state_code', 'city', 'card_path',
-        // Quoted price (Map Supplier Directory → Domestic ₹ + GST / International currency).
+
         'origin', 'currency_code', 'price', 'gst_percentage', 'gst_type',
         'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_amount', 'total_amount',
         'exchange_rate', 'inr_amount', 'price_valid_till', 'mapped_by',
