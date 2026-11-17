@@ -136,12 +136,13 @@ class SourcingController extends Controller
     /**
      * Sourcing Management Tracker list: one call per tab.
      *   all      = created by me + assigned to me (each target once)
+     *   created  = Sourcing Target Created by Me
      * counts{} always carries all three badges (not affected by the search box).
      */
     private function trackerList(Request $request, $targets, int $userId): array
     {
         $request->validate([
-            'tab'      => 'required|in:all',
+            'tab'      => 'required|in:all,created',
             'page'     => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
@@ -151,6 +152,7 @@ class SourcingController extends Controller
         $all      = $created->concat($assigned)->unique('id')->sortByDesc('id')->values();
 
         $rows = match ($request->query('tab')) {
+            'created'  => $created->values(),
             default    => $all,
         };
         $rows = $rows->map(fn($t) => $this->row($t));
