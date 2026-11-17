@@ -649,7 +649,11 @@ class HrGeneratedDocumentController extends Controller
          * instead of the manager's. Same resolver the send path uses
          * (App\Support\SignerResolver), so the preview names the same people
          * who will actually be asked to sign.
-         * Sign/Date stay blank here — they are filled when each signer acts. */
+         * Sign/Date are deliberately NOT registered: both are filled when a
+         * signer acts, so they must survive as literal {{SignerNSign}} /
+         * {{SignerNDate}} placeholders. Date used to resolve to '' while Sign
+         * stayed a token — so the preview chipped the signature slot and the
+         * date line beside it simply vanished. (QA #46) */
         if ($tpl && is_array($tpl->signers)) {
             foreach ($tpl->signers as $i => $s) {
                 $n = $i + 1;
@@ -659,7 +663,6 @@ class HrGeneratedDocumentController extends Controller
                     ? \App\Support\SignerResolver::name($roleName, $emp)
                     : '';
                 $tokens["Signer{$n}Designation"] = (string) ($s['designation_name'] ?? '');
-                $tokens["Signer{$n}Date"]        = '';
             }
         }
 

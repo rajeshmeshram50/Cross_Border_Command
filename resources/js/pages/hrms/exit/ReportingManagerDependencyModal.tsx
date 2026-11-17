@@ -33,6 +33,9 @@ type Person = {
   rank: number | null;
   /** Their own exit is already open — still Active, but not a safe manager. */
   exiting?: boolean;
+  /** Still mid-onboarding: the server will refuse the pick, so the option is
+   *  offered disabled with the reason rather than left out of the list. */
+  incomplete_onboarding?: boolean;
   /** 'user' = a tenant login user (Branch User / admin), not an employee row.
    *  The two id spaces overlap, so this decides which column the server writes. */
   kind?: 'user';
@@ -109,6 +112,19 @@ export default function ReportingManagerDependencyModal({
   // Inline has no open/closed state — it loads as soon as it is mounted.
   useEffect(() => { if (open || inline) load(); }, [open, inline, load]);
 
+  /* Re-read when the tab regains focus.
+     The pool is a snapshot of everyone's designation at mount, and fixing a
+     designation means leaving for the employee master and coming back — at
+     which point this list still showed the old one, with a page reload as the
+     only way out (QA #18). Focus is the moment HR returns, and the request is
+     one small GET. */
+  useEffect(() => {
+    if (!open && !inline) return;
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [open, inline, load]);
+
   /* One MasterSelect option per manager. Someone with their own exit already
      open is shown DISABLED with the reason rather than dropped from the list —
      silently omitting them turns "why isn't X here?" into a support call, and
@@ -124,14 +140,24 @@ export default function ReportingManagerDependencyModal({
     /* The reason rides ON the row, not just in the tooltip. A greyed name with
        no visible explanation reads as a bug — the first question it got asked
        was "why is this disabled?". */
-    badges: m.exiting ? [{ text: 'Exiting', tone: 'red' as const }] : undefined,
-    disabled: !!m.exiting,
-    disabledReason: m.exiting ? 'This employee has their own exit in progress, so they cannot take on reports.' : undefined,
+    badges: m.exiting
+      ? [{ text: 'Exiting', tone: 'red' as const }]
+      : m.incomplete_onboarding
+        ? [{ text: 'Onboarding', tone: 'violet' as const }]
+        : undefined,
+    disabled: !!m.exiting || !!m.incomplete_onboarding,
+    disabledReason: m.exiting
+      ? 'This employee has their own exit in progress, so they cannot take on reports.'
+      : m.incomplete_onboarding
+        ? 'This employee has not finished onboarding, so their department, designation and reporting line are not settled yet. Complete their onboarding to make them selectable.'
+        : undefined,
   });
 
-  /** Pickable = passes seniority AND is not themselves on the way out. */
+  /** Pickable = passes seniority AND is not blocked for a reason of their own.
+   *  Must match optionFor()'s `disabled`, or a bulk apply would assign someone
+   *  the server then refuses and the whole save would 422. */
   const assignable = (r: Person, m: Person) =>
-    m.id !== r.id && !m.exiting && eligibleManager(r.rank, m.rank);
+    m.id !== r.id && !m.exiting && !m.incomplete_onboarding && eligibleManager(r.rank, m.rank);
 
   /* Employee candidates for one report, then the tenant's login users.
      Login users used to be appended ONLY when no employee could take the
@@ -156,10 +182,11 @@ export default function ReportingManagerDependencyModal({
   /* Clicking a greyed option is intercepted rather than ignored — MasterSelect
      keeps the menu open and hands the row back, so the toast lands while the
      option the user just tried is still on screen. */
-  const explainDisabled = (opt: { label: string }) => {
+  const explainDisabled = (opt: { label: string; disabledReason?: string }) => {
+    const who = opt.label.split(' · ')[0];
     toast.warning(
-      'Exit in progress',
-      `${opt.label.split(' · ')[0]} has an exit in progress — they cannot be chosen as a reporting manager.`,
+      'Cannot be assigned',
+      opt.disabledReason || `${who} cannot be chosen as a reporting manager.`,
     );
   };
 
@@ -293,9 +320,19 @@ export default function ReportingManagerDependencyModal({
         }
         if (options.every(o => o.disabled)) {
           const names = options.map(o => o.selectedLabel).join(', ');
+          /* Everyone senior enough is blocked — but say WHICH block, because
+             the two have different fixes: finish or cancel an exit, versus
+             finish an onboarding. Naming only the first one sent HR after the
+             wrong thing. */
+          const pool = optionsFor(r);
+          const anyExiting = pool.some(m => m.exiting);
+          const anyOnboarding = pool.some(m => m.incomplete_onboarding);
+          const why = anyExiting && anyOnboarding ? 'exit in progress / onboarding incomplete'
+            : anyExiting ? 'exit in progress'
+            : 'onboarding incomplete';
           return (
-            <span style={{ fontSize: 11.5, color: '#b45309' }} title={`${names} — exit in progress.`}>
-              <i className="ri-time-line" /> Only {names} outrank{options.length === 1 ? 's' : ''} them — exit in progress
+            <span style={{ fontSize: 11.5, color: '#b45309' }} title={`${names} — ${why}.`}>
+              <i className="ri-time-line" /> Only {names} outrank{options.length === 1 ? 's' : ''} them — {why}
             </span>
           );
         }

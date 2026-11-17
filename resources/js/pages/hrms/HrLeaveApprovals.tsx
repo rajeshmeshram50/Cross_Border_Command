@@ -146,7 +146,14 @@ export default function HrLeaveApprovals() {
     setLoading(true);
     try {
       const { data, total: n, counts } = await leaveRequestsApi.approvalsPage({
-        status: status === 'All' ? undefined : status,
+        /* Always sent, 'All' included. Omitting it does NOT mean "no filter":
+           Axios drops an undefined param, and the endpoint defaults a missing
+           status to 'Pending' — so the All tab asked for everything, was served
+           the Pending set, and sat next to a badge counting every status. That
+           is the count-vs-records mismatch, and the reason Approved/Rejected/
+           Cancelled rows never appeared under All. (QA #61)
+           HrLeave.tsx already sends it this way — same endpoint, same trap. */
+        status,
         search: debouncedSearch || undefined,
         page,
         per_page: perPage,

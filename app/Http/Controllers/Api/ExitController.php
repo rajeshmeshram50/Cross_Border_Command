@@ -629,16 +629,18 @@ class ExitController extends Controller
                 ->where(fn($w) => $w
                     ->where('exit_case_status', 'Closed')
                     ->orWhere('final_employee_status', 'Exited')))
-            /* FULLY ONBOARDED ONLY — the same gate the employee master's
-             * manager picker applies (EmployeeController::managers), whose own
-             * comment says it "mirrors the fully-onboarded gate used by Exit
-             * Management". It did not: this screen never had one, so every
-             * half-finished onboarding record in the tenant was offered here as
-             * a reporting manager while being correctly hidden two screens
-             * away. Someone still mid-onboarding has no settled department,
-             * designation or reporting line of their own, which is exactly the
-             * context this assignment is supposed to be judged on. */
-            ->where('onboarding_stage_completed', '>=', 6)
+            /* FULLY ONBOARDED ONLY — but SHOWN, not dropped.
+             *
+             * The rule itself is unchanged and still enforced in
+             * reassignReports(): someone mid-onboarding has no settled
+             * department, designation or reporting line of their own, which is
+             * exactly the context this assignment is judged on. What changed is
+             * that excluding them from the query made them invisible — HR
+             * corrected the designation (the only thing this screen talks
+             * about), the person still did not appear, and nothing said why
+             * (QA #18). They now come back flagged `incomplete_onboarding` and
+             * render disabled with the reason, the same treatment this query
+             * already gives someone whose own exit is open. */
             /* No designation, no candidacy.
              *
              * PositionHierarchy::eligible() is lenient by design — an unknown
@@ -672,6 +674,11 @@ class ExitController extends Controller
                    omitting them — "why isn't X in the list?" is a support call.
                    Rejected server-side too. */
                 'exiting'     => in_array((int) $e->id, $exiting, true),
+                /* Still mid-onboarding: no settled department, designation or
+                   reporting line of their own, which is exactly the context
+                   this assignment is judged on. Shown disabled with the reason
+                   rather than omitted — see the note on the query. */
+                'incomplete_onboarding' => (int) ($e->onboarding_stage_completed ?? 0) < 6,
             ])
             ->values();
 
@@ -717,6 +724,7 @@ class ExitController extends Controller
                 'designation' => $u->designation ?: ucfirst(str_replace('_', ' ', $u->user_type)),
                 'rank'        => \App\Support\PositionHierarchy::TOP_RANK,
                 'exiting'     => false,
+                'incomplete_onboarding' => false,
             ])
             ->values();
 

@@ -164,18 +164,26 @@
         .ep-bd-foot { border-top: 1px solid var(--vz-border-color); }
         /* Footer buttons — ghost Cancel + gradient primary, matching the
         header so the action colour reads as one system. */
+        /* One height and one text size for both, set explicitly rather than
+        left to padding: the two buttons carried different padding AND the save
+        button an icon, so they rendered at different heights side by side
+        (QA #245). 40px / 12.5px is the house control size. */
+        .ep-bd-btn-cancel, .ep-bd-btn-save {
+        height: 40px; min-height: 40px; font-size: 12.5px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        border-radius: 8px; cursor: pointer;
+        }
         .ep-bd-btn-cancel {
         border: 1px solid var(--vz-border-color);
         background: transparent; color: var(--vz-secondary-color);
-        font-weight: 600; font-size: 13px;
-        padding: 8px 18px; border-radius: 8px; cursor: pointer;
+        font-weight: 600;
+        padding: 0 18px;
         transition: background 0.15s ease, border-color 0.15s ease;
         }
         .ep-bd-btn-cancel:hover:not(:disabled) { background: var(--vz-light); }
         .ep-bd-btn-save {
-        border: 0; color: #fff; font-weight: 700; font-size: 13px;
-        padding: 8px 20px; border-radius: 8px; cursor: pointer;
-        display: inline-flex; align-items: center; gap: 6px;
+        border: 0; color: #fff; font-weight: 700;
+        padding: 0 20px;
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
         box-shadow: 0 8px 18px rgba(124,92,252,0.30);
         transition: transform 0.15s ease, box-shadow 0.15s ease;

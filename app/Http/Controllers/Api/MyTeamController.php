@@ -102,6 +102,17 @@ class MyTeamController extends Controller
      * to the returned list with a stable `module` discriminator the SPA can
      * branch on.
      */
+    /** Best available name for an approval's subject employee: the display
+     *  name, else first + last, else the employee code, else a dash. */
+    private function subjectName($emp): string
+    {
+        if (!$emp) return '—';
+        $name = trim((string) ($emp->display_name ?? ''));
+        if ($name !== '') return $name;
+        $name = trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''));
+        if ($name !== '') return $name;
+        return (string) ($emp->emp_code ?: '—');
+    }
     public function approvals(Request $request)
     {
         $user = $request->user();
@@ -113,7 +124,11 @@ class MyTeamController extends Controller
         $q = HrDocumentSignature::query()
             ->with([
                 'template:id,code,name,doc_type',
-                'employee:id,display_name,first_name,last_name,emp_code,department_id,reporting_manager_id,reporting_manager_user_id',
+                // withTrashed for the same reason as the signature inbox (QA #65).
+                'employee' => fn ($r) => $r->withTrashed()->select(
+                    'id', 'display_name', 'first_name', 'last_name', 'emp_code',
+                    'department_id', 'reporting_manager_id', 'reporting_manager_user_id',
+                ),
                 'employee.department:id,name',
                 // Needed by reportsToName() for the approval row's manager.
                 'employee.reportingManager:id,display_name,first_name,last_name',
@@ -145,8 +160,13 @@ class MyTeamController extends Controller
                 'id'            => $row->id,
                 'code'          => $row->code,
                 'title'         => $row->template?->name ?? '(template removed)',
-                'subject_name'  => $row->employee?->display_name ?? '—',
-                'subject_dept'  => $row->employee?->department?->name ?? '—',
+                /* `??` only catches NULL, and display_name is routinely an EMPTY
+                   STRING on records whose name was never consolidated — which
+                   rendered a blank Subject cell rather than the dash it promised.
+                   Falls through first + last, then the code. (QA #65) */
+                'subject_name'  => $this->subjectName($row->employee),
+                'subject_code'  => $row->employee?->emp_code ?: null,
+                'subject_dept'  => $row->employee?->department?->name ?: '—',
                 // Who the subject reports to. The Approval List showed the
                 // employee and their department but never the manager, so a
                 // reviewer could not tell whose line the request came up.

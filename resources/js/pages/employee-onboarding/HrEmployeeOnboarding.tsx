@@ -2776,10 +2776,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
   /* The SAME fetch's full rows, kept so Stage 2 can be seeded from them instead
-     of asking for the list again when it mounts. stage2Docs stays the narrow
-     shape because onDocsChanged feeds it that, and the two must not be
-     conflated. (QA #5) */
+     of asking for the list again when it mounts. (QA #5) */
   const [stage2DocsFull, setStage2DocsFull] = useState<ApiDocument[]>([]);
+  /* Stage 2 unmounts on every stage change and re-seeds from this snapshot, so
+     the snapshot has to track its uploads too, not just the open-time fetch. */
+  const handleStage2Docs = useCallback((rows: ApiDocument[]) => {
+    setStage2Docs(rows.map(d => ({ document_key: d.document_key, status: d.status })));
+    setStage2DocsFull(rows);
+  }, []);
   // Same guard, same reason — this one measured 1.21s + 432ms on the server
   // for one answer. See the note on docSetLoadedForRef. (QA #4/#5)
   const stage2DocsLoadedForRef = useRef<number | null>(null);
@@ -3508,7 +3512,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 ref={stage2Ref}
                 emp={emp}
                 initialDocs={stage2DocsFull}
-                onDocsChanged={(rows) => setStage2Docs(rows)}
+                onDocsChanged={handleStage2Docs}
                 onProgress={setStage2Prev}
               />
             )}
@@ -4807,7 +4811,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
      reloadDocs() after any upload or delete, so it is a head start, not a
      substitute. (QA #5) */
   initialDocs?: ApiDocument[];
-  onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
+  onDocsChanged?: (rows: ApiDocument[]) => void;
   onProgress?: (p: { required: number; uploaded: number }) => void;
 }>(({ emp, initialDocs, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
@@ -5218,7 +5222,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       const map: Record<string, ApiDocument> = {};
       for (const d of list) map[d.document_key] = d;
       setDocsByKey(map);
-      onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
+      onDocsChanged?.(list);
       return map;
     } catch { return null; }
     finally { setDocsLoading(false); }
@@ -5307,7 +5311,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         if (saved?.document_key) {
           const next = { ...docsByKey, [saved.document_key]: saved };
           setDocsByKey(next);
-          onDocsChanged?.(Object.values(next).map(d => ({ document_key: d.document_key, status: d.status })));
+          onDocsChanged?.(Object.values(next));
           toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
         } else {
           const fresh = await reloadDocs();
@@ -6820,7 +6824,10 @@ function Stage5Policies({ emp, onProgress }: {
         {!loading && docSetLoaded && templates.length > 0 && (
           <div className="onb-docset-bar" style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-            padding: '10px 12px', margin: '2px 0 10px', borderRadius: 10,
+            /* The 16px side gutter the section head and every document row
+               below already use — with margin 0 this strip ran edge to edge
+               inside a card whose contents are all inset. (QA #255) */
+            padding: '10px 12px', margin: '2px 16px 10px', borderRadius: 10,
             background: docFinalized ? 'rgba(16,185,129,.08)' : 'rgba(124,92,252,.07)',
             border: `1px solid ${docFinalized ? 'rgba(16,185,129,.3)' : 'rgba(124,92,252,.22)'}`,
           }}>

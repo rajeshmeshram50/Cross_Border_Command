@@ -23,20 +23,35 @@ use Illuminate\Validation\Rule;
 
 class HrDocumentSignatureController extends Controller
 {
-    private const WITH = [
-        'template:id,code,name,doc_type,signing_mode,trigger_point_id,version',
-        'template.triggerPoint:id,module_name',
-        'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
-        'employee.department:id,name',
-        'employee.designation:id,name,level',
-        'creator:id,name',
-        // Needed by HrDocumentSignature::getHeaderConfigAttribute(), which
-        // falls back to the branch (then client) logo when the template
-        // carries none. Eager-loaded so the list endpoints don't fire one
-        // query per row resolving the header logo.
-        'branch:id,name,logo',
-        'client:id,org_name,logo',
-    ];
+    /** Eager loads shared by every read path. A method rather than a const
+     *  because the employee relation needs a closure — see below. */
+    private static function withRelations(): array
+    {
+        return [
+            'template:id,code,name,doc_type,signing_mode,trigger_point_id,version',
+            'template.triggerPoint:id,module_name',
+            /* WITH TRASHED. Employee is soft-deleted, and a plain belongsTo
+               resolves to NULL for a deleted row — so the Inbox's "Subject
+               Employee" column printed a dash for BOTH the name and the
+               employee ID the moment the subject was disabled, on documents
+               still waiting to be signed (QA #65). Same treatment
+               ExpenseClaimController gives its employee relation. */
+            'employee' => fn ($r) => $r->withTrashed()->select(
+                'id', 'first_name', 'last_name', 'display_name', 'emp_code',
+                'department_id', 'designation_id', 'reporting_manager_id',
+                'reporting_manager_user_id', 'user_id', 'deleted_at',
+            ),
+            'employee.department:id,name',
+            'employee.designation:id,name,level',
+            'creator:id,name',
+            // Needed by HrDocumentSignature::getHeaderConfigAttribute(), which
+            // falls back to the branch (then client) logo when the template
+            // carries none. Eager-loaded so the list endpoints don't fire one
+            // query per row resolving the header logo.
+            'branch:id,name,logo',
+            'client:id,org_name,logo',
+        ];
+    }
 
     private const STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected', 'Cancelled'];
     private const ACTIONS  = ['Sign', 'Approve', 'Review & Acknowledge'];
@@ -55,7 +70,7 @@ class HrDocumentSignatureController extends Controller
 
     public function index(Request $request)
     {
-        $q = HrDocumentSignature::query()->with(self::WITH);
+        $q = HrDocumentSignature::query()->with(self::withRelations());
         $this->applyScope($q, $request->user());
 
         /* A plain employee only ever sees runs where THEY are the subject.
@@ -131,20 +146,42 @@ class HrDocumentSignatureController extends Controller
         // of the run's overall status. Default (no flag) → pending inbox.
         $history = $request->boolean('history');
 
-        $q = HrDocumentSignature::query()->with(self::WITH);
+        $q = HrDocumentSignature::query()->with(self::withRelations());
         if (!$history) $q->whereIn('status', ['Pending', 'In Progress']);
         $this->applyScope($q, $user);
 
         if ($history) {
-            $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user) {
+            /* History = documents this user is finished with. That means the
+               ones they ACTED on — and also the ones that ended without them.
+               A rejection closes the run for every signer, so it leaves the
+               pending list (status is no longer Pending/In Progress) while the
+               other signers' own slots are still 'Pending'; they matched
+               neither tab and the document disappeared from their screens with
+               no record of the outcome. Most visible on a parallel run, where
+               two people are asked at the same moment and only the one who
+               declined could see what had happened. */
+            $settled = ['Rejected', 'Cancelled', 'Completed'];
+            $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user, $settled) {
                 $signers = is_array($row->signers) ? $row->signers : [];
+                $isSigner = false;
                 foreach ($signers as $s) {
-                    if ((int) ($s['user_id'] ?? 0) === (int) $user->id
-                        && in_array($s['status'] ?? 'Pending', ['Done', 'Rejected'], true)) {
+                    if ((int) ($s['user_id'] ?? 0) !== (int) $user->id) continue;
+                    $isSigner = true;
+                    if (in_array($s['status'] ?? 'Pending', ['Done', 'Rejected'], true)) {
                         return true;
                     }
                 }
-                return false;
+                $isSettled = in_array((string) $row->status, $settled, true);
+                /* A settled run belongs to its SENDER too, not only to the
+                   people on the signer list. They are the one who has to act on
+                   a rejection — re-issue it, or go and ask why — and they are
+                   never a signer, so the rejection notice reached their bell
+                   and pointed at an Inbox where the document appeared in
+                   neither tab. */
+                if ($isSettled && (int) $row->created_by === (int) $user->id) {
+                    return true;
+                }
+                return $isSigner && $isSettled;
             })->values();
             return response()->json($this->fillSignerDesignations($rows));
         }
@@ -176,7 +213,7 @@ class HrDocumentSignatureController extends Controller
 
     public function show(Request $request, $id)
     {
-        $q = HrDocumentSignature::query()->with(self::WITH);
+        $q = HrDocumentSignature::query()->with(self::withRelations());
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail((int) $id);
         $this->assertEmployeeMayRead($request->user(), $row);
@@ -290,7 +327,7 @@ class HrDocumentSignatureController extends Controller
                 ->lockForUpdate()
                 ->first();
             if ($existing) {
-                $existing->load(self::WITH);
+                $existing->load(self::withRelations());
                 // Same shape as index(), so the caller can use this row
                 // directly instead of re-fetching the list.
                 return response()->json($this->fillSignerDesignations(collect([$existing]))->first(), 200);
@@ -430,7 +467,7 @@ class HrDocumentSignatureController extends Controller
                 'audit_log'      => [$this->event($user, 'sent', "Document {$tpl->code} sent for signing")],
                 'created_by'     => $user?->id,
             ]);
-            $row->load(self::WITH);
+            $row->load(self::withRelations());
 
             /* The bell, not just the Inbox. The run already lands in the
                signer's Inbox (inbox() reads it live), but nothing told the
@@ -471,17 +508,7 @@ class HrDocumentSignatureController extends Controller
             $parallel = $this->isParallel($row);
 
             if ($parallel) {
-                // Parallel: act on THIS user's own pending signer slot, wherever
-                // it sits in the list (not gated by current_index).
-                $idx = null;
-                foreach ($signers as $i => $s) {
-                    if ((int) ($s['user_id'] ?? 0) === (int) $user->id
-                        && !in_array($s['status'] ?? 'Pending', ['Done', 'Rejected', 'Skipped'], true)) {
-                        $idx = $i;
-                        break;
-                    }
-                }
-                if ($idx === null) abort(403, "You're not a pending signer on this document.");
+                $idx = $this->pendingSlotFor($signers, $user);
             } else {
                 // Sequential: only the current_index signer may act.
                 $idx = (int) $row->current_index;
@@ -598,7 +625,7 @@ class HrDocumentSignatureController extends Controller
                    worker cannot read the row before this transaction lands. */
                 StoreSignedDocumentPdf::dispatch($row->id)->afterCommit();
             }
-            $row->load(self::WITH);
+            $row->load(self::withRelations());
 
             return response()->json($row);
         });
@@ -613,8 +640,19 @@ class HrDocumentSignatureController extends Controller
         return DB::transaction(function () use ($request, $data, $id) {
             $user = $request->user();
             $row  = $this->loadForAction($request, (int) $id);
-            $idx  = (int) $row->current_index;
             $signers = $row->signers;
+            /* Which slot is this user's? On a PARALLEL run it is whichever one
+             * is theirs and still pending — not current_index, which points at
+             * the first unacted slot in the list.
+             *
+             * This used to read current_index unconditionally, so on a parallel
+             * document the second signer was compared against the FIRST
+             * signer's slot and got a bare 403: they could sign (action() has
+             * had the parallel branch all along) but could not decline. One
+             * helper for both now, so the two cannot drift again. */
+            $idx = $this->isParallel($row)
+                ? $this->pendingSlotFor($signers, $user)
+                : (int) $row->current_index;
             $current = $signers[$idx] ?? null;
             if (!$current) abort(404);
             if ((int) ($current['user_id'] ?? 0) !== (int) $user->id) abort(403);
@@ -639,12 +677,19 @@ class HrDocumentSignatureController extends Controller
             $signers[$idx] = $current;
             $row->signers = $signers;
             $row->status  = 'Rejected';
+            /* Drop the outstanding "waiting for you to sign" rows first — the
+               document is closed, so nobody is waiting on anything. */
             $this->clearTurnNotifications($row);
+            /* …then tell everyone else it was declined. On a parallel run the
+               other signers were asked at the same moment and are still sitting
+               on it; without this the document simply disappears from their
+               bell and their inbox with no account of why. */
+            $this->notifySignersOfRejection($row, $user, (string) $data['reason'], $idx);
             $row->audit_log = array_merge($row->audit_log ?? [], [
                 $this->event($user, 'rejected', "Rejected by {$user?->name}: {$data['reason']}"),
             ]);
             $row->save();
-            $row->load(self::WITH);
+            $row->load(self::withRelations());
             return response()->json($row);
         });
     }
@@ -662,7 +707,7 @@ class HrDocumentSignatureController extends Controller
         ]);
         $row->save();
         $this->clearTurnNotifications($row);
-        $row->load(self::WITH);
+        $row->load(self::withRelations());
         return response()->json($row);
     }
 
@@ -686,7 +731,7 @@ class HrDocumentSignatureController extends Controller
     public function remind(Request $request, $id)
     {
         $row = $this->loadForRead($request, (int) $id);
-        $row->load(self::WITH);
+        $row->load(self::withRelations());
 
         if (!in_array($row->status, ['Pending', 'In Progress'], true)) {
             abort(422, 'Reminders only apply to in-flight workflows. Current status: ' . $row->status);
@@ -819,6 +864,13 @@ class HrDocumentSignatureController extends Controller
             DB::table('notifications')
                 ->where('type', 'App\Notifications\HrSignatureRequest')
                 ->whereRaw("data::text LIKE ?", ['%"document_id":' . (int) $row->id . '%'])
+                /* Only the "waiting for you to sign" rows. An outcome notice —
+                   "declined by X" — carries the same type and document_id, and
+                   is the one thing that must SURVIVE the document closing. */
+                ->where(function ($w) {
+                    $w->whereRaw('data::text LIKE ?', ['%"kind":"hr_signature_request"%'])
+                      ->orWhereRaw('data::text LIKE ?', ['%"kind":"hr_signature_reminder"%']);
+                })
                 ->delete();
         } catch (\Throwable $e) {
             Log::warning('[hr-document-signatures] could not clear stale signer notifications', [
@@ -827,6 +879,94 @@ class HrDocumentSignatureController extends Controller
         }
     }
 
+    /**
+     * This user's own still-pending signer slot, wherever it sits in the list.
+     *
+     * The parallel rule: there is no order, so a signer acts on THEIR slot and
+     * current_index is only a cosmetic pointer at the first unacted one. Shared
+     * by action() and reject() — reject() used to read current_index directly,
+     * which made declining impossible for anyone but the first signer.
+     */
+    private function pendingSlotFor(array $signers, $user): int
+    {
+        foreach ($signers as $i => $s) {
+            if ((int) ($s['user_id'] ?? 0) === (int) ($user->id ?? 0)
+                && !in_array($s['status'] ?? 'Pending', ['Done', 'Rejected', 'Skipped'], true)) {
+                return (int) $i;
+            }
+        }
+        abort(403, "You're not a pending signer on this document.");
+    }
+
+    /**
+     * Tell the run's OTHER signers that it has been declined.
+     *
+     * A rejection closes the document for everyone, but only the person who
+     * rejected it had any way of knowing: the run leaves the pending inbox
+     * (status is no longer Pending/In Progress) and clearTurnNotifications()
+     * removes the bell row that put it there. On a parallel run that is a
+     * document two people were asked to sign at the same moment vanishing from
+     * one of their screens with no account of why.
+     *
+     * Written with kind `rejected`, which the notifications drawer already
+     * renders as a red "Rejected" state, so no client change is needed.
+     */
+    private function notifySignersOfRejection(HrDocumentSignature $row, $actor, string $reason, int $actedIdx): void
+    {
+        $signers = is_array($row->signers) ? $row->signers : [];
+        $targets = [];
+        foreach ($signers as $i => $s) {
+            if ((int) $i === $actedIdx) continue;                   // not the decider
+            $uid = (int) ($s['user_id'] ?? 0);
+            if ($uid > 0 && $uid !== (int) ($actor->id ?? 0)) $targets[$uid] = true;
+        }
+        /* The sender is told too — they are the one who has to do something
+           about it, and they are not a signer. */
+        if ($row->created_by && (int) $row->created_by !== (int) ($actor->id ?? 0)) {
+            $targets[(int) $row->created_by] = true;
+        }
+        if (!$targets) return;
+
+        $tplName = $row->template?->name ?: 'a document';
+        $docCode = $row->code ?: ('doc-' . $row->id);
+        $by      = $actor?->name ?: 'A signer';
+        $subject = $row->employee?->display_name
+            ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''));
+
+        DB::afterCommit(function () use ($row, $targets, $tplName, $docCode, $by, $subject, $reason) {
+            foreach (array_keys($targets) as $uid) {
+                try {
+                    DB::table('notifications')->insert([
+                        'id'              => (string) Str::uuid(),
+                        'type'            => 'App\\Notifications\\HrSignatureRequest',
+                        'notifiable_type' => User::class,
+                        'notifiable_id'   => $uid,
+                        'data'            => json_encode([
+                            'kind'          => 'rejected',
+                            'document_id'   => $row->id,
+                            'code'          => $docCode,
+                            'template'      => $tplName,
+                            'sender_name'   => $by,
+                            'employee_name' => $subject ?: null,
+                            'employee_code' => (string) ($row->employee?->emp_code ?? '') ?: null,
+                            'subject'       => "{$tplName} was declined"
+                                . ($subject ? " — {$subject}" : ''),
+                            'message'       => "{$docCode} · declined by {$by}: {$reason}",
+                            'reason'        => $reason,
+                            'url'           => '/inbox',
+                        ]),
+                        'read_at'    => null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('[hr-document-signatures] rejection notification insert failed', [
+                        'id' => $row->id, 'user' => $uid, 'err' => $e->getMessage(),
+                    ]);
+                }
+            }
+        });
+    }
     private function notifySignersOfTurn(HrDocumentSignature $row, array $userIds, ?string $senderName): void
     {
         $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
@@ -838,6 +978,9 @@ class HrDocumentSignatureController extends Controller
         $sender  = $senderName ?: 'HR';
         $subject = $row->employee?->display_name
             ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''));
+        // The employee CODE as well — the payload named the person but never
+        // identified them, so a reader had nothing to fall back on. (QA #65)
+        $subjectCode = (string) ($row->employee?->emp_code ?? '');
 
         /* Where the document stands, so the bell can say who it is waiting on
            rather than only "waiting on you": with two or more signers the run
@@ -847,7 +990,7 @@ class HrDocumentSignatureController extends Controller
         $total  = $signers->count();
         $waiting = $signers->first(fn ($x) => !in_array($x['status'] ?? 'Pending', ['Done', 'Skipped', 'Rejected'], true));
 
-        DB::afterCommit(function () use ($row, $userIds, $signers, $tplName, $docCode, $sender, $subject, $acted, $total, $waiting) {
+        DB::afterCommit(function () use ($row, $userIds, $signers, $tplName, $docCode, $sender, $subject, $subjectCode, $acted, $total, $waiting) {
             foreach ($userIds as $uid) {
                 $action = $signers->firstWhere('user_id', $uid)['action'] ?? 'Sign';
                 try {
@@ -864,6 +1007,8 @@ class HrDocumentSignatureController extends Controller
                             'action'        => $action,
                             'sender_name'   => $sender,
                             'employee_name' => $subject ?: null,
+                            'employee_code' => $subjectCode ?: null,
+                            'employee_id'   => $row->employee_id,
                             'message'       => "{$tplName} — waiting for you to {$action}"
                                 . ($subject ? " ({$subject})" : ''),
                             'url'           => '/inbox',
@@ -904,7 +1049,7 @@ class HrDocumentSignatureController extends Controller
         if (!$emp) abort(404, 'Employee not found');
 
         $status = (string) $request->query('status', 'Completed');
-        $q = HrDocumentSignature::query()->with(self::WITH)
+        $q = HrDocumentSignature::query()->with(self::withRelations())
             ->where('employee_id', $emp->id);
         if ($status !== 'all') $q->where('status', $status);
 
@@ -1106,7 +1251,7 @@ class HrDocumentSignatureController extends Controller
      */
     public function renderSignedPdfBytes(HrDocumentSignature $row): string
     {
-        $row->load(self::WITH);
+        $row->load(self::withRelations());
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $logoUrl = null;
@@ -1225,7 +1370,7 @@ class HrDocumentSignatureController extends Controller
     public function emailToEmployee(Request $request, $id)
     {
         $row = $this->loadForRead($request, (int) $id);
-        $row->load(self::WITH);
+        $row->load(self::withRelations());
 
         if ($row->status !== 'Completed') {
             abort(422, 'Only completed workflows can be emailed. Current status: ' . $row->status);

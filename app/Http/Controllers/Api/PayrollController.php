@@ -501,25 +501,23 @@ class PayrollController extends Controller
             )->values();
         }
 
-        // A cycle still in progress can only be judged on the days that have
-        // actually happened — see elapsedWorkingDaysMap().
-        $elapsed = $this->elapsedWorkingDaysMap($period, $slips);
         $pfNotices = $this->pfNoticeMap($slips, $run, $period);
         // Structure gross per employee, so slips generated before the monthly
         // line data still caption the contractual CTC correctly. (#134)
         $structureGross = $this->structureGrossMap($slips, $period);
         // Weekly offs per employee for the Biometric Input column. (CBC #7)
         $weekOffs = $this->weekOffDaysMap($slips, $period);
-        // Holidays per employee, so Absent does not swallow them. (CBC #8)
-        $holidays = $this->holidayDaysMap($slips, $period);
+        /* Absent — counted from the attendance calendar's own rule — and the
+           holiday split behind it, from one walk of the period. (QA #55) */
+        $attDays = $this->attendanceDaysMap($slips, $period);
         $rows = $slips->map(fn ($p) => $this->serializePayslip(
             $p,
             false,
-            $elapsed[$p->employee_id] ?? null,
+            null,
             $pfNotices[$p->id] ?? null,
             $structureGross[$p->employee_id] ?? null,
             $weekOffs[$p->employee_id] ?? null,
-            $holidays[$p->employee_id] ?? null,
+            $attDays[$p->employee_id] ?? null,
         ));
 
         /* Employees this cycle SHOULD pay who have no payslip in it yet. (#121)
@@ -1662,6 +1660,212 @@ class PayrollController extends Controller
     /** Salary-slip history for one employee across cycles (Rule 16). Only
      *  finalized (approved/paid) payslips are official; drafts are flagged
      *  provisional so the UI can mark them. Tenant-gated. */
+    /**
+     * The CURRENT payroll cycle for one employee — what the Employee Profile's
+     * Payroll Summary hero prints.
+     *
+     * The hero used to be literal text ("Last Processed: Mar 2026 (01 Mar – 31
+     * Mar)", Working Days 31, Loss of Pay 0, Status Active), so it said March
+     * forever and described nobody (QA #62). Every figure here is read from the
+     * same rows payroll itself uses: the period for this month, and this
+     * employee's payslip in it when a run has produced one.
+     *
+     * READ-ONLY. A month with no period row yet is reported transiently rather
+     * than created — a GET from a profile page must not seed payroll periods,
+     * and working_days then comes from the service's own default rule so the
+     * figure matches what a run would compute.
+     */
+    /**
+     * Payroll Execution History — who ran payroll, when, and how it ended.
+     *
+     * The Branch Admin login is shared between several people, so `created_by`
+     * on a run says "the branch admin" and nothing more. These rows carry the
+     * operator the popup asked for, snapshotted at execution time.
+     *
+     * Append-only and read-only: there is no update or delete endpoint, by
+     * design — "users should not be able to manually modify the saved execution
+     * date, execution time or operator details".
+     *
+     * Returns the paged list AND a per-month roll-up, because the question the
+     * screen is actually asked is "who ran September, and how many times".
+     */
+    public function executionHistory(Request $request)
+    {
+        /* Same gate as the rest of payroll's read surface: this names people
+           and amounts, so it is not for the employee tier. */
+        if (!$this->canManage($request) && !$this->canExport($request)) {
+            return response()->json(['message' => 'You are not allowed to view payroll execution history.'], 403);
+        }
+
+        $ctx = $this->ctx($request);
+        $q = \App\Models\PayrollExecutionLog::query()
+            ->when($ctx['client_id'], fn ($x) => $x->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($x) => $x->where('branch_id', $ctx['branch_id']));
+
+        // Optional narrowing — the cycle strip can scope the list to one month.
+        if ($m = $request->integer('month')) $q->where('month', $m);
+        if ($y = $request->integer('year'))  $q->where('year', $y);
+        $status = trim((string) $request->input('status', ''));
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->where(fn ($w) => $w
+                ->where('run_by_name', 'ilike', $like)
+                ->orWhere('run_by_employee_code', 'ilike', $like)
+                ->orWhere('batch_ref', 'ilike', $like));
+        }
+
+        /* Everything above narrows the set the TABS count across, so the status
+           clause has to be the last one added — otherwise every tab would be
+           filtered by the tab already open. */
+        $qNoStatus = clone $q;
+        if ($status !== '' && strcasecmp($status, 'All') !== 0) {
+            $q->where('status', $status);
+        }
+
+        /* The month roll-up is taken from a copy with the SAME filters except
+           the page, so it describes the set being browsed rather than the slice
+           on screen. */
+        $summary = (clone $q)->reorder()
+            ->selectRaw('year, month, period_label, run_by_name, run_by_employee_code, count(*) as runs, max(executed_at) as last_run')
+            ->groupBy('year', 'month', 'period_label', 'run_by_name', 'run_by_employee_code')
+            ->orderByDesc('year')->orderByDesc('month')
+            ->limit(200)
+            ->get()
+            ->map(fn ($r) => [
+                'year'        => (int) $r->year,
+                'month'       => (int) $r->month,
+                'label'       => $r->period_label ?: trim(($r->month ? date('M', mktime(0, 0, 0, (int) $r->month, 1)) : '') . ' ' . $r->year),
+                'run_by'      => $r->run_by_name ?: '—',
+                'employee_id' => $r->run_by_employee_code ?: '—',
+                'runs'        => (int) $r->runs,
+                'last_run'    => $r->last_run,
+            ])->values();
+
+        /* Tab counts, taken from the status-free copy so each tab reports what
+           it would show under the filters already in force — counted after the
+           status clause they would all just describe the open tab. */
+        $byStatus = (clone $qNoStatus)->reorder()
+            ->select('status', DB::raw('count(*) as n'))
+            ->groupBy('status')->pluck('n', 'status');
+        $counts = [
+            'All'         => (int) $byStatus->sum(),
+            'Completed'   => (int) ($byStatus['Completed'] ?? 0),
+            'In Progress' => (int) ($byStatus['In Progress'] ?? 0),
+            'Failed'      => (int) ($byStatus['Failed'] ?? 0),
+        ];
+
+        $perPage = min(200, max(1, (int) $request->input('per_page', 10)));
+        $page    = max(1, (int) $request->input('page', 1));
+        $total   = (clone $q)->count();
+
+        $rows = $q->orderByDesc('executed_at')->orderByDesc('id')
+            ->forPage($page, $perPage)->get()
+            ->map(fn ($r) => [
+                'id'            => $r->id,
+                'run_by'        => $r->run_by_name ?: '—',
+                // The employee CODE is what HR calls an "Employee ID".
+                'employee_id'   => $r->run_by_employee_code ?: '—',
+                'executed_at'   => optional($r->executed_at)->toIso8601String(),
+                'period_label'  => $r->period_label ?: '—',
+                'month'         => $r->month,
+                'year'          => $r->year,
+                'status'        => $r->status,
+                'failure_reason' => $r->failure_reason,
+                'batch_ref'     => $r->batch_ref,
+                'employees_paid' => $r->employees_paid,
+                'employees_held' => $r->employees_held,
+                'total_amount'  => $r->total_amount !== null ? (float) $r->total_amount : null,
+                /* The shared login the declared operator was sitting at — the
+                   whole reason this table exists is that the two differ. */
+                'executed_by'   => $r->executed_by_user_name,
+            ])->values();
+
+        return response()->json([
+            'data'    => $rows,
+            'total'   => $total,
+            'counts'  => $counts,
+            'summary' => $summary,
+        ]);
+    }
+
+    public function employeeCurrentCycle(Request $request, int $employeeId)
+    {
+        $user = $request->user();
+        /* Same self-guard as employeePayslips(): an employee reads their own
+           cycle and nobody else's, since lop_days is attendance about a person. */
+        if ($user && $user->user_type === 'employee'
+            && (int) $employeeId !== (int) ($user->employee_id ?? 0)) {
+            return response()->json(['message' => 'You can only view your own payroll summary.'], 403);
+        }
+
+        $ctx   = $this->ctx($request);
+        $today = Carbon::now();
+        $start = $today->copy()->startOfMonth();
+        $end   = $today->copy()->endOfMonth();
+
+        $period = PayrollPeriod::query()
+            ->when($ctx['client_id'], fn ($q) => $q->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($q) => $q->where('branch_id', $ctx['branch_id']))
+            ->where('month', (int) $today->month)
+            ->where('year', (int) $today->year)
+            ->first();
+
+        $run = $period
+            ? PayrollRun::where('payroll_period_id', $period->id)->orderByDesc('id')->first()
+            : null;
+
+        $slip = $period
+            ? Payslip::where('payroll_period_id', $period->id)
+                ->where('employee_id', $employeeId)
+                ->orderByDesc('id')
+                ->first()
+            : null;
+
+        /* The last cycle that actually finished, so the hero can still name it
+           alongside the current one. Locked period or a paid run — the same two
+           conditions cycleDisplayStatus() reads as Completed. */
+        $lastDone = PayrollPeriod::query()
+            ->when($ctx['client_id'], fn ($q) => $q->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($q) => $q->where('branch_id', $ctx['branch_id']))
+            ->where(fn ($w) => $w
+                ->where('status', 'locked')
+                ->orWhereHas('runs', fn ($r) => $r->where('status', 'paid')))
+            ->where(fn ($w) => $w
+                ->where('year', '<', (int) $today->year)
+                ->orWhere(fn ($x) => $x->where('year', (int) $today->year)->where('month', '<=', (int) $today->month)))
+            ->orderByDesc('year')->orderByDesc('month')
+            ->first();
+
+        $next = $today->copy()->startOfMonth()->addMonth();
+
+        return response()->json(['data' => [
+            'month'         => (int) $today->month,
+            'year'          => (int) $today->year,
+            'label'         => $period?->label ?: $start->format('M Y'),
+            'period_start'  => optional($period?->period_start)->toDateString() ?: $start->toDateString(),
+            'period_end'    => optional($period?->period_end)->toDateString() ?: $end->toDateString(),
+            'range'         => $start->format('d M') . ' – ' . $end->format('d M'),
+            'working_days'  => (float) ($period?->working_days ?? $this->payroll->defaultWorkingDays($start, $end)),
+            /* Loss of pay is only knowable once a run has priced the month —
+               before that it is 0 because nothing has been computed, not
+               because the employee was present every day. `has_payslip` says
+               which of the two the figure is, so the UI need not guess. */
+            'lop_days'      => (float) ($slip?->lop_days ?? 0),
+            'paid_days'     => $slip ? (float) $slip->paid_days : null,
+            'has_payslip'   => (bool) $slip,
+            'payslip_id'    => $slip?->id,
+            'payslip_status' => $slip?->status,
+            'status'        => $this->cycleDisplayStatus($period, $start->copy(), $run),
+            'run_status'    => $run?->status,
+            'next_label'    => $next->format('M Y'),
+            'last_processed' => $lastDone ? [
+                'label' => $lastDone->label ?: Carbon::create($lastDone->year, $lastDone->month, 1)->format('M Y'),
+                'range' => Carbon::create($lastDone->year, $lastDone->month, 1)->format('d M')
+                    . ' – ' . Carbon::create($lastDone->year, $lastDone->month, 1)->endOfMonth()->format('d M'),
+            ] : null,
+        ]]);
+    }
+
     public function employeePayslips(Request $request, int $employeeId)
     {
         $user = $request->user();
@@ -2147,57 +2351,6 @@ class PayrollController extends Controller
     }
 
     /**
-     * Working days that have actually ELAPSED, per employee, for a cycle whose
-     * month has not finished yet. Empty for a completed month.
-     *
-     * The Absent figure is derived as working_days − present − paid leave, and
-     * working_days is the whole month. On a cycle in progress that counted
-     * every day still to come as an absence: on 20 August, an employee with no
-     * punches yet read "Present 0 / Absent 26" — twenty-six absences in a month
-     * that had only seen seventeen working days. Clipping the denominator to
-     * the elapsed part of the month is what makes the column mean anything
-     * before month end.
-     *
-     * Weekly offs come from each employee's own pattern (the same
-     * App\Support\WeekOff the engine uses), so a Saturday-and-Sunday employee
-     * is not charged for a Saturday. Holidays are deliberately NOT removed —
-     * payroll's working_days does not remove them either, and the two figures
-     * have to be built the same way or the subtraction goes wrong.
-     *
-     * One query for the whole page, not one per row.
-     */
-    private function elapsedWorkingDaysMap(PayrollPeriod $period, $slips): array
-    {
-        if ($slips->isEmpty()) {
-            return [];
-        }
-        $today = Carbon::today();
-        $start = Carbon::parse($period->period_start)->startOfDay();
-        $end   = Carbon::parse($period->period_end)->startOfDay();
-
-        // Month already over: working_days is entirely in the past, nothing to clip.
-        if ($end->lt($today)) {
-            return [];
-        }
-        // Cycle hasn't started at all — no day can be an absence yet.
-        $cut = $today->lt($start) ? null : $today->copy()->min($end);
-
-        $offs = \App\Models\Employee::whereIn('id', $slips->pluck('employee_id')->unique()->all())
-            ->pluck('weekly_off', 'id');
-
-        $map = [];
-        foreach ($offs as $id => $label) {
-            if ($cut === null) { $map[$id] = 0.0; continue; }
-            $n = 0;
-            for ($d = $start->copy(); $d->lte($cut); $d->addDay()) {
-                if (!\App\Support\WeekOff::isOff((string) $label, $d)) $n++;
-            }
-            $map[$id] = (float) $n;
-        }
-        return $map;
-    }
-
-    /**
      * Per-payslip explanation for a PF figure that no longer matches the live
      * "PF Applicable" flag, keyed by payslip id. Empty for an open cycle, which
      * recomputeEmployeePayslips() keeps in step on its own.
@@ -2222,47 +2375,113 @@ class PayrollController extends Controller
      * would not give the real number back.
      */
     /**
-     * Paid holidays in the period, per employee. (CBC #8)
+     * Absent days per employee — COUNTED, not derived — plus the holiday
+     * split behind the figure. (QA #55)
      *
-     * Absent is DERIVED on the row as working − present − paid leave, and that
-     * subtraction never knew about holidays: a public holiday nobody punched on
-     * is not present, not leave, and still inside working_days, so every
-     * employee picked up an extra Absent day for it. Payroll itself was right —
-     * it credits the holiday as paid — only the reader disagreed.
+     * The Biometric Input table used to reconstruct this by subtraction —
+     * scheduled days minus present minus holidays — which is a second model of
+     * the month kept in step by hand. It drifted from the Attendance calendar
+     * twice in opposite directions: CBC #8 had holidays inflating it, #55 had
+     * holidays the employee had WORKED deflating it (the calendar read 3, this
+     * table read 1). Every term that subtraction forgets lands silently here,
+     * so the subtraction is gone.
      *
-     * The count cannot be read off the payslip: the engine computes
-     * `holiday_days` and then loses it on save (no such column, so mass
-     * assignment drops it), which is why this recomputes rather than reads. Via
-     * PayrollService so the exclusion of holidays landing on a weekly off is
-     * the engine's own rule and not a second copy of it.
+     * Each day is now classified by App\Support\AttendanceDayStatus — the same
+     * function the calendar renders from — and the Absent days are counted.
+     * The two screens ask one question of one implementation, so they cannot
+     * answer it differently.
      *
-     * Memoized per holiday group: employees overwhelmingly share one, and the
-     * date set costs a query each.
+     * READ-ONLY and display-only. Payroll never reads this figure: pay is built
+     * from paid_days, which the engine accumulates as a positive credit. Nothing
+     * in PayrollService is touched and no stored column changes.
+     *
+     * Bulk: one attendance query and one employee query for the whole run, then
+     * an in-memory walk of the period. Holiday sets are memoized per group.
      */
-    private function holidayDaysMap($slips, $period): array
+    private function attendanceDaysMap($slips, $period): array
     {
         if (!$period || $slips->isEmpty()) {
             return [];
         }
-        $svc   = app(\App\Services\PayrollService::class);
-        $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
-        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $start = Carbon::parse($period->period_start)->startOfDay();
+        $end   = Carbon::parse($period->period_end)->startOfDay();
+        /* Days that have not happened yet are not absences. The calendar
+           excludes future cells for the same reason, and the Absent column was
+           already clipped this way before it was counted. */
+        $today = Carbon::today();
+        if ($end->gt($today)) $end = $today->copy();
+        if ($end->lt($start)) return [];
+
+        $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
 
         $employees = \App\Models\Employee::withTrashed()
-            ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
-            ->get(['id', 'weekly_off', 'holiday_group_id', 'client_id']);
+            ->with('branch')
+            ->whereIn('id', $empIds)
+            ->get(['id', 'weekly_off', 'holiday_group_id', 'client_id', 'branch_id', 'shift', 'date_of_joining']);
 
-        $memo = [];
-        $out  = [];
-        foreach ($employees as $e) {
-            // Weekly off is part of the key: the same group yields a different
-            // count for someone whose Saturday is off.
-            $key = ($e->holiday_group_id ?? 'none') . '|' . ($e->weekly_off ?? '');
-            $out[$e->id] = $memo[$key] ??= $svc->holidayDaysFor($e, $start->copy(), $end->copy());
+        /* Rows keyed by employee + date. `punches` is NOT loaded: resolve()
+           only consults it when the row carries a rest-day label and no
+           check-in, and loading them for a whole run is the cost that made the
+           attendance endpoint slow in the first place. */
+        $rowsByEmp = [];
+        foreach (\App\Models\Attendance::query()
+            ->whereIn('employee_id', $empIds)
+            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->get(['id', 'employee_id', 'attendance_date', 'status', 'check_in_at', 'check_out_at', 'shift_start', 'shift_end', 'shift_name']) as $r) {
+            $rowsByEmp[(int) $r->employee_id][Carbon::parse($r->attendance_date)->toDateString()] = $r;
         }
+
+        $svc = app(\App\Services\PayrollService::class);
+        $holidayMemo = [];
+        $out = [];
+
+        foreach ($employees as $e) {
+            $key = ($e->holiday_group_id ?? 'none') . '|' . ($e->weekly_off ?? '');
+            $holidays = $holidayMemo[$key] ??= array_flip(
+                $svc->holidayDatesFor($e, $start->copy(), $end->copy()),
+            );
+
+            $weeklyOffLabel = (string) ($e->weekly_off ?? '');
+            $shiftStart     = $e->resolveShiftWindow()[0];
+            $rows           = $rowsByEmp[(int) $e->id] ?? [];
+            /* Before they joined, a day is out of scope rather than an absence
+               — the same guard the roster applies (CBC #74). A stored row still
+               wins, exactly as it does there. */
+            $joined = $e->date_of_joining
+                ? Carbon::parse($e->date_of_joining)->startOfDay()->toDateString()
+                : null;
+
+            $absent = 0;
+            /* The holiday split falls out of the same walk, for the Absent
+               tooltip: a holiday that resolves to anything other than 'Holiday'
+               is one the employee worked, and so is already counted present. */
+            $holidayWorked = 0;
+            for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+                $ds  = $d->toDateString();
+                $row = $rows[$ds] ?? null;
+                if (!$row && $joined !== null && $ds < $joined) continue;
+
+                $isHoliday = isset($holidays[$ds]);
+                $status = \App\Support\AttendanceDayStatus::resolve(
+                    $row,
+                    \App\Support\WeekOff::isOff($weeklyOffLabel, $d),
+                    $shiftStart,
+                    $ds,
+                    $isHoliday,
+                );
+                if ($status === 'Absent') $absent++;
+                if ($isHoliday && $status !== 'Holiday') $holidayWorked++;
+            }
+            $out[$e->id] = [
+                'absent'        => (float) $absent,
+                'holidayTotal'  => (float) count($holidays),
+                'holidayWorked' => (float) $holidayWorked,
+            ];
+        }
+
         return $out;
     }
-
     private function weekOffDaysMap($slips, $period): array
     {
         if (!$period || $slips->isEmpty()) {
@@ -2440,7 +2659,10 @@ class PayrollController extends Controller
     }
 
     /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
-    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null, ?int $weekOffDays = null, ?float $holidayDays = null): array
+    /** $elapsedWorkingDays is vestigial — it clipped the old Absent
+     *  subtraction that attendanceDaysMap() replaced. Kept only so the
+     *  positional signature the two callers use does not shift. */
+    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null, ?int $weekOffDays = null, ?array $attDays = null): array
     {
         $name = $p->employee_name ?: 'Employee';
         $parts = preg_split('/\s+/', trim($name));
@@ -2529,54 +2751,30 @@ class PayrollController extends Controller
             'lop_days'    => (float) $p->lop_days,
             'status'      => $p->status,
             'present'     => (float) $p->present_days,
-            /* Absent is derived, not stored. For a cycle still running, the
-               denominator is the elapsed part of the month rather than the
-               whole of it, so days that have not happened yet are not counted
-               as absences. Null (a finished month) keeps the full figure. */
-            /* Holidays come out too. (CBC #8) A public holiday is inside
-               working_days and is neither present nor leave, so without this
-               term every employee collected an extra Absent day for it — while
-               payroll had already paid it as a credited day. */
-            /* Absent is measured in SCHEDULED days — the days the employee was
-             * actually due to work. (CBC #8, corrected for CBC #11)
+            /* COUNTED, not derived. (QA #55)
              *
-             * working_days is the CALENDAR window now (weekly offs live inside
-             * it and are credited as paid), so subtracting only present + leave
-             * + holidays counted every Sunday as an absence: a 31-day August
-             * reported 30 absent for someone with 25 unworked days.
-             * elapsedWorkingDays, by contrast, has always counted scheduled
-             * days — so the two have to be brought into the same unit before
-             * they are compared.
+             * This was `scheduled − present_days − holidays`, a second model of
+             * the month that had to be kept in step with the calendar by hand —
+             * and twice was not: CBC #8 counted holidays as absences, then #55
+             * credited holidays the employee had actually WORKED, which are
+             * already inside present_days. The calendar said 3, this said 1.
              *
-             * A slip generated BEFORE that change already excludes weekly offs
-             * from working_days, and subtracting them again would under-count.
-             * The slip says which basis it used: a denominator equal to the
-             * month's calendar days can only be the new one. */
-            'absent'      => (function () use ($p, $elapsedWorkingDays, $weekOffDays, $holidayDays) {
-                $working  = (float) $p->working_days;
-                $calendar = $p->period
-                    ? (float) Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
-                    : 0.0;
-                $calendarBasis = $calendar > 0 && abs($working - $calendar) < 0.005;
-                $scheduled = $calendarBasis ? max(0, $working - (float) ($weekOffDays ?? 0)) : $working;
-                $base = $elapsedWorkingDays !== null ? min($scheduled, $elapsedWorkingDays) : $scheduled;
-
-                /* "Absent" on the Biometric Input table is PURE attendance — a
-                 * scheduled working day on which the employee did NOT physically
-                 * attend: no biometric punch and no approved regularization
-                 * (which stamps the day Present, so it lands in present_days).
-                 *
-                 * LEAVE IS NOT SUBTRACTED. An approved leave still means the
-                 * person was not in the office, so biometrically the day is
-                 * absent; whether it is PAID or UNPAID is decided in the payroll
-                 * run (lop_days / lop_amount), not here. Weekly offs are already
-                 * out of $base and holidays are non-working days, so only those
-                 * two are excluded. */
-                return (float) max(0, $base
-                    - (float) $p->present_days
-                    - (float) ($holidayDays ?? 0));
-            })(),
-            'holidayDays' => $holidayDays,
+             * attendanceDaysMap() now asks App\Support\AttendanceDayStatus, the
+             * same function the calendar renders from, so there is no formula
+             * left to get out of step. Null only on a row with no payslip in
+             * this run, where there is no attendance to classify.
+             *
+             * NOTE this means an approved LEAVE day is no longer counted as an
+             * absence: the calendar gives it its own 'Leave' status. The leave
+             * is still deducted exactly as before and still shown in the
+             * Unpaid Leave and LOP columns — only this column's meaning
+             * narrows, to "a scheduled day with no punch and no explanation",
+             * which is the question a Biometric Input screen is asking. */
+            'absent'      => $attDays === null ? null : (float) $attDays['absent'],
+            // Total holidays in the period and how they split, for the Absent
+            // tooltip — so a reader can see which days were accounted for.
+            'holidayDays'        => $attDays === null ? null : (float) $attDays['holidayTotal'],
+            'holidayDaysWorked'  => $attDays === null ? null : (float) $attDays['holidayWorked'],
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,
@@ -2810,6 +3008,7 @@ class PayrollController extends Controller
             // asserting they had no weekly offs. (CBC #7)
             'weekOffDays' => null,
             'holidayDays' => null,
+            'holidayDaysWorked' => null,
             'attSource'   => 'Manual',
             'mismatch'    => null,
             'attMismatch' => false,

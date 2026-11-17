@@ -19,44 +19,15 @@
 .pga-pill i { font-size: 12px; }
 .pga-pill--warn { background: #fef3c7; color: #b45309; }
 .pga-pill--ok { background: #dcfce7; color: #15803d; }
-.pga-pill--bad { background: #fee2e2; color: #b91c1c; }
-
-/* Fixed layout with shares of the width: spare space is split between the
-   columns instead of piling up in one of them. */
-.pga-itbl { width: 100%; min-width: 1040px; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; }
-.pga-itbl th {
-  padding: 9px 12px; background: #f2fcfe; border-top: 1px solid #d8eff5; border-bottom: 1px solid #d8eff5;
-  font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #0e7490;
-  text-align: left; white-space: nowrap;
-}
-.pga-itbl td { padding: 10px 12px; border-bottom: 1px solid #eef4f7; vertical-align: middle; color: #0f172a; }
-.pga-itbl tbody tr { transition: background .15s; }
-.pga-itbl tbody tr:nth-child(even) td { background: #fafdff; }
-.pga-itbl tbody tr:hover td { background: #f2fbfe; }
-.pga-itbl tbody tr:last-child td { border-bottom: 0; }
-/* Column widths. The table is `table-layout: fixed`, so ONLY the header row
+.pga-pill--bad { background: #fee2e2; color: #b91c1c; }/* Fixed layout with shares of the width: spare space is split between the
+   columns instead of piling up in one of them. *//* Column widths. The table is `table-layout: fixed`, so ONLY the header row
    sets them — every width class below has to sit on the `th` as well as the
-   `td`, or the column quietly falls back to an equal share. */
-.pga-itbl .pga-itbl__sr { width: 5%; text-align: center; font-weight: 700; color: #64748b; }
-.pga-itbl th:nth-child(2), .pga-itbl td:nth-child(2) { width: 14%; }
-.pga-itbl .pga-itbl__sup { width: 16%; }
-/* The money column reads left, like every other column in this table — a lone
+   `td`, or the column quietly falls back to an equal share. *//* The money column reads left, like every other column in this table — a lone
    right-aligned figure sat away from its label and pulled the row apart. The
    digits are tabular, so the amounts still line up under one another. */
-.pga-itbl .pga-itbl__amt { width: 10%; text-align: left; white-space: nowrap; }
-.pga-amt-cell { font-weight: 800; color: var(--pga-teal); font-variant-numeric: tabular-nums; }
-/* The decision / reason carries the most text, the date the least. */
-.pga-itbl .pga-itbl__why { width: 20%; }
-.pga-itbl .pga-itbl__who { width: 16%; }
-.pga-itbl .pga-itbl__when { width: 13%; }
-.pga-itbl .pga-itbl__act { width: 6%; text-align: right; }
-/* Hairline gutters. A short value next to a right-aligned amount leaves a
+.pga-amt-cell { font-weight: 800; color: var(--pga-teal); font-variant-numeric: tabular-nums; }/* The decision / reason carries the most text, the date the least. *//* Hairline gutters. A short value next to a right-aligned amount leaves a
    300px canyon in one place and 24px in the next, and the row reads as
-   scattered words; ruled columns make that space deliberate. */
-.pga-itbl th + th, .pga-itbl td + td { border-left: 1px solid #eef4f7; }
-/* Fixed layout clips instead of stretching, so long values end in an ellipsis. */
-.pga-itbl td { overflow: hidden; text-overflow: ellipsis; }
-.pga-itbl .pga-sub, .pga-itbl .pga-strong-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+   scattered words; ruled columns make that space deliberate. *//* Fixed layout clips instead of stretching, so long values end in an ellipsis. */
 
 .pga-code {
   display: inline-block; padding: 3px 8px; border-radius: 7px; border: 1px solid #c3eef6; background: #f2fcfe;
@@ -86,34 +57,17 @@
 .pga-act--go { border: 0; color: #fff; background: linear-gradient(135deg, #15803d, #16a34a 55%, #22c55e); box-shadow: 0 3px 10px rgba(22, 163, 74, .28); }
 .pga-act--go:hover { box-shadow: 0 6px 14px rgba(22, 163, 74, .36); }
 .pga-act--view { border: 1px solid #c3eef6; color: #0e7490; background: #f2fcfe; }
-.pga-act--view:hover { background: #e8fbfd; border-color: #a5e8f5; }
-
-.pga-itbl__empty { padding: 40px 16px !important; text-align: center; color: #94a3b8; }
-.pga-itbl__empty > i { display: block; margin-bottom: 8px; font-size: 34px; color: #67e8f9; }
-.pga-itbl__empty-t { font-size: 14px; font-weight: 700; color: #475569; }
-.pga-itbl__empty-s { font-size: 12px; }
-.pga-itbl__empty > .pga-itbl__err-ico { color: #f87171; }
-.pga-itbl__retry { margin-top: 12px; }
-/* Changing page: the current rows stay, dimmed, until the next ones arrive. */
-.pga-itbl.is-loading tbody { opacity: .55; transition: opacity .15s; }
+.pga-act--view:hover { background: #e8fbfd; border-color: #a5e8f5; }/* Changing page: the current rows stay, dimmed, until the next ones arrive. */
 
 [data-bs-theme="dark"] .pga-chip,
 [data-bs-theme="dark"] .pga-count { background: rgba(34, 211, 238, .16); color: #67e8f9; }
 [data-bs-theme="dark"] .pga-pill--warn { background: rgba(245, 158, 11, .16); color: #fbbf24; }
 [data-bs-theme="dark"] .pga-pill--ok { background: rgba(22, 163, 74, .16); color: #4ade80; }
 [data-bs-theme="dark"] .pga-pill--bad { background: rgba(220, 38, 38, .18); color: #fca5a5; }
-[data-bs-theme="dark"] .pga-itbl th { background: rgba(34, 211, 238, .07); border-color: rgba(34, 211, 238, .16); color: #67e8f9; }
-[data-bs-theme="dark"] .pga-itbl tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .02); }
-[data-bs-theme="dark"] .pga-itbl td { border-bottom-color: rgba(148, 163, 184, .14); color: #e2e8f0; }
-[data-bs-theme="dark"] .pga-itbl td + td { border-left-color: rgba(148, 163, 184, .14); }
-[data-bs-theme="dark"] .pga-itbl tbody tr:hover td { background: rgba(34, 211, 238, .05); }
 [data-bs-theme="dark"] .pga-code { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .pga-strong-txt { color: #f1f5f9; }
-[data-bs-theme="dark"] .pga-sub,
-[data-bs-theme="dark"] .pga-itbl .pga-itbl__sr { color: #94a3b8; }
 [data-bs-theme="dark"] .pga-note-line { color: #cbd5e1; }
 [data-bs-theme="dark"] .pga-act--view { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
-[data-bs-theme="dark"] .pga-itbl__empty-t { color: #cbd5e1; }
 
 /* ── Review page ──
    Hero, then two columns: the facts on the left, the request / decision

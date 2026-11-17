@@ -2539,10 +2539,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      number off it. The pool belongs to ReportingManagerDependencyModal, which
      only mounts on the closure stage — so the expensive half now happens there
      and nowhere else. */
-  const loadDirectReports = useCallback(() => {
+  const loadDirectReports = useCallback((fresh = false) => {
     if (!employee) return;
-    getExitOverview(employee.id)
-      .then((b) => setDirectReportCount(Array.isArray(b?.direct_reports?.reports) ? b.direct_reports.reports.length : 0))
+    /* `fresh` goes straight to the endpoint and drops the memoised bundle.
+       Without it the reassignment's own refresh replayed the promise captured
+       when the wizard opened — so Complete Exit stayed disabled, still naming
+       reports that had just been moved, until the page was reloaded. The
+       bundle is cleared too, so nothing else serves that stale count either. */
+    if (fresh) exitOverviewRef.current = null;
+    const src = fresh
+      ? api.get(`/employees/${employee.id}/exit/direct-reports`, { params: { count_only: 1 } })
+          .then(r => r.data ?? {})
+          .catch(() => ({}))
+      : getExitOverview(employee.id).then((b) => b?.direct_reports ?? {});
+    src
+      .then((d: any) => setDirectReportCount(Array.isArray(d?.reports) ? d.reports.length : 0))
       .catch(() => setDirectReportCount(0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
@@ -5170,7 +5181,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       employeeId={employee?.id ?? null}
                       employeeName={employee?.name || 'This employee'}
                       onClose={() => {}}
-                      onResolved={() => { setRmReassigned(true); loadDirectReports(); }}
+                      onResolved={() => { setRmReassigned(true); loadDirectReports(true); }}
                     />
                   </div>
                 )}
