@@ -1332,3 +1332,37 @@
 }
 [data-bs-theme="dark"] .svf-modal .svf-select .master-select-toggle:disabled .master-select-chev { color: #3f5865; }
 [data-bs-theme="dark"] .svf-modal .svf-select .master-select-toggle:disabled .master-select-placeholder { color: #5d7480 !important; }
+
+/* Header actions — GST (%) button beside the close button (same as the Product form). */
+.svf-head-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Map GST (%) / GST (%) Master popups — the Product popups, in the service teal. */
+.svf-gst .apm-gst-modal { border-color: rgba(103, 232, 249, .55); box-shadow: 0 30px 80px rgba(8, 47, 73, .45); }
+.svf-gst .apm-gst-head { background: linear-gradient(115deg, #0c4a6e 0%, #0e7490 35%, #0891b2 65%, #22d3ee 100%); }
+.svf-gst .apm-gst-label { color: #0c4a6e; }
+.svf-gst .apm-gst-plus,
+.svf-gst .apm-gst-addbtn { background: linear-gradient(135deg, #22b8d6, #0891b2 55%, #0e7490); box-shadow: 0 4px 12px rgba(8, 145, 178, .35); }
+.svf-gst .apm-gst-hint { color: #5b7c8a; }
+.svf-gst .apm-gst-hint b { color: #0891b2; }
+.svf-gst .apm-gst-foot { background: #f4fdff; border-top-color: #e3f3f7; }
+.svf-gst .apm-gst-count { color: #0e7490; background: #ecfeff; border-color: #bae6f0; }
+.svf-gst .apm-gst-empty { color: #0e7490; border-color: #bae6f0; background: #f4fdff; }
+.svf-gst .apm-gst-tablewrap { border-color: #e3f3f7; }
+.svf-gst .apm-gst-tablewrap::-webkit-scrollbar-thumb { background: #b6e3ee; }
+.svf-gst .apm-gst-table thead th { border-bottom-color: #e3f3f7; }
+.svf-gst .apm-gst-table tbody td { border-bottom-color: #eef9fb; }
+.svf-gst .apm-gst-table tbody tr:hover { background: #f0fbfd; }
+
+[data-bs-theme="dark"] .svf-gst .apm-gst-modal { background: #0f1d25; border-color: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .svf-gst .apm-gst-body,
+[data-bs-theme="dark"] .svf-gst .apm-gst-table thead th { background: #0f1d25; }
+[data-bs-theme="dark"] .svf-gst .apm-gst-label { color: #e2f6fa; }
+[data-bs-theme="dark"] .svf-gst .apm-gst-hint { color: #8fb3c0; }
+[data-bs-theme="dark"] .svf-gst .apm-gst-hint b { color: #67e8f9; }
+[data-bs-theme="dark"] .svf-gst .apm-gst-foot { background: rgba(255, 255, 255, .03); border-top-color: rgba(34, 211, 238, .16); }
+[data-bs-theme="dark"] .svf-gst .apm-gst-count,
+[data-bs-theme="dark"] .svf-gst .apm-gst-empty { color: #67e8f9; background: rgba(8, 145, 178, .14); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .svf-gst .apm-gst-tablewrap { border-color: rgba(34, 211, 238, .16); }
+[data-bs-theme="dark"] .svf-gst .apm-gst-table thead th,
+[data-bs-theme="dark"] .svf-gst .apm-gst-table tbody td { border-bottom-color: rgba(34, 211, 238, .1); }
+[data-bs-theme="dark"] .svf-gst .apm-gst-table tbody tr:hover { background: rgba(8, 145, 178, .12); }

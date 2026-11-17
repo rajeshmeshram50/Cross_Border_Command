@@ -9,6 +9,7 @@ import {
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceVals,
 } from './serviceData';
 import { SupplierMapPanel } from './ServiceSupplierModal';
+import ServiceGstModal from './ServiceGstModal';
 import { SVC_ICONS } from './serviceIcons';
 import './service-form.css';
 
@@ -51,6 +52,7 @@ export default function ServiceFormModal({
   const [suppliers, setSuppliers] = useState<MappedSupplier[]>(() => record?.suppliers ?? []);
   const [errors, setErrors] = useState<Errors>({});
   const [files, setFiles] = useState<FileMap>({});
+  const [gstOpen, setGstOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const pick = (k: FileKey, f: File | null) => {
@@ -71,7 +73,7 @@ export default function ServiceFormModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop')) return;
+      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop, .apm-gst-overlay')) return;
       onClose();
     };
     window.addEventListener('keydown', onKey);
@@ -115,6 +117,11 @@ export default function ServiceFormModal({
 
   const goNext = () => {
     if (!validate()) return;
+    if (!vals.gstId) {
+      toast.error('GST is mandatory', 'Map a GST % to this service before continuing.');
+      setGstOpen(true);
+      return;
+    }
     setStage(2);
     bodyRef.current?.scrollTo({ top: 0 });
   };
@@ -150,7 +157,14 @@ export default function ServiceFormModal({
               <div className="svf-sub">{KIND_SUB[kind]}</div>
             </div>
           </div>
-          <button type="button" className="svf-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
+          <div className="svf-head-actions">
+            <Tooltip label="Map / manage GST %">
+              <button type="button" className="apm-head-btn" onClick={() => setGstOpen(true)}>
+                {vals.gstId && vals.gstPct != null ? `GST ${vals.gstPct}%` : 'GST (%)'}
+              </button>
+            </Tooltip>
+            <button type="button" className="svf-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
+          </div>
         </div>
 
         <div className="svf-stepper">
@@ -168,7 +182,7 @@ export default function ServiceFormModal({
 
           {stage === 2 && (
             <div className="svs-teal svf-sup-panel">
-              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={setSuppliers} />
+              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={setSuppliers} defaultGst={vals.gstPct} />
             </div>
           )}
         </div>
@@ -201,6 +215,15 @@ export default function ServiceFormModal({
           </div>
         </div>
       </div>
+
+      {gstOpen && (
+        <ServiceGstModal
+          value={vals.gstId}
+          onClose={() => setGstOpen(false)}
+          onMap={(r) => setVals(p => ({ ...p, gstId: r.id, gstPct: r.pct }))}
+          onRemoved={(id) => setVals(p => (p.gstId === id ? { ...p, gstId: undefined, gstPct: undefined } : p))}
+        />
+      )}
     </div>
   ), document.body);
 }
