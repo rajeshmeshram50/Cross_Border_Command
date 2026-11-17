@@ -1,0 +1,646 @@
+/* Map Supplier → Supplier Master → Domestic / International form (stsm-*). Values from the
+   design file's .svms-* popup. Colours are tokens on .stsm-box; dark mode only swaps the tokens. */
+
+.stsm-box {
+    --sm-bg: linear-gradient(180deg, #fbfeff, #f4fbfd);
+    --sm-bd: rgba(103, 232, 249, .55);
+    --sm-label: #083344;
+    --sm-brand: #0891b2;
+    --sm-brand-ink: #0e7490;
+    --sm-text: #0f172a;
+    --sm-input: #fff;
+    --sm-input-bd: #d9eef4;
+    --sm-key-bd: #7dd3e6;
+    --sm-ph: #a9c3cc;
+    --sm-ro: #eef3f6;
+    --sm-ro-bd: #cdd9e1;
+    --sm-ro-ph: #9aabb8;
+    --sm-ro-text: #475569;
+    --sm-calc-text: #334155;
+    --sm-auto: #64748b;
+    --sm-auto-bg: #eef3f6;
+    --sm-auto-bd: #d5dee5;
+    --sm-rule: #eef5f8;
+    --sm-ft-bg: linear-gradient(180deg, rgba(255, 255, 255, .6), #eef8fb);
+    --sm-ft-bd: #dceff4;
+    --sm-ghost: linear-gradient(180deg, #fff, #ecfeff);
+    --sm-ghost-bd: #a5e6f1;
+    --sm-ghost-hover: #ecfeff;
+    --sm-nogst: #0369a1;
+    --sm-nogst-bg: #f0f9ff;
+    --sm-nogst-bd: #cfe8fb;
+    --sm-card: #fff;
+    --sm-card-bd: #d6eef3;
+    --sm-card-title: #0b3b47;
+    --sm-card-rule: #e0eef2;
+    --sm-muted: #64748b;
+    --sm-chip: #ecfeff;
+    --sm-chip-bd: #cffafe;
+    --sm-pill: #f0fbfd;
+    --sm-pill-bd: #cdeef3;
+    --sm-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(980px, calc(100vw - 28px));
+    max-height: calc(100vh - 40px);
+    overflow: hidden;
+    border-radius: 22px;
+    background: var(--sm-bg);
+    border: 1px solid var(--sm-bd);
+    box-shadow: 0 40px 90px rgba(4, 40, 55, .5), 0 0 0 1px rgba(255, 255, 255, .5) inset;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    animation: stmapSlideIn .26s cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-bs-theme="dark"] .stsm-box {
+    --sm-bg: #0b1a2a;
+    --sm-bd: rgba(34, 211, 238, .28);
+    --sm-label: #cbd5e1;
+    --sm-brand: #67e8f9;
+    --sm-brand-ink: #67e8f9;
+    --sm-text: #f1f5f9;
+    --sm-input: #11263a;
+    --sm-input-bd: #24445f;
+    --sm-key-bd: rgba(34, 211, 238, .55);
+    --sm-ph: #6b86a0;
+    --sm-ro: #0e2133;
+    --sm-ro-bd: #2a4a66;
+    --sm-ro-ph: #5f7a93;
+    --sm-ro-text: #94a8bb;
+    --sm-calc-text: #e2e8f0;
+    --sm-auto: #94a8bb;
+    --sm-auto-bg: rgba(148, 163, 184, .12);
+    --sm-auto-bd: rgba(148, 163, 184, .28);
+    --sm-rule: #1f3a52;
+    --sm-ft-bg: #0b1a2a;
+    --sm-ft-bd: #1f3a52;
+    --sm-ghost: #162f45;
+    --sm-ghost-bd: #24445f;
+    --sm-ghost-hover: #1d3b56;
+    --sm-nogst: #7dd3fc;
+    --sm-nogst-bg: rgba(56, 189, 248, .1);
+    --sm-nogst-bd: rgba(56, 189, 248, .3);
+    --sm-card: #11263a;
+    --sm-card-bd: #1f3a52;
+    --sm-card-title: #f1f5f9;
+    --sm-card-rule: #24445f;
+    --sm-muted: #94a8bb;
+    --sm-chip: rgba(34, 211, 238, .12);
+    --sm-chip-bd: rgba(34, 211, 238, .3);
+    --sm-pill: rgba(34, 211, 238, .08);
+    --sm-pill-bd: rgba(34, 211, 238, .26);
+    --sm-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b86a0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+    box-shadow: 0 40px 90px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .22);
+}
+
+.stsm-box *,
+.stsm-box *::before,
+.stsm-box *::after {
+    box-sizing: border-box;
+}
+
+.stsm-box[role="dialog"]:focus {
+    outline: none;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.stsm-hd {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 22px;
+    overflow: hidden;
+    color: #fff;
+    background: linear-gradient(115deg, #083344 0%, #0e5a6e 28%, #0e7490 55%, #0891b2 80%, #22d3ee 100%);
+}
+
+.stsm-hd::after {
+    content: '';
+    position: absolute;
+    top: -70px;
+    right: -30px;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(94, 234, 212, .35), transparent 65%);
+    pointer-events: none;
+}
+
+.stsm-hd__ico {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .1));
+    border: 1px solid rgba(255, 255, 255, .35);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .18), 0 1px 0 rgba(255, 255, 255, .4) inset;
+}
+
+.stsm-hd__txt {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-width: 0;
+}
+
+.stsm-hd__t {
+    font-size: 17px;
+    font-weight: 900;
+    letter-spacing: -.3px;
+}
+
+.stsm-hd__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 10px;
+    padding: 3px 9px;
+    vertical-align: middle;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .18);
+    border: 1px solid rgba(255, 255, 255, .35);
+}
+
+.stsm-hd__s {
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: rgba(220, 248, 255, .85);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.stsm-hd__s b {
+    font-weight: 800;
+    color: #fff;
+}
+
+.stsm-x {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    cursor: pointer;
+    color: #fff;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .16);
+    border: 1px solid rgba(255, 255, 255, .3);
+    transition: background .15s, transform .15s;
+}
+
+.stsm-x:hover:not(:disabled) {
+    background: rgba(255, 255, 255, .3);
+    transform: rotate(90deg);
+}
+
+/* ── Body ───────────────────────────────────────────────────────────── */
+.stsm-bd {
+    padding: 22px 24px 20px;
+    overflow-y: auto;
+}
+
+.stsm-subhd {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 2px 0 10px;
+    font-size: 10.5px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--sm-brand);
+}
+
+.stsm-subhd:not(:first-child) {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--sm-rule);
+}
+
+.stsm-nogst {
+    margin-left: auto;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--sm-nogst);
+    background: var(--sm-nogst-bg);
+    border: 1px solid var(--sm-nogst-bd);
+    border-radius: 99px;
+}
+
+.stsm-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 18px;
+}
+
+.stsm-grid--4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stsm-f {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.stsm-l {
+    margin: 0;   /* the theme gives <label> a bottom margin; <span> labels have none, so align both */
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
+    min-height: 22px;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: var(--sm-label);
+}
+
+.stsm-req {
+    font-weight: 800;
+    color: #ef4444;
+}
+
+/* "+" beside Supplier Name: opens the app's Add Supplier wizard. */
+.stsm-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 20px;
+    margin-left: 6px;
+    padding: 0;
+    cursor: pointer;
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #22d3ee, #0891b2, #0e7490);
+    box-shadow: 0 4px 10px -3px rgba(8, 145, 178, .55);
+    transition: filter .15s, transform .15s;
+}
+
+.stsm-mini:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.stsm-mini:focus-visible {
+    outline: 2px solid #22d3ee;
+    outline-offset: 2px;
+}
+
+.stsm-auto {
+    margin-left: 4px;
+    padding: 2px 7px;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    color: var(--sm-auto);
+    background: var(--sm-auto-bg);
+    border: 1px solid var(--sm-auto-bd);
+    border-radius: 999px;
+}
+
+.stsm-i {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    font: 13px 'DM Sans', system-ui, sans-serif;
+    color: var(--sm-text);
+    background: var(--sm-input);
+    border: 1.5px solid var(--sm-input-bd);
+    border-radius: 12px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.stsm-i::placeholder {
+    color: var(--sm-ph);
+}
+
+/* Plain editable field (e.g. the pre-filled exchange rate). */
+.stsm-i:not([readonly]):not(.stsm-i--key):not(.is-err):hover {
+    border-color: #b7e4ee;
+}
+
+.stsm-i:not([readonly]):not(.stsm-i--key):not(.is-err):focus {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .16);
+}
+
+[data-bs-theme="dark"] .stsm-i:not([readonly]):not(.stsm-i--key):not(.is-err):hover {
+    border-color: rgba(34, 211, 238, .45);
+}
+
+/* Fields the user fills (price, rate) are highlighted; auto fields are frozen with a lock. */
+.stsm-i--key {
+    border-color: var(--sm-key-bd);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .1), 0 4px 12px -8px rgba(8, 145, 178, .45);
+}
+
+.stsm-i--key:focus {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, .18);
+}
+
+.stsm-i.is-ro,
+.stsm-i.is-calc {
+    padding-right: 36px;
+    font-weight: 700;
+    cursor: not-allowed;
+    color: var(--sm-ro-text);
+    background: var(--sm-ro) var(--sm-lock) no-repeat right 13px center / 13px 13px;
+    border: 1.5px dashed var(--sm-ro-bd);
+    box-shadow: none;
+}
+
+.stsm-i.is-ro::placeholder,
+.stsm-i.is-calc::placeholder {
+    color: var(--sm-ro-ph);
+}
+
+.stsm-i.is-calc {
+    font-weight: 800;
+    color: var(--sm-calc-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.stsm-i.is-err {
+    border-color: #f87171;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, .15);
+}
+
+.stsm-err {
+    margin-top: -2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #dc2626;
+}
+
+[data-bs-theme="dark"] .stsm-err {
+    color: #fb7185;
+}
+
+/* The app's MasterSelect, sized and highlighted like the design's dropdowns. */
+.stsm-ms .master-select-toggle {
+    height: 44px;
+    padding: 0 14px;
+    font-size: 13px;
+    color: var(--sm-text);
+    background: var(--sm-input);
+    border: 1.5px solid var(--sm-key-bd);
+    border-radius: 12px;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .1), 0 4px 12px -8px rgba(8, 145, 178, .45);
+}
+
+.stsm-ms.is-err .master-select-toggle {
+    border-color: #f87171;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, .15);
+}
+
+/* ── Supplier type chooser (New Supplier: Domestic / International) ───── */
+.stsm-box--choose {
+    width: min(720px, calc(100vw - 28px));
+}
+
+.stsm-ocgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.stsm-oc {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 16px;
+    text-align: left;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    cursor: pointer;
+    background: var(--sm-card);
+    border: 1.5px solid var(--sm-card-bd);
+    border-radius: 14px;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+
+.stsm-oc:hover,
+.stsm-oc:focus-visible {
+    outline: none;
+    border-color: #22d3ee;
+    box-shadow: 0 12px 26px -14px rgba(8, 145, 178, .5);
+    transform: translateY(-1px);
+}
+
+.stsm-oc__ico {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 4px;
+    color: #fff;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+    box-shadow: 0 6px 14px -6px rgba(8, 145, 178, .6);
+}
+
+.stsm-oc--international .stsm-oc__ico {
+    background: linear-gradient(135deg, #38bdf8, #0369a1);
+}
+
+.stsm-oc__t {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--sm-card-title);
+}
+
+.stsm-oc__t em {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 700;
+    color: var(--sm-brand-ink);
+    background: var(--sm-chip);
+    border: 1px solid var(--sm-chip-bd);
+    border-radius: 99px;
+}
+
+.stsm-oc__d {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--sm-muted);
+}
+
+.stsm-oc__ft {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px dashed var(--sm-card-rule);
+}
+
+.stsm-oc__pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.stsm-oc__pills span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--sm-brand-ink);
+    background: var(--sm-pill);
+    border: 1px solid var(--sm-pill-bd);
+    border-radius: 99px;
+}
+
+.stsm-oc__go {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    color: #fff;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
+.stsm-ft {
+    flex-shrink: 0;
+    display: flex;
+    gap: 10px;
+    padding: 14px 24px 16px;
+    background: var(--sm-ft-bg);
+    border-top: 1px solid var(--sm-ft-bd);
+}
+
+.stsm-ft__sp {
+    flex: 1;
+}
+
+.stsm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 44px;
+    padding: 0 24px;
+    font: 800 12px 'DM Sans', system-ui, sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: all .15s;
+}
+
+.stsm-btn--ghost {
+    color: var(--sm-brand-ink);
+    background: var(--sm-ghost);
+    border: 1.5px solid var(--sm-ghost-bd);
+}
+
+.stsm-btn--ghost:hover:not(:disabled) {
+    background: var(--sm-ghost-hover);
+    border-color: #67e8f9;
+}
+
+.stsm-btn--primary {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(135deg, #0b4f63, #0e7490 35%, #0891b2 70%, #22d3ee);
+    box-shadow: 0 10px 24px -6px rgba(8, 145, 178, .65), inset 0 1px 0 rgba(255, 255, 255, .25);
+}
+
+.stsm-btn--primary:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+}
+
+.stsm-btn:disabled,
+.stsm-x:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+/* Saving: fields fade, the busy Save button keeps its colour. */
+.stsm-box.is-saving {
+    cursor: progress;
+}
+
+.stsm-box.is-saving .stsm-bd {
+    opacity: .6;
+    transition: opacity .15s;
+}
+
+.stsm-box.is-saving .stsm-btn--primary:disabled {
+    opacity: 1;
+    cursor: progress;
+}
+
+/* ── Smaller screens ────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+    .stsm-ocgrid,
+    .stsm-grid,
+    .stsm-grid--4 {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .stsm-f--sup {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 480px) {
+    .stsm-grid,
+    .stsm-grid--4 {
+        grid-template-columns: 1fr;
+    }
+
+    .stsm-bd {
+        padding: 16px;
+    }
+
+    .stsm-btn {
+        padding: 0 16px;
+    }
+}
+
+/* While the app's Add Supplier wizard is open (from "+"), this module's popups behind it step out of
+   view: the wizard sits on the app's own modal layer, below them. They stay mounted, so the form
+   keeps what was typed and shows again when the wizard closes. */
+body:has(.avm-backdrop) .stmap-overlay,
+body:has(.avm-backdrop) .sta-overlay {
+    visibility: hidden;
+}
