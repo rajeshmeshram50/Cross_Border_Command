@@ -1039,12 +1039,21 @@ class SourcingController extends Controller
             'products'                => 'required|array|min:1',
             'products.*.id'           => 'nullable|integer',   // existing row (edit); absent = new
             'products.*.from'         => 'required|in:master,manual',
-            'products.*.code'         => 'nullable|string|max:64',
-            'products.*.name'         => 'nullable|string|max:255',
-            'products.*.target_price' => 'nullable|string|max:64',
+            // FROM PRODUCT MASTER → the picked product's code.
+            'products.*.code'         => 'nullable|required_if:products.*.from,master|string|max:64',
+            // MANUAL PRODUCT ENTRY → PRODUCT NAME * + TARGET PRICE (₹) *.
+            'products.*.name'         => 'nullable|required_if:products.*.from,manual|string|max:255',
+            'products.*.target_price' => ['nullable', 'required_if:products.*.from,manual', 'regex:/^\d[\d,]*(\.\d{1,2})?$/', 'max:64'],   // 1200 · 1,200 · 1200.50
             'products.*.clarity'      => 'nullable|array',
+            'products.*.clarity.type' => 'nullable|in:text,link,pdf',
+            'products.*.clarity.val'  => 'nullable|string',
         ], [
-            'assignee_id.required'    => 'Assign this sourcing target to a team member before saving.',
+            'assignee_id.required'                => 'Assign this sourcing target to a team member before saving.',
+            'products.required'                   => 'Add at least one product to the Product List.',
+            'products.*.code.required_if'         => 'Pick a product from the Product Master.',
+            'products.*.name.required_if'         => 'Enter the product name.',
+            'products.*.target_price.required_if' => 'Enter the target price.',
+            'products.*.target_price.regex'       => 'The target price must be a number (up to 2 decimals).',
         ]);
     }
 
