@@ -86,6 +86,7 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
   '/p2p/sourcing-tracker': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
+  '/p2p/service-management': 'p2p.service',
   '/inventory-management/warehouse-master': 'master.warehouse_master',
   '/inventory-management/zone-master': 'master.zone_master',
   '/inventory-management/rack-master': 'master.racks',
@@ -160,7 +161,6 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   if (path === '/p2p') return isBiz && (leaf('p2p') || group('p2p.'));
   if (path.startsWith('/p2p/')) {
     if (!isBiz) return false;
-    if (path === '/p2p/service-management') return true;
     return path in P2P_LEAF ? leaf(P2P_LEAF[path]) : false;
   }
 
