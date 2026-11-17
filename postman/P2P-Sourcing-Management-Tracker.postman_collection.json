@@ -1,0 +1,2116 @@
+{
+  "info": {
+    "name": "P2P · Sourcing Management Tracker (/api/p2p/sourcing-targets)",
+    "_postman_id": "8a2b6c1e-p2p-sourcing-0001",
+    "description": "Sourcing Management Tracker → Sourcing Target Management (the RFQ tab is not part of this collection).\nSame targets and APIs as Bulk Sourcing — the tracker only shows them with \"Sourcing\" wording.\n\nRun order: 0. Auth → 2. form data (fills assignee / product ids) → 3. Assign Target → 1. list → 4. report & mapping.\nRoles: the CREATOR edits the target; the ASSIGNEE maps suppliers. Log in as the assignee for folder 4's mapping requests.\nEvery main request has a saved example response; Postman's Code (</>) → cURL gives the curl command.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "",
+      "type": "string",
+      "description": "Test user"
+    },
+    {
+      "key": "password",
+      "value": "CHANGE_ME",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "Set by Login"
+    },
+    {
+      "key": "due_date",
+      "value": "2026-12-31",
+      "type": "string",
+      "description": "SOURCING TAT (YYYY-MM-DD, today or later)"
+    },
+    {
+      "key": "assignee_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by ASSIGN TO · team members"
+    },
+    {
+      "key": "product_code",
+      "value": "",
+      "type": "string",
+      "description": "Set by product picker"
+    },
+    {
+      "key": "product_code_2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "target_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by Assign Target (e.g. SRC-008)"
+    },
+    {
+      "key": "master_row_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by Edit form · load"
+    },
+    {
+      "key": "manual_row_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "product_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by Sourcing Target Report"
+    },
+    {
+      "key": "supplier_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by supplier directory"
+    },
+    {
+      "key": "mapped_supplier_id",
+      "value": "",
+      "type": "string",
+      "description": "Set by Mapped suppliers"
+    },
+    {
+      "key": "clarity_path",
+      "value": "",
+      "type": "string",
+      "description": "path from POST /p2p/upload"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Auth",
+      "description": "Run first — stores {{token}}.\nNOTE: /api/login revokes the user's other tokens. Use a test user.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Sourcing Target list (3 tabs)",
+      "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged.\n\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "All Sourcing Targets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&page=1&per_page=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "all"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&page=1&per_page=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "all"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-16\",\n        \"due\": \"2026-11-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sourcing Target Created by Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=created&page=1&per_page=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "created"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=created&page=1&per_page=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "created"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "10"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-16\",\n        \"due\": \"2026-11-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sourcing Target Assigned to Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned&page=1&per_page=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "assigned"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned&page=1&per_page=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "assigned"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "10"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Search (ID, source, people, status, product)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&q=valve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "all"
+                },
+                {
+                  "key": "q",
+                  "value": "valve"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter · Overdue only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned&status=Overdue",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "assigned"
+                },
+                {
+                  "key": "status",
+                  "value": "Overdue"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter · Completed only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&status=Completed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "all"
+                },
+                {
+                  "key": "status",
+                  "value": "Completed"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Assign Sourcing Target · form data",
+      "description": "Everything the \"Assign Sourcing Target\" pop-up needs before saving. Run these first — they fill {{assignee_id}}, {{product_code}}, {{product_code_2}}.\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "Next Sourcing Target ID (header card)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/next-code",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "next-code"
+              ]
+            },
+            "description": "Preview only — the real ID is allocated on save."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/next-code",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "next-code"
+                  ]
+                },
+                "description": "Preview only — the real ID is allocated on save."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"code\": \"SRC-008\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "ASSIGN TO · team members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/team-members",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "team-members"
+              ]
+            },
+            "description": "Active, fully-onboarded Sales / Purchase staff of the user's branch: { id, name, role }. Optional ?branch_id= for tenant-wide users."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data[0]) pm.collectionVariables.set('assignee_id', j.data[0].id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/team-members",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "team-members"
+                  ]
+                },
+                "description": "Active, fully-onboarded Sales / Purchase staff of the user's branch: { id, name, role }. Optional ?branch_id= for tenant-wide users."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "FROM PRODUCT MASTER · product picker",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "products"
+              ]
+            },
+            "description": "The SELECT PRODUCTS search list: { code, name, segment, hsn }. Branch-scoped. Search is done on this list in the UI."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const d = j.data || [];",
+                  "if (d[0]) pm.collectionVariables.set('product_code', d[0].code);",
+                  "if (d[1]) pm.collectionVariables.set('product_code_2', d[1].code); else if (d[0]) pm.collectionVariables.set('product_code_2', d[0].code);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/products",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "products"
+                  ]
+                },
+                "description": "The SELECT PRODUCTS search list: { code, name, segment, hsn }. Branch-scoped. Search is done on this list in the UI."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"code\": \"P-001\",\n      \"name\": \"Generic Medicens\",\n      \"segment\": \"Mediciens\",\n      \"hsn\": \"08062000\"\n    },\n    {\n      \"code\": \"P-002\",\n      \"name\": \"Paracetamol Tablets 500mg\",\n      \"segment\": \"\",\n      \"hsn\": \"\"\n    },\n    {\n      \"code\": \"P-003\",\n      \"name\": \"Amoxicillin Capsules 250mg\",\n      \"segment\": \"\",\n      \"hsn\": \"\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Clarity PDF upload (optional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "upload"
+              ]
+            },
+            "description": "multipart/form-data: file (pdf, jpg, png, webp · ≤5 MB) + kind = clarity. Returns { path, name } — send the path as clarity.val with type = pdf."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Assign Sourcing Target · save",
+      "description": "POST /p2p/sourcing-targets creates, PUT /p2p/sourcing-targets/{id} edits (creator only). Response envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "Assign Target · FROM PRODUCT MASTER",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1200\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch, brass body\"\n      }\n    },\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code_2}}\",\n      \"target_price\": \"850.50\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('target_id', j.data.id);",
+                  "pm.test('created', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1200\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch, brass body\"\n      }\n    },\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code_2}}\",\n      \"target_price\": \"850.50\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Assign Target · MANUAL PRODUCT ENTRY",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"manual\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\",\n      \"target_price\": \"18500\"\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"Laser Toner Cartridge 76A\",\n      \"target_price\": \"3,200\",\n      \"clarity\": {\n        \"type\": \"link\",\n        \"val\": \"https://example.com/toner-spec.pdf\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('target_id', j.data.id);",
+                  "pm.test('created', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Target · Masters + Manual in one list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1200\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch, brass body\"\n      }\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\",\n      \"target_price\": \"18500\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('target_id', j.data.id);",
+                  "pm.test('created', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · no TAT / manual product without price",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"manual\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"source\": \"manual\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"Pick the Sourcing TAT (target completion date). (and 1 more error)\",\n  \"errors\": {\n    \"due_date\": [\n      \"Pick the Sourcing TAT (target completion date).\"\n    ],\n    \"products.0.target_price\": [\n      \"Enter the target price.\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit form · load (Edit icon)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}"
+              ]
+            },
+            "description": "masterRows[] / manualRows[] fill the Masters / Manual lists. mapped = true → the row already has suppliers and can't be removed (only price / clarity). assigneeId is fixed on edit; assigneeActive = false → the target is view-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const d = j.data || {};",
+                  "if (d.masterRows && d.masterRows[0]) pm.collectionVariables.set('master_row_id', d.masterRows[0].id);",
+                  "if (d.manualRows && d.manualRows[0]) pm.collectionVariables.set('manual_row_id', d.manualRows[0].id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}"
+                  ]
+                },
+                "description": "masterRows[] / manualRows[] fill the Masters / Manual lists. mapped = true → the row already has suppliers and can't be removed (only price / clarity). assigneeId is fixed on edit; assigneeActive = false → the target is view-only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-16\",\n    \"due\": \"2026-11-30\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 19,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 20,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 21,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit · update target",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"id\": \"{{master_row_id}}\",\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1150\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch\"\n      }\n    },\n    {\n      \"id\": \"{{manual_row_id}}\",\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4 (Duplex)\",\n      \"target_price\": \"19500\"\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"A4 Paper Ream 75 GSM\",\n      \"target_price\": \"280\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Same body as create. Send `id` for rows you keep; rows without id are added; rows you leave out are removed (422 if they already have suppliers). assignee_id is ignored on edit (the assignee stays fixed). Only the creator may edit (403 otherwise)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"id\": \"{{master_row_id}}\",\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1150\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch\"\n      }\n    },\n    {\n      \"id\": \"{{manual_row_id}}\",\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4 (Duplex)\",\n      \"target_price\": \"19500\"\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"A4 Paper Ream 75 GSM\",\n      \"target_price\": \"280\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Same body as create. Send `id` for rows you keep; rows without id are added; rows you leave out are removed (422 if they already have suppliers). assignee_id is ignored on edit (the assignee stays fixed). Only the creator may edit (403 otherwise)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Sourcing Target Report & supplier mapping",
+      "description": "The \"Sourcing Target Report\" button and the green Mapped Suppliers count. Map / edit supplier = the ASSIGNEE only (the creator gets 403). Response envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "Sourcing Target Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/report",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "report"
+              ]
+            },
+            "description": "Header (id, source, start, due, createdBy, assignee) + products[] { id, type, code, name, segment, hsn, price, status, supplierCount, clarity }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const p = (j.data && j.data.products) || [];",
+                  "if (p[0]) pm.collectionVariables.set('product_id', p[0].id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/report",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "report"
+                  ]
+                },
+                "description": "Header (id, source, start, due, createdBy, assignee) + products[] { id, type, code, name, segment, hsn, price, status, supplierCount, clarity }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-16\",\n    \"due\": \"2026-12-07\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 20,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 19,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 21,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Product · update clarity",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/clarity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "clarity"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clarity_type\": \"link\",\n  \"clarity_value\": \"https://example.com/spec.pdf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "clarity_type: text | link | pdf (or null to clear) · clarity_value: the text / URL / newline-joined PDF paths."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/clarity",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "clarity"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"clarity_type\": \"link\",\n  \"clarity_value\": \"https://example.com/spec.pdf\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "clarity_type: text | link | pdf (or null to clear) · clarity_value: the text / URL / newline-joined PDF paths."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 20,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Product · mark Completed",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Completed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "status: Completed | In Progress. Mapping a supplier marks the product Completed automatically."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"Completed\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "status: Completed | In Progress. Mapping a supplier marks the product Completed automatically."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 20,\n    \"status\": \"Completed\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Product · back to In Progress",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Progress\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Map Supplier · supplier directory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "suppliers"
+              ]
+            },
+            "description": "Supplier master visible to the user: { id, code, name, segment, contact, mobile, email, country, region (Domestic | International) }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data[0]) pm.collectionVariables.set('supplier_id', j.data[0].id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "suppliers"
+                  ]
+                },
+                "description": "Supplier master visible to the user: { id, code, name, segment, contact, mobile, email, country, region (Domestic | International) }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"2\",\n      \"code\": \"S-002\",\n      \"name\": \"ABC Logistics Pvt. Ltd\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    },\n    {\n      \"id\": \"1\",\n      \"code\": \"S-001\",\n      \"name\": \"TechParts\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Map Supplier · from supplier master",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Assignee only. 422 if this supplier is already mapped to the product. Response: { supplierCount }."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Assignee only. 422 if this supplier is already mapped to the product. Response: { supplierCount }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Map Supplier · new supplier (not in master)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Industrial\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "new_supplier.name required; every other field optional (card = visiting-card path from POST /p2p/upload with kind = card). Stored in the P2P supplier directory, not the Vendor master."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Industrial\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "new_supplier.name required; every other field optional (card = visiting-card path from POST /p2p/upload with kind = card). Stored in the P2P supplier directory, not the Vendor master."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 2\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 403 · creator tries to map",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Logged in as the creator (not the assignee)."
+          },
+          "response": [
+            {
+              "name": "403 Forbidden",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Logged in as the creator (not the assignee)."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": false,\n  \"message\": \"You created this sourcing target — vendor mapping is done by the assignee, not the creator.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mapped suppliers of a product",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const n = (j.data || []).find(x => x.source === 'New Supplier');",
+                  "if (n) pm.collectionVariables.set('mapped_supplier_id', n.id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"14\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"\",\n      \"state\": \"\",\n      \"state_code\": \"\",\n      \"city\": \"\",\n      \"source\": \"Master\"\n    },\n    {\n      \"id\": \"15\",\n      \"supplier_id\": 5,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit a mapped NEW supplier",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers/{{mapped_supplier_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers",
+                "{{mapped_supplier_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"city\": \"Pune\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Only source = New Supplier rows (master suppliers are edited in the Supplier master → 422)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers/{{mapped_supplier_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers",
+                    "{{mapped_supplier_id}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"city\": \"Pune\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Only source = New Supplier rows (master suppliers are edited in the Supplier master → 422)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"15\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Download clarity PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/clarity/download?path={{clarity_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "clarity",
+                "download"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "{{clarity_path}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Masters for the New Supplier form",
+      "description": "Response envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "Form masters (segments, countries, states, state codes)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/form-masters",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "form-masters"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/form-masters",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "form-masters"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"segments\": [\n      {\n        \"id\": 32,\n        \"name\": \"Ayurvedic Products\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Ayurvedic Products\"\n      },\n      {\n        \"id\": 23,\n        \"name\": \"Food Oil\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Food Oil\"\n      },\n      {\n        \"id\": 31,\n        \"name\": \"Medical Devices\",\n        \"regulatory_status\": \"highly\",\n        \"title\": \"Medical Devices\"\n      }\n    ],\n    \"countries\": [\n      {\n        \"id\": 1,\n        \"name\": \"Afghanistan\"\n      },\n      {\n        \"id\": 2,\n        \"name\": \"Aland Islands\"\n      },\n      {\n        \"id\": 3,\n        \"name\": \"Albania\"\n      }\n    ],\n    \"states\": [\n      {\n        \"id\": 745,\n        \"country_id\": \"216\",\n        \"name\": \"Aargau\"\n      },\n      {\n        \"id\": 1522,\n        \"country_id\": \"162\",\n        \"name\": \"Abia\"\n      },\n      {\n        \"id\": 683,\n        \"country_id\": \"111\",\n        \"name\": \"Abruzzo\"\n      }\n    ],\n    \"stateCodes\": [\n      {\n        \"id\": 1,\n        \"state_id\": \"14\",\n        \"state_code\": \"27\"\n      },\n      {\n        \"id\": 2,\n        \"state_id\": \"7\",\n        \"state_code\": \"24\"\n      },\n      {\n        \"id\": 3,\n        \"state_id\": \"32\",\n        \"state_code\": \"07\"\n      }\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
