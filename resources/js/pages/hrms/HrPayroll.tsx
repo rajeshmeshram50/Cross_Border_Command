@@ -90,6 +90,9 @@ interface PayrollRow {
   weekOffDays?: number | null;
   /** Paid holidays in the period — excluded from Absent. Null when not computed. */
   holidayDays?: number | null;
+  /** Of those holidays, how many the employee actually worked. Those are
+   *  already inside `present`, so only the rest come out of Absent. */
+  holidayDaysWorked?: number | null;
   pfStale?: boolean;
   pfNotice?: string | null;
   /* Full monthly salary from the structure, and whether this cycle pays less
@@ -1699,18 +1702,25 @@ status: facetParam(facets.status),
       meta: { width: '10%', align: 'center' },
       cell: info => {
         const r = info.row.original;
-        /* Say that holidays were taken out. The figure is derived, and a
-           reader counting days by hand has no way to see which credits went
-           into it — that invisibility is what got holidays reported as being
-           counted twice. (CBC #8) */
+        /* Say which credits went into the figure. It is derived, and a reader
+           counting days by hand has no way to see them — that invisibility is
+           what got holidays reported as being counted twice (CBC #8), and then
+           as being counted twice the OTHER way when a worked holiday was taken
+           out of Absent as well as being counted Present (QA #55). */
         const hol = r.holidayDays ?? 0;
+        const holWorked = r.holidayDaysWorked ?? 0;
+        const holUnworked = Math.max(0, hol - holWorked);
+        const title = hol > 0
+          ? `${holUnworked} paid holiday day(s) are excluded from Absent.`
+            + (holWorked > 0
+              ? ` ${holWorked} holiday day(s) were worked and are already counted under Present.`
+              : '')
+          : undefined;
         return (
           <span
             className="fs-13 fw-bold"
             style={{ color: r.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}
-            title={hol > 0
-              ? `${hol} paid holiday day(s) in this period are excluded from Absent.`
-              : undefined}
+            title={title}
           >
             {r.absent}
           </span>
@@ -2148,6 +2158,31 @@ status: facetParam(facets.status),
               never receives hover and its own title can never appear — the
               button just greyed out with no explanation. The span is not
               disabled, so it does. */}
+          {/* Before Run Payroll on purpose: the question it answers —
+              who ran this last, and when — is one you ask before you run
+              it again, not after. */}
+          <Tooltip label="Who ran payroll, when it was executed, and how it ended.">
+            <Button
+              className="rounded-pill fw-semibold d-inline-flex align-items-center"
+              onClick={() => navigate({
+                pathname: '/hr/payroll/execution-history',
+                search: new URLSearchParams({
+                  month: String(cycle?.month ?? ''),
+                  year:  String(cycle?.year ?? ''),
+                  label: cycle?.label ?? '',
+                }).toString(),
+              })}
+              style={{
+                padding: '10px 15px',
+                fontSize: 12,
+                border: '1px solid #705ad0',
+                background: 'var(--vz-card-bg)',
+                color: '#5a3fd1',
+              }}
+            >
+              <i className="ri-history-line me-2" style={{ fontSize: 15 }} /> History
+            </Button>
+          </Tooltip>
           <Tooltip label={loading
             ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
             : canReopenCycle
