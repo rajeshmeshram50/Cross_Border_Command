@@ -803,6 +803,25 @@ class ServiceController extends Controller
         return response()->json($this->supplierRowFresh($map));
     }
 
+    /**
+     * PATCH /p2p/services/{id}/suppliers/{mapId}/status  { "status": "active" | "inactive" }
+     * Mappings are never deleted — an inactive one drops out of the
+     * "Mapped Suppliers" count and stays in the history.
+     */
+    public function updateSupplierStatus(Request $request, int $id, int $mapId)
+    {
+        $service = $this->findService($request, $id);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        $map  = $service->suppliers()->findOrFail($mapId);
+        $data = $request->validate(['status' => ['required', Rule::in(ServiceSupplier::STATUSES)]]);
+
+        $map->fill(['status' => $data['status'], 'updated_by' => $request->user()?->id])->save();
+
+        return response()->json($this->supplierRowFresh($map) + [
+            'suppliers_count' => $service->activeSuppliers()->count(),
+        ]);
+    }
+
     private function supplierRowFresh(ServiceSupplier $map): array
     {
         $map->load([
@@ -824,5 +843,33 @@ class ServiceController extends Controller
         if ($missing) {
             throw ValidationException::withMessages([$field => ['Unknown supplier id(s): ' . implode(', ', $missing) . '.']]);
         }
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * PATCH /p2p/services/{id}/status  { "status": "active" | "inactive" }
+     * Services are never deleted — the row action switches them inactive
+     * (and back). A draft (Stage 2 not submitted yet) can be made inactive,
+     * but only becomes active through the Stage-2 submit.
+     * ══════════════════════════════════════════════════════════════════ */
+    public function updateStatus(Request $request, int $id)
+    {
+        $service = $this->findService($request, $id);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+
+        $data = $request->validate(['status' => ['required', Rule::in(['active', 'inactive'])]]);
+        if ($data['status'] === 'active' && (int) $service->step_completed < 2) {
+            throw ValidationException::withMessages(['status' => ['Complete Stage 2 (Map Service Suppliers) before activating this service.']]);
+        }
+
+        $service->status     = $data['status'];
+        $service->updated_by = $request->user()?->id;
+        $service->save();
+
+        return response()->json([
+            'id'     => $service->id,
+            'code'   => $service->code,
+            'status' => $service->status,
+            'message' => 'Service ' . $service->code . ' is now ' . $service->status . '.',
+        ]);
     }
 }

@@ -474,6 +474,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/{id}/suppliers',              [$svc, 'suppliers'])->whereNumber('id');
         Route::post  ('/{id}/suppliers',              [$svc, 'storeSupplier'])->whereNumber('id');
         Route::patch ('/{id}/suppliers/{map}',        [$svc, 'updateSupplier'])->whereNumber('id')->whereNumber('map');
+        Route::patch ('/{id}/suppliers/{map}/status', [$svc, 'updateSupplierStatus'])->whereNumber('id')->whereNumber('map'); // active | inactive (no delete)
+        Route::patch ('/{id}/status',                 [$svc, 'updateStatus'])->whereNumber('id');   // active | inactive (no delete)
     });
 
     // P2P · Create Purchase Order (new backend — independent of /p2p/purchase-orders).
