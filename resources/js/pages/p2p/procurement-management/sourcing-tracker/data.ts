@@ -91,14 +91,30 @@ export const DUMMY_TARGETS: SourcingTarget[] = [
 
 export const isComplete = (r: SourcingTarget) => r.totalProducts > 0 && r.completedProducts >= r.totalProducts;
 
-export const progressPct = (r: SourcingTarget) =>
+const progressPct = (r: SourcingTarget) =>
   r.totalProducts ? Math.round((Math.min(r.completedProducts, r.totalProducts) / r.totalProducts) * 100) : 0;
 
+/** Total / done / pending / % / complete for a target — the list row, the report and the Product
+    List popup all read these, so they always show the same numbers (CS-2216 V-T69). */
+export const progressOf = (r: SourcingTarget) => {
+  const total = r.totalProducts;
+  const done = Math.min(r.completedProducts, total);
+  return { total, done, pending: total - done, pct: progressPct(r), full: isComplete(r) };
+};
 
-/* ── data.ts chya shevti he paste kara (existing code la haat lavu naka) ── */
+type TatState = 'ontrack' | 'atrisk' | 'overdue';
 
-/** Product Master la dummy rows — API aalyavar hech field names return kele jatil. */
-export type MasterProduct = { code: string; name: string; segment: string; hsn: string };
+/** On track / at risk (due within 7 days) / overdue — a finished target is always on track. */
+export const tatState = (r: SourcingTarget): TatState => {
+  if (isComplete(r)) return 'ontrack';
+  const days = Math.round((Date.parse(r.dueDate) - Date.parse(TODAY)) / 86400000);
+  if (days < 0) return 'overdue';
+  return days <= 7 ? 'atrisk' : 'ontrack';
+};
+
+
+/** Dummy Product Master rows; the API will return the same field names. */
+type MasterProduct = { code: string; name: string; segment: string; hsn: string };
 
 export const MASTER_PRODUCTS: MasterProduct[] = [
   { code: 'P-001', name: 'Premium Basmati Rice 1121 Sella (25kg)', segment: 'Rice', hsn: '10063020' },
@@ -117,17 +133,20 @@ export const ASSIGNEES = [
   'Sneha Patil', 'Vikram Patel', 'Ananya Gupta', 'Meera Krishnan',
 ];
 
-/** Popup madhla ek product row (save hoin paryant). */
+/** One product row in the Assign / Edit popup (until it is saved). */
 export type DraftProduct = {
   key: string;
   source: SourceType;
-  code: string;      // Manual la '—'
+  code: string;      // '—' for a manual product
   name: string;
   segment: string;
   hsn: string;
   targetPrice: string;   // required
-  clarity: string;       // optional
 };
+
+/** What the Assign / Edit popup hands back. The page adds Created By (the current user on Add,
+    unchanged on Edit), so the popup never has to know who is signed in. */
+export type TargetDraft = Omit<SourcingTarget, 'createdBy'>;
 
 /** Next ST-0xx — per-client sequential. */
 export const nextCode = (all: SourcingTarget[]) => {
@@ -135,7 +154,7 @@ export const nextCode = (all: SourcingTarget[]) => {
   return `ST-${String(max + 1).padStart(3, '0')}`;
 };
 
-/** Aajchi khari tarikh, local, yyyy-mm-dd (TODAY fixture nahi — to fakt Overdue sathi). */
+/** Today's real date, local time, yyyy-mm-dd. (TODAY above is a fixed fixture, used only for Overdue.) */
 export const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

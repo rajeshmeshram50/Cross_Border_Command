@@ -1,0 +1,138 @@
+/* "Add attachment" menu (AttachPicker: Upload file / Take photo) for the Clarity document and the
+   New Supplier business card. Same look as the app's shared attachment menu in p2p-common.css,
+   kept under this module's own sta-att name so it never restyles that shared menu on other P2P
+   screens. Portalled to <body>, z-index 3200: above the clarity popup and Map Supplier (3000). */
+.sta-att {
+  position: fixed;
+  z-index: 3200;
+  padding: 8px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 18px 40px -12px rgba(15, 23, 42, .28);
+}
+
+.sta-att__hd {
+  padding: 4px 8px 8px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.sta-att__opt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 8px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sta-att__opt+.sta-att__opt {
+  border-top: 1px solid #f1f5f9;
+  border-radius: 0 0 9px 9px;
+}
+
+.sta-att__opt:hover {
+  background: #f1f9fc;
+}
+
+/* The design's .p2pcap-opt__t / __s. Only the sizes matched: the title sat a
+   shade darker than #0c4a6e, the sub-line ran a point large at 10.5px with
+   whatever weight it inherited, and neither had its leading set, so the two
+   lines sat further apart than the design has them. */
+.sta-att__opt b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0c4a6e;
+  line-height: 1.25;
+}
+
+.sta-att__opt i {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  font-style: normal;
+  color: #8aa5b2;
+  line-height: 1.3;
+}
+
+/* The design stacks the two lines with a 3px gap (.p2pcap-opt__txt); ours
+   relied on the blocks sitting flush, which with the leading set above left
+   them tighter than the design has them. */
+.sta-att__opt>span:not(.sta-att__ico) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sta-att__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #22b8d6, #0e7490);
+  color: #fff;
+}
+
+/* Stays violet on purpose — the design uses it to tell "Take photo" apart
+   from "Upload file" at a glance — but on the design's stops, not ours. */
+.sta-att__ico--cam {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+}
+
+[data-bs-theme="dark"] .sta-att {
+  background: #0f1827;
+  border-color: #1f2d42;
+}
+
+[data-bs-theme="dark"] .sta-att__opt:hover {
+  background: rgba(34, 211, 238, .1);
+}
+
+[data-bs-theme="dark"] .sta-att__opt b {
+  color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .sta-att__opt+.sta-att__opt {
+  border-top-color: #1f2d42;
+}
+
+/* Take photo — the shared CameraCaptureModal's backdrop (.spi-mdl-backdrop) gets its base layout
+   (fixed, full screen, centred, dimmed) from p2p-common.css, which this module does not load. Without
+   it the camera rendered as a plain block at the bottom of the page, BEHIND the clarity popup.
+   The same base rule, copied here and scoped to the camera (.cam-layer) on this page only;
+   camera-capture.css keeps its own z-index 12000, above every popup of this module. */
+body:has(.sct-page) .spi-mdl-backdrop.cam-layer {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(8, 47, 73, .45);
+    backdrop-filter: blur(4px);
+    overflow-y: auto;
+}
+
+[data-bs-theme="dark"] body:has(.sct-page) .spi-mdl-backdrop.cam-layer {
+    background: rgba(0, 6, 16, .7);
+}
+
+/* Phones: the whole screen is the camera (as camera-capture.css intends). */
+@media (max-width: 640px) {
+    body:has(.sct-page) .spi-mdl-backdrop.cam-layer {
+        padding: 0;
+    }
+}
