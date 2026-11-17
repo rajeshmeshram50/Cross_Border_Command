@@ -321,6 +321,7 @@ export default function ServiceManagement() {
         <ServiceSupplierModal
           code={mapFor.code}
           serviceName={mapFor.vals.name}
+          defaultGst={mapFor.vals.gstPct}
           suppliers={mapFor.suppliers}
           onClose={() => setMapFor(null)}
           onChange={saveMap}

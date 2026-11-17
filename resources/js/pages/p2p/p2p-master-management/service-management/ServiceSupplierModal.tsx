@@ -117,13 +117,22 @@ function OriginCard({ origin, available, onPick }: { origin: SupplierOrigin; ava
 }
 
 export function SupplierMapPanel({
-  serviceName, suppliers, onChange,
+  serviceName, suppliers, onChange, defaultGst,
 }: {
   serviceName: string;
   suppliers: MappedSupplier[];
   onChange: (next: MappedSupplier[]) => void;
+  /** GST % mapped on the service — prefills a domestic supplier's GST %. */
+  defaultGst?: number;
 }) {
   const toast = useToast();
+  const gstDefault = String(defaultGst ?? 18);
+  const gstOpts = useMemo(
+    () => [...new Set([...GST_RATES, ...(defaultGst != null ? [defaultGst] : [])])]
+      .sort((a, b) => a - b)
+      .map(r => ({ value: String(r), label: String(r) })),
+    [defaultGst],
+  );
   const confirm = useConfirm();
 
   const [vendors, setVendors] = useState<VendorOpt[]>(vendorCache ?? []);
@@ -145,7 +154,7 @@ export function SupplierMapPanel({
   const intl = origin === 'international';
   const [selCode, setSelCode] = useState('');
   const [price, setPrice] = useState('');
-  const [gst, setGst] = useState('18');
+  const [gst, setGst] = useState(gstDefault);
   const [currency, setCurrency] = useState('USD');
   const [fx, setFx] = useState(String(FX_DEFAULTS.USD));
   const [errors, setErrors] = useState<{ supplier?: string; price?: string; fx?: string }>({});
@@ -203,7 +212,7 @@ export function SupplierMapPanel({
   const domTotal = +(priceNum + gstAmt).toFixed(2);
 
   const resetForm = () => {
-    setSelCode(''); setPrice(''); setGst('18'); setCurrency('USD'); setFx(String(FX_DEFAULTS.USD)); setErrors({});
+    setSelCode(''); setPrice(''); setGst(gstDefault); setCurrency('USD'); setFx(String(FX_DEFAULTS.USD)); setErrors({});
   };
   const openChooser = () => { resetForm(); setStep('choose'); };
   const pickOrigin = (o: SupplierOrigin) => { resetForm(); setOrigin(o); setStep('form'); };
@@ -514,7 +523,7 @@ export function SupplierMapPanel({
                       <div className="svms-select is-key">
                         <MasterSelect
                           value={gst}
-                          options={GST_RATES.map(r => ({ value: String(r), label: String(r) }))}
+                          options={gstOpts}
                           placeholder="Select GST %"
                           onChange={setGst}
                         />
@@ -584,10 +593,11 @@ export function SupplierMapPanel({
 }
 
 export default function ServiceSupplierModal({
-  code, serviceName, suppliers, onClose, onChange,
+  code, serviceName, suppliers, onClose, onChange, defaultGst,
 }: {
   code: string;
   serviceName: string;
+  defaultGst?: number;
   suppliers: MappedSupplier[];
   onClose: () => void;
   onChange: (next: MappedSupplier[]) => void;
@@ -611,7 +621,7 @@ export default function ServiceSupplierModal({
           <button type="button" className="svs-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
         </div>
         <div className="svs-body">
-          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} />
+          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} />
         </div>
         <div className="svs-foot">
           <span className="svs-note">{SVC_ICONS.info} Changes apply to <code>{code}</code></span>

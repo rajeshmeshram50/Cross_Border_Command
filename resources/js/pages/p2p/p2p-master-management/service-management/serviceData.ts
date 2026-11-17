@@ -48,6 +48,8 @@ export interface ServiceVals {
   img1?: string;
   img2?: string;
   confidential?: string;
+  gstId?: string;
+  gstPct?: number;
 }
 
 export interface ServiceRecord {
