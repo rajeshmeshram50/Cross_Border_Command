@@ -675,8 +675,12 @@ class SourcingController extends Controller
         // Pull the vendor's primary contact person from its primary address
         // (contact_name / contact_no / email) — `addresses` is ordered
         // is_primary-first, so first() is the primary (or the only) one.
+        // ?origin=domestic|international → only that tab of the Map Supplier popup.
+        $request->validate(['origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)]]);
+        $origin = $request->query('origin');
+
         $rows = Vendor::query()->forUser($user, $request->integer('branch_id') ?: null)
-            ->with(['segment:id,name', 'addresses', 'addresses.country:id,name'])
+            ->with(['segment:id,name', 'vendorType:id,name', 'addresses', 'addresses.country:id,name', 'addresses.state:id,name'])
             ->orderBy('company_name')
             ->get()
             ->map(function ($v) {
@@ -688,6 +692,13 @@ class SourcingController extends Controller
                     ? ''
                     : (strcasecmp($countryName, 'India') === 0 ? 'Domestic' : 'International');
                 return [
+                    // Map Supplier → Domestic / International (no country = Domestic).
+                    'origin'       => SupplierPricing::originOf($countryName),
+                    'supplierType' => $v->vendorType->name ?? '',
+                    'state'        => $addr && $addr->state ? $addr->state->name : '',
+                    'stateCode'    => $addr->state_code ?? '',      // GST State Code
+                    'city'         => $addr->city ?? '',
+                    'currency'     => SupplierPricing::currencyFor($countryName),
                     'id'      => (string) $v->id,
                     // Human-facing supplier code (e.g. "S-002"). The picker
                     // shows this instead of the raw numeric id.
@@ -700,7 +711,8 @@ class SourcingController extends Controller
                     'country' => $countryName,
                     'region'  => $region,
                 ];
-            });
+            })
+            ->when($origin, fn ($c) => $c->where('origin', $origin)->values());
 
         return $this->ok($rows);
     }
@@ -742,7 +754,12 @@ class SourcingController extends Controller
             'state_code'     => $s->state_code,
             'city'           => $s->city,
             'gmaps'          => $s->gmaps,
+            'origin'         => $s->origin ?: SupplierPricing::originOf($s->country),
             'sourcing_count' => (int) ($counts[$s->id] ?? 0),
+            // Convert to Supplier → registered in the Supplier Master as this vendor.
+            'converted'           => (bool) $s->converted_vendor_id,
+            'converted_vendor_id' => $s->converted_vendor_id,
+            'converted_at'        => optional($s->converted_at)->toIso8601String(),
             'created_at'     => optional($s->created_at)->toIso8601String(),
         ]);
 
@@ -943,6 +960,11 @@ class SourcingController extends Controller
                 ]);
             }
 
+            // Already registered in the Supplier Master (Convert to Supplier) → map that vendor.
+            if ($directory->converted_vendor_id) {
+                return response()->json(['status' => false, 'message' => "“{$name}” is already in the Supplier Master — map it from Supplier Master."], 422);
+            }
+
             // A product can't have the same directory supplier mapped twice.
             if ($p->suppliers()->where('source', 'new')->where('supplier_id', $directory->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$name}” is already mapped to this product."], 422);
@@ -1087,6 +1109,9 @@ class SourcingController extends Controller
         $p = $t->products()->where('id', $product)->firstOrFail();
 
         $target    = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
+        $converted = P2pSupplier::where('client_id', $request->user()->client_id)
+            ->whereIn('id', $p->suppliers()->where('source', 'new')->pluck('supplier_id'))
+            ->pluck('converted_vendor_id', 'id');
 
         $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
@@ -1127,6 +1152,8 @@ class SourcingController extends Controller
             'vsTarget'      => $s->price === null ? null : SupplierPricing::vsTarget(
                 $s->origin === SupplierPricing::INTERNATIONAL ? (float) $s->inr_amount : (float) $s->price, $target),
             'mappedOn'      => optional($s->created_at)->toIso8601String(),
+            // "Convert to Supplier" button — New Suppliers not yet in the Supplier Master.
+            'canConvert'    => $s->source === 'new' && empty($converted[$s->supplier_id]),
         ]);
 
         return $this->ok($rows);
@@ -1172,6 +1199,100 @@ class SourcingController extends Controller
         }
 
         return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
+    }
+
+    /* ── Convert to Supplier (New Supplier → Supplier Master) ─────────────── */
+    // GET /p2p/new-suppliers/{supplier}/convert — the New Supplier's details in
+    // the shape of the Add Supplier form (/vendors/step/identity + step/contacts),
+    // with master ids looked up by name, so the form opens pre-filled.
+    public function convertPrefill(Request $request, int $supplier)
+    {
+        $user = $request->user();
+        $s    = P2pSupplier::where('client_id', $user->client_id)->findOrFail($supplier);
+        $scope = fn($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+
+        $countryId = $s->country ? Countries::query()->tap($scope)->whereRaw('LOWER(name) = ?', [mb_strtolower($s->country)])->value('id') : null;
+        $stateId   = $s->state ? States::query()->tap($scope)
+            ->when($countryId, fn($q) => $q->where('country_id', $countryId))
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($s->state)])->value('id') : null;
+        $segmentId = $s->segment ? Segments::query()->tap($scope)->whereRaw('LOWER(name) = ?', [mb_strtolower($s->segment)])->value('id') : null;
+        $origin    = $s->origin ?: SupplierPricing::originOf($s->country);
+
+        return $this->ok([
+            'supplier_id'         => $s->id,
+            'origin'              => $origin,
+            'converted'           => (bool) $s->converted_vendor_id,
+            'converted_vendor_id' => $s->converted_vendor_id,
+            'sourcing_count'      => SourcingProductSupplier::where('source', 'new')->where('supplier_id', $s->id)->count(),
+            // POST /vendors/step/identity
+            'identity' => [
+                'company_name'   => $s->name,
+                'legal_name'     => $s->name,
+                'primary_email'  => $s->email,
+                'segment_id'     => $segmentId,
+                'segment'        => $s->segment,
+                'gst_applicable' => $origin === SupplierPricing::INTERNATIONAL ? 'No' : null,
+            ],
+            // PUT /vendors/{id}/step/contacts → primary address / contact person
+            'address' => [
+                'address_line'    => $s->address,
+                'country_id'      => $countryId,
+                'country'         => $s->country,
+                'state_id'        => $stateId,
+                'state'           => $s->state,
+                'state_code'      => $s->state_code,
+                'city'            => $s->city,
+                'google_location' => $s->gmaps,
+                'contact_name'    => $s->contact,
+                'contact_no'      => $s->mobile,
+                'email'           => $s->email,
+                'is_primary'      => true,
+            ],
+            'business_card' => $s->card_path,
+        ]);
+    }
+
+    // POST /p2p/new-suppliers/{supplier}/convert { vendor_id } — after the Add
+    // Supplier form saves the vendor, link it: the New Supplier is marked
+    // converted and every product it was mapped on now points at the vendor
+    // (source = master), keeping the quoted prices. A product that already has
+    // that vendor mapped keeps the existing row and drops the duplicate.
+    public function convertSupplier(Request $request, int $supplier)
+    {
+        $user = $request->user();
+        $s    = P2pSupplier::where('client_id', $user->client_id)->findOrFail($supplier);
+        $data = $request->validate(['vendor_id' => 'required|integer'], ['vendor_id.required' => 'Save the supplier in the Supplier Master first.']);
+
+        $vendor = Vendor::query()->forUser($user)->find($data['vendor_id']);
+        if (!$vendor) {
+            throw ValidationException::withMessages(['vendor_id' => ['Unknown supplier in the Supplier Master.']]);
+        }
+        if ($s->converted_vendor_id && (int) $s->converted_vendor_id !== (int) $vendor->id) {
+            return response()->json(['status' => false, 'message' => "“{$s->name}” is already converted to another supplier in the Supplier Master."], 422);
+        }
+
+        $moved = 0; $merged = 0;
+        DB::transaction(function () use ($s, $vendor, $user, &$moved, &$merged) {
+            $rows = SourcingProductSupplier::where('source', 'new')->where('supplier_id', $s->id)->get();
+            foreach ($rows as $row) {
+                $dup = SourcingProductSupplier::where('sourcing_product_id', $row->sourcing_product_id)
+                    ->where('source', 'master')->where('supplier_id', $vendor->id)->exists();
+                if ($dup) { $row->delete(); $merged++; continue; }
+                $row->update(['source' => 'master', 'supplier_id' => $vendor->id, 'name' => $vendor->company_name]);
+                $moved++;
+            }
+            $s->update(['converted_vendor_id' => $vendor->id, 'converted_at' => now(), 'converted_by' => $user->id]);
+        });
+
+        return $this->ok([
+            'supplier_id'   => $s->id,
+            'vendor_id'     => $vendor->id,
+            'vendor_code'   => $vendor->vendor_code,
+            'vendor_name'   => $vendor->company_name,
+            'mappings_moved'  => $moved,     // now shown as "Master" on those products
+            'mappings_merged' => $merged,    // the product already had this vendor mapped
+            'message'       => "{$s->name} is now in the Supplier Master as {$vendor->vendor_code}.",
+        ]);
     }
 
     private function validatePayload(Request $request, bool $creating = false): array
