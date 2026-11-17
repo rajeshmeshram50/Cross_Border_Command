@@ -17,6 +17,8 @@ class P2pFileController extends Controller
         'p2p/refund-adjustments/' => ['p2p_po_refund_adjustments', 'attachment_path', 'attachment_name'],
         'p2p/po-documents/'       => ['p2p_purchase_order_documents', 'file_path', 'original_name'],
         'p2p/spi/'               => ['p2p_supplier_invoices', 'invoice_file_path', 'invoice_file_name'],
+        'p2p/services/images/'      => ['p2p_service_images', 'file_path', 'original_name'],
+        'p2p/services/attachments/' => ['p2p_service_attachments', 'file_path', 'original_name'],
     ];
 
     private const ALSO = [
