@@ -457,6 +457,19 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
 
+    /* P2P · Service Management (service catalogue + supplier mapping).
+       Dropdown "+" buttons reuse /master/{slug} (service_categories,
+       segments, hsn_codes, uom, haz_class, conditions, packaging_material);
+       "+ Add new supplier" reuses /vendors/step/*;
+       images / attachments download through /p2p/files/download. */
+    Route::prefix('p2p/services')->group(function () {
+        $svc = \App\Http\Controllers\Api\P2p\ServiceController::class;
+        Route::get   ('/master-bundle',               [$svc, 'masterBundle']);
+        Route::get   ('/next-code',                   [$svc, 'nextCodePreview']);
+        Route::post  ('/step/core',                   [$svc, 'storeCore']);                  // Stage 1 (create / update, multipart)
+        Route::get   ('/{id}',                        [$svc, 'show'])->whereNumber('id');
+    });
+
     // P2P · Create Purchase Order (new backend — independent of /p2p/purchase-orders).
     Route::prefix('p2p/orders')->group(function () {
         $po  = \App\Http\Controllers\Api\P2p\PurchaseOrderController::class;
