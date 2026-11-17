@@ -3,6 +3,8 @@ export type ServiceKind = 'soft' | 'trackable' | 'consumable' | 'other';
 export type OtherType = 'professional' | 'utility' | 'facility' | 'maintenance' | 'outsourcing';
 export type MaterialSub = 'trackable' | 'consumable';
 
+export type SupplierOrigin = 'domestic' | 'international';
+
 export interface MappedSupplier {
   vendorId?: string;
   code: string;
@@ -14,6 +16,12 @@ export interface MappedSupplier {
   gst: number;
   gstAmt: number;
   total: number;
+  origin?: SupplierOrigin;
+  gstStateCode?: string;
+  country?: string;
+  currency?: string;
+  fx?: number;
+  inr?: number;
 }
 
 export interface ServiceVals {
@@ -191,6 +199,45 @@ export const makeSupplier = (
   return { ...s, price, gst, gstAmt, total: round2(price + gstAmt) };
 };
 
+export const SUPPLIER_CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SGD', 'SAR', 'OMR', 'CNY', 'JPY', 'KRW', 'MYR'];
+export const FX_DEFAULTS: Record<string, number> = {
+  USD: 83.25, EUR: 90.40, GBP: 105.60, AED: 22.67, SGD: 62.10, CNY: 11.52,
+  JPY: 0.556, KRW: 0.0612, SAR: 22.20, OMR: 216.30, MYR: 18.85,
+};
+const CUR_SYMBOL: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', AED: 'AED ', SGD: 'S$', SAR: 'SAR ', OMR: 'OMR ',
+  CNY: '¥', JPY: '¥', KRW: '₩', MYR: 'RM ', INR: '₹ ',
+};
+export const fmtCurrency = (cur: string, n: number): string => {
+  const d = cur === 'JPY' || cur === 'KRW' ? 0 : 2;
+  return (CUR_SYMBOL[cur] ?? `${cur} `) + (Number(n) || 0).toLocaleString(cur === 'INR' ? 'en-IN' : 'en-US', {
+    minimumFractionDigits: d, maximumFractionDigits: d,
+  });
+};
+export const isIntl = (s: Pick<MappedSupplier, 'origin'>) => s.origin === 'international';
+export const supplierInr = (s: MappedSupplier) => (isIntl(s) ? (s.inr ?? 0) : s.total);
+
+export type IntlVendor = { id: string; code: string; name: string; type: string; country: string; city: string; contact: string };
+export const SAMPLE_INTL_VENDORS: IntlVendor[] = [
+  { id: 'intl-1', code: 'S-004', name: 'Gulf Trade Services FZE', type: 'Service', country: 'United Arab Emirates', city: 'Dubai', contact: 'Ahmed Al-Farsi' },
+  { id: 'intl-2', code: 'S-026', name: 'Milano Design Consulting Srl', type: 'Service', country: 'Italy', city: 'Milan', contact: 'Giulia Rossi' },
+  { id: 'intl-3', code: 'S-031', name: 'Pacific Cloud Systems Inc.', type: 'Service', country: 'United States', city: 'San Jose', contact: 'Daniel Brooks' },
+  { id: 'intl-4', code: 'S-035', name: 'Thames Advisory Partners Ltd', type: 'Service', country: 'United Kingdom', city: 'London', contact: 'Olivia Hart' },
+  { id: 'intl-5', code: 'S-038', name: 'Lion City Tech Services Pte Ltd', type: 'Service', country: 'Singapore', city: 'Singapore', contact: 'Wei Ming Tan' },
+  { id: 'intl-6', code: 'S-042', name: 'Rhein Engineering GmbH', type: 'Service', country: 'Germany', city: 'Frankfurt', contact: 'Lukas Weber' },
+  { id: 'intl-7', code: 'S-047', name: 'Shenzhen Smart Devices Co.', type: 'Service', country: 'China', city: 'Shenzhen', contact: 'Li Wei' },
+  { id: 'intl-8', code: 'S-051', name: 'Riyadh Facility Group', type: 'Service', country: 'Saudi Arabia', city: 'Riyadh', contact: 'Omar Al-Qahtani' },
+];
+
+export const makeIntlSupplier = (
+  v: Pick<IntlVendor, 'code' | 'name' | 'type' | 'city' | 'contact' | 'country'> & { vendorId?: string },
+  price: number, currency: string, fx: number,
+): MappedSupplier => ({
+  vendorId: v.vendorId, code: v.code, name: v.name, type: v.type, state: v.city, contact: v.contact,
+  country: v.country, origin: 'international', currency, fx,
+  price: round2(price), gst: 0, gstAmt: 0, total: round2(price), inr: round2(price * fx),
+});
+
 export const nextServiceCode = (rows: ServiceRecord[]): string => {
   const max = rows.reduce((m, r) => {
     const hit = /^SVC-(\d+)$/.exec(r.code);
@@ -211,8 +258,17 @@ const POOL: PoolRow[] = [
   ['S-026', 'Milano Design Consulting Srl', 'Service', 'Milan', 'Giulia Rossi'],
   ['S-103', 'Apex Advisory Services', 'Service', 'Karnataka', 'Rahul Menon'],
 ];
-const sup = (q: PoolRow, price: number, gst: number) =>
-  makeSupplier({ code: q[0], name: q[1], type: q[2], state: q[3], contact: q[4] }, price, gst);
+const sup = (q: PoolRow, price: number, gst: number): MappedSupplier => {
+  const intl = SAMPLE_INTL_VENDORS.find(v => v.code === q[0]);
+  if (intl) {
+    const cur = intl.country === 'Italy' ? 'EUR' : 'AED';
+    return makeIntlSupplier(intl, price / FX_DEFAULTS[cur], cur, FX_DEFAULTS[cur]);
+  }
+  return {
+    ...makeSupplier({ code: q[0], name: q[1], type: q[2], state: q[3], contact: q[4] }, price, gst),
+    origin: 'domestic', country: 'India',
+  };
+};
 const pool = (code: string) => POOL.find(p => p[0] === code)!;
 const pick = (n: number, base: number, gst: number, seed: number): MappedSupplier[] =>
   Array.from({ length: n }, (_, k) => {
