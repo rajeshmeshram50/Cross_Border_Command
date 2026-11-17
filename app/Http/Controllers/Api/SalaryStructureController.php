@@ -972,6 +972,30 @@ class SalaryStructureController extends Controller
         return $s;
     }
 
+    /**
+     * A TDS amount the operator entered by hand on the structure.
+     *
+     * Matched by CODE first and then by a tight LABEL pattern, the same order
+     * PayrollService::structureDeduction() uses — a manual line always wins
+     * over the slab engine there, so this has to recognise the same rows or the
+     * banner would claim an automatic computation that never runs.
+     */
+    private static function manualTdsAmount($deductions): float
+    {
+        foreach ((array) $deductions as $d) {
+            $amount = (float) ($d['amount'] ?? 0);
+            if ($amount <= 0) continue;
+            $code = strtolower(trim((string) ($d['code'] ?? '')));
+            if ($code === 'tds') return $amount;
+        }
+        foreach ((array) $deductions as $d) {
+            $amount = (float) ($d['amount'] ?? 0);
+            if ($amount <= 0) continue;
+            $label = strtolower(trim((string) ($d['label'] ?? '')));
+            if (preg_match('/^(tds|income\s*tax)\b/', $label)) return $amount;
+        }
+        return 0;
+    }
     private function serialize(SalaryStructure $s): array
     {
         return [
@@ -987,6 +1011,17 @@ class SalaryStructureController extends Controller
             'pf_applicable'   => (bool) $s->pf_applicable,
             'esi_applicable'  => (bool) $s->esi_applicable,
             'pt_applicable'   => (bool) $s->pt_applicable,
+            /* Does this structure actually tax the employee, and where the
+               figure comes from. The profile's "computed as per <regime>"
+               banner was printed unconditionally, so an employee with no tax
+               on their salary was told their tax was being computed (QA #63).
+               'manual' = a TDS line accounts typed on the structure, which
+               follows the regime HR recorded; 'auto' = the slab engine, which
+               only models the new regime; null = no tax, print nothing. */
+            'tds_applicable'  => (bool) $s->tds_applicable,
+            'tds_source'      => self::manualTdsAmount($s->deductions ?: []) > 0
+                ? 'manual'
+                : ($s->tds_applicable ? 'auto' : null),
             /* PF TYPE RIDES ALONG. (#214)
              *
              * It is an EMPLOYEE column, not a structure one, so Revise Salary

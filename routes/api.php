@@ -1307,6 +1307,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
     Route::get ('/payroll/history',             [\App\Http\Controllers\Api\PayrollController::class, 'history']);
+    /* Payroll Execution Tracking & Audit Log — WHO ran payroll and when,
+       which /payroll/history (the cycle's own figures) does not answer. */
+    Route::get ('/payroll/execution-history',   [\App\Http\Controllers\Api\PayrollController::class, 'executionHistory']);
     Route::get ('/payroll/preflight',           [\App\Http\Controllers\Api\PayrollController::class, 'preflight']);
     // Leaves in the cycle inflated by the Sandwich Leave Policy — the payroll
     // screen's review list. Waiving still goes through the leave endpoint.
@@ -1318,6 +1321,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post('/payroll/payslip/{id}/email',  [\App\Http\Controllers\Api\PayrollController::class, 'emailPayslip'])->whereNumber('id');
     Route::get ('/payroll/payslip/{id}',        [\App\Http\Controllers\Api\PayrollController::class, 'payslip'])->whereNumber('id');
     Route::get ('/payroll/employee/{employeeId}/payslips', [\App\Http\Controllers\Api\PayrollController::class, 'employeePayslips'])->whereNumber('employeeId');
+    // Current month's cycle for ONE employee — the profile's Payroll Summary hero.
+    Route::get ('/payroll/employee/{employeeId}/current-cycle', [\App\Http\Controllers\Api\PayrollController::class, 'employeeCurrentCycle'])->whereNumber('employeeId');
     Route::get ('/payroll/fnf/{employeeId}',    [\App\Http\Controllers\Api\PayrollController::class, 'fnf'])->whereNumber('employeeId');
     // Rule 21 — the settlement is a saved document, not just a live preview.
     Route::post('/payroll/fnf/{employeeId}',        [\App\Http\Controllers\Api\PayrollController::class, 'fnfSave'])->whereNumber('employeeId');

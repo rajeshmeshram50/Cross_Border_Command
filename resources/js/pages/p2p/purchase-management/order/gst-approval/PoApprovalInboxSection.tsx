@@ -3,10 +3,10 @@
 // (which PO, which supplier, how much, why it is here, who asked, when).
 // "New" lists the pending ones; history lists those already decided.
 // Rows come from GET /p2p/orders/gst-approvals?history=0|1, 10 a page.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody } from 'reactstrap';
-import { ShimmerTableRows } from '../../../../../components/ui/Shimmer';
+import DataTable, { type DataTableColumn } from '../../../../../components/ui/DataTable';
 import { FitTip } from '../create-po/form-fields';
 import { PoApiError, poApprovalApi, type GstApprovalInboxMeta, type GstApprovalInboxRow } from '../api/po-api';
 import { fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
@@ -50,7 +50,121 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
 
   const open = (r: GstApprovalInboxRow) => navigate(`/inbox/po-approval/${r.id}`);
   const total = meta?.total ?? 0;
-  const cols = 8;
+
+  /* The shared DataTable, as the Inbox's Leave and Documents worklists use it
+     — serial pills, sortable headers, one pager band. This was a hand-rolled
+     <table> with its own header colour, its own pager, and a fixed layout that
+     clipped the action button with no scrollbar to reach it (QA #257). */
+  const columns = useMemo<DataTableColumn<GstApprovalInboxRow>[]>(() => [
+    {
+      header: 'Purchase Order', id: 'po', accessorFn: (r) => r.po_code ?? '',
+      meta: { width: '14%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="min-w-0">
+            <span className="pga-code">{r.po_code}</span>
+            <div className="pga-sub">{fmtDate(r.po_date)}</div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Supplier', id: 'supplier', accessorFn: (r) => r.supplier_name ?? '',
+      meta: { width: '16%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="min-w-0">
+            <FitTip label={r.supplier_name ?? '—'}><div className="pga-strong-txt pga-ellipsis">{r.supplier_name ?? '—'}</div></FitTip>
+            <div className="pga-sub">{r.supplier_code ?? '—'}</div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'PO Amount', id: 'amount', accessorFn: (r) => Number(r.grand_total ?? 0),
+      meta: { width: '11%' },
+      cell: info => {
+        const r = info.row.original;
+        return <span className="pga-amt-cell">{fmtMoney(r.grand_total, r.currency_code)}</span>;
+      },
+    },
+    {
+      header: history ? 'Decision' : 'Why Approval', id: 'why', enableSorting: false,
+      meta: { width: '19%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        const approved = r.status === 'approved';
+        if (history) {
+          return (
+            <div className="min-w-0">
+              <span className={`pga-pill pga-pill--${approved ? 'ok' : 'bad'}`}>
+                <i className={approved ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />{approved ? 'Approved' : 'Rejected'}
+              </span>
+              {r.reason && <FitTip label={r.reason}><div className="pga-sub pga-ellipsis">“{r.reason}”</div></FitTip>}
+            </div>
+          );
+        }
+        return (
+          <div className="min-w-0">
+            <span className="pga-pill pga-pill--warn"><i className="ri-error-warning-line" />GST return overdue</span>
+            <div className="pga-sub">Last filed {fmtDate(r.gst_last_filing_date)} · {monthsAgoText(r.gst_last_filing_date)}</div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Requested By', id: 'who', accessorFn: (r) => r.requested_by_name ?? '',
+      meta: { width: '16%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="pga-who">
+            <span className="pga-who__av">{initialsOf(r.requested_by_name)}</span>
+            <div className="pga-who__txt">
+              <div className="pga-strong-txt">{r.requested_by_name ?? '—'}</div>
+              <div className="pga-sub">{[r.requested_by_department, r.requested_by_designation].filter(Boolean).join(' · ') || '—'}</div>
+              {!history && r.request_note && (
+                <FitTip label={r.request_note}><div className="pga-note-line pga-ellipsis"><i className="ri-chat-quote-line" />{r.request_note}</div></FitTip>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: history ? 'Decided On' : 'Received', id: 'when',
+      accessorFn: (r) => (history ? r.decided_at : r.requested_at) ?? '',
+      meta: { width: '12%' },
+      cell: info => {
+        const r = info.row.original;
+        return <span className="pga-sub text-nowrap">{fmtDateTime(history ? r.decided_at : r.requested_at)}</span>;
+      },
+    },
+    {
+      header: 'Take Action', id: 'act', enableSorting: false,
+      meta: { width: '12%', align: 'right' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div onClick={e => e.stopPropagation()}>
+            {history ? (
+              <button type="button" className="pga-act pga-act--view" onClick={() => open(r)}>
+                <i className="ri-eye-line" />View
+              </button>
+            ) : (
+              <button type="button" className="pga-act pga-act--go" onClick={() => open(r)}>
+                <i className="ri-checkbox-circle-line" />Review &amp; Approve
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [history]);
+
 
   return (
     <Card className="mb-3 ep-section-card-flat">
@@ -70,119 +184,41 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
           <span className="pga-count">{loading && !meta ? '…' : total}</span>
         </div>
 
-        <div className="table-responsive">
-          <table className={`pga-itbl${loading && rows.length ? ' is-loading' : ''}`}>
-            <thead>
-              <tr>
-                <th className="pga-itbl__sr">Sr No</th>
-                <th>Purchase Order</th>
-                {/* The width classes belong on the header too: the table is
-                    table-layout: fixed, so only this row sets the columns. */}
-                <th className="pga-itbl__sup">Supplier</th>
-                <th className="pga-itbl__amt">PO Amount</th>
-                <th className="pga-itbl__why">{history ? 'Decision' : 'Why Approval'}</th>
-                <th className="pga-itbl__who">Requested By</th>
-                <th className="pga-itbl__when">{history ? 'Decided On' : 'Received'}</th>
-                <th className="pga-itbl__act">Take Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && !rows.length ? (
-                <ShimmerTableRows rows={3} cols={cols} />
-              ) : error ? (
-                <tr>
-                  <td colSpan={cols} className="pga-itbl__empty">
-                    <i className="ri-error-warning-line pga-itbl__err-ico" />
-                    <div className="pga-itbl__empty-t">{error}</div>
-                    <button type="button" className="pga-act pga-act--view pga-itbl__retry" onClick={() => setAttempt((a) => a + 1)}>
-                      <i className="ri-refresh-line" />Try again
-                    </button>
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={cols} className="pga-itbl__empty">
-                    <i className="ri-file-shield-2-line" />
-                    <div className="pga-itbl__empty-t">{history ? 'No decided PO approvals yet' : 'No pending PO approvals'}</div>
-                    <div className="pga-itbl__empty-s">
-                      {history ? 'Purchase orders you approve or reject will be listed here.' : 'Requests from your team will appear here.'}
-                    </div>
-                  </td>
-                </tr>
-              ) : rows.map((r, i) => {
-                const approved = r.status === 'approved';
-                return (
-                  <tr key={r.id}>
-                    <td className="pga-itbl__sr">{(page - 1) * PER_PAGE + i + 1}</td>
-                    <td>
-                      <span className="pga-code">{r.po_code}</span>
-                      <div className="pga-sub">{fmtDate(r.po_date)}</div>
-                    </td>
-                    <td className="pga-itbl__sup">
-                      <FitTip label={r.supplier_name ?? '—'}><div className="pga-strong-txt pga-ellipsis">{r.supplier_name ?? '—'}</div></FitTip>
-                      <div className="pga-sub">{r.supplier_code ?? '—'}</div>
-                    </td>
-                    {/* What the decision is about — the same total the review page leads with. */}
-                    <td className="pga-itbl__amt"><span className="pga-amt-cell">{fmtMoney(r.grand_total, r.currency_code)}</span></td>
-                    {history ? (
-                      <td className="pga-itbl__why">
-                        <span className={`pga-pill pga-pill--${approved ? 'ok' : 'bad'}`}>
-                          <i className={approved ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />{approved ? 'Approved' : 'Rejected'}
-                        </span>
-                        {r.reason && (
-                          <FitTip label={r.reason}><div className="pga-sub pga-ellipsis">“{r.reason}”</div></FitTip>
-                        )}
-                      </td>
-                    ) : (
-                      <td className="pga-itbl__why">
-                        <span className="pga-pill pga-pill--warn"><i className="ri-error-warning-line" />GST return overdue</span>
-                        <div className="pga-sub">Last filed {fmtDate(r.gst_last_filing_date)} · {monthsAgoText(r.gst_last_filing_date)}</div>
-                      </td>
-                    )}
-                    <td className="pga-itbl__who">
-                      <div className="pga-who">
-                        <span className="pga-who__av">{initialsOf(r.requested_by_name)}</span>
-                        <div className="pga-who__txt">
-                          <div className="pga-strong-txt">{r.requested_by_name ?? '—'}</div>
-                          <div className="pga-sub">{[r.requested_by_department, r.requested_by_designation].filter(Boolean).join(' · ') || '—'}</div>
-                          {!history && r.request_note && (
-                            <FitTip label={r.request_note}><div className="pga-note-line pga-ellipsis"><i className="ri-chat-quote-line" />{r.request_note}</div></FitTip>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="pga-sub pga-itbl__when">{fmtDateTime(history ? r.decided_at : r.requested_at)}</td>
-                    <td className="pga-itbl__act">
-                      {history ? (
-                        <button type="button" className="pga-act pga-act--view" onClick={() => open(r)}>
-                          <i className="ri-eye-line" />View
-                        </button>
-                      ) : (
-                        <button type="button" className="pga-act pga-act--go" onClick={() => open(r)}>
-                          <i className="ri-checkbox-circle-line" />Review &amp; Approve
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {meta && meta.last_page > 1 && (
-          <div className="d-flex align-items-center justify-content-between gap-2 ib-pager">
-            <small className="ib-pager-info">Page {meta.current_page} of {meta.last_page} · {meta.total} total</small>
-            <div className="d-flex gap-1">
-              <button type="button" className="ib-pager-btn" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
-                <i className="ri-arrow-left-s-line" /> Prev
-              </button>
-              <button type="button" className="ib-pager-btn" disabled={page >= meta.last_page || loading} onClick={() => setPage(page + 1)}>
-                Next <i className="ri-arrow-right-s-line" />
-              </button>
-            </div>
-          </div>
-        )}
+        <DataTable<GstApprovalInboxRow>
+          data={rows}
+          columns={columns}
+          serial={{ header: 'SR NO', width: '6%' }}
+          searchable={false}
+          accent="teal"
+          className="ib-leave-dt"
+          loading={loading}
+          minWidth={1180}
+          onRowClick={(r) => open(r)}
+          serverPagination={{
+            total: meta?.total ?? rows.length,
+            pageIndex: page - 1,                       // state is 1-based
+            onPageChange: (idx) => setPage(idx + 1),
+          }}
+          emptyMessage={
+            error ? (
+              <>
+                <i className="ri-error-warning-line d-block mb-2" style={{ fontSize: 30, opacity: 0.45 }} />
+                <div className="fw-semibold">{error}</div>
+                <button type="button" className="pga-act pga-act--view mt-2" onClick={() => setAttempt((a) => a + 1)}>
+                  <i className="ri-refresh-line" />Try again
+                </button>
+              </>
+            ) : (
+              <>
+                <i className="ri-file-shield-2-line d-block mb-2" style={{ fontSize: 30, opacity: 0.4 }} />
+                <div className="fw-semibold">{history ? 'No decided PO approvals yet' : 'No pending PO approvals'}</div>
+                <div className="fs-13 mt-1">
+                  {history ? 'Purchase orders you approve or reject will be listed here.' : 'Requests from your team will appear here.'}
+                </div>
+              </>
+            )
+          }
+        />
       </CardBody>
     </Card>
   );

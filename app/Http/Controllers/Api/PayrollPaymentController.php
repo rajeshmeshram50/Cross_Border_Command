@@ -105,6 +105,13 @@ class PayrollPaymentController extends Controller
             'prepared_by' => ['required', 'string', 'max:191'],
             'verified_by' => ['required', 'string', 'max:191'],
             'approved_by' => ['required', 'string', 'max:191'],
+            /* WHO is actually at the keyboard. The Branch Admin login is shared,
+               so created_by only ever says "the branch admin" — this is the one
+               field that says which person ran it. The popup has always sent it;
+               it was validated nowhere and stored nowhere. Required, because
+               "No name selected in Payroll Run By → do not allow payroll
+               confirmation" is the rule this screen is here to enforce. */
+            'run_by'      => ['required', 'integer', 'exists:employees,id'],
         ]);
         $payment = $this->findScoped($request, $id);
         if (!$payment) return response()->json(['message' => 'Payment not found.'], 404);
@@ -112,12 +119,16 @@ class PayrollPaymentController extends Controller
             return response()->json(['message' => 'Payment is already executed.'], 422);
         }
 
+        /* Parked, not logged. The audit row is written only once payroll has
+           actually been disbursed — approving is the intent to execute, not
+           the execution, and a log of intentions is not what was asked for. */
         $payment->update([
-            'prepared_by_name' => $data['prepared_by'],
-            'verified_by_name' => $data['verified_by'],
-            'approved_by_name' => $data['approved_by'],
-            'approved_at'      => now(),
-            'status'           => 'approved',
+            'prepared_by_name'   => $data['prepared_by'],
+            'verified_by_name'   => $data['verified_by'],
+            'approved_by_name'   => $data['approved_by'],
+            'run_by_employee_id' => (int) $data['run_by'],
+            'approved_at'        => now(),
+            'status'             => 'approved',
         ]);
         $this->logAudit($request, 'payment_approve', $payment, "Payment sign-off: prepared {$data['prepared_by']}, verified {$data['verified_by']}, approved {$data['approved_by']}");
 
@@ -144,7 +155,17 @@ class PayrollPaymentController extends Controller
             return response()->json(['message' => 'This payroll was reopened after approval — re-run and re-prepare the payment.'], 422);
         }
 
-        $result = $this->payroll->disburseRun($run, $request->user()?->id);
+        /* A failure has to be recorded as a failure, not left as silence.
+           "If payroll execution fails, the system should not mark the execution
+           as Completed" — so the log row is written on both paths, and the
+           exception is rethrown so the caller still sees the error it would
+           have seen. */
+        try {
+            $result = $this->payroll->disburseRun($run, $request->user()?->id);
+        } catch (\Throwable $e) {
+            $this->logExecution($request, $payment, $run, 'Failed', null, null, $e->getMessage());
+            throw $e;
+        }
 
         $batchRef = 'CHQ-' . $run->id . '-' . now()->format('YmdHis');
         $payment->update([
@@ -155,6 +176,19 @@ class PayrollPaymentController extends Controller
         ]);
         $this->logAudit($request, 'payment_initiate', $payment, "Payment initiated ({$payment->mode}) — {$result['paid']} paid, {$result['held']} held. Batch {$batchRef}");
 
+        /* The execution record. Held employees mean the cycle is not finished —
+           some were paid, the rest are waiting on bank details — so it reads
+           In Progress rather than Completed, which is what the status column is
+           for. A re-run writes another row; nothing here updates an old one. */
+        $this->logExecution(
+            $request,
+            $payment,
+            $run,
+            $result['held'] === 0 ? 'Completed' : 'In Progress',
+            $batchRef,
+            $result,
+        );
+
         return response()->json([
             'message' => $result['held'] === 0
                 ? "Payment initiated for {$result['paid']} employees. Batch {$batchRef}."
@@ -163,6 +197,64 @@ class PayrollPaymentController extends Controller
         ]);
     }
 
+    /**
+     * Write one Payroll Execution Tracking row. Append-only — see the model.
+     *
+     * Never throws: an audit row failing to save must not undo a disbursement
+     * that has already moved money. It is logged loudly instead.
+     */
+    private function logExecution(
+        Request $request,
+        PayrollPayment $payment,
+        ?PayrollRun $run,
+        string $status,
+        ?string $batchRef = null,
+        ?array $result = null,
+        ?string $failureReason = null,
+    ): void {
+        try {
+            $user   = $request->user();
+            $period = $run?->period;
+
+            /* The operator's name and code are SNAPSHOTTED. This record has to
+               keep naming the right person after they are renamed or leave, so
+               it cannot be a join. withTrashed for the same reason. */
+            $emp = $payment->run_by_employee_id
+                ? \App\Models\Employee::withTrashed()
+                    ->select('id', 'emp_code', 'display_name', 'first_name', 'last_name')
+                    ->find($payment->run_by_employee_id)
+                : null;
+            $runByName = $emp
+                ? (trim((string) $emp->display_name) ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
+                : null;
+
+            \App\Models\PayrollExecutionLog::create([
+                'client_id'             => $payment->client_id,
+                'branch_id'             => $payment->branch_id,
+                'payroll_run_id'        => $payment->payroll_run_id,
+                'payroll_period_id'     => $payment->payroll_period_id,
+                'month'                 => $period?->month,
+                'year'                  => $period?->year,
+                'period_label'          => $period?->label,
+                'run_by_employee_id'    => $payment->run_by_employee_id,
+                'run_by_employee_code'  => $emp?->emp_code,
+                'run_by_name'           => $runByName ?: ($emp?->emp_code ?: null),
+                'executed_by_user_id'   => $user?->id,
+                'executed_by_user_name' => $user?->name,
+                'status'                => $status,
+                'failure_reason'        => $failureReason ? mb_substr($failureReason, 0, 500) : null,
+                'executed_at'           => now(),
+                'batch_ref'             => $batchRef,
+                'employees_paid'        => $result['paid'] ?? null,
+                'employees_held'        => $result['held'] ?? null,
+                'total_amount'          => $payment->total_amount,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('[payroll] execution log write failed', [
+                'payment' => $payment->id, 'status' => $status, 'err' => $e->getMessage(),
+            ]);
+        }
+    }
     /** NEFT bank file (CSV) — one row per payable employee. */
     public function bankFile(Request $request, int $id)
     {

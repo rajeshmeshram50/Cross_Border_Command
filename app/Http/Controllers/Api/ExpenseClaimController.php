@@ -113,14 +113,27 @@ class ExpenseClaimController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-            // "Mine" = the authenticated user's OWN claims. For a non-super-admin,
-            // resolve from the auth user — NOT a request employee_id/code. The SPA
-            // sends a numeric employee_id and resolveEmployeeId returns it verbatim
-            // (no tenant/ownership check); a stale/wrong value would filter to
-            // another employee and return an EMPTY list of the user's own claims.
-            $targetEmployeeId = ($user && $user->user_type === 'super_admin')
-                ? ($employeeIdFilter ?: $this->currentEmployeeId($user))
-                : ($this->currentEmployeeId($user) ?: $employeeIdFilter);
+            /* "Mine" = the claims of the employee being LOOKED AT, which is the
+               viewer themselves everywhere except an Employee Profile opened on
+               somebody else. employee_id used to be discarded outright for any
+               non-super-admin, so HR opening a colleague's Expense tab was shown
+               their OWN claims under that colleague's name (QA #64).
+
+               It is honoured now, but only for a viewer entitled to read that
+               employee — the same tiers the team scope below trusts — so a
+               branch peer still cannot read another's claims by sending an id.
+               An unentitled id falls back to the viewer's own rows rather than
+               erroring: the tab is a read, not an assertion of access. */
+            $myEmployeeId = $this->currentEmployeeId($user);
+            $targetEmployeeId = $myEmployeeId;
+            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId
+                && $this->mayReadEmployeeClaims($user, $employeeIdFilter, $myEmployeeId)) {
+                $targetEmployeeId = $employeeIdFilter;
+            } elseif (!$myEmployeeId) {
+                // super_admin / client_admin with no personal employee row —
+                // without a filter there is nothing of "their own" to show.
+                $targetEmployeeId = $employeeIdFilter;
+            }
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
             // Team scope rules:
@@ -1392,6 +1405,40 @@ class ExpenseClaimController extends Controller
     {
         if (!$user) return null;
         return $user->employee_id;
+    }
+
+    /**
+     * May this user read ANOTHER employee's expense rows?
+     *
+     * Same entitlement the "team" scope applies a few lines up: the admin tiers
+     * see anyone inside their tenant scope, everyone else only their own
+     * downstream reports. Kept as one rule so the Employee Profile's Expense tab
+     * and the My Team queue cannot disagree about who may look at whom.
+     */
+    private function mayReadEmployeeClaims($user, int $targetEmployeeId, ?int $myEmployeeId): bool
+    {
+        if (!$user) return false;
+        if ($user->user_type === 'super_admin') return true;
+
+        $target = Employee::withTrashed()
+            ->select('id', 'client_id', 'branch_id')
+            ->find($targetEmployeeId);
+        if (!$target) return false;
+        if ($target->client_id !== null && (int) $target->client_id !== (int) $user->client_id) {
+            return false;
+        }
+
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            return true;
+        }
+        if ($user->user_type === 'branch_user') {
+            // Every branch is an isolated peer, exactly as applyTenantScope says.
+            return $target->branch_id === null
+                || (int) $target->branch_id === (int) $user->branch_id;
+        }
+
+        // Employee tier: only their own downstream, direct or indirect.
+        return in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true);
     }
 
     /**

@@ -91,6 +91,44 @@ export default function PayrollTab() {
 const pendingPayment = (np?.payments || [])
   .find((p: any) => String(p.status).toLowerCase() === 'pending') ?? null;
 const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPayment;
+  /* Current payroll cycle for THIS employee (QA #62).
+     The hero used to print literal text — "Last Processed: Mar 2026 (01 Mar –
+     31 Mar)", 31 working days, 0 LOP, Active — so it named March forever and
+     described nobody. Every figure now comes off the period and payslip rows
+     payroll itself reads. */
+  type CycleSummary = {
+    label: string; range: string; working_days: number; lop_days: number;
+    has_payslip: boolean; status: string; next_label: string;
+    last_processed: { label: string; range: string } | null;
+  };
+  const [cycle, setCycle] = useState<CycleSummary | null>(null);
+  useEffect(() => {
+    const id = empDetail?.id;
+    if (!id) { setCycle(null); return; }
+    let cancelled = false;
+    api.get(`/payroll/employee/${id}/current-cycle`)
+      .then(r => { if (!cancelled) setCycle(r.data?.data ?? null); })
+      .catch(() => { if (!cancelled) setCycle(null); });
+    return () => { cancelled = true; };
+  }, [empDetail?.id]);
+
+  /* Does this employee's salary actually carry tax? The "computed as per New
+     Tax Regime" banner was printed unconditionally and hardcoded to New, so it
+     told someone with no tax on their salary that their tax was being computed,
+     and told an Old-regime employee the wrong regime (QA #63).
+
+     `tds_source` is the server's answer: 'manual' when accounts typed a TDS
+     line on the structure, 'auto' when the slab engine computes it, null when
+     neither — and null is the case that must print nothing at all. */
+  const tdsSource: string | null = (salaryStruct as any)?.tds_source ?? null;
+  const recordedRegime = String(empDetail?.tax_regime || '').trim();
+  /* The slab engine only models the new regime (PayrollService), so an
+     auto-computed figure IS new-regime whatever the employee record says. Only
+     a manually entered amount follows the regime HR recorded. */
+  const bannerRegime = tdsSource === 'manual' && recordedRegime
+    ? recordedRegime
+    : 'New Tax Regime';
+  const bannerIsOld = /old/i.test(bannerRegime);
   const loadNoticePayment = useCallback(() => {
     if (!empDetail?.id) return;
     api.get(`/employees/${empDetail.id}/notice-payment`)
@@ -470,16 +508,23 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                     <Col className="min-w-0">
                       <p className="mb-0 text-uppercase fw-semibold pyt-hero-eyebrow">Payroll Summary</p>
                       <div className="text-white pyt-hero-lastprocessed">
-                        Last Processed: <span className="pyt-hero-month">Mar 2026</span> (01 Mar – 31 Mar)
+                        Current Period: <span className="pyt-hero-month">{cycle?.label || '—'}</span>
+                        {cycle?.range ? ` (${cycle.range})` : ''}
                       </div>
-                      <small className="pyt-hero-nextcycle">Next cycle: Apr 2026 · Monthly payroll</small>
+                      <small className="pyt-hero-nextcycle">
+                        {cycle?.last_processed ? `Last processed: ${cycle.last_processed.label} · ` : ''}
+                        Next cycle: {cycle?.next_label || '—'} · Monthly payroll
+                      </small>
                     </Col>
                     <Col xs="12" lg="auto">
                       <div className="d-flex gap-1 flex-wrap justify-content-lg-end align-items-center">
                         {[
-                          { label: 'Working Days', value: '31',     color: '#fff' },
-                          { label: 'Loss of Pay',  value: '0',      color: '#fcd34d' },
-                          { label: 'Status',       value: 'Active', color: '#86efac' },
+                          { label: 'Working Days', value: cycle ? String(+Number(cycle.working_days).toFixed(2)) : '—', color: '#fff' },
+                          /* Before a run has priced the month there is no loss
+                             of pay to report — printing 0 would assert full
+                             attendance the engine has not yet checked. */
+                          { label: 'Loss of Pay',  value: cycle?.has_payslip ? String(+Number(cycle.lop_days).toFixed(2)) : '—', color: '#fcd34d' },
+                          { label: 'Status',       value: cycle?.status || '—', color: cycle?.status === 'Completed' ? '#86efac' : '#fcd34d' },
                         ].map(c => (
                           <div
                             key={c.label}
@@ -815,12 +860,18 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 </Col>
               </Row>
 
-              <div
-                className="d-flex align-items-center gap-2 mb-3 pyt-tax-banner"
-              >
-                <i className="ri-information-line pyt-icon-16" />
-                <span>Income and tax liability is being computed as per <strong>New Tax Regime</strong>. To switch to Old Tax Regime, contact your HR admin.</span>
-              </div>
+              {/* Only when tax is actually part of this salary — see tdsSource. */}
+              {tdsSource && (
+                <div
+                  className="d-flex align-items-center gap-2 mb-3 pyt-tax-banner"
+                >
+                  <i className="ri-information-line pyt-icon-16" />
+                  <span>
+                    Income and tax liability is being computed as per <strong>{bannerRegime}</strong>.
+                    {!bannerIsOld && ' To switch to Old Tax Regime, contact your HR admin.'}
+                  </span>
+                </div>
+              )}
 
               <div
                 className="ep-section-card-flat ep-section-card mb-3 ep-ct-emerald"

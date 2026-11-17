@@ -112,6 +112,104 @@ export default function Inbox() {
     setLeaveReviewId(id);
   };
 
+  /* Columns for the Documents worklist. Same <DataTable> the Leave worklist
+     below uses, so the two sections on this page are one component with two
+     column sets rather than two tables that merely sit near each other. */
+  const docColumns = useMemo<DataTableColumn<SignatureRun>[]>(() => [
+    {
+      header: 'Document', id: 'document',
+      accessorFn: (r) => `${r.template?.name ?? ''} ${r.code ?? ''}`,
+      meta: { width: '22%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="min-w-0">
+            <div className="ib-doc-name-cell text-truncate">{r.template?.name || '(template removed)'}</div>
+            {r.code && <code className="inbox-code-pill ib-code-amber">{r.code}</code>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Subject Employee', id: 'subject',
+      accessorFn: (r) => `${r.employee?.display_name ?? ''} ${r.employee?.emp_code ?? ''}`,
+      meta: { width: '22%' },
+      cell: info => {
+        const r = info.row.original;
+        /* A disabled subject used to leave BOTH lines as a dash, because the
+           API dropped the relation for a soft-deleted row. It is loaded
+           withTrashed now, so the code is the last resort rather than the
+           usual outcome. (QA #65) */
+        const empName = r.employee?.display_name?.trim()
+          || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim()
+          || r.employee?.emp_code
+          || (r.employee ? '—' : 'Employee record removed');
+        const initials = String(empName).split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--doc" style={{ width: 28, height: 28, fontSize: 10 }}>{initials}</span>
+            <div className="min-w-0">
+              <div className="ib-name text-truncate">{empName}</div>
+              <div className="ib-sub-meta">
+                {r.employee?.emp_code || '—'}
+                {r.employee?.department?.name ? ` · ${r.employee.department.name}` : ''}
+              </div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Action Requested', id: 'action_requested',
+      accessorFn: (r) => r.signers[r.current_index]?.action ?? '',
+      meta: { width: '14%', align: 'center' },
+      cell: info => {
+        const current = info.row.original.signers[info.row.original.current_index];
+        const tone = current?.action === 'Sign' ? 'ib-action-pill--sign'
+          : current?.action === 'Approve' ? 'ib-action-pill--approve'
+          : 'ib-action-pill--other';
+        return (
+          <span className={`inbox-action-pill inbox-action-${current?.action || 'Other'} ib-action-pill ${tone}`}>
+            {current?.action || '—'}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Step', id: 'step',
+      accessorFn: (r) => r.current_index,
+      meta: { width: '10%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return <span className="ib-step-cell">Step <strong>{r.current_index + 1}</strong> of {r.signers.length}</span>;
+      },
+    },
+    {
+      header: 'Received', id: 'received', accessorFn: (r) => r.created_at,
+      meta: { width: '14%' },
+      cell: info => <span className="ib-cell-muted text-nowrap">{new Date(info.row.original.created_at).toLocaleString()}</span>,
+    },
+    {
+      header: 'Take Action', id: 'take_action', enableSorting: false,
+      meta: { width: '18%', align: 'right' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-inline-flex gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
+            <button type="button" onClick={() => setViewRun(r)}
+              title="Preview the document before deciding"
+              className="inbox-view-btn ib-view-btn">
+              <i className="ri-eye-line me-1" />View
+            </button>
+            <button type="button" onClick={() => openAction(r)} className="ib-decide-btn">
+              <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
+            </button>
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
   // Columns for the shared <DataTable> rendering of the leave worklist — the
   // same component the Leave Approvals page and the Employee list use.
   const fmtLeaveDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -234,7 +332,6 @@ export default function Inbox() {
   const PAGE_SIZE = 4;
   const [expensePage,  setExpensePage]  = useState(0);
   const [updatesPage,  setUpdatesPage]  = useState(0);
-  const [docsPage,     setDocsPage]     = useState(0);
 
   // ── Updated (History) tab data — the same Leave / Expense / Document
   //    containers, but listing items this user has already acted on. ──
@@ -1039,82 +1136,43 @@ export default function Inbox() {
           {tab === 'new' && (
           <Card className="ep-section-card-flat">
             <CardBody className="ib-cardbody-0">
-              <div className="table-responsive">
-                <table className="table align-middle mb-0 inbox-table ib-table">
-                  <thead className="inbox-thead ib-thead-bg">
-                    <tr className="ib-thead-row">
-                      <th className="ib-th-srno">Sr No</th>
-                      <th>Document</th>
-                      <th>Subject Employee</th>
-                      <th>Action Requested</th>
-                      <th>Step</th>
-                      <th>Received</th>
-                      <th className="ib-th-action">Take Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <ShimmerTableRows rows={5} cols={7} />
-                    ) : rows.length === 0 ? (
-                      <tr><td colSpan={7} className="inbox-empty ib-empty-cell">
-                        <i className="ri-checkbox-circle-line ib-empty-cell-icon" />
-                        <div className="ib-empty-cell-title">No pending documents</div>
-                        <div className="ib-empty-cell-sub">You're all caught up. Anything sent to you will land here.</div>
-                      </td></tr>
-                    ) : (
-                      paginate(rows, docsPage).map((r, i) => {
-                        const current = r.signers[r.current_index];
-                        const empName = r.employee?.display_name
-                          || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim()
-                          || '—';
-                        const actionToneClass =
-                          current?.action === 'Sign'    ? 'ib-action-pill--sign'
-                          : current?.action === 'Approve'? 'ib-action-pill--approve'
-                          :                                'ib-action-pill--other';
-                        return (
-                          <tr key={r.id}>
-                            <td>{i + 1}</td>
-                            <td>
-                              <div className="inbox-doc-name ib-doc-name-cell">{r.template?.name || '(template removed)'}</div>
-                              {r.code && <code className="inbox-code-pill ib-code-amber">{r.code}</code>}
-                            </td>
-                            <td>
-                              <div>{empName}</div>
-                              <div className="inbox-muted ib-muted-cell">
-                                {r.employee?.emp_code || '—'}
-                                {r.employee?.department?.name ? ` · ${r.employee.department.name}` : ''}
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`inbox-action-pill inbox-action-${current?.action || 'Other'} ib-action-pill ${actionToneClass}`}>
-                                {current?.action || '—'}
-                              </span>
-                            </td>
-                            <td className="ib-step-cell">
-                              Step <strong>{r.current_index + 1}</strong> of {r.signers.length}
-                            </td>
-                            <td className="inbox-muted ib-received-cell">{new Date(r.created_at).toLocaleString()}</td>
-                            <td>
-                              <div className="d-flex gap-1 flex-wrap">
-                                <button type="button" onClick={() => setViewRun(r)}
-                                  title="Preview the document before deciding"
-                                  className="inbox-view-btn ib-view-btn">
-                                  <i className="ri-eye-line me-1" />View
-                                </button>
-                                <button type="button" onClick={() => openAction(r)}
-                                  className="ib-decide-btn">
-                                  <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+              {/* Every other block on this page leads with a title + subtitle
+                  band; this table started cold on its header row, which is what
+                  made it read as a different component (QA #257). */}
+              <div className="d-flex align-items-center justify-content-between ib-section-head">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ib-head-chip ib-head-chip--doc"><i className="ri-file-text-line ib-head-icon ib-head-icon--doc" /></span>
+                  <div>
+                    <h6 className="mb-0 fw-bold ib-head-title">Documents</h6>
+                    <div className="text-muted ib-head-sub">Documents waiting for you to sign, approve or acknowledge.</div>
+                  </div>
+                </div>
+                <span className="ib-head-count ib-head-count--doc">{loading ? '…' : rows.length}</span>
               </div>
-              <Pager total={rows.length} page={docsPage} onChange={setDocsPage} />
+              {/* The shared DataTable, exactly as the Leave worklist above uses
+                  it — serial pills, sortable headers, the same pager band. This
+                  was a hand-rolled <table> with its own header colour and a
+                  pager floating outside the card, which is what made the three
+                  sections on this page read as three different components
+                  (QA #257). */}
+              <DataTable<SignatureRun>
+                data={rows}
+                columns={docColumns}
+                serial={{ header: 'SR NO', width: '6%' }}
+                searchable={false}
+                accent="violet"
+                paginate
+                pageSize={PAGE_SIZE}
+                className="ib-leave-dt"
+                loading={loading}
+                emptyMessage={
+                  <>
+                    <i className="ri-checkbox-circle-line d-block mb-2" style={{ fontSize: 30, opacity: 0.4 }} />
+                    <div className="fw-semibold">No pending documents</div>
+                    <div className="fs-13 mt-1">You're all caught up. Anything sent to you will land here.</div>
+                  </>
+                }
+              />
             </CardBody>
           </Card>
           )}

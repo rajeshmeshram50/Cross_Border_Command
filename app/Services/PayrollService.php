@@ -522,7 +522,9 @@ class PayrollService
     /** Working days = calendar days minus Sundays (a sane default; HR can edit).
      *  Company/branch level — stored on the payroll period. Per-EMPLOYEE counts
      *  come from employeeWorkingDays() above, which honours their weekly off. */
-    private function defaultWorkingDays(Carbon $start, Carbon $end): int
+    /** Public so PayrollController's per-employee cycle summary prints the same
+     *  figure a run would compute for a month that has no period row yet. */
+    public function defaultWorkingDays(Carbon $start, Carbon $end): int
     {
         $days = 0;
         for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
@@ -3320,6 +3322,30 @@ class PayrollService
     public function holidayDaysFor(Employee $employee, Carbon $start, Carbon $end): float
     {
         return $this->holidayAggregates($employee, $start, $end);
+    }
+
+    /**
+     * The holiday DATES holidayDaysFor() counts, as Y-m-d strings.
+     *
+     * Same rule, same exclusions — a holiday on the employee's own weekly off
+     * is already a non-working day and is left out of both. Exposed because a
+     * caller sometimes needs to know WHICH days they are and not just how
+     * many: the Biometric Input table's Absent column has to tell a holiday
+     * the employee worked from one they did not, since the worked ones are
+     * already inside present_days.
+     */
+    public function holidayDatesFor(Employee $employee, Carbon $start, Carbon $end): array
+    {
+        if (!$this->hasTable('holidays')) {
+            return [];
+        }
+        $label = (string) ($employee->weekly_off ?? '');
+        $out = [];
+        foreach (array_keys($this->holidayDateSet($employee, $start, $end)) as $ds) {
+            if (\App\Support\WeekOff::isOff($label, Carbon::parse($ds))) continue;
+            $out[] = $ds;
+        }
+        return $out;
     }
 
     private function holidayAggregates($employee, Carbon $start, Carbon $end): float

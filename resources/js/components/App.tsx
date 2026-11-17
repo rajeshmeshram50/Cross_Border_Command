@@ -99,6 +99,7 @@ const HrCandidates = lazyPage(() => import('../pages/recruitment/HrCandidates'))
 const HrExitManagement = lazyPage(() => import('../pages/hrms/HrExitManagement'));
 const HrAttendance = lazyPage(() => import('../pages/hrms/HrAttendance'));
 const HrRegularizationRequests = lazyPage(() => import('../pages/hrms/HrRegularizationRequests'));
+const PayrollExecutionHistory = lazyPage(() => import('../pages/hrms/PayrollExecutionHistory'));
 const HrLeave = lazyPage(() => import('../pages/hrms/HrLeave'));
 const HrLeavePlans = lazyPage(() => import('../pages/hrms/HrLeavePlans'));
 const HrLeaveApprovals = lazyPage(() => import('../pages/hrms/HrLeaveApprovals'));
@@ -794,6 +795,7 @@ function DashboardRoutesInner({ user }: { user: any }) {
                 <>
                   <Route path="/hr/attendance" element={<HrAttendance />} />
                   <Route path="/hr/regularization-requests" element={<HrRegularizationRequests />} />
+                  <Route path="/hr/payroll/execution-history" element={<PayrollExecutionHistory />} />
                 </>
               )}
               <Route path="/hr/leave" element={<HrLeave />} />

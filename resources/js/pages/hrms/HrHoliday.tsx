@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
-import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
+import { Col, Row, Modal, ModalBody } from 'reactstrap';
+import BusyOverlay from '../../components/ui/BusyOverlay';
+import BusyLabel from '../../components/ui/BusyLabel';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -525,7 +527,7 @@ export default function HrHoliday() {
                 </Tooltip>
                 <Tooltip label="Import holidays from a filled-in Excel template — download the template first if you have not">
                   <button type="button" className="cand-pill-btn cand-pill-btn--green" onClick={() => fileRef.current?.click()} disabled={importing}>
-                    {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
+                    <BusyLabel busy={importing} icon="ri-file-excel-2-line" busyText="Importing…">Import Excel</BusyLabel>
                   </button>
                 </Tooltip>
                 <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
@@ -730,6 +732,7 @@ function HolidayModal({
           </div>
         </div>
 
+        <BusyOverlay busy={saving} label="Saving…">
         <div style={{ padding: '18px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
           <Row className="g-3">
             <Col md={6}>
@@ -775,9 +778,10 @@ function HolidayModal({
           </Row>
         </div>
 
+        </BusyOverlay>
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}{editing ? 'Update Holiday' : 'Save Holiday'}
+            <BusyLabel busy={saving} icon="ri-save-line">{editing ? 'Update Holiday' : 'Save Holiday'}</BusyLabel>
           </button>
         </div>
       </ModalBody>
@@ -1007,6 +1011,7 @@ function ManageGroupsModal({
                 </button>
               </div>
             </div>
+            <BusyOverlay busy={saving} label="Saving…">
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
                 <Col md={12}>
@@ -1023,10 +1028,11 @@ function ManageGroupsModal({
                 </Col>
               </Row>
             </div>
+            </BusyOverlay>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="rec-btn-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
               <button type="button" className="rec-btn-primary" onClick={save} disabled={saving}>
-                {saving ? <Spinner size="sm" /> : <i className={editing ? 'ri-save-line' : 'ri-add-line'} />}{editing ? 'Update Group' : 'Save Group'}
+                <BusyLabel busy={saving} icon={editing ? 'ri-save-line' : 'ri-add-line'}>{editing ? 'Update Group' : 'Save Group'}</BusyLabel>
               </button>
             </div>
           </ModalBody>

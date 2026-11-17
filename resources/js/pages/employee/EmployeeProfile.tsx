@@ -2760,8 +2760,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Pre-compute counts and the filtered list from API rows. The list source
   // depends on the active sub-tab: "mine" → claims this employee raised,
   // "team" → claims where the current user is the assigned reporting manager.
+  /* The Team strip only renders on your OWN profile, but the sub-tab selection
+     survives navigating to somebody else's — so landing there with Team still
+     active listed the viewer's teammates under that employee's name, with no
+     visible tab saying so (QA #64). Ownership decides the source, not just the
+     strip's visibility. */
   const activeClaimsSource: ApiClaim[] =
-    expenseSubTab === 'team' ? teamClaims : apiClaims;
+    (expenseSubTab === 'team' && isOwnProfile) ? teamClaims : apiClaims;
   const expenseCounts = {
     all:      activeClaimsSource.length,
     approved: activeClaimsSource.filter(c => c.status === 'approved').length,
@@ -2795,7 +2800,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // table. `activeAdvancesSource` follows the My/Team sub-tab selection
   // the same way `activeClaimsSource` does for expenses.
   const baseAdvancesSource: AdvanceRequestRow[] =
-    advanceSubTab === 'team' ? teamAdvances : apiAdvances;
+    (advanceSubTab === 'team' && isOwnProfile) ? teamAdvances : apiAdvances;
   // Used-For tab counts (from the My/Team source, before the status filter).
   const advUsedForCounts = {
     self:    baseAdvancesSource.filter(a => (a.used_for || 'self') === 'self').length,

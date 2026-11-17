@@ -66,13 +66,18 @@ class AdvanceRequestController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-            // "Mine" = the authenticated user's OWN advances. For a non-super-admin,
-            // resolve from the auth user — NOT a request employee_id/code, which the
-            // SPA sends numerically and resolveEmployeeId returns verbatim; a
-            // stale/wrong value would filter to another employee → empty list.
-            $targetEmployeeId = ($user && $user->user_type === 'super_admin')
-                ? ($employeeIdFilter ?: $this->currentEmployeeId($user))
-                : ($this->currentEmployeeId($user) ?: $employeeIdFilter);
+            /* "Mine" = the advances of the employee being LOOKED AT. See the
+               twin block in ExpenseClaimController::index — both tabs live on
+               the same Employee Profile screen and showed the VIEWER's rows
+               under somebody else's name (QA #64). */
+            $myEmployeeId = $this->currentEmployeeId($user);
+            $targetEmployeeId = $myEmployeeId;
+            if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId
+                && $this->mayReadEmployeeAdvances($user, $employeeIdFilter, $myEmployeeId)) {
+                $targetEmployeeId = $employeeIdFilter;
+            } elseif (!$myEmployeeId) {
+                $targetEmployeeId = $employeeIdFilter;
+            }
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
             // Team scope rules (mirrors ExpenseClaimController):
@@ -651,6 +656,31 @@ class AdvanceRequestController extends Controller
     }
 
   
+
+    /** May this user read ANOTHER employee's advances? Same rule as
+     *  ExpenseClaimController::mayReadEmployeeClaims — admin tiers inside their
+     *  tenant scope, everyone else only their own downstream reports. */
+    private function mayReadEmployeeAdvances($user, int $targetEmployeeId, ?int $myEmployeeId): bool
+    {
+        if (!$user) return false;
+        if ($user->user_type === 'super_admin') return true;
+
+        $target = Employee::withTrashed()
+            ->select('id', 'client_id', 'branch_id')
+            ->find($targetEmployeeId);
+        if (!$target) return false;
+        if ($target->client_id !== null && (int) $target->client_id !== (int) $user->client_id) {
+            return false;
+        }
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            return true;
+        }
+        if ($user->user_type === 'branch_user') {
+            return $target->branch_id === null
+                || (int) $target->branch_id === (int) $user->branch_id;
+        }
+        return in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true);
+    }
 
     private function currentEmployeeId($user): ?int
     {

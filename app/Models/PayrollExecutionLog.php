@@ -1,0 +1,36 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * One row per payroll execution — see the migration for why it exists.
+ *
+ * Deliberately NOT soft-deleted and never updated: an audit log that can be
+ * edited answers a different question from the one it was created to answer.
+ * The only write in the application is the insert in
+ * PayrollPaymentController::initiate(), after a disbursement has succeeded.
+ */
+class PayrollExecutionLog extends Model
+{
+    protected $table = 'payroll_execution_logs';
+
+    protected $fillable = [
+        'client_id', 'branch_id',
+        'payroll_run_id', 'payroll_period_id', 'month', 'year', 'period_label',
+        'run_by_employee_id', 'run_by_employee_code', 'run_by_name',
+        'executed_by_user_id', 'executed_by_user_name',
+        'status', 'failure_reason', 'executed_at',
+        'batch_ref', 'employees_paid', 'employees_held', 'total_amount',
+    ];
+
+    protected $casts = [
+        'executed_at'    => 'datetime',
+        'month'          => 'integer',
+        'year'           => 'integer',
+        'employees_paid' => 'integer',
+        'employees_held' => 'integer',
+        'total_amount'   => 'decimal:2',
+    ];
+}
