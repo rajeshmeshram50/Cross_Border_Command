@@ -341,6 +341,8 @@ class ServiceController extends Controller
             'step_completed'       => $s->step_completed,
             'primary_image'        => $s->primaryImage?->file_path,
             'suppliers_count'      => (int) $s->suppliers_count,
+            // Tooltip on the "Mapped Suppliers" badge.
+            'supplier_names'       => $s->activeSuppliers->map(fn ($m) => $m->vendor?->company_name)->filter()->values(),
         ];
     }
 
@@ -375,6 +377,12 @@ class ServiceController extends Controller
 
         $data = $service->toArray();
         $data['suppliers'] = $service->suppliers->map(fn ($m) => $this->supplierRow($m))->values();
+        $active = $service->suppliers->where('status', 'active');
+        $data['suppliers_summary'] = [
+            'count'          => $active->count(),          // the "Mapped Suppliers" badge
+            'inactive_count' => $service->suppliers->count() - $active->count(),
+            'total_amount'   => round((float) $active->sum('total_amount'), 2),
+        ];
         return $data;
     }
 
@@ -722,6 +730,18 @@ class ServiceController extends Controller
     /* ══════════════════════════════════════════════════════════════════
      * Map Supplier (list-row action + Stage-2 popup), one row at a time.
      * ══════════════════════════════════════════════════════════════════ */
+
+    /** GET /p2p/services/{id}/suppliers */
+    public function suppliers(Request $request, int $id)
+    {
+        $service = $this->findService($request, $id);
+        $detail  = $this->detail($service);
+        return response()->json([
+            'service' => ['id' => $service->id, 'code' => $service->code, 'name' => $service->name],
+            'data'    => $detail['suppliers'],
+            'summary' => $detail['suppliers_summary'],
+        ]);
+    }
 
     /** POST /p2p/services/{id}/suppliers — map one supplier. */
     public function storeSupplier(Request $request, int $id)
