@@ -110,13 +110,41 @@ class PayrollPaymentController extends Controller
                field that says which person ran it. The popup has always sent it;
                it was validated nowhere and stored nowhere. Required, because
                "No name selected in Payroll Run By → do not allow payroll
-               confirmation" is the rule this screen is here to enforce. */
-            'run_by'      => ['required', 'integer', 'exists:employees,id'],
+               confirmation" is the rule this screen is here to enforce.
+
+               Accepts the employee ID or the emp_code. The dropdown sent the
+               CODE until this was tightened, so an `integer` rule 422'd with
+               "The run by field must be an integer" — a message about a field
+               the operator never typed, on a client that simply had not been
+               reloaded. Resolved below rather than refused. */
+            'run_by'      => ['required'],
         ]);
         $payment = $this->findScoped($request, $id);
         if (!$payment) return response()->json(['message' => 'Payment not found.'], 404);
         if ($payment->status === 'paid') {
             return response()->json(['message' => 'Payment is already executed.'], 422);
+        }
+
+        /* Resolve the operator to a real employee row. emp_code is unique PER
+           CLIENT only, so the lookup is scoped to this payment's tenant — an
+           unscoped match could record another company's employee as the person
+           who ran this payroll. */
+        $runBy = trim((string) $data['run_by']);
+        $runByEmployeeId = ctype_digit($runBy)
+            ? (int) $runBy
+            : (int) \App\Models\Employee::withTrashed()
+                ->where('emp_code', $runBy)
+                ->when($payment->client_id, fn ($q) => $q->where('client_id', $payment->client_id))
+                ->value('id');
+        $operatorExists = $runByEmployeeId > 0 && \App\Models\Employee::withTrashed()
+            ->where('id', $runByEmployeeId)
+            ->when($payment->client_id, fn ($q) => $q->where('client_id', $payment->client_id))
+            ->exists();
+        if (!$operatorExists) {
+            return response()->json([
+                'message' => 'Select who ran this payroll — that employee could not be found.',
+                'errors'  => ['run_by' => ['Choose a name from the Payroll Run By list.']],
+            ], 422);
         }
 
         /* Parked, not logged. The audit row is written only once payroll has
@@ -126,7 +154,7 @@ class PayrollPaymentController extends Controller
             'prepared_by_name'   => $data['prepared_by'],
             'verified_by_name'   => $data['verified_by'],
             'approved_by_name'   => $data['approved_by'],
-            'run_by_employee_id' => (int) $data['run_by'],
+            'run_by_employee_id' => $runByEmployeeId,
             'approved_at'        => now(),
             'status'             => 'approved',
         ]);

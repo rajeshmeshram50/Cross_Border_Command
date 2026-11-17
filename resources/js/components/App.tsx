@@ -99,7 +99,6 @@ const HrCandidates = lazyPage(() => import('../pages/recruitment/HrCandidates'))
 const HrExitManagement = lazyPage(() => import('../pages/hrms/HrExitManagement'));
 const HrAttendance = lazyPage(() => import('../pages/hrms/HrAttendance'));
 const HrRegularizationRequests = lazyPage(() => import('../pages/hrms/HrRegularizationRequests'));
-const PayrollExecutionHistory = lazyPage(() => import('../pages/hrms/PayrollExecutionHistory'));
 const HrLeave = lazyPage(() => import('../pages/hrms/HrLeave'));
 const HrLeavePlans = lazyPage(() => import('../pages/hrms/HrLeavePlans'));
 const HrLeaveApprovals = lazyPage(() => import('../pages/hrms/HrLeaveApprovals'));
@@ -804,9 +803,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/hr/pip" element={<HrPIP />} />
               <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/payroll" element={<HrPayroll />} />
-              {/* Beside /hr/payroll, under the same condition as the page that
-                  links to it — the History button is on the payroll header. */}
-              <Route path="/hr/payroll/execution-history" element={<PayrollExecutionHistory />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
               <Route path="/hr/doc-templates" element={<HrDocumentTemplates />} />
               <Route path="/hr/doc-templates/new" element={<TemplateFormPage />} />

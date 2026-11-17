@@ -69,7 +69,11 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
           const nm = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
           // code → the badge pill shown FIRST, label → the name after it.
           return {
-            value: String(e.emp_code ?? e.id),
+            /* The employee ID. It used to be the emp_code, which is what the
+               server stores the operator BY — a code is a label, not a key,
+               and it is unique per client only. `code` below still drives the
+               badge, so the dropdown looks exactly the same. */
+            value: String(e.id),
             code: e.emp_code ? String(e.emp_code) : undefined,
             label: nm,
           };

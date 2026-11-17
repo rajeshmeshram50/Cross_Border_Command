@@ -69,10 +69,6 @@ const HR_LEAF: Record<string, string> = {
   '/hr/pip': 'hr.pip',
   '/hr/expense': 'hr.expense',
   '/hr/payroll': 'hr.payroll',
-  // Payroll Execution History — who ran payroll and when. Reached from a
-  // button on the Payroll header, so it rides on the payroll grant, the
-  // same way Regularization Requests rides on hr.attendance.
-  '/hr/payroll/execution-history': 'hr.payroll',
   '/hr/broadcast': 'hr.broadcast',
   '/hr/doc-templates': 'hr.doc_templates',
   '/hr/custom-fields': 'hr.custom_fields',
@@ -81,11 +77,6 @@ const HR_PREFIX_LEAF: Array<[string, string]> = [
   ['/hr/employees/', 'hr.employee'],       // /:id/permissions, /:id/profile
   ['/hr/recruitment/', 'hr.recruitment'],  // /:id/candidates
   ['/hr/doc-templates/', 'hr.doc_templates'], // /new, /:id/edit, /:id/generate
-  // Any payroll sub-page rides on the payroll grant. A prefix rather than
-  // another exact entry: the guard fails closed here, so a sub-page added
-  // later would otherwise be silently unreachable with nothing on screen
-  // to say why.
-  ['/hr/payroll/', 'hr.payroll'],
 ];
 
 // Sales leaves: some paths accept any-of several slugs (a page shared by two

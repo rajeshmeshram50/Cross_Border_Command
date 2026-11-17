@@ -8,6 +8,7 @@ import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type P
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import SalaryHistoryModal from '../../components/SalaryHistoryModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
+import PayrollExecutionHistoryModal from './PayrollExecutionHistoryModal';
 import { useToast } from '../../contexts/ToastContext';
 import useModulePermission from '../../hooks/useModulePermission';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -328,6 +329,10 @@ export default function HrPayroll() {
   const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  /* Payroll Execution History — who ran payroll each month and when.
+     Opened from the header, beside Run Payroll, because that is where the
+     question comes up: before running it again, who ran it last time. */
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
@@ -2164,14 +2169,7 @@ status: facetParam(facets.status),
           <Tooltip label="Who ran payroll, when it was executed, and how it ended.">
             <Button
               className="rounded-pill fw-semibold d-inline-flex align-items-center"
-              onClick={() => navigate({
-                pathname: '/hr/payroll/execution-history',
-                search: new URLSearchParams({
-                  month: String(cycle?.month ?? ''),
-                  year:  String(cycle?.year ?? ''),
-                  label: cycle?.label ?? '',
-                }).toString(),
-              })}
+              onClick={() => setHistoryOpen(true)}
               style={{
                 padding: '10px 15px',
                 fontSize: 12,
@@ -2849,6 +2847,10 @@ status: facetParam(facets.status),
         </div>
       </div>
 
+      <PayrollExecutionHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
       <PaymentDisbursementModal
         open={paymentOpen}
         onClose={() => { setPaymentOpen(false); loadCycles(); }}
