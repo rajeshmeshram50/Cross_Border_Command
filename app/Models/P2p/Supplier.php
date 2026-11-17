@@ -30,6 +30,12 @@ class Supplier extends Model
         'client_id', 'branch_id',
         'name', 'segment', 'contact', 'mobile', 'email',
         'gmaps', 'address', 'country', 'state', 'state_code', 'city',
-        'card_path', 'created_by',
+        'card_path', 'created_by', 'origin',
+        // Convert to Supplier → the Supplier Master (vendors) row it became.
+        'converted_vendor_id', 'converted_at', 'converted_by',
+    ];
+
+    protected $casts = [
+        'converted_at' => 'datetime',
     ];
 }

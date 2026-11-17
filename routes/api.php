@@ -442,6 +442,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/p2p/suppliers',     [\App\Http\Controllers\Api\P2p\SourcingController::class, 'suppliers']);
     Route::get   ('/p2p/new-suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'newSuppliers']);
     Route::get   ('/p2p/new-suppliers/{supplier}/sourcings', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'supplierSourcings'])->whereNumber('supplier');
+    // Convert to Supplier — pre-fill the Add Supplier form, then link the saved vendor.
+    Route::get   ('/p2p/new-suppliers/{supplier}/convert',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'convertPrefill'])->whereNumber('supplier');
+    Route::post  ('/p2p/new-suppliers/{supplier}/convert',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'convertSupplier'])->whereNumber('supplier');
     Route::get   ('/p2p/form-masters',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'formMasters']);
     Route::post  ('/p2p/upload',        [\App\Http\Controllers\Api\P2p\SourcingController::class, 'upload']);
     Route::get   ('/p2p/clarity/download', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'downloadClarity']);

@@ -937,7 +937,7 @@ const C: Record<string, MasterConfig> = {
     key: 'service_categories', slug: 'service_categories', title: 'Service Category', titleSingular: 'Service Category',
     icon: 'ri-price-tag-3-line', iconColor: 'success', iconBg: 'success',
     desc: 'Service categories for Soft / Digital and Other Operational services',
-    cat: 'Party & Classification',
+    cat: 'Trade & Commercial',
     noDelete: true,
     inUseStatusOnly: true,
     fields: [

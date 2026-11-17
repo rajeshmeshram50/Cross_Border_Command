@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
-import BusyOverlay from '../../components/ui/BusyOverlay';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import BusyLabel from '../../components/ui/BusyLabel';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -732,7 +732,7 @@ function HolidayModal({
           </div>
         </div>
 
-        <BusyOverlay busy={saving} label="Saving…">
+        {saving && <FullPageLoader label="Saving…" />}
         <div style={{ padding: '18px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
           <Row className="g-3">
             <Col md={6}>
@@ -778,7 +778,6 @@ function HolidayModal({
           </Row>
         </div>
 
-        </BusyOverlay>
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
             <BusyLabel busy={saving} icon="ri-save-line">{editing ? 'Update Holiday' : 'Save Holiday'}</BusyLabel>
@@ -1011,7 +1010,7 @@ function ManageGroupsModal({
                 </button>
               </div>
             </div>
-            <BusyOverlay busy={saving} label="Saving…">
+            {saving && <FullPageLoader label="Saving…" />}
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
                 <Col md={12}>
@@ -1028,7 +1027,6 @@ function ManageGroupsModal({
                 </Col>
               </Row>
             </div>
-            </BusyOverlay>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="rec-btn-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
               <button type="button" className="rec-btn-primary" onClick={save} disabled={saving}>
