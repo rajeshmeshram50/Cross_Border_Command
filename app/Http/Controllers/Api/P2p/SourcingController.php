@@ -78,6 +78,9 @@ class SourcingController extends Controller
             && $t->due_date
             && \Illuminate\Support\Carbon::parse($t->due_date)->endOfDay()->isPast();
 
+        // "Total Products" cell = first product's name + a "+N" pill for the rest.
+        $first = $t->products->sortBy('id')->first();
+
         return [
             'id'        => $t->code,
             'source'    => $this->sourceLabel($t->source),
@@ -90,6 +93,10 @@ class SourcingController extends Controller
             'completed' => $done,          // = "Mapped Suppliers" column (products with ≥1 supplier)
             'overdue'   => $overdue,
             // Sourcing Management Tracker columns.
+            'createdById'     => $t->created_by ? (string) $t->created_by : null,
+            'assigneeId'      => $t->assignee_id ? (string) $t->assignee_id : null,
+            'firstProduct'    => $first->name ?? null,
+            'moreProducts'    => max(0, $total - 1),
             'pending'         => $total - $done,
             'progress'        => $total > 0 ? (int) round($done * 100 / $total) : 0,
             'progressStatus'  => $isComplete ? 'Completed' : 'In Progress',
@@ -97,16 +104,26 @@ class SourcingController extends Controller
     }
 
     /* ── 1. list ─────────────────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets → { assigned, created }
+    // GET /p2p/sourcing-targets → { assigned, created }           (Bulk Sourcing, unchanged)
+    // GET /p2p/sourcing-targets?tab=all|created|assigned&q=&page=&per_page=
+    //     → { rows, counts{all,created,assigned}, pagination }  (Sourcing Management Tracker)
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->client_id) return $this->ok(['assigned' => [], 'created' => []]);
+        if (!$user || !$user->client_id) {
+            return $this->ok($request->filled('tab')
+                ? ['rows' => [], 'counts' => ['all' => 0, 'created' => 0, 'assigned' => 0], 'pagination' => ['page' => 1, 'per_page' => 10, 'total' => 0, 'last_page' => 1]]
+                : ['assigned' => [], 'created' => []]);
+        }
 
         $targets = SourcingTarget::where('client_id', $user->client_id)
-            ->with('products:id,sourcing_target_id,status,source')
+            ->with('products:id,sourcing_target_id,status,source,name')
             ->latest()
             ->get();
+
+        if ($request->filled('tab')) {
+            return $this->ok($this->trackerList($request, $targets, (int) $user->id));
+        }
 
         return $this->ok([
             'assigned' => $targets->filter(fn($t) => (int) $t->assignee_id === (int) $user->id)
@@ -114,6 +131,41 @@ class SourcingController extends Controller
             'created'  => $targets->filter(fn($t) => (int) $t->created_by === (int) $user->id)
                 ->map(fn($t) => $this->row($t))->values(),
         ]);
+    }
+
+    /**
+     * Sourcing Management Tracker list: one call per tab.
+     *   all      = created by me + assigned to me (each target once)
+     * counts{} always carries all three badges (not affected by the search box).
+     */
+    private function trackerList(Request $request, $targets, int $userId): array
+    {
+        $request->validate([
+            'tab'      => 'required|in:all',
+            'page'     => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        $created  = $targets->filter(fn($t) => (int) $t->created_by === $userId);
+        $assigned = $targets->filter(fn($t) => (int) $t->assignee_id === $userId);
+        $all      = $created->concat($assigned)->unique('id')->sortByDesc('id')->values();
+
+        $rows = match ($request->query('tab')) {
+            default    => $all,
+        };
+        $rows = $rows->map(fn($t) => $this->row($t));
+
+
+        $perPage = (int) $request->query('per_page', 10);
+        $total   = $rows->count();
+        $last    = max(1, (int) ceil($total / $perPage));
+        $page    = min((int) $request->query('page', 1), $last);
+
+        return [
+            'rows'       => $rows->slice(($page - 1) * $perPage, $perPage)->values(),
+            'counts'     => ['all' => $all->count(), 'created' => $created->count(), 'assigned' => $assigned->count()],
+            'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => $last],
+        ];
     }
 
     /* ── 2. product master ───────────────────────────────────────────────── */
