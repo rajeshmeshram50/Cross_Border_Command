@@ -146,7 +146,7 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
         )}
 
         {step === 'new' && (
-          <NewSupplierForm product={product} saving={saving} onDirty={setFormDirty}
+          <NewSupplierForm key={newScope} scope={newScope} product={product} saving={saving} onDirty={setFormDirty}
             onBack={() => { setFormDirty(false); setStep('newType'); }}
             onSave={name => { void run(() => onMapped(name)); }} />
         )}
