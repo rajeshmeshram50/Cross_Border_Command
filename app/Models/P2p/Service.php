@@ -74,6 +74,7 @@ class Service extends Model
             'description' => 'Professional, utility, facility, maintenance and outsourced services.',
             'classifications' => [
                 'professional' => ['label' => 'Professional Services', 'short' => 'Professional', 'description' => 'CA, legal consultancy, accounting, HR consultancy.'],
+                'utility'      => ['label' => 'Utility Services',      'short' => 'Utility',      'description' => 'Electricity, water supply, internet connectivity.'],
             ],
         ],
     ];
