@@ -79,6 +79,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.vendor_types', icon: 'Store', label: 'Supplier Types' },
       { id: 'master.vendor_behaviour', icon: 'Activity', label: 'Supplier Behaviour' },
       { id: 'master.applicable_types', icon: 'Users2', label: 'Applicable Parties' },
+      { id: 'master.service_categories', icon: 'Tags', label: 'Service Category' },
     ],
   },
   {

@@ -26,6 +26,12 @@ import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
 import '../../../css/master.css';
 
+const LOCAL_ROWS: Record<string, any[]> = {};
+const localRows = (cfg: MasterConfig): any[] => {
+  if (!LOCAL_ROWS[cfg.slug]) LOCAL_ROWS[cfg.slug] = (cfg.data || []).map(r => ({ ...r }));
+  return LOCAL_ROWS[cfg.slug];
+};
+
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -274,6 +280,12 @@ function MasterPageInner({
     setRecords([]);
     setApiAutogen({});
 
+    if (cfg.local) {
+      setRecords([...localRows(cfg)]);
+      setLoading(false);
+      return () => { aborted = true; };
+    }
+
     const loadRecords = serverPaged
       ? api.get(masterEndpoint(cfg), {
           params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined },
@@ -306,6 +318,7 @@ function MasterPageInner({
   // shared row they're permitted to view.
   const tenantScopedRecords = useMemo(() => {
     if (!user) return [];
+    if (cfg.local) return records;
     const eq = (a: any, b: any) => String(a ?? '') === String(b ?? '');
     if (user.user_type === 'super_admin') {
       // Super-admin adds default to (null, null) — the "global" pool.
@@ -318,7 +331,7 @@ function MasterPageInner({
       return records.filter(r => eq(r.client_id, user.client_id) && eq(r.branch_id, user.branch_id));
     }
     return records;
-  }, [records, user]);
+  }, [records, user, cfg.local]);
 
   // Filter rows by search input across all column accessors + ownership fields
   const filteredRecords = useMemo(() => {
@@ -1042,6 +1055,24 @@ function MasterPageInner({
       }
     }
 
+    if (cfg.local) {
+      const store = localRows(cfg);
+      if (editingId != null) {
+        const updated = { ...store.find(r => r.id === editingId), ...payload, id: editingId };
+        LOCAL_ROWS[cfg.slug] = store.map(r => r.id === editingId ? updated : r);
+        setRecords(prev => prev.map(r => r.id === editingId ? updated : r));
+        toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
+      } else {
+        const id = store.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+        const created = { ...payload, id };
+        LOCAL_ROWS[cfg.slug] = [created, ...store];
+        setRecords(prev => [created, ...prev]);
+        toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
+      }
+      setModalOpen(false);
+      return;
+    }
+
     savingRef.current = true;
     setSaving(true);
     try {
@@ -1151,6 +1182,14 @@ function MasterPageInner({
       setDeleteTarget(null);
       return;
     }
+    if (cfg.local) {
+      LOCAL_ROWS[cfg.slug] = localRows(cfg).filter(r => r.id !== deleteTarget.id);
+      setRecords(prev => prev.filter(r => r.id !== deleteTarget.id));
+      toast.success('Deleted', `"${label}" removed successfully`);
+      setDeleteOpen(false);
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await api.delete(`${masterEndpoint(cfg)}/${deleteTarget.id}`);
@@ -1183,11 +1222,14 @@ function MasterPageInner({
     }
 
     if (fieldName === 'status') {
-      const active = String(raw).toLowerCase() === 'active';
+      const active = raw === true || raw === 1
+        || ['active', '1', 'true', 'yes', 'enabled'].includes(String(raw).toLowerCase());
+      const inactive = raw === false || raw === 0
+        || ['0', 'false'].includes(String(raw).toLowerCase());
       const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
       const tone = active
         ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', text: 'Active' }
-        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: raw ? titleCase(String(raw)) : 'Inactive' };
+        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: inactive || !raw ? 'Inactive' : titleCase(String(raw)) };
       void tone.dot;  // dot indicator dropped per UX request — keep tone struct for parity
       return (
         <span
