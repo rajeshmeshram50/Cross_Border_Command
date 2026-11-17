@@ -112,6 +112,117 @@ export default function Inbox() {
     setLeaveReviewId(id);
   };
 
+  /* Shared by the history sections AND the decided-documents table below.
+     They used to live inside the history tab's IIFE, which put them out of
+     reach of a column definition declared at component scope. */
+  const fmtD = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const StatusPill = ({ ok, label }: { ok: boolean; label: string }) => (
+    <span className={`ib-status-pill ${ok ? 'ib-status-pill--ok' : 'ib-status-pill--bad'}`}>
+      <i className={ok ? 'ri-checkbox-circle-line me-1' : 'ri-close-circle-line me-1'} />{label}
+    </span>
+  );
+
+  /* Columns for the DECIDED documents list on the History tab. The New tab's
+     table was converted to <DataTable> for QA #257 and this one was left as a
+     stack of rows, so the same documents were a table before you acted on them
+     and a list afterwards. Same component, columns adjusted for what a decided
+     row has to say: what YOU did, and when. */
+  const histDocColumns = useMemo<DataTableColumn<SignatureRun>[]>(() => [
+    {
+      header: 'Document', id: 'document',
+      accessorFn: (r) => `${r.template?.name ?? ''} ${r.code ?? ''}`,
+      meta: { width: '26%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="min-w-0">
+            <div className="ib-doc-name-cell text-truncate">{r.template?.name || '(template removed)'}</div>
+            {r.code && <code className="inbox-code-pill ib-code-amber">{r.code}</code>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Subject Employee', id: 'subject',
+      accessorFn: (r) => `${r.employee?.display_name ?? ''} ${r.employee?.emp_code ?? ''}`,
+      meta: { width: '24%' },
+      cell: info => {
+        const r = info.row.original;
+        const empName = r.employee?.display_name?.trim()
+          || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim()
+          || r.employee?.emp_code
+          || (r.employee ? '—' : 'Employee record removed');
+        const initials = String(empName).split(/\s+/).filter(Boolean)
+          .map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--doc" style={{ width: 28, height: 28, fontSize: 10 }}>{initials}</span>
+            <div className="min-w-0">
+              <div className="ib-name text-truncate">{empName}</div>
+              <div className="ib-sub-meta">
+                {r.employee?.emp_code || '—'}
+                {r.employee?.department?.name ? ` · ${r.employee.department.name}` : ''}
+              </div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      /* What YOU did — not the run's status. On a parallel run the two differ:
+         the document can be Rejected by someone else while your own slot still
+         reads Pending, which is exactly the case that used to be invisible. */
+      header: 'Your Action', id: 'my_action',
+      accessorFn: (r) => r.signers.find(s => s.user_id === user?.id)?.status ?? '',
+      meta: { width: '14%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        const mine = r.signers.find(s => s.user_id === user?.id);
+        if (!mine) return <span className="ib-sub-meta">Sent by you</span>;
+        const rejected = mine.status === 'Rejected';
+        const label = rejected ? 'Rejected'
+          : mine.status !== 'Done' ? 'Not acted'
+          : mine.action === 'Sign' ? 'Signed'
+          : mine.action === 'Approve' ? 'Approved'
+          : 'Acknowledged';
+        return <StatusPill ok={!rejected && mine.status === 'Done'} label={label} />;
+      },
+    },
+    {
+      header: 'Decided On', id: 'decided',
+      accessorFn: (r) => r.signers.find(s => s.user_id === user?.id)?.acted_at ?? r.created_at,
+      meta: { width: '14%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        const mine = r.signers.find(s => s.user_id === user?.id);
+        return <span className="ib-cell-muted text-nowrap">{mine?.acted_at ? fmtD(mine.acted_at) : '—'}</span>;
+      },
+    },
+    {
+      /* The run's own outcome, which is a different question from the column
+         before it. */
+      header: 'Document Status', id: 'run_status', accessorFn: (r) => r.status,
+      meta: { width: '12%', align: 'center' },
+      cell: info => {
+        const st = info.row.original.status;
+        return <StatusPill ok={st === 'Completed'} label={st} />;
+      },
+    },
+    {
+      header: 'Action', id: 'view', enableSorting: false,
+      meta: { width: '10%', align: 'right' },
+      cell: info => (
+        <div onClick={e => e.stopPropagation()}>
+          <button type="button" onClick={() => setViewRun(info.row.original)}
+            className="inbox-view-btn ib-view-btn">
+            <i className="ri-eye-line me-1" />View
+          </button>
+        </div>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [user?.id]);
+
   /* Columns for the Documents worklist. Same <DataTable> the Leave worklist
      below uses, so the two sections on this page are one component with two
      column sets rather than two tables that merely sit near each other. */
@@ -342,7 +453,6 @@ export default function Inbox() {
   const [histLoading, setHistLoading] = useState(true);
   const [histLeavePage,   setHistLeavePage]   = useState(0);
   const [histExpensePage, setHistExpensePage] = useState(0);
-  const [histDocsPage,    setHistDocsPage]    = useState(0);
 
   const loadHistory = async () => {
     setHistLoading(true);
@@ -909,12 +1019,7 @@ export default function Inbox() {
           {/* ── Updated (History) tab: the same Leave / Expense / Document
                  containers, listing items you've already acted on. ── */}
           {tab === 'updated' && (() => {
-            const fmtD = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-            const StatusPill = ({ ok, label }: { ok: boolean; label: string }) => (
-              <span className={`ib-status-pill ${ok ? 'ib-status-pill--ok' : 'ib-status-pill--bad'}`}>
-                <i className={ok ? 'ri-checkbox-circle-line me-1' : 'ri-close-circle-line me-1'} />{label}
-              </span>
-            );
+
             const HistHead = ({ icon, bg, fg, darkFg, title, sub, count }: { icon: string; bg: string; fg: string; darkFg: string; title: string; sub: string; count: number }) => {
               // Light values drive --ib-hist-bg/--ib-hist-fg directly; the dark
               // override (in Inbox.css) reads the *-d custom properties below.
@@ -996,29 +1101,24 @@ export default function Inbox() {
                 <Card className="mb-3 ep-section-card-flat">
                   <CardBody className="ib-cardbody-0">
                     <HistHead icon="ri-file-text-line" bg="#e0e7ff" fg="#4338ca" darkFg="#a5b4fc" title="Documents" sub="Documents you've signed, approved or acknowledged." count={histDocs.length} />
-                    {histLoading ? (
-                      <div className="ib-shim-wrap">{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
-                    ) : histDocs.length === 0 ? (
-                      <div className="ib-hist-empty">No signed or approved documents yet.</div>
-                    ) : paginate(histDocs, histDocsPage).map((r) => {
-                      const mine = r.signers.find(s => s.user_id === user?.id);
-                      const empName = r.employee?.display_name || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim() || '—';
-                      const rejected = mine?.status === 'Rejected';
-                      return (
-                        <div key={r.id} className="ib-row-hist">
-                          <div className="d-flex align-items-center gap-3 flex-wrap">
-                            <span className="d-inline-flex align-items-center justify-content-center flex-shrink-0 ib-doc-chip"><i className="ri-file-text-line ib-doc-chip-icon" /></span>
-                            <div className="ib-body-col-hist">
-                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong className="ib-name-sm">{r.template?.name || '(template removed)'}</strong>{r.code && <code className="ib-code-amber">{r.code}</code>}</div>
-                              <div className="text-muted ib-hist-meta">Subject: {empName}{mine?.acted_at ? ` · ${fmtD(mine.acted_at)}` : ''}</div>
-                            </div>
-                            <StatusPill ok={!rejected} label={rejected ? 'Rejected' : (mine?.action === 'Sign' ? 'Signed' : mine?.action === 'Approve' ? 'Approved' : 'Acknowledged')} />
-                            <button type="button" onClick={() => setViewRun(r)} className="inbox-view-btn ib-view-btn"><i className="ri-eye-line me-1" />View</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <Pager total={histDocs.length} page={histDocsPage} onChange={setHistDocsPage} />
+                    <DataTable<SignatureRun>
+                      data={histDocs}
+                      columns={histDocColumns}
+                      serial={{ header: 'SR NO', width: '6%' }}
+                      searchable={false}
+                      accent="violet"
+                      paginate
+                      pageSize={PAGE_SIZE}
+                      className="ib-leave-dt"
+                      loading={histLoading}
+                      emptyMessage={
+                        <>
+                          <i className="ri-file-text-line d-block mb-2" style={{ fontSize: 30, opacity: 0.4 }} />
+                          <div className="fw-semibold">No decided documents yet</div>
+                          <div className="fs-13 mt-1">Documents you sign, approve or decline will be listed here.</div>
+                        </>
+                      }
+                    />
                   </CardBody>
                 </Card>
               </>
