@@ -284,6 +284,24 @@ class ServiceController extends Controller
             default  => null,
         };
 
+        if ($q = trim((string) $request->query('q', ''))) {
+            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
+            $query->where(function ($w) use ($like) {
+                $w->where('code', 'ilike', $like)
+                    ->orWhere('name', 'ilike', $like)
+                    ->orWhere('description', 'ilike', $like)
+                    ->orWhere('provider_brand', 'ilike', $like)
+                    ->orWhere('delivery_type', 'ilike', $like)
+                    ->orWhere('billing_frequency', 'ilike', $like)
+                    ->orWhereHas('category', fn ($r) => $r->where('name', 'ilike', $like))
+                    ->orWhereHas('segment', fn ($r) => $r->where('name', 'ilike', $like))
+                    ->orWhereHas('hsn', fn ($r) => $r->where('hsn_code', 'ilike', $like))
+                    ->orWhereHas('uom', fn ($r) => $r->where('title', 'ilike', $like)->orWhere('short_code', 'ilike', $like))
+                    ->orWhereHas('condition', fn ($r) => $r->where('title', 'ilike', $like))
+                    ->orWhereHas('activeSuppliers.vendor', fn ($r) => $r->where('company_name', 'ilike', $like)->orWhere('vendor_code', 'ilike', $like));
+            });
+        }
+
         match ($request->query('sort')) {
             'oldest' => $query->orderBy('created_at')->orderBy('id'),
             'name'   => $query->orderBy('name'),
