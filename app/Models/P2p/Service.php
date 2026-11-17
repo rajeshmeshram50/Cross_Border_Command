@@ -76,6 +76,7 @@ class Service extends Model
                 'professional' => ['label' => 'Professional Services', 'short' => 'Professional', 'description' => 'CA, legal consultancy, accounting, HR consultancy.'],
                 'utility'      => ['label' => 'Utility Services',      'short' => 'Utility',      'description' => 'Electricity, water supply, internet connectivity.'],
                 'facility'     => ['label' => 'Facility Services',     'short' => 'Facility',     'description' => 'Housekeeping, security, pantry management.'],
+                'maintenance'  => ['label' => 'Maintenance Services',  'short' => 'Maintenance',  'description' => 'AC maintenance, electrical repair, equipment AMC.'],
             ],
         ],
     ];
