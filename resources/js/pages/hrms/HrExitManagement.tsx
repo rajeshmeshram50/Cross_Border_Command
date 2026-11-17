@@ -13,6 +13,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import ReportingManagerDependencyModal from './exit/ReportingManagerDependencyModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
 
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -3432,6 +3433,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   return (
     <>
+    {/* One veil for every write this wizard makes — a stage save, a draft,
+        the settlement, or the final Complete Exit. Named per action so the
+        label says which one is running rather than a generic wait. */}
+    {!!employee && (stage1Saving || draftSaving || advancingStage || settleSaving || completing) && (
+      <FullPageLoader label={
+        completing ? 'Completing exit…'
+        : settleSaving ? 'Saving settlement…'
+        : draftSaving ? 'Saving draft…'
+        : 'Saving…'
+      } />
+    )}
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="ep-head">

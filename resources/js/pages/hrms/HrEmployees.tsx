@@ -5,6 +5,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import DataTable, { ActionIcon, ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -4727,6 +4728,15 @@ const STEP_SAFE_FIELDS = new Set([
           })()}
         </ModalBody>
       </Modal>
+
+      {/* A save on this wizard PUTs the whole employee — ~48 queries on the
+          server — so it is long enough to need more than a caption change on
+          one button. The veil also stops a second submit while the first is
+          in flight, which the step buttons alone did not: the stepper rail
+          and the close control stayed live. */}
+      {empOpen && saving && (
+        <FullPageLoader label={empMode === 'edit' ? 'Updating employee…' : 'Saving employee…'} />
+      )}
 
       <Modal
         isOpen={empOpen}

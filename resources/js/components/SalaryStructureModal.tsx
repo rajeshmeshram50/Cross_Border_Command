@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, ModalBody, Spinner } from 'reactstrap';
+import { Modal, ModalBody } from 'reactstrap';
+import BusyOverlay from './ui/BusyOverlay';
+import BusyLabel from './ui/BusyLabel';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -745,10 +747,11 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
 
         {loading ? (
           <div className="ssm-loading">
-            <Spinner style={{ width: 26, height: 26, color: '#5a3fd1' }} />
+            <i className="ri-loader-4-line ri-spin" style={{ fontSize: 26, color: '#5a3fd1' }} />
             <span>Loading the current structure…</span>
           </div>
         ) : (
+          <BusyOverlay busy={saving} label="Saving…">
           <div className="ssm-body">
             <div className="ssm-section">
               <div className="ssm-section-head">
@@ -999,6 +1002,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
               />
             </div>
           </div>
+          </BusyOverlay>
         )}
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
@@ -1011,8 +1015,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <div className="ssm-footer-actions">
               <button type="button" className="ssm-btn ssm-btn--ghost" onClick={onClose} disabled={saving}>Cancel</button>
               <button type="button" className="ssm-btn ssm-btn--primary" onClick={save} disabled={saving}>
-                {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}
-                {employee.has_structure ? 'Save Revision' : 'Save Salary'}
+                <BusyLabel busy={saving} icon="ri-save-line">
+                  {employee.has_structure ? 'Save Revision' : 'Save Salary'}
+                </BusyLabel>
               </button>
             </div>
           </div>

@@ -3,6 +3,8 @@ import {
   Col, Row, Button, Input, Label, Spinner,
   Badge, Modal, ModalBody, ModalFooter, Form, FormFeedback,
 } from 'reactstrap';
+import BusyOverlay from '../../components/ui/BusyOverlay';
+import BusyLabel from '../../components/ui/BusyLabel';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import Swal from 'sweetalert2';
@@ -405,6 +407,7 @@ export default function HrBiometricDevices() {
           </div>
         </div>
         <Form onSubmit={handleSave}>
+          <BusyOverlay busy={saving} label={editId ? 'Updating…' : 'Saving…'}>
           <ModalBody className="p-3">
             <Row className="g-2">
               <Col md={6}>
@@ -494,6 +497,7 @@ export default function HrBiometricDevices() {
               </Col>
             </Row>
           </ModalBody>
+          </BusyOverlay>
           {/* Right-aligned, like every other modal footer in the app.
               `justify-content-center` left the actions floating mid-footer (QA #1).
               py-3, not pb-3: setting only the bottom left the buttons riding
@@ -522,12 +526,9 @@ export default function HrBiometricDevices() {
                  flow needs no special casing. */
               className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
             >
-              {saving
-                ? <Spinner size="sm" />
-                : <i className="ri-save-line align-middle"></i>}
-              {saving
-                ? (editId ? 'Updating...' : 'Saving...')
-                : (editId ? 'Update Device' : 'Register Device')}
+              <BusyLabel busy={saving} icon="ri-save-line" busyText={editId ? 'Updating…' : 'Saving…'}>
+                {editId ? 'Update Device' : 'Register Device'}
+              </BusyLabel>
             </Button>
           </ModalFooter>
         </Form>
@@ -593,6 +594,7 @@ export default function HrBiometricDevices() {
           </div>
         </div>
         <Form onSubmit={doImport}>
+          <BusyOverlay busy={importing} label="Importing…">
           <ModalBody className="p-4">
             <Row className="g-3">
               <Col md={12}>
@@ -651,6 +653,7 @@ export default function HrBiometricDevices() {
               )}
             </Row>
           </ModalBody>
+          </BusyOverlay>
           {/* Right-aligned, like every other modal footer in the app.
               `justify-content-center` left the actions floating mid-footer (QA #1).
               py-3, not pb-3: setting only the bottom left the buttons riding
@@ -669,10 +672,7 @@ export default function HrBiometricDevices() {
                  so the button reads as two colours welded together. */
               className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
             >
-              {importing
-                ? <Spinner size="sm" />
-                : <i className="ri-upload-2-line align-middle"></i>}
-              {importing ? 'Importing...' : 'Import'}
+              <BusyLabel busy={importing} icon="ri-upload-2-line" busyText="Importing…">Import</BusyLabel>
             </Button>
           </ModalFooter>
         </Form>

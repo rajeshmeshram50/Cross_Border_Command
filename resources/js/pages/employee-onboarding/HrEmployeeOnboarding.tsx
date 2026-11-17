@@ -18,6 +18,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
@@ -4566,6 +4567,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 </div>
         </div>
       </ModalBody>
+
+      {/* Completing onboarding activates the employee record and closes the
+          wizard behind this dialog — a single irreversible step, and long
+          enough that a spinner inside one button was the only sign it had
+          started. Scoped to this confirmation: the rest of the wizard saves
+          per stage and does not need a veil. */}
+      {showCompleteConfirm && nextLoading && (
+        <FullPageLoader label="Completing onboarding…" />
+      )}
 
       <Modal
         isOpen={showCompleteConfirm}

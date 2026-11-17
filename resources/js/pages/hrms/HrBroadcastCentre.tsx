@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
-import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
+import { Col, Row, Modal, ModalBody } from 'reactstrap';
+import BusyOverlay from '../../components/ui/BusyOverlay';
+import BusyLabel from '../../components/ui/BusyLabel';
 import { MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -354,9 +356,7 @@ export default function HrBroadcastCentre() {
             {r.status === 'Draft' && (
               <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
                 <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
-                  {publishingId === r.id
-                    ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                    : <i className="ri-send-plane-line" />}
+                  <i className={publishingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-line'} />
                 </button>
               </Tooltip>
             )}
@@ -868,6 +868,7 @@ function CreateAnnouncementModal({
       contentClassName="rec-form-content border-0 brd-wizard"
     >
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+      <BusyOverlay busy={!!saving} label={saving === 'publish' ? 'Publishing…' : 'Saving…'}>
 
         <div className="brd-wizard-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1093,7 +1094,7 @@ function CreateAnnouncementModal({
             ) : (
               <>
                 <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={!!saving}>
-                  {saving === 'draft' ? <Spinner size="sm" /> : <i className="ri-save-3-line" />}Save Draft
+                  <BusyLabel busy={saving === 'draft'} icon="ri-save-3-line">Save Draft</BusyLabel>
                 </button>
                 {step < TOTAL_STEPS ? (
                   <button type="button" className="rec-btn-primary" onClick={handleNext} disabled={!!saving}>
@@ -1111,13 +1112,14 @@ function CreateAnnouncementModal({
                       display: 'inline-flex', alignItems: 'center', gap: 6,
                     }}
                   >
-                    {saving === 'publish' ? <Spinner size="sm" /> : <i className="ri-send-plane-line" />}Publish
+                    <BusyLabel busy={saving === 'publish'} icon="ri-send-plane-line" busyText="Publishing…">Publish</BusyLabel>
                   </button>
                 )}
               </>
             )}
           </div>
         </div>
+      </BusyOverlay>
       </ModalBody>
     </Modal>
   );
