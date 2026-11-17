@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
+use App\Models\Branch;
 use App\Models\Masters\Countries;
+use App\Models\Masters\GstPercentage;
 use App\Models\Masters\Segments;
 use App\Models\P2p\Supplier as P2pSupplier;
 use App\Models\Masters\StateCodes;
@@ -14,8 +16,11 @@ use App\Models\Masters\States;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\SupplierPricing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 
 class SourcingController extends Controller
@@ -280,7 +285,27 @@ class SourcingController extends Controller
             'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
             'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->statutoryFirst()->get(['id', 'state_id', 'state_code']),
+            // Map Supplier Directory → Domestic (₹ + GST) / International (currency, no GST).
+            'supplierOrigins' => [
+                ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
+                ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
+            ],
+            'gstRates'   => GstPercentage::query()->tap($scope)->tap($active)->orderBy('percentage')->pluck('percentage')
+                ->map(fn ($g) => (float) $g)->unique()->values(),
+            'gstTypes'   => [
+                ['value' => SupplierPricing::GST_INTRA, 'label' => 'CGST + SGST (Intra-state)'],
+                ['value' => SupplierPricing::GST_INTER, 'label' => 'IGST (Inter-state)'],
+            ],
+            // Our place of supply — a supplier in this state is Intra-state (CGST + SGST).
+            'homeState'  => $this->homeState($user),
         ]);
+    }
+
+    /** The user's branch state (place of supply) for the CGST + SGST / IGST choice. */
+    private function homeState($user): array
+    {
+        $b = $user && $user->branch_id ? Branch::find($user->branch_id, ['id', 'state', 'gst_state_code']) : null;
+        return ['state' => $b->state ?? null, 'stateCode' => $b->gst_state_code ?? null];
     }
 
 
@@ -799,9 +824,18 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
+            // Supplier Price — Domestic: ₹ unit price (excl. GST) + GST rate + GST type;
+            'origin'                  => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            'price'                   => 'required_with:supplier_id|nullable|numeric|gt:0',
+            'gst_percentage'          => 'nullable|numeric|min:0|max:100',
+            'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email'        => 'Enter a valid supplier email address.',
+            'price.required'                  => "Please enter the supplier's unit price.",
+            'price.gt'                        => 'The unit price must be more than 0.',
+            'valid_till.after_or_equal'       => 'Price Valid Till cannot be in the past.',
         ], [
             // Friendly field names so a message reads "The Contact Person must not
             // be greater than 255 characters" rather than "The new supplier.name
@@ -831,14 +865,18 @@ class SourcingController extends Controller
                 ->findOrFail($request->input('supplier_id'));
 
             // A product can't have the same vendor mapped twice.
-            if ($p->suppliers()->where('supplier_id', $v->id)->exists()) {
+            // (source = master only: a New Supplier's id is a p2p_suppliers id, not a vendor id.)
+            if ($p->suppliers()->where('source', 'master')->where('supplier_id', $v->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
             // Snapshot the vendor's primary contact person (from its primary
             // address) so the mapped-supplier card shows real contact details.
-            $addr = $v->addresses->first();
-            $p->suppliers()->create([
+            $addr    = $v->addresses->first();
+            $country = $addr && $addr->country_id ? Countries::whereKey($addr->country_id)->value('name') : null;
+            $state   = $addr && $addr->state_id ? States::whereKey($addr->state_id)->value('name') : null;
+            $price   = $this->sourcingPrice($request, $user, $country, $state, $addr->state_code ?? null);
+            $p->suppliers()->create($price + [
                 'supplier_id' => $v->id,
                 'source'      => 'master',
                 'name'        => $v->company_name,
@@ -846,6 +884,11 @@ class SourcingController extends Controller
                 'contact'     => $addr->contact_name ?? null,
                 'mobile'      => $addr->contact_no ?? null,
                 'email'       => ($addr->email ?? '') ?: $v->primary_email,
+                'country'     => $country ?: ($price['origin'] === SupplierPricing::DOMESTIC ? 'India' : null),
+                'state'       => $state,
+                'state_code'  => $addr->state_code ?? null,
+                'city'        => $addr->city ?? null,
+                'mapped_by'   => $user->id,
             ]);
         } elseif ($request->filled('new_supplier')) {
             $n    = $request->input('new_supplier');
@@ -1002,6 +1045,8 @@ class SourcingController extends Controller
         $t = $this->target($request, $target);
         $p = $t->products()->where('id', $product)->firstOrFail();
 
+        $target    = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
+
         $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
             // Underlying directory id so the UI can open the right edit form:
@@ -1023,12 +1068,56 @@ class SourcingController extends Controller
             'state_code' => $s->state_code ?? '',
             'city'       => $s->city ?? '',
             'source'  => $s->source === 'new' ? 'New Supplier' : 'Master',
+            // Quoted price (null = mapped before pricing → "Price & GST not mapped").
+            'origin'        => $s->origin,                       // domestic | international
+            'currency'      => $s->currency_code,
+            'price'         => $s->price !== null ? (float) $s->price : null,           // unit price in `currency`, excl. GST
+            'gstPercentage' => $s->gst_percentage !== null ? (float) $s->gst_percentage : null,
+            'gstType'       => $s->gst_type,                     // intra (CGST + SGST) | inter (IGST) | none
+            'cgst'          => $s->cgst_amount !== null ? (float) $s->cgst_amount : null,
+            'sgst'          => $s->sgst_amount !== null ? (float) $s->sgst_amount : null,
+            'igst'          => $s->igst_amount !== null ? (float) $s->igst_amount : null,
+            'gstAmount'     => $s->gst_amount !== null ? (float) $s->gst_amount : null,
+            'total'         => $s->total_amount !== null ? (float) $s->total_amount : null,   // incl. GST, in `currency`
+            'exchangeRate'  => $s->exchange_rate !== null ? (float) $s->exchange_rate : null, // ₹ per unit (international)
+            'inrAmount'     => $s->inr_amount !== null ? (float) $s->inr_amount : null,       // ₹ equivalent
+            'validTill'     => optional($s->price_valid_till)->format('Y-m-d'),
+            // "vs Target Price": unit price in ₹ before GST against the product's target.
+            'vsTarget'      => $s->price === null ? null : SupplierPricing::vsTarget(
+                $s->origin === SupplierPricing::INTERNATIONAL ? (float) $s->inr_amount : (float) $s->price, $target),
+            'mappedOn'      => optional($s->created_at)->toIso8601String(),
         ]);
 
         return $this->ok($rows);
     }
 
 
+
+    /**
+     * Price columns for one Map Supplier row (validated input already).
+     *   Domestic      ₹ unit price + GST rate (default 18) + GST type (default:
+     *                 CGST + SGST when the supplier is in our branch's state, else IGST)
+     * The origin defaults to the supplier's country and must match it.
+     */
+    private function sourcingPrice(Request $request, $user, ?string $country, ?string $state, ?string $stateCode): array
+    {
+        $origin = $request->input('origin') ?: SupplierPricing::originOf($country);
+        if ($origin !== SupplierPricing::originOf($country)) {
+            throw ValidationException::withMessages(['origin' => [
+                $origin === SupplierPricing::INTERNATIONAL
+                    ? 'This supplier is based in India — map it as a Domestic supplier.'
+                    : 'This supplier is based in ' . ($country ?: 'another country') . ' — map it as an International supplier.',
+            ]]);
+        }
+
+        $home  = $this->homeState($user);
+        $type  = $request->input('gst_type')
+            ?: SupplierPricing::gstTypeFor($state, $stateCode, $home['state'], $home['stateCode']);
+        $gst   = $request->filled('gst_percentage') ? (float) $request->input('gst_percentage') : 18.0;
+        $price = SupplierPricing::domestic((float) $request->input('price'), $gst, $type);
+
+        return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
+    }
 
     private function validatePayload(Request $request, bool $creating = false): array
     {
