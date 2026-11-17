@@ -299,11 +299,21 @@ class ServiceController extends Controller
         $this->normaliseCoreInput($request);
 
         $service = null;
+        if ($request->filled('id')) {
+            $service = $this->findService($request, (int) $request->input('id'));
+            if ($denial = $this->editDenial($user, $service, 'edit')) return $this->deny($denial);
+        }
+
         $data = $this->validateCore($request, $service);
 
         // Self-Consumable needs a primary image — checked before any file is stored.
         if ($data['service_type'] === Service::TYPE_SELF && !$request->hasFile('primary_image_file')) {
-            throw ValidationException::withMessages(['primary_image_file' => ['A primary image is required for Self-Consumable services.']]);
+            $removing = array_map('intval', (array) $request->input('remove_image_ids', []));
+            $keepsOne = $service && $service->service_type === Service::TYPE_SELF
+                && $service->images()->where('is_primary', true)->whereNotIn('id', $removing ?: [0])->exists();
+            if (!$keepsOne) {
+                throw ValidationException::withMessages(['primary_image_file' => ['A primary image is required for Self-Consumable services.']]);
+            }
         }
 
         $service = DB::transaction(function () use ($request, $user, $service, $data) {
@@ -343,7 +353,7 @@ class ServiceController extends Controller
             return $service;
         });
 
-        return response()->json($this->detail($service->fresh()), 201);
+        return response()->json($this->detail($service->fresh()), $request->filled('id') ? 200 : 201);
     }
 
     /** Multipart sends everything as strings — normalise toggles and blanks first. */
