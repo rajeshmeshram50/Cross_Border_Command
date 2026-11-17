@@ -8,6 +8,7 @@ use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
 use App\Models\Branch;
 use App\Models\Masters\Countries;
+use App\Models\Masters\Currencies;
 use App\Models\Masters\GstPercentage;
 use App\Models\Masters\Segments;
 use App\Models\P2p\Supplier as P2pSupplier;
@@ -296,6 +297,8 @@ class SourcingController extends Controller
                 ['value' => SupplierPricing::GST_INTRA, 'label' => 'CGST + SGST (Intra-state)'],
                 ['value' => SupplierPricing::GST_INTER, 'label' => 'IGST (Inter-state)'],
             ],
+            'currencies' => Currencies::query()->tap($scope)->tap($active)->whereRaw('UPPER(code) <> ?', ['INR'])
+                ->orderBy('code')->get(['id', 'code', 'name', 'symbol', 'exchange_rate']),
             // Our place of supply — a supplier in this state is Intra-state (CGST + SGST).
             'homeState'  => $this->homeState($user),
         ]);
@@ -825,16 +828,20 @@ class SourcingController extends Controller
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
             // Supplier Price — Domestic: ₹ unit price (excl. GST) + GST rate + GST type;
+            // International: unit price in the supplier's currency + exchange rate, no GST.
             'origin'                  => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'price'                   => 'required_with:supplier_id|nullable|numeric|gt:0',
             'gst_percentage'          => 'nullable|numeric|min:0|max:100',
             'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'currency'                => 'nullable|string|size:3|alpha',
+            'exchange_rate'           => 'nullable|numeric|gt:0',
             'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email'        => 'Enter a valid supplier email address.',
             'price.required'                  => "Please enter the supplier's unit price.",
             'price.gt'                        => 'The unit price must be more than 0.',
+            'exchange_rate.gt'                => 'The exchange rate must be more than 0.',
             'valid_till.after_or_equal'       => 'Price Valid Till cannot be in the past.',
         ], [
             // Friendly field names so a message reads "The Contact Person must not
@@ -1097,6 +1104,8 @@ class SourcingController extends Controller
      * Price columns for one Map Supplier row (validated input already).
      *   Domestic      ₹ unit price + GST rate (default 18) + GST type (default:
      *                 CGST + SGST when the supplier is in our branch's state, else IGST)
+     *   International unit price in `currency` (default: the country's) ×
+     *                 `exchange_rate` (default: Currency master), no GST
      * The origin defaults to the supplier's country and must match it.
      */
     private function sourcingPrice(Request $request, $user, ?string $country, ?string $state, ?string $stateCode): array
@@ -1110,11 +1119,23 @@ class SourcingController extends Controller
             ]]);
         }
 
-        $home  = $this->homeState($user);
-        $type  = $request->input('gst_type')
-            ?: SupplierPricing::gstTypeFor($state, $stateCode, $home['state'], $home['stateCode']);
-        $gst   = $request->filled('gst_percentage') ? (float) $request->input('gst_percentage') : 18.0;
-        $price = SupplierPricing::domestic((float) $request->input('price'), $gst, $type);
+        if ($origin === SupplierPricing::INTERNATIONAL) {
+            $currency = strtoupper((string) $request->input('currency')) ?: SupplierPricing::currencyFor($country);
+            if ($currency === 'INR') {
+                throw ValidationException::withMessages(['currency' => ["Pick the supplier's currency — an International price is not in ₹."]]);
+            }
+            $rate = (float) $request->input('exchange_rate') ?: SupplierPricing::defaultRate($currency, $user);
+            if (!$rate) {
+                throw ValidationException::withMessages(['exchange_rate' => ["Please enter the exchange rate (₹ per {$currency})."]]);
+            }
+            $price = SupplierPricing::international((float) $request->input('price'), $currency, $rate);
+        } else {
+            $home  = $this->homeState($user);
+            $type  = $request->input('gst_type')
+                ?: SupplierPricing::gstTypeFor($state, $stateCode, $home['state'], $home['stateCode']);
+            $gst   = $request->filled('gst_percentage') ? (float) $request->input('gst_percentage') : 18.0;
+            $price = SupplierPricing::domestic((float) $request->input('price'), $gst, $type);
+        }
 
         return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
     }
