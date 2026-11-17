@@ -830,7 +830,7 @@ class SourcingController extends Controller
             // Supplier Price — Domestic: ₹ unit price (excl. GST) + GST rate + GST type;
             // International: unit price in the supplier's currency + exchange rate, no GST.
             'origin'                  => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'price'                   => 'required_with:supplier_id|nullable|numeric|gt:0',
+            'price'                   => 'required|numeric|gt:0',
             'gst_percentage'          => 'nullable|numeric|min:0|max:100',
             'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
             'currency'                => 'nullable|string|size:3|alpha',
@@ -901,6 +901,14 @@ class SourcingController extends Controller
             $n    = $request->input('new_supplier');
             $name = trim($n['name'] ?? '') ?: '—';
 
+            // New · Domestic: the supplier is in India.
+            if (SupplierPricing::isInternational($n['country'] ?? null)) {
+                throw ValidationException::withMessages(['new_supplier.country' => ['A Domestic supplier must be in India.']]);
+            }
+            $n['country'] = 'India';
+            $request->merge(['origin' => SupplierPricing::DOMESTIC]);
+            $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
+
             $fields = [
                 'segment'    => $n['segment'] ?? null,
                 'contact'    => $n['contact'] ?? null,
@@ -927,6 +935,7 @@ class SourcingController extends Controller
                     'client_id'  => $user->client_id,
                     'branch_id'  => $user->branch_id ?? null,
                     'name'       => $name,
+                    'origin'     => $price['origin'],
                     'created_by' => $user->id,
                 ]);
             }
@@ -937,10 +946,11 @@ class SourcingController extends Controller
             }
 
             // Mapping row snapshots the details; supplier_id → p2p_suppliers.id.
-            $p->suppliers()->create($fields + [
+            $p->suppliers()->create($price + $fields + [
                 'supplier_id' => $directory->id,
                 'source'      => 'new',
                 'name'        => $name,
+                'mapped_by'   => $user->id,
             ]);
         } else {
             return response()->json(['status' => false, 'message' => 'Provide supplier_id or new_supplier'], 422);
@@ -998,6 +1008,11 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
+            // Optional — send price to re-quote (same rules as Map Supplier).
+            'price'                   => 'sometimes|required|numeric|gt:0',
+            'gst_percentage'          => 'nullable|numeric|min:0|max:100',
+            'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required' => 'Enter the supplier company name.',
             'new_supplier.email.email'   => 'Enter a valid supplier email address.',
@@ -1032,8 +1047,22 @@ class SourcingController extends Controller
             'card_path'  => $n['card'] ?? null,
         ];
 
+        // The origin follows the country, as on Map Supplier.
+        if (($row->origin ?? null) && $row->origin !== SupplierPricing::originOf($n['country'] ?? null)) {
+            throw ValidationException::withMessages(['new_supplier.country' => [
+                $row->origin === SupplierPricing::INTERNATIONAL
+                    ? 'This is an International supplier — choose a country outside India.'
+                    : 'This is a Domestic supplier — the country must be India.',
+            ]]);
+        }
+        $price = [];
+        if ($request->has('price')) {
+            $request->merge(['origin' => $row->origin ?: SupplierPricing::originOf($n['country'] ?? null)]);
+            $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
+        }
+
         // Update the snapshot mapping row (name + all fields).
-        $row->update($fields + ['name' => $name]);
+        $row->update($price + $fields + ['name' => $name]);
 
         // Keep the shared directory row (p2p_suppliers) in sync so the same
         // supplier reads the same details wherever it's mapped.
