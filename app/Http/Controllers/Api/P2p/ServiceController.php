@@ -208,6 +208,125 @@ class ServiceController extends Controller
     }
 
     /* ══════════════════════════════════════════════════════════════════
+     * GET /p2p/services/stats — tab + sub-tab badges.
+     * Counted on the scoped catalogue WITHOUT the search box, matching the
+     * design (badges keep their totals while searching).
+     * ══════════════════════════════════════════════════════════════════ */
+    public function stats(Request $request)
+    {
+        return response()->json($this->tabCounts($request));
+    }
+
+    private function tabCounts(Request $request): array
+    {
+        $rows = $this->scoped($request, true)
+            ->selectRaw('service_type, classification, COUNT(*) AS n')
+            ->groupBy('service_type', 'classification')
+            ->get();
+
+        $counts = [];
+        foreach (Service::TYPES as $type => $t) {
+            $counts[$type] = ['total' => 0] + array_fill_keys(array_keys($t['classifications']), 0);
+        }
+        foreach ($rows as $r) {
+            if (!isset($counts[$r->service_type])) continue;
+            $counts[$r->service_type]['total'] += (int) $r->n;
+            if ($r->classification && array_key_exists($r->classification, $counts[$r->service_type])) {
+                $counts[$r->service_type][$r->classification] += (int) $r->n;
+            }
+        }
+        $counts['all'] = array_sum(array_column($counts, 'total'));
+        return $counts;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * GET /p2p/services
+     * Query: service_type, classification, q, status, supplier=mapped|zero,
+     *        sort=recent|oldest|name, per_page (≤200), page
+     * ══════════════════════════════════════════════════════════════════ */
+    public function index(Request $request)
+    {
+        $request->validate([
+            'service_type'   => ['nullable', Rule::in(array_keys(Service::TYPES))],
+            'classification' => 'nullable|string|max:30',
+            'status'         => ['nullable', Rule::in(Service::STATUSES)],
+            'supplier'       => 'nullable|in:mapped,zero',
+            'sort'           => 'nullable|in:recent,oldest,name',
+            'per_page'       => 'nullable|integer|min:1|max:200',
+        ]);
+
+        $query = $this->scoped($request, true)
+            ->with([
+                'category:id,name',
+                'segment:id,name',
+                'hsn:id,hsn_code',
+                'uom:id,title,short_code',
+                'condition:id,title',
+                'department:id,name',
+                'primaryImage:id,service_id,file_path,original_name',
+                'activeSuppliers:id,service_id,vendor_id,status',
+                'activeSuppliers.vendor:id,vendor_code,company_name',
+            ])
+            ->withCount(['activeSuppliers as suppliers_count']);
+
+        if ($type = $request->query('service_type')) {
+            $query->where('service_type', $type);
+        }
+        if ($class = $request->query('classification')) {
+            $query->where('classification', $class);
+        }
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+        match ($request->query('supplier')) {
+            'mapped' => $query->has('activeSuppliers'),
+            'zero'   => $query->doesntHave('activeSuppliers'),
+            default  => null,
+        };
+
+        match ($request->query('sort')) {
+            'oldest' => $query->orderBy('created_at')->orderBy('id'),
+            'name'   => $query->orderBy('name'),
+            default  => $query->orderByDesc('created_at')->orderByDesc('id'),
+        };
+
+        $page = $query->paginate((int) $request->query('per_page', 10));
+        $page->setCollection($page->getCollection()->map(fn (Service $s) => $this->listRow($s)));
+
+        return response()->json($page->toArray() + ['counts' => $this->tabCounts($request)]);
+    }
+
+    /** One list row — the columns of all three tabs, flattened. */
+    private function listRow(Service $s): array
+    {
+        return [
+            'id'                   => $s->id,
+            'code'                 => $s->code,
+            'created_at'           => $s->created_at,
+            'name'                 => $s->name,
+            'description'          => $s->description,
+            'service_type'         => $s->service_type,
+            'service_type_label'   => $s->service_type_label,
+            'classification'       => $s->classification,
+            'classification_label' => $s->classification_label,
+            'category'             => $s->category?->name,
+            'segment'              => $s->segment?->name,
+            'provider_brand'       => $s->provider_brand,
+            'delivery_type'        => $s->delivery_type,
+            'billing_frequency'    => $s->billing_frequency,
+            'department'           => $s->department?->name,
+            'hsn_code'             => $s->hsn?->hsn_code,
+            'uom'                  => $s->uom?->short_code ?: $s->uom?->title,
+            'condition'            => $s->condition?->title,
+            'contract_required'    => (bool) $s->contract_required,
+            'status'               => $s->status,
+            'step_completed'       => $s->step_completed,
+            'primary_image'        => $s->primaryImage?->file_path,
+            'suppliers_count'      => (int) $s->suppliers_count,
+        ];
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
      * GET /p2p/services/{id} — everything the Edit form + detail need.
      * ══════════════════════════════════════════════════════════════════ */
     public function show(Request $request, int $id)

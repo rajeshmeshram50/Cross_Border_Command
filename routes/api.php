@@ -465,7 +465,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::prefix('p2p/services')->group(function () {
         $svc = \App\Http\Controllers\Api\P2p\ServiceController::class;
         Route::get   ('/master-bundle',               [$svc, 'masterBundle']);
+        Route::get   ('/stats',                       [$svc, 'stats']);
         Route::get   ('/next-code',                   [$svc, 'nextCodePreview']);
+        Route::get   ('/',                            [$svc, 'index']);
         Route::post  ('/step/core',                   [$svc, 'storeCore']);                  // Stage 1 (create / update, multipart)
         Route::get   ('/{id}',                        [$svc, 'show'])->whereNumber('id');
         Route::put   ('/{id}/step/suppliers',         [$svc, 'storeSuppliers'])->whereNumber('id'); // Stage 2 + submit
