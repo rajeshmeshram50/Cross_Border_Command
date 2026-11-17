@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\P2p;
 
 use App\Http\Controllers\Controller;
 use App\Models\Masters\Conditions;
+use App\Models\Masters\Currencies;
 use App\Models\Masters\Departments;
 use App\Models\Masters\GstPercentage;
 use App\Models\Masters\HazClass;
@@ -36,6 +37,7 @@ use Illuminate\Validation\ValidationException;
  *   Add / Edit     POST   /p2p/services/step/core       Stage 1 — Service Core Information (multipart)
  *                  PUT    /p2p/services/{id}/step/suppliers   Stage 2 — Map Service Suppliers + submit
  *   Map Supplier   GET|POST /p2p/services/{id}/suppliers, PATCH …/suppliers/{map}, PATCH …/suppliers/{map}/status
+ *                  Domestic (₹ + GST) or International (currency × exchange rate, no GST)
  *   Active/Inactive PATCH  /p2p/services/{id}/status      (nothing in this module is deleted)
  *
  * Dropdown masters come from GET /p2p/services/master-bundle; the "+" (add new)
@@ -172,6 +174,9 @@ class ServiceController extends Controller
                     ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
                     ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
                 ],
+                // International price: currency + default exchange rate (₹ per unit).
+                'currencies'          => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
+                    ->reject(fn ($c) => strtoupper((string) $c->code) === 'INR')->values(),
             ];
         });
 
@@ -384,6 +389,7 @@ class ServiceController extends Controller
         $data['suppliers_summary'] = [
             'count'               => $active->count(),          // the "Mapped Suppliers" badge
             'domestic_count'      => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
+            'international_count' => $active->where('origin', SupplierPricing::INTERNATIONAL)->count(),
             'inactive_count'      => $service->suppliers->count() - $active->count(),
             // ₹ value of every active supplier (international at its exchange rate).
             'total_amount'        => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
@@ -442,6 +448,7 @@ class ServiceController extends Controller
             'contact_person' => $card['contact_person'] ?? null,
             'currency'       => $m->currency_code ?: 'INR',
             'price'          => (float) $m->price,                         // in `currency`
+            'exchange_rate'  => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,   // ₹ per unit (international)
             'gst_percentage' => (float) $m->gst_percentage,                // 0 = "No GST" for international
             'gst_amount'     => (float) $m->gst_amount,
             'total_amount'   => (float) $m->total_amount,                  // Total Service Cost, in `currency`
@@ -728,6 +735,8 @@ class ServiceController extends Controller
             'suppliers.*.origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'suppliers.*.price'          => 'required|numeric|gt:0',
             'suppliers.*.gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'suppliers.*.currency'       => 'nullable|string|size:3|alpha',
+            'suppliers.*.exchange_rate'  => 'nullable|numeric|gt:0',
             'suppliers.*.remarks'        => 'nullable|string|max:1000',
         ], $this->priceMessages());
 
@@ -789,6 +798,8 @@ class ServiceController extends Controller
             'origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],   // default: from the supplier's country
             'price'          => 'required|numeric|gt:0',
             'gst_percentage' => 'nullable|numeric|min:0|max:100',                   // domestic
+            'currency'       => 'nullable|string|size:3|alpha',                     // international
+            'exchange_rate'  => 'nullable|numeric|gt:0',                            // international, ₹ per unit
             'remarks'        => 'nullable|string|max:1000',
         ], $this->priceMessages());
         $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
@@ -824,6 +835,8 @@ class ServiceController extends Controller
         $data = $request->validate([
             'price'          => 'sometimes|required|numeric|gt:0',
             'gst_percentage' => 'sometimes|required|numeric|min:0|max:100',
+            'currency'       => 'sometimes|required|string|size:3|alpha',
+            'exchange_rate'  => 'sometimes|required|numeric|gt:0',
             'remarks'        => 'sometimes|nullable|string|max:1000',
         ], $this->priceMessages());
 
@@ -833,6 +846,8 @@ class ServiceController extends Controller
             'origin'         => $map->origin ?: SupplierPricing::DOMESTIC,
             'price'          => $data['price'] ?? $map->price,
             'gst_percentage' => $data['gst_percentage'] ?? $map->gst_percentage,
+            'currency'       => $data['currency'] ?? $map->currency_code,
+            'exchange_rate'  => $data['exchange_rate'] ?? $map->exchange_rate,
         ], $service);
         $map->fill($amounts + ['updated_by' => $request->user()?->id]);
         if (array_key_exists('remarks', $data)) $map->remarks = $data['remarks'];
@@ -863,6 +878,8 @@ class ServiceController extends Controller
     /**
      * The price columns of one mapping (Map Supplier step 2).
      *   Domestic      price in ₹ + GST % (default: the service's GST %, else 18)
+     *   International price in `currency` (default: the supplier country's),
+     *                 `exchange_rate` ₹ per unit (default: Currency master), no GST
      * The origin defaults to the supplier's country and must match it.
      */
     private function priceFields(Request $request, array $in, Service $service, string $prefix = ''): array
@@ -877,6 +894,20 @@ class ServiceController extends Controller
                     ? 'This supplier is based in India — map it as a Domestic supplier.'
                     : 'This supplier is based in ' . ($card['country'] ?: 'another country') . ' — map it as an International supplier.',
             ]]);
+        }
+
+        if ($origin === SupplierPricing::INTERNATIONAL) {
+            $currency = strtoupper((string) ($in['currency'] ?? '')) ?: $card['currency'];
+            if ($currency === 'INR') {
+                throw ValidationException::withMessages([$prefix . 'currency' => ["Pick the supplier's currency — an International price is not in ₹."]]);
+            }
+            $rate = isset($in['exchange_rate']) && (float) $in['exchange_rate'] > 0
+                ? (float) $in['exchange_rate']
+                : SupplierPricing::defaultRate($currency, $request->user());
+            if (!$rate) {
+                throw ValidationException::withMessages([$prefix . 'exchange_rate' => ["Enter the exchange rate (₹ per {$currency})."]]);
+            }
+            return SupplierPricing::international((float) $in['price'], $currency, $rate);
         }
 
         $gst = isset($in['gst_percentage']) && $in['gst_percentage'] !== ''
@@ -896,6 +927,8 @@ class ServiceController extends Controller
             'price.gt'                   => 'The price must be more than 0.',
             'suppliers.*.price.required' => "Enter the supplier's price.",
             'suppliers.*.price.gt'       => 'The price must be more than 0.',
+            'exchange_rate.gt'           => 'The exchange rate must be more than 0.',
+            'currency.size'              => 'Pick a currency (3-letter code, e.g. USD).',
         ];
     }
 
