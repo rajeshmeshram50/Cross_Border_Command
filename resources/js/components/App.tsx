@@ -795,7 +795,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
                 <>
                   <Route path="/hr/attendance" element={<HrAttendance />} />
                   <Route path="/hr/regularization-requests" element={<HrRegularizationRequests />} />
-                  <Route path="/hr/payroll/execution-history" element={<PayrollExecutionHistory />} />
                 </>
               )}
               <Route path="/hr/leave" element={<HrLeave />} />
@@ -805,6 +804,9 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/hr/pip" element={<HrPIP />} />
               <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/payroll" element={<HrPayroll />} />
+              {/* Beside /hr/payroll, under the same condition as the page that
+                  links to it — the History button is on the payroll header. */}
+              <Route path="/hr/payroll/execution-history" element={<PayrollExecutionHistory />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
               <Route path="/hr/doc-templates" element={<HrDocumentTemplates />} />
               <Route path="/hr/doc-templates/new" element={<TemplateFormPage />} />
