@@ -6,12 +6,6 @@ use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * A supplier (vendor) mapped to a service with its price.
- *   domestic      ₹ price + GST % (gst_amount / total_amount computed)
- *   international price in currency_code, no GST, inr_amount = price × exchange_rate
- * Amounts are always computed server-side (App\Support\SupplierPricing).
- */
 class ServiceSupplier extends Model
 {
     protected $table = 'p2p_service_suppliers';
@@ -43,7 +37,6 @@ class ServiceSupplier extends Model
         return $this->belongsTo(Vendor::class, 'vendor_id')->withTrashed();
     }
 
-    /** Recompute the GST amount and total from price + GST %. */
     public static function amounts(float $price, float $gstPct): array
     {
         $price = round($price, 2);

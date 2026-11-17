@@ -4,28 +4,16 @@ namespace App\Support;
 
 use App\Models\Masters\Currencies;
 
-/**
- * Map Supplier pricing, shared by Service Management and the Sourcing
- * Management Tracker (same popup in the design):
- *
- *   Domestic      → supplier in India, price in ₹ + GST %
- *                   (CGST + SGST when it is in our state, IGST otherwise).
- *   International → supplier outside India, price in its own currency,
- *                   NO GST, converted to ₹ at the exchange rate.
- *
- * Amounts are always computed here, never taken from the client.
- */
 final class SupplierPricing
 {
     public const DOMESTIC      = 'domestic';
     public const INTERNATIONAL = 'international';
     public const ORIGINS       = [self::DOMESTIC, self::INTERNATIONAL];
 
-    public const GST_INTRA = 'intra';   // CGST + SGST
-    public const GST_INTER = 'inter';   // IGST
-    public const GST_NONE  = 'none';    // international
+    public const GST_INTRA = 'intra';
+    public const GST_INTER = 'inter';
+    public const GST_NONE  = 'none';
 
-    /** The supplier's usual trading currency by country (design: SVMS_CUR). */
     public const COUNTRY_CURRENCY = [
         'uae' => 'AED', 'united arab emirates' => 'AED',
         'usa' => 'USD', 'united states' => 'USD', 'united states of america' => 'USD',
@@ -41,7 +29,6 @@ final class SupplierPricing
         return $c !== '' && strcasecmp($c, 'India') !== 0;
     }
 
-    /** No country yet counts as Domestic (an Indian supplier), as in the design. */
     public static function originOf(?string $country): string
     {
         return self::isInternational($country) ? self::INTERNATIONAL : self::DOMESTIC;
@@ -53,20 +40,18 @@ final class SupplierPricing
         return self::COUNTRY_CURRENCY[mb_strtolower(trim((string) $country))] ?? 'USD';
     }
 
-    /** ₹ per unit of $code from the Currency master the user can see (null = not set up). */
     public static function defaultRate(string $code, $user): ?float
     {
         $row = Currencies::query()
             ->whereRaw('UPPER(code) = ?', [strtoupper($code)])
             ->whereRaw('LOWER(status) = ?', ['active'])
             ->tap(fn ($q) => MasterVisibility::applyReadScope($q, $user))
-            ->orderByRaw('client_id IS NULL')       // the tenant's own rate wins over the global one
+            ->orderByRaw('client_id IS NULL')
             ->first(['exchange_rate']);
         $rate = $row ? (float) $row->exchange_rate : 0.0;
         return $rate > 0 ? $rate : null;
     }
 
-    /** Intra-state when the supplier is in the same state as our branch (GST state code, else state name). */
     public static function gstTypeFor(?string $supplierState, ?string $supplierStateCode, ?string $ourState, ?string $ourStateCode): string
     {
         $a = trim((string) $supplierStateCode); $b = trim((string) $ourStateCode);
@@ -75,7 +60,6 @@ final class SupplierPricing
         return ($s !== '' && $o !== '' && strcasecmp($s, $o) === 0) ? self::GST_INTRA : self::GST_INTER;
     }
 
-    /** Domestic: ₹ price + GST. */
     public static function domestic(float $price, float $gstPct, string $gstType = self::GST_INTER): array
     {
         $price = round($price, 2);
@@ -99,7 +83,6 @@ final class SupplierPricing
         ];
     }
 
-    /** International: price in the supplier's currency, no GST, ₹ equivalent at the rate. */
     public static function international(float $price, string $currency, float $rate): array
     {
         $price = round($price, 2);
@@ -119,10 +102,6 @@ final class SupplierPricing
         ];
     }
 
-    /**
-     * "vs Target Price" on the design: the supplier's unit price in ₹ before GST
-     * (domestic price, or the international ₹ equivalent) against the target.
-     */
     public static function vsTarget(?float $unitInr, ?float $target): ?array
     {
         if (!$unitInr || !$target || $target <= 0) return null;

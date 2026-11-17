@@ -5,14 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Service Management → Map Supplier: Domestic or International supplier.
- *   domestic      price in ₹ + GST % (existing columns)
- *   international price in the supplier's currency, no GST,
- *                 exchange_rate = ₹ per unit, inr_amount = price × rate
- * inr_amount is the ₹ value of every row, so the "total" summary can add
- * domestic and international suppliers together.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -32,7 +24,6 @@ return new class extends Migration
             }
         });
 
-        // Existing mappings are all domestic: their ₹ value is the total.
         DB::table('p2p_service_suppliers')->whereNull('inr_amount')->update(['inr_amount' => DB::raw('total_amount')]);
     }
 
