@@ -49,6 +49,7 @@ class MasterController extends Controller
         'vendor_types' => \App\Models\Masters\VendorTypes::class,
         'vendor_behaviour' => \App\Models\Masters\VendorBehaviour::class,
         'supplier_category' => \App\Models\Masters\SupplierCategory::class,
+        'service_categories' => \App\Models\Masters\ServiceCategory::class,
         'applicable_types' => \App\Models\Masters\ApplicableTypes::class,
         'license_name' => \App\Models\Masters\LicenseName::class,
         'risk_levels' => \App\Models\Masters\RiskLevels::class,
@@ -215,6 +216,23 @@ class MasterController extends Controller
             // 'uEach' ensures the name is unique per (client_id + branch_id)
             'uEach' => ['name'],
             'tenantScoped' => true
+        ],
+        // P2P · Service Management — Service Category. Two main types:
+        // soft_digital (no sub-type) and other_operational (sub-type =
+        // professional | utility | facility | maintenance | outsourcing).
+        // The form is just the type (+ sub-type for Other) and the name; the
+        // name is unique within its type + sub-type. classification is checked
+        // against the type in normaliseServiceCategory(). status is optional
+        // (defaults to Active in the table).
+        'service_categories' => [
+            'fields' => [
+                ['n' => 'service_type', 't' => 'select', 'r' => true, 'opts' => ['soft_digital', 'other_operational']],
+                ['n' => 'classification', 't' => 'select', 'opts' => ['professional', 'utility', 'facility', 'maintenance', 'outsourcing']],
+                ['n' => 'name', 't' => 'text', 'r' => true, 'maxLen' => 150],
+                ['n' => 'status', 't' => 'select', 'opts' => ['Active', 'Inactive']],
+            ],
+            'uFields' => ['name', 'service_type', 'classification'],
+            'tenantScoped' => true,
         ],
     ];
 
@@ -423,6 +441,13 @@ class MasterController extends Controller
             });
         }
 
+        // Service categories: one tab's list (?service_type=…&classification=…).
+        if ($slug === 'service_categories') {
+            if ($t = $request->query('service_type'))   $q->where('service_type', $t);
+            if ($c = $request->query('classification')) $q->where('classification', $c);
+            if ($s = $request->query('status'))         $q->whereRaw('LOWER(status) = ?', [strtolower($s)]);
+        }
+
         // country_id cascade filter — used by forms that resolve states /
         // ports off the chosen Country (ClientForm, BranchForm, vendor
         // address sub-modal). Replaces the prior "load 1797 states upfront"
@@ -532,6 +557,7 @@ class MasterController extends Controller
 
         $modelClass = $this->resolveModel($slug);
         $data = $this->validatePayload($request, $slug, null);
+        if ($slug === 'service_categories') $data = $this->normaliseServiceCategory($data);
         $user = $request->user();
         $data['created_by'] = optional($user)->id;
 
@@ -584,7 +610,31 @@ class MasterController extends Controller
             ], 403);
         }
 
+        // Service category: a body with only `status` is the Active / Inactive
+        // toggle — always allowed, even while services use the category
+        // (an inactive category just stops appearing in the dropdown).
+        if ($row instanceof \App\Models\Masters\ServiceCategory
+            && array_keys($request->except(['_method'])) === ['status']) {
+            $status = ucfirst(strtolower((string) $request->input('status')));
+            if (!in_array($status, ['Active', 'Inactive'], true)) {
+                return response()->json(['message' => 'The status must be Active or Inactive.', 'errors' => ['status' => ['The status must be Active or Inactive.']]], 422);
+            }
+            $row->update(['status' => $status]);
+            MasterBundleCache::bump();
+            $row->load(self::OWNERSHIP_WITH);
+            return response()->json($this->withOwnership($row));
+        }
+
+        // A service category becomes read-only once any service uses it.
+        if ($row instanceof \App\Models\Masters\ServiceCategory && ($used = $row->usageCount()) > 0) {
+            return response()->json([
+                'message' => 'This service category is used by ' . $used . ' service' . ($used === 1 ? '' : 's')
+                    . ' and cannot be edited. Create a new category instead.',
+            ], 409);
+        }
+
         $data = $this->validatePayload($request, $slug, $id);
+        if ($slug === 'service_categories') $data = $this->normaliseServiceCategory($data, $row);
 
         // Same file-upload absorbtion as store(). For update, we also
         // clean up the previously-stored file when a new one is being
@@ -794,6 +844,14 @@ class MasterController extends Controller
             }
         }
 
+        // Service categories are never deleted — they are switched Inactive
+        // (PUT /master/service_categories/{id} with { "status": "Inactive" }).
+        if ($row instanceof \App\Models\Masters\ServiceCategory) {
+            return response()->json([
+                'message' => 'Service categories cannot be deleted. Set the status to Inactive instead.',
+            ], 405);
+        }
+
         $row->delete();
 
         // Removing a master must drop it from the cached form-bundle dropdowns.
@@ -914,7 +972,38 @@ class MasterController extends Controller
             $arr['in_use'] = \App\Models\Product::where('gst_id', $row->id)->exists();
         }
 
+        // Service categories used by a service are locked (no edit / delete) —
+        // the frontend disables both buttons on in_use rows.
+        if ($row instanceof \App\Models\Masters\ServiceCategory) {
+            $arr['used_count'] = $row->usageCount();
+            $arr['in_use']     = $arr['used_count'] > 0;
+        }
+
         return $arr;
+    }
+
+    /**
+     * Service Category: Soft / Digital has no sub-type; Other Operational must
+     * name one of its five. On update the omitted half is taken from the row.
+     */
+    private function normaliseServiceCategory(array $data, $row = null): array
+    {
+        $type  = $data['service_type'] ?? $row?->service_type;
+        $class = array_key_exists('classification', $data) ? $data['classification'] : $row?->classification;
+
+        if ($type === 'soft_digital') {
+            $data['classification'] = null;
+        } elseif (!in_array($class, \App\Models\Masters\ServiceCategory::OTHER_CLASSIFICATIONS, true)) {
+            throw ValidationException::withMessages([
+                'classification' => ['Choose the Other Operational type: Professional, Utility, Facility, Maintenance or Outsourcing.'],
+            ]);
+        }
+        // The form is just type + name — status defaults to Active.
+        if (($data['status'] ?? null) === null) {
+            if ($row) unset($data['status']);
+            else $data['status'] = 'Active';
+        }
+        return $data;
     }
 
 

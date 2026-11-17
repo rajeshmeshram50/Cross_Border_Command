@@ -102,6 +102,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Packaging Materials',   'slug' => 'master.packaging_material',  'icon' => 'Package',       'description' => 'Box, carton & wrapping types'],
                 ['name' => 'Product Conditions',    'slug' => 'master.conditions',          'icon' => 'Leaf',          'description' => 'Storage states: organic, fresh, frozen'],
                 ['name' => 'Incoterms',             'slug' => 'master.incoterms',           'icon' => 'Handshake',     'description' => 'Trade terms: FOB, CIF, EXW etc.'],
+                ['name' => 'Service Categories',    'slug' => 'master.service_categories',  'icon' => 'Tags',          'description' => 'Service categories for Soft / Digital & Other Operational services'],
             ],
             'master.party' => [
                 ['name' => 'Customer Types',          'slug' => 'master.customer_types',           'icon' => 'UserSquare',   'description' => 'Classify buyers: domestic/export'],
