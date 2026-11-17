@@ -1,9 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Card, CardBody, CardHeader, Row, Col,
-  Button, Input, Label, Form, FormFeedback,
-  Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
+import {  Card, CardBody, CardHeader, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -14,13 +11,7 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { ShimmerStatCards } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import {
-  getMasterConfig,
-  masterEndpoint,
-  normalizeOpts,
-  type FieldDef,
-  type MasterConfig,
-} from './masterConfigs';
+import {  getMasterConfig, masterEndpoint, normalizeOpts, type FieldDef, type MasterConfig, shouldShowField } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
@@ -44,107 +35,61 @@ function MasterPageInner({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { user, refresh } = useAuth();
-  /* Back target. A master that belongs to another module (cfg.parent — e.g.
-     Trigger Point Master, which lives in the HR sidebar) returns to THAT
-     module's page; everything else belongs to the Master Control Center and
-     returns there. A fixed parent, deliberately, not history: the same call HR
-     > Custom Fields makes, because navigate(-1) drops the user on whatever
-     page they happened to come from rather than the module that owns this
-     master. */
   const backTo    = cfg.parent?.path ?? '/master';
   const backLabel = cfg.parent ? 'Back' : 'Back to Master list';
   const backTitle = cfg.parent ? `Back to ${cfg.parent.label}` : 'Back to Master list';
-
-  // Refresh user perms on every master page mount. Without this, a branch user
-  // whose client admin just changed their permissions in another tab still uses
-  // the stale `permissions` map cached in localStorage — so the Add button might
-  // appear (or stay hidden) even after the change. Backend authorizeMaster() is
-  // the source of truth, but matching the UI to current perms avoids confusion.
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.slug]);
   const toast = useToast();
   const [records, setRecords] = useState<any[]>([]);
   const [refData, setRefData] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
 
-  // Module-level capabilities for the current master, resolved against the
-  // permission map returned by /me. Module slugs in the DB are prefixed with
-  // `master.` (e.g. `master.countries`), matching MasterPlaceholder + Sidebar.
-  // Super admins bypass the granular permission table entirely.
   const isSuperAdmin = user?.user_type === 'super_admin';
   const fullSlug = `master.${cfg.slug}`;
   const modulePerm = user?.permissions?.[fullSlug];
-  /* Does the user hold can_add, IGNORING the lockedFixed override? Needed to
-     tell "you lack permission" (show nothing) apart from "this master is
-     closed" (show the disabled, explained button). */
   const permitsAdd = isSuperAdmin || !!modulePerm?.can_add;
 
   const caps = useMemo(() => ({
     view:   isSuperAdmin || !!modulePerm?.can_view,
-    // `lockedFixed` masters (e.g. address_types) override permissions —
-    // not even super_admin can add rows. Backend rejects POST anyway;
-    // hiding the button keeps the UI honest. Edit/delete still gated
-    // by the per-row is_system flag (handled in row actions).
     add:    !cfg.lockedFixed && (isSuperAdmin || !!modulePerm?.can_add),
     edit:   isSuperAdmin || !!modulePerm?.can_edit,
-    delete: isSuperAdmin || !!modulePerm?.can_delete,
+    delete: !cfg.noDelete && (isSuperAdmin || !!modulePerm?.can_delete),
     export: isSuperAdmin || !!modulePerm?.can_export,
     import: isSuperAdmin || !!modulePerm?.can_import,
-  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import, cfg.lockedFixed]);
+  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import, cfg.lockedFixed, cfg.noDelete]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Synchronous in-flight flag. `saving` only disables the button after the
-  // next render, so a fast double-click / Enter could submit twice before it.
   const savingRef = useRef(false);
-  // Server-derived auto-generated values (e.g. next DEPT-### code) keyed by
-  // field name. Populated when openAdd() fires for any field with
-  // `autogenApi: true`. Cleared on master switch / modal close so a stale
-  // value doesn't bleed into the next form open.
   const [apiAutogen, setApiAutogen] = useState<Record<string, string>>({});
   const [searchInput, setSearchInput] = useState('');
-
-  /* Server-side pagination — the fix for masters that grow large (a 1M-row
-     master used to $q->get() everything and OOM the request). The four masters
-     with bespoke client-side filters / KPI strips (designations, roles, kpis,
-     departments) are inherently small and stay client-side so their filters and
-     hierarchy chips keep working untouched. Everything else pages on the
-     server: one page of rows in memory regardless of table size. */
   const CLIENT_MASTERS = ['designations', 'roles', 'kpis', 'departments'];
   const serverPaged = !CLIENT_MASTERS.includes(cfg.slug);
-  const [page, setPage] = useState(0);          // 0-based, controlled
+  const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(24);
   const [totalRows, setTotalRows] = useState(0);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  /* Debounce the search box so a paged master refetches once typing settles,
-     not on every keystroke. Also resets to page 1 — a new term on page 40,000
-     would otherwise ask for a page the result no longer has. */
   useEffect(() => {
     if (!serverPaged) { setDebouncedSearch(searchInput.trim()); return; }
     const t = window.setTimeout(() => { setDebouncedSearch(searchInput.trim()); setPage(0); }, 350);
     return () => window.clearTimeout(t);
   }, [searchInput, serverPaged]);
 
-  // A slug change resets the pager so you never open a master on a stale page.
   useEffect(() => { setPage(0); setTotalRows(0); }, [cfg.slug]);
-  // Designation-master-specific filter state. Only used when cfg.slug === 'designations'.
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
-  // Department-master-specific filter state. Only used when cfg.slug === 'departments'.
   const [dpStatusFilter, setDpStatusFilter] = useState<string>('all');
   const [dpParentFilter, setDpParentFilter] = useState<string>('all');
-  // Role-master-specific filter state. Only used when cfg.slug === 'roles'.
   const [roleStatusFilter, setRoleStatusFilter] = useState<string>('all');
   const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
   const [roleDeptFilter, setRoleDeptFilter] = useState<string>('all');
   const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
-  // KPI-master-specific filter state.
   const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
   const [kpiTargetFilter, setKpiTargetFilter] = useState<string>('all');
   const [kpiPriorityFilter, setKpiPriorityFilter] = useState<string>('all');
@@ -153,22 +98,12 @@ function MasterPageInner({
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Audit history modal — shown when a row's history (clock) button is clicked.
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditTarget, setAuditTarget] = useState<any | null>(null);
-  // Employee-tree modal — replaces the audit button on the Department master.
   const [treeOpen, setTreeOpen] = useState(false);
   const [treeTarget, setTreeTarget] = useState<any | null>(null);
 
-  // Sublist values keyed by field name (e.g. { banks: [{ bank_name, account_number, ... }] }).
-  // Sublists live OUTSIDE the form's FormData because each item is a multi-field card,
-  // not a single input. They're synced to local state via the sub-modal and merged into
-  // the JSON payload at save time.
   const [sublistValues, setSublistValues] = useState<Record<string, any[]>>({});
-  // Tracks the current value of any `t: 'radio'` field so other fields can
-  // conditionally show/hide based on it (`showWhen`). Uncontrolled inputs
-  // alone can't drive re-renders — this lightweight controlled state powers
-  // the "Calendar vs If Joining" style branches in the Leave Plan form.
   const [radioValues, setRadioValues] = useState<Record<string, string>>({});
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -180,25 +115,17 @@ function MasterPageInner({
       return n;
     });
   };
-
-  // Ownership columns injected by role: just "Created By" for every role.
-  // Client / Branch columns were removed — the audit log shown in the
-  // Actions column already surfaces that ownership information, so they
-  // were redundant in the table itself.
   const ownershipCols = useMemo<{ key: string; label: string }[]>(() => {
     if (!user?.user_type) return [];
     return [{ key: '__creator', label: 'Created By' }];
   }, [user?.user_type]);
 
-  // ref masters referenced by this master's fields
   const refSlugs = useMemo(() => {
     const set = new Set<string>();
     for (const f of cfg.fields) if (f.ref) set.add(f.ref);
     return [...set];
   }, [cfg]);
 
-  // Group fields by section header (so each section becomes a tinted card in the modal).
-  // A field with `sec` starts a new group; subsequent non-sec fields belong to it.
   const sectionedFields = useMemo(() => {
     const groups: { sec: string | null; fields: FieldDef[] }[] = [];
     let current: { sec: string | null; fields: FieldDef[] } = { sec: null, fields: [] };
@@ -215,8 +142,6 @@ function MasterPageInner({
     return groups;
   }, [cfg]);
 
-  // Shrink the modal + widen each field when the form only has a handful of inputs.
-  // ≤ 4 fields → default (500px) with fields stacked, 5–9 → lg (800px), 10+ → xl (1140px).
   const nonSecFieldCount = useMemo(
     () => cfg.fields.filter(f => !f.sec).length,
     [cfg]
@@ -235,11 +160,6 @@ function MasterPageInner({
 
   const resolveRefLabel = (refSlug: string, refLabel: string | undefined, value: any): string => {
     if (value == null || value === '') return '';
-    // Self-references resolve from the live `records` list. refData is loaded
-    // once on mount and not re-fetched after add/edit/delete, so it can drift
-    // out of sync with the master's own data — e.g. a brand-new parent row
-    // created seconds ago wouldn't be in refData yet, so the column would show
-    // the raw id instead of the name.
     const rows = refSlug === cfg.slug ? records : (refData[refSlug] || []);
     const row = rows.find(r => String(r.id) === String(value));
     if (!row) return String(value ?? '');
@@ -247,9 +167,6 @@ function MasterPageInner({
     return String(row[lf] ?? value);
   };
 
-  // Refetches every referenced master's rows. Used both on initial mount AND
-  // every time the form modal opens — that way a department added in another
-  // master shows up in this master's Department dropdown without a page reload.
   const fetchRefs = useCallback(async () => {
     if (refSlugs.length === 0) return;
     const pairs = await Promise.all(refSlugs.map(s => {
@@ -264,7 +181,6 @@ function MasterPageInner({
     setRefData(next);
   }, [refSlugs.join('|')]);
 
-  // Load records whenever cfg changes
   useEffect(() => {
     let aborted = false;
     setLoading(true);
@@ -280,8 +196,6 @@ function MasterPageInner({
         }).then(r => {
           if (aborted) return;
           const body: any = r.data ?? {};
-          // Paginator envelope on the server path; fall back to a flat array
-          // if the endpoint ever returns one (keeps this resilient).
           setRecords(Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : []));
           setTotalRows(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
         }).catch(() => { if (!aborted) { setRecords([]); setTotalRows(0); } })
@@ -297,18 +211,12 @@ function MasterPageInner({
   }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
+  const statusOnlyEdit = !!cfg.inUseStatusOnly && !!editing?.in_use;
 
-  // Records scoped to the *exact* tenant tuple (client_id, branch_id) the
-  // current user would stamp onto a new row. Used by `autogen` so number
-  // sequences (e.g. DEPT-001, DEPT-002) restart per client/branch instead of
-  // running globally across the visible rows. List view, KPIs and search
-  // continue to use `records` / `filteredRecords` so users still see every
-  // shared row they're permitted to view.
   const tenantScopedRecords = useMemo(() => {
     if (!user) return [];
     const eq = (a: any, b: any) => String(a ?? '') === String(b ?? '');
     if (user.user_type === 'super_admin') {
-      // Super-admin adds default to (null, null) — the "global" pool.
       return records.filter(r => r.client_id == null && r.branch_id == null);
     }
     if (user.user_type === 'client_admin') {
@@ -320,7 +228,6 @@ function MasterPageInner({
     return records;
   }, [records, user]);
 
-  // Filter rows by search input across all column accessors + ownership fields
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isDsn = cfg.slug === 'designations';
@@ -331,7 +238,6 @@ function MasterPageInner({
       'client_name', 'branch_name', 'creator_name',
     ];
     return records.filter(row => {
-      // Designation-master extra filters: Status / Level / Dept dropdowns.
       if (isDsn) {
         if (dsnStatusFilter !== 'all') {
           if (String(row.status ?? '').toLowerCase() !== dsnStatusFilter.toLowerCase()) return false;
@@ -343,7 +249,6 @@ function MasterPageInner({
           if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
         }
       }
-      // Department-master extra filters: Status / Parent dropdowns.
       if (isDp) {
         if (dpStatusFilter !== 'all') {
           if (String(row.status ?? '').toLowerCase() !== dpStatusFilter.toLowerCase()) return false;
@@ -356,7 +261,6 @@ function MasterPageInner({
           }
         }
       }
-      // Role-master extra filters: tab (All/Primary/Ancillary) + Type/Status/Dept.
       if (isRole) {
         const rt = String(row.role_type ?? '').toLowerCase();
         if (roleTab === 'primary' && !/primary/.test(rt)) return false;
@@ -371,7 +275,6 @@ function MasterPageInner({
           if (String(row.department_id ?? '') !== String(roleDeptFilter)) return false;
         }
       }
-      // KPI-master extra filters: Role / Target Type / Priority dropdowns.
       if (cfg.slug === 'kpis') {
         if (kpiRoleFilter !== 'all') {
           if (String(row.role_id ?? '') !== String(kpiRoleFilter)) return false;
@@ -391,13 +294,8 @@ function MasterPageInner({
       }
       return false;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, dpStatusFilter, dpParentFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
 
-  /* Roles master — the All / Primary / Ancillary rail that rides in the table
-     toolbar. Counts come from the unfiltered record set, so each tab always
-     shows its own total rather than a count of the current view. Type matching
-     mirrors the filter in filteredRecords above. */
   const roleTabs = useMemo(() => {
     const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
     return [
@@ -407,16 +305,10 @@ function MasterPageInner({
     ];
   }, [records]);
 
-  // Effective ref-data passed to renderField. For self-referential refs (e.g.
-  // Designation's "Reports To" → Designations) we want the dropdown to reflect
-  // the user's *current* records (so a freshly-added designation appears as a
-  // valid manager immediately). When the master has no rows yet, fall back to
-  // the seed data so the dropdown is never empty during onboarding.
   const effectiveRefData = useMemo(() => {
     const next: Record<string, any[]> = { ...refData };
     const selfList = records.length > 0 ? records : (cfg.data || []);
     if (selfList.length > 0) next[cfg.slug] = selfList;
-    // Also seed any other ref this config points at when its API came back empty.
     for (const f of cfg.fields) {
       if (f.ref && (!next[f.ref] || next[f.ref].length === 0)) {
         const refCfg = getMasterConfig(f.ref);
@@ -426,19 +318,19 @@ function MasterPageInner({
     return next;
   }, [refData, records, cfg]);
 
-  // Initialize controlled radio state from a record (or defaults). Used on
-  // both Add and Edit so `showWhen` immediately reflects the form's value
-  // — without this, the conditional inputs would always start hidden.
   const seedRadioValues = (row?: any) => {
     const next: Record<string, string> = {};
+    const conditionalSources = new Set(
+      cfg.fields.flatMap(f => f.showWhen ? [f.showWhen.field] : []),
+    );
     for (const f of cfg.fields) {
-      if (f.t !== 'radio') continue;
+      if (f.t !== 'radio' && !conditionalSources.has(f.n)) continue;
       const v = row?.[f.n];
       if (v != null && v !== '') {
         next[f.n] = String(v);
       } else {
         const first = normalizeOpts(f.opts)[0]?.value;
-        if (first != null) next[f.n] = String(first);
+        if (first != null && (f.t === 'radio' || f.t === 'select')) next[f.n] = String(first);
       }
     }
     setRadioValues(next);
@@ -452,34 +344,24 @@ function MasterPageInner({
     setApiAutogen({});
     seedRadioValues(null);
     setModalOpen(true);
-    // Refresh referenced masters so dropdowns reflect anything added elsewhere.
     fetchRefs();
-    // Pre-fill any field flagged `autogenApi` from the server. The backend
-    // returns a tenant-scoped next code (e.g. DEPT-001) computed straight
-    // from the DB, so the value reflects what `store()` will accept rather
-    // than what the page happens to have loaded.
     const apiFields = cfg.fields.filter(f => (f as any).autogenApi);
     if (apiFields.length > 0) {
       api.get(`${masterEndpoint(cfg)}/next-code`)
         .then(r => {
           const code = r?.data?.code;
           if (!code) return;
-          // Currently only one such field per master ('code'); apply the
-          // returned value to every autogenApi field by name.
           const next: Record<string, string> = {};
           for (const f of apiFields) next[f.n] = String(code);
           setApiAutogen(next);
         })
-        .catch(() => { /* fall back to client-side autogen() */ });
+        .catch(() => {  });
     }
   };
   const openEdit = (row: any, readonly = false) => {
     setFieldErrors({});
     setEditingId(row.id);
     setViewOnly(readonly);
-    // Hydrate sublist state from the row — backend returns child arrays inline
-    // (e.g. row.banks for a bank-accounts sublist), so the form pre-fills with
-    // any existing items.
     const init: Record<string, any[]> = {};
     for (const f of cfg.fields) {
       if (f.t === 'sublist' && f.n) {
@@ -493,21 +375,11 @@ function MasterPageInner({
     fetchRefs();
   };
 
-  // Wire up `autoDeriveFrom` fields once the form is in the DOM. The fields
-  // are uncontrolled (defaultValue + onInput), so we hook the source input's
-  // 'input' event and write the computed default into the target input until
-  // the user manually edits it. Re-runs on every modal open and on slug
-  // changes so the listener targets the right form.
   useEffect(() => {
     if (!modalOpen) return;
     const deriveFields = cfg.fields.filter((f: any) => f.autoDeriveFrom);
     if (deriveFields.length === 0) return;
 
-    // Resolve the form lazily. Reactstrap's modal can be off-DOM for
-    // a tick after `modalOpen` flips, and on some systems the 60ms
-    // delay races the actual mount. Retry up to ~600ms before giving
-    // up. The selector list widens progressively to handle different
-    // modal wrappers across the project.
     const findForm = (): HTMLFormElement | null => {
       const selectors = [
         '.master-modal form',
@@ -540,16 +412,7 @@ function MasterPageInner({
         const target = form.querySelector(`[name="${field.n}"]`) as HTMLInputElement | null;
         if (!source || !target) return;
 
-        // Once the user manually types in the target we stop auto-filling.
-        // Clearing the target back to empty re-enables auto-fill, so users
-        // can re-trigger derivation by emptying the short code.
         let userEdited = !!target.value && editing != null;
-        // Guard flag — set true while we programmatically update the
-        // target. Without it, dispatching the synthetic 'input' event
-        // below fires onTargetInput, which sees a non-empty value and
-        // flips userEdited to true permanently — that left every UOM
-        // entry stuck at the first letter ("K" instead of "KG"). The
-        // guard makes onTargetInput ignore self-fired events.
         let programmatic = false;
         const onTargetInput = () => {
           if (programmatic) return;
@@ -560,8 +423,6 @@ function MasterPageInner({
         const onSourceInput = () => {
           if (userEdited) return;
           const next = deriveValue(cfg.slug, field.n, source.value);
-          // Set via the native setter so React/Reactstrap don't strip the
-          // change; then dispatch an 'input' event so any listeners fire.
           const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
           programmatic = true;
           try {
@@ -579,7 +440,6 @@ function MasterPageInner({
         });
       });
 
-      // Stash for cleanup phase below.
       (window as any).__autoDeriveCleanups = cleanups;
     };
     const timer = window.setTimeout(attach, 60);
@@ -592,7 +452,6 @@ function MasterPageInner({
     };
   }, [modalOpen, cfg.slug, editing?.id]);
 
-  // Clients-page style compact action button
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
@@ -635,8 +494,6 @@ function MasterPageInner({
       onClick={onClick}
     >
       {disabled ? (
-        // Custom prohibit indicator: clean circle border wrapping the icon
-        // with a diagonal slash clipped inside the circle (overflow: hidden).
         <span
           aria-hidden="true"
           style={{
@@ -653,7 +510,6 @@ function MasterPageInner({
           }}
         >
           <i className={icon} style={{ fontSize: 9, lineHeight: 1 }} />
-          {/* Diagonal slash — clipped by the round wrapper so it stays inside. */}
           <span
             style={{
               position: 'absolute',
@@ -676,8 +532,6 @@ function MasterPageInner({
 
   const validateForm = (fd: FormData): Record<string, string> => {
     const errs: Record<string, string> = {};
-    // Helper — a field gated by `showWhen` shouldn't be validated when its
-    // controlling field's current value doesn't match (it's not in the DOM).
     const isHiddenByShowWhen = (f: FieldDef): boolean => {
       if (!f.showWhen) return false;
       const live = radioValues[f.showWhen.field];
@@ -690,11 +544,8 @@ function MasterPageInner({
     };
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
-      // Auto-generated fields are filled by the server, never the user.
       if (f.auto) continue;
-      // Sublist values aren't tied to a single FormData input — they live in
-      // their own state and are validated by the sub-modal at add/edit time.
-      // A REQUIRED sublist must hold at least one entry (bug #9 — Bank Details).
+      if (statusOnlyEdit && f.n !== 'status') continue;
       if (f.t === 'sublist') {
         if (f.r && (!sublistValues[f.n] || sublistValues[f.n].length === 0)) {
           errs[f.n] = `Please add at least one ${f.subSingular || f.l}.`;
@@ -702,10 +553,6 @@ function MasterPageInner({
         continue;
       }
       if (isHiddenByShowWhen(f)) continue;
-      // File inputs: required check uses File.size; skip the rest of validation.
-      // On EDIT the existing file already lives on the server, so we don't
-      // force a re-upload — only the size cap (when a new file is chosen)
-      // and the required check on CREATE stay active.
       if (f.t === 'file') {
         const v = fd.get(f.n);
         const file = v instanceof File ? v : null;
@@ -724,9 +571,7 @@ function MasterPageInner({
         continue;
       }
       if (!raw) continue;
-      /* Length cap on text fields — backstop for cases where the
-       * input's maxLength was bypassed (paste, browser quirks, …).
-       * Default 50, overridable per field via `maxLen`. */
+
       if (f.t === 'text' || (f.t === 'textarea' && typeof (f as any).maxLen === 'number')) {
         const cap = typeof (f as any).maxLen === 'number' ? (f as any).maxLen : 50;
         if (raw.length > cap) {
@@ -734,31 +579,7 @@ function MasterPageInner({
           continue;
         }
       }
-      /* ── Security validators (text + textarea only) ──────────────
-       * XSS — angle brackets never legitimately appear in master
-       * names, descriptions, codes, etc. Blocking them at the form
-       * boundary kills <script>…</script>, <img onerror=…>, and
-       * every other HTML-injection payload regardless of which master
-       * is being edited.
-       *
-       * SQL injection — block the signature patterns a tester would
-       * paste (' OR 1=1 --, ; DROP …, UNION SELECT, javascript:,
-       * inline event handlers). Backend ORM already parameterises
-       * queries, but rejecting the payload up front prevents the
-       * data from being stored verbatim and surfacing later in
-       * exports / reports.
-       *
-       * Meaningful input — required free-text fields can be bypassed
-       * by submitting "...", "!!!", "---", or other symbol-only
-       * strings (raw.trim() leaves them non-empty). Require at least
-       * one letter or digit so "Segment Name" can't be saved as ":::".
-       *
-       * Name whitelist — per-slug list of fields that must stay in a
-       * conservative letters/digits/space/basic-punctuation charset
-       * (covers Segment Name, UOM Title & Short Code, Condition
-       * Title, Haz Class Name, Packaging Material). Other free-text
-       * fields (descriptions, addresses, action-required notes,
-       * incoterm full names) keep their broader charset. */
+
       if (f.t === 'text' || f.t === 'textarea') {
         if (/[<>]/.test(raw)) {
           errs[f.n] = `${f.l} cannot contain HTML characters (< or >)`;
@@ -768,18 +589,11 @@ function MasterPageInner({
           errs[f.n] = `${f.l} contains disallowed patterns (possible SQL/JS injection)`;
           continue;
         }
-        // The currency Symbol field is legitimately symbol-only (₹, $, €, £),
-        // so it's exempt from the "must contain letters/numbers" check (bug #19).
         if (f.n !== 'symbol' && f.r && !/[A-Za-z0-9]/.test(raw)) {
           errs[f.n] = `${f.l} must contain meaningful text (letters or numbers, not only symbols)`;
           continue;
         }
-        /* Identifier-style fields (name, title, code, short_code, role
-         * names, etc.) get a stricter charset whitelist so users can't
-         * paste emoji, symbol soup, or anything outside basic Latin
-         * punctuation into the master's primary label. The list is by
-         * field name rather than slug, so the rule auto-extends to any
-         * future master that uses one of these conventional names. */
+
         const NAME_FIELD_NAMES = new Set([
           'name', 'title', 'role_name', 'behaviour_name', 'category_name',
           'short_code', 'code', 'license_code', 'cat_code', 'iso_code', 'state_code',
@@ -790,18 +604,11 @@ function MasterPageInner({
             continue;
           }
         }
-        // Per-field regex from the config — stricter field-specific formats
-        // (e.g. "no numbers" name fields, numeric-only codes). Runs when the
-        // field declares a `pattern` and has a value.
         if (f.pattern && !new RegExp(f.pattern).test(raw)) {
           errs[f.n] = f.patternMessage || `${f.l} is invalid`;
           continue;
         }
       }
-      // Future-only date guard — kicks in for fields like Warranty
-      // Expiry where a backdated value doesn't make sense. Lexical
-      // YYYY-MM-DD compare is fine because that's what the picker
-      // emits and what we store on the row.
       if (f.t === 'date' && f.futureOnly) {
         const todayIso = new Date().toISOString().slice(0, 10);
         if (raw < todayIso) {
@@ -809,9 +616,6 @@ function MasterPageInner({
           continue;
         }
       }
-      // Cross-date constraint — this date must be AFTER another date field
-      // (e.g. Warranty Expiry must be later than Purchase Date, bug #27). Only
-      // checks when both dates are present; lexical YYYY-MM-DD compare is safe.
       if (f.t === 'date' && (f as any).afterField) {
         const other = String(fd.get((f as any).afterField) ?? '').trim();
         const otherLabel = cfg.fields.find(x => x.n === (f as any).afterField)?.l || 'the start date';
@@ -825,10 +629,6 @@ function MasterPageInner({
       } else if (f.t === 'number' && isNaN(Number(raw))) {
         errs[f.n] = 'Must be a valid number';
       } else if (f.t === 'number') {
-        /* Range guard — both per-field overrides (`min` / `max`) and the
-         * default 0..999999999 cap from the input renderer above. Stops
-         * users from pasting numbers that overflow the backend column
-         * before the request ever leaves the browser. */
         const num = Number(raw);
         const minOverride = typeof (f as any).min === 'number' ? (f as any).min : 0;
         const maxOverride = typeof (f as any).max === 'number' ? (f as any).max : 999999999;
@@ -846,19 +646,8 @@ function MasterPageInner({
       } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
       } else if (f.n === 'hsn_code' && !/^[0-9]{4,8}$/.test(raw)) {
-        /* HSN / SAC are strictly numeric per Indian GST notification —
-         * 4, 6, or 8 digit codes. Capped at 8 because Zoho Books refuses
-         * anything longer, so a 10-digit code saved here only failed later,
-         * at PO sync. Mirrors the backend rule (^[0-9]{4,8}$) so the user
-         * sees an instant inline error instead of a server-side 422. */
         errs[f.n] = 'Invalid HSN / SAC — 4 to 8 digit numeric code';
       } else if (cfg.slug === 'hsn_codes' && f.n === 'description') {
-        /* HSN/SAC commodity descriptions are short product names like
-         * "Almonds — Shelled" or "Sesame Seeds, Whole". Allow letters,
-         * digits, spaces, and the punctuation real descriptions actually
-         * use (hyphen, em/en dash, period, comma, parentheses, ampersand,
-         * slash, apostrophe, percent). Block everything else so a user
-         * can't paste markup, control characters, or symbol soup. */
         if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
           errs[f.n] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
         } else if (raw.length > 150) {
@@ -867,25 +656,11 @@ function MasterPageInner({
       }
     }
 
-    /* Duplicate-row check — every master config lists its unique columns
-     * in cfg.uFields (e.g. segments uFields=['title']). Before the form
-     * hits the server, scan the in-memory `records` list and reject if
-     * another row already has the same value (case-insensitive). Edit-
-     * mode skips the row being edited so its own name doesn't collide
-     * with itself. Surfaces a clear inline error on the duplicate field
-     * instead of waiting for a 422 round-trip. */
-    if (cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
+    if (!statusOnlyEdit && cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
       const labelOf = (u: string) => cfg.fields.find(ff => ff.n === u)?.l || u;
       if (cfg.uFields.length > 1) {
-        // COMPOSITE uniqueness — only the COMBINATION of all uFields must be
-        // unique (matches the backend). Checking each field independently wrongly
-        // flagged e.g. module_scope as a duplicate whenever ANY row used the same
-        // scope, so every option errored (bug #29).
         const vals = cfg.uFields.map(u => String(fd.get(u) ?? '').trim());
-        /* Only the FIRST column has to be filled in. An optional column left
-           blank (roles' Department) is its own bucket, not a wildcard —
-           requiring every column to be non-empty skipped the check entirely
-           and let two identical department-less rows through. */
+
         if (vals[0] !== '') {
           const dup = records.find(r => {
             if (editingId != null && r.id === editingId) return false;
@@ -893,13 +668,13 @@ function MasterPageInner({
           });
           if (dup) {
             const first = cfg.uFields[0];
-            /* Name the values that clashed, not just the column names — the
-               list is usually sliced by exactly these columns, so "this
-               combination already exists" leaves the user hunting. */
+
             const ctx = cfg.uFields.slice(1).map((u, i) => {
               const f = cfg.fields.find(ff => ff.n === u);
               const raw = vals[i + 1];
-              const shown = raw ? (f?.ref ? resolveRefLabel(f.ref, f.refL, raw) : raw) : '—';
+              const shown = raw
+                ? (f?.ref ? resolveRefLabel(f.ref, f.refL, raw) : (normalizeOpts(f?.opts).find(o => o.value === raw)?.label ?? raw))
+                : '—';
               return `${labelOf(u)}: ${shown}`;
             });
             errs[first] = ctx.length
@@ -911,12 +686,7 @@ function MasterPageInner({
         const uName = cfg.uFields[0];
         const dupRaw = String(fd.get(uName) ?? '').trim();
         if (dupRaw && !errs[uName]) {
-          /* Keep the row, not just a boolean. Where the list is sliced into
-           * tabs by a column outside uFields, the clash can sit on a tab the
-           * user isn't on, and a bare "already exists" reads as if the list is
-           * wrong (QA #68: "Manager" as an Ancillary role blocked adding it
-           * from the Primary Roles tab, with an empty Primary list behind the
-           * message). cfg.uContext names the columns that locate the row. */
+
           const dup = records.find(r => {
             if (editingId != null && r.id === editingId) return false;
             return String(r[uName] ?? '').trim().toLowerCase() === dupRaw.toLowerCase();
@@ -956,9 +726,6 @@ function MasterPageInner({
     }
     setFieldErrors({});
 
-    // Auto-capitalize the first letter of text/textarea values across every
-    // master form. Skips identifier-style fields (codes / GSTIN / PAN / etc.)
-    // and email, which have their own casing rules.
     const SKIP_CAPITALIZE = new Set([
       'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
       'gstin', 'pan', 'tan', 'cin', 'iec',
@@ -968,16 +735,11 @@ function MasterPageInner({
     ]);
     const capitalizeFirst = (s: string): string => {
       if (!s) return s;
-      // Find first letter (skip leading whitespace/punctuation) and uppercase it.
       const idx = s.search(/[a-zA-Z]/);
       if (idx === -1) return s;
       return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
     };
 
-    // Helper — same gate used in validateForm. A field hidden by `showWhen`
-    // must be sent as NULL on save so toggling away wipes the stale value
-    // (otherwise switching "Calendar → If Joining" would silently leave the
-    // previously-picked month attached on the row).
     const isHiddenByShowWhenForPayload = (f: FieldDef): boolean => {
       if (!f.showWhen) return false;
       const live = radioValues[f.showWhen.field];
@@ -991,16 +753,8 @@ function MasterPageInner({
     const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
-      // File fields are not yet wired to backend storage — skip them in the
-      // JSON payload so the request stays a plain JSON POST/PUT.
       if (f.t === 'file') continue;
-      // Auto-generated fields (code/AST-XXXX/ROL-XX) are filled by the
-      // server's creating-hook on insert and preserved as-is on update —
-      // skip them so the backend stays the single source of truth and
-      // the frontend's preview value never overrides the canonical code.
       if (f.auto) continue;
-      // Sublist fields ride alongside the parent's own fields — emit the
-      // current array for each so the controller can sync child rows.
       if (f.t === 'sublist') {
         payload[f.n] = sublistValues[f.n] || [];
         continue;
@@ -1014,11 +768,7 @@ function MasterPageInner({
         if (raw == null || raw === '') {
           payload[f.n] = null;
         } else {
-          /* Belt-and-suspenders clamp — validateForm already rejects
-           * out-of-range numbers, but if a future code path skips it
-           * (or scientific-notation input slips past the HTML control)
-           * we still cap here so the server never sees a value that
-           * would overflow the column. */
+
           let num = Number(raw);
           const minOverride = typeof (f as any).min === 'number' ? (f as any).min : 0;
           const maxOverride = typeof (f as any).max === 'number' ? (f as any).max : 999999999;
@@ -1044,13 +794,6 @@ function MasterPageInner({
     try {
       const base = masterEndpoint(cfg);
 
-      // Collect actual File uploads from the form. When at least one
-      // file is selected, switch the request to multipart/form-data so
-      // the backend can read it via $request->file(...). Previously
-      // file fields were skipped entirely from the JSON payload, which
-      // meant invoices / warranty cards uploaded against an asset
-      // never reached the server — they were gone the moment the user
-      // hit Save and the form re-opened with empty file inputs.
       const filesToUpload: { name: string; file: File }[] = [];
       for (const f of cfg.fields) {
         if (f.t !== 'file' || !f.n) continue;
@@ -1060,17 +803,13 @@ function MasterPageInner({
         }
       }
 
-      // Build the request body. Without files, keep posting JSON so
-      // existing masters that don't carry uploads aren't disturbed.
-      let body: any = payload;
+      let body: any = statusOnlyEdit ? { status: payload.status } : payload;
       let headers: any = undefined;
       if (filesToUpload.length > 0) {
         const out = new FormData();
         for (const k of Object.keys(payload)) {
           const v = (payload as Record<string, any>)[k];
           if (v === null || v === undefined) {
-            // Laravel treats a missing key as null; explicit empty
-            // string is closer to the intent ("clear this column").
             out.append(k, '');
           } else if (Array.isArray(v) || (typeof v === 'object' && !(v instanceof File))) {
             out.append(k, JSON.stringify(v));
@@ -1078,12 +817,9 @@ function MasterPageInner({
             out.append(k, String(v));
           }
         }
-        for (const { name, file } of filesToUpload) {
+        for (const { name, file } of filesToUpload)     {
           out.append(name, file);
         }
-        // Laravel only honors PATCH/PUT methods in multipart bodies
-        // when the verb is spoofed via _method, so we POST + spoof on
-        // the update path.
         if (editingId != null) out.append('_method', 'PUT');
         body = out;
         headers = { 'Content-Type': 'multipart/form-data' };
@@ -1092,7 +828,7 @@ function MasterPageInner({
       if (editingId != null) {
         const url = `${base}/${editingId}`;
         const { data } = filesToUpload.length > 0
-          ? await api.post(url, body, { headers })  // _method=PUT spoof for multipart
+          ? await api.post(url, body, { headers })
           : await api.put(url, body);
         setRecords(prev => prev.map(r => r.id === editingId ? data : r));
         toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
@@ -1101,9 +837,6 @@ function MasterPageInner({
         setRecords(prev => [data, ...prev]);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
-      // The form-bundle caches (Customer/Consignee/Product/Vendor/Client/
-      // Branch) may now be stale — drop them so this new/edited master shows
-      // in their dropdowns on the next form open instead of after the TTL.
       bustAllMasterBundles();
       setModalOpen(false);
     } catch (err: any) {
@@ -1139,9 +872,6 @@ function MasterPageInner({
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     const label = deleteLabel(deleteTarget);
-    // Defensive: an upstream API that returns a wrapped payload (e.g. legacy
-    // `{ message, record }`) can leave a row in state without an `id`. Catch
-    // it here so we never send `/endpoint/undefined` to the backend.
     if (deleteTarget.id == null) {
       toast.error('Cannot delete', 'This record is missing an identifier. Refresh the page and try again.');
       setDeleteOpen(false);
@@ -1168,8 +898,6 @@ function MasterPageInner({
     const f = cfg.fields.find(ff => ff.n === fieldName);
     const raw = row[fieldName];
 
-    // Date fields render as "28-Mar-2026" — applied to every column whose
-    // FieldDef declares t: 'date' (purchase_date, warranty_expiry_date, etc.)
     if (f?.t === 'date') {
       if (raw == null || raw === '') return <span className="text-muted">—</span>;
       const d = new Date(String(raw));
@@ -1180,12 +908,15 @@ function MasterPageInner({
     }
 
     if (fieldName === 'status') {
-      const active = String(raw).toLowerCase() === 'active';
+      const active = raw === true || raw === 1
+        || ['active', '1', 'true', 'yes', 'enabled'].includes(String(raw).toLowerCase());
       const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+      const inactive = raw === false || raw === 0
+        || ['0', 'false'].includes(String(raw).toLowerCase());
       const tone = active
         ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', text: 'Active' }
-        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: raw ? titleCase(String(raw)) : 'Inactive' };
-      void tone.dot;  // dot indicator dropped per UX request — keep tone struct for parity
+        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: inactive || !raw ? 'Inactive' : titleCase(String(raw)) };
+      void tone.dot;
       return (
         <span
           className={`mp-status-pill mp-status-${active ? 'active' : 'inactive'}`}
@@ -1206,9 +937,6 @@ function MasterPageInner({
       );
     }
 
-    // Reports-To column: show the manager's name with a colored bullet (matches
-    // reference design "● CEO" / "● VP Engineering"). Falls through to the
-    // generic ref renderer if not a designations master.
     if (fieldName === 'reports_to_id' && f?.ref === 'designations') {
       const label = resolveRefLabel(f.ref, f.refL, raw);
       if (!label) return <span className="text-muted">—</span>;
@@ -1228,7 +956,6 @@ function MasterPageInner({
       return <span className="text-muted">—</span>;
     }
 
-    // "code"-type identifiers — bold honey-amber glossy chip.
     if (fieldName === 'code') {
       const codeTxt = String(raw).toUpperCase();
       const CODE_MAX = 14;
@@ -1259,7 +986,6 @@ function MasterPageInner({
       return chip;
     }
 
-    // KPI Target Type — colored text pill (matches Status/Created By style).
     if (fieldName === 'target_type') {
       const v = String(raw);
       const tone =
@@ -1290,7 +1016,6 @@ function MasterPageInner({
       );
     }
 
-    // KPI Priority — colored text pill (matches Status/Created By style).
     if (fieldName === 'priority') {
       const v = String(raw);
       const tone =
@@ -1319,7 +1044,6 @@ function MasterPageInner({
       );
     }
 
-    // Role Type — bold Tailwind-style palette with leading filled icon.
     if (fieldName === 'role_type') {
       const v = String(raw);
       const tone =
@@ -1351,8 +1075,6 @@ function MasterPageInner({
       );
     }
 
-    // Designation Level — chip styled exactly like the hierarchy strip chips
-    // (icon + bold text, fixed bg/fg/border per tier) plus a 5-star rating.
     if (fieldName === 'level') {
       const v = String(raw);
       const TOTAL_STARS = 5;
@@ -1406,8 +1128,6 @@ function MasterPageInner({
       );
     }
 
-    // Identifier-style fields (GSTIN, PAN, etc.) render in a consistent
-    // monospace style regardless of letter case so the column looks uniform.
     if (
       fieldName === 'gstin' ||
       fieldName === 'pan' ||
@@ -1431,9 +1151,6 @@ function MasterPageInner({
       );
     }
 
-    // Strict identifier heuristic — only render as monospace `<code>` when the
-    // value is ALL UPPERCASE alphanumerics (e.g. "INMAA", "USD", "FOB"). This
-    // avoids false positives on plain words like "developer" or "soft tech".
     if (typeof raw === 'string' && /^[A-Z0-9]{2,}$/.test(raw.replace(/\s|-/g, ''))) {
       const idTxt = String(raw);
       const idMax = 18;
@@ -1447,9 +1164,11 @@ function MasterPageInner({
       );
     }
 
-    /* Long free-text cells — truncate with ellipsis + hover tooltip so a
-     * 200-char milestone description or address doesn't blow out the
-     * column. Mirrors the first-column truncation rule. */
+    if (f?.t === 'select' && f.opts?.some(o => typeof o !== 'string')) {
+      const opt = normalizeOpts(f.opts).find(o => o.value === String(raw));
+      if (opt) return <span className="text-body">{opt.label}</span>;
+    }
+
     const txt = String(raw);
     const MAX = 24;
     if (txt.length <= MAX) {
@@ -1464,17 +1183,9 @@ function MasterPageInner({
     );
   };
 
-  // Columns for the shared <DataTable> (TanStack Table). Built dynamically from
-  // cfg.cols + ownershipCols so every master renders the same table.
-  // No Sr No column here — DataTable's `serial` prop prepends it and numbers the
-  // row's VISIBLE position, which stays 1..n when a column is sorted.
   const columns = useMemo(() => {
     const cols: any[] = [];
     cfg.cols.forEach((colName, idx) => {
-      // Only the 'level' rating tile is visually centered as a square
-      // badge — everything else (status pill, code chip, plain text)
-      // reads more natural left-aligned so the column header sits
-      // directly above its content's left edge.
       const isCentered = colName === 'level';
       cols.push({
         meta: isCentered ? { align: 'center' } : undefined,
@@ -1483,7 +1194,6 @@ function MasterPageInner({
             {cfg.colL[idx] || colName}
           </div>
         ),
-        // Accessor: resolve ref labels upfront so sorting/search see the label.
         accessorFn: (row: any) => {
           const f = cfg.fields.find(ff => ff.n === colName);
           if (f?.ref) return resolveRefLabel(f.ref, f.refL, row[colName]);
@@ -1492,11 +1202,6 @@ function MasterPageInner({
         id: `col_${colName}`,
         cell: (info: any) => {
           const row = info.row.original;
-          // First-column bold rule — but skip for "code" (it has its own pill
-          // renderer in formatCell) and "status" (its own status badge).
-          // Long values are truncated to ~20 chars and hover-tooltipped via
-          // the project-wide Tooltip so the column width stays predictable
-          // even when someone enters a 50-char master name.
           if (idx === 0 && colName !== 'status' && colName !== 'code') {
             const f = cfg.fields.find(ff => ff.n === colName);
             const raw = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
@@ -1517,10 +1222,6 @@ function MasterPageInner({
     });
     ownershipCols.forEach(o => {
       cols.push({
-        // Left-aligned (default) — the "Super Admin" / "Client Admin"
-        // pill sits naturally at the start of the cell, directly under
-        // the header label. Centering wide columns made the small pill
-        // float in empty space.
         header: o.label,
         id: o.key,
         accessorFn: (row: any) =>
@@ -1530,9 +1231,6 @@ function MasterPageInner({
         cell: (info: any) => renderOwnership(o.key, info.row.original),
       });
     });
-    // Designation-master-only: Employees column. Reads row.employees_count when
-    // the backend supplies it (later); falls back to "0 emp" so the column is
-    // never empty.
     if (cfg.slug === 'designations' || cfg.slug === 'roles') {
       cols.push({
         header: () => <div className="text-center">Employees</div>,
@@ -1549,13 +1247,6 @@ function MasterPageInner({
         },
       });
     }
-    /* Department-master Employees column. Two-line cell ("18" / "employees").
-     *
-     * Reads the REAL count: MasterController::list withCount('employees') on the
-     * departments slug. It used to fall back to a hash-of-the-row-id mock (4-25)
-     * when the field was absent — which it always was, so every figure on screen
-     * was invented, and the totals happily exceeded the entire employee table.
-     * No fallback now: a department with no staff must read 0, not a number. */
     if (cfg.slug === 'departments') {
       cols.push({
         header: () => <div className="text-center">Employees</div>,
@@ -1578,10 +1269,7 @@ function MasterPageInner({
         },
       });
     }
-    // Created Date column — every Eloquent master row carries a created_at
-    // timestamp, so the column is added globally. Renders as "12-Jan-2026".
     cols.push({
-      // Left-aligned — date text reads cleanest at the cell's start edge.
       header: 'Created Date',
       id: '__created_at',
       accessorFn: (row: any) => row.created_at ?? '',
@@ -1607,14 +1295,8 @@ function MasterPageInner({
       meta: { align: 'center' },
       enableGlobalFilter: false,
       cell: (info: any) => {
-        // Hide actions the current user is not allowed to perform on this master.
-        // If none are allowed, render an em-dash so the column still aligns.
         const showAny = caps.view || caps.edit || caps.delete;
         const row = info.row.original;
-        // ── Hierarchical edit/delete rule (mirrors backend MasterVisibility) ──
-        // super_admin (4) > client_admin/client_user (3) > branch_user/employee (2).
-        // Every branch is an isolated peer, so all branch_user/employee
-        // creators share one tier.
         const rankFor = (t?: string): number => {
           switch (t) {
             case 'super_admin':                return 4;
@@ -1626,17 +1308,11 @@ function MasterPageInner({
         };
         const myRank = rankFor(user?.user_type);
         const creatorRank = rankFor(row?.creator_user_type);
-        // Fallback: when the row carries no creator user (NULL or stale
-        // created_by) rank it by its own ownership stamp (client-level row
-        // with no branch ranks above a branch-stamped row).
         const fallbackCreatorRank = !row?.created_by
           ? (row?.client_id == null ? 4
               : row?.branch_id == null ? 3
               : 2)
           : creatorRank;
-        // Block edit/delete only when the creator is strictly higher-
-        // ranked AND it's not the user's own record. Super admin always
-        // passes.
         const blockedByRank =
           user?.user_type !== 'super_admin'
           && row?.created_by !== user?.id
@@ -1647,20 +1323,11 @@ function MasterPageInner({
                        : (row?.creator_user_type === 'branch_user' || row?.creator_user_type === 'employee')
                          ? 'another Branch'
                        : 'a higher-privileged user';
-        // System-seeded rows ("Office" address type, "Laptop" / "Mobile"
-        // asset categories, "Standard" / "VIP" classifications, etc.)
-        // come back from the API with is_system=true. The backend
-        // returns 403 on both edit and delete now — block the buttons
-        // up front so the user gets a clear tooltip instead of a
-        // failed request toast.
         const isSystemRow = !!row?.is_system;
-        // Rows the backend reports as still referenced (e.g. a GST rate used by
-        // products / HSN codes) can't be deleted — the API 409s. Block the
-        // button up front with an explanatory tooltip instead of a failed
-        // request (QA #43).
         const inUseRow = !!row?.in_use;
         const editTooltip   = isSystemRow ? 'System-managed — cannot be edited'
                             : blockedByRank ? `Cannot edit — created by ${whoLabel}`
+                            : inUseRow && cfg.inUseStatusOnly ? 'In use by a service — only the status can be changed'
                             : 'Edit';
         const deleteTooltip = isSystemRow ? 'System-managed — cannot be deleted'
                             : blockedByRank ? `Cannot delete — created by ${whoLabel}`
@@ -1673,9 +1340,6 @@ function MasterPageInner({
               title={editTooltip}
               icon="ri-pencil-line"
               color="info"
-              // System rows are fully locked — the backend 403s edit
-              // attempts, so block the button up front. Users can
-              // still hit View to inspect the system-managed values.
               disabled={blockedByRank || isSystemRow}
               onClick={() => openEdit(info.row.original)}
             />}
@@ -1707,10 +1371,8 @@ function MasterPageInner({
       },
     });
     return cols;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, ownershipCols, refData, caps, records]);
 
-  /** Chars of a creator name the "Created By" pill shows before ellipsising. */
   const CREATOR_NAME_MAX = 11;
 
   const renderOwnership = (key: string, row: any): React.ReactNode => {
@@ -1734,17 +1396,12 @@ function MasterPageInner({
         : row.client_name
         ? `Client: ${row.client_name}`
         : null;
-      // Pick a tone based on the creator's user_type so super-admin / client /
-      // branch users each show a distinct pill color.
       const userType = String(row.creator_user_type ?? '').toLowerCase();
       const tone =
         userType === 'super_admin' ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'super' as const } :
         userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', kind: 'client' as const } :
         userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const } :
         { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
-      /* The pill is nowrap, so a long creator name (an org name like "INORBVICT
-         HEALTHCARE INDIA PRIVATE LIMITED") ran past the column and over
-         Employees. Cut at 11 characters; the full name is on hover. */
       const shortName = String(name).length > CREATOR_NAME_MAX
         ? `${String(name).slice(0, CREATOR_NAME_MAX)}…`
         : String(name);
@@ -1769,7 +1426,7 @@ function MasterPageInner({
       return (
         <div className="d-flex flex-column align-items-start" style={{ gap: 3, maxWidth: '100%' }}>
           {shortName === name ? pill : <Tooltip label={name} maxWidth={320}>{pill}</Tooltip>}
-          {/* Same clipping for the scope caption — it carries the same long name. */}
+          {}
           {scope && (
             <span
               className="text-muted mp-creator-sub"
@@ -1787,9 +1444,6 @@ function MasterPageInner({
 
   const singular = cfg.titleSingular || cfg.title;
 
-  // Guard direct-URL navigation: users without can_view should not see records,
-  // even if the API didn't 403 yet. The sidebar already filters by can_view,
-  // but a deep link or stale tab can land here without it.
   if (!caps.view) {
     return (
       <Row>
@@ -1819,12 +1473,8 @@ function MasterPageInner({
 
   return (
     <>
-      {/* ───── Shared visual polish for every master ──────────────────────────
-          The page header strip, KPI tile hover, the toolbar Add button, badge
-          refinements and their dark-mode overrides. Scoped via the .mp-*
-          class names so nothing leaks off this surface. */}
+      {}
       <style>{`
-        /* KPI tile lift + indigo glow on hover */
         .mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
         .mp-kpi-tile:hover {
           transform: translateY(-3px);
@@ -1837,12 +1487,6 @@ function MasterPageInner({
           border-color: rgba(139,92,246,0.55) !important;
         }
 
-        /* ── Page header strip ────────────────────────────────────────────────
-           Ported from the Supplier Management header (.sup-fig .cstrip in
-           pages/p2p/p2p-master-management/supplier-management/
-           supplier-management.css) so every master opens with the same 58px
-           violet strip as the Supplier list. Values are that file's verbatim —
-           only the class prefix changed. */
         .mp-cstrip {
           position: relative; overflow: hidden;
           display: flex; align-items: center; justify-content: space-between;
@@ -1889,8 +1533,6 @@ function MasterPageInner({
         [data-bs-theme="dark"] .mp-cstrip__back, [data-layout-mode="dark"] .mp-cstrip__back { background: rgba(255,255,255,.08); color: #ddd6fe; }
         [data-bs-theme="dark"] .mp-cstrip__back:hover, [data-layout-mode="dark"] .mp-cstrip__back:hover { background: rgba(255,255,255,.16); }
 
-        /* "Add <master>" — rides in the DataTable toolbar (right end). Same
-           gradient pill the search row used to carry. */
         .mp-add-btn {
           display: inline-flex; align-items: center; justify-content: center; gap: 6px;
           height: 34px; padding: 0 18px; border: 0; border-radius: 999px;
@@ -1903,8 +1545,6 @@ function MasterPageInner({
         .mp-add-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
         .mp-add-btn i { font-size: 15px; }
 
-        /* Status / created-by badges — softer Velzon "subtle" treatment inside
-           the table body. */
         .mp-kpi-tile + * .badge,
         .dt-table .badge {
           font-weight: 700;
@@ -1914,11 +1554,6 @@ function MasterPageInner({
           font-size: 11px;
         }
 
-        /* Search box — give the resting + hover border real contrast so the
-           field reads as interactive (not just on focus), then the violet
-           focus ring on top. Applied to every search box (HRMS-BUG-116)
-           with the hover treatment carried over from the master list card
-           fix (HRMS-BUG-085). */
         .search-box .form-control {
           border: 1px solid #cbd5e1;
           transition: border-color .15s ease, box-shadow .15s ease;
@@ -1937,16 +1572,10 @@ function MasterPageInner({
           box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
         }
 
-        /* Small-form modal — bump the default width so 3-4 field forms
-           (Trigger Point, Leave Type, etc.) don't feel cramped. Larger
-           lg/xl sizes still take their own reactstrap widths. */
         .master-modal .modal-dialog:not(.modal-lg):not(.modal-xl) {
           max-width: 620px;
         }
 
-        /* Status + Created-By pills — flat translucent fills in dark mode so
-           they read as native dark-mode chips rather than light pastels
-           floating on a dark surface. */
         [data-bs-theme="dark"] .mp-status-active,
         [data-layout-mode="dark"] .mp-status-active {
           background: rgba(34, 197, 94, 0.18) !important;
@@ -1980,14 +1609,6 @@ function MasterPageInner({
         [data-bs-theme="dark"] .mp-creator-sub,
         [data-layout-mode="dark"] .mp-creator-sub { color: rgba(255,255,255,0.55) !important; }
 
-        /* Master list table — clamp long cell values to one line with
-         * ellipsis so a 500-char Segment Name (or pasted SQL payload)
-         * doesn't blow the row height out and break the table grid.
-         * The first-column renderer already adds a hover tooltip for its
-         * truncated value; for other columns, browsers show the title
-         * attribute on hover when it's present. */
-        /* Cells holding a button / badge / status pill must not clip it —
-           DataTable's td truncates text by default. */
         .dt-table tbody td:has(.btn),
         .dt-table tbody td:has(.badge),
         .dt-table tbody td:has(.mp-status-active),
@@ -1996,12 +1617,7 @@ function MasterPageInner({
         }
       `}</style>
 
-
-      {/* A master that belongs to another module (cfg.parent) wears THAT
-          module's header instead — the .frm-cstrip strip HR > Custom Fields
-          uses — with a Back button to its fixed parent page. Trigger Point
-          Master sits in the HR sidebar beside Document Templates and Custom
-          Fields, so opening it should not feel like leaving HRMS. */}
+      {}
       {cfg.parent ? (
         <div className="frm-cstrip mb-3">
           <span className="frm-cstrip-accent" />
@@ -2025,10 +1641,6 @@ function MasterPageInner({
           </button>
         </div>
       ) : (
-      /* Page header — the Supplier Management strip (.sup-fig .cstrip in
-          p2p/.../supplier-management.css): violet gradient wash, accent rail,
-          glow + sheen, 38px icon tile with an online dot, action on the right.
-          Every other master renders it, so those pages open identically. */
       <div className="mp-cstrip mb-3">
         <span className="mp-cstrip__accent" />
         <span className="mp-cstrip__glow" />
@@ -2089,21 +1701,9 @@ function MasterPageInner({
       </div>
       )}
 
-      {/* "What you are doing here" guide — fully retired. Departments now uses
-          the same rich client-style header + search-row Add as every other
-          master, so this standalone guide strip is no longer rendered. */}
+      {}
 
-      {/* KPI strip — only when the master config opts in via `kpis`.
-          Flex row (flex:1 per tile) so ANY number of KPIs always fills the
-          full width evenly — Bootstrap Col spans left a gap when the count
-          didn't divide into 12 (e.g. 5 KPIs → 10/12 cols). Wraps on small
-          screens via flex-wrap + min-width.
-
-          Spaced at 8px, like everything else on a page: .page-content sets an
-          8px gutter on all four sides and the strip above this one already sat
-          8px clear of it. Only this row kept Bootstrap's mb-3 and a 16px gap,
-          so the KPI tiles sat twice as far from the table below them as from
-          the header above — the one seam on the page that did not line up. */}
+      {}
       {cfg.kpis && cfg.kpis.length > 0 && (
         <div className="d-flex flex-wrap align-items-stretch mb-2" style={{ gap: 8 }}>
           {cfg.kpis.map(k => {
@@ -2152,28 +1752,23 @@ function MasterPageInner({
         </div>
       )}
 
-      {/* Designations-only: KPI strip + hierarchy chips. */}
+      {}
       {cfg.slug === 'designations' && (
         <DesignationExtras
           records={records}
           filteredCount={filteredRecords.length}
         />
       )}
-      {/* Roles-only: KPI strip. The All / Primary / Ancillary tabs moved into the
-          table toolbar below (DataTable's `tabs` rail, left of the search). */}
+      {}
       {cfg.slug === 'roles' && (
         <RolesExtras records={records} />
       )}
-      {/* KPI-master only: KPI count cards. */}
+      {}
       {cfg.slug === 'kpis' && (
         <KpiExtras records={records} />
       )}
 
-      {/* Shared list table (components/ui/DataTable) — the same component the
-          rest of the app uses: search, sortable headers, the rows-per-page
-          footer and the fit-the-viewport row sizing all live in the component.
-          Each master's inline filters and its Add button ride in the toolbar,
-          which is where the old search Row used to put them. */}
+      {}
       <DataTable<any>
         data={serverPaged ? records : filteredRecords}
         columns={columns}
@@ -2257,14 +1852,6 @@ function MasterPageInner({
                 Add {singular}
               </button>
             ) : cfg.lockedFixed && permitsAdd ? (
-              /* Locked master, and the user DOES hold can_add: show the button
-                 DISABLED with the reason, rather than nothing at all.
-                 Hiding it made a deliberate product rule look like a broken
-                 permission -- QA filed "Add Designation not visible despite
-                 full Master permissions" against exactly this (CBC #1). The
-                 restriction now explains itself at the point of confusion.
-                 A user WITHOUT can_add still sees nothing: for them the button
-                 is genuinely out of scope and a lock message would mislead. */
               <button
                 type="button"
                 className="mp-add-btn"
@@ -2280,19 +1867,18 @@ function MasterPageInner({
         }
       />
 
-      {/* Add / Edit modal */}
+      {}
       <MasterFormStyles />
       <Modal
         isOpen={modalOpen}
-        toggle={() => { /* explicit Cancel only — outside click & Esc disabled */ }}
+        toggle={() => {  }}
         size={modalSize}
         centered
         modalClassName="master-modal"
         backdrop="static"
         keyboard={false}
       >
-        {/* Header — rich layered gradient with brand-blue → indigo → violet flow,
-            decorative glows, and a subtle diagonal sheen for depth. */}
+        {}
         <div
           className="position-relative overflow-hidden"
           style={{
@@ -2301,7 +1887,7 @@ function MasterPageInner({
             padding: '22px 24px',
           }}
         >
-          {/* Top-right warm glow — adds a hint of indigo-pink sparkle */}
+          {}
           <span
             aria-hidden
             style={{
@@ -2310,7 +1896,7 @@ function MasterPageInner({
               pointerEvents: 'none',
             }}
           />
-          {/* Bottom-right cyan accent — cools the bottom edge */}
+          {}
           <span
             aria-hidden
             style={{
@@ -2319,7 +1905,7 @@ function MasterPageInner({
               pointerEvents: 'none',
             }}
           />
-          {/* Bottom-left violet halo — depth on the title side */}
+          {}
           <span
             aria-hidden
             style={{
@@ -2328,7 +1914,7 @@ function MasterPageInner({
               pointerEvents: 'none',
             }}
           />
-          {/* Subtle diagonal sheen — top-left highlight to bottom-right shadow */}
+          {}
           <span
             aria-hidden
             style={{
@@ -2359,13 +1945,12 @@ function MasterPageInner({
                  `Fill in the details to register a new ${singular.toLowerCase()}`}
               </small>
             </div>
-            {/* No top-right X — footer has Cancel; one dismiss path. */}
+            {}
           </div>
         </div>
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
-            {/* Lock every field while the request is in flight. `disabled` covers
-                native inputs; pointer-events covers custom pickers. */}
+            {}
             <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, pointerEvents: saving ? 'none' : undefined }}>
             {sectionedFields.map((group, gIdx) => {
               const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
@@ -2397,10 +1982,6 @@ function MasterPageInner({
                   <Row className="g-2">
                     {group.fields
                       .filter((f) => {
-                        // showWhen — hide a field unless the controlling field
-                        // currently equals one of the listed values. Falls back
-                        // to `editing` so already-saved rows still gate correctly
-                        // on first render before any radio change fires.
                         if (!f.showWhen) return true;
                         const live = radioValues[f.showWhen.field];
                         const fromRow = editing?.[f.showWhen.field];
@@ -2410,7 +1991,7 @@ function MasterPageInner({
                           : [String(f.showWhen.equals)];
                         return need.includes(cur);
                       })
-                      .map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
+                      .map((f, i) => renderField(f, i, editing, viewOnly || (statusOnlyEdit && f.n !== 'status'), refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
                   </Row>
                 </div>
               );
@@ -2419,17 +2000,13 @@ function MasterPageInner({
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <span />
-            {/* Action buttons on the right */}
+            {}
             <div className="d-flex align-items-center gap-2">
               <button type="button" className="master-modal-cancel" disabled={saving} onClick={() => setModalOpen(false)}>
                 <i className="ri-close-line align-middle me-1"></i>
                 {viewOnly ? 'Close' : 'Cancel'}
               </button>
               {!viewOnly && (
-                /* Hover/active states live on the shared `.master-modal-save`
-                   class (masterFormKit.tsx) so every master form gets the
-                   same lift-on-hover behaviour — inline styles can't carry
-                   :hover so the class is required. */
                 <Button
                   type="submit"
                   disabled={saving}
@@ -2482,15 +2059,6 @@ function MasterPageInner({
   );
 }
 
-
-
-
-/* ────────────────────────────────────────────────────────────────────
- * Employee Tree modal — opens from the Department master's row action
- * (replaces the audit button there). Renders the department's org chart as
- * four tiers: Director / CEO (Branch User) → single HOD → Team Leaders →
- * Employees, connected top-to-bottom. Data from GET /employees/department-tree.
- * ──────────────────────────────────────────────────────────────────── */
 function EmployeeTreeModal({
   open,
   onClose,
@@ -2517,8 +2085,6 @@ function EmployeeTreeModal({
   }, [open, department?.id]);
 
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-  // Colour a node by its tier: Branch User = violet, HOD = cyan, Team Leader =
-  // green, everyone else = amber.
   const accentFor = (node: TreeNode) => {
     if (node.id.startsWith('u')) return '#7c3aed';
     const r = (node.role || '').toLowerCase();
@@ -2577,10 +2143,6 @@ function EmployeeTreeModal({
   );
 }
 
-/* Employee-tree modal styling. The header mirrors the Audit History modal
- * (indigo → violet → purple gradient + white icon box); the body is a pure-CSS
- * org chart (classic nested-UL connectors) with card-style nodes. Theme-aware
- * via the Velzon CSS variables so it reads in light and dark. */
 const ET_TREE_CSS = `
 .et-modal-wrap .modal-dialog { max-width: 94vw; }
 .et-modal {
@@ -2664,13 +2226,6 @@ const ET_TREE_CSS = `
 }
 `;
 
-/* ────────────────────────────────────────────────────────────────────
- * Audit History modal — opens from the row's "clock" action button.
- * Shows a compact event timeline for that record. Today the entries are
- * synthesized from the record's own created_at / updated_at fields (and
- * the creator/branch/client metadata the API already returns); a real
- * activity_logs feed can be wired later from the existing backend table.
- * ──────────────────────────────────────────────────────────────────── */
 function AuditHistoryModal({
   open,
   onClose,
@@ -2800,8 +2355,6 @@ function AuditHistoryModal({
           border: 0;
           box-shadow: 0 25px 60px rgba(15,23,42,0.25);
         }
-        /* Gradient header — matches the Edit Trigger modal + every other
-           in-app gradient (indigo → violet → purple). */
         .audit-modal-header {
           padding: 18px 22px;
           background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
@@ -2845,9 +2398,7 @@ function AuditHistoryModal({
           background: rgba(255,255,255,0.30);
         }
         .audit-modal-close i { font-size: 16px; line-height: 1; }
-        /* Body picks up the card-bg variable so dark mode inverts cleanly. */
         .audit-modal-body { background: var(--vz-card-bg); }
-        /* Timeline — vertical rail behind the icon dots */
         .audit-timeline {
           position: relative;
           display: flex;
@@ -2926,7 +2477,6 @@ function AuditHistoryModal({
         }
         .audit-event-meta-time i { font-size: 12px; opacity: 0.7; }
 
-        /* Dark-mode parity */
         [data-bs-theme="dark"] .audit-event,
         [data-layout-mode="dark"] .audit-event {
           background: rgba(99,102,241,0.10);
@@ -2948,7 +2498,6 @@ function AuditHistoryModal({
   );
 }
 
-/* ── Section palette — colors a section card in the Add/Edit modal ── */
 const SECTION_PALETTES: { color: string; grad: string; tint: string; border: string; shadow: string }[] = [
   { color: '#6366f1', grad: 'linear-gradient(135deg, #6366f1, #8b5cf6)', tint: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.03))', border: 'rgba(99,102,241,0.22)', shadow: 'rgba(99,102,241,0.35)' },
   { color: '#0ea5e9', grad: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', tint: 'linear-gradient(135deg, rgba(14,165,233,0.08), rgba(56,189,248,0.03))', border: 'rgba(14,165,233,0.22)', shadow: 'rgba(14,165,233,0.35)' },
@@ -2958,16 +2507,6 @@ const SECTION_PALETTES: { color: string; grad: string; tint: string; border: str
   { color: '#db2777', grad: 'linear-gradient(135deg, #ec4899, #f9a8d4)', tint: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgba(249,168,212,0.03))', border: 'rgba(236,72,153,0.22)', shadow: 'rgba(236,72,153,0.35)' },
 ];
 
-// Auto-derive a target field's value from a source field's typed value.
-// Per-master/per-field algorithms: today only UOM `short_code` is wired
-// (Kilogram → KG, Metric Ton → MT). Falls back to the first 3 uppercase
-// letters of the source string so unknown inputs still produce a usable
-// suggestion the user can refine.
-// Unit short codes follow the standard "First letter caps + prefix
-// lowercase" convention used on Indian commerce forms — e.g. "Kg"
-// rather than "KG", "Mm" rather than "MM". Counts / non-SI units
-// (PCS, BOX, CTN…) stay uppercase since that's how they read in
-// stock and packaging lists.
 const UOM_SHORT_CODE_DICT: Record<string, string> = {
   'kilogram': 'Kg', 'kilo': 'Kg', 'kg': 'Kg',
   'gram': 'g', 'milligram': 'mg',
@@ -2979,11 +2518,8 @@ const UOM_SHORT_CODE_DICT: Record<string, string> = {
   'meter': 'm', 'metre': 'm', 'meters': 'm', 'metres': 'm',
   'centimeter': 'Cm', 'centimetre': 'Cm', 'centimeters': 'Cm', 'centimetres': 'Cm',
   'millimeter': 'Mm', 'millimetre': 'Mm', 'millimeters': 'Mm', 'millimetres': 'Mm',
-  // Common one-L misspellings — surface the same Mm short code so a
-  // typo in the title still produces the correct unit code.
   'milimeter': 'Mm', 'milimetre': 'Mm', 'milimeters': 'Mm', 'milimetres': 'Mm',
   'kilometer': 'Km', 'kilometre': 'Km', 'kilometers': 'Km', 'kilometres': 'Km',
-  // "Killogram" with double L — same Kg short code.
   'killogram': 'Kg', 'killograms': 'Kg', 'kilograms': 'Kg',
   'inch': 'IN', 'inches': 'IN', 'foot': 'FT', 'feet': 'FT', 'yard': 'YD', 'yards': 'YD',
   'piece': 'PCS', 'pieces': 'PCS', 'pcs': 'PCS',
@@ -3003,19 +2539,15 @@ function deriveValue(slug: string, fieldName: string, sourceValue: string): stri
   if (slug === 'uom' && fieldName === 'short_code') {
     const key = raw.toLowerCase();
     if (UOM_SHORT_CODE_DICT[key]) return UOM_SHORT_CODE_DICT[key];
-    // Multi-word fallback — first letter of each word, up to 4 chars.
     const words = raw.split(/\s+/);
     if (words.length > 1) {
       return words.map(w => (w[0] || '').toUpperCase()).join('').slice(0, 4);
     }
-    // Single word fallback — first 3 letters uppercase.
     return raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   }
-  // Generic fallback for unknown master/field pairs.
   return raw.toUpperCase().slice(0, 4);
 }
 
-/* ── "What you are doing here" — gradient step tiles ── */
 const STEP_PALETTES: { grad: string; tint: string; border: string; accent: string }[] = [
   { grad: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)', tint: 'linear-gradient(135deg, rgba(64,81,137,0.08), rgba(102,145,231,0.04))', border: 'rgba(64,81,137,0.20)', accent: '#405189' },
   { grad: 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)', tint: 'linear-gradient(135deg, rgba(10,179,156,0.08), rgba(48,213,181,0.04))', border: 'rgba(10,179,156,0.22)', accent: '#0ab39c' },
@@ -3029,11 +2561,8 @@ function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAd
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
   const [open, setOpen] = useState(false);
-  // Departments collapses the body — only the heading + Add button row is shown.
   const isDepartments = cfg.slug === 'departments';
 
-  // Heading content reused by both the collapsible (default) and static
-  // (departments) variants so the title styling stays in sync.
   const heading = (
     <div className="d-flex align-items-center gap-3">
       <span
@@ -3071,9 +2600,7 @@ function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAd
         >
           {heading}
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {/* "Back to Master list" pill sits immediately before Add so
-                the action cluster matches the Legal Entities header
-                layout (back action + primary CTA on the right). */}
+            {}
             {onBack && (
               <button
                 type="button"
@@ -3247,10 +2774,6 @@ function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAd
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Designation-master extras: top hierarchy chip strip + Status/Level/Dept
- * filter dropdowns. Renders only inside the Designations master.
- * ────────────────────────────────────────────────────────────────────────── */
 function DesignationExtras({
   records,
   filteredCount,
@@ -3258,9 +2781,6 @@ function DesignationExtras({
   records: any[];
   filteredCount: number;
 }) {
-  // Hierarchy tiers — same order/colors as the reference design.
-  // Fresh Tailwind-style palette — bright + deep pair per tier, plus an
-  // accent gradient that drives the KPI icon tile + colored shadow halo.
   const TIERS: {
     label: string; short: string; icon: string;
     bg: string; fg: string; border: string;
@@ -3274,8 +2794,6 @@ function DesignationExtras({
     { label: 'Intern / Trainee',         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', deep: '#475569', bright: '#94a3b8', accent: 'linear-gradient(135deg,#475569 0%,#94a3b8 100%)' },
   ];
 
-  // KPI counts derived from the current records (not the filtered list — the
-  // top KPIs always reflect the full dataset so users can see overall totals).
   const total = records.length;
   const tierCounts = TIERS.map(t => ({
     ...t,
@@ -3285,7 +2803,7 @@ function DesignationExtras({
   return (
     <div className="dsn-extras mb-3">
 
-      {/* Hierarchy chip strip — sits ABOVE the KPI cards (per request). */}
+      {}
       <div className="dsn-hier-row">
         <span className="dsn-hier-label">Hierarchy</span>
         {TIERS.map((t, i) => (
@@ -3302,10 +2820,7 @@ function DesignationExtras({
         ))}
       </div>
 
-      {/* KPI cards — [Icon tile] [Number / Label]. Sits BELOW the hierarchy strip.
-          Each card carries its tier's BRIGHT brand color via a CSS var so the
-          numbers stay vivid in BOTH themes (dark mode picks up the brighter
-          shade automatically — see the dark-mode CSS below). */}
+      {}
       <div className="dsn-kpis">
         <div
           className="dsn-kpi"
@@ -3363,8 +2878,6 @@ function DesignationExtras({
   );
 }
 
-/* Inline Status / Level / Dept filters — sits between the search box and the
- * Add New button on the Designations master. */
 function DesignationInlineFilters({
   refData,
   statusFilter, setStatusFilter,
@@ -3430,8 +2943,6 @@ function DesignationInlineFilters({
   );
 }
 
-/* Inline Status / Parent filters — sits between the search box and the
- * Add button row on the Department master. */
 function DepartmentInlineFilters({
   records,
   statusFilter, setStatusFilter,
@@ -3467,9 +2978,6 @@ function DepartmentInlineFilters({
             value={parentFilter}
             onChange={(v) => setParentFilter(v || 'all')}
             options={(() => {
-              // Only departments that are actually being used as a parent of
-              // another row appear in this dropdown — filtering by a leaf
-              // department would always return zero rows, so it shouldn't show.
               const parentIds = new Set<string>();
               for (const r of records) {
                 if (r?.parent_id != null && r.parent_id !== '') parentIds.add(String(r.parent_id));
@@ -3489,13 +2997,6 @@ function DepartmentInlineFilters({
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Role-master extras: KPI strip (Total / Primary / Ancillary / Active /
- * Assigned / Inactive) + filter chip tabs (All / Primary / Ancillary).
- * Renders only inside the Roles master.
- * ────────────────────────────────────────────────────────────────────────── */
-/* KPI strip for the Roles master. The All / Primary / Ancillary tabs used to
-   live here too; they now ride in the DataTable toolbar (see `roleTabs`). */
 function RolesExtras({ records }: { records: any[] }) {
   const total = records.length;
   const primaryCount = records.filter(r => /primary/i.test(String(r.role_type ?? ''))).length;
@@ -3504,8 +3005,6 @@ function RolesExtras({ records }: { records: any[] }) {
   const inactiveCount = records.filter(r => String(r.status ?? '').toLowerCase() !== 'active').length;
   const assignedCount = records.filter(r => Number(r.employees_count ?? 0) > 0).length;
 
-  // Fresh palette — paired bright + deep colors per tier, plus an accent
-  // gradient that drives the card's top strip + bg wash.
   const KPIS = [
     { key: 'total',     label: 'Total Roles',     icon: 'ri-shield-fill',          deep: '#3d4eb1', bright: '#6691e7', accent: 'linear-gradient(135deg,#3d4eb1 0%,#6691e7 100%)', tint: 'rgba(102,145,231,0.10)', value: total },
     { key: 'primary',   label: 'Primary Roles',   icon: 'ri-star-fill',            deep: '#6940d8', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6940d8 0%,#a78bfa 100%)', tint: 'rgba(167,139,250,0.12)', value: primaryCount },
@@ -3518,7 +3017,7 @@ function RolesExtras({ records }: { records: any[] }) {
   return (
     <div className="role-extras mb-3">
 
-      {/* KPI cards */}
+      {}
       <div className="role-kpis">
         {KPIS.map(k => (
           <div
@@ -3554,7 +3053,6 @@ function RolesExtras({ records }: { records: any[] }) {
   );
 }
 
-/* Inline Type / Status / Department filters for the Roles master. */
 function RolesInlineFilters({
   refData,
   typeFilter,   setTypeFilter,
@@ -3617,9 +3115,6 @@ function RolesInlineFilters({
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * KPI-master extras: 5 KPI count cards.
- * ────────────────────────────────────────────────────────────────────────── */
 function KpiExtras({ records }: { records: any[] }) {
   const total = records.length;
   const numCount       = records.filter(r => /numeric|number/i.test(String(r.target_type ?? ''))).length;
@@ -3670,7 +3165,6 @@ function KpiExtras({ records }: { records: any[] }) {
   );
 }
 
-/* Inline Role / Target / Priority filters for the KPI master. */
 function KpiInlineFilters({
   refData,
   roleFilter,     setRoleFilter,
@@ -3791,8 +3285,6 @@ export function renderField(
     );
   }
 
-  // Sublist field — renders inline cards + an inline editor panel that
-  // expands when adding/editing (no modal-on-modal stacking).
   if (f.t === 'sublist') {
     const items = sublistValues[f.n] || [];
     return (
@@ -3811,28 +3303,14 @@ export function renderField(
   }
 
   const span = f.full ? 12 : (f.t === 'textarea' || f.t === 'radio') ? 12 : defaultSpan;
-  // Auto-generated fields are locked in BOTH add and edit flows: on add the
-  // value is computed from existing records, on edit we keep whatever was
-  // saved. Either way the input is rendered read-only so users can't override
-  // the auto-managed value.
   const isAutogen = (!!f.autogen || !!f.autogenApi) && !viewOnly;
-  // Server-derived value (from /master/{slug}/next-code) wins when present.
-  // Otherwise fall back to the client-side autogen() preview so the field
-  // never renders empty between modal-open and the API response.
   const apiAutogenVal = apiAutogen[f.n];
   const autogenVal = (isAutogen && editing == null)
     ? (apiAutogenVal || (f.autogen ? f.autogen(allRecords) : ''))
     : '';
-  /* Clean the hydrated value for number fields so edit-mode never
-   * shows stale decimals / scientific-notation entries that pre-date
-   * the integer-only rule (e.g. legacy "34334434.0000" rows show as
-   * "34334434"). The sanitised value also feeds back into the form
-   * payload as integer. */
   const rawDefaultVal = (isAutogen && editing == null) ? autogenVal : (editing?.[f.n] ?? '');
   const defaultVal = (() => {
     if (f.t !== 'number' || rawDefaultVal === '' || rawDefaultVal == null) return rawDefaultVal;
-    // Truncate at the first non-digit (drops decimals + exponent suffix),
-    // so "34334434.0000" → "34334434" and "1.5e3" → "1".
     const s = String(rawDefaultVal);
     const m = s.match(/^-?\d+/);
     return m ? m[0].replace(/^-/, '') : '';
@@ -3847,8 +3325,6 @@ export function renderField(
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
-    // refLFmt lets a config render a composite label like "{name} ({level})"
-    // — e.g. for the Reports To picker. Falls back to the single labelField.
     const buildLabel = (r: any): string => {
       if (f.refLFmt) {
         return f.refLFmt
@@ -3861,15 +3337,9 @@ export function renderField(
       }
       return String(r[labelField] ?? r.id);
     };
-    // Self-references: hide the row being edited so a department can't pick
-    // itself as its own parent (which would create a cycle).
     let refRows = (f.ref === undefined || editing == null)
       ? rows
       : rows.filter((r: any) => String(r.id) !== String(editing.id));
-    // Cascade filter — e.g. the State dropdown shows only states of the selected
-    // Country (bug #10). Uses the source field's live value (tracked in
-    // radioValues) or the editing row's value; shows all when nothing's picked
-    // yet so the field is never empty-locked.
     const cascadeKey = (f as any).cascadeFrom as string | undefined;
     if (cascadeKey) {
       const srcVal = radioValues[cascadeKey] ?? (editing != null ? String(editing[cascadeKey] ?? '') : '');
@@ -3890,7 +3360,6 @@ export function renderField(
         placeholder={f.noneLabel || `Select ${f.l}…`}
         disabled={viewOnly}
         invalid={!!err}
-        // Track the value so cascade targets (e.g. State ← Country) can filter.
         onChange={(v) => { onFieldChange(); onRadioChange(f.n, v); }}
       />
     );
@@ -3899,22 +3368,21 @@ export function renderField(
     if (f.noneLabel) {
       options = [{ value: '', label: f.noneLabel }, ...options];
     }
+    const selectDefault = typeof defaultVal === 'boolean' ? (defaultVal ? '1' : '0') : defaultVal;
     input = (
       <MasterSelect
         name={f.n}
-        defaultValue={defaultVal || (f.r ? (options[0]?.value ?? '') : '')}
+        defaultValue={selectDefault != null && String(selectDefault) !== ''
+          ? String(selectDefault)
+          : (f.r ? (options[0]?.value ?? '') : '')}
         options={options}
         placeholder={f.noneLabel || 'Select…'}
         disabled={viewOnly}
         invalid={!!err}
-        onChange={onFieldChange}
+        onChange={(v) => { onFieldChange(); onRadioChange(f.n, v); }}
       />
     );
   } else if (f.t === 'radio') {
-    // Vertical radio group with optional per-option helper text. Drives the
-    // controlled `radioValues` map so sibling fields can toggle visibility
-    // via `showWhen`. The actual posted value comes from the checked
-    // <input>'s `name`, picked up by FormData on submit.
     const options = normalizeOpts(f.opts);
     const current = radioValues[f.n] ?? (defaultVal ? String(defaultVal) : (options[0]?.value ?? ''));
     input = (
@@ -3928,9 +3396,6 @@ export function renderField(
               className="d-flex align-items-start gap-2"
               style={{
                 padding: '10px 12px',
-                // Stronger unchecked border in light mode so each option
-                // reads as a tappable card, not a label floating in space.
-                // Dark mode still uses the theme variable.
                 border: `1.5px solid ${checked ? 'var(--vz-primary)' : '#94a3b8'}`,
                 background: checked ? 'rgba(64,81,137,0.05)' : 'transparent',
                 borderRadius: 8,
@@ -3978,10 +3443,6 @@ export function renderField(
       />
     );
   } else if (f.t === 'date') {
-    // Future-only dates (e.g. warranty expiry) get a hard min on the
-    // picker so the calendar literally can't open a past day. The
-    // on-save validator below catches typed / pasted values that
-    // bypass the picker.
     const todayIso = new Date().toISOString().slice(0, 10);
     input = (
       <MasterDatePicker
@@ -3995,12 +3456,6 @@ export function renderField(
       />
     );
   } else if (f.t === 'file') {
-    // The `required` attribute is only set on CREATE — on EDIT the
-    // existing file already lives on the server, so native browser
-    // validation must not block submit when the user hasn't picked
-    // a new file. Backend convention: column ending in `_path` holds
-    // the stored disk path. We surface a "View" link for it so the
-    // user can confirm what's already attached before replacing.
     const isEdit = !!editing;
     const hintParts: string[] = [];
     if (f.accept) hintParts.push(f.accept);
@@ -4008,12 +3463,6 @@ export function renderField(
     const existingPath: string | null = editing
       ? (editing[`${f.n}_path`] || editing[f.n] || null)
       : null;
-    /* Prefer the URL the SERVER resolved (MasterController::withOwnership adds
-     * `<column>_url` for every *_path). Building it here from the raw path
-     * assumes files sit under {origin}/storage/, which is only true on the
-     * local disk — on the Azure deployment they live on the blob host, so the
-     * client-built link 404'd there. resolveFileUrl stays as the fallback for
-     * responses that predate the `_url` field. */
     const serverUrl: string | null = editing
       ? (editing[`${f.n}_path_url`] || editing[`${f.n}_url`] || null)
       : null;
@@ -4059,10 +3508,6 @@ export function renderField(
       </>
     );
   } else {
-    // Auto-capitalize the first alphabetic character on text inputs as the
-    // user types — only the first letter, rest of the casing is preserved
-    // exactly as typed. Skipped for email/number, code-style, and contact
-    // fields (handled by SKIP_AUTOCAP_FIELDS below).
     const SKIP_AUTOCAP_FIELDS = new Set([
       'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
       'gstin', 'pan', 'tan', 'cin', 'iec',
@@ -4071,12 +3516,6 @@ export function renderField(
       'pincode', 'postal_code', 'zip',
     ]);
     const shouldAutoCap = f.t === 'text' && !isAutogen && !SKIP_AUTOCAP_FIELDS.has(f.n);
-    /* Numeric-only text fields — HSN/SAC codes are 4–8 digit numeric per
-     * Indian GST notification, so strip anything non-numeric as the user
-     * types / pastes. The validateForm pattern catches anything that slips
-     * through (e.g. programmatic value setters); this just gives instant
-     * feedback while typing. Extend this set if more code-style fields
-     * need the same behaviour (e.g. PIN, mobile). */
     const NUMERIC_ONLY_FIELDS = new Set(['hsn_code']);
     const isNumericOnly = f.t === 'text' && NUMERIC_ONLY_FIELDS.has(f.n);
 
@@ -4088,8 +3527,6 @@ export function renderField(
         if (cleaned !== v) {
           const cursor = target.selectionStart;
           target.value = cleaned;
-          // Re-position the caret roughly where it was — clamped to the
-          // new (possibly shorter) string length.
           if (cursor != null) {
             const next = Math.min(cursor, cleaned.length);
             target.setSelectionRange(next, next);
@@ -4105,11 +3542,6 @@ export function renderField(
           if (cursor != null) target.setSelectionRange(cursor, cursor);
         }
       }
-      /* Number-input sanitiser. HTML `type="number"` accepts scientific
-       * notation (`e`, `+`, `-`) which silently breaks numeric fields — a
-       * user typing "e" leaves the value as just "e" and the form submits NaN.
-       * Strip everything except digits and a SINGLE decimal point so valid
-       * decimals (e.g. GST 18.5, exchange rates) are preserved (bug #18). */
       if (f.t === 'number') {
         const target = e.currentTarget;
         let cleaned = target.value.replace(/[^\d.]/g, '');
@@ -4120,40 +3552,25 @@ export function renderField(
         if (target.value !== cleaned) {
           const cursor = Math.max(0, (target.selectionStart ?? cleaned.length) - (target.value.length - cleaned.length));
           target.value = cleaned;
-          try { target.setSelectionRange(cursor, cursor); } catch { /* selection on type=number is finicky in some browsers */ }
+          try { target.setSelectionRange(cursor, cursor); } catch {  }
         }
       }
       onFieldChange();
     };
 
-    /* Block the keys that drive HTML number inputs off the integer
-     * rails before they ever land in the value — keeps the cursor in
-     * a sensible spot and avoids the "I typed e and nothing shows" UX
-     * trap. Paste is still cleaned by handleInput above. */
     const handleNumberKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (f.t !== 'number') return;
-      // Allow '.' for decimals (bug #18); still block scientific-notation keys.
       if (['e', 'E', '+', '-', ','].includes(e.key)) {
         e.preventDefault();
       }
     };
 
-    /* Default 50-char cap on text inputs — names, titles, labels and
-     * other free-text master fields are way short of 50 chars in
-     * practice, so this stops anyone pasting paragraphs into a name.
-     * Number / email inputs and explicit `maxLen` overrides bypass it. */
     const TEXT_MAX = 50;
     const maxLength =
       f.t === 'text' && !isAutogen
         ? (typeof (f as any).maxLen === 'number' ? (f as any).maxLen : TEXT_MAX)
         : undefined;
 
-    /* Number-range defaults — uncapped numeric fields previously let users
-     * paste 30M+ values that overflowed the column on the backend. The
-     * defaults below are wide enough for any sane business value (credit
-     * days, percentages, INR thresholds, etc.) but stop the SQL overflow.
-     * Field configs can override via `min` / `max` for stricter ranges
-     * (e.g. percentages at max:100). */
     const numMin = f.t === 'number'
       ? (typeof (f as any).min === 'number' ? (f as any).min : 0)
       : undefined;
@@ -4169,11 +3586,7 @@ export function renderField(
         maxLength={maxLength}
         min={numMin}
         max={numMax}
-        // Number fields and numeric-only text fields (HSN/SAC) get the on-screen
-        // numeric keypad on mobile + a hint to the browser's autofill heuristics.
         inputMode={(f.t === 'number' || isNumericOnly) ? 'numeric' : undefined}
-        // `key` forces a remount when the auto-generated value changes between
-        // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}
         defaultValue={defaultVal}
         disabled={viewOnly}
@@ -4185,10 +3598,6 @@ export function renderField(
       />
     );
   }
-
-  // Optional uppercase tag after the label — used by file fields to show
-  // "MANDATORY" (red) vs "OPTIONAL" (muted) so users immediately know which
-  // attachments are required.
   const optTag = f.optionalLabel;
   const isMandatoryTag = !!optTag && /mandator/i.test(optTag);
 

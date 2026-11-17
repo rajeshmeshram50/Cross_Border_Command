@@ -22,6 +22,7 @@ const PERM_ALIAS: Record<string, string> = {
   'p2p.advance_refund': 'p2p.order',
   'p2p.invoice': 'p2p.order',
   'p2p.sourcing_tracker': 'p2p.bulk_sourcing',
+  'p2p.service': 'p2p.product',
   'master.product_flags': 'master.warehouse_master',
   ...Object.fromEntries(CREDVAULT_GROUPS.flatMap(g => g.children.map(l => [l.id, 'credentials-vault']))),
 };
@@ -90,6 +91,7 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.sales_summary': 'Track sourcing performance.',
   'p2p.product': 'Manage products & sourcing readiness.',
   'p2p.supplier': 'Manage supplier onboarding & compliance.',
+  'p2p.service': 'Manage services & service catalogue.',
   'p2p.bulk_sourcing': 'Manage bulk sourcing requests.',
   'p2p.sourcing_tracker': 'Assign sourcing targets and manage Requests for Quotation (RFQs).',
   'p2p.case_to_case': 'Manage request-based sourcing.',
@@ -196,6 +198,7 @@ function p2pLeafPath(id: string): string {
   switch (id) {
     case 'p2p.product':       return '/products';
     case 'p2p.supplier':      return '/suppliers';
+    case 'p2p.service':       return '/p2p/service-management';
     case 'p2p.sales_summary': return '/sales/p2p-summary';
     case 'p2p.analytics':     return '/p2p/analytics';
     case 'p2p.diagnosis':     return '/p2p/diagnosis';
@@ -221,7 +224,6 @@ export default function IdimsHeader() {
   const { selectedBranch } = useBranchSwitcher();
   const dispatch = useDispatch();
 
-  
   const toggleThemeSynced = () => {
     const next = theme === 'light' ? 'dark' : 'light';
     dispatch(changeLayoutMode(next));
@@ -379,7 +381,6 @@ export default function IdimsHeader() {
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const toggleNetwork = () => {
     if (net.paused) {
@@ -446,7 +447,6 @@ export default function IdimsHeader() {
     }
     if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
     return items;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const cvItem = navItems.find(i => i.id === 'credentials-vault');
@@ -539,7 +539,6 @@ export default function IdimsHeader() {
         g.children.forEach(leaf => consider(item.id, leafPath(leaf.id, item.dd!))));
     });
     return bestId;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, navItems]);
 
   type SearchEntry = { id: string; label: string; parent?: string; path: string; icon: JSX.Element };
@@ -558,7 +557,6 @@ export default function IdimsHeader() {
       }
     });
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navItems]);
 
   const searchResults = useMemo(() => {
@@ -567,7 +565,6 @@ export default function IdimsHeader() {
     return searchIndex
       .filter(e => e.label.toLowerCase().includes(q) || (e.parent?.toLowerCase().includes(q)))
       .slice(0, 12);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, searchIndex]);
 
   const runSearchNav = (path: string) => {
@@ -1162,10 +1159,6 @@ const IC = {
 };
 
 const IDIMS_CSS = `
-/* The shell carries the sticky (not the nav): its containing block is the
-   full-height #layout-wrapper, so it pins to the top across the whole page.
-   Sticking the nav directly failed — its containing block (the shell) was
-   only nav-height tall, so it had no travel and scrolled away. */
 .idims-shell { font-family: var(--font-sans); position: sticky; top: 0; z-index: 1030; }
 .idims-nav {
   height: 110px; background: #fff; border-bottom: 1px solid #E4E7EF;
@@ -1173,28 +1166,21 @@ const IDIMS_CSS = `
   display: flex; align-items: center; gap: 0;
   position: relative; z-index: 2; overflow-x: clip; overflow-y: visible;
 }
-/* Backdrop sits inside the (sticky) shell — above page content but below the
-   nav (z-index:2) and the dropdown — so only the page gets blurred. */
 .idims-dd-backdrop { position: fixed; inset: 0; z-index: 1; background: rgba(15,23,42,.10); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: idimsFade .18s ease; }
 .idims-dark .idims-dd-backdrop { background: rgba(0,0,0,.35); }
 .idims-logo { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; border-radius: 12px; transition: background .2s ease, box-shadow .2s ease, padding .2s ease; }
 .idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease; }
 .idims-logo:hover .idims-logo-full { transform: scale(1.03); }
-/* Dark mode: a recoloured "-dark" logo variant is used when one exists (see
-   darkLogoSrc); otherwise the original logo sits directly on the nav, no box. */
 .idims-dark .idims-logo-full { filter: none; }
 .idims-divider { width: 1px; height: 56px; background: #E4E7EF; flex-shrink: 0; margin: 0 12px 0 10px; }
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
 .idims-nav-row { display: flex; align-items: center; min-width: 0; }
 .idims-row-top { flex: 1.08; gap: 12px; padding: 8px 0 4px 0; border-bottom: 1px solid #EEF1F7; }
 .idims-row-bottom { position: relative; flex: 1; padding: 6px 0 10px 0; min-width: 0; }
-/* No horizontal scroll — items that don't fit collapse into "More". */
 .idims-row-bottom .idims-nav-items { gap: 2px; overflow: visible; flex-wrap: nowrap; }
-/* Hidden measuring row: laid out flat off-screen, never visible/clickable. */
 .idims-nav-ghost { position: absolute; top: 0; left: 0; display: flex; gap: 2px; flex-wrap: nowrap;
   white-space: nowrap; visibility: hidden; pointer-events: none; height: 0; overflow: hidden; }
 
-/* Overflow "More" dropdown panel */
 .idims-more-wrap { position: relative; flex-shrink: 0; }
 .idims-more-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 1200; min-width: 240px; max-width: 320px;
   max-height: 70vh; overflow-y: auto; background: #fff; border: 1px solid #E7EAF3; border-radius: 12px;
@@ -1213,7 +1199,6 @@ const IDIMS_CSS = `
   padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: #475569; transition: background .14s, color .14s; }
 .idims-more-sub-item:hover { background: #F5F3FF; color: #7C3AED; }
 
-/* Search */
 .idims-search { position: relative; width: 440px; flex-shrink: 0; height: 40px; display: flex; align-items: center; gap: 10px;
   background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; border-radius: 12px; padding: 0 6px 0 13px;
   box-shadow: inset 0 1px 2px rgba(15,23,42,.04); transition: border-color .18s, box-shadow .18s, background .18s; }
@@ -1242,7 +1227,6 @@ const IDIMS_CSS = `
 .idims-search-input::placeholder { color: #9AA2B8; }
 .idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 400; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
 
-/* Branch switcher */
 .idims-branch-wrap { position: relative; flex-shrink: 0; margin-left: auto; }
 .idims-branch-btn { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 11px 0 12px; border-radius: 12px;
   background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; font-family: var(--font-sans);
@@ -1276,7 +1260,6 @@ const IDIMS_CSS = `
 .idims-branch-all .idims-branch-avatar { background: linear-gradient(135deg,#EDE9FE,#DDD6FE); color: #7C3AED; box-shadow: none; border: 1px solid #DDD6FE; }
 .idims-branch-all .idims-branch-item-name { color: #4338CA; }
 
-/* Right controls */
 .idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
 .idims-cv-btn { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px 0 6px; border: 0; border-radius: 12px; flex-shrink: 0; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#A78BFA 0%,#8B5CF6 45%,#7C3AED 100%); box-shadow: 0 4px 14px rgba(124,58,237,.35), inset 0 1px 0 rgba(255,255,255,.25); transition: transform .16s, box-shadow .16s; }
 .idims-cv-btn:hover, .idims-cv-btn.dd-open { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.45), inset 0 1px 0 rgba(255,255,255,.25); }
@@ -1292,19 +1275,12 @@ const IDIMS_CSS = `
 .idims-brand .idims-theme-toggle { background: var(--bp, #7C3AED); }
 .idims-brand .idims-theme-toggle::after { transform: translateX(20px); }
 
-/* Brand mode — swap the default violet hover/active accents for the tenant
-   primary colour (topbar stays white). Covers nav buttons + the top-right
-   action icons + the active underline + the mobile menu rows. */
-/* !important so brand wins over the dark-theme hover rule (.idims-dark
-   .idims-nav-btn:hover) which has equal specificity but comes later — without
-   it the icon/underline turn primary in dark+brand but the text stays grey. */
 .idims-brand .idims-nav-btn:hover, .idims-brand .idims-nav-btn.dd-open, .idims-brand .idims-nav-btn.is-current { color: var(--bp) !important; }
 .idims-brand .idims-nav-btn:hover .idims-ico, .idims-brand .idims-nav-btn.dd-open .idims-ico, .idims-brand .idims-nav-btn.is-current .idims-ico { color: var(--bp) !important; }
 .idims-brand .idims-nav-btn::after { background: var(--bp); }
 .idims-brand .idims-action-btn:hover { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
 .idims-brand .idims-mob-item:hover, .idims-brand .idims-mob-item.open { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
 .idims-brand .idims-mob-item:hover .idims-ico, .idims-brand .idims-mob-item.open .idims-ico { color: var(--bp); }
-/* Branch switcher + profile accents → primary in brand mode. */
 .idims-brand .idims-branch-ico { background: var(--bp); box-shadow: 0 2px 5px color-mix(in srgb, var(--bp) 40%, transparent); }
 .idims-brand .idims-branch-btn.dd-open { border-color: var(--bp); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bp) 16%, transparent); }
 .idims-brand .idims-branch-btn.dd-open .idims-branch-chev { color: var(--bp); }
@@ -1324,13 +1300,10 @@ const IDIMS_CSS = `
 .idims-logout-btn:hover { background: #FFF1F2; color: #E11D48; }
 .idims-action-btn svg { width: 18px; height: 18px; display: block; }
 .idims-action-badge { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #7C3AED; border: 2px solid #fff; }
-/* Unread notifications, counted. Red and lifted off the icon, so it reads from
-   across the room rather than being mistaken for part of the bell. */
 .idims-action-count { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E11D48; color: #fff; font-size: 9.5px; font-weight: 800; line-height: 1; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(225,29,72,.45); }
 [data-bs-theme="dark"] .idims-action-count { border-color: #1b2733; }
 .idims-action-sep { width: 1px; height: 20px; flex-shrink: 0; background: #E7EAF3; }
 
-/* Profile */
 .idims-profile-wrap { position: relative; flex-shrink: 0; }
 .idims-profile-icon { position: relative; width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; cursor: pointer; padding: 0; background: none; border: none; transition: transform .2s; }
 .idims-profile-icon::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: linear-gradient(135deg,#94A3B8,#8B5CF6 55%,#7C3AED); padding: 2px; -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
@@ -1367,7 +1340,6 @@ const IDIMS_CSS = `
 .idims-profile-logout:hover { background: #FFF1F2; }
 .idims-profile-logout:hover .idims-profile-item-label { color: #E11D48; }
 
-/* Nav buttons */
 .idims-nav-items { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; }
 .idims-dd-wrap { position: relative; flex-shrink: 0; }
 .idims-nav-btn { position: relative; height: 36px; padding: 0 9px; border-radius: 9px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: #5B6478; background: transparent; border: none; cursor: pointer; font-family: var(--font-sans); transition: color .2s ease; white-space: nowrap; flex-shrink: 0; }
@@ -1379,33 +1351,19 @@ const IDIMS_CSS = `
 .idims-nav-btn.dd-open { font-weight: 500; color: #6D28D9; }
 .idims-nav-btn.dd-open .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.dd-open::after { width: 100%; opacity: 1; }
-/* The module the current page belongs to. Same underline as an open menu, but
-   held while you are inside the module rather than only while the menu is
-   down, and a heavier label so it still reads as "you are here" when a
-   different module's menu is open over it. */
 .idims-nav-btn.is-current { font-weight: 650; color: #6D28D9; }
 .idims-nav-btn.is-current .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.is-current::after { width: 100%; opacity: 1; }
 .dd-chev { display: flex; align-items: center; opacity: .45; transition: transform .18s, opacity .13s; margin-left: 2px; }
 .idims-nav-btn.dd-open .dd-chev { transform: rotate(180deg); opacity: .9; }
 
-/* Dropdown / mega menu.
-   position: fixed + centered so the panel escapes the .idims-nav-items
-   horizontal scroll container (which would otherwise clip it vertically). */
 .idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); max-height: calc(100vh - 128px); display: flex; flex-direction: column; background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
-/* P2P has 4 columns but compact content — narrower than the CLM/HR wide menu,
-   yet roomy enough that the longer labels don't crowd. */
 .idims-dd-p2p { width: min(1320px, calc(100vw - 28px)); }
-/* Inventory Management is a single column of four. At the shared 1060px it
-   would be a strip of whitespace with the items stranded on the left, so it
-   takes its width from its content, as the prototype's panel does. */
 .idims-dd-inv { width: max-content; min-width: 320px; max-width: calc(100vw - 40px); }
 .idims-dd-inv .idims-dd-grid { grid-template-columns: minmax(300px, max-content); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
 
-/* CredVault mega-menu — the prototype's Quick Actions row (.p2pj-qa-*) and its
-   teal pill buttons (.c2c-paybtn), above the three columns. */
 .p2pj-qa-wrap { margin: 0 0 14px 0; padding: 0 18px; }
 .p2pj-qa-label { padding-bottom: 8px !important; margin-bottom: 10px !important; }
 .p2pj-qa-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 2px 4px 14px; margin: 0; border-bottom: 1px solid #F1F4FB; overflow-x: auto; scrollbar-width: none; }
@@ -1429,8 +1387,6 @@ const IDIMS_CSS = `
 @media (max-width: 1440px) {
   .p2pj-actbtn { font-size: 9.5px !important; padding: 7px 7px 7px 5px !important; letter-spacing: -.1px; }
 }
-/* CLM mega layout — 3 sections; Operations + Master Management each split into
-   two sub-columns with sub-headers; Without-Shipment nests its agreements. */
 .idims-clm-grid { display: grid; grid-template-columns: 290px 1.1fr 1.35fr; align-items: stretch; }
 .idims-clm-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 2px; }
 .idims-clm-subcol { padding: 0 16px 0 0; min-width: 0; }
@@ -1448,14 +1404,8 @@ const IDIMS_CSS = `
 .idims-dark .idims-clm-child:hover { background: rgba(167,139,250,.12); }
 .idims-dark .idims-clm-child-label { color: #E5E7EB; }
 .idims-dark .idims-clm-child-ico { background: rgba(148,163,184,.14) !important; }
-/* Long labels inside the CLM sub-columns (e.g. "Quality & Compliance Docs")
-   wrap instead of nowrap-overflowing into the neighbouring column, and the text
-   box clips as a safety net so nothing bleeds across columns at tight widths. */
 .idims-clm-sub .idims-dd-item-label { white-space: normal; overflow-wrap: anywhere; }
 .idims-clm-subcol .idims-dd-item-text { overflow: hidden; }
-/* Responsive: the mega-menu is capped at min(1480px, 100vw - 28px), so on
-   narrower screens the 3 sections + nested sub-columns get cramped and collide.
-   Ease the track sizing first, then stack each section's two sub-columns. */
 @media (max-width: 1320px) {
   .idims-clm-grid { grid-template-columns: 240px 1fr 1.2fr; }
 }
@@ -1465,15 +1415,8 @@ const IDIMS_CSS = `
   .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-top-color: #262B38; }
 }
 @keyframes idimsDD { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
-/* The same entrance without the horizontal half-step. A panel that hangs off
-   its button is placed by its left offset alone, and the shared keyframes end
-   on translate(-50%) with fill-mode both — which beats any inline transform
-   and drags it half its own width to the left. */
 @keyframes idimsDDanchor { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 .idims-dropdown.idims-dd-inv { animation-name: idimsDDanchor; }
-/* Stop loading — muted and inert until something is actually on the wire,
-   so a permanently visible button in a dense icon row does not read as
-   clickable when it would do nothing. */
 .idims-stop-btn { position: relative; }
 .idims-stop-btn:disabled { opacity: .32; cursor: default; }
 .idims-stop-btn.is-busy { color: #DC2626; }
@@ -1493,11 +1436,6 @@ const IDIMS_CSS = `
 @media (prefers-reduced-motion: reduce) { .idims-stop-btn.is-busy svg { animation: none; } }
 
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
-/* flex:1 + min-height:0 lets the content scroll within the height-capped panel
-   so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
-/* scrollbar-width/color: Firefox ignores the ::-webkit-scrollbar rules below and
-   would otherwise draw a ~15px native bar, eating column width and making the
-   panel look differently sized than in Chrome. */
 .idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #D7DBEA transparent; }
 .idims-dark .idims-dd-inner { scrollbar-color: #3A4150 transparent; }
 .idims-dd-inner::-webkit-scrollbar { width: 9px; }
@@ -1505,16 +1443,11 @@ const IDIMS_CSS = `
 .idims-dd-inner::-webkit-scrollbar-thumb { background: #D7DBEA; border-radius: 8px; border: 2px solid #fff; background-clip: padding-box; }
 .idims-dd-inner::-webkit-scrollbar-thumb:hover { background: #C0C6DC; background-clip: padding-box; }
 .idims-dark .idims-dd-inner::-webkit-scrollbar-thumb { background: #3A4150; border-color: #171A23; }
-/* align-items: stretch so every column fills the tallest column's height —
-   then the border-right dividers run the full panel height (like the
-   prototype) instead of stopping at each column's own content. */
 .idims-dd-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: stretch; gap: 0; }
 .idims-dd-col { padding: 18px 24px 22px 20px; border-right: 1px solid #E6EAF3; }
 .idims-dd-col:last-child { border-right: none; }
 .idims-dd-group + .idims-dd-group { margin-top: 14px; }
 .idims-dd-section-label { font-size: 8px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 12px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
-/* Small standing color bar on the left of each section header (matches Figma).
-   currentColor = the column accent set inline on the label. */
 .idims-dd-section-label::before { content: ''; position: absolute; left: 0; top: 0; bottom: 11px; width: 3px; border-radius: 2px; background: currentColor; }
 .dd-sl-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .idims-dd-item { display: flex; align-items: flex-start; gap: 13px; padding: 9px 11px; cursor: pointer; border-radius: 11px; width: 100%; background: none; border: none; font-family: var(--font-sans); transition: background .13s, transform .13s; margin-bottom: 4px; text-align: left; }
@@ -1526,7 +1459,6 @@ const IDIMS_CSS = `
 .idims-dd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .idims-dd-item-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
 .idims-dd-item-desc { font-size: 10px; color: #94A3B8; line-height: 1.4; white-space: normal; }
-/* Column-size variants (match the prototype): first column large, rest compact. */
 .idims-dd-item-lg { padding: 10px 12px; gap: 13px; margin-bottom: 6px; }
 .idims-dd-item-lg .idims-dd-item-ico { width: 38px; height: 38px; border-radius: 11px; }
 .idims-dd-item-lg .idims-dd-item-label { font-size: 13.5px; }
@@ -1535,9 +1467,6 @@ const IDIMS_CSS = `
 .idims-dd-item-sm .idims-dd-item-label { font-size: 12.5px; }
 .idims-dd-item-sm .idims-dd-item-desc { font-size: 9.5px; }
 
-/* Locked (no-permission) modules: every module still shows, but the ones the
-   user can't access render greyed + non-clickable, with a small lock badge.
-   Neutralise the hover lift/tint so they read as inert (QA requirement). */
 .idims-dd-item.is-locked, .idims-clm-child.is-locked,
 .idims-more-sub-item.is-locked, .idims-mob-sub-item.is-locked { opacity: .48; cursor: not-allowed; filter: grayscale(1); }
 .idims-dd-item.is-locked:hover, .idims-clm-child.is-locked:hover { transform: none; background: none; }
@@ -1548,7 +1477,6 @@ const IDIMS_CSS = `
 .idims-dd-lock svg { display: block; }
 .idims-dark .idims-dd-item.is-locked:hover .idims-dd-item-label { color: #E5E7EB; }
 
-/* Logout modal */
 .idims-logout-overlay { position: fixed; inset: 0; z-index: 1060; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(5px); animation: idimsFade .2s ease; }
 @keyframes idimsFade { from { opacity: 0; } to { opacity: 1; } }
 .idims-logout-modal { width: 100%; max-width: 380px; border-radius: 22px; overflow: hidden; background: #fff; text-align: center; padding: 30px 28px 24px; box-shadow: 0 30px 80px rgba(15,23,42,.32); position: relative; animation: idimsPop .32s cubic-bezier(.34,1.56,.64,1); }
@@ -1565,7 +1493,6 @@ const IDIMS_CSS = `
 .idims-btn-confirm { color: #fff; background: linear-gradient(135deg,#F43F5E,#E11D48); box-shadow: 0 6px 16px rgba(225,29,72,.35); }
 .idims-btn-confirm:hover { box-shadow: 0 8px 22px rgba(225,29,72,.45); transform: translateY(-1px); }
 
-/* Dark theme */
 .idims-dark .idims-nav { background: #171A23; border-bottom-color: #262B38; }
 .idims-dark .idims-row-top { border-bottom-color: #262B38; }
 .idims-dark .idims-divider { background: #262B38; }
@@ -1591,8 +1518,6 @@ const IDIMS_CSS = `
 .idims-dark .idims-nav-btn.is-current .idims-ico { color: #A78BFA; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }
 .idims-dark .idims-action-btn:hover { color: #C4B5FD; background: #221E36; }
-/* Keep the logout icon RED in dark mode too (the generic action-btn rule
- * above otherwise greys it out). Brighter rose so it reads on the dark nav. */
 .idims-dark .idims-logout-btn { color: #FB7185; }
 .idims-dark .idims-logout-btn:hover { color: #FDA4AF; background: rgba(244,63,94,.16); }
 .idims-dark .idims-action-sep { background: #2C3242; }
@@ -1604,8 +1529,6 @@ const IDIMS_CSS = `
 .idims-dark .idims-dd-item-label, .idims-dark .idims-profile-item-label { color: #E5E7EB; }
 .idims-dark .idims-dd-item:hover { background: rgba(167,139,250,.12); }
 .idims-dark .idims-dd-item:hover .idims-dd-item-label { color: #C4B5FD; }
-/* The leaf icon chips use light tints inline; dim them for the dark panel
-   so they don't read as bright white dots. The accent-coloured dot stays. */
 .idims-dark .idims-dd-item-ico { background: rgba(148,163,184,.14) !important; }
 .idims-dark .idims-dd-col { border-right-color: #262B38; }
 .idims-dark .idims-dd-section-label { border-bottom-color: #262B38; }
@@ -1613,7 +1536,6 @@ const IDIMS_CSS = `
 .idims-dark .idims-logout-text { color: #9CA3AF; }
 .idims-dark .idims-btn-cancel { background: #232838; color: #CBD5E1; border-color: #2C3242 !important; }
 
-/* Hamburger + mobile panel (hidden on desktop) */
 .idims-hamburger { display: none; width: 38px; height: 38px; flex-shrink: 0; border: 1.5px solid #E7EAF3; background: linear-gradient(180deg,#FFF,#F7F8FC); border-radius: 10px; color: #5B6478; align-items: center; justify-content: center; cursor: pointer; }
 .idims-hamburger svg { width: 20px; height: 20px; }
 .idims-dark .idims-hamburger { background: #1E2230; border-color: #2C3242; color: #C4B5FD; }
@@ -1627,10 +1549,6 @@ const IDIMS_CSS = `
 .idims-mob-chev { display: flex; transition: transform .18s; opacity: .5; }
 .idims-mob-item.open .idims-mob-chev { transform: rotate(180deg); }
 
-/* Expanded sub-menu inside a mobile group — indented, left-bordered column of
-   stacked leaf buttons grouped under small section labels. (These base rules
-   were lost to a bad autocomplete; without them the leaves rendered as inline
-   buttons and ran together, e.g. "RecruitmentEmployeeEmployee Onboarding".) */
 .idims-mob-sub { display: flex; flex-direction: column; margin: 2px 0 6px 22px; padding-left: 12px; border-left: 2px solid #EDE9FE; }
 .idims-mob-subgroup { display: flex; flex-direction: column; }
 .idims-mob-subgroup + .idims-mob-subgroup { margin-top: 4px; }
@@ -1644,22 +1562,12 @@ const IDIMS_CSS = `
 .idims-dark .idims-mob-sub { border-left-color: #2C3242; }
 .idims-dark .idims-mob-sub-item { color: #9CA3AF; }
 
-/* ── Responsive ──────────────────────────────────────────────────────────
-   Four tiers:
-   · ≥1281        full two-row desktop bar
-   · 1025–1280    laptop — same two rows, search narrows, nav row scrolls if tight
-   · 641–1024     tablet — single compact row, nav moves into hamburger panel
-   · ≤640         phone  — search + branch hidden; just logo + icons + profile
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* Laptop: keep the two-row layout but tighten the top row so nothing clips. */
 @media (min-width: 1025px) and (max-width: 1280px) {
   .idims-search { width: 300px; }
   .idims-branch-btn { width: auto; min-width: 0; max-width: 230px; }
   .idims-nav-right { gap: 9px; }
 }
 
-/* Tablet + phone share the collapse to a hamburger-driven single bar. */
 @media (max-width: 1024px) {
   .idims-nav { height: auto; padding: 9px 12px; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
   .idims-divider { display: none; }
@@ -1669,11 +1577,9 @@ const IDIMS_CSS = `
   .idims-row-top { border-bottom: none; padding: 0; gap: 8px 10px; flex-wrap: wrap; align-items: center; }
   .idims-row-bottom { display: none; }
   .idims-hamburger { display: flex; order: 0; }
-  /* line 1: controls pinned to the right of the hamburger */
   .idims-nav-right { order: 1; margin-left: auto; gap: 8px; }
   .idims-cv-btn { padding: 0 6px; }
   .idims-cv-label, .idims-cv-btn .dd-chev { display: none; }
-  /* line 2: search grows, branch sits beside it */
   .idims-search { order: 5; flex: 1 1 60%; min-width: 170px; width: auto; }
   .idims-branch-wrap { order: 6; margin-left: 0; flex: 0 0 auto; }
   .idims-branch-btn { width: auto; min-width: 0; max-width: 210px; }
@@ -1682,9 +1588,6 @@ const IDIMS_CSS = `
   .idims-theme-switch { padding: 4px 10px 4px 11px; }
 }
 
-/* Phone: too narrow for a usable search box or branch pill, so hide both —
-   the header becomes one clean row (logo · hamburger · icons · profile).
-   Branch switching stays reachable on tablet/desktop; search via the menu. */
 @media (max-width: 640px) {
   .idims-nav { padding: 8px 10px; gap: 6px; align-items: center; flex-wrap: nowrap; }
   .idims-logo-full { height: 30px; }
@@ -1692,10 +1595,6 @@ const IDIMS_CSS = `
   .idims-branch-wrap { display: none; }
   .idims-theme-switch { display: none; }
   .idims-fs-btn { display: none; }
-  /* One tidy single row: [logo] ............ [☰ · icons · profile].
-     nowrap keeps the icons from dropping to a second line; the auto-margin on
-     the hamburger pushes the whole right cluster to the right edge. Everything
-     in the right cluster is shrunk so all icons + the profile stay on-screen. */
   .idims-row-top { gap: 6px; flex-wrap: nowrap; }
   .idims-hamburger { margin-left: auto; flex-shrink: 0; width: 32px; height: 32px; }
   .idims-hamburger svg { width: 18px; height: 18px; }

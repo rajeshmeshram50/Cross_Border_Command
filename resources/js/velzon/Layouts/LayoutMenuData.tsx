@@ -27,8 +27,6 @@ const iconMap: Record<string, string> = {
   ShoppingBag: "ri-shopping-bag-3-line",
   Globe:    "ri-global-line",
   Boxes:    "ri-stack-line",
-  // Sub-menu (leaf) icons — lucide names declared on *_GROUPS children,
-  // mapped to the sidebar's Remix icon set so sub-items can show a tile.
   LayoutDashboard: "ri-dashboard-3-line",
   BarChart3: "ri-bar-chart-2-line",
   BarChart4: "ri-bar-chart-box-line",
@@ -39,6 +37,7 @@ const iconMap: Record<string, string> = {
   Activity: "ri-pulse-line",
   Tag: "ri-price-tag-3-line",
   UserPlus: "ri-user-add-line",
+  Wrench: "ri-tools-line",
   User: "ri-user-3-line",
   LogOut: "ri-logout-box-r-line",
   CalendarOff: "ri-calendar-close-line",
@@ -61,14 +60,8 @@ const iconMap: Record<string, string> = {
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
-// Leaf icon used inside a sub-menu tile — same map, minus the ms-2 spacer the
-// top-level Dashboard entry carries (which would push the glyph off-centre in
-// the centred tile).
 const resolveLeafIcon = (name?: string) => resolveIcon(name).replace(" ms-2", "");
 
-// Short description shown under each sub-menu leaf — mirrors IdimsHeader's
-// LEAF_DESC so the sidebar and the horizontal mega-menu read identically.
-// Keep in sync when adding a menu leaf.
 const LEAF_DESC: Record<string, string> = {
   "sales.analytics": "Sales dashboard, Diagnosis View & Resolution Center.",
   "sales.productivity_tracker": "Manage reminders, meetings & to-do activities.",
@@ -122,6 +115,7 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.sales_summary": "Track sourcing performance.",
   "p2p.product": "Manage products & sourcing readiness.",
   "p2p.supplier": "Manage supplier onboarding & compliance.",
+  "p2p.service": "Manage services & service catalogue.",
   "p2p.bulk_sourcing": "Manage bulk sourcing requests.",
   "p2p.sourcing_tracker": "Assign sourcing targets and manage Requests for Quotation (RFQs).",
   "p2p.case_to_case": "Manage request-based sourcing.",
@@ -147,8 +141,6 @@ const slugToPath = (slug: string): string => {
     case "hr":          return "/hr";
     case "products":    return "/products";
     case "vendors":     return "/suppliers";
-    // New top-level header modules. P2P reuses the existing Sales P2P
-    // Summary page; the rest render the shared permission-gated stub.
     case "p2p":               return "/p2p";
     case "credentials-vault": return "/credentials-vault";
     case "project-navigator": return "/project-navigator";
@@ -159,9 +151,6 @@ const slugToPath = (slug: string): string => {
   }
 };
 
-// Most HR leaves don't have dedicated pages yet — they fall back to the hub
-// (/hr) so navigation stays graceful. As real per-leaf pages get built, add
-// them to the switch below; the rest keep falling back to /hr.
 const hrLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "hr.overview":    return "/hr/overview";
@@ -180,25 +169,13 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.expense":     return "/hr/expense";
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";
-    // Attendance Master Management leaves — these live under the HR sidebar
-    // (branch-only) but reuse the generic /master/:slug page shell because
-    // they're standard MasterController-backed CRUD masters.
     case "master.leave_type": return "/master/leave_type";
     case "master.leave_plan": return "/master/leave_plan";
-    // Trigger Point Master — lives under HR > Document & Evidence but reuses
-    // the generic /master/:slug page shell. See masterConfigs.ts.
     case "master.trigger_point": return "/master/trigger_point";
     default:               return "/hr";
   }
 };
 
-// Sales Matrix leaves — wire each id to its real React page as it ships.
-// Anything not listed falls back to /sales (which routes to /dashboard for
-// now since /sales itself isn't built yet).
-//
-// Note: leaf IDs come from SALES_GROUPS in constants.ts. "sales.workplace"
-// is the "My Workplace" sidebar entry and renders the Lead Worksheet page
-// (the centerpiece port of the prototype's `lwPage`).
 const salesLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "sales.customers":           return "/sales/customers";
@@ -213,21 +190,15 @@ const salesLeafLink = (leafId: string): string => {
     case "sales.diagnosis":           return "/sales/diagnosis";
     case "sales.resolution_center":   return "/sales/resolution-center";
     case "sales.performance":         return "/sales/performance";
-    /* Lead Distribution / Lead Detail / Enquiries / Leads Details were
-     * removed from the menu (May-26 cleanup). Their cases are gone too
-     * — any stale link falls through to the /sales default. */
     default:                          return "/sales";
   }
 };
 
-// Procure to Pay (P2P) leaves → routes. Product/Supplier reuse the existing
-// masters; Sales Summary the P2P summary page. The rest are under development
-// and land on the P2P hub until their own pages ship (mirrors p2pLeafPath in
-// IdimsHeader).
 const p2pLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "p2p.product":       return "/products";
     case "p2p.supplier":      return "/suppliers";
+    case "p2p.service":       return "/p2p/service-management";
     case "p2p.sales_summary": return "/sales/p2p-summary";
     case "p2p.analytics":     return "/p2p/analytics";
     case "p2p.diagnosis":     return "/p2p/diagnosis";
@@ -242,10 +213,6 @@ const p2pLeafLink = (leafId: string): string => {
   }
 };
 
-// Central CLM leaves — every leaf currently routes to the same stub page
-// (/clm/<dash-slug>). The slug after /clm/ is what ClmStubPage reads to
-// render the right title + breadcrumb. As real pages ship, swap each
-// case to its dedicated route.
 const clmLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "clm.analytics":             return "/clm/analytics";
@@ -274,10 +241,6 @@ const clmLeafLink = (leafId: string): string => {
 const Navdata = () => {
   const { user } = useAuth();
 
-  // Onboarding gate — an employee whose onboarding isn't finished yet may only
-  // reach the Inbox (to sign their pending documents). Hide every other nav
-  // item until HR completes onboarding and `onboarding_pending` clears. Mirror
-  // of the route guard in App.tsx so the navbar can't even offer a dead link.
   if (user?.user_type === "employee" && (user as any)?.onboarding_pending) {
     return (
       <React.Fragment>
@@ -286,19 +249,12 @@ const Navdata = () => {
     );
   }
 
-  // Collapse state for HR parent + categories lives in a module-level Set
-  // (see ./menuState). Necessary because Navdata is called as a function from
-  // VerticalLayout — `useState` here resets on every parent render. The Layout
-  // re-renders via `subscribeMenu()` whenever `toggleMenu()` fires.
   const isOpen = isMenuOpen;
   const toggle = toggleMenu;
   const toggleTop = toggleTopMenu;
   const toggleGroup = toggleGroupMenu;
 
   const isSuperAdmin = user?.user_type === "super_admin";
-  // Any non-super tenant user — they all inherit the org's plan, so an
-  // expired plan blocks all of them equally. Includes employees + client
-  // users that were previously omitted.
   const isTenantUser = user?.user_type === "client_admin"
     || user?.user_type === "client_user"
     || user?.user_type === "branch_user"
@@ -306,8 +262,6 @@ const Navdata = () => {
   const planExpiredOrMissing =
     isTenantUser && user?.plan && (!user.plan.has_plan || user.plan.expired);
   const perms = user?.permissions || {};
-  // clock-in is added to defaults so it surfaces even when the user has
-  // zero module permissions — every employee can clock themselves in.
   const defaultSlugs = ["dashboard", "profile", "my-plan", "clock-in", "products", "vendors"];
   const roleOnlySlugs = ["clients", "plans", "payments", "settings", "permissions"];
 
@@ -319,11 +273,6 @@ const Navdata = () => {
     );
   };
 
-  // Sales Matrix is permission-gated end-to-end: the menu only surfaces if
-  // the user has can_view on at least one sales.* leaf, matching the HR
-  // pattern. Super_admin / client_admin are already filtered out by the role
-  // check on the MENU_ITEMS entry — they hold perm rows only to cascade-grant
-  // downstream, never to navigate into Sales themselves.
   const hasAnySalesView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
@@ -332,11 +281,6 @@ const Navdata = () => {
     );
   };
 
-  // Central CLM is now permission-gated end-to-end, matching HR + Sales: the
-  // menu only surfaces if the user holds can_view on at least one clm.* leaf.
-  // (The rollout bypass that surfaced CLM for every branch_user / employee
-  // regardless of grants has been removed — visibility follows the Permissions
-  // sheet just like the other modules.)
   const hasAnyClmView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
@@ -348,10 +292,6 @@ const Navdata = () => {
   const hasAnyHrView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
-    // The Attendance Master Management group lives under HR in HR_GROUPS but
-    // its leaves use `master.*` ids (so they reuse the generic MasterPage
-    // shell). Include them in the "any HR view" check so a branch user with
-    // ONLY these perms still sees the HR menu open up.
     const hrAttendanceLeafSlugs = new Set(['master.leave_type', 'master.leave_plan']);
     return Object.keys(perms).some(
       (slug) =>
@@ -360,23 +300,12 @@ const Navdata = () => {
     );
   };
 
-  // P2P is a PARENT module with a real p2p.* leaf subtree, so permission rows
-  // live on the leaves — perms['p2p'] (the parent slug) is never saved. Gate on
-  // any p2p.* leaf view, mirroring HR/Sales/CLM above.
-  // Shared rule (see utils/menuAccess) so the sidebar and header never drift.
   const hasAnyP2pView = () => moduleVisible(perms, "p2p", isSuperAdmin, planExpiredOrMissing);
 
-  // Build the HR dropdown (3 levels): HR → categories → leaves.
-  // Each category becomes a `subItem` with `isChildItem:true` so Velzon's
-  // VerticalLayouts renderer expands it as a collapsible group with its own
-  // childItems[]. Leaves the user cannot view are filtered out; categories
-  // with no remaining leaves are dropped entirely.
   const buildHrSubItems = () => {
     return HR_GROUPS
       .map((g) => {
         const childItems = g.children
-          // hr.devices rides on the hr.attendance grant (no separate permission
-          // leaf) — same pattern as sales.sign_tracker.
           .filter((c) => isSuperAdmin || perms[c.id]?.can_view
             || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view)
             || (c.id === 'p2p.advance_refund' && !!perms['p2p.order']?.can_view))
@@ -400,21 +329,13 @@ const Navdata = () => {
       .filter(Boolean);
   };
 
-  // Build the Sales Matrix dropdown (3 levels): Sales Matrix → categories →
-  // leaves. Mirrors buildHrSubItems — leaves the user cannot view are
-  // filtered out, and categories with no remaining leaves are dropped, so the
-  // sidebar tree always reflects what was granted on the Permissions sheet.
   const buildSalesSubItems = () => {
     return SALES_GROUPS
       .map((g) => {
         const childItems = g.children
           .filter((c) => {
             if (isSuperAdmin) return true;
-            // Sign Document Tracker has no permission slug of its own — it's a
-            // read-only view of the same Quotation/PI/agreement sign requests,
-            // so it rides on the Quotation Vs PI permission.
             if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
-            // Order has no DB module row — it rides on the Purchase Order grant.
             if (c.id === 'p2p.advance_refund') return !!perms['p2p.order']?.can_view;
             return !!perms[c.id]?.can_view;
           })
@@ -438,10 +359,6 @@ const Navdata = () => {
       .filter(Boolean);
   };
 
-  // Central CLM dropdown (3 levels): CLM → categories → leaves. Same shape
-  // as buildSalesSubItems — leaves the user cannot view are filtered out and
-  // categories with no remaining leaves are dropped, so the sidebar tree
-  // always reflects exactly what was granted on the Permissions sheet.
   const buildClmSubItems = () => {
     return CLM_GROUPS
       .map((g) => {
@@ -467,10 +384,6 @@ const Navdata = () => {
       .filter(Boolean);
   };
 
-  // Procure to Pay (P2P) dropdown (3 levels): P2P → categories → leaves.
-  // The menu surfaces when the user holds any p2p.* leaf view (hasAnyP2pView);
-  // once in, every leaf shows — matching the header mega-menu. Built from the
-  // shared P2P_GROUPS so both menus stay in sync.
   const buildP2pSubItems = () => {
     return P2P_GROUPS.map((g) => ({
       id: g.id,
@@ -504,17 +417,11 @@ const Navdata = () => {
       continue;
     }
 
-    // Permissions menu is visible to every branch_user. A branch user can
-    // grant module access to employees in their own branch — see
-    // PermissionController::manageableUsers / savePermissions for the
-    // back-end scope guards (every branch is an isolated peer).
-
     if (m.section) {
       menuItems.push({ label: m.section, isHeader: true });
       continue;
     }
 
-    // Master → single flat link
     if (m.id === "master") {
       if (!hasAnyMasterView()) continue;
       menuItems.push({
@@ -526,18 +433,6 @@ const Navdata = () => {
       continue;
     }
 
-    // HR → pure 3-level nested dropdown. Clicking the parent toggles the
-    // dropdown only (no navigation). The /hr hub page is still reachable
-    // through any leaf — they all route to /hr via hrLeafLink. Mixing a real
-    // link with `data-bs-toggle="collapse"` caused the submenu to flash open
-    // then immediately collapse: the path change triggered the layout's
-    // initMenu() effect which strips `.show` off active menu-link siblings,
-    // and Reactstrap's Collapse never re-applied it because its isOpen state
-    // hadn't changed.
-    // Sales Matrix → 3-level nested dropdown, mirroring HR's structure.
-    // The /sales hub page doesn't exist yet, so leaves all link to /sales (a
-    // no-op until pages get built) and clicking "Sales Matrix" itself just
-    // toggles the dropdown open/closed without navigating.
     if (m.id === "sales") {
       if (!hasAnySalesView()) continue;
       const subItems = buildSalesSubItems();
@@ -553,11 +448,6 @@ const Navdata = () => {
           id: m.id,
           label: m.label,
           icon: resolveIcon(m.icon),
-          // pathPrefix mirrors slugToPath but is rendered as `data-path-prefix`
-          // on the trigger so the active-route matcher can highlight the
-          // top-level entry when the URL is under /sales/*. We can't use
-          // `link` here because the trigger is dropdown-only (clicking must
-          // toggle, not navigate) — see the HR comment below.
           pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
           click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
@@ -567,10 +457,6 @@ const Navdata = () => {
       continue;
     }
 
-    // Central CLM → 3-level nested dropdown. Same trigger semantics as
-    // Sales Matrix: clicking the parent toggles the dropdown only (no
-    // navigation), and the active-route highlight is driven by the
-    // `pathPrefix` data-attribute so any /clm/* URL keeps the parent lit.
     if (m.id === "clm") {
       if (!hasAnyClmView()) continue;
       const subItems = buildClmSubItems();
@@ -599,7 +485,6 @@ const Navdata = () => {
       if (!hasAnyHrView()) continue;
       const subItems = buildHrSubItems();
       if (subItems.length === 0) {
-        // Defensive fallback: hub-only link (no dropdown)
         menuItems.push({
           id: m.id,
           label: m.label,
@@ -611,10 +496,6 @@ const Navdata = () => {
           id: m.id,
           label: m.label,
           icon: resolveIcon(m.icon),
-          // pathPrefix is surfaced as a `data-path-prefix` attribute on the
-          // trigger anchor. We can't put `/hr` in `link` because that would
-          // re-introduce the flash-open-then-collapse bug documented above —
-          // the click handler must purely toggle the dropdown.
           pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
           click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
@@ -624,10 +505,6 @@ const Navdata = () => {
       continue;
     }
 
-    // Developers → single flat link to its only leaf (Shipment / Business
-    // Task). The permission lives on the LEAF slug `developers.shipment`, not
-    // the parent `developers`, so gate on that (the generic fallback below
-    // would wrongly check perms['developers']).
     if (m.id === "developers") {
       if (!isSuperAdmin && (planExpiredOrMissing || !perms["developers.shipment"]?.can_view)) continue;
       menuItems.push({
@@ -639,10 +516,6 @@ const Navdata = () => {
       continue;
     }
 
-    // Procure to Pay (P2P) → 3-level nested dropdown like Sales/CLM/HR. Gated on
-    // any p2p.* leaf view (perms['p2p'] is a parent slug and never saved); once
-    // in, every leaf shows (matches the header mega-menu). Clicking the parent
-    // only toggles the dropdown.
     if (m.id === "p2p") {
       if (!hasAnyP2pView()) continue;
       const subItems = buildP2pSubItems();

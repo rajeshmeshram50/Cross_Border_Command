@@ -78,6 +78,9 @@ class SourcingController extends Controller
             && $t->due_date
             && \Illuminate\Support\Carbon::parse($t->due_date)->endOfDay()->isPast();
 
+        // "Total Products" cell = first product's name + a "+N" pill for the rest.
+        $first = $t->products->sortBy('id')->first();
+
         return [
             'id'        => $t->code,
             'source'    => $this->sourceLabel($t->source),
@@ -90,6 +93,10 @@ class SourcingController extends Controller
             'completed' => $done,          // = "Mapped Suppliers" column (products with ≥1 supplier)
             'overdue'   => $overdue,
             // Sourcing Management Tracker columns.
+            'createdById'     => $t->created_by ? (string) $t->created_by : null,
+            'assigneeId'      => $t->assignee_id ? (string) $t->assignee_id : null,
+            'firstProduct'    => $first->name ?? null,
+            'moreProducts'    => max(0, $total - 1),
             'pending'         => $total - $done,
             'progress'        => $total > 0 ? (int) round($done * 100 / $total) : 0,
             'progressStatus'  => $isComplete ? 'Completed' : 'In Progress',
@@ -97,16 +104,26 @@ class SourcingController extends Controller
     }
 
     /* ── 1. list ─────────────────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets → { assigned, created }
+    // GET /p2p/sourcing-targets → { assigned, created }           (Bulk Sourcing, unchanged)
+    // GET /p2p/sourcing-targets?tab=all|created|assigned&q=&page=&per_page=
+    //     → { rows, counts{all,created,assigned}, pagination }  (Sourcing Management Tracker)
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->client_id) return $this->ok(['assigned' => [], 'created' => []]);
+        if (!$user || !$user->client_id) {
+            return $this->ok($request->filled('tab')
+                ? ['rows' => [], 'counts' => ['all' => 0, 'created' => 0, 'assigned' => 0], 'pagination' => ['page' => 1, 'per_page' => 10, 'total' => 0, 'last_page' => 1]]
+                : ['assigned' => [], 'created' => []]);
+        }
 
         $targets = SourcingTarget::where('client_id', $user->client_id)
-            ->with('products:id,sourcing_target_id,status,source')
+            ->with('products:id,sourcing_target_id,status,source,name')
             ->latest()
             ->get();
+
+        if ($request->filled('tab')) {
+            return $this->ok($this->trackerList($request, $targets, (int) $user->id));
+        }
 
         return $this->ok([
             'assigned' => $targets->filter(fn($t) => (int) $t->assignee_id === (int) $user->id)
@@ -114,6 +131,58 @@ class SourcingController extends Controller
             'created'  => $targets->filter(fn($t) => (int) $t->created_by === (int) $user->id)
                 ->map(fn($t) => $this->row($t))->values(),
         ]);
+    }
+
+    /**
+     * Sourcing Management Tracker list: one call per tab.
+     *   all      = created by me + assigned to me (each target once)
+     *   created  = Sourcing Target Created by Me
+     *   assigned = Sourcing Target Assigned to Me
+     * counts{} always carries all three badges (not affected by the search box).
+     * q searches target code, source, created by, assignee, status and product names.
+     */
+    private function trackerList(Request $request, $targets, int $userId): array
+    {
+        $request->validate([
+            'tab'      => 'required|in:all,created,assigned',
+            'q'        => 'nullable|string|max:100',
+            'status'   => 'nullable|in:In Progress,Completed,Overdue',
+            'page'     => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        $created  = $targets->filter(fn($t) => (int) $t->created_by === $userId);
+        $assigned = $targets->filter(fn($t) => (int) $t->assignee_id === $userId);
+        $all      = $created->concat($assigned)->unique('id')->sortByDesc('id')->values();
+
+        $rows = match ($request->query('tab')) {
+            'created'  => $created->values(),
+            'assigned' => $assigned->values(),
+            default    => $all,
+        };
+        $rows = $rows->map(fn($t) => $this->row($t) + ['_names' => $t->products->pluck('name')->implode(' ')]);
+
+        if ($q = mb_strtolower(trim((string) $request->query('q', '')))) {
+            $rows = $rows->filter(fn($r) => str_contains(mb_strtolower(implode(' ', [
+                $r['id'], $r['source'], implode(' ', $r['sources']), $r['createdBy'], $r['assignee'],
+                $r['progressStatus'], $r['overdue'] ? 'overdue' : '', $r['_names'],
+            ])), $q));
+        }
+        if ($status = $request->query('status')) {
+            $rows = $rows->filter(fn($r) => $status === 'Overdue' ? $r['overdue'] : $r['progressStatus'] === $status);
+        }
+
+        $perPage = (int) $request->query('per_page', 10);
+        $total   = $rows->count();
+        $last    = max(1, (int) ceil($total / $perPage));
+        $page    = min((int) $request->query('page', 1), $last);
+
+        return [
+            'rows'       => $rows->slice(($page - 1) * $perPage, $perPage)
+                ->map(fn($r) => \Illuminate\Support\Arr::except($r, ['_names']))->values(),
+            'counts'     => ['all' => $all->count(), 'created' => $created->count(), 'assigned' => $assigned->count()],
+            'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => $last],
+        ];
     }
 
     /* ── 2. product master ───────────────────────────────────────────────── */
@@ -305,7 +374,7 @@ class SourcingController extends Controller
         $user = $request->user();
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, true);
 
         $target = DB::transaction(function () use ($user, $data) {
             // Per-client sequential code under a row lock (same as Quotation/PI/CTC).
@@ -961,21 +1030,33 @@ class SourcingController extends Controller
 
 
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, bool $creating = false): array
     {
         return $request->validate([
-            'due_date'                => 'nullable|date',
+            // SOURCING TAT * — the target completion date (not in the past on create).
+            'due_date'                => ['required', 'date', ...($creating ? ['after_or_equal:today'] : [])],
             'source'                  => 'required|in:master,manual',
             'assignee_id'             => 'required',                 // must be assigned to someone
             'products'                => 'required|array|min:1',
             'products.*.id'           => 'nullable|integer',   // existing row (edit); absent = new
             'products.*.from'         => 'required|in:master,manual',
-            'products.*.code'         => 'nullable|string|max:64',
-            'products.*.name'         => 'nullable|string|max:255',
-            'products.*.target_price' => 'nullable|string|max:64',
+            // FROM PRODUCT MASTER → the picked product's code.
+            'products.*.code'         => 'nullable|required_if:products.*.from,master|string|max:64',
+            // MANUAL PRODUCT ENTRY → PRODUCT NAME * + TARGET PRICE (₹) *.
+            'products.*.name'         => 'nullable|required_if:products.*.from,manual|string|max:255',
+            'products.*.target_price' => ['nullable', 'required_if:products.*.from,manual', 'regex:/^\d[\d,]*(\.\d{1,2})?$/', 'max:64'],   // 1200 · 1,200 · 1200.50
             'products.*.clarity'      => 'nullable|array',
+            'products.*.clarity.type' => 'nullable|in:text,link,pdf',
+            'products.*.clarity.val'  => 'nullable|string',
         ], [
-            'assignee_id.required'    => 'Assign this sourcing target to a team member before saving.',
+            'assignee_id.required'                => 'Assign this sourcing target to a team member before saving.',
+            'due_date.required'                   => 'Pick the Sourcing TAT (target completion date).',
+            'due_date.after_or_equal'             => 'The Sourcing TAT cannot be in the past.',
+            'products.required'                   => 'Add at least one product to the Product List.',
+            'products.*.code.required_if'         => 'Pick a product from the Product Master.',
+            'products.*.name.required_if'         => 'Enter the product name.',
+            'products.*.target_price.required_if' => 'Enter the target price.',
+            'products.*.target_price.regex'       => 'The target price must be a number (up to 2 decimals).',
         ]);
     }
 

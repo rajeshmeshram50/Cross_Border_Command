@@ -79,6 +79,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.vendor_types', icon: 'Store', label: 'Supplier Types' },
       { id: 'master.vendor_behaviour', icon: 'Activity', label: 'Supplier Behaviour' },
       { id: 'master.applicable_types', icon: 'Users2', label: 'Applicable Parties' },
+      { id: 'master.service_categories', icon: 'Tags', label: 'Service Category' },
     ],
   },
   {
@@ -292,6 +293,7 @@ export const P2P_GROUPS: MenuGroup[] = [
     children: [
       { id: 'p2p.product', icon: 'Tag', label: 'Product Management' },
       { id: 'p2p.supplier', icon: 'UserPlus', label: 'Supplier Management' },
+      { id: 'p2p.service', icon: 'Wrench', label: 'Service Management' },
     ],
   },
   {

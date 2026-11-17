@@ -1,89 +1,52 @@
-// Generic master config — one entry per master.
-// Every master shares the same page shell; only fields/columns/seed/wtd differ.
-
 export type FieldOption = string | { value: string; label: string };
 
 export type FieldDef = {
-  n: string;                // field name (row key)
-  l: string;                // label
+  n: string;
+  l: string;
   t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'radio' | 'file' | 'sublist';
-  r?: boolean;              // required
-  p?: string;               // placeholder
-  full?: boolean;           // span full row
-  opts?: FieldOption[];     // select options — string or { value, label } for distinct display/payload
-  ref?: string;             // ref to another master key (dropdown from that master's data)
-  refL?: string;            // label field on the referenced master
-  refLFmt?: string;         // composite label template, e.g. "{name} ({level})" — overrides refL
-  sec?: string;             // section divider (no input, header only)
-  auto?: boolean;           // server-generated value (e.g. auto-numbered code); rendered read-only
-  hint?: string;            // small italic helper text shown next to the label
-  autogen?: (rows: any[]) => string; // optional client-side preview of an auto-generated value
-  autogenApi?: boolean;     // when true, MasterPage fetches `/master/{slug}/next-code` on form-open
-                            // and uses that value (DB-derived, tenant-scoped) instead of `autogen()`
-  noneLabel?: string;       // explicit "none/empty" option label for ref dropdowns (e.g. "— None (Top Level) —")
-  accept?: string;          // file input accept attribute, e.g. ".pdf,.jpg,.jpeg,.png"
-  maxMb?: number;           // file input max size in MB (rendered as hint, validated client-side)
-  optionalLabel?: string;   // small uppercase tag next to label, e.g. "OPTIONAL" or "MANDATORY"
-  icon?: string;            // remix icon class to render before the label (used by file fields)
-  // Sublist fields (t: 'sublist') — render a card-list of child rows inside
-  // the parent form (e.g. a branch's bank accounts).
-  subFields?: FieldDef[];   // fields shown in the sub-modal for each item
-  subSingular?: string;     // singular label for the sub-modal title (e.g. 'Bank Detail')
-  subDesc?: string;         // small subtitle under the sublist section header
-  subCardTitleField?: string;     // which sub-field is the card's main title (e.g. 'bank_name')
-  subCardSubtitleField?: string;  // small text under the title (e.g. 'branch_name')
-  subCardLines?: string[];        // additional lines rendered on the card (field names)
-  subPrimaryFlagField?: string;   // boolean field that marks an item as PRIMARY (e.g. 'is_primary')
-  // Per-option helper text shown under each choice — used by 'radio' fields
-  // when `opts` are { value, label } objects. Keyed by option value.
+  r?: boolean;
+  p?: string;
+  full?: boolean;
+  opts?: FieldOption[];
+  ref?: string;
+  refL?: string;
+  refLFmt?: string;
+  sec?: string;
+  auto?: boolean;
+  hint?: string;
+  autogen?: (rows: any[]) => string;
+  autogenApi?: boolean;
+  noneLabel?: string;
+  accept?: string;
+  maxMb?: number;
+  optionalLabel?: string;
+  icon?: string;
+  subFields?: FieldDef[];
+  subSingular?: string;
+  subDesc?: string;
+  subCardTitleField?: string;
+  subCardSubtitleField?: string;
+  subCardLines?: string[];
+  subPrimaryFlagField?: string;
   optDesc?: Record<string, string>;
-  // Conditional visibility — only render this field when the referenced
-  // field's current value matches. Useful for forms where one choice unlocks
-  // a follow-up input (e.g. show Calendar From Month only when From Month = Calendar).
   showWhen?: { field: string; equals: string | string[] };
-  // Date constraints — kicks in when t === 'date'. `futureOnly` clamps
-  // both the picker's min and the on-save validator to >= today, used
-  // for things like warranty expiry where backdating doesn't make sense.
   futureOnly?: boolean;
-  // Numeric range constraints — kick in when t === 'number'. Both the
-  // input's HTML min/max attrs and the on-save validator honour these,
-  // so percentages can be clamped to 0..100 and ₹ amounts to a sane
-  // upper bound that fits the backend column. If omitted, MasterPage
-  // defaults to min:0 / max:999999999 to prevent SQL overflow.
   min?: number;
   max?: number;
-  // Auto-derive this field's value from another field as the user types.
-  // The source field is referenced by `n` (e.g. autoDeriveFrom: 'title').
-  // MasterPage wires up a DOM input-listener while the modal is open and
-  // computes a sensible default (e.g. UOM "Kilogram" → "KG"). Auto-fill
-  // stops once the user manually edits the target field, so user input
-  // is always preserved.
   autoDeriveFrom?: string;
-  // Regex validation (source string, no delimiters) applied on save when the
-  // field has a value. Used by sublist sub-fields (e.g. bank account number /
-  // IFSC) and any field needing a format check. `patternMessage` is the error
-  // shown when it fails.
   pattern?: string;
   patternMessage?: string;
-  // Max character length for text/textarea inputs.
   maxLen?: number;
-  // Cross-date constraint (t === 'date') — this date must be strictly AFTER
-  // the referenced date field (e.g. warranty_expiry_date afterField 'purchase_date').
   afterField?: string;
-  // Cascade (t: ref select) — filter this dropdown's options by the current
-  // value of another field, matching on the ref row's column of the same name
-  // (e.g. state_id cascadeFrom 'country_id' shows only that country's states).
   cascadeFrom?: string;
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
 
-// Optional KPI strip rendered above the search bar on a master page.
-// `compute` receives the full record array and returns the KPI value.
 export type KpiDef = {
   label: string;
-  icon: string;        // remix icon class
-  gradient: string;    // CSS linear-gradient for the icon tile + top accent stripe
+  icon: string;
+  gradient: string;
   compute: (records: any[]) => number;
 };
 
@@ -91,101 +54,63 @@ export type MasterConfig = {
   key: string;
   slug: string;
   title: string;
-  titleSingular?: string;   // used in modal title e.g. "Add Company Detail"
-  icon: string;             // remix icon class like "ri-building-4-line"
-  iconColor: string;        // "primary" | "success" | etc. (Bootstrap)
-  iconBg: string;           // used with ${color}-subtle bg
+  titleSingular?: string;
+  icon: string;
+  iconColor: string;
+  iconBg: string;
   desc: string;
   cat: string;
-  endpoint?: string;        // custom REST endpoint prefix (default: `/master/${slug}`)
+  endpoint?: string;
+  noDelete?: boolean;
+  inUseStatusOnly?: boolean;
   fields: FieldDef[];
   cols: string[];
   colL: string[];
   uFields?: string[];
-  /**
-   * Extra columns quoted back in the duplicate-row error so the message points
-   * at the row that actually caused it.
-   *
-   * Needed wherever the list is sliced into tabs by a column that ISN'T part of
-   * uFields: the clash can then sit on a tab the user isn't looking at, and a
-   * bare "already exists" reads as if the data on screen is wrong. Roles is the
-   * case that surfaced it (QA #68) — names are unique across the master, but
-   * the page splits into Primary / Ancillary by role_type, so "Manager" as an
-   * Ancillary role blocked adding it from the Primary tab with nothing visible
-   * to explain why. Naming the type + code sends the user straight to the row.
-   */
   uContext?: string[];
-  // When true, this is a fixed-vocabulary master — no rows can be added.
-  // Backend also rejects POST. Used for things like address_types where
-  // the product defines the closed set (Warehouse / Registered Address /
-  // Billing Address) and tenants cannot extend it.
   lockedFixed?: boolean;
-  /**
-   * Why this master is locked, in the user's words. REQUIRED alongside
-   * lockedFixed: the Add button is rendered DISABLED carrying this as its
-   * tooltip rather than being hidden. A restriction nobody can see is
-   * indistinguishable from a broken permission -- QA filed "Add Designation
-   * missing despite full Master permissions" (CBC #1, 02-09-2026) against
-   * exactly that silence. Say what is fixed and why, not just "not allowed".
-   */
   lockedReason?: string;
-  /**
-   * The module this master really belongs to, for masters reached from another
-   * module's menu rather than the Master Control Center. Set it and the page
-   * renders that module's header treatment (the .frm-cstrip strip used by HR >
-   * Custom Fields) with a Back button that returns to `path` — a fixed parent,
-   * not wherever history happens to point.
-   */
   parent?: { path: string; label: string };
   data: any[];
   wtd: WtdStep[];
   kpis?: KpiDef[];
 };
 
-/** Turn opts (string | {value,label}) into uniform {value,label} pairs for rendering. */
 export function normalizeOpts(opts: FieldOption[] | undefined): { value: string; label: string }[] {
   return (opts || []).map(o => typeof o === 'string' ? { value: o, label: o } : o);
 }
 
-/** Endpoint for a master — honors the optional override. */
 export function masterEndpoint(cfg: Pick<MasterConfig, 'slug' | 'endpoint'>): string {
   return cfg.endpoint || `/master/${cfg.slug}`;
 }
 
-// Shared field-validation patterns (regex source strings; enforced by
-// MasterPage.validateForm and mirrored server-side). Added for the master
-// field-validation bug batch (#11-#30).
-const P_NAME_NO_DIGITS  = "^[A-Za-z][A-Za-z .,&'()\\-]*$";           // letters + name punctuation, no digits
+const P_NAME_NO_DIGITS  = "^[A-Za-z][A-Za-z .,&'()\\-]*$";
 const M_NAME_NO_DIGITS  = "Only letters and spaces are allowed (no numbers or special characters).";
-const P_NAME_NO_SYMBOLS = "^(?=.*[A-Za-z])[A-Za-z0-9 .,&'()/\\-]+$"; // letters/numbers/space/basic punct, no special symbols
+const P_NAME_NO_SYMBOLS = "^(?=.*[A-Za-z])[A-Za-z0-9 .,&'()/\\-]+$";
 const M_NAME_NO_SYMBOLS = "Special characters are not allowed.";
-const P_ACCOUNT_NO      = "^[0-9]{9,18}$";                            // bank account number: 9-18 digits
+const P_ACCOUNT_NO      = "^[0-9]{9,18}$";
 const M_ACCOUNT_NO      = "Account Number must be 9 to 18 digits (numbers only).";
-const P_AD_CODE         = "^[0-9]{14}$";                              // AD code: exactly 14 digits
+const P_AD_CODE         = "^[0-9]{14}$";
 const M_AD_CODE         = "AD Code must be exactly 14 digits (numbers only).";
-const P_ALNUM_CODE      = "^[A-Za-z0-9]+$";                           // alphanumeric code
+const P_ALNUM_CODE      = "^[A-Za-z0-9]+$";
 const M_ALNUM_CODE      = "Only letters and numbers are allowed (no spaces or special characters).";
-// Indian PIN: exactly 6 digits, and no PIN code starts with 0 — so "@#SDCS",
-// "0411045" and a 5-digit typo are all rejected.
 const P_PINCODE         = "^[1-9][0-9]{5}$";
 const M_PINCODE         = "PIN Code must be exactly 6 digits and cannot start with 0.";
-// Phone: 7-15 digits. The range covers short landlines through the longest
-// international numbers (ITU E.164 caps at 15). Digits ONLY — letters, "+",
-// spaces and dashes are all rejected, so the stored value is always dialable.
 const P_PHONE_7_15      = "^[0-9]{7,15}$";
 const M_PHONE_7_15      = "Phone must be 7 to 15 digits (numbers only — no spaces, +, or other symbols).";
-// GST state code: exactly two digits, 01-38. Kept as TEXT, never a number field
-// — the leading zero in "07" / "01" is part of the code and would be lost.
 const P_STATE_CODE      = "^[0-9]{2}$";
 const M_STATE_CODE      = "State Code must be exactly 2 digits, e.g. 07 or 27 (numbers only).";
-/* SWIFT / BIC (ISO 9362): 4-letter bank + 2-letter country + 2 alphanumeric
- * location, then an OPTIONAL 3-character branch — so 8 or 11 characters, never
- * 9, 10 or anything with a symbol. "SBININBB104" = SBIN·IN·BB·104. */
 const P_SWIFT_CODE      = "^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$";
 const M_SWIFT_CODE      = "Swift Code must be 8 or 11 letters/numbers, e.g. HDFCINBB or SBININBB104 (no spaces or special characters).";
-
+export const shouldShowField = (field: FieldDef, formData: Record<string, any>): boolean => {
+  if (!field.showWhen) return true;
+  const current = formData[field.showWhen.field];
+  const expected = field.showWhen.equals;
+  return Array.isArray(expected)
+    ? expected.includes(current)
+    : current === expected;
+};
 const C: Record<string, MasterConfig> = {
-  // ---------- IDENTITY & ENTITY ----------
   company: {
     key: 'company', slug: 'company', title: 'Company Details', titleSingular: 'Company Detail',
     icon: 'ri-building-4-line', iconColor: 'primary', iconBg: 'primary',
@@ -216,7 +141,6 @@ const C: Record<string, MasterConfig> = {
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Enables use across all modules' },
     ],
   },
-
 
   organization_types: {
     key: 'organization_types', slug: 'organization_types', title: 'Organization Types', titleSingular: 'Organization Type',
@@ -282,9 +206,6 @@ const C: Record<string, MasterConfig> = {
       { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'code', l: 'Department Code', t: 'text', r: true, p: 'e.g. DEPT-001',
         autogenApi: true,
-        // Fallback used until /next-code resolves (or if it errors out). Same
-        // formula the backend applies, but computed against the rows already
-        // loaded into the page.
         autogen: (records: any[]) => {
           const max = records.reduce((m: number, r: any) => {
             const match = /^DEPT-(\d+)$/i.exec(String(r.code || '').trim());
@@ -293,11 +214,8 @@ const C: Record<string, MasterConfig> = {
           }, 0);
           return `DEPT-${String(max + 1).padStart(3, '0')}`;
         } },
-      // Self-reference: parent_id points to another department row (refL = 'name').
-      // noneLabel prepends a "Root Department" entry so a department can be set as top-level.
       { n: 'parent_id', l: 'Parent Department', t: 'select', ref: 'departments', refL: 'name',
         noneLabel: '— None (Root Department) —' },
-      // Display "Name — Designation" in the dropdown but persist only the name as the value.
       { n: 'head', l: 'Department Head', t: 'select', noneLabel: '— Select Employee —', opts: [
         { value: 'Gaurav Jagtap',   label: 'Gaurav Jagtap — Software Developer' },
         { value: 'Atharv Patekar',  label: 'Atharv Patekar — QA Engineer' },
@@ -363,13 +281,6 @@ const C: Record<string, MasterConfig> = {
     ],
     cols: ['code', 'name', 'role_type', 'department_id', 'role_category', 'status'],
     colL: ['Code', 'Role Name', 'Role Type', 'Department', 'Category', 'Status'],
-    /* A role name is unique per (Role Type + Department), not across the whole
-       master. "Manager" can be a Primary role in Sales and again in HR, and
-       Primary / Ancillary are separate vocabularies. Checking the name alone
-       rejected "Manager" as a Primary role because an Ancillary "Manager"
-       existed — while the Primary tab the user was looking at showed no such
-       row (QA #68). Department is optional; a blank one is its own bucket, so
-       two department-less Primary "Manager" rows still clash. */
     uFields: ['name', 'role_type', 'department_id'],
     uContext: ['code'],
     data: [
@@ -394,13 +305,6 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-verified-badge-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Job titles shown on letters, profiles & HR records',
     cat: 'Identity & Entity',
-    // Closed vocabulary: the six seeded levels (Director/CEO, HOD, Team
-    // Leader, Executive, Employee, Intern/Trainee) are the whole hierarchy,
-    // and every HR screen that reads a designation level assumes exactly
-    // this set. A tenant-added seventh title has no level to sit at, so it
-    // breaks the hierarchy strip and the level KPIs. Hides the Add button;
-    // MasterController blocks the POST so a direct API hit cannot add one
-    // either. Existing rows stay editable.
     lockedFixed: true,
     lockedReason: 'Designations is a fixed master. The six seeded titles (Director / CEO, '
       + 'Head of Department, Team Leader, Executive, Employee, Intern / Trainee) are the whole '
@@ -417,8 +321,6 @@ const C: Record<string, MasterConfig> = {
     cols: ['code', 'name', 'status'],
     colL: ['Code', 'Designation Name', 'Status'],
     uFields: ['name', 'code'],
-    // Seed list — used as the Reports-To fallback when no records exist yet,
-    // and as starter data so the dropdown is never empty during onboarding.
     data: [
       { id: 1,  name: 'CEO',                       code: 'DGN-001', level: 'Director / CEO',           status: 'Active' },
       { id: 2,  name: 'VP Engineering',            code: 'DGN-002', level: 'Director / CEO',           status: 'Active' },
@@ -454,9 +356,6 @@ const C: Record<string, MasterConfig> = {
     cat: 'Identity & Entity',
     fields: [
       { n: 'name', l: 'KPI Name', t: 'text', r: true, p: 'e.g. Monthly Sales Target, Revenue Growth, Task Completion Rate…' },
-      // Role names repeat across role types / departments now that role
-      // uniqueness is scoped that way, so show the type alongside the name —
-      // otherwise this dropdown lists two indistinguishable "Manager" rows.
       { n: 'role_id', l: 'Role', t: 'select', r: true, ref: 'roles', refL: 'name', refLFmt: '{name} ({role_type})', p: '— Select from Role Master —' },
       { n: 'target_type', l: 'Target Type', t: 'select', r: true, p: 'Please Select KPI target', opts: ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating'] },
       { n: 'priority', l: 'Priority', t: 'select', r: true, p: 'Select priority…', opts: ['Critical', 'High', 'Medium', 'Low'] },
@@ -481,7 +380,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- GEOGRAPHY & LOCATION ----------
   countries: {
     key: 'countries', slug: 'countries', title: 'Countries', titleSingular: 'Country',
     icon: 'ri-earth-line', iconColor: 'info', iconBg: 'info',
@@ -524,11 +422,6 @@ const C: Record<string, MasterConfig> = {
     cat: 'Geography & Location',
     fields: [
       { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
-      // A state name is a place name — digits and symbols have no business in
-      // it. P_NAME_NO_DIGITS still allows the hyphens / apostrophes / full stops
-      // that real names use ("Jammu and Kashmir", "N'Djamena", "St. Gallen"):
-      // of the 1,797 seeded states, those cover every one but a single
-      // digit-bearing outlier.
       { n: 'name', l: 'State Name', t: 'text', r: true, p: 'e.g. Maharashtra', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -585,9 +478,6 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-home-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Fixed vocabulary: Warehouse, Registered Office, Billing Address. No additions allowed.',
     cat: 'Geography & Location',
-    // Locked-fixed master — backend rejects POST and the three rows are
-    // is_system protected from edit/delete. The Add button is shown DISABLED
-    // with lockedReason as its tooltip, so the restriction explains itself.
     lockedFixed: true,
     lockedReason: 'Address Types is a fixed master. Only Registered Office, Warehouse and '
       + 'Branch are allowed — the address forms across Sales, P2P and CLM are built around '
@@ -669,7 +559,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- TRADE & COMMERCIAL ----------
   segments: {
     key: 'segments', slug: 'segments', title: 'Segments', titleSingular: 'Segment',
     icon: 'ri-focus-3-line', iconColor: 'success', iconBg: 'success',
@@ -705,10 +594,6 @@ const C: Record<string, MasterConfig> = {
     desc: '4–8 digit numeric commodity codes for GST & customs filings',
     cat: 'Trade & Commercial',
     fields: [
-      // HSN / SAC are strictly NUMERIC — 4, 6, or 8 digit codes per Indian
-      // GST notification. Backend validates ^[0-9]{4,8}$; the client mirrors
-      // it via the hsn_code validator in MasterPage and strips non-digits as
-      // the user types so a paste of "0802-1200" auto-corrects to "08021200".
       { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200', maxLen: 8 } as any,
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -734,10 +619,6 @@ const C: Record<string, MasterConfig> = {
     desc: 'GST tax slabs applied on product invoices',
     cat: 'Trade & Commercial',
     fields: [
-      // GST slabs are 0..28% in practice; backend column is DECIMAL(5,2)
-      // so anything ≥ 1000 throws a raw SQL overflow. Cap at 100 on the
-      // frontend so the user sees "GST % must be at most 100" instead of
-      // a stack trace, and 0 is a valid slab (e.g. exempt goods).
       { n: 'percentage', l: 'GST %', t: 'number', r: true, p: 'e.g. 18', min: 0, max: 100 } as any,
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -905,22 +786,13 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- PARTY & CLASSIFICATION ----------
   customer_types: {
-    // Slug stays `customer_types` (used by API, migrations, FKs) but
-    // the UI label is "Customer Consignee Type" — the master pins two
-    // global system entries (Retailer, Wholesaler) and the SaaS
-    // operator decides whether they want extra buyer classifications
-    // on top.
     key: 'customer_types', slug: 'customer_types', title: 'Customer Consignee Type', titleSingular: 'Customer Consignee Type',
     icon: 'ri-user-3-line', iconColor: 'danger', iconBg: 'danger',
     desc: 'Customer / consignee classification — drives pricing & GST rules',
     cat: 'Party & Classification',
     fields: [
       { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
-      // "No" listed first so a fresh form defaults to GST-not-applicable;
-      // user flips to "Yes" for taxable buyer types. Required so the
-      // server never sees a null GST flag for a customer-type row.
       { n: 'gst_applicable', l: 'GST Applicable', t: 'select', r: true, opts: ['No', 'Yes'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -1060,7 +932,50 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- LEGAL & COMPLIANCE ----------
+  service_categories: {
+    key: 'service_categories', slug: 'service_categories', title: 'Service Category', titleSingular: 'Service Category',
+    icon: 'ri-price-tag-3-line', iconColor: 'success', iconBg: 'success',
+    desc: 'Service categories for Soft / Digital and Other Operational services',
+    cat: 'Party & Classification',
+    noDelete: true,
+    inUseStatusOnly: true,
+    fields: [
+      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Software Licence' },
+      {
+        n: 'service_type', l: 'Select Service', t: 'select', r: true,
+        opts: [
+          { value: 'soft_digital', label: 'Soft / Digital Service' },
+          { value: 'other_operational', label: 'Other Operational Service' },
+        ],
+      },
+      {
+        n: 'classification', l: 'Select Type', t: 'select', r: true,
+        opts: [
+          { value: 'professional', label: 'Professional' },
+          { value: 'utility', label: 'Utility' },
+          { value: 'facility', label: 'Facility' },
+          { value: 'maintenance', label: 'Maintenance' },
+          { value: 'outsourcing', label: 'Outsourcing' },
+        ],
+        showWhen: { field: 'service_type', equals: 'other_operational' },
+      },
+      {
+        n: 'status', l: 'Status', t: 'select', r: true,
+        opts: ['Active', 'Inactive'],
+      },
+    ],
+    cols: ['name', 'service_type', 'classification', 'status'],
+    colL: ['Service Category Name', 'Select Service', 'Select Type', 'Status'],
+    uFields: ['name', 'service_type', 'classification'],
+    data: [],
+    wtd: [
+      { icon: 'ri-price-tag-3-line', title: 'Name the Category', desc: 'Give the service category a clear name' },
+      { icon: 'ri-list-check-2', title: 'Select Service', desc: 'Choose Soft / Digital or Other Operational' },
+      { icon: 'ri-list-check-2', title: 'Select Service Type', desc: 'For Other Operational, choose the applicable type' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Inactive categories stop appearing in the service form' },
+    ],
+  },
+
   license_name: {
     key: 'license_name', slug: 'license_name', title: 'License Types', titleSingular: 'License Type',
     icon: 'ri-file-shield-2-line', iconColor: 'danger', iconBg: 'danger',
@@ -1095,11 +1010,6 @@ const C: Record<string, MasterConfig> = {
     desc: 'Risk severity tags for vendor & shipment screening',
     cat: 'Legal & Compliance',
     fields: [
-      // noneLabel prepends a blank option, which makes it options[0] — so the
-      // "required select defaults to its first option" rule in renderField
-      // lands on the blank instead of pre-selecting "Low". Risk severity must
-      // be a deliberate choice, and a silent default is the one value nobody
-      // reviews. Still required: an empty submit is rejected on save.
       { n: 'name', l: 'Risk Level', t: 'select', r: true, noneLabel: '— Select Risk Level —', opts: ['Low', 'Medium', 'High', 'Critical'] },
       { n: 'description', l: 'Description', t: 'text', p: 'Risk criteria' },
       { n: 'action_required', l: 'Action Required', t: 'text', p: 'e.g. Escalate' },
@@ -1207,7 +1117,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- OPERATIONS & SUPPORT ----------
   assets: {
     key: 'assets', slug: 'assets', title: 'Assets', titleSingular: 'Asset',
     icon: 'ri-briefcase-4-line', iconColor: 'info', iconBg: 'info',
@@ -1313,7 +1222,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- P2P MASTERS ----------
   payment_terms: {
     key: 'payment_terms', slug: 'payment_terms', title: 'Payment Terms', titleSingular: 'Payment Term',
     icon: 'ri-calendar-line', iconColor: 'info', iconBg: 'info',
@@ -1626,7 +1534,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- WAREHOUSE MASTERS ----------
   warehouse_master: {
     key: 'warehouse_master', slug: 'warehouse_master', title: 'Warehouse Master', titleSingular: 'Warehouse',
     icon: 'ri-building-2-line', iconColor: 'success', iconBg: 'success',
@@ -1636,18 +1543,11 @@ const C: Record<string, MasterConfig> = {
       { n: 'wh_id', l: 'Warehouse ID', t: 'text', r: true, p: 'e.g. WH-001' },
       { n: 'wh_name', l: 'Warehouse Name', t: 'text', r: true, p: 'e.g. Pune Main' },
       { n: 'wh_type', l: 'Warehouse Type', t: 'select', r: true, opts: ['Own Warehouse', 'Third Party Warehouse'] },
-      // Address hierarchy, widest first: Country → State → City → PIN. State is
-      // cascaded off Country so it can only ever offer that country's states —
-      // it used to be free text, which allowed a State that belonged nowhere.
       { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
       { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', cascadeFrom: 'country_id' },
       { n: 'city', l: 'City', t: 'text', r: true, p: 'e.g. Pune' },
-      // maxLen caps entry at 6 while typing; the pattern is what actually
-      // rejects letters / symbols on save.
       { n: 'pincode', l: 'PIN Code', t: 'text', r: true, p: 'e.g. 411045', maxLen: 6, pattern: P_PINCODE, patternMessage: M_PINCODE },
       { n: 'contact_person', l: 'Contact Person', t: 'text', p: 'e.g. Rajesh Kumar' },
-      // Placeholder shows a bare number on purpose — the old "+91 98000 00000"
-      // demonstrated a format the pattern now rejects.
       { n: 'contact_phone', l: 'Contact Phone', t: 'text', p: 'e.g. 9876543210', maxLen: 15, pattern: P_PHONE_7_15, patternMessage: M_PHONE_7_15 },
       { n: 'area_sqft', l: 'Area (sq. ft.)', t: 'number', p: 'e.g. 25000' },
       { n: 'address', l: 'Full Address', t: 'textarea', p: 'Full warehouse address', full: true },
@@ -1848,7 +1748,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- ATTENDANCE MASTER MANAGEMENT ----------
   leave_type: {
     key: 'leave_type', slug: 'leave_type', title: 'Leave Type Master', titleSingular: 'Leave Type',
     icon: 'ri-calendar-close-line', iconColor: 'success', iconBg: 'success',
@@ -1880,10 +1779,6 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'plan_name', l: 'Leave Plan Name', t: 'text', r: true, p: 'e.g. Default Plan 2026', full: true },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Optional — short note describing this plan', full: true },
-      // Radio group mirrors the reference UX: one path picks a fixed calendar
-      // start month, the other ties the calendar year to each employee's
-      // joining date. The from_month picker below appears only when the
-      // "Calendar" path is selected (showWhen).
       {
         n: 'from_month_type',
         l: 'Leave calendar year under this plan',
@@ -1945,23 +1840,12 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  // ---------- HR · DOCUMENT & EVIDENCE ----------
-  // Trigger Point Master — defines lifecycle trigger modules (Onboarding,
-  // Offboarding, Event-Based, etc.) that the Doc Generation Rules engine
-  // hangs auto-generation rules off of. Visible inside HR > Document &
-  // Evidence; reuses the generic /master/:slug page shell.
   trigger_point: {
     key: 'trigger_point', slug: 'trigger_point', title: 'Trigger Point Master', titleSingular: 'Trigger',
     icon: 'ri-flashlight-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Define lifecycle trigger modules for document generation',
     cat: 'Document & Evidence',
-    /* Lives in the HR sidebar under Document & Evidence, next to Document
-       Templates and Custom Fields — never in the Master Control Center. Back
-       returns to that parent, the same fixed target Custom Fields uses, rather
-       than the Master list an HR user never opened. */
-    parent: { path: '/hr/doc-templates', label: 'Document Templates' },
-    // Trigger points are seed-managed (Onboarding / Exit / Promotion) — no manual
-    // Add button; existing rows stay editable.
+  parent: { path: '/hr/doc-templates', label: 'Document Templates' },
     lockedFixed: true,
     lockedReason: 'Trigger Points is a fixed master. Each trigger is wired to code that runs '
       + 'when it fires, so a new one added here would never trigger anything. Existing trigger '
@@ -2025,8 +1909,6 @@ export function allMasterConfigs(): MasterConfig[] {
   return Object.values(C);
 }
 
-
-// Resolve a reference field value to its display label.
 export function resolveRef(refMaster: string, refLabel: string | undefined, value: any): string {
   const m = C[refMaster];
   if (!m) return String(value ?? '');
