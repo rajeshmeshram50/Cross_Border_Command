@@ -2,7 +2,7 @@
   "info": {
     "name": "P2P · Sourcing Management Tracker (/api/p2p/sourcing-targets)",
     "_postman_id": "8a2b6c1e-p2p-sourcing-0001",
-    "description": "Sourcing Management Tracker → Sourcing Target Management (the RFQ tab is not part of this collection).\nSame targets and APIs as Bulk Sourcing — the tracker only shows them with \"Sourcing\" wording.\n\nRun order: 0. Auth → 2. form data (fills assignee / product ids) → 3. Assign Target → 1. list → 4. report & mapping.\nRoles: the CREATOR edits the target; the ASSIGNEE maps suppliers. Log in as the assignee for folder 4's mapping requests.\nEvery main request has a saved example response; Postman's Code (</>) → cURL gives the curl command.",
+    "description": "Sourcing Management Tracker → Sourcing Target Management (the RFQ tab is not part of this collection).\nSame targets and APIs as Bulk Sourcing — the tracker only shows them with \"Sourcing\" wording.\n\nRun order: 0. Auth → 2. form data (fills assignee / product ids) → 3. Assign Target → 1. list → 4. report → 5. Map Supplier Directory → 6. Convert to Supplier.\nRoles: the CREATOR edits the target; the ASSIGNEE maps suppliers. Log in as the assignee for folder 5.\nMap Supplier: Domestic supplier (₹ unit price + GST, CGST + SGST or IGST) or International supplier (price in its currency × exchange rate, no GST); every mapping stores its quote.\nEvery main request has a saved example response; Postman's Code (</>) → cURL gives the curl command.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -101,6 +101,30 @@
       "value": "",
       "type": "string",
       "description": "path from POST /p2p/upload"
+    },
+    {
+      "key": "supplier_id_intl",
+      "value": "",
+      "type": "string",
+      "description": "International Supplier Master row · set by supplier lists"
+    },
+    {
+      "key": "currency",
+      "value": "USD",
+      "type": "string",
+      "description": "Set by supplier lists"
+    },
+    {
+      "key": "new_supplier_id",
+      "value": "",
+      "type": "string",
+      "description": "New Supplier directory id · set by Mapped suppliers"
+    },
+    {
+      "key": "vendor_id",
+      "value": "",
+      "type": "string",
+      "description": "Supplier Master id saved by the Add Supplier form"
     }
   ],
   "item": [
@@ -245,7 +269,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-16\",\n        \"due\": \"2026-11-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-17\",\n        \"due\": \"2026-12-01\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -329,7 +353,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-16\",\n        \"due\": \"2026-11-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-17\",\n        \"due\": \"2026-12-01\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -1108,7 +1132,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-16\",\n    \"due\": \"2026-11-30\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 19,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 20,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 21,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-17\",\n    \"due\": \"2026-12-01\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 27,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 28,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 29,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1275,7 +1299,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-16\",\n    \"due\": \"2026-12-07\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 20,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 19,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 21,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-17\",\n    \"due\": \"2026-12-08\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 28,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 27,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 29,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1367,7 +1391,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 20,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 28,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
             }
           ]
         },
@@ -1459,7 +1483,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 20,\n    \"status\": \"Completed\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 28,\n    \"status\": \"Completed\"\n  }\n}"
             }
           ]
         },
@@ -1503,7 +1527,291 @@
           }
         },
         {
-          "name": "Map Supplier · supplier directory",
+          "name": "Mapped suppliers of a product",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "description": "Mapped Suppliers popup (supplier cards). Per row: id, supplier_id, name, segment, contact, mobile, email, address fields, source (Master | New Supplier) and the quote:\norigin · currency · price · gstPercentage · gstType (intra | inter | none) · cgst / sgst / igst · gstAmount · total (incl. GST, in currency) · exchangeRate · inrAmount (₹ equivalent) · validTill · vsTarget { target, difference, percent, status below | at | above } (₹ unit price before GST vs the product's target price) · mappedOn · canConvert (show \"Convert to Supplier\").\nRows mapped before pricing existed have price = null → \"Price & GST not mapped for this supplier\"."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const n = (j.data || []).find(x => x.source === 'New Supplier');",
+                  "if (n) { pm.collectionVariables.set('mapped_supplier_id', n.id); pm.collectionVariables.set('new_supplier_id', n.supplier_id); }"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "description": "Mapped Suppliers popup (supplier cards). Per row: id, supplier_id, name, segment, contact, mobile, email, address fields, source (Master | New Supplier) and the quote:\norigin · currency · price · gstPercentage · gstType (intra | inter | none) · cgst / sgst / igst · gstAmount · total (incl. GST, in currency) · exchangeRate · inrAmount (₹ equivalent) · validTill · vsTarget { target, difference, percent, status below | at | above } (₹ unit price before GST vs the product's target price) · mappedOn · canConvert (show \"Convert to Supplier\").\nRows mapped before pricing existed have price = null → \"Price & GST not mapped for this supplier\"."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"20\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"21\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"22\",\n      \"supplier_id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Download clarity PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/clarity/download?path={{clarity_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "clarity",
+                "download"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "{{clarity_path}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Map Supplier Directory (Domestic / International)",
+      "description": "Map Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }.\n\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
+        {
+          "name": "Supplier Master · Domestic suppliers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/suppliers?origin=domestic",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "origin",
+                  "value": "domestic"
+                }
+              ]
+            },
+            "description": "Supplier Master → Domestic Supplier list. Rows: { id, code, name, segment, supplierType, contact, mobile, email, country, state, stateCode (GST state code), city, origin, currency, region }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const d = j.data || [];",
+                  "const dom = d.find(x => x.origin === 'domestic'), intl = d.find(x => x.origin === 'international');",
+                  "if (dom) pm.collectionVariables.set('supplier_id', dom.id);",
+                  "if (intl) { pm.collectionVariables.set('supplier_id_intl', intl.id); pm.collectionVariables.set('currency', intl.currency); }"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/suppliers?origin=domestic",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "suppliers"
+                  ],
+                  "query": [
+                    {
+                      "key": "origin",
+                      "value": "domestic"
+                    }
+                  ]
+                },
+                "description": "Supplier Master → Domestic Supplier list. Rows: { id, code, name, segment, supplierType, contact, mobile, email, country, state, stateCode (GST state code), city, origin, currency, region }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"origin\": \"domestic\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Karnataka\",\n      \"stateCode\": \"29\",\n      \"city\": \"Pune\",\n      \"currency\": \"INR\",\n      \"id\": \"3\",\n      \"code\": \"S-003\",\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    },\n    {\n      \"origin\": \"domestic\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Andaman and Nicobar Islands\",\n      \"stateCode\": \"35\",\n      \"city\": \"fd asdfjs\",\n      \"currency\": \"INR\",\n      \"id\": \"5\",\n      \"code\": \"S-005\",\n      \"name\": \"ASASAS\",\n      \"segment\": \"Ceramics & Tiles\",\n      \"contact\": \"\",\n      \"mobile\": \"\",\n      \"email\": \"\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    },\n    {\n      \"origin\": \"domestic\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Maharashtra\",\n      \"stateCode\": \"27\",\n      \"city\": \"mumbai\",\n      \"currency\": \"INR\",\n      \"id\": \"4\",\n      \"code\": \"S-004\",\n      \"name\": \"google 121212\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Supplier Master · International suppliers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/suppliers?origin=international",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "origin",
+                  "value": "international"
+                }
+              ]
+            },
+            "description": "Supplier Master → International Supplier list (primary address outside India). `currency` = the suggested currency for the price."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const d = j.data || [];",
+                  "const dom = d.find(x => x.origin === 'domestic'), intl = d.find(x => x.origin === 'international');",
+                  "if (dom) pm.collectionVariables.set('supplier_id', dom.id);",
+                  "if (intl) { pm.collectionVariables.set('supplier_id_intl', intl.id); pm.collectionVariables.set('currency', intl.currency); }"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/suppliers?origin=international",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "suppliers"
+                  ],
+                  "query": [
+                    {
+                      "key": "origin",
+                      "value": "international"
+                    }
+                  ]
+                },
+                "description": "Supplier Master → International Supplier list (primary address outside India). `currency` = the suggested currency for the price."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"origin\": \"international\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Alabama\",\n      \"stateCode\": \"\",\n      \"city\": \"Pune\",\n      \"currency\": \"USD\",\n      \"id\": \"7\",\n      \"code\": \"S-007\",\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"United States\",\n      \"region\": \"International\"\n    },\n    {\n      \"origin\": \"international\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"\",\n      \"stateCode\": \"\",\n      \"city\": \"Houston\",\n      \"currency\": \"USD\",\n      \"id\": \"9\",\n      \"code\": \"S-101\",\n      \"name\": \"Atlantic Grain Traders LLC\",\n      \"segment\": \"\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"United States\",\n      \"region\": \"International\"\n    },\n    {\n      \"origin\": \"international\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Fujairah\",\n      \"stateCode\": \"\",\n      \"city\": \"Dubai\",\n      \"currency\": \"AED\",\n      \"id\": \"12\",\n      \"code\": \"S-104\",\n      \"name\": \"Gulf Commodities FZE\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"United Arab Emirates\",\n      \"region\": \"International\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Supplier Master · all (both origins)",
           "request": {
             "method": "GET",
             "header": [
@@ -1522,7 +1830,7 @@
                 "suppliers"
               ]
             },
-            "description": "Supplier master visible to the user: { id, code, name, segment, contact, mobile, email, country, region (Domestic | International) }."
+            "description": "Without ?origin the list is unchanged (both origins). origin is invalid → 422."
           },
           "event": [
             {
@@ -1531,7 +1839,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "if (j.data && j.data[0]) pm.collectionVariables.set('supplier_id', j.data[0].id);"
+                  "const d = j.data || [];",
+                  "const dom = d.find(x => x.origin === 'domestic'), intl = d.find(x => x.origin === 'international');",
+                  "if (dom) pm.collectionVariables.set('supplier_id', dom.id);",
+                  "if (intl) { pm.collectionVariables.set('supplier_id_intl', intl.id); pm.collectionVariables.set('currency', intl.currency); }"
                 ]
               }
             }
@@ -1557,7 +1868,7 @@
                     "suppliers"
                   ]
                 },
-                "description": "Supplier master visible to the user: { id, code, name, segment, contact, mobile, email, country, region (Domestic | International) }."
+                "description": "Without ?origin the list is unchanged (both origins). origin is invalid → 422."
               },
               "status": "OK",
               "code": 200,
@@ -1568,12 +1879,380 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"2\",\n      \"code\": \"S-002\",\n      \"name\": \"ABC Logistics Pvt. Ltd\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    },\n    {\n      \"id\": \"1\",\n      \"code\": \"S-001\",\n      \"name\": \"TechParts\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"origin\": \"domestic\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Karnataka\",\n      \"stateCode\": \"29\",\n      \"city\": \"Pune\",\n      \"currency\": \"INR\",\n      \"id\": \"3\",\n      \"code\": \"S-003\",\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    },\n    {\n      \"origin\": \"international\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Alabama\",\n      \"stateCode\": \"\",\n      \"city\": \"Pune\",\n      \"currency\": \"USD\",\n      \"id\": \"7\",\n      \"code\": \"S-007\",\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"country\": \"United States\",\n      \"region\": \"International\"\n    },\n    {\n      \"origin\": \"domestic\",\n      \"supplierType\": \"Material / Goods\",\n      \"state\": \"Andaman and Nicobar Islands\",\n      \"stateCode\": \"35\",\n      \"city\": \"fd asdfjs\",\n      \"currency\": \"INR\",\n      \"id\": \"5\",\n      \"code\": \"S-005\",\n      \"name\": \"ASASAS\",\n      \"segment\": \"Ceramics & Tiles\",\n      \"contact\": \"\",\n      \"mobile\": \"\",\n      \"email\": \"\",\n      \"country\": \"India\",\n      \"region\": \"Domestic\"\n    }\n  ]\n}"
             }
           ]
         },
         {
-          "name": "Map Supplier · from supplier master",
+          "name": "Supplier Master · map Domestic (₹ + GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"origin\": \"domestic\",\n  \"price\": 1100,\n  \"gst_percentage\": 18,\n  \"valid_till\": \"{{due_date}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Map Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"origin\": \"domestic\",\n  \"price\": 1100,\n  \"gst_percentage\": 18,\n  \"valid_till\": \"{{due_date}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Map Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Supplier Master · map International (currency, no GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id_intl}}\",\n  \"origin\": \"international\",\n  \"price\": 14.5,\n  \"currency\": \"USD\",\n  \"exchange_rate\": 83.25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Map Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }.\nExample: USD 14.50 × 83.25 = ₹1,207.13 (inrAmount), no GST."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id_intl}}\",\n  \"origin\": \"international\",\n  \"price\": 14.5,\n  \"currency\": \"USD\",\n  \"exchange_rate\": 83.25\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Map Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }.\nExample: USD 14.50 × 83.25 = ₹1,207.13 (inrAmount), no GST."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 2\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "New Supplier · Domestic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Valves\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  },\n  \"origin\": \"domestic\",\n  \"price\": 1150,\n  \"gst_percentage\": 18,\n  \"gst_type\": \"intra\",\n  \"valid_till\": \"{{due_date}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "New · Domestic form. new_supplier.name required; other supplier fields optional (card = visiting-card path from POST /p2p/upload with kind = card). country is India. Stored in the P2P New Supplier directory, not the Supplier Master (use 6. Convert to Supplier for that).\nMap Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Valves\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  },\n  \"origin\": \"domestic\",\n  \"price\": 1150,\n  \"gst_percentage\": 18,\n  \"gst_type\": \"intra\",\n  \"valid_till\": \"{{due_date}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "New · Domestic form. new_supplier.name required; other supplier fields optional (card = visiting-card path from POST /p2p/upload with kind = card). country is India. Stored in the P2P New Supplier directory, not the Supplier Master (use 6. Convert to Supplier for that).\nMap Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 3\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "New Supplier · International",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Rhein Armaturen GmbH\",\n    \"segment\": \"Valves\",\n    \"contact\": \"Jonas Weber\",\n    \"mobile\": \"+49 221 555 0101\",\n    \"email\": \"sales@rhein-armaturen.example\",\n    \"address\": \"Industriestr. 4\",\n    \"country\": \"Germany\",\n    \"state\": \"NRW\",\n    \"city\": \"Cologne\"\n  },\n  \"origin\": \"international\",\n  \"price\": 12.5,\n  \"currency\": \"EUR\",\n  \"exchange_rate\": 90.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "New · International form: country required (outside India), mobile with country code, State / Province free text. Price in the supplier's currency, no GST.\nMap Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Rhein Armaturen GmbH\",\n    \"segment\": \"Valves\",\n    \"contact\": \"Jonas Weber\",\n    \"mobile\": \"+49 221 555 0101\",\n    \"email\": \"sales@rhein-armaturen.example\",\n    \"address\": \"Industriestr. 4\",\n    \"country\": \"Germany\",\n    \"state\": \"NRW\",\n    \"city\": \"Cologne\"\n  },\n  \"origin\": \"international\",\n  \"price\": 12.5,\n  \"currency\": \"EUR\",\n  \"exchange_rate\": 90.4\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "New · International form: country required (outside India), mobile with country code, State / Province free text. Price in the supplier's currency, no GST.\nMap Supplier Directory: Supplier Master or New Supplier → Domestic Supplier or International Supplier → price form. Assignee only (creator / others → 403).\nPrice fields (sent with supplier_id or new_supplier):\n• origin — domestic | international (optional, defaults to the supplier's country; must match it → 422)\n• price — required · unit price (Domestic: ₹ excl. GST; International: in `currency`)\n• Domestic: gst_percentage (default 18) · gst_type intra (CGST + SGST) | inter (IGST) — default: intra when the supplier's state = our branch's state\n• International: currency (3-letter, default from the country) · exchange_rate (₹ per unit, default from the Currency master) · no GST\n• valid_till — optional · Price Valid Till (today or later)\nGST amounts, total and the ₹ equivalent are computed by the server. 422 if the supplier is already mapped to the product. Response: { supplierCount }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 4\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · no unit price",
           "request": {
             "method": "POST",
             "header": [
@@ -1608,12 +2287,22 @@
                   "language": "json"
                 }
               }
-            },
-            "description": "Assignee only. 422 if this supplier is already mapped to the product. Response: { supplierCount }."
+            }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
           "response": [
             {
-              "name": "200 OK",
+              "name": "422 Unprocessable Content",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -1648,11 +2337,10 @@
                       "language": "json"
                     }
                   }
-                },
-                "description": "Assignee only. 422 if this supplier is already mapped to the product. Response: { supplierCount }."
+                }
               },
-              "status": "OK",
-              "code": 200,
+              "status": "Unprocessable Content",
+              "code": 422,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -1660,12 +2348,12 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 1\n  }\n}"
+              "body": "{\n  \"message\": \"Please enter the supplier's unit price.\",\n  \"errors\": {\n    \"price\": [\n      \"Please enter the supplier's unit price.\"\n    ]\n  }\n}"
             }
           ]
         },
         {
-          "name": "Map Supplier · new supplier (not in master)",
+          "name": "Expect 422 · origin does not match the supplier",
           "request": {
             "method": "POST",
             "header": [
@@ -1694,18 +2382,28 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Industrial\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  }\n}",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id_intl}}\",\n  \"origin\": \"domestic\",\n  \"price\": 10\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            },
-            "description": "new_supplier.name required; every other field optional (card = visiting-card path from POST /p2p/upload with kind = card). Stored in the P2P supplier directory, not the Vendor master."
+            }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
           "response": [
             {
-              "name": "200 OK",
+              "name": "422 Unprocessable Content",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -1734,17 +2432,16 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"segment\": \"Industrial\",\n    \"contact\": \"Rohit Shah\",\n    \"mobile\": \"9800000000\",\n    \"email\": \"sales@shreevalves.example\",\n    \"gmaps\": \"https://maps.google.com/?q=Pune\",\n    \"address\": \"Plot 12, MIDC Bhosari\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"state_code\": \"27\",\n    \"city\": \"Pune\",\n    \"card\": \"\"\n  }\n}",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id_intl}}\",\n  \"origin\": \"domestic\",\n  \"price\": 10\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
-                },
-                "description": "new_supplier.name required; every other field optional (card = visiting-card path from POST /p2p/upload with kind = card). Stored in the P2P supplier directory, not the Vendor master."
+                }
               },
-              "status": "OK",
-              "code": 200,
+              "status": "Unprocessable Content",
+              "code": 422,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -1752,7 +2449,108 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplierCount\": 2\n  }\n}"
+              "body": "{\n  \"message\": \"This supplier is based in United States — map it as an International supplier.\",\n  \"errors\": {\n    \"origin\": [\n      \"This supplier is based in United States — map it as an International supplier.\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · International new supplier without country",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Rhein Armaturen GmbH\",\n    \"city\": \"Cologne\"\n  },\n  \"origin\": \"international\",\n  \"price\": 12.5,\n  \"currency\": \"EUR\",\n  \"exchange_rate\": 90.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Rhein Armaturen GmbH\",\n    \"city\": \"Cologne\"\n  },\n  \"origin\": \"international\",\n  \"price\": 12.5,\n  \"currency\": \"EUR\",\n  \"exchange_rate\": 90.4\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"Please select the supplier's country (outside India).\",\n  \"errors\": {\n    \"new_supplier.country\": [\n      \"Please select the supplier's country (outside India).\"\n    ]\n  }\n}"
             }
           ]
         },
@@ -1786,7 +2584,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"price\": 950,\n  \"gst_percentage\": 18\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1826,7 +2624,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\"\n}",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"price\": 950,\n  \"gst_percentage\": 18\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1849,7 +2647,7 @@
           ]
         },
         {
-          "name": "Mapped suppliers of a product",
+          "name": "Mapped suppliers of a product (with price)",
           "request": {
             "method": "GET",
             "header": [
@@ -1871,7 +2669,8 @@
                 "{{product_id}}",
                 "suppliers"
               ]
-            }
+            },
+            "description": "Mapped Suppliers popup (supplier cards). Per row: id, supplier_id, name, segment, contact, mobile, email, address fields, source (Master | New Supplier) and the quote:\norigin · currency · price · gstPercentage · gstType (intra | inter | none) · cgst / sgst / igst · gstAmount · total (incl. GST, in currency) · exchangeRate · inrAmount (₹ equivalent) · validTill · vsTarget { target, difference, percent, status below | at | above } (₹ unit price before GST vs the product's target price) · mappedOn · canConvert (show \"Convert to Supplier\").\nRows mapped before pricing existed have price = null → \"Price & GST not mapped for this supplier\"."
           },
           "event": [
             {
@@ -1881,7 +2680,7 @@
                 "exec": [
                   "const j = pm.response.json();",
                   "const n = (j.data || []).find(x => x.source === 'New Supplier');",
-                  "if (n) pm.collectionVariables.set('mapped_supplier_id', n.id);"
+                  "if (n) { pm.collectionVariables.set('mapped_supplier_id', n.id); pm.collectionVariables.set('new_supplier_id', n.supplier_id); }"
                 ]
               }
             }
@@ -1910,7 +2709,8 @@
                     "{{product_id}}",
                     "suppliers"
                   ]
-                }
+                },
+                "description": "Mapped Suppliers popup (supplier cards). Per row: id, supplier_id, name, segment, contact, mobile, email, address fields, source (Master | New Supplier) and the quote:\norigin · currency · price · gstPercentage · gstType (intra | inter | none) · cgst / sgst / igst · gstAmount · total (incl. GST, in currency) · exchangeRate · inrAmount (₹ equivalent) · validTill · vsTarget { target, difference, percent, status below | at | above } (₹ unit price before GST vs the product's target price) · mappedOn · canConvert (show \"Convert to Supplier\").\nRows mapped before pricing existed have price = null → \"Price & GST not mapped for this supplier\"."
               },
               "status": "OK",
               "code": 200,
@@ -1921,12 +2721,12 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"14\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"\",\n      \"state\": \"\",\n      \"state_code\": \"\",\n      \"city\": \"\",\n      \"source\": \"Master\"\n    },\n    {\n      \"id\": \"15\",\n      \"supplier_id\": 5,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\"\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"20\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"21\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"22\",\n      \"supplier_id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
             }
           ]
         },
         {
-          "name": "Edit a mapped NEW supplier",
+          "name": "Edit a mapped NEW supplier (+ re-quote)",
           "request": {
             "method": "PUT",
             "header": [
@@ -1956,14 +2756,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"city\": \"Pune\"\n  }\n}",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"city\": \"Pune\"\n  },\n  \"price\": 1120,\n  \"gst_percentage\": 12\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Only source = New Supplier rows (master suppliers are edited in the Supplier master → 422)."
+            "description": "Only source = New Supplier rows (Supplier Master rows are edited in the Supplier Master → 422). price / gst_percentage / gst_type / currency / exchange_rate / valid_till are optional — send price to re-quote. The country must keep the same origin (Domestic stays in India)."
           },
           "response": [
             {
@@ -1997,14 +2797,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"city\": \"Pune\"\n  }\n}",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"contact\": \"Rohit S.\",\n    \"mobile\": \"9800000001\",\n    \"country\": \"India\",\n    \"state\": \"Maharashtra\",\n    \"city\": \"Pune\"\n  },\n  \"price\": 1120,\n  \"gst_percentage\": 12\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "Only source = New Supplier rows (master suppliers are edited in the Supplier master → 422)."
+                "description": "Only source = New Supplier rows (Supplier Master rows are edited in the Supplier Master → 422). price / gst_percentage / gst_type / currency / exchange_rate / valid_till are optional — send price to re-quote. The country must keep the same origin (Domestic stays in India)."
               },
               "status": "OK",
               "code": 200,
@@ -2015,12 +2815,18 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"15\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"22\"\n  }\n}"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "6. Convert to Supplier (New Supplier → Supplier Master)",
+      "description": "\"Convert to Supplier\" on a New Supplier card: register it in the Supplier Master with the normal Add Supplier form, then link it.\n1. GET …/convert → pre-filled form data · 2. save with the existing /vendors/step/* wizard · 3. POST …/convert { vendor_id } → its mappings become Supplier Master rows.\n\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "item": [
         {
-          "name": "Download clarity PDF",
+          "name": "1 · Pre-fill the Add Supplier form",
           "request": {
             "method": "GET",
             "header": [
@@ -2030,32 +2836,461 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/p2p/clarity/download?path={{clarity_path}}",
+              "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "p2p",
-                "clarity",
-                "download"
-              ],
-              "query": [
-                {
-                  "key": "path",
-                  "value": "{{clarity_path}}"
-                }
+                "new-suppliers",
+                "{{new_supplier_id}}",
+                "convert"
               ]
+            },
+            "description": "new_supplier_id = supplier_id of a \"New Supplier\" row from Mapped suppliers (canConvert = true).\nidentity → POST /vendors/step/identity fields (company_name, legal_name, primary_email, segment_id, gst_applicable = No for International).\naddress → PUT /vendors/{id}/step/contacts primary address (address_line, country_id, state_id, state_code, city, google_location, contact_name, contact_no, email).\nIds are looked up by name; null when the master has no match (pick it in the form)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const d = j.data || {};",
+                  "pm.test('prefill', () => pm.expect(d.identity.company_name).to.be.a('string'));"
+                ]
+              }
             }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "new-suppliers",
+                    "{{new_supplier_id}}",
+                    "convert"
+                  ]
+                },
+                "description": "new_supplier_id = supplier_id of a \"New Supplier\" row from Mapped suppliers (canConvert = true).\nidentity → POST /vendors/step/identity fields (company_name, legal_name, primary_email, segment_id, gst_applicable = No for International).\naddress → PUT /vendors/{id}/step/contacts primary address (address_line, country_id, state_id, state_code, city, google_location, contact_name, contact_no, email).\nIds are looked up by name; null when the master has no match (pick it in the form)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 8,\n    \"origin\": \"domestic\",\n    \"converted\": false,\n    \"converted_vendor_id\": null,\n    \"sourcing_count\": 1,\n    \"identity\": {\n      \"company_name\": \"Smoke Valves Pvt Ltd\",\n      \"legal_name\": \"Smoke Valves Pvt Ltd\",\n      \"primary_email\": null,\n      \"segment_id\": null,\n      \"segment\": null,\n      \"gst_applicable\": null\n    },\n    \"address\": {\n      \"address_line\": null,\n      \"country_id\": 104,\n      \"country\": \"India\",\n      \"state_id\": 14,\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"google_location\": null,\n      \"contact_name\": \"Rohit S.\",\n      \"contact_no\": null,\n      \"email\": null,\n      \"is_primary\": true\n    },\n    \"business_card\": null\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2 · Save the supplier (existing Add Supplier wizard)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/step/identity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "step",
+                "identity"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Shree Valves Pvt Ltd\",\n  \"legal_name\": \"Shree Valves Pvt Ltd\",\n  \"gst_applicable\": \"Yes\",\n  \"vendor_type_id\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "♻ EXISTING API — the purple Add Supplier form. Continue with /vendors/{id}/step/contacts → kyc → products as usual, then copy the new vendor id into {{vendor_id}}."
           }
+        },
+        {
+          "name": "3 · Link the saved supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "new-suppliers",
+                "{{new_supplier_id}}",
+                "convert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Marks the New Supplier converted and moves every product it was mapped on to the Supplier Master vendor (source = Master), keeping the quoted price. If a product already had that vendor mapped, the duplicate row is dropped (mappings_merged). Linking the same vendor again is harmless (200)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "new-suppliers",
+                    "{{new_supplier_id}}",
+                    "convert"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"vendor_id\": \"{{vendor_id}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Marks the New Supplier converted and moves every product it was mapped on to the Supplier Master vendor (source = Master), keeping the quoted price. If a product already had that vendor mapped, the duplicate row is dropped (mappings_merged). Linking the same vendor again is harmless (200)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 8,\n    \"vendor_id\": 5,\n    \"vendor_code\": \"S-005\",\n    \"vendor_name\": \"ASASAS\",\n    \"mappings_moved\": 1,\n    \"mappings_merged\": 0,\n    \"message\": \"Smoke Valves Pvt Ltd is now in the Supplier Master as S-005.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · already converted to another supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "new-suppliers",
+                "{{new_supplier_id}}",
+                "convert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": 999999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/convert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "new-suppliers",
+                    "{{new_supplier_id}}",
+                    "convert"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"vendor_id\": 999999\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": false,\n  \"message\": \"“Smoke Valves Pvt Ltd” is already converted to another supplier in the Supplier Master.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · map the converted name again as New Supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"country\": \"India\"\n  },\n  \"price\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Once converted, map it from the Supplier Master instead."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"new_supplier\": {\n    \"name\": \"Shree Valves Pvt Ltd\",\n    \"country\": \"India\"\n  },\n  \"price\": 1000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Once converted, map it from the Supplier Master instead."
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": false,\n  \"message\": \"“Smoke Valves Pvt Ltd” is already in the Supplier Master — map it from Supplier Master.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "New Supplier directory (with converted flag)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/new-suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "new-suppliers"
+              ]
+            },
+            "description": "Every inline-created New Supplier: … origin, sourcing_count, converted, converted_vendor_id, converted_at."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/new-suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "new-suppliers"
+                  ]
+                },
+                "description": "Every inline-created New Supplier: … origin, sourcing_count, converted, converted_vendor_id, converted_at."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": 9,\n      \"name\": \"Rhein Armaturen GmbH\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Industriestr. 4\",\n      \"country\": \"Germany\",\n      \"state\": \"NRW\",\n      \"state_code\": null,\n      \"city\": \"Cologne\",\n      \"gmaps\": null,\n      \"origin\": \"international\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-11-17T11:39:50+00:00\"\n    },\n    {\n      \"id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": null,\n      \"contact\": \"••••\",\n      \"mobile\": null,\n      \"email\": null,\n      \"address\": null,\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 0,\n      \"converted\": true,\n      \"converted_vendor_id\": 5,\n      \"converted_at\": \"2026-11-17T11:39:50+00:00\",\n      \"created_at\": \"2026-11-17T11:39:50+00:00\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Durgesh\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi High Street,\",\n      \"country\": \"India\",\n      \"state\": \"Andhra Pradesh\",\n      \"state_code\": \"37\",\n      \"city\": \"mumbai\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-07-20T07:09:44+00:00\"\n    }\n  ]\n}"
+            }
+          ]
         }
       ]
     },
     {
-      "name": "5. Masters for the New Supplier form",
+      "name": "7. Masters for the Map Supplier forms",
       "description": "Response envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
       "item": [
         {
-          "name": "Form masters (segments, countries, states, state codes)",
+          "name": "Form masters",
           "request": {
             "method": "GET",
             "header": [
@@ -2073,7 +3308,8 @@
                 "p2p",
                 "form-masters"
               ]
-            }
+            },
+            "description": "segments, countries, states, stateCodes (New Supplier address) · supplierOrigins (Domestic / International cards) · gstRates · gstTypes (intra = CGST + SGST, inter = IGST) · currencies (code, symbol, exchange_rate = default ₹ per unit) · homeState { state, stateCode } = our place of supply (a supplier in this state is Intra-state)."
           },
           "response": [
             {
@@ -2095,7 +3331,8 @@
                     "p2p",
                     "form-masters"
                   ]
-                }
+                },
+                "description": "segments, countries, states, stateCodes (New Supplier address) · supplierOrigins (Domestic / International cards) · gstRates · gstTypes (intra = CGST + SGST, inter = IGST) · currencies (code, symbol, exchange_rate = default ₹ per unit) · homeState { state, stateCode } = our place of supply (a supplier in this state is Intra-state)."
               },
               "status": "OK",
               "code": 200,
@@ -2106,7 +3343,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"segments\": [\n      {\n        \"id\": 32,\n        \"name\": \"Ayurvedic Products\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Ayurvedic Products\"\n      },\n      {\n        \"id\": 23,\n        \"name\": \"Food Oil\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Food Oil\"\n      },\n      {\n        \"id\": 31,\n        \"name\": \"Medical Devices\",\n        \"regulatory_status\": \"highly\",\n        \"title\": \"Medical Devices\"\n      }\n    ],\n    \"countries\": [\n      {\n        \"id\": 1,\n        \"name\": \"Afghanistan\"\n      },\n      {\n        \"id\": 2,\n        \"name\": \"Aland Islands\"\n      },\n      {\n        \"id\": 3,\n        \"name\": \"Albania\"\n      }\n    ],\n    \"states\": [\n      {\n        \"id\": 745,\n        \"country_id\": \"216\",\n        \"name\": \"Aargau\"\n      },\n      {\n        \"id\": 1522,\n        \"country_id\": \"162\",\n        \"name\": \"Abia\"\n      },\n      {\n        \"id\": 683,\n        \"country_id\": \"111\",\n        \"name\": \"Abruzzo\"\n      }\n    ],\n    \"stateCodes\": [\n      {\n        \"id\": 1,\n        \"state_id\": \"14\",\n        \"state_code\": \"27\"\n      },\n      {\n        \"id\": 2,\n        \"state_id\": \"7\",\n        \"state_code\": \"24\"\n      },\n      {\n        \"id\": 3,\n        \"state_id\": \"32\",\n        \"state_code\": \"07\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"segments\": [\n      {\n        \"id\": 32,\n        \"name\": \"Ayurvedic Products\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Ayurvedic Products\"\n      },\n      {\n        \"id\": 23,\n        \"name\": \"Food Oil\",\n        \"regulatory_status\": \"less\",\n        \"title\": \"Food Oil\"\n      },\n      {\n        \"id\": 31,\n        \"name\": \"Medical Devices\",\n        \"regulatory_status\": \"highly\",\n        \"title\": \"Medical Devices\"\n      }\n    ],\n    \"countries\": [\n      {\n        \"id\": 1,\n        \"name\": \"Afghanistan\"\n      },\n      {\n        \"id\": 2,\n        \"name\": \"Aland Islands\"\n      },\n      {\n        \"id\": 3,\n        \"name\": \"Albania\"\n      }\n    ],\n    \"states\": [\n      {\n        \"id\": 745,\n        \"country_id\": \"216\",\n        \"name\": \"Aargau\"\n      },\n      {\n        \"id\": 1522,\n        \"country_id\": \"162\",\n        \"name\": \"Abia\"\n      },\n      {\n        \"id\": 683,\n        \"country_id\": \"111\",\n        \"name\": \"Abruzzo\"\n      }\n    ],\n    \"stateCodes\": [\n      {\n        \"id\": 1,\n        \"state_id\": \"14\",\n        \"state_code\": \"27\"\n      },\n      {\n        \"id\": 2,\n        \"state_id\": \"7\",\n        \"state_code\": \"24\"\n      },\n      {\n        \"id\": 3,\n        \"state_id\": \"32\",\n        \"state_code\": \"07\"\n      }\n    ],\n    \"supplierOrigins\": [\n      {\n        \"value\": \"domestic\",\n        \"label\": \"Domestic Supplier\",\n        \"note\": \"Supplier based in India — price in ₹ with GST applied\"\n      },\n      {\n        \"value\": \"international\",\n        \"label\": \"International Supplier\",\n        \"note\": \"Overseas supplier — price in its currency, no GST\"\n      }\n    ],\n    \"gstRates\": [\n      0,\n      0.1,\n      0.25\n    ],\n    \"gstTypes\": [\n      {\n        \"value\": \"intra\",\n        \"label\": \"CGST + SGST (Intra-state)\"\n      },\n      {\n        \"value\": \"inter\",\n        \"label\": \"IGST (Inter-state)\"\n      }\n    ],\n    \"currencies\": [\n      {\n        \"id\": 5,\n        \"code\": \"AED\",\n        \"name\": \"UAE Dirham\",\n        \"symbol\": \"د.إ\",\n        \"exchange_rate\": \"22.7000\"\n      },\n      {\n        \"id\": 7,\n        \"code\": \"AUD\",\n        \"name\": \"Australian Dollar\",\n        \"symbol\": \"A$\",\n        \"exchange_rate\": \"55.4000\"\n      },\n      {\n        \"id\": 8,\n        \"code\": \"CAD\",\n        \"name\": \"Canadian Dollar\",\n        \"symbol\": \"C$\",\n        \"exchange_rate\": \"61.2000\"\n      }\n    ],\n    \"homeState\": {\n      \"state\": \"Maharashtra\",\n      \"stateCode\": \"27\"\n    }\n  }\n}"
             }
           ]
         }

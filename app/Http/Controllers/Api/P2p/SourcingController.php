@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
+use App\Models\Branch;
 use App\Models\Masters\Countries;
+use App\Models\Masters\Currencies;
+use App\Models\Masters\GstPercentage;
 use App\Models\Masters\Segments;
 use App\Models\P2p\Supplier as P2pSupplier;
 use App\Models\Masters\StateCodes;
@@ -14,8 +17,11 @@ use App\Models\Masters\States;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\SupplierPricing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 
 class SourcingController extends Controller
@@ -280,7 +286,29 @@ class SourcingController extends Controller
             'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
             'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->statutoryFirst()->get(['id', 'state_id', 'state_code']),
+            // Map Supplier Directory → Domestic (₹ + GST) / International (currency, no GST).
+            'supplierOrigins' => [
+                ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
+                ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
+            ],
+            'gstRates'   => GstPercentage::query()->tap($scope)->tap($active)->orderBy('percentage')->pluck('percentage')
+                ->map(fn ($g) => (float) $g)->unique()->values(),
+            'gstTypes'   => [
+                ['value' => SupplierPricing::GST_INTRA, 'label' => 'CGST + SGST (Intra-state)'],
+                ['value' => SupplierPricing::GST_INTER, 'label' => 'IGST (Inter-state)'],
+            ],
+            'currencies' => Currencies::query()->tap($scope)->tap($active)->whereRaw('UPPER(code) <> ?', ['INR'])
+                ->orderBy('code')->get(['id', 'code', 'name', 'symbol', 'exchange_rate']),
+            // Our place of supply — a supplier in this state is Intra-state (CGST + SGST).
+            'homeState'  => $this->homeState($user),
         ]);
+    }
+
+    /** The user's branch state (place of supply) for the CGST + SGST / IGST choice. */
+    private function homeState($user): array
+    {
+        $b = $user && $user->branch_id ? Branch::find($user->branch_id, ['id', 'state', 'gst_state_code']) : null;
+        return ['state' => $b->state ?? null, 'stateCode' => $b->gst_state_code ?? null];
     }
 
 
@@ -647,8 +675,12 @@ class SourcingController extends Controller
         // Pull the vendor's primary contact person from its primary address
         // (contact_name / contact_no / email) — `addresses` is ordered
         // is_primary-first, so first() is the primary (or the only) one.
+        // ?origin=domestic|international → only that tab of the Map Supplier popup.
+        $request->validate(['origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)]]);
+        $origin = $request->query('origin');
+
         $rows = Vendor::query()->forUser($user, $request->integer('branch_id') ?: null)
-            ->with(['segment:id,name', 'addresses', 'addresses.country:id,name'])
+            ->with(['segment:id,name', 'vendorType:id,name', 'addresses', 'addresses.country:id,name', 'addresses.state:id,name'])
             ->orderBy('company_name')
             ->get()
             ->map(function ($v) {
@@ -660,6 +692,13 @@ class SourcingController extends Controller
                     ? ''
                     : (strcasecmp($countryName, 'India') === 0 ? 'Domestic' : 'International');
                 return [
+                    // Map Supplier → Domestic / International (no country = Domestic).
+                    'origin'       => SupplierPricing::originOf($countryName),
+                    'supplierType' => $v->vendorType->name ?? '',
+                    'state'        => $addr && $addr->state ? $addr->state->name : '',
+                    'stateCode'    => $addr->state_code ?? '',      // GST State Code
+                    'city'         => $addr->city ?? '',
+                    'currency'     => SupplierPricing::currencyFor($countryName),
                     'id'      => (string) $v->id,
                     // Human-facing supplier code (e.g. "S-002"). The picker
                     // shows this instead of the raw numeric id.
@@ -672,7 +711,8 @@ class SourcingController extends Controller
                     'country' => $countryName,
                     'region'  => $region,
                 ];
-            });
+            })
+            ->when($origin, fn ($c) => $c->where('origin', $origin)->values());
 
         return $this->ok($rows);
     }
@@ -714,7 +754,12 @@ class SourcingController extends Controller
             'state_code'     => $s->state_code,
             'city'           => $s->city,
             'gmaps'          => $s->gmaps,
+            'origin'         => $s->origin ?: SupplierPricing::originOf($s->country),
             'sourcing_count' => (int) ($counts[$s->id] ?? 0),
+            // Convert to Supplier → registered in the Supplier Master as this vendor.
+            'converted'           => (bool) $s->converted_vendor_id,
+            'converted_vendor_id' => $s->converted_vendor_id,
+            'converted_at'        => optional($s->converted_at)->toIso8601String(),
             'created_at'     => optional($s->created_at)->toIso8601String(),
         ]);
 
@@ -799,9 +844,22 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
+            // Supplier Price — Domestic: ₹ unit price (excl. GST) + GST rate + GST type;
+            // International: unit price in the supplier's currency + exchange rate, no GST.
+            'origin'                  => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            'price'                   => 'required|numeric|gt:0',
+            'gst_percentage'          => 'nullable|numeric|min:0|max:100',
+            'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'currency'                => 'nullable|string|size:3|alpha',
+            'exchange_rate'           => 'nullable|numeric|gt:0',
+            'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email'        => 'Enter a valid supplier email address.',
+            'price.required'                  => "Please enter the supplier's unit price.",
+            'price.gt'                        => 'The unit price must be more than 0.',
+            'exchange_rate.gt'                => 'The exchange rate must be more than 0.',
+            'valid_till.after_or_equal'       => 'Price Valid Till cannot be in the past.',
         ], [
             // Friendly field names so a message reads "The Contact Person must not
             // be greater than 255 characters" rather than "The new supplier.name
@@ -831,14 +889,18 @@ class SourcingController extends Controller
                 ->findOrFail($request->input('supplier_id'));
 
             // A product can't have the same vendor mapped twice.
-            if ($p->suppliers()->where('supplier_id', $v->id)->exists()) {
+            // (source = master only: a New Supplier's id is a p2p_suppliers id, not a vendor id.)
+            if ($p->suppliers()->where('source', 'master')->where('supplier_id', $v->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
             // Snapshot the vendor's primary contact person (from its primary
             // address) so the mapped-supplier card shows real contact details.
-            $addr = $v->addresses->first();
-            $p->suppliers()->create([
+            $addr    = $v->addresses->first();
+            $country = $addr && $addr->country_id ? Countries::whereKey($addr->country_id)->value('name') : null;
+            $state   = $addr && $addr->state_id ? States::whereKey($addr->state_id)->value('name') : null;
+            $price   = $this->sourcingPrice($request, $user, $country, $state, $addr->state_code ?? null);
+            $p->suppliers()->create($price + [
                 'supplier_id' => $v->id,
                 'source'      => 'master',
                 'name'        => $v->company_name,
@@ -846,10 +908,26 @@ class SourcingController extends Controller
                 'contact'     => $addr->contact_name ?? null,
                 'mobile'      => $addr->contact_no ?? null,
                 'email'       => ($addr->email ?? '') ?: $v->primary_email,
+                'country'     => $country ?: ($price['origin'] === SupplierPricing::DOMESTIC ? 'India' : null),
+                'state'       => $state,
+                'state_code'  => $addr->state_code ?? null,
+                'city'        => $addr->city ?? null,
+                'mapped_by'   => $user->id,
             ]);
         } elseif ($request->filled('new_supplier')) {
             $n    = $request->input('new_supplier');
             $name = trim($n['name'] ?? '') ?: '—';
+
+            // New · International needs the supplier's country; New · Domestic is in India.
+            $origin = $request->input('origin') ?: SupplierPricing::originOf($n['country'] ?? null);
+            if ($origin === SupplierPricing::INTERNATIONAL && !SupplierPricing::isInternational($n['country'] ?? null)) {
+                throw ValidationException::withMessages(['new_supplier.country' => ["Please select the supplier's country (outside India)."]]);
+            }
+            if ($origin === SupplierPricing::DOMESTIC && SupplierPricing::isInternational($n['country'] ?? null)) {
+                throw ValidationException::withMessages(['new_supplier.country' => ['A Domestic supplier must be in India — choose International for an overseas supplier.']]);
+            }
+            if ($origin === SupplierPricing::DOMESTIC) $n['country'] = 'India';
+            $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
 
             $fields = [
                 'segment'    => $n['segment'] ?? null,
@@ -877,8 +955,14 @@ class SourcingController extends Controller
                     'client_id'  => $user->client_id,
                     'branch_id'  => $user->branch_id ?? null,
                     'name'       => $name,
+                    'origin'     => $price['origin'],
                     'created_by' => $user->id,
                 ]);
+            }
+
+            // Already registered in the Supplier Master (Convert to Supplier) → map that vendor.
+            if ($directory->converted_vendor_id) {
+                return response()->json(['status' => false, 'message' => "“{$name}” is already in the Supplier Master — map it from Supplier Master."], 422);
             }
 
             // A product can't have the same directory supplier mapped twice.
@@ -887,10 +971,11 @@ class SourcingController extends Controller
             }
 
             // Mapping row snapshots the details; supplier_id → p2p_suppliers.id.
-            $p->suppliers()->create($fields + [
+            $p->suppliers()->create($price + $fields + [
                 'supplier_id' => $directory->id,
                 'source'      => 'new',
                 'name'        => $name,
+                'mapped_by'   => $user->id,
             ]);
         } else {
             return response()->json(['status' => false, 'message' => 'Provide supplier_id or new_supplier'], 422);
@@ -948,6 +1033,13 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
+            // Optional — send price to re-quote (same rules as Map Supplier).
+            'price'                   => 'sometimes|required|numeric|gt:0',
+            'gst_percentage'          => 'nullable|numeric|min:0|max:100',
+            'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'currency'                => 'nullable|string|size:3|alpha',
+            'exchange_rate'           => 'nullable|numeric|gt:0',
+            'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required' => 'Enter the supplier company name.',
             'new_supplier.email.email'   => 'Enter a valid supplier email address.',
@@ -982,8 +1074,22 @@ class SourcingController extends Controller
             'card_path'  => $n['card'] ?? null,
         ];
 
+        // The origin follows the country, as on Map Supplier.
+        if (($row->origin ?? null) && $row->origin !== SupplierPricing::originOf($n['country'] ?? null)) {
+            throw ValidationException::withMessages(['new_supplier.country' => [
+                $row->origin === SupplierPricing::INTERNATIONAL
+                    ? 'This is an International supplier — choose a country outside India.'
+                    : 'This is a Domestic supplier — the country must be India.',
+            ]]);
+        }
+        $price = [];
+        if ($request->has('price')) {
+            $request->merge(['origin' => $row->origin ?: SupplierPricing::originOf($n['country'] ?? null)]);
+            $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
+        }
+
         // Update the snapshot mapping row (name + all fields).
-        $row->update($fields + ['name' => $name]);
+        $row->update($price + $fields + ['name' => $name]);
 
         // Keep the shared directory row (p2p_suppliers) in sync so the same
         // supplier reads the same details wherever it's mapped.
@@ -1001,6 +1107,11 @@ class SourcingController extends Controller
     {
         $t = $this->target($request, $target);
         $p = $t->products()->where('id', $product)->firstOrFail();
+
+        $target    = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
+        $converted = P2pSupplier::where('client_id', $request->user()->client_id)
+            ->whereIn('id', $p->suppliers()->where('source', 'new')->pluck('supplier_id'))
+            ->pluck('converted_vendor_id', 'id');
 
         $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
@@ -1023,12 +1134,166 @@ class SourcingController extends Controller
             'state_code' => $s->state_code ?? '',
             'city'       => $s->city ?? '',
             'source'  => $s->source === 'new' ? 'New Supplier' : 'Master',
+            // Quoted price (null = mapped before pricing → "Price & GST not mapped").
+            'origin'        => $s->origin,                       // domestic | international
+            'currency'      => $s->currency_code,
+            'price'         => $s->price !== null ? (float) $s->price : null,           // unit price in `currency`, excl. GST
+            'gstPercentage' => $s->gst_percentage !== null ? (float) $s->gst_percentage : null,
+            'gstType'       => $s->gst_type,                     // intra (CGST + SGST) | inter (IGST) | none
+            'cgst'          => $s->cgst_amount !== null ? (float) $s->cgst_amount : null,
+            'sgst'          => $s->sgst_amount !== null ? (float) $s->sgst_amount : null,
+            'igst'          => $s->igst_amount !== null ? (float) $s->igst_amount : null,
+            'gstAmount'     => $s->gst_amount !== null ? (float) $s->gst_amount : null,
+            'total'         => $s->total_amount !== null ? (float) $s->total_amount : null,   // incl. GST, in `currency`
+            'exchangeRate'  => $s->exchange_rate !== null ? (float) $s->exchange_rate : null, // ₹ per unit (international)
+            'inrAmount'     => $s->inr_amount !== null ? (float) $s->inr_amount : null,       // ₹ equivalent
+            'validTill'     => optional($s->price_valid_till)->format('Y-m-d'),
+            // "vs Target Price": unit price in ₹ before GST against the product's target.
+            'vsTarget'      => $s->price === null ? null : SupplierPricing::vsTarget(
+                $s->origin === SupplierPricing::INTERNATIONAL ? (float) $s->inr_amount : (float) $s->price, $target),
+            'mappedOn'      => optional($s->created_at)->toIso8601String(),
+            // "Convert to Supplier" button — New Suppliers not yet in the Supplier Master.
+            'canConvert'    => $s->source === 'new' && empty($converted[$s->supplier_id]),
         ]);
 
         return $this->ok($rows);
     }
 
 
+
+    /**
+     * Price columns for one Map Supplier row (validated input already).
+     *   Domestic      ₹ unit price + GST rate (default 18) + GST type (default:
+     *                 CGST + SGST when the supplier is in our branch's state, else IGST)
+     *   International unit price in `currency` (default: the country's) ×
+     *                 `exchange_rate` (default: Currency master), no GST
+     * The origin defaults to the supplier's country and must match it.
+     */
+    private function sourcingPrice(Request $request, $user, ?string $country, ?string $state, ?string $stateCode): array
+    {
+        $origin = $request->input('origin') ?: SupplierPricing::originOf($country);
+        if ($origin !== SupplierPricing::originOf($country)) {
+            throw ValidationException::withMessages(['origin' => [
+                $origin === SupplierPricing::INTERNATIONAL
+                    ? 'This supplier is based in India — map it as a Domestic supplier.'
+                    : 'This supplier is based in ' . ($country ?: 'another country') . ' — map it as an International supplier.',
+            ]]);
+        }
+
+        if ($origin === SupplierPricing::INTERNATIONAL) {
+            $currency = strtoupper((string) $request->input('currency')) ?: SupplierPricing::currencyFor($country);
+            if ($currency === 'INR') {
+                throw ValidationException::withMessages(['currency' => ["Pick the supplier's currency — an International price is not in ₹."]]);
+            }
+            $rate = (float) $request->input('exchange_rate') ?: SupplierPricing::defaultRate($currency, $user);
+            if (!$rate) {
+                throw ValidationException::withMessages(['exchange_rate' => ["Please enter the exchange rate (₹ per {$currency})."]]);
+            }
+            $price = SupplierPricing::international((float) $request->input('price'), $currency, $rate);
+        } else {
+            $home  = $this->homeState($user);
+            $type  = $request->input('gst_type')
+                ?: SupplierPricing::gstTypeFor($state, $stateCode, $home['state'], $home['stateCode']);
+            $gst   = $request->filled('gst_percentage') ? (float) $request->input('gst_percentage') : 18.0;
+            $price = SupplierPricing::domestic((float) $request->input('price'), $gst, $type);
+        }
+
+        return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
+    }
+
+    /* ── Convert to Supplier (New Supplier → Supplier Master) ─────────────── */
+    // GET /p2p/new-suppliers/{supplier}/convert — the New Supplier's details in
+    // the shape of the Add Supplier form (/vendors/step/identity + step/contacts),
+    // with master ids looked up by name, so the form opens pre-filled.
+    public function convertPrefill(Request $request, int $supplier)
+    {
+        $user = $request->user();
+        $s    = P2pSupplier::where('client_id', $user->client_id)->findOrFail($supplier);
+        $scope = fn($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+
+        $countryId = $s->country ? Countries::query()->tap($scope)->whereRaw('LOWER(name) = ?', [mb_strtolower($s->country)])->value('id') : null;
+        $stateId   = $s->state ? States::query()->tap($scope)
+            ->when($countryId, fn($q) => $q->where('country_id', $countryId))
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($s->state)])->value('id') : null;
+        $segmentId = $s->segment ? Segments::query()->tap($scope)->whereRaw('LOWER(name) = ?', [mb_strtolower($s->segment)])->value('id') : null;
+        $origin    = $s->origin ?: SupplierPricing::originOf($s->country);
+
+        return $this->ok([
+            'supplier_id'         => $s->id,
+            'origin'              => $origin,
+            'converted'           => (bool) $s->converted_vendor_id,
+            'converted_vendor_id' => $s->converted_vendor_id,
+            'sourcing_count'      => SourcingProductSupplier::where('source', 'new')->where('supplier_id', $s->id)->count(),
+            // POST /vendors/step/identity
+            'identity' => [
+                'company_name'   => $s->name,
+                'legal_name'     => $s->name,
+                'primary_email'  => $s->email,
+                'segment_id'     => $segmentId,
+                'segment'        => $s->segment,
+                'gst_applicable' => $origin === SupplierPricing::INTERNATIONAL ? 'No' : null,
+            ],
+            // PUT /vendors/{id}/step/contacts → primary address / contact person
+            'address' => [
+                'address_line'    => $s->address,
+                'country_id'      => $countryId,
+                'country'         => $s->country,
+                'state_id'        => $stateId,
+                'state'           => $s->state,
+                'state_code'      => $s->state_code,
+                'city'            => $s->city,
+                'google_location' => $s->gmaps,
+                'contact_name'    => $s->contact,
+                'contact_no'      => $s->mobile,
+                'email'           => $s->email,
+                'is_primary'      => true,
+            ],
+            'business_card' => $s->card_path,
+        ]);
+    }
+
+    // POST /p2p/new-suppliers/{supplier}/convert { vendor_id } — after the Add
+    // Supplier form saves the vendor, link it: the New Supplier is marked
+    // converted and every product it was mapped on now points at the vendor
+    // (source = master), keeping the quoted prices. A product that already has
+    // that vendor mapped keeps the existing row and drops the duplicate.
+    public function convertSupplier(Request $request, int $supplier)
+    {
+        $user = $request->user();
+        $s    = P2pSupplier::where('client_id', $user->client_id)->findOrFail($supplier);
+        $data = $request->validate(['vendor_id' => 'required|integer'], ['vendor_id.required' => 'Save the supplier in the Supplier Master first.']);
+
+        $vendor = Vendor::query()->forUser($user)->find($data['vendor_id']);
+        if (!$vendor) {
+            throw ValidationException::withMessages(['vendor_id' => ['Unknown supplier in the Supplier Master.']]);
+        }
+        if ($s->converted_vendor_id && (int) $s->converted_vendor_id !== (int) $vendor->id) {
+            return response()->json(['status' => false, 'message' => "“{$s->name}” is already converted to another supplier in the Supplier Master."], 422);
+        }
+
+        $moved = 0; $merged = 0;
+        DB::transaction(function () use ($s, $vendor, $user, &$moved, &$merged) {
+            $rows = SourcingProductSupplier::where('source', 'new')->where('supplier_id', $s->id)->get();
+            foreach ($rows as $row) {
+                $dup = SourcingProductSupplier::where('sourcing_product_id', $row->sourcing_product_id)
+                    ->where('source', 'master')->where('supplier_id', $vendor->id)->exists();
+                if ($dup) { $row->delete(); $merged++; continue; }
+                $row->update(['source' => 'master', 'supplier_id' => $vendor->id, 'name' => $vendor->company_name]);
+                $moved++;
+            }
+            $s->update(['converted_vendor_id' => $vendor->id, 'converted_at' => now(), 'converted_by' => $user->id]);
+        });
+
+        return $this->ok([
+            'supplier_id'   => $s->id,
+            'vendor_id'     => $vendor->id,
+            'vendor_code'   => $vendor->vendor_code,
+            'vendor_name'   => $vendor->company_name,
+            'mappings_moved'  => $moved,     // now shown as "Master" on those products
+            'mappings_merged' => $merged,    // the product already had this vendor mapped
+            'message'       => "{$s->name} is now in the Supplier Master as {$vendor->vendor_code}.",
+        ]);
+    }
 
     private function validatePayload(Request $request, bool $creating = false): array
     {

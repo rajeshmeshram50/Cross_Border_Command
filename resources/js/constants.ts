@@ -304,8 +304,7 @@ export const P2P_GROUPS: MenuGroup[] = [
       { id: 'p2p.bulk_sourcing', icon: 'Activity', label: 'Bulk Sourcing Management' },
       // New Sourcing Management Tracker (design build). Rides on the Bulk
       // Sourcing grant (PERM_ALIAS in IdimsHeader) until it has its own module.
-      // Hidden from the menu until it is ready for production — uncomment to show it again.
-      // { id: 'p2p.sourcing_tracker', icon: 'Search', label: 'Sourcing Management Tracker' },
+      { id: 'p2p.sourcing_tracker', icon: 'Search', label: 'Sourcing Management Tracker' },
       { id: 'p2p.case_to_case', icon: 'Activity', label: 'Case to Case Procurement Management' },
     ],
   },
