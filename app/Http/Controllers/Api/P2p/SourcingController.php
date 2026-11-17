@@ -374,7 +374,7 @@ class SourcingController extends Controller
         $user = $request->user();
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, true);
 
         $target = DB::transaction(function () use ($user, $data) {
             // Per-client sequential code under a row lock (same as Quotation/PI/CTC).
@@ -1030,10 +1030,11 @@ class SourcingController extends Controller
 
 
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, bool $creating = false): array
     {
         return $request->validate([
-            'due_date'                => 'nullable|date',
+            // SOURCING TAT * — the target completion date (not in the past on create).
+            'due_date'                => ['required', 'date', ...($creating ? ['after_or_equal:today'] : [])],
             'source'                  => 'required|in:master,manual',
             'assignee_id'             => 'required',                 // must be assigned to someone
             'products'                => 'required|array|min:1',
@@ -1049,6 +1050,8 @@ class SourcingController extends Controller
             'products.*.clarity.val'  => 'nullable|string',
         ], [
             'assignee_id.required'                => 'Assign this sourcing target to a team member before saving.',
+            'due_date.required'                   => 'Pick the Sourcing TAT (target completion date).',
+            'due_date.after_or_equal'             => 'The Sourcing TAT cannot be in the past.',
             'products.required'                   => 'Add at least one product to the Product List.',
             'products.*.code.required_if'         => 'Pick a product from the Product Master.',
             'products.*.name.required_if'         => 'Enter the product name.',
