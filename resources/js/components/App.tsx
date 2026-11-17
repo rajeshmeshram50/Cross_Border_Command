@@ -126,6 +126,7 @@ const RackMaster = lazyPage(() => import('../pages/inventory-management/rack/Rac
 const ProductFlagMaster = lazyPage(() => import('../pages/inventory-management/product-flag/ProductFlagMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const SourcingTracker = lazyPage(() => import('../pages/p2p/procurement-management/sourcing-tracker/SourcingTracker'));
+const ServiceManagement = lazyPage(() => import('../pages/p2p/p2p-master-management/service-management/ServiceManagement'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 const Invoice = lazyPage(() => import('../pages/p2p/purchase-management/invoice/InvoiceList'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
@@ -744,6 +745,7 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/sourcing-tracker" element={<SourcingTracker />} />
+              <Route path="/p2p/service-management" element={<ServiceManagement />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ZoneMaster />} />

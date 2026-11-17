@@ -229,6 +229,7 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   if (path === '/p2p') return isBiz && (leaf('p2p') || group('p2p.'));
   if (path.startsWith('/p2p/')) {
     if (!isBiz) return false;
+    if (path === '/p2p/service-management') return true;
     return path in P2P_LEAF ? leaf(P2P_LEAF[path]) : false;
   }
 

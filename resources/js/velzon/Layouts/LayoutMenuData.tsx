@@ -39,6 +39,7 @@ const iconMap: Record<string, string> = {
   Activity: "ri-pulse-line",
   Tag: "ri-price-tag-3-line",
   UserPlus: "ri-user-add-line",
+  Wrench: "ri-tools-line",
   User: "ri-user-3-line",
   LogOut: "ri-logout-box-r-line",
   CalendarOff: "ri-calendar-close-line",
@@ -122,6 +123,7 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.sales_summary": "Track sourcing performance.",
   "p2p.product": "Manage products & sourcing readiness.",
   "p2p.supplier": "Manage supplier onboarding & compliance.",
+  "p2p.service": "Manage services & service catalogue.",
   "p2p.bulk_sourcing": "Manage bulk sourcing requests.",
   "p2p.sourcing_tracker": "Assign sourcing targets and manage Requests for Quotation (RFQs).",
   "p2p.case_to_case": "Manage request-based sourcing.",
@@ -228,6 +230,7 @@ const p2pLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "p2p.product":       return "/products";
     case "p2p.supplier":      return "/suppliers";
+    case "p2p.service":       return "/p2p/service-management";
     case "p2p.sales_summary": return "/sales/p2p-summary";
     case "p2p.analytics":     return "/p2p/analytics";
     case "p2p.diagnosis":     return "/p2p/diagnosis";

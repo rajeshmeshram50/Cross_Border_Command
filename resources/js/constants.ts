@@ -292,6 +292,7 @@ export const P2P_GROUPS: MenuGroup[] = [
     children: [
       { id: 'p2p.product', icon: 'Tag', label: 'Product Management' },
       { id: 'p2p.supplier', icon: 'UserPlus', label: 'Supplier Management' },
+      { id: 'p2p.service', icon: 'Wrench', label: 'Service Management' },
     ],
   },
   {
