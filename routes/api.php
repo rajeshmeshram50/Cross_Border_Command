@@ -442,7 +442,6 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/p2p/suppliers',     [\App\Http\Controllers\Api\P2p\SourcingController::class, 'suppliers']);
     Route::get   ('/p2p/new-suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'newSuppliers']);
     Route::get   ('/p2p/new-suppliers/{supplier}/sourcings', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'supplierSourcings'])->whereNumber('supplier');
-    // Convert to Supplier — pre-fill the Add Supplier form, then link the saved vendor.
     Route::get   ('/p2p/new-suppliers/{supplier}/convert',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'convertPrefill'])->whereNumber('supplier');
     Route::post  ('/p2p/new-suppliers/{supplier}/convert',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'convertSupplier'])->whereNumber('supplier');
     Route::get   ('/p2p/form-masters',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'formMasters']);
@@ -460,27 +459,21 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
 
-    /* P2P · Service Management (service catalogue + supplier mapping).
-       Dropdown "+" buttons reuse /master/{slug} (service_categories,
-       segments, hsn_codes, uom, haz_class, conditions, packaging_material);
-       "+ Add new supplier" reuses /vendors/step/*;
-       images / attachments download through /p2p/files/download. */
     Route::prefix('p2p/services')->group(function () {
         $svc = \App\Http\Controllers\Api\P2p\ServiceController::class;
         Route::get   ('/master-bundle',               [$svc, 'masterBundle']);
         Route::get   ('/stats',                       [$svc, 'stats']);
         Route::get   ('/next-code',                   [$svc, 'nextCodePreview']);
         Route::get   ('/',                            [$svc, 'index']);
-        Route::post  ('/step/core',                   [$svc, 'storeCore']);                  // Stage 1 (create / update, multipart)
+        Route::post  ('/step/core',                   [$svc, 'storeCore']);
         Route::get   ('/{id}',                        [$svc, 'show'])->whereNumber('id');
-        Route::put   ('/{id}/step/suppliers',         [$svc, 'storeSuppliers'])->whereNumber('id'); // Stage 2 + submit
+        Route::put   ('/{id}/step/suppliers',         [$svc, 'storeSuppliers'])->whereNumber('id');
         Route::get   ('/{id}/suppliers',              [$svc, 'suppliers'])->whereNumber('id');
         Route::post  ('/{id}/suppliers',              [$svc, 'storeSupplier'])->whereNumber('id');
         Route::patch ('/{id}/suppliers/{map}',        [$svc, 'updateSupplier'])->whereNumber('id')->whereNumber('map');
-        Route::patch ('/{id}/suppliers/{map}/status', [$svc, 'updateSupplierStatus'])->whereNumber('id')->whereNumber('map'); // active | inactive (no delete)
-        Route::patch ('/{id}/status',                 [$svc, 'updateStatus'])->whereNumber('id');   // active | inactive (no delete)
+        Route::patch ('/{id}/suppliers/{map}/status', [$svc, 'updateSupplierStatus'])->whereNumber('id')->whereNumber('map');
+        Route::patch ('/{id}/status',                 [$svc, 'updateStatus'])->whereNumber('id');
     });
-
     // P2P · Create Purchase Order (new backend — independent of /p2p/purchase-orders).
     Route::prefix('p2p/orders')->group(function () {
         $po  = \App\Http\Controllers\Api\P2p\PurchaseOrderController::class;

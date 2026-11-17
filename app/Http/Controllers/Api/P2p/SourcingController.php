@@ -23,17 +23,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-
 class SourcingController extends Controller
 {
-
-
     private function ok($data)
     {
         return response()->json(['status' => true, 'data' => $data]);
     }
 
-    /** Resolve a target by its per-client code or fail (tenant-scoped). */
     private function target(Request $request, string $code): SourcingTarget
     {
         return SourcingTarget::where('client_id', $request->user()->client_id)
@@ -46,10 +42,6 @@ class SourcingController extends Controller
         return $s === 'manual' ? 'Manual Entry' : 'Product Master';
     }
 
-    /** Normalise a product code's trailing number to 3 digits for display,
-     *  e.g. "P-02" → "P-002", so bulk sourcing shows the same width as the
-     *  supplier codes (S-003). Codes already 3+ digits and values without a
-     *  trailing number are returned untouched. */
     private function padCode(?string $code): ?string
     {
         if (!$code) return $code;
@@ -60,31 +52,22 @@ class SourcingController extends Controller
         );
     }
 
-
     private function row(SourcingTarget $t): array
     {
         $total = $t->products->count();
         $done  = $t->products->where('status', 'Completed')->count();
 
-        // A target's actual source mix comes from its products, not just the
-        // `source` chosen at creation — it can hold BOTH master and manual rows.
-        // Surface every source present so the list can render 1 or 2 badges.
         $present = $t->products->pluck('source')->filter()->unique();
         $sources = [];
         if ($present->contains('master')) $sources[] = 'Product Master';
         if ($present->contains('manual')) $sources[] = 'Manual Entry';
         if (empty($sources)) $sources[] = $this->sourceLabel($t->source);
 
-        // Overdue = past the due date AND not yet fully sourced. A completed
-        // target is never overdue (all products mapped). Drives the "Overdue"
-        // badge so an assignee sees a late task clearly — completion stays
-        // allowed (QA #51: mark Overdue, still completable).
         $isComplete = $total > 0 && $done >= $total;
         $overdue = !$isComplete
             && $t->due_date
             && \Illuminate\Support\Carbon::parse($t->due_date)->endOfDay()->isPast();
 
-        // "Total Products" cell = first product's name + a "+N" pill for the rest.
         $first = $t->products->sortBy('id')->first();
 
         return [
@@ -96,9 +79,9 @@ class SourcingController extends Controller
             'createdBy' => $t->created_by_name ?: '—',
             'assignee'  => $t->assignee_name ?: '—',
             'products'  => $total,
-            'completed' => $done,          // = "Mapped Suppliers" column (products with ≥1 supplier)
+            'completed' => $done,
             'overdue'   => $overdue,
-            // Sourcing Management Tracker columns.
+
             'createdById'     => $t->created_by ? (string) $t->created_by : null,
             'assigneeId'      => $t->assignee_id ? (string) $t->assignee_id : null,
             'firstProduct'    => $first->name ?? null,
@@ -109,10 +92,6 @@ class SourcingController extends Controller
         ];
     }
 
-    /* ── 1. list ─────────────────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets → { assigned, created }           (Bulk Sourcing, unchanged)
-    // GET /p2p/sourcing-targets?tab=all|created|assigned&q=&page=&per_page=
-    //     → { rows, counts{all,created,assigned}, pagination }  (Sourcing Management Tracker)
     public function index(Request $request)
     {
         $user = $request->user();
@@ -139,14 +118,6 @@ class SourcingController extends Controller
         ]);
     }
 
-    /**
-     * Sourcing Management Tracker list: one call per tab.
-     *   all      = created by me + assigned to me (each target once)
-     *   created  = Sourcing Target Created by Me
-     *   assigned = Sourcing Target Assigned to Me
-     * counts{} always carries all three badges (not affected by the search box).
-     * q searches target code, source, created by, assignee, status and product names.
-     */
     private function trackerList(Request $request, $targets, int $userId): array
     {
         $request->validate([
@@ -191,20 +162,15 @@ class SourcingController extends Controller
         ];
     }
 
-    /* ── 2. product master ───────────────────────────────────────────────── */
-    // GET /p2p/products
     public function products(Request $request)
     {
         $user = $request->user();
-        // Branch-scope the picker: a branch user sees only their own branch's
-        // products; the active branch from the switcher (?branch_id) is the
-        // fallback for tenant-wide users. Mirrors teamMembers().
+
         $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
         $rows = Product::where('client_id', $user->client_id)
             ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->with(['segment:id,name', 'hsn:id,hsn_code'])
-            // Order by the product-code SERIES (numeric part) so the picker lists
-            // P-1, P-2 … P-10 in order rather than lexicographically or by name.
+
             ->orderByRaw("NULLIF(regexp_replace(product_code, '[^0-9]', '', 'g'), '')::int ASC NULLS LAST")
             ->orderBy('product_code')
             ->get()
@@ -218,33 +184,20 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-
     public function teamMembers(Request $request)
     {
         $user   = $request->user();
         $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
-        // Only Sales & Purchase department staff can be assigned a sourcing
-        // target — procurement is their remit. Department lives on the EMPLOYEE
-        // record (employees.department_id → master_departments), NOT on the user,
-        // so resolve the eligible user ids through employees. master_departments
-        // is global (client_id null), matched by name so it holds across tenants.
         $deptIds = \Illuminate\Support\Facades\DB::table('master_departments')
             ->whereRaw('LOWER(name) LIKE ? OR LOWER(name) LIKE ?', ['%sales%', '%purchase%'])
             ->pluck('id');
 
-        // Resolve the DESIGNATION from the same employee record (designation lives
-        // on employees.designation_id → master_designations, NOT on the user —
-        // users.designation is empty, so the list was falling back to the raw
-        // user_type "Employee" for everyone, QA #50). Keep a user_id ⇒ title map.
         $eligibleEmployees = \App\Models\Employee::where('client_id', $user->client_id)
             ->whereIn('department_id', $deptIds)
-            // Only ACTIVE employees are assignable — Inactive and Exited staff
-            // (the exit flow flips employees.status to those) must not appear.
+
             ->whereRaw('LOWER(status) = ?', ['active'])
-            // Only FULLY-ONBOARDED employees (all 6 HR onboarding stages done)
-            // may be assigned — half-onboarded staff must not appear (QA #48).
-            // Same gate as EmployeeController's `onboarded_only` filter.
+
             ->where('onboarding_stage_completed', '>=', 6)
             ->whereNotNull('user_id')
             ->with('designation:id,name')
@@ -256,8 +209,7 @@ class SourcingController extends Controller
 
         $rows = User::where('client_id', $user->client_id)
             ->whereIn('id', $eligibleUserIds)
-            // Belt-and-braces: also drop any deactivated login (exit flips the
-            // linked user's status to 'inactive').
+
             ->whereRaw('LOWER(status) = ?', ['active'])
             ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->where('user_type', '!=', 'super_admin')
@@ -266,8 +218,7 @@ class SourcingController extends Controller
             ->map(fn($u) => [
                 'id'   => (string) $u->id,
                 'name' => $u->name,
-                // Prefer the employee's real designation; fall back to any
-                // user-level designation, then to a humanised user_type.
+
                 'role' => ($designationByUser[(int) $u->id] ?? null)
                     ?: ($u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type))),
             ]);
@@ -286,7 +237,7 @@ class SourcingController extends Controller
             'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
             'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->statutoryFirst()->get(['id', 'state_id', 'state_code']),
-            // Map Supplier Directory → Domestic (₹ + GST) / International (currency, no GST).
+
             'supplierOrigins' => [
                 ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
                 ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
@@ -299,27 +250,19 @@ class SourcingController extends Controller
             ],
             'currencies' => Currencies::query()->tap($scope)->tap($active)->whereRaw('UPPER(code) <> ?', ['INR'])
                 ->orderBy('code')->get(['id', 'code', 'name', 'symbol', 'exchange_rate']),
-            // Our place of supply — a supplier in this state is Intra-state (CGST + SGST).
+
             'homeState'  => $this->homeState($user),
         ]);
     }
 
-    /** The user's branch state (place of supply) for the CGST + SGST / IGST choice. */
     private function homeState($user): array
     {
         $b = $user && $user->branch_id ? Branch::find($user->branch_id, ['id', 'state', 'gst_state_code']) : null;
         return ['state' => $b->state ?? null, 'stateCode' => $b->gst_state_code ?? null];
     }
 
-
     public function upload(Request $request)
     {
-        // NOTE: validate the file's actual extension, not the content-sniffed
-        // MIME type. Laravel's `mimes:` rule sniffs the bytes with finfo, and on
-        // some XAMPP/Windows setups a perfectly valid PDF sniffs as
-        // application/octet-stream → false "must be a file of type pdf…" 422s.
-        // Files here are download-only + auth-gated, so trusting the extension
-        // (with a size cap) is safe and lets every real PDF through.
         $request->validate([
             'file' => 'required|file|max:5120',
             'kind' => 'nullable|in:clarity,card',
@@ -334,11 +277,6 @@ class SourcingController extends Controller
             ], 422);
         }
 
-        // Keep the user's ORIGINAL filename on disk (so the UI shows "Basmati
-        // Spec.pdf", not a random hash) while still guaranteeing uniqueness by
-        // dropping each file into its own random sub-folder. store() alone would
-        // hash the name away; storeAs() under a per-file token folder preserves
-        // the real name and can never collide with another upload.
         $file     = $request->file('file');
         $token    = \Illuminate\Support\Str::random(24);
         $safeName = $this->safeUploadName($file->getClientOriginalName(), $ext);
@@ -351,30 +289,21 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* Sanitise an uploaded filename for safe storage while keeping it readable:
-     * strip the directory portion, drop characters that don't belong in a path,
-     * collapse whitespace, and force the validated extension. */
     private function safeUploadName(string $original, string $ext): string
     {
         $base = pathinfo(basename($original), PATHINFO_FILENAME);
         $base = preg_replace('/[^\p{L}\p{N}\-_. ]+/u', '', $base) ?? '';
         $base = trim(preg_replace('/\s+/', ' ', $base) ?? '');
         if ($base === '' || $base === '.') $base = 'document';
-        // Guard against an over-long name blowing the path limit.
+
         if (mb_strlen($base) > 120) $base = mb_substr($base, 0, 120);
         return $base . '.' . $ext;
     }
 
-    /* Stream ONE clarity file for download. The path is passed as a query
-     * parameter (?path=…) — not as a URL segment — so a multi-PDF value can
-     * never smear several storage paths into one request URL. Auth-gated and
-     * locked to the p2p/clarity folder to block directory traversal. */
-    // GET /p2p/clarity/download?path=/storage/p2p/clarity/xxxx.pdf
     public function downloadClarity(Request $request)
     {
         $data = $request->validate(['path' => 'required|string']);
 
-        // Normalise to a disk-relative path: strip a leading /storage/ and slashes.
         $rel = ltrim(str_replace('\\', '/', $data['path']), '/');
         $rel = preg_replace('#^storage/#', '', $rel);
 
@@ -388,14 +317,12 @@ class SourcingController extends Controller
         return $disk->download($rel, basename($rel));
     }
 
-
     public function nextCode(Request $request)
     {
         $user = $request->user();
         $seq  = SourcingTarget::withTrashed()->where('client_id', $user->client_id)->count() + 1;
         return $this->ok(['code' => sprintf('SRC-%03d', $seq)]);
     }
-
 
     public function store(Request $request)
     {
@@ -405,7 +332,6 @@ class SourcingController extends Controller
         $data = $this->validatePayload($request, true);
 
         $target = DB::transaction(function () use ($user, $data) {
-            // Per-client sequential code under a row lock (same as Quotation/PI/CTC).
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $seq  = SourcingTarget::withTrashed()->where('client_id', $user->client_id)->count() + 1;
             $code = sprintf('SRC-%03d', $seq);
@@ -434,15 +360,11 @@ class SourcingController extends Controller
         return $this->ok(['id' => $target->code]);
     }
 
-
     public function update(Request $request, string $target)
     {
         $user = $request->user();
         $t    = $this->target($request, $target);
 
-        // Owner-only: a user merely assigned to a target can't re-edit it (they
-        // work it via the Sourcing Report). Mirrors the frontend hiding Edit on
-        // the "Assigned to Me" tab — enforced here so the API can't be bypassed.
         if ((int) $t->created_by !== (int) $user->id) {
             return response()->json([
                 'status'  => false,
@@ -452,11 +374,6 @@ class SourcingController extends Controller
 
         $data = $this->validatePayload($request);
 
-        // Reconcile the product list instead of wiping it. A product already
-        // mapped to a supplier in the Sourcing Report is LOCKED — it can't be
-        // removed via edit (the UI hides its delete button; this is the
-        // server-side guard). Unmapped products may be removed, retained
-        // products keep their suppliers, and new rows are appended.
         $existing    = $t->products()->withCount('suppliers')->get();
         $incomingIds = collect($data['products'])
             ->pluck('id')->filter()->map(fn($x) => (int) $x)->all();
@@ -471,9 +388,6 @@ class SourcingController extends Controller
             ], 422);
         }
 
-        // A target whose assignee has gone Inactive/Exited is view-only — no
-        // edits are accepted (the frontend also disables the form + shows a
-        // toast). Reassignment is NOT offered; the assignee stays fixed.
         if (!$this->assigneeIsActive($t->client_id, $t->assignee_id)) {
             return response()->json([
                 'status'  => false,
@@ -482,8 +396,6 @@ class SourcingController extends Controller
         }
 
         DB::transaction(function () use ($t, $user, $data, $existing) {
-            // Assignee is fixed once the target is created — edit never reassigns
-            // it (the frontend also locks the "Assign to Team Member" control).
             $t->update([
                 'source'   => $data['source'],
                 'due_date' => $data['due_date'] ?? null,
@@ -496,26 +408,23 @@ class SourcingController extends Controller
                 $pid = isset($p['id']) ? (int) $p['id'] : 0;
 
                 if ($pid && $existingById->has($pid)) {
-                    // Retained row — update editable fields, keep its suppliers.
                     $clarity = $p['clarity'] ?? null;
                     $update  = [
                         'target_price'  => $p['target_price'] ?? null,
                         'clarity_type'  => $clarity['type'] ?? null,
                         'clarity_value' => $clarity['val'] ?? ($clarity['value'] ?? null),
                     ];
-                    // Manual rows allow inline name edits; master names are fixed.
+
                     if (($p['from'] ?? null) === 'manual' && array_key_exists('name', $p)) {
                         $update['name'] = $p['name'] ?? '—';
                     }
                     $existingById->get($pid)->update($update);
                     $keptIds[] = $pid;
                 } else {
-                    // Brand-new product line.
                     $this->syncProducts($t, $user->client_id, [$p]);
                 }
             }
 
-            // Drop the (unmapped) products the user removed from the list.
             $existing->reject(fn($p) => in_array((int) $p->id, $keptIds, true))
                 ->each(function ($p) {
                     $p->suppliers()->delete();
@@ -529,18 +438,13 @@ class SourcingController extends Controller
     public function show(Request $request, string $target)
     {
         $t = $this->target($request, $target);
-        // suppliers_count drives the edit form's per-row lock: a product already
-        // mapped to a supplier can't be removed (only its price/clarity edited).
+
         $t->load(['products' => fn($q) => $q->withCount('suppliers')]);
 
         $clarity = fn($p) => $p->clarity_type
             ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
             : null;
 
-        // Master rows show the LIVE product name/segment/HSN whenever the row
-        // still links to a product — so the edit form never surfaces a stale
-        // "code as name" (P-004 instead of the real text). Snapshot is the
-        // fallback only for free-text/legacy rows with no product_id.
         $resolve = $this->productDisplayResolver($t->products);
         $master  = $t->products->where('source', 'master')->values()->map(function ($p) use ($clarity, $resolve) {
             $d = $resolve($p);
@@ -570,18 +474,14 @@ class SourcingController extends Controller
             'start'      => optional($t->start_date)->format('Y-m-d') ?? '',
             'due'        => optional($t->due_date)->format('Y-m-d') ?? '',
             'assignee'   => $t->assignee_name ?: '',
-            // The assignee is fixed on edit; the frontend sends this id straight
-            // back on Update so it doesn't have to re-resolve the (now Sales/
-            // Purchase-only, active-only) team list by name.
+
             'assigneeId' => $t->assignee_id ? (string) $t->assignee_id : null,
-            // False when the assignee has gone Inactive/Exited — the edit form
-            // then becomes view-only (no save).
+
             'assigneeActive' => $this->assigneeIsActive($t->client_id, $t->assignee_id),
             'masterRows' => $master,
             'manualRows' => $manual,
         ]);
     }
-
 
     public function report(Request $request, string $target)
     {
@@ -620,7 +520,6 @@ class SourcingController extends Controller
         ]);
     }
 
-
     public function setProductStatus(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
@@ -635,10 +534,6 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* Persist a single product's clarity WITHOUT re-saving the whole target —
-     * the Product List "Update" button writes it straight to the DB (PDF paths
-     * are newline-joined in clarity_value; empty type/value clears it). */
-    // PUT /p2p/sourcing-targets/{target}/products/{product}/clarity
     public function updateProductClarity(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
@@ -661,21 +556,10 @@ class SourcingController extends Controller
         ]);
     }
 
-
     public function suppliers(Request $request)
     {
         $user = $request->user();
-        // Branch-isolated, exactly like the Supplier master list
-        // (VendorController@index) and the Customer/Consignee books: an
-        // employee/branch user sees only their own branch's suppliers, a
-        // client admin sees the BranchSwitcher's active branch. This keeps
-        // the picker in lock-step with the master EDIT scope — you can only
-        // map a supplier you can also open in the edit form, so the deep-link
-        // "Edit" from Mapped Suppliers never 404s on a cross-branch row.
-        // Pull the vendor's primary contact person from its primary address
-        // (contact_name / contact_no / email) — `addresses` is ordered
-        // is_primary-first, so first() is the primary (or the only) one.
-        // ?origin=domestic|international → only that tab of the Map Supplier popup.
+
         $request->validate(['origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)]]);
         $origin = $request->query('origin');
 
@@ -685,23 +569,20 @@ class SourcingController extends Controller
             ->get()
             ->map(function ($v) {
                 $addr = $v->addresses->first();
-                // Domestic (India) vs International, decided by the primary
-                // address country. Blank when no country is set yet.
+
                 $countryName = $addr && $addr->country ? $addr->country->name : '';
                 $region = $countryName === ''
                     ? ''
                     : (strcasecmp($countryName, 'India') === 0 ? 'Domestic' : 'International');
                 return [
-                    // Map Supplier → Domestic / International (no country = Domestic).
                     'origin'       => SupplierPricing::originOf($countryName),
                     'supplierType' => $v->vendorType->name ?? '',
                     'state'        => $addr && $addr->state ? $addr->state->name : '',
-                    'stateCode'    => $addr->state_code ?? '',      // GST State Code
+                    'stateCode'    => $addr->state_code ?? '',
                     'city'         => $addr->city ?? '',
                     'currency'     => SupplierPricing::currencyFor($countryName),
                     'id'      => (string) $v->id,
-                    // Human-facing supplier code (e.g. "S-002"). The picker
-                    // shows this instead of the raw numeric id.
+
                     'code'    => $v->vendor_code ?? '',
                     'name'    => $v->company_name,
                     'segment' => $v->segment->name ?? '',
@@ -717,10 +598,6 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── list the P2P "New Supplier" directory (Dev Tools tab) ───────────── */
-    // GET /p2p/new-suppliers — every inline-created supplier (p2p_suppliers),
-    // i.e. those registered via the Map Supplier Directory "New Supplier" flow,
-    // NOT the Vendor master. Tenant-scoped.
     public function newSuppliers(Request $request)
     {
         $user = $request->user();
@@ -730,7 +607,6 @@ class SourcingController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        // How many DISTINCT sourcing targets each supplier is mapped into.
         $counts = DB::table('p2p_sourcing_product_suppliers as sps')
             ->join('p2p_sourcing_products as sp', 'sp.id', '=', 'sps.sourcing_product_id')
             ->where('sps.source', 'new')
@@ -756,7 +632,7 @@ class SourcingController extends Controller
             'gmaps'          => $s->gmaps,
             'origin'         => $s->origin ?: SupplierPricing::originOf($s->country),
             'sourcing_count' => (int) ($counts[$s->id] ?? 0),
-            // Convert to Supplier → registered in the Supplier Master as this vendor.
+
             'converted'           => (bool) $s->converted_vendor_id,
             'converted_vendor_id' => $s->converted_vendor_id,
             'converted_at'        => optional($s->converted_at)->toIso8601String(),
@@ -766,15 +642,11 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── sourcings that use a given New Supplier (Dev Tools drill-down) ───── */
-    // GET /p2p/new-suppliers/{supplier}/sourcings — each distinct sourcing
-    // target this supplier is mapped into, with the product(s) it was mapped on.
     public function supplierSourcings(Request $request, int $supplier)
     {
         $user = $request->user();
         if (!$user || !$user->client_id) return $this->ok([]);
 
-        // Tenant guard: the supplier must belong to this client.
         $sup = P2pSupplier::where('client_id', $user->client_id)->find($supplier);
         if (!$sup) return $this->ok([]);
 
@@ -790,7 +662,6 @@ class SourcingController extends Controller
             ->orderByDesc('t.id')
             ->get(['t.id as target_id', 't.code as code', 't.due_date as due_date', 'sp.name as product']);
 
-        // One entry per sourcing target, with the product names mapped under it.
         $grouped = $rows->groupBy('target_id')->map(fn($g) => [
             'code'     => $g->first()->code,
             'due_date' => $g->first()->due_date,
@@ -800,18 +671,11 @@ class SourcingController extends Controller
         return $this->ok($grouped);
     }
 
-    /* ── 10. map a supplier to a product ─────────────────────────────────── */
-    // POST /p2p/sourcing-targets/{target}/products/{product}/suppliers
     public function mapSupplier(Request $request, string $target, int $product)
     {
         $user = $request->user();
         $t    = $this->target($request, $target);
 
-        // Supplier mapping is the ASSIGNEE's job only. Anyone who isn't the
-        // assignee — the creator, another branch user, or a viewer whose target
-        // is view-only because the assignee left — is blocked here (super_admin
-        // excepted). The report already hides the Map button off the assigned
-        // tab, but this is the real gate: the UI can be bypassed, this can't.
         if ((int) $t->assignee_id !== (int) $user->id
             && $user->user_type !== 'super_admin') {
             $mine = (int) $t->created_by === (int) $user->id;
@@ -825,10 +689,6 @@ class SourcingController extends Controller
 
         $p    = $t->products()->where('id', $product)->firstOrFail();
 
-        // Length caps mirror the p2p_suppliers column limits so an over-long
-        // value is caught here as a friendly 422 instead of leaking a raw
-        // PostgreSQL "value too long" error from the insert. Street Address is
-        // capped at 255 even though the column is TEXT (product decision).
         $request->validate([
             'supplier_id'             => 'nullable',
             'new_supplier'            => 'nullable|array',
@@ -844,8 +704,7 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
-            // Supplier Price — Domestic: ₹ unit price (excl. GST) + GST rate + GST type;
-            // International: unit price in the supplier's currency + exchange rate, no GST.
+
             'origin'                  => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'price'                   => 'required|numeric|gt:0',
             'gst_percentage'          => 'nullable|numeric|min:0|max:100',
@@ -861,9 +720,6 @@ class SourcingController extends Controller
             'exchange_rate.gt'                => 'The exchange rate must be more than 0.',
             'valid_till.after_or_equal'       => 'Price Valid Till cannot be in the past.',
         ], [
-            // Friendly field names so a message reads "The Contact Person must not
-            // be greater than 255 characters" rather than "The new supplier.name
-            // field …" (Laravel's raw dotted-path default).
             'new_supplier.name'       => 'Supplier Company Name',
             'new_supplier.segment'    => 'Segment',
             'new_supplier.contact'    => 'Contact Person',
@@ -878,24 +734,14 @@ class SourcingController extends Controller
         ]);
 
         if ($request->filled('supplier_id')) {
-            // Scope with forUser() (NOT client_id only) so a vendor can only be
-            // mapped if it's also visible/editable in the same branch catalog the
-            // Supplier edit form uses (VendorController::show). client_id-only let
-            // a sibling-branch vendor be mapped that the edit form then 404s on
-            // ("No query results for model Vendor <id>") — fine on a single-branch
-            // local DB, broken on a multi-branch server.
             $v = Vendor::query()->forUser($user)
                 ->with(['segment:id,name', 'addresses'])
                 ->findOrFail($request->input('supplier_id'));
 
-            // A product can't have the same vendor mapped twice.
-            // (source = master only: a New Supplier's id is a p2p_suppliers id, not a vendor id.)
             if ($p->suppliers()->where('source', 'master')->where('supplier_id', $v->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
-            // Snapshot the vendor's primary contact person (from its primary
-            // address) so the mapped-supplier card shows real contact details.
             $addr    = $v->addresses->first();
             $country = $addr && $addr->country_id ? Countries::whereKey($addr->country_id)->value('name') : null;
             $state   = $addr && $addr->state_id ? States::whereKey($addr->state_id)->value('name') : null;
@@ -918,7 +764,6 @@ class SourcingController extends Controller
             $n    = $request->input('new_supplier');
             $name = trim($n['name'] ?? '') ?: '—';
 
-            // New · International needs the supplier's country; New · Domestic is in India.
             $origin = $request->input('origin') ?: SupplierPricing::originOf($n['country'] ?? null);
             if ($origin === SupplierPricing::INTERNATIONAL && !SupplierPricing::isInternational($n['country'] ?? null)) {
                 throw ValidationException::withMessages(['new_supplier.country' => ["Please select the supplier's country (outside India)."]]);
@@ -943,10 +788,6 @@ class SourcingController extends Controller
                 'card_path'  => $n['card'] ?? null,
             ];
 
-            // Store in the dedicated P2P supplier directory (p2p_suppliers) — NOT
-            // the company Vendor master. Reuse an existing directory entry with
-            // the same name (per client) so one supplier keeps a single id and
-            // can be re-mapped to other products by that id.
             $directory = P2pSupplier::where('client_id', $user->client_id)
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
                 ->first();
@@ -960,17 +801,14 @@ class SourcingController extends Controller
                 ]);
             }
 
-            // Already registered in the Supplier Master (Convert to Supplier) → map that vendor.
             if ($directory->converted_vendor_id) {
                 return response()->json(['status' => false, 'message' => "“{$name}” is already in the Supplier Master — map it from Supplier Master."], 422);
             }
 
-            // A product can't have the same directory supplier mapped twice.
             if ($p->suppliers()->where('source', 'new')->where('supplier_id', $directory->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$name}” is already mapped to this product."], 422);
             }
 
-            // Mapping row snapshots the details; supplier_id → p2p_suppliers.id.
             $p->suppliers()->create($price + $fields + [
                 'supplier_id' => $directory->id,
                 'source'      => 'new',
@@ -981,25 +819,16 @@ class SourcingController extends Controller
             return response()->json(['status' => false, 'message' => 'Provide supplier_id or new_supplier'], 422);
         }
 
-        // A product with at least one supplier counts as sourced.
         if ($p->status !== 'Completed') $p->update(['status' => 'Completed']);
 
         return $this->ok(['supplierCount' => $p->suppliers()->count()]);
     }
 
-    /**
-     * Update a mapped NEW (manual) supplier — the Bulk Sourcing → Mapped
-     * Suppliers → Edit flow for a "New Supplier" card. Master rows are edited
-     * on the Supplier master, not here, so this rejects source='master'.
-     * Updates both the snapshot mapping row and the shared p2p_suppliers row.
-     */
     public function updateSupplier(Request $request, string $target, int $product, int $supplier)
     {
         $user = $request->user();
         $t    = $this->target($request, $target);
 
-        // Same gate as mapSupplier — editing mapped suppliers is the assignee's
-        // job (super_admin excepted).
         if ((int) $t->assignee_id !== (int) $user->id
             && $user->user_type !== 'super_admin') {
             $mine = (int) $t->created_by === (int) $user->id;
@@ -1018,7 +847,6 @@ class SourcingController extends Controller
             return response()->json(['status' => false, 'message' => 'Only new (manual) suppliers can be edited here. Edit master suppliers from the Supplier master.'], 422);
         }
 
-        // Same caps / friendly names as mapSupplier's new_supplier branch.
         $request->validate([
             'new_supplier'            => 'required|array',
             'new_supplier.name'       => 'required|string|max:255',
@@ -1033,7 +861,7 @@ class SourcingController extends Controller
             'new_supplier.state_code' => 'nullable|string|max:16',
             'new_supplier.city'       => 'nullable|string|max:128',
             'new_supplier.card'       => 'nullable|string|max:512',
-            // Optional — send price to re-quote (same rules as Map Supplier).
+
             'price'                   => 'sometimes|required|numeric|gt:0',
             'gst_percentage'          => 'nullable|numeric|min:0|max:100',
             'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
@@ -1074,7 +902,6 @@ class SourcingController extends Controller
             'card_path'  => $n['card'] ?? null,
         ];
 
-        // The origin follows the country, as on Map Supplier.
         if (($row->origin ?? null) && $row->origin !== SupplierPricing::originOf($n['country'] ?? null)) {
             throw ValidationException::withMessages(['new_supplier.country' => [
                 $row->origin === SupplierPricing::INTERNATIONAL
@@ -1088,11 +915,8 @@ class SourcingController extends Controller
             $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
         }
 
-        // Update the snapshot mapping row (name + all fields).
         $row->update($price + $fields + ['name' => $name]);
 
-        // Keep the shared directory row (p2p_suppliers) in sync so the same
-        // supplier reads the same details wherever it's mapped.
         if ($row->supplier_id) {
             P2pSupplier::where('client_id', $user->client_id)
                 ->where('id', $row->supplier_id)
@@ -1101,7 +925,6 @@ class SourcingController extends Controller
 
         return $this->ok(['id' => (string) $row->id]);
     }
-
 
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
@@ -1115,9 +938,7 @@ class SourcingController extends Controller
 
         $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
-            // Underlying directory id so the UI can open the right edit form:
-            // for a Master row this is the Vendor master id; for a New Supplier
-            // row it is the p2p_suppliers directory id.
+
             'supplier_id' => $s->supplier_id,
             'name'    => $s->name,
             'segment' => $s->segment ?? '',
@@ -1125,8 +946,7 @@ class SourcingController extends Controller
             'mobile'  => $s->mobile ?? '',
             'email'   => $s->email ?? '',
             'card'    => $s->card_path ?? '',
-            // Manual-supplier address snapshot (only populated for source='new'),
-            // used to prefill the Map Supplier edit form.
+
             'gmaps'      => $s->gmaps ?? '',
             'address'    => $s->address ?? '',
             'country'    => $s->country ?? '',
@@ -1134,41 +954,31 @@ class SourcingController extends Controller
             'state_code' => $s->state_code ?? '',
             'city'       => $s->city ?? '',
             'source'  => $s->source === 'new' ? 'New Supplier' : 'Master',
-            // Quoted price (null = mapped before pricing → "Price & GST not mapped").
-            'origin'        => $s->origin,                       // domestic | international
+
+            'origin'        => $s->origin,
             'currency'      => $s->currency_code,
-            'price'         => $s->price !== null ? (float) $s->price : null,           // unit price in `currency`, excl. GST
+            'price'         => $s->price !== null ? (float) $s->price : null,
             'gstPercentage' => $s->gst_percentage !== null ? (float) $s->gst_percentage : null,
-            'gstType'       => $s->gst_type,                     // intra (CGST + SGST) | inter (IGST) | none
+            'gstType'       => $s->gst_type,
             'cgst'          => $s->cgst_amount !== null ? (float) $s->cgst_amount : null,
             'sgst'          => $s->sgst_amount !== null ? (float) $s->sgst_amount : null,
             'igst'          => $s->igst_amount !== null ? (float) $s->igst_amount : null,
             'gstAmount'     => $s->gst_amount !== null ? (float) $s->gst_amount : null,
-            'total'         => $s->total_amount !== null ? (float) $s->total_amount : null,   // incl. GST, in `currency`
-            'exchangeRate'  => $s->exchange_rate !== null ? (float) $s->exchange_rate : null, // ₹ per unit (international)
-            'inrAmount'     => $s->inr_amount !== null ? (float) $s->inr_amount : null,       // ₹ equivalent
+            'total'         => $s->total_amount !== null ? (float) $s->total_amount : null,
+            'exchangeRate'  => $s->exchange_rate !== null ? (float) $s->exchange_rate : null,
+            'inrAmount'     => $s->inr_amount !== null ? (float) $s->inr_amount : null,
             'validTill'     => optional($s->price_valid_till)->format('Y-m-d'),
-            // "vs Target Price": unit price in ₹ before GST against the product's target.
+
             'vsTarget'      => $s->price === null ? null : SupplierPricing::vsTarget(
                 $s->origin === SupplierPricing::INTERNATIONAL ? (float) $s->inr_amount : (float) $s->price, $target),
             'mappedOn'      => optional($s->created_at)->toIso8601String(),
-            // "Convert to Supplier" button — New Suppliers not yet in the Supplier Master.
+
             'canConvert'    => $s->source === 'new' && empty($converted[$s->supplier_id]),
         ]);
 
         return $this->ok($rows);
     }
 
-
-
-    /**
-     * Price columns for one Map Supplier row (validated input already).
-     *   Domestic      ₹ unit price + GST rate (default 18) + GST type (default:
-     *                 CGST + SGST when the supplier is in our branch's state, else IGST)
-     *   International unit price in `currency` (default: the country's) ×
-     *                 `exchange_rate` (default: Currency master), no GST
-     * The origin defaults to the supplier's country and must match it.
-     */
     private function sourcingPrice(Request $request, $user, ?string $country, ?string $state, ?string $stateCode): array
     {
         $origin = $request->input('origin') ?: SupplierPricing::originOf($country);
@@ -1201,10 +1011,6 @@ class SourcingController extends Controller
         return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
     }
 
-    /* ── Convert to Supplier (New Supplier → Supplier Master) ─────────────── */
-    // GET /p2p/new-suppliers/{supplier}/convert — the New Supplier's details in
-    // the shape of the Add Supplier form (/vendors/step/identity + step/contacts),
-    // with master ids looked up by name, so the form opens pre-filled.
     public function convertPrefill(Request $request, int $supplier)
     {
         $user = $request->user();
@@ -1224,7 +1030,7 @@ class SourcingController extends Controller
             'converted'           => (bool) $s->converted_vendor_id,
             'converted_vendor_id' => $s->converted_vendor_id,
             'sourcing_count'      => SourcingProductSupplier::where('source', 'new')->where('supplier_id', $s->id)->count(),
-            // POST /vendors/step/identity
+
             'identity' => [
                 'company_name'   => $s->name,
                 'legal_name'     => $s->name,
@@ -1233,7 +1039,7 @@ class SourcingController extends Controller
                 'segment'        => $s->segment,
                 'gst_applicable' => $origin === SupplierPricing::INTERNATIONAL ? 'No' : null,
             ],
-            // PUT /vendors/{id}/step/contacts → primary address / contact person
+
             'address' => [
                 'address_line'    => $s->address,
                 'country_id'      => $countryId,
@@ -1252,11 +1058,6 @@ class SourcingController extends Controller
         ]);
     }
 
-    // POST /p2p/new-suppliers/{supplier}/convert { vendor_id } — after the Add
-    // Supplier form saves the vendor, link it: the New Supplier is marked
-    // converted and every product it was mapped on now points at the vendor
-    // (source = master), keeping the quoted prices. A product that already has
-    // that vendor mapped keeps the existing row and drops the duplicate.
     public function convertSupplier(Request $request, int $supplier)
     {
         $user = $request->user();
@@ -1289,8 +1090,8 @@ class SourcingController extends Controller
             'vendor_id'     => $vendor->id,
             'vendor_code'   => $vendor->vendor_code,
             'vendor_name'   => $vendor->company_name,
-            'mappings_moved'  => $moved,     // now shown as "Master" on those products
-            'mappings_merged' => $merged,    // the product already had this vendor mapped
+            'mappings_moved'  => $moved,
+            'mappings_merged' => $merged,
             'message'       => "{$s->name} is now in the Supplier Master as {$vendor->vendor_code}.",
         ]);
     }
@@ -1298,18 +1099,17 @@ class SourcingController extends Controller
     private function validatePayload(Request $request, bool $creating = false): array
     {
         return $request->validate([
-            // SOURCING TAT * — the target completion date (not in the past on create).
             'due_date'                => ['required', 'date', ...($creating ? ['after_or_equal:today'] : [])],
             'source'                  => 'required|in:master,manual',
-            'assignee_id'             => 'required',                 // must be assigned to someone
+            'assignee_id'             => 'required',
             'products'                => 'required|array|min:1',
-            'products.*.id'           => 'nullable|integer',   // existing row (edit); absent = new
+            'products.*.id'           => 'nullable|integer',
             'products.*.from'         => 'required|in:master,manual',
-            // FROM PRODUCT MASTER → the picked product's code.
+
             'products.*.code'         => 'nullable|required_if:products.*.from,master|string|max:64',
-            // MANUAL PRODUCT ENTRY → PRODUCT NAME * + TARGET PRICE (₹) *.
+
             'products.*.name'         => 'nullable|required_if:products.*.from,manual|string|max:255',
-            'products.*.target_price' => ['nullable', 'required_if:products.*.from,manual', 'regex:/^\d[\d,]*(\.\d{1,2})?$/', 'max:64'],   // 1200 · 1,200 · 1200.50
+            'products.*.target_price' => ['nullable', 'required_if:products.*.from,manual', 'regex:/^\d[\d,]*(\.\d{1,2})?$/', 'max:64'],
             'products.*.clarity'      => 'nullable|array',
             'products.*.clarity.type' => 'nullable|in:text,link,pdf',
             'products.*.clarity.val'  => 'nullable|string',
@@ -1325,7 +1125,6 @@ class SourcingController extends Controller
         ]);
     }
 
-
     private function resolveAssignee($clientId, $assigneeId): array
     {
         if (!$assigneeId) return ['id' => null, 'name' => null];
@@ -1333,12 +1132,6 @@ class SourcingController extends Controller
         return ['id' => $u?->id, 'name' => $u?->name];
     }
 
-    /**
-     * Live display resolver for a set of sourcing products. Master rows follow
-     * the linked product master (name / segment / HSN) so a raw code never shows
-     * in place of the name; manual & legacy rows fall back to their snapshot.
-     * Returns fn($sourcingProduct) => ['name','segment','hsn'].
-     */
     private function productDisplayResolver($products): \Closure
     {
         $ids = collect($products)
@@ -1357,24 +1150,14 @@ class SourcingController extends Controller
         };
     }
 
-    /**
-     * Whether the target's current assignee is still an ACTIVE, assignable
-     * member — i.e. their login is active AND their employee record is 'Active'
-     * (not Inactive / Exited). Drives the edit form's reassignment unlock: once
-     * the assignee goes Inactive/Exited the creator may hand the target off to
-     * another active member.
-     */
     private function assigneeIsActive($clientId, $assigneeUserId): bool
     {
         if (!$assigneeUserId) return false;
-        // A deactivated login is never active (the exit flow also flips this).
+
         $userActive = User::where('id', $assigneeUserId)
             ->whereRaw('LOWER(status) = ?', ['active'])->exists();
         if (!$userActive) return false;
-        // The unlock trigger is specifically an EMPLOYEE going Inactive/Exited.
-        // If the assignee has an employee record it must be 'Active'; if they
-        // have no employee record they never "exit", so keep them valid (locked)
-        // rather than forcing reassignment on legacy/non-employee assignees.
+
         $emp = \App\Models\Employee::where('client_id', $clientId)
             ->where('user_id', $assigneeUserId)->first();
         if (!$emp) return true;
@@ -1396,14 +1179,7 @@ class SourcingController extends Controller
 
             if ($from === 'master') {
                 $code = $p['code'] ?? '';
-                /* Scoped to the TARGET's branch first. product_code is a
-                   per-branch sequence (ProductController::nextProductCode --
-                   "each branch restarts at P-01", unique on client_id +
-                   branch_id + product_code), so P-01 exists once per branch and
-                   a client-wide match returned whichever row the database
-                   handed back: another branch's product, with its name, segment,
-                   HSN and id written onto this sourcing row. Client-wide stays
-                   as the fallback for targets with no branch. */
+
                 $byBranch = fn () => Product::where('client_id', $clientId)
                     ->with(['segment:id,name', 'hsn:id,hsn_code'])
                     ->where('product_code', $code);
@@ -1412,15 +1188,7 @@ class SourcingController extends Controller
                     : null;
                 if (!$prod) $prod = $byBranch()->first();
 
-                // The frontend sends the DISPLAY code, padded by padCode()
-                // ("P-41" → "P-041"). When product_code is stored unpadded the
-                // exact match above misses — which left the row showing the code
-                // as its name and no segment/HSN. Fall back to matching on the
-                // padded form so the real product (name, segment, HSN, id) resolves.
                 if (!$prod && $code !== '') {
-                    // Same branch-first rule on the padded fallback: without it
-                    // the unpadded-code path walked straight back into another
-                    // branch's P-1.
                     $padded = Product::where('client_id', $clientId)
                         ->when($target->branch_id, fn ($q) => $q->where('branch_id', $target->branch_id))
                         ->with(['segment:id,name', 'hsn:id,hsn_code'])
