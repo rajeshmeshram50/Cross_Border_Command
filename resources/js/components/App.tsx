@@ -521,7 +521,7 @@ function ProfileRouter() {
 function AuthRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const state = location.state as { email?: string } | null;
   const [resetEmail, setResetEmail] = useState(state?.email || '');
 
@@ -592,7 +592,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingPending, navigate]);
 
   const navigateFn = (p: string, data?: any) => {

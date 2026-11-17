@@ -1,30 +1,3 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * Global route-access guard.
- *
- * The sidebar (LayoutMenuData) and header (IdimsHeader) only *hide* menu items
- * a user can't reach — they do NOT stop someone pasting a restricted URL into
- * the address bar. Without a guard, a Dashboard-only employee who types
- * `/hr/employees` lands on the real page (rendered passively read-only) instead
- * of being blocked.
- *
- * `canAccessPath` closes that hole. It re-derives, for a given pathname, the
- * SAME visibility decision the menu makes, so the two never drift:
- *   - platform modules (clients / plans / payments / master)               → super_admin
- *   - account modules (branches / master / my-plan)                        → client_admin
- *   - permissions                                                          → EVERY role
- *     (granting is delegated down the reporting line; the API scopes who a
- *      given granter may target and caps it at their own access)
- *   - business modules (HR / Sales / CLM / P2P / GTS / Inventory / Dev …)   → branch_user
- *     & employee, gated per-leaf on the exact `perms['<slug>'].can_view` grant
- *   - self / utility pages (dashboard, profile, settings, my-team, inbox …) → any role
- *
- * Policy (chosen for this guard): STRICT menu parity for every role, and
- * FAIL-CLOSED inside known module prefixes — any /hr, /sales, /clm, /p2p,
- * /master, /clients, … path that doesn't resolve to a granted slug is denied.
- * Paths outside every known prefix fall through as ALLOWED so genuine 404s
- * still hit React Router's `*` → /dashboard redirect instead of a false block.
- * ───────────────────────────────────────────────────────────────────────── */
-
 type PermRow = { can_view?: boolean } | undefined;
 
 interface GuardUser {
@@ -32,9 +5,6 @@ interface GuardUser {
   permissions?: Record<string, PermRow>;
 }
 
-// Self / utility pages every authenticated role may open. These back the
-// always-present header affordances (profile menu, inbox/gmail/clock-in
-// action buttons) — blocking them would deny users their own chrome.
 const ALWAYS_ALLOW = new Set<string>([
   '/dashboard',
   '/profile',
@@ -47,8 +17,6 @@ const ALWAYS_ALLOW = new Set<string>([
   '/clock-in',
 ]);
 
-// Business-module routes → the exact permission slug the menu gates each leaf
-// on. Sub-routes (detail / edit / nested) resolve via HR_PREFIX_LEAF below.
 const HR_LEAF: Record<string, string> = {
   '/hr/overview': 'hr.overview',
   '/hr/employees': 'hr.employee',
@@ -56,14 +24,10 @@ const HR_LEAF: Record<string, string> = {
   '/hr/exit-management': 'hr.exit',
   '/hr/employee-onboarding': 'hr.onboarding',
   '/hr/attendance': 'hr.attendance',
-  '/hr/devices': 'hr.attendance',   // Biometric Devices rides on the attendance grant
-  // Regularization Requests are attendance corrections, reached from a button
-  // on the Attendance page — same grant, as Biometric Devices has it.
+  '/hr/devices': 'hr.attendance',
   '/hr/regularization-requests': 'hr.attendance',
   '/hr/leave': 'hr.leave',
   '/hr/leave-plans': 'hr.leave',
-  // No hr.leave_approvals module exists, so that slug can never be granted and
-  // the page was unreachable. Approvals ride on the leave grant, like leave-plans.
   '/hr/leave-approvals': 'hr.leave',
   '/hr/holiday': 'hr.holiday',
   '/hr/pip': 'hr.pip',
@@ -74,13 +38,11 @@ const HR_LEAF: Record<string, string> = {
   '/hr/custom-fields': 'hr.custom_fields',
 };
 const HR_PREFIX_LEAF: Array<[string, string]> = [
-  ['/hr/employees/', 'hr.employee'],       // /:id/permissions, /:id/profile
-  ['/hr/recruitment/', 'hr.recruitment'],  // /:id/candidates
-  ['/hr/doc-templates/', 'hr.doc_templates'], // /new, /:id/edit, /:id/generate
+  ['/hr/employees/', 'hr.employee'],
+  ['/hr/recruitment/', 'hr.recruitment'],
+  ['/hr/doc-templates/', 'hr.doc_templates'],
 ];
 
-// Sales leaves: some paths accept any-of several slugs (a page shared by two
-// menu leaves, or one that rides on another leaf's grant).
 const SALES_LEAF: Record<string, string[]> = {
   '/sales/customers': ['sales.customers'],
   '/sales/consignee': ['sales.consignee'],
@@ -122,35 +84,19 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/analytics': 'p2p.analytics',
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
-  // New Sourcing Management Tracker (design build) — same grant as Bulk Sourcing.
   '/p2p/sourcing-tracker': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
-  /* Inventory Management. Each page is gated on the master it is replacing,
-     so the people who can already see that master keep seeing it here and
-     nobody has to be re-granted. Product Flags has no master of its own yet,
-     so it rides on the warehouse grant it sits with. */
   '/inventory-management/warehouse-master': 'master.warehouse_master',
   '/inventory-management/zone-master': 'master.zone_master',
   '/inventory-management/rack-master': 'master.racks',
   '/inventory-management/product-flags': 'master.warehouse_master',
-  // Invoice — the rebuilt supplier purchase invoice. It rides on the Purchase
-  // Order grant rather than introducing a module row of its own: it is part of
-  // the same business object, so nobody has to be re-granted anything. It rode
-  // on p2p.spi until that module was removed with the old screen.
   '/p2p/supplier-purchase-invoice': 'p2p.order',
-  /* The old path, still routed as a redirect. It needs the same grant: the
-     guard runs before the redirect does. */
   '/p2p/invoice': 'p2p.order',
   '/p2p/order': 'p2p.order',
   '/p2p/payment-request': 'p2p.payment_request',
-  /* Advance Refund has no module row of its own, so it rode on the legacy
-     p2p.po grant. That module is gone and its grants were carried over to
-     p2p.order, which this now follows — the same seven people keep it. */
   '/p2p/advance-refund-adjustment': 'p2p.order',
 };
 
-// Known module prefixes — a path under any of these that fails to resolve to a
-// grant is DENIED (fail-closed), rather than falling through to "allow".
 const GUARDED_PREFIXES = [
   '/clients', '/branches', '/plans', '/payments', '/permissions', '/master',
   '/hr', '/sales', '/clm', '/p2p', '/products', '/suppliers', '/vendors',
@@ -160,7 +106,6 @@ const GUARDED_PREFIXES = [
 export function canAccessPath(pathname: string, user: GuardUser | null | undefined): boolean {
   if (!user) return false;
 
-  // Normalise: drop query/hash (pathname has none, but be defensive) + trailing slash.
   let path = (pathname || '/').split('?')[0].split('#')[0];
   if (path.length > 1 && path.endsWith('/')) path = path.replace(/\/+$/, '');
 
@@ -169,9 +114,6 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   const isClientAdmin = role === 'client_admin';
   const isBranchUser = role === 'branch_user';
   const isEmployee = role === 'employee';
-  // Audience for the day-to-day business modules. Admins are intentionally
-  // excluded — the menu never surfaces these to them (they hold grant rows
-  // only to cascade access downstream).
   const isBiz = isBranchUser || isEmployee;
 
   const perms = user.permissions || {};
@@ -180,29 +122,20 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   const group = (prefix: string) =>
     Object.keys(perms).some((s) => s.startsWith(prefix) && perms[s]?.can_view);
 
-  // 1) Self / utility pages — every role.
   if (ALWAYS_ALLOW.has(path)) return true;
-  // Inbox review pages (e.g. a PO approval) — the API checks the request was sent to this user.
   if (path.startsWith('/inbox/')) return true;
 
-  // 2) Platform modules — super_admin only.
   if (path === '/clients' || path.startsWith('/clients/')) return isSuper;
   if (path === '/plans' || path.startsWith('/plans/')) return isSuper;
-  // Payments: super_admin + the client_admin who settles the bills (mirrors the
-  // existing explicit route guard in App.tsx).
   if (path === '/payments') return isSuper || isClientAdmin;
 
-  // 3) Account modules — client_admin.
   if (path === '/branches' || path.startsWith('/branches/')) return isClientAdmin;
   if (path === '/permissions') return isSuper || isClientAdmin || isBranchUser || isEmployee;
 
-  // 4) Master — admins get the whole area; tenants need a master.* grant.
-  //    MasterPage self-guards the specific leaf, so module-level access is enough here.
   if (path === '/master' || path.startsWith('/master/')) {
     return isSuper || isClientAdmin || group('master.');
   }
 
-  // 5) Business modules — branch_user / employee, gated per leaf.
   if (path === '/hr') return isBiz && group('hr.');
   if (path.startsWith('/hr/')) {
     if (!isBiz) return false;
@@ -214,8 +147,6 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   if (path === '/sales' || path.startsWith('/sales/')) {
     if (!isBiz) return false;
     if (path in SALES_LEAF) return anyLeaf(SALES_LEAF[path]);
-    // Hub, matrix detail, and the un-slugged operational pages ride on "any
-    // Sales grant" — the same rule that shows the Sales Matrix parent menu.
     return group('sales.');
   }
 
@@ -223,7 +154,7 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
   if (path.startsWith('/clm/')) {
     if (!isBiz) return false;
     if (path in CLM_LEAF) return leaf(CLM_LEAF[path]);
-    return group('clm.'); // stub leaves fall through to the shared CLM stub page
+    return group('clm.');
   }
 
   if (path === '/p2p') return isBiz && (leaf('p2p') || group('p2p.'));
@@ -233,17 +164,8 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
     return path in P2P_LEAF ? leaf(P2P_LEAF[path]) : false;
   }
 
-  // 6) Single-page business modules.
   if (path === '/gts') return isBiz && leaf('gts');
-  // TEMPORARY — Inventory put-away scanning is open to every signed-in user
-  // while the Zebra TC27 pilot is being tested, so admins can reach it too.
-  // Restore the line below when the pilot ends:
-  //   if (path === '/inventory' || path.startsWith('/inventory/')) return isBiz && leaf('inventory');
-  if (path === '/inventory' || path.startsWith('/inventory/')) return true;
-  /* CredVault — business users with the module grant, and the client admin:
-     the client admin is the Vault Admin, who approves access requests and
-     sets the policies, so the module is theirs too (the API enforces the
-     same rule). Every screen sits under the one prefix. */
+   if (path === '/inventory' || path.startsWith('/inventory/')) return true;
   if (path === '/credentials-vault' || path.startsWith('/credentials-vault/')) {
     return isClientAdmin || (isBiz && leaf('credentials-vault'));
   }
@@ -252,16 +174,12 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
     return isBiz && leaf('developers.shipment');
   }
 
-  // 7) Products / Suppliers — default modules every tenant business user holds.
   if (path === '/products' || path.startsWith('/products/')) return isBiz;
   if (path === '/suppliers' || path === '/vendors' || path.startsWith('/vendors/')) return isBiz;
 
-  // 8) Anything under a guarded prefix that didn't resolve above → fail-closed.
   if (GUARDED_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) {
     return false;
   }
 
-  // 9) Unknown path outside every module — allow through so React Router's
-  //    catch-all (`*` → /dashboard) handles it instead of a false Access Denied.
-  return true;
+   return true;
 }
