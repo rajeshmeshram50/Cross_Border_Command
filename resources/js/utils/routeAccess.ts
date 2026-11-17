@@ -84,7 +84,7 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/analytics': 'p2p.analytics',
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
-  '/p2p/sourcing-tracker': 'p2p.bulk_sourcing',
+  '/p2p/sourcing-tracker': 'p2p.sourcing_tracker',
   '/p2p/case-to-case': 'p2p.case_to_case',
   '/p2p/service-management': 'p2p.service',
   '/inventory-management/warehouse-master': 'master.warehouse_master',

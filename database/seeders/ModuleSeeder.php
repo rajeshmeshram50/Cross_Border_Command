@@ -464,6 +464,7 @@ class ModuleSeeder extends Seeder
             ],
             'p2p.procurement' => [
                 ['name' => 'Bulk Sourcing Management',           'slug' => 'p2p.bulk_sourcing', 'icon' => 'Activity', 'description' => 'Manage bulk sourcing requests'],
+                ['name' => 'Sourcing Management Tracker',        'slug' => 'p2p.sourcing_tracker', 'icon' => 'Search', 'description' => 'Assign sourcing targets and manage Requests for Quotation (RFQs)'],
                 ['name' => 'Case to Case Procurement Management', 'slug' => 'p2p.case_to_case', 'icon' => 'Activity', 'description' => 'Manage request-based sourcing'],
             ],
             'p2p.purchase' => [

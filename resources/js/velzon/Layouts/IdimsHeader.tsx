@@ -21,7 +21,6 @@ const PERM_ALIAS: Record<string, string> = {
   'hr.devices': 'hr.attendance',
   'p2p.advance_refund': 'p2p.order',
   'p2p.invoice': 'p2p.order',
-  'p2p.sourcing_tracker': 'p2p.bulk_sourcing',
   'master.product_flags': 'master.warehouse_master',
   ...Object.fromEntries(CREDVAULT_GROUPS.flatMap(g => g.children.map(l => [l.id, 'credentials-vault']))),
 };
