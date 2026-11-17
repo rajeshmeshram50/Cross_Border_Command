@@ -30,6 +30,7 @@ export type FieldDef = {
   subPrimaryFlagField?: string;
   optDesc?: Record<string, string>;
   showWhen?: { field: string; equals: string | string[] };
+  segmented?: boolean;
   futureOnly?: boolean;
   min?: number;
   max?: number;
@@ -940,9 +941,8 @@ const C: Record<string, MasterConfig> = {
     noDelete: true,
     inUseStatusOnly: true,
     fields: [
-      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Software Licence' },
       {
-        n: 'service_type', l: 'Select Service', t: 'select', r: true,
+        n: 'service_type', l: 'Select Service', t: 'radio', r: true, segmented: true,
         opts: [
           { value: 'soft_digital', label: 'Soft / Digital Service' },
           { value: 'other_operational', label: 'Other Operational Service' },
@@ -959,6 +959,7 @@ const C: Record<string, MasterConfig> = {
         ],
         showWhen: { field: 'service_type', equals: 'other_operational' },
       },
+      { n: 'name', l: 'Service Category Name', t: 'text', r: true, p: 'e.g. Software Licence' },
       {
         n: 'status', l: 'Status', t: 'select', r: true,
         opts: ['Active', 'Inactive'],
