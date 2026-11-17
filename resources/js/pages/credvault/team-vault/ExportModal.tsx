@@ -233,6 +233,9 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
                     {!preview && <div className="mapsup-ffield" style={{ marginTop: 10 }}>
                       <label className="mapsup-flabel" htmlFor="tv-ex-pw">Account password<span className="req">*</span></label>
                       <div className="mapsup-inputwrap">
+                        {/* The browser fills a saved login's username into the nearest text box before a password
+                            field; without this hidden one it landed in the Team Details search (as in BackupModal). */}
+                        <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" className="ir-ac-trap" />
                         <input id="tv-ex-pw" type="password" className="mapsup-finput" autoComplete="current-password"
                           placeholder="Enter your login password to confirm" value={password}
                           onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') run(); }} />

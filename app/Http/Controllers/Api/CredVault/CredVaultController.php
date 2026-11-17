@@ -2519,7 +2519,11 @@ class CredVaultController extends Controller
         if ($tab === 'mine') {
             $q->where('owner_id', $u->id);
         } else {
-            $q->where('scope', 'team')->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $this->sharedWithMeIds($u));
+            // The same set as the Team tab (listCredentials): team-scope credentials, plus the
+            // credentials of the people this viewer oversees, whatever their scope.
+            $overseen = $this->overseenUserIds($u);
+            $q->where(fn ($w) => $w->where('scope', 'team')->when($overseen, fn ($x) => $x->orWhereIn('owner_id', $overseen)))
+                ->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $this->sharedWithMeIds($u));
             if (!empty($d['department_id'])) $q->where('department_id', $d['department_id']);
         }
         $this->credentialSearch($q, $u, $d['q'] ?? null);

@@ -211,6 +211,7 @@ export default function TeamVault() {
                 </div>
               )}
               <CredentialTable
+                secretLabels
                 rows={rows}
                 startIndex={((meta?.current_page ?? page) - 1) * perPage}
                 loading={loading}
