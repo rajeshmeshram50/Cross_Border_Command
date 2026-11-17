@@ -901,12 +901,15 @@ class SourcingController extends Controller
             $n    = $request->input('new_supplier');
             $name = trim($n['name'] ?? '') ?: '—';
 
-            // New · Domestic: the supplier is in India.
-            if (SupplierPricing::isInternational($n['country'] ?? null)) {
-                throw ValidationException::withMessages(['new_supplier.country' => ['A Domestic supplier must be in India.']]);
+            // New · International needs the supplier's country; New · Domestic is in India.
+            $origin = $request->input('origin') ?: SupplierPricing::originOf($n['country'] ?? null);
+            if ($origin === SupplierPricing::INTERNATIONAL && !SupplierPricing::isInternational($n['country'] ?? null)) {
+                throw ValidationException::withMessages(['new_supplier.country' => ["Please select the supplier's country (outside India)."]]);
             }
-            $n['country'] = 'India';
-            $request->merge(['origin' => SupplierPricing::DOMESTIC]);
+            if ($origin === SupplierPricing::DOMESTIC && SupplierPricing::isInternational($n['country'] ?? null)) {
+                throw ValidationException::withMessages(['new_supplier.country' => ['A Domestic supplier must be in India — choose International for an overseas supplier.']]);
+            }
+            if ($origin === SupplierPricing::DOMESTIC) $n['country'] = 'India';
             $price = $this->sourcingPrice($request, $user, $n['country'] ?? null, $n['state'] ?? null, $n['state_code'] ?? null);
 
             $fields = [
@@ -1012,6 +1015,8 @@ class SourcingController extends Controller
             'price'                   => 'sometimes|required|numeric|gt:0',
             'gst_percentage'          => 'nullable|numeric|min:0|max:100',
             'gst_type'                => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'currency'                => 'nullable|string|size:3|alpha',
+            'exchange_rate'           => 'nullable|numeric|gt:0',
             'valid_till'              => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required' => 'Enter the supplier company name.',
