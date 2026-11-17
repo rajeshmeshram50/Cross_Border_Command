@@ -537,4 +537,135 @@ class ServiceController extends Controller
             Log::warning('Service file delete failed', ['path' => $path, 'error' => $e->getMessage()]);
         }
     }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * PUT /p2p/services/{id}/step/suppliers
+     * Stage 2 — the whole "Mapped Service Suppliers" list (full replace) and
+     * submit. The service becomes active. An empty list is allowed, as in the
+     * design (the list then shows 0 mapped suppliers).
+     * ══════════════════════════════════════════════════════════════════ */
+    public function storeSuppliers(Request $request, int $id)
+    {
+        $service = $this->findService($request, $id);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+
+        $data = $request->validate([
+            'suppliers'                  => 'present|array',
+            'suppliers.*.vendor_id'      => 'required|integer|distinct',
+            'suppliers.*.price'          => 'required|numeric|gt:0',
+            'suppliers.*.gst_percentage' => 'required|numeric|min:0|max:100',
+            'suppliers.*.remarks'        => 'nullable|string|max:1000',
+        ]);
+
+        $this->assertVendorsVisible($request, array_column($data['suppliers'], 'vendor_id'), 'suppliers');
+
+        DB::transaction(function () use ($service, $data, $request) {
+            $userId = $request->user()?->id;
+            $keep   = [];
+            foreach ($data['suppliers'] as $row) {
+                $amounts = ServiceSupplier::amounts((float) $row['price'], (float) $row['gst_percentage']);
+                $map = ServiceSupplier::firstOrNew(['service_id' => $service->id, 'vendor_id' => $row['vendor_id']]);
+                if (!$map->exists) $map->created_by = $userId;
+                $map->fill($amounts + ['remarks' => $row['remarks'] ?? null, 'status' => 'active', 'updated_by' => $userId])->save();
+                $keep[] = $map->id;
+            }
+            // Suppliers left out of the list are switched inactive, never deleted.
+            $service->suppliers()->whereNotIn('id', $keep ?: [0])->where('status', 'active')
+                ->update(['status' => 'inactive', 'updated_by' => $userId, 'updated_at' => now()]);
+
+            $service->status         = 'active';
+            $service->step_completed = 2;
+            $service->updated_by     = $userId;
+            $service->save();
+        });
+
+        return response()->json($this->detail($service->fresh()));
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * Map Supplier (list-row action + Stage-2 popup), one row at a time.
+     * ══════════════════════════════════════════════════════════════════ */
+
+    /** POST /p2p/services/{id}/suppliers — map one supplier. */
+    public function storeSupplier(Request $request, int $id)
+    {
+        $service = $this->findService($request, $id);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+
+        $data = $request->validate([
+            'vendor_id'      => 'required|integer',
+            'price'          => 'required|numeric|gt:0',
+            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'remarks'        => 'nullable|string|max:1000',
+        ]);
+        $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
+
+        $existing = $service->suppliers()->where('vendor_id', $data['vendor_id'])->first();
+        if ($existing && $existing->status === 'active') {
+            throw ValidationException::withMessages(['vendor_id' => ['This supplier is already mapped to the service.']]);
+        }
+
+        $gst    = $data['gst_percentage'] ?? ($service->gst_percentage !== null ? (float) $service->gst_percentage : 18.0);
+        $userId = $request->user()?->id;
+        $fields = ServiceSupplier::amounts((float) $data['price'], (float) $gst) + [
+            'remarks' => $data['remarks'] ?? null,
+            'status'  => 'active',
+        ];
+
+        // A previously de-activated mapping is switched back on with the new price.
+        if ($existing) {
+            $existing->fill($fields + ['updated_by' => $userId])->save();
+            return response()->json($this->supplierRowFresh($existing));
+        }
+
+        $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
+        return response()->json($this->supplierRowFresh($map), 201);
+    }
+
+    /** PATCH /p2p/services/{id}/suppliers/{mapId} — change price / GST / remarks. */
+    public function updateSupplier(Request $request, int $id, int $mapId)
+    {
+        $service = $this->findService($request, $id);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        $map = $service->suppliers()->findOrFail($mapId);
+
+        $data = $request->validate([
+            'price'          => 'sometimes|required|numeric|gt:0',
+            'gst_percentage' => 'sometimes|required|numeric|min:0|max:100',
+            'remarks'        => 'sometimes|nullable|string|max:1000',
+        ]);
+
+        $amounts = ServiceSupplier::amounts(
+            (float) ($data['price'] ?? $map->price),
+            (float) ($data['gst_percentage'] ?? $map->gst_percentage)
+        );
+        $map->fill($amounts + ['updated_by' => $request->user()?->id]);
+        if (array_key_exists('remarks', $data)) $map->remarks = $data['remarks'];
+        $map->save();
+
+        return response()->json($this->supplierRowFresh($map));
+    }
+
+    private function supplierRowFresh(ServiceSupplier $map): array
+    {
+        $map->load([
+            'vendor:id,vendor_code,company_name,vendor_type_id,status',
+            'vendor.vendorType:id,name',
+            'vendor.primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email',
+            'vendor.primaryAddress.state:id,name',
+        ]);
+        return $this->supplierRow($map);
+    }
+
+    /** Every vendor id must be one the user can see in the supplier book. */
+    private function assertVendorsVisible(Request $request, array $ids, string $field): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (!$ids) return;
+        $found = Vendor::query()->forUser($request->user())->whereIn('id', $ids)->pluck('id')->map(fn ($x) => (int) $x)->all();
+        $missing = array_diff($ids, $found);
+        if ($missing) {
+            throw ValidationException::withMessages([$field => ['Unknown supplier id(s): ' . implode(', ', $missing) . '.']]);
+        }
+    }
 }

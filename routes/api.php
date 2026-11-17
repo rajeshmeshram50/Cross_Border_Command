@@ -468,6 +468,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/next-code',                   [$svc, 'nextCodePreview']);
         Route::post  ('/step/core',                   [$svc, 'storeCore']);                  // Stage 1 (create / update, multipart)
         Route::get   ('/{id}',                        [$svc, 'show'])->whereNumber('id');
+        Route::put   ('/{id}/step/suppliers',         [$svc, 'storeSuppliers'])->whereNumber('id'); // Stage 2 + submit
+        Route::post  ('/{id}/suppliers',              [$svc, 'storeSupplier'])->whereNumber('id');
+        Route::patch ('/{id}/suppliers/{map}',        [$svc, 'updateSupplier'])->whereNumber('id')->whereNumber('map');
     });
 
     // P2P · Create Purchase Order (new backend — independent of /p2p/purchase-orders).
