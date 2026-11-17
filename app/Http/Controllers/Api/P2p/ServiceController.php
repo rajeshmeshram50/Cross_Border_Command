@@ -418,6 +418,15 @@ class ServiceController extends Controller
                 'contract_required' => 'nullable|boolean',
                 'remark'            => 'nullable|string|max:2000',
             ];
+        } elseif ($type === Service::TYPE_OTHER) {
+            $rules += [
+                'classification'    => ['required', Rule::in(Service::classificationsOf(Service::TYPE_OTHER))],
+                'category_id'       => ['required', 'integer'],
+                'department_id'     => ['required', 'integer', $exists(Departments::class)],
+                'billing_frequency' => ['required', Rule::in(Service::BILLING_FREQUENCIES)],
+                'contract_required' => 'nullable|boolean',
+                'remark'            => 'nullable|string|max:2000',
+            ];
         }
 
         $data = $request->validate($rules);

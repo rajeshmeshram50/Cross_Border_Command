@@ -68,6 +68,14 @@ class Service extends Model
             // No sub-type: a Soft / Digital service is classified by its category alone.
             'classifications' => [],
         ],
+        self::TYPE_OTHER => [
+            'label'       => 'Other Operational Services',
+            'short'       => 'Other Operational',
+            'description' => 'Professional, utility, facility, maintenance and outsourced services.',
+            'classifications' => [
+                'professional' => ['label' => 'Professional Services', 'short' => 'Professional', 'description' => 'CA, legal consultancy, accounting, HR consultancy.'],
+            ],
+        ],
     ];
 
     /** Columns each type owns. Anything not listed for the saved type is nulled. */
