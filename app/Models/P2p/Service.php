@@ -77,6 +77,7 @@ class Service extends Model
                 'utility'      => ['label' => 'Utility Services',      'short' => 'Utility',      'description' => 'Electricity, water supply, internet connectivity.'],
                 'facility'     => ['label' => 'Facility Services',     'short' => 'Facility',     'description' => 'Housekeeping, security, pantry management.'],
                 'maintenance'  => ['label' => 'Maintenance Services',  'short' => 'Maintenance',  'description' => 'AC maintenance, electrical repair, equipment AMC.'],
+                'outsourcing'  => ['label' => 'Outsourcing Services',  'short' => 'Outsourcing',  'description' => 'Recruitment, payroll processing, courier, transportation.'],
             ],
         ],
     ];
