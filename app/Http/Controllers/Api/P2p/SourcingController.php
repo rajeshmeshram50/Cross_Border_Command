@@ -139,11 +139,13 @@ class SourcingController extends Controller
      *   created  = Sourcing Target Created by Me
      *   assigned = Sourcing Target Assigned to Me
      * counts{} always carries all three badges (not affected by the search box).
+     * q searches target code, source, created by, assignee, status and product names.
      */
     private function trackerList(Request $request, $targets, int $userId): array
     {
         $request->validate([
             'tab'      => 'required|in:all,created,assigned',
+            'q'        => 'nullable|string|max:100',
             'page'     => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
@@ -157,8 +159,14 @@ class SourcingController extends Controller
             'assigned' => $assigned->values(),
             default    => $all,
         };
-        $rows = $rows->map(fn($t) => $this->row($t));
+        $rows = $rows->map(fn($t) => $this->row($t) + ['_names' => $t->products->pluck('name')->implode(' ')]);
 
+        if ($q = mb_strtolower(trim((string) $request->query('q', '')))) {
+            $rows = $rows->filter(fn($r) => str_contains(mb_strtolower(implode(' ', [
+                $r['id'], $r['source'], implode(' ', $r['sources']), $r['createdBy'], $r['assignee'],
+                $r['progressStatus'], $r['overdue'] ? 'overdue' : '', $r['_names'],
+            ])), $q));
+        }
 
         $perPage = (int) $request->query('per_page', 10);
         $total   = $rows->count();
@@ -166,7 +174,8 @@ class SourcingController extends Controller
         $page    = min((int) $request->query('page', 1), $last);
 
         return [
-            'rows'       => $rows->slice(($page - 1) * $perPage, $perPage)->values(),
+            'rows'       => $rows->slice(($page - 1) * $perPage, $perPage)
+                ->map(fn($r) => \Illuminate\Support\Arr::except($r, ['_names']))->values(),
             'counts'     => ['all' => $all->count(), 'created' => $created->count(), 'assigned' => $assigned->count()],
             'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => $last],
         ];
