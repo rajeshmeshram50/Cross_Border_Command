@@ -410,10 +410,32 @@ class ServiceController extends Controller
                 'remove_image_ids'        => 'nullable|array',
                 'remove_image_ids.*'      => 'integer',
             ];
+        } elseif ($type === Service::TYPE_SOFT) {
+            $rules += [
+                'category_id'       => ['required', 'integer'],
+                'segment_id'        => ['required', 'integer'],
+                'delivery_type'     => ['required', Rule::in(Service::DELIVERY_TYPES)],
+                'contract_required' => 'nullable|boolean',
+                'remark'            => 'nullable|string|max:2000',
+            ];
         }
 
         $data = $request->validate($rules);
         $errors = [];
+
+        // Category must belong to this type (and, for Other, to the picked classification).
+        if (array_key_exists('category_id', $data)) {
+            $cat = $this->masterQuery(ServiceCategory::class, $user)->whereKey($data['category_id'])
+                ->where('service_type', $type)->first();
+            if (!$cat || ($type === Service::TYPE_OTHER && $cat->classification !== $data['classification'])) {
+                $errors['category_id'] = ['The selected service category does not belong to this service type.'];
+            }
+        }
+
+        // Soft / Digital has no sub-type.
+        if ($type === Service::TYPE_SOFT) {
+            $data['classification'] = null;
+        }
 
         // Segment comes from the shared Segments master (same list as products).
         if (array_key_exists('segment_id', $data)
@@ -423,6 +445,9 @@ class ServiceController extends Controller
 
         if ($errors) throw ValidationException::withMessages($errors);
 
+        if (!array_key_exists('contract_required', $data) && $type !== Service::TYPE_SELF) {
+            $data['contract_required'] = (bool) ($existing?->contract_required ?? false);
+        }
         return $data;
     }
 

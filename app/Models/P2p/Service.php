@@ -61,6 +61,13 @@ class Service extends Model
                                  'description' => 'Stationery, pantry supplies, cleaning materials, printer paper — tracked by quantity.'],
             ],
         ],
+        self::TYPE_SOFT => [
+            'label'       => 'Soft / Digital Services',
+            'short'       => 'Soft / Digital',
+            'description' => 'Software, platforms, subscriptions, APIs, licences and cloud services.',
+            // No sub-type: a Soft / Digital service is classified by its category alone.
+            'classifications' => [],
+        ],
     ];
 
     /** Columns each type owns. Anything not listed for the saved type is nulled. */
