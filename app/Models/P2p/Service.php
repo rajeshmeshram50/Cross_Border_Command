@@ -19,20 +19,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * P2P · Service Management — one service in the service catalogue.
- *
- * Three primary types and their classification (sub-type):
- *   self_consumable   → trackable | consumable
- *   soft_digital      → none (classification stays NULL)
- *   other_operational → professional | utility | facility | maintenance | outsourcing
- *
- * segment_id is the shared Segments master (clm_segments) — the same segments
- * products use.
- *
- * Lifecycle: draft (Stage 1 "Service Core Information" saved) → active
- * (Stage 2 "Map Service Suppliers" submitted). inactive is a manual switch.
- */
 class Service extends Model
 {
     use SoftDeletes;
@@ -45,10 +31,6 @@ class Service extends Model
 
     public const STATUSES = ['draft', 'active', 'inactive'];
 
-    /**
-     * The service taxonomy. Order matters: it is the tab order of the list page
-     * and the card order of the "Add Service" chooser.
-     */
     public const TYPES = [
         self::TYPE_SELF => [
             'label'       => 'Self-Consumable Services',
@@ -65,7 +47,7 @@ class Service extends Model
             'label'       => 'Soft / Digital Services',
             'short'       => 'Soft / Digital',
             'description' => 'Software, platforms, subscriptions, APIs, licences and cloud services.',
-            // No sub-type: a Soft / Digital service is classified by its category alone.
+
             'classifications' => [],
         ],
         self::TYPE_OTHER => [
@@ -82,14 +64,12 @@ class Service extends Model
         ],
     ];
 
-    /** Columns each type owns. Anything not listed for the saved type is nulled. */
     public const TYPE_FIELDS = [
         self::TYPE_SELF  => ['segment_id', 'haz_type', 'haz_class_id', 'condition_id', 'packaging_id', 'confidential_info'],
         self::TYPE_SOFT  => ['category_id', 'segment_id', 'delivery_type', 'contract_required', 'remark'],
         self::TYPE_OTHER => ['category_id', 'department_id', 'billing_frequency', 'contract_required', 'remark'],
     ];
 
-    /** Type-specific columns across all types (used to null the ones a type doesn't own). */
     public const SWITCHABLE_FIELDS = [
         'category_id', 'segment_id', 'delivery_type', 'haz_type', 'haz_class_id', 'condition_id',
         'packaging_id', 'department_id', 'billing_frequency', 'contract_required', 'remark', 'confidential_info',
@@ -131,7 +111,6 @@ class Service extends Model
         return self::TYPES[$this->service_type]['classifications'][$this->classification]['short'] ?? null;
     }
 
-    /* ── Tenant ─────────────────────────────────────────────────────── */
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -147,7 +126,6 @@ class Service extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /* ── Masters ────────────────────────────────────────────────────── */
     public function category(): BelongsTo
     {
         return $this->belongsTo(ServiceCategory::class, 'category_id');
@@ -188,16 +166,11 @@ class Service extends Model
         return $this->belongsTo(Departments::class, 'department_id');
     }
 
-    /* ── Children ─────────────────────────────────────────────────────
-     * No orderBy on the relations themselves: PostgreSQL rejects an ORDER BY
-     * on aggregate queries (count()/max() through the relation). Callers that
-     * need an order apply it when eager loading. */
     public function suppliers(): HasMany
     {
         return $this->hasMany(ServiceSupplier::class, 'service_id');
     }
 
-    /** Mappings that count as "Mapped Suppliers" (inactive ones are kept for history). */
     public function activeSuppliers(): HasMany
     {
         return $this->hasMany(ServiceSupplier::class, 'service_id')->where('status', 'active');

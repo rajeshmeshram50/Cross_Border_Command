@@ -5,10 +5,6 @@ namespace App\Models\P2p;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Supporting document of a service (the multi-file "Attachment" field).
- * Files download through GET /p2p/files/download?path=… (tenant-checked on client_id).
- */
 class ServiceAttachment extends Model
 {
     protected $table = 'p2p_service_attachments';
