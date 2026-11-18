@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Masters\Conditions;
 use App\Models\Masters\Departments;
+use App\Models\Masters\GstPercentage;
 use App\Models\Masters\HazClass;
 use App\Models\Masters\HsnCodes;
 use App\Models\Masters\PackagingMaterial;
@@ -88,7 +89,7 @@ class Service extends Model
         'code', 'name', 'description',
         'service_type', 'classification', 'category_id', 'provider_brand', 'delivery_type', 'haz_type',
         'segment_id', 'hsn_id', 'uom_id', 'haz_class_id', 'condition_id', 'packaging_id', 'department_id',
-        'billing_frequency', 'gst_percentage', 'contract_required', 'remark', 'confidential_info',
+        'billing_frequency', 'gst_id', 'gst_percentage', 'contract_required', 'remark', 'confidential_info',
         'status', 'step_completed',
     ];
 
@@ -168,6 +169,11 @@ class Service extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Departments::class, 'department_id');
+    }
+
+    public function gst(): BelongsTo
+    {
+        return $this->belongsTo(GstPercentage::class, 'gst_id');
     }
 
     public function suppliers(): HasMany

@@ -301,6 +301,8 @@ class ServiceController extends Controller
             'billing_frequency' => $s->billing_frequency,
             'department' => $s->department?->name,
             'hsn_code' => $s->hsn?->hsn_code,
+            'gst_id' => $s->gst_id,
+            'gst_percentage' => $s->gst_percentage !== null ? (float) $s->gst_percentage : null,
             'uom' => $s->uom?->short_code ?: $s->uom?->title,
             'condition' => $s->condition?->title,
             'contract_required' => (bool) $s->contract_required,
@@ -329,6 +331,7 @@ class ServiceController extends Controller
             'condition:id,title',
             'packaging:id,title',
             'department:id,name,code',
+            'gst:id,percentage',
             'images' => fn ($q) => $q->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
             'attachments' => fn ($q) => $q->orderBy('id'),
             'creator:id,name',
@@ -487,7 +490,7 @@ class ServiceController extends Controller
                 $merge[$f] = str_replace(["\r\n", "\r"], "\n", $request->input($f));
             }
         }
-        foreach (['classification', 'category_id', 'segment_id', 'haz_class_id', 'gst_percentage'] as $f) {
+        foreach (['classification', 'category_id', 'segment_id', 'haz_class_id', 'gst_id'] as $f) {
             if ($request->input($f) === '') {
                 $merge[$f] = null;
             }
@@ -517,7 +520,7 @@ class ServiceController extends Controller
             'provider_brand' => 'required|string|max:255',
             'hsn_id' => ['required', 'integer', $exists(HsnCodes::class)],
             'uom_id' => ['required', 'integer', $exists(Uom::class)],
-            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'gst_id' => ['required', 'integer', $exists(GstPercentage::class)],
 
             'attachment_files' => 'nullable|array|max:10',
             'attachment_files.*' => 'file|mimes:'.self::ATTACHMENT_MIMES.'|max:10240',
@@ -559,7 +562,7 @@ class ServiceController extends Controller
             ];
         }
 
-        $data = $request->validate($rules);
+        $data = $request->validate($rules, ['gst_id.required' => 'Map a GST % to this service (GST is mandatory).']);
         $errors = [];
 
         if (array_key_exists('category_id', $data)) {
@@ -582,6 +585,8 @@ class ServiceController extends Controller
         if ($errors) {
             throw ValidationException::withMessages($errors);
         }
+
+        $data['gst_percentage'] = (float) GstPercentage::whereKey($data['gst_id'])->value('percentage');
 
         if (! array_key_exists('contract_required', $data) && $type !== Service::TYPE_SELF) {
             $data['contract_required'] = (bool) ($existing?->contract_required ?? false);
