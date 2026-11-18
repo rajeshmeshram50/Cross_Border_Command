@@ -1032,7 +1032,14 @@ class SourcingController extends Controller
             ->whereIn('id', $p->suppliers()->where('source', 'new')->pluck('supplier_id'))
             ->pluck('converted_vendor_id', 'id');
 
-        $rows = $p->suppliers()->latest()->get()->map(fn ($s) => [
+        $rows = $p->suppliers()->latest()->get()->map(fn ($s) => $this->mappedRow($s, $target, $converted));
+
+        return $this->ok($rows);
+    }
+
+    private function mappedRow(SourcingProductSupplier $s, ?float $target, $converted): array
+    {
+        return [
             'id' => (string) $s->id,
 
             'supplier_id' => $s->supplier_id,
@@ -1070,9 +1077,48 @@ class SourcingController extends Controller
             'mappedOn' => optional($s->created_at)->toIso8601String(),
 
             'canConvert' => $s->source === 'new' && empty($converted[$s->supplier_id]),
+        ];
+    }
+
+    // PATCH /p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}/price
+    // Re-quote a mapped supplier (Supplier Master or New Supplier): unit price,
+    // GST % / GST type (domestic), currency / exchange rate (international) and
+    // price valid till. The origin stays as mapped. Assignee only, like mapping.
+    public function updateSupplierPrice(Request $request, string $target, int $product, int $supplier)
+    {
+        $user = $request->user();
+        $t = $this->target($request, $target);
+        if ((int) $t->assignee_id !== (int) $user->id && $user->user_type !== 'super_admin') {
+            return response()->json(['status' => false, 'message' => 'Only the assignee can change a mapped supplier\'s price.'], 403);
+        }
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
+        $row = $p->suppliers()->where('id', $supplier)->first() ?? abort(404, 'Mapped supplier not found for this product.');
+
+        $request->validate([
+            'price' => 'required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
+            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'gst_type' => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
+            'currency' => 'nullable|string|size:3|alpha',
+            'exchange_rate' => 'nullable|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
+            'valid_till' => 'nullable|date|after_or_equal:today',
+        ], [
+            'price.required' => "Please enter the supplier's unit price.",
+            'price.gt' => 'The unit price must be more than 0.',
+            'price.max' => 'The unit price cannot be more than '.number_format(SupplierPricing::MAX_PRICE, 2).'.',
+            'exchange_rate.gt' => 'The exchange rate must be more than 0.',
+            'exchange_rate.max' => 'The exchange rate cannot be more than '.SupplierPricing::MAX_RATE.'.',
+            'valid_till.after_or_equal' => 'Price Valid Till cannot be in the past.',
         ]);
 
-        return $this->ok($rows);
+        $origin = $row->origin ?: SupplierPricing::originOf($row->country);
+        $country = $row->country ?: ($origin === SupplierPricing::DOMESTIC ? 'India' : null);
+        $request->merge(['origin' => $origin]);
+        $row->update($this->sourcingPrice($request, $user, $country, $row->state, $row->state_code) + ['mapped_by' => $user->id]);
+
+        $targetPrice = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
+        $converted = P2pSupplier::where('client_id', $user->client_id)->where('id', $row->supplier_id)->pluck('converted_vendor_id', 'id');
+
+        return $this->ok($this->mappedRow($row->fresh(), $targetPrice, $converted));
     }
 
     private function sourcingPrice(Request $request, $user, ?string $country, ?string $state, ?string $stateCode): array

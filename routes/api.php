@@ -457,6 +457,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mappedSuppliers'])->whereNumber('product');
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
+    Route::patch ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}/price', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplierPrice'])->whereNumber('product')->whereNumber('supplier');
 
     Route::prefix('p2p/services')->group(function () {
         $svc = \App\Http\Controllers\Api\P2p\ServiceController::class;
