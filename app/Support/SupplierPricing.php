@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Masters\Currencies;
+use Illuminate\Validation\ValidationException;
 
 final class SupplierPricing
 {
@@ -11,6 +12,12 @@ final class SupplierPricing
     public const INTERNATIONAL = 'international';
 
     public const ORIGINS = [self::DOMESTIC, self::INTERNATIONAL];
+
+    public const MAX_PRICE = 9999999999.99;
+
+    public const MAX_RATE = 99999.9999;
+
+    public const MAX_AMOUNT = 999999999999.99;
 
     public const GST_INTRA = 'intra';
 
@@ -131,5 +138,16 @@ final class SupplierPricing
             'percent' => abs($pct),
             'status' => abs($pct) < 0.005 ? 'at' : ($pct < 0 ? 'below' : 'above'),
         ];
+    }
+
+    public static function assertFits(array $amounts, string $prefix = ''): void
+    {
+        foreach (['total_amount', 'inr_amount'] as $k) {
+            if (isset($amounts[$k]) && (float) $amounts[$k] > self::MAX_AMOUNT) {
+                throw ValidationException::withMessages([$prefix.'price' => [
+                    'The total value is too large (max ₹ '.number_format(self::MAX_AMOUNT, 2).'). Check the price and exchange rate.',
+                ]]);
+            }
+        }
     }
 }

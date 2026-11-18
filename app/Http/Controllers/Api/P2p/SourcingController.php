@@ -746,17 +746,19 @@ class SourcingController extends Controller
             'new_supplier.card' => 'nullable|string|max:512',
 
             'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'price' => 'required|numeric|gt:0',
+            'price' => 'required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
             'gst_percentage' => 'nullable|numeric|min:0|max:100',
             'gst_type' => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
             'currency' => 'nullable|string|size:3|alpha',
-            'exchange_rate' => 'nullable|numeric|gt:0',
+            'exchange_rate' => 'nullable|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
             'valid_till' => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email' => 'Enter a valid supplier email address.',
             'price.required' => "Please enter the supplier's unit price.",
             'price.gt' => 'The unit price must be more than 0.',
+            'price.max' => 'The unit price cannot be more than '.number_format(SupplierPricing::MAX_PRICE, 2).'.',
+            'exchange_rate.max' => 'The exchange rate cannot be more than '.SupplierPricing::MAX_RATE.'.',
             'exchange_rate.gt' => 'The exchange rate must be more than 0.',
             'valid_till.after_or_equal' => 'Price Valid Till cannot be in the past.',
         ], [
@@ -907,11 +909,11 @@ class SourcingController extends Controller
             'new_supplier.city' => 'nullable|string|max:128',
             'new_supplier.card' => 'nullable|string|max:512',
 
-            'price' => 'sometimes|required|numeric|gt:0',
+            'price' => 'sometimes|required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
             'gst_percentage' => 'nullable|numeric|min:0|max:100',
             'gst_type' => ['nullable', Rule::in([SupplierPricing::GST_INTRA, SupplierPricing::GST_INTER])],
             'currency' => 'nullable|string|size:3|alpha',
-            'exchange_rate' => 'nullable|numeric|gt:0',
+            'exchange_rate' => 'nullable|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
             'valid_till' => 'nullable|date|after_or_equal:today',
         ], [
             'new_supplier.name.required' => 'Enter the supplier company name.',
@@ -1052,6 +1054,8 @@ class SourcingController extends Controller
             $gst = $request->filled('gst_percentage') ? (float) $request->input('gst_percentage') : 18.0;
             $price = SupplierPricing::domestic((float) $request->input('price'), $gst, $type);
         }
+
+        SupplierPricing::assertFits($price);
 
         return $price + ['price_valid_till' => $request->input('valid_till') ?: null];
     }

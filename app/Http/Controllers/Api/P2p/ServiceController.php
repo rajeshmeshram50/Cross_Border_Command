@@ -687,10 +687,10 @@ class ServiceController extends Controller
             'suppliers' => 'present|array',
             'suppliers.*.vendor_id' => 'required|integer|distinct',
             'suppliers.*.origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'suppliers.*.price' => 'required|numeric|gt:0',
+            'suppliers.*.price' => 'required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
             'suppliers.*.gst_id' => 'nullable|integer',
             'suppliers.*.currency' => 'nullable|string|size:3|alpha',
-            'suppliers.*.exchange_rate' => 'nullable|numeric|gt:0',
+            'suppliers.*.exchange_rate' => 'nullable|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
             'suppliers.*.remarks' => 'nullable|string|max:1000',
         ], $this->priceMessages());
 
@@ -748,10 +748,10 @@ class ServiceController extends Controller
         $data = $request->validate([
             'vendor_id' => 'required|integer',
             'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'price' => 'required|numeric|gt:0',
+            'price' => 'required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
             'gst_id' => 'nullable|integer',
             'currency' => 'nullable|string|size:3|alpha',
-            'exchange_rate' => 'nullable|numeric|gt:0',
+            'exchange_rate' => 'nullable|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
             'remarks' => 'nullable|string|max:1000',
         ], $this->priceMessages());
         $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
@@ -787,10 +787,10 @@ class ServiceController extends Controller
         $map = $this->findMapping($service, $mapId);
 
         $data = $request->validate([
-            'price' => 'sometimes|required|numeric|gt:0',
+            'price' => 'sometimes|required|numeric|gt:0|max:'.SupplierPricing::MAX_PRICE,
             'gst_id' => 'sometimes|nullable|integer',
             'currency' => 'sometimes|required|string|size:3|alpha',
-            'exchange_rate' => 'sometimes|required|numeric|gt:0',
+            'exchange_rate' => 'sometimes|required|numeric|gt:0|max:'.SupplierPricing::MAX_RATE,
             'remarks' => 'sometimes|nullable|string|max:1000',
         ], $this->priceMessages());
 
@@ -854,6 +854,7 @@ class ServiceController extends Controller
             }
 
             $amounts = SupplierPricing::international((float) $in['price'], $currency, $rate) + ['gst_id' => null];
+            SupplierPricing::assertFits($amounts, $prefix);
 
             return $amounts;
         }
@@ -868,6 +869,7 @@ class ServiceController extends Controller
         }
 
         $amounts = $this->domesticAmounts((float) $in['price'], $service);
+        SupplierPricing::assertFits($amounts, $prefix);
 
         return $amounts;
     }
@@ -894,7 +896,10 @@ class ServiceController extends Controller
             'price.gt' => 'The price must be more than 0.',
             'suppliers.*.price.required' => "Enter the supplier's price.",
             'suppliers.*.price.gt' => 'The price must be more than 0.',
+            'price.max' => 'The price cannot be more than '.number_format(SupplierPricing::MAX_PRICE, 2).'.',
+            'suppliers.*.price.max' => 'The price cannot be more than '.number_format(SupplierPricing::MAX_PRICE, 2).'.',
             'exchange_rate.gt' => 'The exchange rate must be more than 0.',
+            'exchange_rate.max' => 'The exchange rate cannot be more than '.SupplierPricing::MAX_RATE.'.',
             'gst_id.required' => 'Map a GST % to this service.',
             'currency.size' => 'Pick a currency (3-letter code, e.g. USD).',
         ];
