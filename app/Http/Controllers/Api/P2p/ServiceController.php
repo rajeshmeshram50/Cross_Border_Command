@@ -106,51 +106,114 @@ class ServiceController extends Controller
         return 'SVC-'.str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
+    private const BUNDLE_SECTIONS = [
+        'service_types', 'delivery_types', 'billing_frequencies', 'haz_types', 'contract_options',
+        'service_categories', 'segments', 'hsn_codes', 'uom', 'haz_class', 'conditions',
+        'packaging_material', 'departments', 'gst_percentage', 'supplier_origins', 'currencies',
+    ];
+
     public function masterBundle(Request $request)
     {
+        $request->validate([
+            'only' => ['nullable', 'string', function ($attr, $value, $fail) {
+                $bad = array_diff(array_map('trim', explode(',', $value)), self::BUNDLE_SECTIONS);
+                if ($bad) {
+                    $fail('Unknown section(s): '.implode(', ', $bad).'. Allowed: '.implode(', ', self::BUNDLE_SECTIONS).'.');
+                }
+            }],
+            'service_type' => ['nullable', Rule::in(array_keys(Service::TYPES))],
+        ]);
+
         $user = $request->user();
-        $key = MasterBundleCache::key('service:master-bundle:v2', $user?->id);
+        $only = $request->filled('only')
+            ? array_values(array_unique(array_map('trim', explode(',', $request->query('only')))))
+            : self::BUNDLE_SECTIONS;
+        sort($only);
+        $type = $request->query('service_type');
+        $key = MasterBundleCache::key('service:master-bundle:v3:'.md5(implode(',', $only).':'.($type ?? 'all')), $user?->id);
 
-        $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user) {
+        $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user, $only, $type) {
             $active = fn (string $cls, array $cols) => $this->masterQuery($cls, $user)->orderBy('id')->get($cols);
-
-            $vendors = Vendor::query()
-                ->forUser($user)
-                ->with(self::VENDOR_WITH)
-                ->orderByDesc('id')
-                ->get(['id', 'vendor_code', 'company_name', 'status', 'vendor_type_id'])
-                ->map(fn ($v) => $this->vendorCard($v))
-                ->values();
-
-            return [
-                'service_types' => $this->taxonomy(),
-                'delivery_types' => Service::DELIVERY_TYPES,
-                'billing_frequencies' => Service::BILLING_FREQUENCIES,
-                'haz_types' => Service::HAZ_TYPES,
-                'contract_options' => [['value' => true, 'label' => 'Required'], ['value' => false, 'label' => 'Not Required']],
-                'service_categories' => $active(ServiceCategory::class, ['id', 'name', 'service_type', 'classification']),
-
-                'segments' => $active(Segments::class, ['id', 'name']),
-                'hsn_codes' => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
-                'uom' => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
-                'haz_class' => $active(HazClass::class, ['id', 'name']),
-                'conditions' => $active(Conditions::class, ['id', 'title']),
-                'packaging_material' => $active(PackagingMaterial::class, ['id', 'title']),
-                'departments' => $active(Departments::class, ['id', 'name', 'code']),
-                'gst_percentage' => $active(GstPercentage::class, ['id', 'percentage']),
-                'vendors' => $vendors,
-
-                'supplier_origins' => [
+            $sections = [
+                'service_types' => fn () => $this->taxonomy(),
+                'delivery_types' => fn () => Service::DELIVERY_TYPES,
+                'billing_frequencies' => fn () => Service::BILLING_FREQUENCIES,
+                'haz_types' => fn () => Service::HAZ_TYPES,
+                'contract_options' => fn () => [['value' => true, 'label' => 'Required'], ['value' => false, 'label' => 'Not Required']],
+                'service_categories' => fn () => $this->masterQuery(ServiceCategory::class, $user)
+                    ->when($type, fn ($q) => $q->where('service_type', $type))
+                    ->orderBy('id')->get(['id', 'name', 'service_type', 'classification']),
+                'segments' => fn () => $active(Segments::class, ['id', 'name']),
+                'hsn_codes' => fn () => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
+                'uom' => fn () => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
+                'haz_class' => fn () => $active(HazClass::class, ['id', 'name']),
+                'conditions' => fn () => $active(Conditions::class, ['id', 'title']),
+                'packaging_material' => fn () => $active(PackagingMaterial::class, ['id', 'title']),
+                'departments' => fn () => $active(Departments::class, ['id', 'name', 'code']),
+                'gst_percentage' => fn () => $active(GstPercentage::class, ['id', 'percentage']),
+                'supplier_origins' => fn () => [
                     ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
                     ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
                 ],
-
-                'currencies' => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
+                'currencies' => fn () => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
                     ->reject(fn ($c) => strtoupper((string) $c->code) === 'INR')->values(),
             ];
+
+            $out = [];
+            foreach (self::BUNDLE_SECTIONS as $name) {
+                if (in_array($name, $only, true)) {
+                    $out[$name] = $sections[$name]();
+                }
+            }
+
+            return $out;
         });
 
         return response()->json($bundle);
+    }
+
+    public function supplierPool(Request $request)
+    {
+        $data = $request->validate([
+            'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            'q' => 'nullable|string|max:100',
+            'service_id' => 'nullable|integer',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+        $user = $request->user();
+
+        $abroad = fn ($q) => $q->whereRaw('LOWER(name) <> ?', ['india']);
+        $base = fn () => Vendor::query()->forUser($user)
+            ->when($data['q'] ?? null, function ($q, $term) {
+                $like = '%'.mb_strtolower(trim($term)).'%';
+                $q->where(fn ($w) => $w->whereRaw('LOWER(company_name) LIKE ?', [$like])->orWhereRaw('LOWER(vendor_code) LIKE ?', [$like]));
+            })
+            ->when($data['service_id'] ?? null, function ($q, $sid) use ($request) {
+                $service = $this->findService($request, (int) $sid);
+                $q->whereNotIn('id', $service->suppliers()->where('status', 'active')->pluck('vendor_id'));
+            });
+        $origin = fn ($q, $o) => $o === SupplierPricing::INTERNATIONAL
+            ? $q->whereHas('primaryAddress.country', $abroad)
+            : $q->whereDoesntHave('primaryAddress.country', $abroad);
+
+        $page = $base()
+            ->when($data['origin'] ?? null, $origin)
+            ->with(self::VENDOR_WITH)
+            ->orderBy('company_name')
+            ->paginate($data['per_page'] ?? 20, ['id', 'vendor_code', 'company_name', 'status', 'vendor_type_id']);
+
+        return response()->json([
+            'data' => collect($page->items())->map(fn ($v) => $this->vendorCard($v))->values(),
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'per_page' => $page->perPage(),
+            'total' => $page->total(),
+            'counts' => [
+                'domestic' => $origin($base(), SupplierPricing::DOMESTIC)->count(),
+                'international' => $origin($base(), SupplierPricing::INTERNATIONAL)->count(),
+            ],
+        ]);
     }
 
     private function taxonomy(): array

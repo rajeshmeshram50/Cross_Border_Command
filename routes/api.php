@@ -462,6 +462,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::prefix('p2p/services')->group(function () {
         $svc = \App\Http\Controllers\Api\P2p\ServiceController::class;
         Route::get   ('/master-bundle',               [$svc, 'masterBundle']);
+        Route::get   ('/supplier-pool',               [$svc, 'supplierPool']);
         Route::get   ('/stats',                       [$svc, 'stats']);
         Route::get   ('/next-code',                   [$svc, 'nextCodePreview']);
         Route::get   ('/',                            [$svc, 'index']);
