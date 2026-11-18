@@ -7,6 +7,7 @@ import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/mast
 import { HolidayFilterModal, type HolidayFilterValues } from './HrHoliday';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -1071,6 +1072,11 @@ export default function HrLeave() {
                 <button type="button" className="rec-btn-ghost ms-auto" disabled={!!bulkBusy} onClick={clearSelection}>
                   <i className="ri-close-circle-line" />Clear
                 </button>
+                {bulkBusy && (
+                  <FullPageLoader
+                    label={`${bulkBusy === 'approve' ? 'Approving' : 'Rejecting'} ${selectedIds.size} request${selectedIds.size > 1 ? 's' : ''}…`}
+                  />
+                )}
               </div>
             )}
 
@@ -1958,6 +1964,8 @@ function ConfirmActionModal({
           </button>
         </div>
       </ModalBody>
+      {/* QA 248 — the house loader, not a per-popup one. */}
+      {submitting && <FullPageLoader label={isApprove ? 'Approving leave…' : 'Rejecting leave…'} />}
     </Modal>
   );
 }

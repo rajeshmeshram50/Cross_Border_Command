@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Col, Row } from 'reactstrap';
 import { useScrollLock } from '../hooks/useScrollLock';
+import FullPageLoader from './ui/FullPageLoader';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface PayrollRunActionChip {
@@ -762,6 +763,9 @@ export default function PayrollRunModal({
                   ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Re-running…</>
                   : <><i className="ri-play-circle-line me-1" /> Re-run Payroll</>}
               </button>
+              {/* A re-run rewrites the whole cycle — nothing else on the page
+                  may be touched while it runs (QA 254). */}
+              {reRunning && <FullPageLoader label="Re-running payroll…" />}
               {/* The cycle is already priced and nothing is blocking it, so the
                   next step is paying — not re-running. Re-run stays beside it
                   because regenerating after a correction is still legitimate;
