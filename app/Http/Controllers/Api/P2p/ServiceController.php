@@ -177,6 +177,7 @@ class ServiceController extends Controller
         $data = $request->validate([
             'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'q' => 'nullable|string|max:100',
+            'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
             'service_id' => 'nullable|integer',
             'per_page' => 'nullable|integer|min:1|max:100',
             'page' => 'nullable|integer|min:1',
@@ -189,6 +190,7 @@ class ServiceController extends Controller
                 $like = '%'.mb_strtolower(trim($term)).'%';
                 $q->where(fn ($w) => $w->whereRaw('LOWER(company_name) LIKE ?', [$like])->orWhereRaw('LOWER(vendor_code) LIKE ?', [$like]));
             })
+            ->when($data['status'] ?? null, fn ($q, $st) => $q->whereRaw('LOWER(status) = ?', [$st]))
             ->when($data['service_id'] ?? null, function ($q, $sid) use ($request) {
                 $service = $this->findService($request, (int) $sid);
                 $q->whereNotIn('id', $service->suppliers()->where('status', 'active')->pluck('vendor_id'));
