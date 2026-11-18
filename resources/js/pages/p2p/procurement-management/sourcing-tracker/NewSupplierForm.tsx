@@ -4,16 +4,24 @@ import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import type { ReportProduct } from './targetProducts';
 import { todayIso } from './data';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
-import { COUNTRY_CURRENCY, COUNTRY_OPTIONS, CURRENCY_OPTIONS, FX, money } from './currency';
+import { COUNTRY_CURRENCY, money } from './currency';
+import { gstTypeFor, indianStates, overseasCountries, rateOf, stateCodeOf, useFormMasters } from './formMasters';
+import type { MapRequest } from './MapSupplierModal';
 import AttachPicker from './AttachPicker';
+import Tooltip from '../../../../components/ui/Tooltip';
+import { useToast } from '../../../../contexts/ToastContext';
+import { viewDocument } from './targetProducts';
+import './attached-files.css';
 import { IcoBack, IcoPin, IcoUpload, Svg } from './icons';
 
 /* Map Supplier → New Supplier: register a supplier with its price for this product.
    Domestic: Indian address, price in ₹ with GST. International: overseas address, price in the
    supplier's currency at an exchange rate, no GST (₹ equivalent shown).
    Renders the body of the Map Supplier popup (its header and product strip stay above). Section
-   cards, field icons and the price summary follow the design; suppliers are saved on dummy data
-   until the API lands. */
+   cards, field icons and the price summary follow the design. Segments, countries, states, GST
+   state codes, GST rates, currencies (+ default rates) and our own state come from
+   GET /p2p/form-masters. Save hands { new_supplier, price … } and the business card to the Map
+   Supplier popup, which uploads the card and POSTs the mapping. */
 
 /** Business card: PDF, JPG or PNG, at most 5 MB (CS-2221 V-T21). */
 const CARD_MAX_BYTES = 5 * 1024 * 1024;
@@ -21,9 +29,7 @@ const CARD_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const CARD_EXT = /\.(pdf|jpe?g|png)$/i;
 const CARD_ERR = 'PDF, JPG or PNG up to 5 MB.';
 
-/** The company's own state: a supplier in it is billed CGST + SGST, any other state IGST. */
-const HOME_STATE = 'Maharashtra';
-const GST_RATES = [0, 5, 12, 18, 28];
+/** 18% is the default GST rate when the GST master has it. */
 const DEFAULT_GST = 18;
 type GstType = 'intra' | 'inter';
 
@@ -33,15 +39,12 @@ type NewForm = {
   price: string; gst: string; gstType: GstType; validTill: string;
   cur: string; fx: string;   // International only
 };
+/** A mapped New Supplier's saved values, to open the form for Edit. */
+export type NewSupplierValues = Partial<NewForm>;
 const emptyForm = (intl: boolean): NewForm => ({
   coName: '', contact: '', mobile: '', segment: '', email: '', gmaps: '', addr: '', country: intl ? '' : 'India', state: '', stateCode: '', city: '',
-  price: '', gst: String(DEFAULT_GST), gstType: 'inter', validTill: '', cur: 'USD', fx: String(FX.USD),
+  price: '', gst: String(DEFAULT_GST), gstType: 'inter', validTill: '', cur: 'USD', fx: '',
 });
-const SEGMENTS = ['Mechanical', 'Electrical', 'Instrumentation', 'Pneumatics', 'Hydraulics', 'Automation', 'Valves', 'Raw Material', 'Fasteners', 'Piping'];
-const STATES = ['Andhra Pradesh', 'Assam', 'Bihar', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
-const SEGMENT_OPTIONS = SEGMENTS.map(s => ({ value: s, label: s }));
-const STATE_OPTIONS = STATES.map(s => ({ value: s, label: s }));
-const GST_OPTIONS = GST_RATES.map(r => ({ value: String(r), label: `${r}%${r === DEFAULT_GST ? ' (default)' : ''}` }));
 const GST_TYPE_OPTIONS = [
   { value: 'intra', label: 'CGST + SGST (Intra-state)' },
   { value: 'inter', label: 'IGST (Inter-state)' },
@@ -124,20 +127,50 @@ type Props = {
   scope: SupplierScope;
   product: ReportProduct;
   saving: boolean;
+  /** Field messages the server sent back (422), by API field name. */
+  serverErrors?: Record<string, string>;
+  onClearServerErrors?: () => void;
   /** Tells the parent whether anything was typed (Esc must not lose it). */
   onDirty: (dirty: boolean) => void;
   onBack: () => void;
-  onSave: (supplierName: string) => void;
+  onSave: (req: MapRequest) => void;
+  /** Edit a mapped New Supplier: the form opens with these values … */
+  initial?: NewSupplierValues;
+  /** … and its stored business card (a /storage path), if it has one. */
+  initialCard?: string;
 };
 
-export default function NewSupplierForm({ scope, product, saving, onDirty, onBack, onSave }: Props) {
+/** API field → form field, for the server's 422 messages. */
+const SERVER_FIELD: Record<string, keyof NewForm> = {
+  'new_supplier.name': 'coName', 'new_supplier.contact': 'contact', 'new_supplier.mobile': 'mobile', 'new_supplier.segment': 'segment',
+  'new_supplier.email': 'email', 'new_supplier.gmaps': 'gmaps', 'new_supplier.address': 'addr', 'new_supplier.country': 'country',
+  'new_supplier.state': 'state', 'new_supplier.state_code': 'stateCode', 'new_supplier.city': 'city',
+  price: 'price', exchange_rate: 'fx', valid_till: 'validTill', currency: 'cur',
+};
+
+export default function NewSupplierForm({ scope, product, saving, serverErrors = {}, onClearServerErrors, onDirty, onBack, onSave, initial, initialCard }: Props) {
+  const isEdit = !!initial;
   const intl = scope === 'international';
-  const empty = useMemo(() => emptyForm(intl), [intl]);
+  const { masters } = useFormMasters();
+  const segmentOptions = useMemo(() => (masters?.segments ?? []).map(sg => ({ value: sg.name, label: sg.name })), [masters]);
+  const stateOptions = useMemo(() => (masters ? indianStates(masters) : []).map(st => ({ value: st.name, label: st.name })), [masters]);
+  const countryOptions = useMemo(() => (masters ? overseasCountries(masters) : []).map(c => ({ value: c.name, label: c.name })), [masters]);
+  const currencyOptions = useMemo(() => (masters?.currencies ?? []).map(c => ({ value: c.code.toUpperCase(), label: c.name ? `${c.code.toUpperCase()} · ${c.name}` : c.code.toUpperCase(), selectedLabel: c.code.toUpperCase() })), [masters]);
+  const gstRates = useMemo(() => (masters?.gstRates.length ? masters.gstRates : [0, 5, 12, 18, 28]), [masters]);
+  const gstOptions = useMemo(() => gstRates.map(r => ({ value: String(r), label: `${r}%${r === DEFAULT_GST ? ' (default)' : ''}` })), [gstRates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const empty = useMemo(() => ({ ...emptyForm(intl), ...(initial ?? {}) }), [intl]);
   const [f, setF] = useState<NewForm>(empty);
-  const [gstTypeTouched, setGstTypeTouched] = useState(false);
+  // Edit keeps the saved GST type; a new supplier's follows the state until picked by hand.
+  const [gstTypeTouched, setGstTypeTouched] = useState(isEdit);
   const [tried, setTried] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  // Edit: the business card already stored with the supplier (kept unless replaced or removed).
+  const [cardPath, setCardPath] = useState(initialCard ?? '');
   const [fileErr, setFileErr] = useState('');
+  const toast = useToast();
+  /** The attached card's name: a picked file, or the stored one (Edit). */
+  const cardName = file ? file.name : cardPath ? (cardPath.split('/').pop() || 'Business card') : '';
   // Business card: the upload area opens the "Add attachment" menu (Upload file / Take photo).
   const cardRef = useRef<HTMLButtonElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -148,22 +181,48 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
   };
   const today = useMemo(todayIso, []);
 
-  const dirty = !!file || JSON.stringify(f) !== JSON.stringify(empty);
+  const dirty = !!file || cardPath !== (initialCard ?? '') || JSON.stringify(f) !== JSON.stringify(empty);
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
+  // The masters arrive after the form opens: the default GST rate and exchange rate follow them.
+  useEffect(() => {
+    if (!masters) return;
+    setF(p => ({
+      ...p,
+      gst: gstRates.includes(Number(p.gst)) ? p.gst : String(gstRates.includes(DEFAULT_GST) ? DEFAULT_GST : gstRates[0] ?? 0),
+      fx: p.fx || rateOf(masters, p.cur),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masters]);
+  // A server message stays until the user changes the form.
+  useEffect(() => { if (Object.keys(serverErrors).length) onClearServerErrors?.(); }, [f, file, cardPath]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k: keyof NewForm) => (e: ChangeEvent<HTMLInputElement>) =>
     setF(p => ({ ...p, [k]: k === 'stateCode' ? e.target.value.toUpperCase() : e.target.value }));
-  // The GST type follows the supplier's state until the user picks one by hand.
+  // The state fills its GST state code, and the GST type follows it (our own state = CGST + SGST)
+  // until the user picks a type by hand.
   const pickState = (state: string) =>
-    setF(p => ({ ...p, state, gstType: gstTypeTouched ? p.gstType : state === HOME_STATE ? 'intra' : 'inter' }));
-  // International: the country sets the currency and its default rate (both can still be changed).
+    setF(p => ({
+      ...p, state,
+      stateCode: masters ? stateCodeOf(masters, state) || p.stateCode : p.stateCode,
+      gstType: gstTypeTouched ? p.gstType : gstTypeFor(masters, state),
+    }));
+  // International: the country suggests its currency, with the Currency master's default rate
+  // (both can still be changed). A country without a known currency keeps the current one.
   const pickCountry = (country: string) => {
-    const cur = COUNTRY_CURRENCY[country] ?? 'USD';
-    setF(p => ({ ...p, country, cur, fx: String(FX[cur] ?? '') }));
+    const known = COUNTRY_CURRENCY[country];
+    const cur = known && currencyOptions.some(o => o.value === known) ? known : f.cur;
+    setF(p => ({ ...p, country, cur, fx: cur === p.cur ? p.fx : rateOf(masters, cur) }));
   };
-  const pickCurrency = (cur: string) => setF(p => ({ ...p, cur, fx: String(FX[cur] ?? '') }));
-  const errs = useMemo(() => errors(f, intl), [f, intl]);
-  const bad = (k: keyof NewForm) => tried && !!errs[k];
+  const pickCurrency = (cur: string) => setF(p => ({ ...p, cur, fx: rateOf(masters, cur) }));
+  const errs = useMemo(() => {
+    const e = errors(f, intl);
+    // The server's own messages (422) for fields the form did not already flag.
+    for (const [k, v] of Object.entries(serverErrors)) { const fk = SERVER_FIELD[k]; if (fk && v && !e[fk]) e[fk] = v; }
+    return e;
+  }, [f, intl, serverErrors]);
+  // Form checks show after the first Save; a server message shows at once.
+  const fromServer = useMemo(() => new Set(Object.keys(serverErrors).map(k => SERVER_FIELD[k]).filter(Boolean)), [serverErrors]);
+  const bad = (k: keyof NewForm) => !!errs[k] && (tried || fromServer.has(k));
   const cls = (base: string, k: keyof NewForm) => `${base}${bad(k) ? ' is-err' : ''}`;
   // Invalid-state props for an input, tied to its message below the field.
   const aria = (k: keyof NewForm) => ({ 'aria-invalid': bad(k), 'aria-describedby': bad(k) ? `stnf-${k}-err` : undefined });
@@ -185,8 +244,27 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
 
   const save = () => {
     setTried(true);
-    if (Object.keys(errs).length) return;
-    onSave(f.coName.trim());
+    if (Object.keys(errors(f, intl)).length) return;
+    const t = (v: string) => v.trim() || undefined;
+    onSave({
+      supplierName: f.coName.trim(),
+      card: file,
+      body: {
+        new_supplier: {
+          name: f.coName.trim(), segment: t(f.segment), contact: t(f.contact), mobile: t(f.mobile), email: t(f.email),
+          gmaps: t(f.gmaps), address: t(f.addr), country: intl ? f.country : 'India', state: t(f.state),
+          state_code: intl ? undefined : t(f.stateCode), city: t(f.city),
+          // Edit: the stored card stays, or is cleared when removed (a new pick is uploaded first).
+          ...(isEdit && !file ? { card: cardPath } : {}),
+        },
+        origin: intl ? 'international' : 'domestic',
+        price,
+        ...(intl
+          ? { currency: f.cur, exchange_rate: fx }
+          : { gst_percentage: rate, gst_type: f.gstType }),
+        ...(f.validTill ? { valid_till: f.validTill } : {}),
+      },
+    });
   };
 
   return (
@@ -206,7 +284,7 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
           <div className="stnf-field"><span className="stnf-lbl">Segment <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'segment')}>
               <MasterSelect value={f.segment} placeholder="Select segment..." invalid={bad('segment')}
-                options={SEGMENT_OPTIONS} onChange={v => setF(p => ({ ...p, segment: v }))} />
+                options={segmentOptions} searchable={segmentOptions.length > 8} searchPlaceholder="Search segment…" onChange={v => setF(p => ({ ...p, segment: v }))} />
             </div>{msg('segment')}</div>
         </div>
         <div className="stnf-row stnf-row-2">
@@ -228,7 +306,7 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
           <div className="stnf-field"><span className="stnf-lbl">Country <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'country')}>
               <MasterSelect value={f.country} placeholder="Select country..." invalid={bad('country')} searchable
-                searchPlaceholder="Search country…" options={COUNTRY_OPTIONS} onChange={pickCountry} />
+                searchPlaceholder="Search country…" options={countryOptions} onChange={pickCountry} />
             </div>{msg('country')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-province">State / Province</label>
             {withIcon(FIELD_ICONS.flag, <input id="stnf-province" className="stnf-inp" placeholder="e.g. Dubai, Bavaria" value={f.state} onChange={set('state')} />)}</div>
@@ -242,10 +320,10 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
           <div className="stnf-field"><span className="stnf-lbl">State <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'state')}>
               <MasterSelect value={f.state} placeholder="Select state..." invalid={bad('state')} searchable
-                searchPlaceholder="Search state…" options={STATE_OPTIONS} onChange={pickState} />
+                searchPlaceholder="Search state…" options={stateOptions} onChange={pickState} />
             </div>{msg('state')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-stateCode">State Code</label>
-            {withIcon(FIELD_ICONS.hash, <input id="stnf-stateCode" className="stnf-inp" placeholder="MH" maxLength={3} value={f.stateCode} onChange={set('stateCode')} />)}</div>
+            {withIcon(FIELD_ICONS.hash, <input id="stnf-stateCode" className="stnf-inp" placeholder="e.g. 27" maxLength={3} value={f.stateCode} onChange={set('stateCode')} />)}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-city">City <span className="stnf-req">*</span></label>
             {withIcon(FIELD_ICONS.city, <input id="stnf-city" className={cls('stnf-inp', 'city')} placeholder="City name" value={f.city} onChange={set('city')} {...aria('city')} />)}{msg('city')}</div>
         </div>
@@ -262,7 +340,7 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
         </SecHead>
         <div className="stnf-row stnf-row-4">
           <div className="stnf-field"><span className="stnf-lbl">Currency <span className="stnf-req">*</span></span>
-            <div className="stnf-ms"><MasterSelect value={f.cur} options={CURRENCY_OPTIONS} onChange={pickCurrency} /></div></div>
+            <div className="stnf-ms"><MasterSelect value={f.cur} options={currencyOptions} searchable={currencyOptions.length > 8} searchPlaceholder="Search currency…" onChange={pickCurrency} /></div>{msg('cur')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-price">Unit Price ({f.cur}) <span className="stnf-req">*</span></label>
             <input id="stnf-price" className={cls('stnf-inp stnf-inp--num', 'price')} inputMode="decimal" placeholder="Price in supplier currency"
               value={f.price} onChange={e => setF(p => ({ ...p, price: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('price')} />{msg('price')}</div>
@@ -270,7 +348,7 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
             {withIcon(FIELD_ICONS.fx, <input id="stnf-fx" className={cls('stnf-inp stnf-inp--num', 'fx')} inputMode="decimal"
               value={f.fx} onChange={e => setF(p => ({ ...p, fx: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('fx')} />)}{msg('fx')}</div>
           <div className="stnf-field"><span className="stnf-lbl">Price Valid Till</span>
-            <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div></div>
+            <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div>{msg('validTill')}</div>
         </div>
         <div className="stnf-sum">
           <div className="stnf-k"><span>Total Amount</span><b>{money(f.cur, price)}</b><small>per unit · {f.cur}</small></div>
@@ -294,12 +372,12 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
                 value={f.price} onChange={e => setF(p => ({ ...p, price: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('price')} />
             </div>{msg('price')}</div>
           <div className="stnf-field"><span className="stnf-lbl">GST Rate <span className="stnf-req">*</span></span>
-            <div className="stnf-ms"><MasterSelect value={f.gst} options={GST_OPTIONS} onChange={v => setF(p => ({ ...p, gst: v }))} /></div></div>
+            <div className="stnf-ms"><MasterSelect value={f.gst} options={gstOptions} onChange={v => setF(p => ({ ...p, gst: v }))} /></div></div>
           <div className="stnf-field"><span className="stnf-lbl">GST Type <span className="stnf-req">*</span></span>
             <div className="stnf-ms"><MasterSelect value={f.gstType} options={GST_TYPE_OPTIONS}
               onChange={v => { setGstTypeTouched(true); setF(p => ({ ...p, gstType: v as GstType })); }} /></div></div>
           <div className="stnf-field"><span className="stnf-lbl">Price Valid Till</span>
-            <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div></div>
+            <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div>{msg('validTill')}</div>
         </div>
         <div className="stnf-sum">
           <div className="stnf-k"><span>Taxable Value</span><b>{rupees(price)}</b><small>per unit</small></div>
@@ -312,17 +390,46 @@ export default function NewSupplierForm({ scope, product, saving, onDirty, onBac
 
       <div className="stnf-section" inert={saving}>
         <SecHead icon={SEC_ICONS.docs} title="Documents" sub="Business card or company profile" />
-        <button type="button" ref={cardRef} className="stnf-upload" onClick={() => setAttachOpen(true)}
-          aria-haspopup="menu" aria-expanded={attachOpen} aria-invalid={!!fileErr} aria-describedby={fileErr ? 'stnf-card-err' : undefined}>
-          <span className="stnf-upload-icon"><IcoUpload size={20} sw={1.8} /></span>
-          <span className="stnf-upload-text">
-            <span className="stnf-upload-main">{file ? file.name : 'Click to upload Business Card'}</span>
-            <span className="stnf-upload-sub">PDF, JPG, PNG&nbsp;·&nbsp;Max 5 MB</span>
-          </span>
-        </button>
+        {cardName ? (
+          // Attached: one row — the file (click it to replace) on the left, NEW · View · Remove on the right.
+          <div className="stnf-upload is-attached">
+            <button type="button" ref={cardRef} className="stnf-upload-pick" onClick={() => setAttachOpen(true)}
+              aria-haspopup="menu" aria-expanded={attachOpen} aria-label={`Business card ${cardName} — replace`}
+              aria-invalid={!!fileErr} aria-describedby={fileErr ? 'stnf-card-err' : undefined}>
+              <span className="stnf-upload-icon"><Svg size={18} sw={2}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></Svg></span>
+              <span className="stnf-upload-text">
+                <span className="stnf-upload-main is-file">{cardName}</span>
+                <span className="stnf-upload-sub">Business card · click to replace</span>
+              </span>
+            </button>
+            {file && <span className="stfile__new">New</span>}
+            <Tooltip label="View document">
+              <button type="button" className="stfile__btn" aria-label={`View ${cardName}`}
+                onClick={() => { const src = file ?? cardPath; if (src) viewDocument(src).catch(() => toast.error('Couldn’t open the document', 'Please try again.')); }}>
+                <Svg size={14} sw={2.2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></Svg>
+              </button>
+            </Tooltip>
+            <Tooltip label="Remove document">
+              <button type="button" className="stfile__btn is-del" aria-label={`Remove ${cardName}`} disabled={saving}
+                onClick={() => { if (file) setFile(null); else setCardPath(''); setFileErr(''); }}>
+                <Svg size={13} sw={2.2}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></Svg>
+              </button>
+            </Tooltip>
+          </div>
+        ) : (
+          <button type="button" ref={cardRef} className="stnf-upload" onClick={() => setAttachOpen(true)}
+            aria-haspopup="menu" aria-expanded={attachOpen} aria-invalid={!!fileErr} aria-describedby={fileErr ? 'stnf-card-err' : undefined}>
+            <span className="stnf-upload-icon"><IcoUpload size={20} sw={1.8} /></span>
+            <span className="stnf-upload-text">
+              <span className="stnf-upload-main">Click to upload Business Card</span>
+              <span className="stnf-upload-sub">PDF, JPG, PNG&nbsp;·&nbsp;Max 5 MB</span>
+            </span>
+          </button>
+        )}
         <AttachPicker anchorRef={cardRef} open={attachOpen} onClose={closeAttach} accept={CARD_ACCEPT} onFile={pickCard}
           camera={{ title: 'Take a photo of the business card', subject: f.coName.trim() || product.name, namePrefix: 'business-card' }} />
         {fileErr && <div className="stnf-err" id="stnf-card-err" role="alert">{fileErr}</div>}
+
       </div>
 
       <div className="stnf-foot">
