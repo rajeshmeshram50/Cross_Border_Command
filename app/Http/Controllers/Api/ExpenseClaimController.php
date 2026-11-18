@@ -867,8 +867,10 @@ class ExpenseClaimController extends Controller
         $user = $request->user();
         $this->guardHrPermission($user, 'can_view');
         $q = \App\Models\ExpenseBatchPayment::query()->with(['employee:id,first_name,last_name,display_name,emp_code', 'payments:id,batch_payment_id,expense_claim_id']);
-        if ($user->client_id) $q->where('client_id', $user->client_id);
-        if ($user->user_type === 'branch_user' && $user->branch_id) $q->where('branch_id', $user->branch_id);
+        /* The same scope every other list here uses. Hand-rolled before, it
+           filtered by branch for branch_user ONLY and ignored the switcher, so
+           client admins saw every branch's batches at once (QA #189). */
+        $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         return response()->json([
             'data' => $q->orderByDesc('id')->limit(100)->get()->map(function ($b) {
