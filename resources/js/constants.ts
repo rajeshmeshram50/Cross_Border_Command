@@ -301,7 +301,7 @@ export const P2P_GROUPS: MenuGroup[] = [
     label: 'Procurement Management',
     icon: 'Activity',
     children: [
-      { id: 'p2p.bulk_sourcing', icon: 'Activity', label: 'Bulk Sourcing Management' },
+      // { id: 'p2p.bulk_sourcing', icon: 'Activity', label: 'Bulk Sourcing Management' },
       // Sourcing Management Tracker: its own permission module (p2p.sourcing_tracker).
       { id: 'p2p.sourcing_tracker', icon: 'Search', label: 'Sourcing Management Tracker' },
       { id: 'p2p.case_to_case', icon: 'Activity', label: 'Case to Case Procurement Management' },
