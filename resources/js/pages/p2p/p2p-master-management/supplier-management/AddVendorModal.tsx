@@ -340,13 +340,15 @@ const SEED_DD: DueDiligenceRow[] = [];
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
 /* Supplier Type, grouped as in the Figma. Group headings are labels only;
-   their children are what gets saved. The server find-or-creates the type by
-   name, so new names need no master setup. Every service name contains
-   "service", so the list page puts them all under the Service Suppliers tab. */
+   their children are what gets saved. The values are the ten fixed types the
+   server seeds globally (2026_11_19_100000_seed_fixed_vendor_types), spelled
+   exactly as seeded, so the save can send that type's vendor_type_id from the
+   master bundle (see supplierTypeId). Every service name contains "service",
+   so the list page puts them all under the Service Suppliers tab. */
 type SupplierTypeNode = { value: string; label: string } | { group: string; items: { value: string; label: string }[] };
 const SUPPLIER_TYPE_TREE: SupplierTypeNode[] = [
-  { value: 'Material / Goods',      label: 'Material/ Goods' },
-  { value: 'FFD / Transporter',     label: 'FFD/ Transporter' },
+  { value: 'Material/ Goods',       label: 'Material/ Goods' },
+  { value: 'FFD/ Transporter',      label: 'FFD/ Transporter' },
   { value: 'Soft Service Provider', label: 'Soft Service Provider' },
   { group: 'Self Consumable Service Provider', items: [
     { value: 'Trackable Services',  label: 'Trackable Services' },
@@ -362,6 +364,19 @@ const SUPPLIER_TYPE_TREE: SupplierTypeNode[] = [
 ];
 const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
   SUPPLIER_TYPE_TREE.flatMap(n => 'group' in n ? n.items : [n]);
+
+/** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
+const squashType = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+/** A saved supplier's type name → the dropdown's value (older rows were saved as "Material / Goods"). */
+const canonicalSupplierType = (name: string) =>
+  SUPPLIER_TYPE_OPTS.find(o => o.value === name || squashType(o.value) === squashType(name))?.value ?? name;
+/** The master_vendor_types id for a picked type: the exact seeded spelling first (the shared global
+    row), then any row with the same name ignoring spacing (an older per-company row). */
+const supplierTypeId = (name: string, opts: { value: string; label: string }[]) => {
+  const hit = opts.find(o => o.label === name) ?? opts.find(o => squashType(o.label) === squashType(name));
+  const id = hit ? Number(hit.value) : NaN;
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
 
 const KYC_TAB_TITLE: Record<string, string> = {
   company: 'Company Due Diligence',
@@ -1301,7 +1316,7 @@ export default function AddVendorModal(props: {
         setWebsite(v.website ?? '');
         setGstApplicable(v.gst_applicable === 'Yes' ? 'Yes' : 'No');
         setGstNumber(v.gst_number ?? '');
-        setVendorType(v.vendor_type_name ?? '');
+        setVendorType(canonicalSupplierType(v.vendor_type_name ?? ''));
         setRiskLevel(numStr(v.risk_level_id));
         // Keep the saved category on edit; older rows hold the label ("Blacklisted Supplier"), so match on the word.
         {
@@ -1560,7 +1575,12 @@ export default function AddVendorModal(props: {
            browser, which is why the field looked like it never saved. The
            server carries the matching rule; both sides have to know it. */
         gst_number: (isInternational || gstApplicable === 'Yes') ? (gstNumber.trim() || null) : null,
-        vendor_type: vendorType || null,
+        /* The fixed type's id from the master bundle; the name only when no master row matches
+           (the server then find-or-creates it by name, and a name sent beside an id would win). */
+        ...(() => {
+          const typeId = vendorType ? supplierTypeId(vendorType, vendorTypeOpts) : null;
+          return typeId ? { vendor_type_id: typeId, vendor_type: null } : { vendor_type: vendorType || null };
+        })(),
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         // The NAME, not an id — the server find-or-creates the master row.
         vendor_behaviour: vendorBehaviour || null,
