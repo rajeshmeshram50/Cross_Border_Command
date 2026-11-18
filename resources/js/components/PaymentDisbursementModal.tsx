@@ -57,11 +57,13 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
   }, [open]);
 
   /* Active employees for the "ran the payroll" dropdown — loaded once the modal
-     opens so the list is ready by the time the approval step is reached. */
+     opens so the list is ready by the time the approval step is reached.
+     `onboarded` as well as `enabled`: a half-onboarded row is not inactive, so
+     enabled alone still listed people who cannot have run anything (QA #165). */
   useEffect(() => {
     if (!open) return;
     let live = true;
-    api.get('/employees', { params: { view: 'list', enabled: 1, per_page: 1000 } })
+    api.get('/employees', { params: { view: 'list', enabled: 1, onboarded: 1, per_page: 1000 } })
       .then(res => {
         if (!live) return;
         const rows = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);

@@ -518,6 +518,16 @@ class EmployeeController extends Controller
                 : $w->whereNotNull('deleted_at')->orWhereIn($st, $off));
         }
 
+        /* Onboarding finished — stage 6 is the completion mark the stats block
+           and the list's own pill both use. Opt-in, so existing callers that
+           need the whole roster are untouched. */
+        if ($request->has('onboarded')) {
+            $stage = 'COALESCE(onboarding_stage_completed, 0)';
+            $request->boolean('onboarded')
+                ? $q->whereRaw("{$stage} >= 6")
+                : $q->whereRaw("{$stage} < 6");
+        }
+
         // Assignment pickers (e.g. Recruitment's Hiring Manager / Assigned HR
         // dropdowns) opt into this so half-onboarded or inactive staff don't
         // appear as selectable people. Defaults OFF so the HR Employees master

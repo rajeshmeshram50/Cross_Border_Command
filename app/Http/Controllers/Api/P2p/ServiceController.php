@@ -14,7 +14,6 @@ use App\Models\Masters\Segments;
 use App\Models\Masters\ServiceCategory;
 use App\Models\Masters\Uom;
 use App\Models\P2p\Service;
-use App\Models\P2p\ServiceAttachment;
 use App\Models\P2p\ServiceImage;
 use App\Models\P2p\ServiceSupplier;
 use App\Models\Vendor;
@@ -32,21 +31,24 @@ use Illuminate\Validation\ValidationException;
 
 class ServiceController extends Controller
 {
-    private const IMAGE_MIMES      = 'jpg,jpeg,png,webp';
+    private const IMAGE_MIMES = 'jpg,jpeg,png,webp';
+
     private const ATTACHMENT_MIMES = 'pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png,webp';
 
     private function scoped(Request $request, bool $applyBranchFilter = false, bool $withTrashed = false)
     {
         $query = $withTrashed ? Service::withTrashed() : Service::query();
-        $user  = $request->user();
+        $user = $request->user();
 
         if ($user && ($user->user_type ?? null) === 'employee') {
             MasterVisibility::applyBranchScope($query, $user);
+
             return $query;
         }
 
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
         MasterVisibility::applyReadScope($query, $user, $branchFilter);
+
         return $query;
     }
 
@@ -62,6 +64,7 @@ class ServiceController extends Controller
             && $service->branch_id && (int) $user->branch_id === (int) $service->branch_id) {
             return null;
         }
+
         return MasterVisibility::hierarchicalDenial($user, $service, $action);
     }
 
@@ -94,13 +97,14 @@ class ServiceController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        return 'SVC-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+
+        return 'SVC-'.str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
     public function masterBundle(Request $request)
     {
         $user = $request->user();
-        $key  = MasterBundleCache::key('service:master-bundle:v2', $user?->id);
+        $key = MasterBundleCache::key('service:master-bundle:v2', $user?->id);
 
         $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user) {
             $active = fn (string $cls, array $cols) => $this->masterQuery($cls, $user)->orderBy('id')->get($cols);
@@ -114,29 +118,29 @@ class ServiceController extends Controller
                 ->values();
 
             return [
-                'service_types'       => $this->taxonomy(),
-                'delivery_types'      => Service::DELIVERY_TYPES,
+                'service_types' => $this->taxonomy(),
+                'delivery_types' => Service::DELIVERY_TYPES,
                 'billing_frequencies' => Service::BILLING_FREQUENCIES,
-                'haz_types'           => Service::HAZ_TYPES,
-                'contract_options'    => [['value' => true, 'label' => 'Required'], ['value' => false, 'label' => 'Not Required']],
-                'service_categories'  => $active(ServiceCategory::class, ['id', 'name', 'service_type', 'classification']),
+                'haz_types' => Service::HAZ_TYPES,
+                'contract_options' => [['value' => true, 'label' => 'Required'], ['value' => false, 'label' => 'Not Required']],
+                'service_categories' => $active(ServiceCategory::class, ['id', 'name', 'service_type', 'classification']),
 
-                'segments'            => $active(Segments::class, ['id', 'name']),
-                'hsn_codes'           => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
-                'uom'                 => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
-                'haz_class'           => $active(HazClass::class, ['id', 'name']),
-                'conditions'          => $active(Conditions::class, ['id', 'title']),
-                'packaging_material'  => $active(PackagingMaterial::class, ['id', 'title']),
-                'departments'         => $active(Departments::class, ['id', 'name', 'code']),
-                'gst_percentage'      => $active(GstPercentage::class, ['id', 'percentage']),
-                'vendors'             => $vendors,
+                'segments' => $active(Segments::class, ['id', 'name']),
+                'hsn_codes' => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
+                'uom' => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
+                'haz_class' => $active(HazClass::class, ['id', 'name']),
+                'conditions' => $active(Conditions::class, ['id', 'title']),
+                'packaging_material' => $active(PackagingMaterial::class, ['id', 'title']),
+                'departments' => $active(Departments::class, ['id', 'name', 'code']),
+                'gst_percentage' => $active(GstPercentage::class, ['id', 'percentage']),
+                'vendors' => $vendors,
 
-                'supplier_origins'    => [
+                'supplier_origins' => [
                     ['value' => SupplierPricing::DOMESTIC,      'label' => 'Domestic Supplier',      'note' => 'Supplier based in India — price in ₹ with GST applied'],
                     ['value' => SupplierPricing::INTERNATIONAL, 'label' => 'International Supplier', 'note' => 'Overseas supplier — price in its currency, no GST'],
                 ],
 
-                'currencies'          => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
+                'currencies' => $active(Currencies::class, ['id', 'code', 'name', 'symbol', 'exchange_rate'])
                     ->reject(fn ($c) => strtoupper((string) $c->code) === 'INR')->values(),
             ];
         });
@@ -153,21 +157,23 @@ class ServiceController extends Controller
                 $classes[] = ['key' => $ck] + $c;
             }
             $out[] = [
-                'key'         => $key,
-                'label'       => $t['label'],
-                'short'       => $t['short'],
+                'key' => $key,
+                'label' => $t['label'],
+                'short' => $t['short'],
                 'description' => $t['description'],
 
-                'pick_classification' => !empty($t['classifications']),
-                'classifications'     => $classes,
+                'pick_classification' => ! empty($t['classifications']),
+                'classifications' => $classes,
             ];
         }
+
         return $out;
     }
 
     public function nextCodePreview(Request $request)
     {
         $user = $request->user();
+
         return response()->json(['code' => $this->nextCode($user->client_id, $user->branch_id)]);
     }
 
@@ -188,25 +194,28 @@ class ServiceController extends Controller
             $counts[$type] = ['total' => 0] + array_fill_keys(array_keys($t['classifications']), 0);
         }
         foreach ($rows as $r) {
-            if (!isset($counts[$r->service_type])) continue;
+            if (! isset($counts[$r->service_type])) {
+                continue;
+            }
             $counts[$r->service_type]['total'] += (int) $r->n;
             if ($r->classification && array_key_exists($r->classification, $counts[$r->service_type])) {
                 $counts[$r->service_type][$r->classification] += (int) $r->n;
             }
         }
         $counts['all'] = array_sum(array_column($counts, 'total'));
+
         return $counts;
     }
 
     public function index(Request $request)
     {
         $request->validate([
-            'service_type'   => ['nullable', Rule::in(array_keys(Service::TYPES))],
+            'service_type' => ['nullable', Rule::in(array_keys(Service::TYPES))],
             'classification' => 'nullable|string|max:30',
-            'status'         => ['nullable', Rule::in(Service::STATUSES)],
-            'supplier'       => 'nullable|in:mapped,zero',
-            'sort'           => 'nullable|in:recent,oldest,name',
-            'per_page'       => 'nullable|integer|min:1|max:200',
+            'status' => ['nullable', Rule::in(Service::STATUSES)],
+            'supplier' => 'nullable|in:mapped,zero',
+            'sort' => 'nullable|in:recent,oldest,name',
+            'per_page' => 'nullable|integer|min:1|max:200',
         ]);
 
         $query = $this->scoped($request, true)
@@ -234,12 +243,12 @@ class ServiceController extends Controller
         }
         match ($request->query('supplier')) {
             'mapped' => $query->has('activeSuppliers'),
-            'zero'   => $query->doesntHave('activeSuppliers'),
-            default  => null,
+            'zero' => $query->doesntHave('activeSuppliers'),
+            default => null,
         };
 
         if ($q = trim((string) $request->query('q', ''))) {
-            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
+            $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $q).'%';
             $query->where(function ($w) use ($like) {
                 $w->where('code', 'ilike', $like)
                     ->orWhere('name', 'ilike', $like)
@@ -258,8 +267,8 @@ class ServiceController extends Controller
 
         match ($request->query('sort')) {
             'oldest' => $query->orderBy('created_at')->orderBy('id'),
-            'name'   => $query->orderBy('name'),
-            default  => $query->orderByDesc('created_at')->orderByDesc('id'),
+            'name' => $query->orderBy('name'),
+            default => $query->orderByDesc('created_at')->orderByDesc('id'),
         };
 
         $page = $query->paginate((int) $request->query('per_page', 10));
@@ -271,31 +280,31 @@ class ServiceController extends Controller
     private function listRow(Service $s): array
     {
         return [
-            'id'                   => $s->id,
-            'code'                 => $s->code,
-            'created_at'           => $s->created_at,
-            'name'                 => $s->name,
-            'description'          => $s->description,
-            'service_type'         => $s->service_type,
-            'service_type_label'   => $s->service_type_label,
-            'classification'       => $s->classification,
+            'id' => $s->id,
+            'code' => $s->code,
+            'created_at' => $s->created_at,
+            'name' => $s->name,
+            'description' => $s->description,
+            'service_type' => $s->service_type,
+            'service_type_label' => $s->service_type_label,
+            'classification' => $s->classification,
             'classification_label' => $s->classification_label,
-            'category'             => $s->category?->name,
-            'segment'              => $s->segment?->name,
-            'provider_brand'       => $s->provider_brand,
-            'delivery_type'        => $s->delivery_type,
-            'billing_frequency'    => $s->billing_frequency,
-            'department'           => $s->department?->name,
-            'hsn_code'             => $s->hsn?->hsn_code,
-            'uom'                  => $s->uom?->short_code ?: $s->uom?->title,
-            'condition'            => $s->condition?->title,
-            'contract_required'    => (bool) $s->contract_required,
-            'status'               => $s->status,
-            'step_completed'       => $s->step_completed,
-            'primary_image'        => $s->primaryImage?->file_path,
-            'suppliers_count'      => (int) $s->suppliers_count,
+            'category' => $s->category?->name,
+            'segment' => $s->segment?->name,
+            'provider_brand' => $s->provider_brand,
+            'delivery_type' => $s->delivery_type,
+            'billing_frequency' => $s->billing_frequency,
+            'department' => $s->department?->name,
+            'hsn_code' => $s->hsn?->hsn_code,
+            'uom' => $s->uom?->short_code ?: $s->uom?->title,
+            'condition' => $s->condition?->title,
+            'contract_required' => (bool) $s->contract_required,
+            'status' => $s->status,
+            'step_completed' => $s->step_completed,
+            'primary_image' => $s->primaryImage?->file_path,
+            'suppliers_count' => (int) $s->suppliers_count,
 
-            'supplier_names'       => $s->activeSuppliers->map(fn ($m) => $m->vendor?->company_name)->filter()->values(),
+            'supplier_names' => $s->activeSuppliers->map(fn ($m) => $m->vendor?->company_name)->filter()->values(),
         ];
     }
 
@@ -315,10 +324,10 @@ class ServiceController extends Controller
             'condition:id,title',
             'packaging:id,title',
             'department:id,name,code',
-            'images'      => fn ($q) => $q->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
+            'images' => fn ($q) => $q->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
             'attachments' => fn ($q) => $q->orderBy('id'),
             'creator:id,name',
-            'suppliers'   => fn ($q) => $q->orderBy('id'),
+            'suppliers' => fn ($q) => $q->orderBy('id'),
             'suppliers.vendor' => fn ($q) => $q->select('id', 'vendor_code', 'company_name', 'vendor_type_id', 'status'),
             'suppliers.vendor.vendorType:id,name',
             'suppliers.vendor.primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email',
@@ -330,13 +339,14 @@ class ServiceController extends Controller
         $data['suppliers'] = $service->suppliers->map(fn ($m) => $this->supplierRow($m))->values();
         $active = $service->suppliers->where('status', 'active');
         $data['suppliers_summary'] = [
-            'count'               => $active->count(),
-            'domestic_count'      => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
+            'count' => $active->count(),
+            'domestic_count' => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
             'international_count' => $active->where('origin', SupplierPricing::INTERNATIONAL)->count(),
-            'inactive_count'      => $service->suppliers->count() - $active->count(),
+            'inactive_count' => $service->suppliers->count() - $active->count(),
 
-            'total_amount'        => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
+            'total_amount' => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
         ];
+
         return $data;
     }
 
@@ -349,49 +359,51 @@ class ServiceController extends Controller
 
     private function vendorCard(Vendor $v): array
     {
-        $addr    = $v->primaryAddress;
+        $addr = $v->primaryAddress;
         $country = $addr?->country?->name;
+
         return [
-            'id'             => $v->id,
-            'vendor_code'    => $v->vendor_code,
-            'company_name'   => $v->company_name,
-            'status'         => $v->status,
-            'supplier_type'  => $v->vendorType?->name,
-            'origin'         => SupplierPricing::originOf($country),
-            'country'        => $country ?: 'India',
-            'state'          => $addr?->state?->name ?? ($addr?->state_code ?: null),
+            'id' => $v->id,
+            'vendor_code' => $v->vendor_code,
+            'company_name' => $v->company_name,
+            'status' => $v->status,
+            'supplier_type' => $v->vendorType?->name,
+            'origin' => SupplierPricing::originOf($country),
+            'country' => $country ?: 'India',
+            'state' => $addr?->state?->name ?? ($addr?->state_code ?: null),
             'gst_state_code' => $addr?->state_code ?: null,
-            'city'           => $addr?->city,
-            'currency'       => SupplierPricing::currencyFor($country),
+            'city' => $addr?->city,
+            'currency' => SupplierPricing::currencyFor($country),
             'contact_person' => $addr?->contact_name,
-            'contact_no'     => $addr?->contact_no,
+            'contact_no' => $addr?->contact_no,
         ];
     }
 
     private function supplierRow(ServiceSupplier $m): array
     {
         $card = $m->vendor ? $this->vendorCard($m->vendor) : ['id' => $m->vendor_id];
+
         return [
-            'id'             => $m->id,
-            'vendor_id'      => $m->vendor_id,
-            'vendor_code'    => $card['vendor_code'] ?? null,
-            'vendor_name'    => $card['company_name'] ?? null,
-            'supplier_type'  => $card['supplier_type'] ?? null,
-            'origin'         => $m->origin ?: SupplierPricing::DOMESTIC,
-            'country'        => $card['country'] ?? null,
-            'state'          => $card['state'] ?? null,
-            'city'           => $card['city'] ?? null,
+            'id' => $m->id,
+            'vendor_id' => $m->vendor_id,
+            'vendor_code' => $card['vendor_code'] ?? null,
+            'vendor_name' => $card['company_name'] ?? null,
+            'supplier_type' => $card['supplier_type'] ?? null,
+            'origin' => $m->origin ?: SupplierPricing::DOMESTIC,
+            'country' => $card['country'] ?? null,
+            'state' => $card['state'] ?? null,
+            'city' => $card['city'] ?? null,
             'contact_person' => $card['contact_person'] ?? null,
-            'currency'       => $m->currency_code ?: 'INR',
-            'price'          => (float) $m->price,
-            'exchange_rate'  => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,
+            'currency' => $m->currency_code ?: 'INR',
+            'price' => (float) $m->price,
+            'exchange_rate' => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,
             'gst_percentage' => (float) $m->gst_percentage,
-            'gst_amount'     => (float) $m->gst_amount,
-            'total_amount'   => (float) $m->total_amount,
-            'inr_amount'     => (float) ($m->inr_amount ?? $m->total_amount),
-            'remarks'        => $m->remarks,
-            'status'         => $m->status ?? 'active',
-            'mapped_at'      => $m->created_at,
+            'gst_amount' => (float) $m->gst_amount,
+            'total_amount' => (float) $m->total_amount,
+            'inr_amount' => (float) ($m->inr_amount ?? $m->total_amount),
+            'remarks' => $m->remarks,
+            'status' => $m->status ?? 'active',
+            'mapped_at' => $m->created_at,
         ];
     }
 
@@ -403,36 +415,38 @@ class ServiceController extends Controller
         $service = null;
         if ($request->filled('id')) {
             $service = $this->findService($request, (int) $request->input('id'));
-            if ($denial = $this->editDenial($user, $service, 'edit')) return $this->deny($denial);
+            if ($denial = $this->editDenial($user, $service, 'edit')) {
+                return $this->deny($denial);
+            }
         }
 
         $data = $this->validateCore($request, $service);
 
-        if ($data['service_type'] === Service::TYPE_SELF && !$request->hasFile('primary_image_file')) {
+        if ($data['service_type'] === Service::TYPE_SELF && ! $request->hasFile('primary_image_file')) {
             $removing = array_map('intval', (array) $request->input('remove_image_ids', []));
             $keepsOne = $service && $service->service_type === Service::TYPE_SELF
                 && $service->images()->where('is_primary', true)->whereNotIn('id', $removing ?: [0])->exists();
-            if (!$keepsOne) {
+            if (! $keepsOne) {
                 throw ValidationException::withMessages(['primary_image_file' => ['A primary image is required for Self-Consumable services.']]);
             }
         }
 
         $service = DB::transaction(function () use ($request, $user, $service, $data) {
-            $isNew = !$service;
+            $isNew = ! $service;
             if ($isNew) {
-                DB::select('SELECT pg_advisory_xact_lock(?)', [crc32('p2p_services:' . $user->client_id . ':' . $user->branch_id)]);
+                DB::select('SELECT pg_advisory_xact_lock(?)', [crc32('p2p_services:'.$user->client_id.':'.$user->branch_id)]);
                 $service = new Service([
-                    'client_id'  => $user->client_id,
-                    'branch_id'  => $user->branch_id,
+                    'client_id' => $user->client_id,
+                    'branch_id' => $user->branch_id,
                     'created_by' => $user->id,
                 ]);
-                $service->code   = $this->nextCode($user->client_id, $user->branch_id);
+                $service->code = $this->nextCode($user->client_id, $user->branch_id);
                 $service->status = 'draft';
             }
 
             $owned = Service::TYPE_FIELDS[$data['service_type']];
             foreach (Service::SWITCHABLE_FIELDS as $col) {
-                if (!in_array($col, $owned, true)) {
+                if (! in_array($col, $owned, true)) {
                     $data[$col] = $col === 'contract_required' ? false : null;
                 }
             }
@@ -440,8 +454,8 @@ class ServiceController extends Controller
                 $data['haz_class_id'] = null;
             }
 
-            $service->fill(collect($data)->only((new Service())->getFillable())->except(['client_id', 'branch_id', 'created_by', 'code', 'status'])->all());
-            $service->updated_by     = $user->id;
+            $service->fill(collect($data)->only((new Service)->getFillable())->except(['client_id', 'branch_id', 'created_by', 'code', 'status'])->all());
+            $service->updated_by = $user->id;
             $service->step_completed = max((int) $service->step_completed, 1);
             $service->save();
 
@@ -469,70 +483,74 @@ class ServiceController extends Controller
             }
         }
         foreach (['classification', 'category_id', 'segment_id', 'haz_class_id', 'gst_percentage'] as $f) {
-            if ($request->input($f) === '') $merge[$f] = null;
+            if ($request->input($f) === '') {
+                $merge[$f] = null;
+            }
         }
-        if ($merge) $request->merge($merge);
+        if ($merge) {
+            $request->merge($merge);
+        }
     }
 
     private function validateCore(Request $request, ?Service $existing): array
     {
-        $user  = $request->user();
-        $type  = (string) $request->input('service_type', $existing?->service_type);
+        $user = $request->user();
+        $type = (string) $request->input('service_type', $existing?->service_type);
         $types = array_keys(Service::TYPES);
 
         $exists = fn (string $cls) => function ($attr, $value, $fail) use ($cls, $user) {
-            if ($value !== null && !$this->masterQuery($cls, $user)->whereKey($value)->exists()) {
-                $fail('The selected ' . str_replace('_', ' ', preg_replace('/_id$/', '', $attr)) . ' is invalid or inactive.');
+            if ($value !== null && ! $this->masterQuery($cls, $user)->whereKey($value)->exists()) {
+                $fail('The selected '.str_replace('_', ' ', preg_replace('/_id$/', '', $attr)).' is invalid or inactive.');
             }
         };
 
         $rules = [
-            'id'             => 'nullable|integer',
-            'service_type'   => ['required', Rule::in($types)],
-            'name'           => 'required|string|max:150',
-            'description'    => 'required|string|max:10000',
+            'id' => 'nullable|integer',
+            'service_type' => ['required', Rule::in($types)],
+            'name' => 'required|string|max:150',
+            'description' => 'required|string|max:10000',
             'provider_brand' => 'required|string|max:255',
-            'hsn_id'         => ['required', 'integer', $exists(HsnCodes::class)],
-            'uom_id'         => ['required', 'integer', $exists(Uom::class)],
+            'hsn_id' => ['required', 'integer', $exists(HsnCodes::class)],
+            'uom_id' => ['required', 'integer', $exists(Uom::class)],
             'gst_percentage' => 'nullable|numeric|min:0|max:100',
 
-            'attachment_files'        => 'nullable|array|max:10',
-            'attachment_files.*'      => 'file|mimes:' . self::ATTACHMENT_MIMES . '|max:10240',
-            'remove_attachment_ids'   => 'nullable|array',
+            'attachment_files' => 'nullable|array|max:10',
+            'attachment_files.*' => 'file|mimes:'.self::ATTACHMENT_MIMES.'|max:10240',
+            'remove_attachment_ids' => 'nullable|array',
             'remove_attachment_ids.*' => 'integer',
         ];
 
         if ($type === Service::TYPE_SELF) {
             $rules += [
-                'classification'          => ['required', Rule::in(Service::classificationsOf(Service::TYPE_SELF))],
-                'segment_id'              => ['required', 'integer'],
-                'haz_type'                => ['required', Rule::in(Service::HAZ_TYPES)],
-                'haz_class_id'            => ['nullable', 'required_if:haz_type,Hazardous', 'integer', $exists(HazClass::class)],
-                'condition_id'            => ['required', 'integer', $exists(Conditions::class)],
-                'packaging_id'            => ['required', 'integer', $exists(PackagingMaterial::class)],
-                'confidential_info'       => 'nullable|string|max:2000',
-                'primary_image_file'      => 'nullable|file|mimes:' . self::IMAGE_MIMES . '|max:2048',
-                'secondary_image_files'   => 'nullable|array|max:10',
-                'secondary_image_files.*' => 'file|mimes:' . self::IMAGE_MIMES . '|max:2048',
-                'remove_image_ids'        => 'nullable|array',
-                'remove_image_ids.*'      => 'integer',
+                'classification' => ['required', Rule::in(Service::classificationsOf(Service::TYPE_SELF))],
+                'segment_id' => ['required', 'integer'],
+                'haz_type' => ['required', Rule::in(Service::HAZ_TYPES)],
+                'haz_class_id' => ['nullable', 'required_if:haz_type,Hazardous', 'integer', $exists(HazClass::class)],
+                'condition_id' => ['required', 'integer', $exists(Conditions::class)],
+                'packaging_id' => ['required', 'integer', $exists(PackagingMaterial::class)],
+                'confidential_info' => 'nullable|string|max:2000',
+                'primary_image_file' => 'nullable|file|mimes:'.self::IMAGE_MIMES.'|max:2048',
+                'secondary_image_files' => 'nullable|array|max:10',
+                'secondary_image_files.*' => 'file|mimes:'.self::IMAGE_MIMES.'|max:2048',
+                'remove_image_ids' => 'nullable|array',
+                'remove_image_ids.*' => 'integer',
             ];
         } elseif ($type === Service::TYPE_SOFT) {
             $rules += [
-                'category_id'       => ['required', 'integer'],
-                'segment_id'        => ['required', 'integer'],
-                'delivery_type'     => ['required', Rule::in(Service::DELIVERY_TYPES)],
+                'category_id' => ['required', 'integer'],
+                'segment_id' => ['required', 'integer'],
+                'delivery_type' => ['required', Rule::in(Service::DELIVERY_TYPES)],
                 'contract_required' => 'nullable|boolean',
-                'remark'            => 'nullable|string|max:2000',
+                'remark' => 'nullable|string|max:2000',
             ];
         } elseif ($type === Service::TYPE_OTHER) {
             $rules += [
-                'classification'    => ['required', Rule::in(Service::classificationsOf(Service::TYPE_OTHER))],
-                'category_id'       => ['required', 'integer'],
-                'department_id'     => ['required', 'integer', $exists(Departments::class)],
+                'classification' => ['required', Rule::in(Service::classificationsOf(Service::TYPE_OTHER))],
+                'category_id' => ['required', 'integer'],
+                'department_id' => ['required', 'integer', $exists(Departments::class)],
                 'billing_frequency' => ['required', Rule::in(Service::BILLING_FREQUENCIES)],
                 'contract_required' => 'nullable|boolean',
-                'remark'            => 'nullable|string|max:2000',
+                'remark' => 'nullable|string|max:2000',
             ];
         }
 
@@ -542,7 +560,7 @@ class ServiceController extends Controller
         if (array_key_exists('category_id', $data)) {
             $cat = $this->masterQuery(ServiceCategory::class, $user)->whereKey($data['category_id'])
                 ->where('service_type', $type)->first();
-            if (!$cat || ($type === Service::TYPE_OTHER && $cat->classification !== $data['classification'])) {
+            if (! $cat || ($type === Service::TYPE_OTHER && $cat->classification !== $data['classification'])) {
                 $errors['category_id'] = ['The selected service category does not belong to this service type.'];
             }
         }
@@ -552,15 +570,18 @@ class ServiceController extends Controller
         }
 
         if (array_key_exists('segment_id', $data)
-            && !$this->masterQuery(Segments::class, $user)->whereKey($data['segment_id'])->exists()) {
+            && ! $this->masterQuery(Segments::class, $user)->whereKey($data['segment_id'])->exists()) {
             $errors['segment_id'] = ['The selected segment is invalid or inactive.'];
         }
 
-        if ($errors) throw ValidationException::withMessages($errors);
+        if ($errors) {
+            throw ValidationException::withMessages($errors);
+        }
 
-        if (!array_key_exists('contract_required', $data) && $type !== Service::TYPE_SELF) {
+        if (! array_key_exists('contract_required', $data) && $type !== Service::TYPE_SELF) {
             $data['contract_required'] = (bool) ($existing?->contract_required ?? false);
         }
+
         return $data;
     }
 
@@ -579,7 +600,9 @@ class ServiceController extends Controller
             $this->deleteFile($img->file_path);
             $img->delete();
         }
-        if ($service->service_type !== Service::TYPE_SELF) return;
+        if ($service->service_type !== Service::TYPE_SELF) {
+            return;
+        }
 
         if ($file = $request->file('primary_image_file')) {
             $service->images()->create($this->fileRow($file, "p2p/services/images/{$service->id}", $disk, $service) + ['is_primary' => true]);
@@ -587,7 +610,9 @@ class ServiceController extends Controller
 
         $order = (int) ServiceImage::where('service_id', $service->id)->max('sort_order');
         foreach ((array) $request->file('secondary_image_files', []) as $file) {
-            if (!$file) continue;
+            if (! $file) {
+                continue;
+            }
             $service->images()->create($this->fileRow($file, "p2p/services/images/{$service->id}", $disk, $service)
                 + ['is_primary' => false, 'sort_order' => ++$order]);
         }
@@ -596,17 +621,19 @@ class ServiceController extends Controller
     private function syncAttachments(Request $request, Service $service): void
     {
         $disk = $this->disk();
-        $ids  = (array) $request->input('remove_attachment_ids', []);
+        $ids = (array) $request->input('remove_attachment_ids', []);
         foreach ($service->attachments()->whereIn('id', $ids)->get() as $att) {
             $this->deleteFile($att->file_path);
             $att->delete();
         }
         foreach ((array) $request->file('attachment_files', []) as $file) {
-            if (!$file) continue;
+            if (! $file) {
+                continue;
+            }
             $row = $this->fileRow($file, "p2p/services/attachments/{$service->id}", $disk, $service);
             $service->attachments()->create($row + [
-                'mime_type'   => $file->getClientMimeType(),
-                'size'        => $file->getSize(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
                 'uploaded_by' => $request->user()?->id,
             ]);
         }
@@ -615,14 +642,17 @@ class ServiceController extends Controller
     private function fileRow(UploadedFile $file, string $dir, string $disk, Service $service): array
     {
         $original = $file->getClientOriginalName() ?: 'file';
-        $safe     = preg_replace('/[^A-Za-z0-9 ._-]/', '_', $original) ?: 'file';
-        $path     = $file->storeAs($dir . '/' . bin2hex(random_bytes(4)), $safe, $disk);
+        $safe = preg_replace('/[^A-Za-z0-9 ._-]/', '_', $original) ?: 'file';
+        $path = $file->storeAs($dir.'/'.bin2hex(random_bytes(4)), $safe, $disk);
+
         return ['file_path' => $path, 'original_name' => $original, 'client_id' => $service->client_id];
     }
 
     private function deleteFile(?string $path): void
     {
-        if (!$path) return;
+        if (! $path) {
+            return;
+        }
         try {
             Storage::disk($this->disk())->delete($path);
         } catch (\Throwable $e) {
@@ -633,17 +663,19 @@ class ServiceController extends Controller
     public function storeSuppliers(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
-        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
+            return $this->deny($denial);
+        }
 
         $data = $request->validate([
-            'suppliers'                  => 'present|array',
-            'suppliers.*.vendor_id'      => 'required|integer|distinct',
-            'suppliers.*.origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'suppliers.*.price'          => 'required|numeric|gt:0',
+            'suppliers' => 'present|array',
+            'suppliers.*.vendor_id' => 'required|integer|distinct',
+            'suppliers.*.origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            'suppliers.*.price' => 'required|numeric|gt:0',
             'suppliers.*.gst_percentage' => 'nullable|numeric|min:0|max:100',
-            'suppliers.*.currency'       => 'nullable|string|size:3|alpha',
-            'suppliers.*.exchange_rate'  => 'nullable|numeric|gt:0',
-            'suppliers.*.remarks'        => 'nullable|string|max:1000',
+            'suppliers.*.currency' => 'nullable|string|size:3|alpha',
+            'suppliers.*.exchange_rate' => 'nullable|numeric|gt:0',
+            'suppliers.*.remarks' => 'nullable|string|max:1000',
         ], $this->priceMessages());
 
         $this->assertVendorsVisible($request, array_column($data['suppliers'], 'vendor_id'), 'suppliers');
@@ -655,11 +687,13 @@ class ServiceController extends Controller
 
         DB::transaction(function () use ($service, $data, $priced, $request) {
             $userId = $request->user()?->id;
-            $keep   = [];
+            $keep = [];
             foreach ($data['suppliers'] as $i => $row) {
                 $amounts = $priced[$i];
                 $map = ServiceSupplier::firstOrNew(['service_id' => $service->id, 'vendor_id' => $row['vendor_id']]);
-                if (!$map->exists) $map->created_by = $userId;
+                if (! $map->exists) {
+                    $map->created_by = $userId;
+                }
                 $map->fill($amounts + ['remarks' => $row['remarks'] ?? null, 'status' => 'active', 'updated_by' => $userId])->save();
                 $keep[] = $map->id;
             }
@@ -667,9 +701,9 @@ class ServiceController extends Controller
             $service->suppliers()->whereNotIn('id', $keep ?: [0])->where('status', 'active')
                 ->update(['status' => 'inactive', 'updated_by' => $userId, 'updated_at' => now()]);
 
-            $service->status         = 'active';
+            $service->status = 'active';
             $service->step_completed = 2;
-            $service->updated_by     = $userId;
+            $service->updated_by = $userId;
             $service->save();
         });
 
@@ -679,10 +713,11 @@ class ServiceController extends Controller
     public function suppliers(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
-        $detail  = $this->detail($service);
+        $detail = $this->detail($service);
+
         return response()->json([
             'service' => ['id' => $service->id, 'code' => $service->code, 'name' => $service->name],
-            'data'    => $detail['suppliers'],
+            'data' => $detail['suppliers'],
             'summary' => $detail['suppliers_summary'],
         ]);
     }
@@ -690,16 +725,18 @@ class ServiceController extends Controller
     public function storeSupplier(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
-        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
+            return $this->deny($denial);
+        }
 
         $data = $request->validate([
-            'vendor_id'      => 'required|integer',
-            'origin'         => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
-            'price'          => 'required|numeric|gt:0',
+            'vendor_id' => 'required|integer',
+            'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            'price' => 'required|numeric|gt:0',
             'gst_percentage' => 'nullable|numeric|min:0|max:100',
-            'currency'       => 'nullable|string|size:3|alpha',
-            'exchange_rate'  => 'nullable|numeric|gt:0',
-            'remarks'        => 'nullable|string|max:1000',
+            'currency' => 'nullable|string|size:3|alpha',
+            'exchange_rate' => 'nullable|numeric|gt:0',
+            'remarks' => 'nullable|string|max:1000',
         ], $this->priceMessages());
         $this->assertVendorsVisible($request, [$data['vendor_id']], 'vendor_id');
 
@@ -711,42 +748,48 @@ class ServiceController extends Controller
         $userId = $request->user()?->id;
         $fields = $this->priceFields($request, $data, $service) + [
             'remarks' => $data['remarks'] ?? null,
-            'status'  => 'active',
+            'status' => 'active',
         ];
 
         if ($existing) {
             $existing->fill($fields + ['updated_by' => $userId])->save();
+
             return response()->json($this->supplierRowFresh($existing));
         }
 
         $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
+
         return response()->json($this->supplierRowFresh($map), 201);
     }
 
     public function updateSupplier(Request $request, int $id, int $mapId)
     {
         $service = $this->findService($request, $id);
-        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
+            return $this->deny($denial);
+        }
         $map = $service->suppliers()->findOrFail($mapId);
 
         $data = $request->validate([
-            'price'          => 'sometimes|required|numeric|gt:0',
+            'price' => 'sometimes|required|numeric|gt:0',
             'gst_percentage' => 'sometimes|required|numeric|min:0|max:100',
-            'currency'       => 'sometimes|required|string|size:3|alpha',
-            'exchange_rate'  => 'sometimes|required|numeric|gt:0',
-            'remarks'        => 'sometimes|nullable|string|max:1000',
+            'currency' => 'sometimes|required|string|size:3|alpha',
+            'exchange_rate' => 'sometimes|required|numeric|gt:0',
+            'remarks' => 'sometimes|nullable|string|max:1000',
         ], $this->priceMessages());
 
         $amounts = $this->priceFields($request, [
-            'vendor_id'      => $map->vendor_id,
-            'origin'         => $map->origin ?: SupplierPricing::DOMESTIC,
-            'price'          => $data['price'] ?? $map->price,
+            'vendor_id' => $map->vendor_id,
+            'origin' => $map->origin ?: SupplierPricing::DOMESTIC,
+            'price' => $data['price'] ?? $map->price,
             'gst_percentage' => $data['gst_percentage'] ?? $map->gst_percentage,
-            'currency'       => $data['currency'] ?? $map->currency_code,
-            'exchange_rate'  => $data['exchange_rate'] ?? $map->exchange_rate,
+            'currency' => $data['currency'] ?? $map->currency_code,
+            'exchange_rate' => $data['exchange_rate'] ?? $map->exchange_rate,
         ], $service);
         $map->fill($amounts + ['updated_by' => $request->user()?->id]);
-        if (array_key_exists('remarks', $data)) $map->remarks = $data['remarks'];
+        if (array_key_exists('remarks', $data)) {
+            $map->remarks = $data['remarks'];
+        }
         $map->save();
 
         return response()->json($this->supplierRowFresh($map));
@@ -755,8 +798,10 @@ class ServiceController extends Controller
     public function updateSupplierStatus(Request $request, int $id, int $mapId)
     {
         $service = $this->findService($request, $id);
-        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
-        $map  = $service->suppliers()->findOrFail($mapId);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
+            return $this->deny($denial);
+        }
+        $map = $service->suppliers()->findOrFail($mapId);
         $data = $request->validate(['status' => ['required', Rule::in(ServiceSupplier::STATUSES)]]);
 
         $map->fill(['status' => $data['status'], 'updated_by' => $request->user()?->id])->save();
@@ -769,28 +814,29 @@ class ServiceController extends Controller
     private function priceFields(Request $request, array $in, Service $service, string $prefix = ''): array
     {
         $vendor = Vendor::query()->with(self::VENDOR_WITH)->find($in['vendor_id']);
-        $card   = $vendor ? $this->vendorCard($vendor) : ['origin' => SupplierPricing::DOMESTIC, 'country' => null, 'currency' => 'INR'];
+        $card = $vendor ? $this->vendorCard($vendor) : ['origin' => SupplierPricing::DOMESTIC, 'country' => null, 'currency' => 'INR'];
         $origin = $in['origin'] ?? $card['origin'];
 
         if ($origin !== $card['origin']) {
-            throw ValidationException::withMessages([$prefix . 'origin' => [
+            throw ValidationException::withMessages([$prefix.'origin' => [
                 $origin === SupplierPricing::INTERNATIONAL
                     ? 'This supplier is based in India — map it as a Domestic supplier.'
-                    : 'This supplier is based in ' . ($card['country'] ?: 'another country') . ' — map it as an International supplier.',
+                    : 'This supplier is based in '.($card['country'] ?: 'another country').' — map it as an International supplier.',
             ]]);
         }
 
         if ($origin === SupplierPricing::INTERNATIONAL) {
             $currency = strtoupper((string) ($in['currency'] ?? '')) ?: $card['currency'];
             if ($currency === 'INR') {
-                throw ValidationException::withMessages([$prefix . 'currency' => ["Pick the supplier's currency — an International price is not in ₹."]]);
+                throw ValidationException::withMessages([$prefix.'currency' => ["Pick the supplier's currency — an International price is not in ₹."]]);
             }
             $rate = isset($in['exchange_rate']) && (float) $in['exchange_rate'] > 0
                 ? (float) $in['exchange_rate']
                 : SupplierPricing::defaultRate($currency, $request->user());
-            if (!$rate) {
-                throw ValidationException::withMessages([$prefix . 'exchange_rate' => ["Enter the exchange rate (₹ per {$currency})."]]);
+            if (! $rate) {
+                throw ValidationException::withMessages([$prefix.'exchange_rate' => ["Enter the exchange rate (₹ per {$currency})."]]);
             }
+
             return SupplierPricing::international((float) $in['price'], $currency, $rate);
         }
 
@@ -807,12 +853,12 @@ class ServiceController extends Controller
     private function priceMessages(): array
     {
         return [
-            'price.required'             => "Enter the supplier's price.",
-            'price.gt'                   => 'The price must be more than 0.',
+            'price.required' => "Enter the supplier's price.",
+            'price.gt' => 'The price must be more than 0.',
             'suppliers.*.price.required' => "Enter the supplier's price.",
-            'suppliers.*.price.gt'       => 'The price must be more than 0.',
-            'exchange_rate.gt'           => 'The exchange rate must be more than 0.',
-            'currency.size'              => 'Pick a currency (3-letter code, e.g. USD).',
+            'suppliers.*.price.gt' => 'The price must be more than 0.',
+            'exchange_rate.gt' => 'The exchange rate must be more than 0.',
+            'currency.size' => 'Pick a currency (3-letter code, e.g. USD).',
         ];
     }
 
@@ -825,39 +871,44 @@ class ServiceController extends Controller
             'vendor.primaryAddress.state:id,name',
             'vendor.primaryAddress.country:id,name',
         ]);
+
         return $this->supplierRow($map);
     }
 
     private function assertVendorsVisible(Request $request, array $ids, string $field): void
     {
         $ids = array_values(array_unique(array_map('intval', $ids)));
-        if (!$ids) return;
+        if (! $ids) {
+            return;
+        }
         $found = Vendor::query()->forUser($request->user())->whereIn('id', $ids)->pluck('id')->map(fn ($x) => (int) $x)->all();
         $missing = array_diff($ids, $found);
         if ($missing) {
-            throw ValidationException::withMessages([$field => ['Unknown supplier id(s): ' . implode(', ', $missing) . '.']]);
+            throw ValidationException::withMessages([$field => ['Unknown supplier id(s): '.implode(', ', $missing).'.']]);
         }
     }
 
     public function updateStatus(Request $request, int $id)
     {
         $service = $this->findService($request, $id);
-        if ($denial = $this->editDenial($request->user(), $service, 'edit')) return $this->deny($denial);
+        if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
+            return $this->deny($denial);
+        }
 
         $data = $request->validate(['status' => ['required', Rule::in(['active', 'inactive'])]]);
         if ($data['status'] === 'active' && (int) $service->step_completed < 2) {
             throw ValidationException::withMessages(['status' => ['Complete Stage 2 (Map Service Suppliers) before activating this service.']]);
         }
 
-        $service->status     = $data['status'];
+        $service->status = $data['status'];
         $service->updated_by = $request->user()?->id;
         $service->save();
 
         return response()->json([
-            'id'     => $service->id,
-            'code'   => $service->code,
+            'id' => $service->id,
+            'code' => $service->code,
             'status' => $service->status,
-            'message' => 'Service ' . $service->code . ' is now ' . $service->status . '.',
+            'message' => 'Service '.$service->code.' is now '.$service->status.'.',
         ]);
     }
 }

@@ -84,17 +84,17 @@ return new class extends Migration
         $categories = [
             'soft_digital' => [
                 '' => ['Software Licence', 'SaaS Subscription', 'Cloud & Hosting', 'Website & Domain', 'Email & Collaboration',
-                       'Cybersecurity', 'API & Integration', 'IT Support & Maintenance', 'Software Development',
-                       'AI Assistant', 'Design & Creative Tools', 'Digital Marketing Platform', 'Online Learning',
-                       'Productivity App', 'Media & Content Subscription', 'Survey & Forms Tool'],
+                    'Cybersecurity', 'API & Integration', 'IT Support & Maintenance', 'Software Development',
+                    'AI Assistant', 'Design & Creative Tools', 'Digital Marketing Platform', 'Online Learning',
+                    'Productivity App', 'Media & Content Subscription', 'Survey & Forms Tool'],
             ],
             'other_operational' => [
                 'professional' => ['Chartered Accountant (CA)', 'Legal Consultancy', 'Accounting & Bookkeeping', 'HR Consultancy',
-                                   'Tax Advisory', 'Audit Services', 'Company Secretary'],
-                'utility'      => ['Electricity', 'Water Supply', 'Internet Connectivity', 'Telephone / Mobile', 'Gas Supply'],
-                'facility'     => ['Housekeeping', 'Security Services', 'Pantry Management', 'Pest Control', 'Front Desk / Reception'],
-                'maintenance'  => ['AC Maintenance', 'Electrical Repair', 'Equipment AMC', 'Plumbing', 'Lift / Elevator AMC', 'Civil & Carpentry'],
-                'outsourcing'  => ['Recruitment', 'Payroll Processing', 'Courier Services', 'Transportation', 'Event Management', 'Printing Services'],
+                    'Tax Advisory', 'Audit Services', 'Company Secretary'],
+                'utility' => ['Electricity', 'Water Supply', 'Internet Connectivity', 'Telephone / Mobile', 'Gas Supply'],
+                'facility' => ['Housekeeping', 'Security Services', 'Pantry Management', 'Pest Control', 'Front Desk / Reception'],
+                'maintenance' => ['AC Maintenance', 'Electrical Repair', 'Equipment AMC', 'Plumbing', 'Lift / Elevator AMC', 'Civil & Carpentry'],
+                'outsourcing' => ['Recruitment', 'Payroll Processing', 'Courier Services', 'Transportation', 'Event Management', 'Printing Services'],
             ],
         ];
         $rows = [];
@@ -102,7 +102,7 @@ return new class extends Migration
             foreach ($byClass as $class => $names) {
                 foreach ($names as $name) {
                     $rows[] = ['service_type' => $type, 'classification' => $class ?: null, 'name' => $name,
-                               'status' => 'Active', 'is_system' => false, 'created_at' => $now, 'updated_at' => $now];
+                        'status' => 'Active', 'is_system' => false, 'created_at' => $now, 'updated_at' => $now];
                 }
             }
         }
@@ -132,7 +132,7 @@ return new class extends Migration
             $table->dropIndex(['category_id']);
             $table->dropIndex(['segment_id']);
             $table->dropColumn(['category_id', 'provider_brand', 'delivery_type', 'haz_type',
-                                'remark', 'confidential_info', 'step_completed', 'updated_by']);
+                'remark', 'confidential_info', 'step_completed', 'updated_by']);
         });
         Schema::table('p2p_services', function (Blueprint $table) {
             $table->string('status')->default('Active')->change();

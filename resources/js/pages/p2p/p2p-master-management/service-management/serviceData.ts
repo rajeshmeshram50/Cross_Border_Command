@@ -59,6 +59,10 @@ export interface ServiceRecord {
   vals: ServiceVals;
   suppliers: MappedSupplier[];
   active: boolean;
+  id?: number;
+  status?: 'draft' | 'active' | 'inactive';
+  suppliersCount?: number;
+  supplierNames?: string[];
 }
 
 export interface SubType { k: string; l: string; full: string; d: string }

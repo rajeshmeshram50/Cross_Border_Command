@@ -360,6 +360,10 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
           /* .ep-hero, not .hr-cstrip, so the HRMS skin has to be named. */
           className="hr-dt"
           pageSize={10}
+          /* Same fill as the Vault tab: the card reaches the viewport bottom
+             with the pager on its edge, so no dead band under it (QA #155). */
+          fitToViewport
+          autoFitRows
           minWidth={720}
           /* No search box: one year's holiday calendar is a short, complete
              list the employee reads top to bottom, and the year stepper above

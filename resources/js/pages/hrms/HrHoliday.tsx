@@ -551,10 +551,10 @@ export default function HrHoliday() {
               serial
               accent="violet"
 
-              /* No viewport stretch: the card hugs its rows so the pager sits
-                 directly under the last one. Stretching left a band of empty
-                 table between the rows and the pagination whenever the page
-                 was not full. (#125) */
+              /* Fill to the footer with real rows, like Employees and Leave:
+                 the page size becomes however many the height holds (QA #71). */
+              fitToViewport
+              autoFitRows
               minWidth={1395}
               loading={loading}
               serverPagination={{

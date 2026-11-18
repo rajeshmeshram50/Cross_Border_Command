@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import FullPageLoader from './ui/FullPageLoader';
 import DataTable, { type DataTableColumn } from './ui/DataTable';
 import { createPortal } from 'react-dom';
 import api from '../api';
@@ -278,13 +279,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           {/* Full-modal blocking loader while the payment is processing — no
               other control (close, reupload, pay again) is clickable until it
               finishes. (QA #112) */}
-          {saving && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'var(--bpw-veil)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7c5cfc" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-accent-fg)' }}>Processing payment…</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--bpw-muted)' }}>Please don’t close this window.</div>
-            </div>
-          )}
+          {saving && <FullPageLoader label="Processing payment…" />}
           {/* Header */}
           <div className="bpw-head" style={header}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -333,13 +328,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
       {(view === 'select' || view === 'pay') && (
         <div style={{ ...backdrop, zIndex: 9100 }} onMouseDown={saving ? undefined : () => { resetForm(); setView('history'); }}>
           <div className="bpw-root" style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
-            {saving && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'var(--bpw-veil)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7c5cfc" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-accent-fg)' }}>Processing payment…</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--bpw-muted)' }}>Please don’t close this window.</div>
-              </div>
-            )}
+            {saving && <FullPageLoader label="Processing payment…" />}
             <div className="bpw-head" style={header}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <span style={heroIco}><i className="ri-stack-line" /></span>

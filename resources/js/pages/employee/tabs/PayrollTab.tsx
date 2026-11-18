@@ -1,6 +1,7 @@
 // Payroll tab — compensation summary, salary-revision timeline and payslip
 // access. Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
 import { useCallback, useEffect, useState } from 'react';
+import FullPageLoader from '../../../components/ui/FullPageLoader';
 import {
   Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, Row,
 } from 'reactstrap';
@@ -1279,6 +1280,8 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 )}
               </button>
             </ModalFooter>
+            {/* Same house loader every other popup uses. */}
+            {savingBank && <FullPageLoader label="Saving payment details…" />}
           </Modal>
         </div>
   );

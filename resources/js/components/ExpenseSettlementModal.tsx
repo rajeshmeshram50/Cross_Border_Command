@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import FullPageLoader from './ui/FullPageLoader';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { markExpenseChanged } from '../utils/expenseBus';
@@ -3061,15 +3062,10 @@ export default function ExpenseSettlementModal({
  * ALSO disabled individually, because an overlay does not stop the keyboard —
  * a textarea that already holds focus keeps accepting input underneath it.
  */
+/* One shim over the house loader, so the four call sites below keep reading
+   the same while the look comes from the system component (QA 250). */
 function BusyVeil({ label }: { label: string }) {
-  return (
-    <div className="esm-veil" aria-live="polite" aria-busy="true">
-      <div className="esm-veil-box">
-        <i className="ri-loader-4-line ri-spin" />
-        <span>{label}</span>
-      </div>
-    </div>
-  );
+  return <FullPageLoader label={label} />;
 }
 
 /* Loading skeleton (QA #147 / #148). "View payment history" / "View history"

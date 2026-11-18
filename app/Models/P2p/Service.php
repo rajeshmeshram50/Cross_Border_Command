@@ -25,48 +25,50 @@ class Service extends Model
 
     protected $table = 'p2p_services';
 
-    public const TYPE_SELF  = 'self_consumable';
-    public const TYPE_SOFT  = 'soft_digital';
+    public const TYPE_SELF = 'self_consumable';
+
+    public const TYPE_SOFT = 'soft_digital';
+
     public const TYPE_OTHER = 'other_operational';
 
     public const STATUSES = ['draft', 'active', 'inactive'];
 
     public const TYPES = [
         self::TYPE_SELF => [
-            'label'       => 'Self-Consumable Services',
-            'short'       => 'Self-Consumable',
+            'label' => 'Self-Consumable Services',
+            'short' => 'Self-Consumable',
             'description' => 'Physical goods, equipment, assets and consumables purchased for internal use.',
             'classifications' => [
-                'trackable'  => ['label' => 'Trackable Material / Goods',  'short' => 'Trackable',
-                                 'description' => 'Laptops, desktops, printers, monitors, furniture — tracked one by one.'],
+                'trackable' => ['label' => 'Trackable Material / Goods',  'short' => 'Trackable',
+                    'description' => 'Laptops, desktops, printers, monitors, furniture — tracked one by one.'],
                 'consumable' => ['label' => 'Consumable Material / Goods', 'short' => 'Consumable',
-                                 'description' => 'Stationery, pantry supplies, cleaning materials, printer paper — tracked by quantity.'],
+                    'description' => 'Stationery, pantry supplies, cleaning materials, printer paper — tracked by quantity.'],
             ],
         ],
         self::TYPE_SOFT => [
-            'label'       => 'Soft / Digital Services',
-            'short'       => 'Soft / Digital',
+            'label' => 'Soft / Digital Services',
+            'short' => 'Soft / Digital',
             'description' => 'Software, platforms, subscriptions, APIs, licences and cloud services.',
 
             'classifications' => [],
         ],
         self::TYPE_OTHER => [
-            'label'       => 'Other Operational Services',
-            'short'       => 'Other Operational',
+            'label' => 'Other Operational Services',
+            'short' => 'Other Operational',
             'description' => 'Professional, utility, facility, maintenance and outsourced services.',
             'classifications' => [
                 'professional' => ['label' => 'Professional Services', 'short' => 'Professional', 'description' => 'CA, legal consultancy, accounting, HR consultancy.'],
-                'utility'      => ['label' => 'Utility Services',      'short' => 'Utility',      'description' => 'Electricity, water supply, internet connectivity.'],
-                'facility'     => ['label' => 'Facility Services',     'short' => 'Facility',     'description' => 'Housekeeping, security, pantry management.'],
-                'maintenance'  => ['label' => 'Maintenance Services',  'short' => 'Maintenance',  'description' => 'AC maintenance, electrical repair, equipment AMC.'],
-                'outsourcing'  => ['label' => 'Outsourcing Services',  'short' => 'Outsourcing',  'description' => 'Recruitment, payroll processing, courier, transportation.'],
+                'utility' => ['label' => 'Utility Services',      'short' => 'Utility',      'description' => 'Electricity, water supply, internet connectivity.'],
+                'facility' => ['label' => 'Facility Services',     'short' => 'Facility',     'description' => 'Housekeeping, security, pantry management.'],
+                'maintenance' => ['label' => 'Maintenance Services',  'short' => 'Maintenance',  'description' => 'AC maintenance, electrical repair, equipment AMC.'],
+                'outsourcing' => ['label' => 'Outsourcing Services',  'short' => 'Outsourcing',  'description' => 'Recruitment, payroll processing, courier, transportation.'],
             ],
         ],
     ];
 
     public const TYPE_FIELDS = [
-        self::TYPE_SELF  => ['segment_id', 'haz_type', 'haz_class_id', 'condition_id', 'packaging_id', 'confidential_info'],
-        self::TYPE_SOFT  => ['category_id', 'segment_id', 'delivery_type', 'contract_required', 'remark'],
+        self::TYPE_SELF => ['segment_id', 'haz_type', 'haz_class_id', 'condition_id', 'packaging_id', 'confidential_info'],
+        self::TYPE_SOFT => ['category_id', 'segment_id', 'delivery_type', 'contract_required', 'remark'],
         self::TYPE_OTHER => ['category_id', 'department_id', 'billing_frequency', 'contract_required', 'remark'],
     ];
 
@@ -76,7 +78,9 @@ class Service extends Model
     ];
 
     public const DELIVERY_TYPES = ['Cloud / SaaS', 'On-Premise', 'Web / Browser', 'Mobile App', 'API', 'Remote Support', 'On-site Support', 'Hybrid'];
+
     public const BILLING_FREQUENCIES = ['Monthly', 'Quarterly', 'Half-yearly', 'Yearly', 'Per Use', 'One-time'];
+
     public const HAZ_TYPES = ['Non Hazardous', 'Hazardous'];
 
     protected $fillable = [
@@ -90,8 +94,8 @@ class Service extends Model
 
     protected $casts = [
         'contract_required' => 'boolean',
-        'gst_percentage'    => 'decimal:2',
-        'step_completed'    => 'integer',
+        'gst_percentage' => 'decimal:2',
+        'step_completed' => 'integer',
     ];
 
     protected $appends = ['service_type_label', 'classification_label'];
