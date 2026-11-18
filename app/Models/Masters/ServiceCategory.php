@@ -4,6 +4,7 @@ namespace App\Models\Masters;
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\P2p\Service;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,11 +12,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ServiceCategory extends Model
 {
     public const TYPES = ['soft_digital', 'other_operational'];
+
     public const OTHER_CLASSIFICATIONS = ['professional', 'utility', 'facility', 'maintenance', 'outsourcing'];
 
     public function usageCount(): int
     {
-        return \App\Models\P2p\Service::withTrashed()->where('category_id', $this->id)->count();
+        return Service::withTrashed()->where('category_id', $this->id)->count();
     }
 
     protected $table = 'master_service_categories';

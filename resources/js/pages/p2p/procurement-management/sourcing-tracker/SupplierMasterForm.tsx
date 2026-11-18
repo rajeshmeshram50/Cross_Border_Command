@@ -3,6 +3,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../contexts/ToastContext';
 import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
+import { CURRENCY_OPTIONS, COUNTRY_CURRENCY, FX, money } from './currency';
 import { IcoBack, IcoCheck, IcoFlag, IcoGlobe, IcoPlus, IcoUserPlus, IcoX } from './icons';
 import './supplier-master-form.css';
 
@@ -37,20 +38,8 @@ const AddVendorModal = lazyPage(() => import('../../p2p-master-management/suppli
 type AddedSupplier = { companyName: string; vendorType: string; contactName: string; state: string; stateCode: string; country: string; city: string };
 
 const GST_RATES = ['0', '5', '12', '18', '28'];
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SGD', 'SAR', 'OMR', 'CNY', 'JPY', 'KRW', 'MYR'];
-/** Default ₹ rate per currency unit (the user can change it). */
-const FX: Record<string, number> = { USD: 83.25, EUR: 90.4, GBP: 105.6, AED: 22.67, SGD: 62.1, SAR: 22.2, OMR: 216.3, CNY: 11.52, JPY: 0.556, KRW: 0.0612, MYR: 18.85 };
-const COUNTRY_CURRENCY: Record<string, string> = { UAE: 'AED', USA: 'USD', Germany: 'EUR', Singapore: 'SGD' };
-const SYMBOL: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', SGD: 'S$', CNY: '¥', JPY: '¥', KRW: '₩' };
-
-const money = (cur: string, n: number) => {
-  const d = cur === 'JPY' || cur === 'KRW' ? 0 : 2;
-  const num = n.toLocaleString(cur === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-  return cur === 'INR' ? `₹ ${num}` : `${SYMBOL[cur] ?? `${cur} `}${num}`;
-};
 const toNum = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
 const numeric = (v: string) => v.replace(/[^\d.]/g, '');
-
 
 const Auto = () => <span className="stsm-auto">Auto</span>;
 const Req = () => <span className="stsm-req" aria-hidden>*</span>;
@@ -182,7 +171,7 @@ export default function SupplierMasterForm({ scope, productName, saving, dialogR
               <div className="stsm-f">
                 <span className="stsm-l" id="stsm-cur-l">Currency <Req /></span>
                 <div className="stsm-ms" aria-labelledby="stsm-cur-l">
-                  <MasterSelect value={cur} options={CURRENCIES.map(c => ({ value: c, label: c }))} onChange={pickCurrency} />
+                  <MasterSelect value={cur} options={CURRENCY_OPTIONS} onChange={pickCurrency} />
                 </div>
               </div>
               <div className="stsm-f">

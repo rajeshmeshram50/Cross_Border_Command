@@ -760,6 +760,10 @@
     border-radius: 6px;
 }
 
+.stnf-hsn--txt {
+    font-family: 'DM Sans', system-ui, sans-serif;
+}
+
 .stnf-tgt {
     font-size: 10.5px;
     font-style: normal;
@@ -819,6 +823,12 @@
 
 .stnf-cur .stnf-inp {
     padding-left: 28px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Price, rate: numbers read in tabular figures. */
+.stnf-inp--num {
     font-weight: 800;
     font-variant-numeric: tabular-nums;
 }

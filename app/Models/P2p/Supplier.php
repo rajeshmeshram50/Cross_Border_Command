@@ -9,8 +9,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Supplier extends Model
 {
     use EnforcesUniqueEmail;
-    protected static string $emailScope   = 'vendor';
-    protected static array  $emailColumns = ['email'];
+
+    protected static string $emailScope = 'vendor';
+
+    protected static array $emailColumns = ['email'];
 
     use SoftDeletes;
 
