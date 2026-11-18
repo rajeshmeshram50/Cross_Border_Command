@@ -54,7 +54,12 @@ class ServiceController extends Controller
 
     private function findService(Request $request, int $id): Service
     {
-        return $this->scoped($request)->findOrFail($id);
+        return $this->scoped($request)->find($id) ?? abort(404, 'Service not found.');
+    }
+
+    private function findMapping(Service $service, int $mapId): ServiceSupplier
+    {
+        return $service->suppliers()->find($mapId) ?? abort(404, 'Supplier mapping not found for this service.');
     }
 
     private function editDenial($user, Service $service, string $action = 'edit'): ?string
@@ -768,7 +773,7 @@ class ServiceController extends Controller
         if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
             return $this->deny($denial);
         }
-        $map = $service->suppliers()->findOrFail($mapId);
+        $map = $this->findMapping($service, $mapId);
 
         $data = $request->validate([
             'price' => 'sometimes|required|numeric|gt:0',
@@ -801,7 +806,7 @@ class ServiceController extends Controller
         if ($denial = $this->editDenial($request->user(), $service, 'edit')) {
             return $this->deny($denial);
         }
-        $map = $service->suppliers()->findOrFail($mapId);
+        $map = $this->findMapping($service, $mapId);
         $data = $request->validate(['status' => ['required', Rule::in(ServiceSupplier::STATUSES)]]);
 
         $map->fill(['status' => $data['status'], 'updated_by' => $request->user()?->id])->save();
