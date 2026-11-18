@@ -37,7 +37,7 @@ export default function ServiceTypeGate({
   const T = open ? SVC_TYPES[open] : null;
 
   return createPortal((
-    <div className="svf-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="svf-backdrop">
       <div className="svg-modal stg-modal" role="dialog" aria-modal="true" aria-label="Add Service">
         <div className="svf-head">
           <div className="svf-head-left">

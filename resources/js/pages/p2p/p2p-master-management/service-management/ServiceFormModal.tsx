@@ -810,7 +810,7 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
       )}
 
       {showAll && createPortal((
-        <div className="svf-imgmodal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowAll(false); }}>
+        <div className="svf-imgmodal-backdrop">
           <div className="svf-imgmodal" role="dialog" aria-modal="true" aria-label={label}>
             <div className="svf-imgmodal-head">
               <span>{label} <em>({total})</em></span>

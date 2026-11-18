@@ -380,7 +380,7 @@ export function SupplierMapPanel({
       </div>
 
       {step === 'choose' && createPortal((
-        <div className="apm-mv-backdrop svms-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+        <div className="apm-mv-backdrop svms-ov">
           <div className="svms-box svms-box--choose" role="dialog" aria-modal="true" aria-label="Map Supplier">
             <div className="svms-hd">
               <div className="svms-hd__ico">{SVC_ICONS.mapUser}</div>
@@ -404,7 +404,7 @@ export function SupplierMapPanel({
       ), document.body)}
 
       {step === 'form' && createPortal((
-        <div className="apm-mv-backdrop svms-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+        <div className="apm-mv-backdrop svms-ov">
           <div className="svms-box" role="dialog" aria-modal="true" aria-label={`Map ${intl ? 'International' : 'Domestic'} Supplier`}>
             <div className="svms-hd">
               <div className="svms-hd__ico">{SVC_ICONS.mapUser}</div>
@@ -622,7 +622,7 @@ export default function ServiceSupplierModal({
   }, [onClose]);
 
   return createPortal((
-    <div className="svs-overlay svs-teal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="svs-overlay svs-teal">
       <div className="svs-modal" role="dialog" aria-modal="true" aria-label={`Map Service Suppliers · ${code}`}>
         {busy && <SavingLock label="Saving suppliers…" />}
         <div className="svs-head">

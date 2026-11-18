@@ -135,8 +135,8 @@ export default function ServiceGstModal({
   return (
     <>
       {createPortal((
-        <div className="apm-gst-overlay svs-teal svf-gst" onClick={onClose}>
-          <div className="apm-gst-modal" role="dialog" aria-modal="true" aria-label="Map GST (%)" onClick={(e) => e.stopPropagation()}>
+        <div className="apm-gst-overlay svs-teal svf-gst">
+          <div className="apm-gst-modal" role="dialog" aria-modal="true" aria-label="Map GST (%)">
             <div className="apm-gst-head">
               <div className="apm-gst-head-ico">{ico}</div>
               <div className="apm-gst-head-txt">
@@ -165,8 +165,8 @@ export default function ServiceGstModal({
       ), document.body)}
 
       {masterOpen && createPortal((
-        <div className="apm-gst-overlay apm-gst-overlay--master svs-teal svf-gst" onClick={() => setMasterOpen(false)}>
-          <div className="apm-gst-modal" role="dialog" aria-modal="true" aria-label="GST (%) Master" onClick={(e) => e.stopPropagation()}>
+        <div className="apm-gst-overlay apm-gst-overlay--master svs-teal svf-gst">
+          <div className="apm-gst-modal" role="dialog" aria-modal="true" aria-label="GST (%) Master">
             <div className="apm-gst-head">
               <div className="apm-gst-head-ico">{ico}</div>
               <div className="apm-gst-head-txt">
