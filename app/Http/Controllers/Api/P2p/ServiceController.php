@@ -838,15 +838,35 @@ class ServiceController extends Controller
             'status' => 'active',
         ];
 
-        if ($existing) {
-            $existing->fill($fields + ['updated_by' => $userId])->save();
+        $map = DB::transaction(function () use ($service, $existing, $fields, $data, $userId) {
+            if ($existing) {
+                $existing->fill($fields + ['updated_by' => $userId])->save();
+                $map = $existing;
+            } else {
+                $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
+            }
+            $this->completeStageTwo($service, $userId);
 
-            return response()->json($this->supplierRowFresh($existing));
+            return $map;
+        });
+
+        return response()->json($this->supplierRowFresh($map) + [
+            'service_status' => $service->status,
+            'step_completed' => (int) $service->step_completed,
+        ], $existing ? 200 : 201);
+    }
+
+    private function completeStageTwo(Service $service, ?int $userId): void
+    {
+        if ((int) $service->step_completed >= 2 && $service->status !== 'draft') {
+            return;
         }
-
-        $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
-
-        return response()->json($this->supplierRowFresh($map), 201);
+        $service->step_completed = max((int) $service->step_completed, 2);
+        if ($service->status === 'draft') {
+            $service->status = 'active';
+        }
+        $service->updated_by = $userId;
+        $service->save();
     }
 
     public function updateSupplier(Request $request, int $id, int $mapId)
