@@ -547,6 +547,16 @@ class VendorController extends Controller
         $data['state_locked'] = \App\Models\P2p\PurchaseOrder::withoutGlobalScope('tenant')
             ->where('client_id', $vendor->client_id)->where('vendor_id', $vendor->id)->exists();
 
+        /* Same argument for the Supplier TYPE: it decides which documents may be
+         * raised against this supplier and which service buckets it appears in,
+         * so once a PO or Supplier Invoice has left draft against it, changing
+         * the type would re-file a supplier those documents already depend on.
+         * 'po' | 'spi' | null — the form names the document holding it. */
+        $data['vendor_type_lock'] = \App\Support\SegmentGuard::vendorCommittedDocument(
+            (int) $vendor->id,
+            (int) $vendor->client_id,
+        );
+
         // Data for the removal guard's unique-document check (condition 2). Keyed
         // by segment ID (the vendor form keys segments by id): each segment's
         // required doc keys (category|code) + the keys actually uploaded.
@@ -699,6 +709,27 @@ class VendorController extends Controller
             $data['vendor_type_id'] = $vt->id;
         }
         unset($data['vendor_type']);   // not a column on vendors
+
+        /* The type is frozen once a PO or Supplier Invoice has left draft
+           against this supplier: those documents were raised on the strength of
+           it, and it decides which service buckets the supplier appears in. The
+           form disables the picker, but a stale tab or a direct call must not
+           get past it either, so the refusal lives here too. */
+        if (!empty($data['id']) && array_key_exists('vendor_type_id', $data)) {
+            $existing = Vendor::query()->forUser($user)->find($data['id']);
+            if ($existing && (int) $existing->vendor_type_id !== (int) $data['vendor_type_id']) {
+                $held = \App\Support\SegmentGuard::vendorCommittedDocument(
+                    (int) $existing->id,
+                    (int) $existing->client_id,
+                );
+                if ($held) {
+                    $doc = $held === 'po' ? 'a Purchase Order' : 'a Supplier Invoice';
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'vendor_type' => ["This supplier is already on {$doc}, so its Supplier Type can no longer be changed."],
+                    ]);
+                }
+            }
+        }
 
         // Resolve the behaviour NAME → master_vendor_behaviour id.
         if (!empty($data['vendor_behaviour'])) {

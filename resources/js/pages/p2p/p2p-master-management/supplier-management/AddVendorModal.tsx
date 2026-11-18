@@ -672,9 +672,17 @@ export default function AddVendorModal(props: {
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
   const [stateLocked, setStateLocked] = useState(false);
+  /* 'po' | 'spi' | null — the document that has frozen the Supplier Type.
+     It decides which documents may be raised against this supplier and which
+     service buckets it appears in, so a committed document depends on it. */
+  const [typeLock, setTypeLock] = useState<string | null>(null);
   const lockToast = () => toast.warning(
     'Can’t change this',
     'This supplier is already used in a Purchase Order.',
+  );
+  const typeLockToast = () => toast.warning(
+    'Can’t change this',
+    `This supplier is already on ${typeLock === 'spi' ? 'a Supplier Invoice' : 'a Purchase Order'}, so its Supplier Type is fixed.`,
   );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
@@ -1349,6 +1357,7 @@ export default function AddVendorModal(props: {
         setLockedSegmentReasons((v as any).locked_segment_reasons && typeof (v as any).locked_segment_reasons === 'object' ? (v as any).locked_segment_reasons : {});
         setLockedSegmentReasons((v as any).locked_segment_reasons && typeof (v as any).locked_segment_reasons === 'object' ? (v as any).locked_segment_reasons : {});
         setStateLocked(!!(v as any).state_locked);
+        setTypeLock(((v as any).vendor_type_lock as string | null) ?? null);
         setSegReqKeys((v as any).segment_required_doc_keys && typeof (v as any).segment_required_doc_keys === 'object' ? (v as any).segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray((v as any).uploaded_doc_keys) ? (v as any).uploaded_doc_keys : []);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
@@ -2959,7 +2968,9 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                     <Field label="Supplier Type" required error={fieldErrors.vendorType}>
-                      <SupplierTypeSelect value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} invalid={!!fieldErrors.vendorType} />
+                      <LockField locked={!!typeLock} onLockClick={typeLockToast}>
+                        <SupplierTypeSelect value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} invalid={!!fieldErrors.vendorType} disabled={!!typeLock} />
+                      </LockField>
                     </Field>
                   </div>
                   <div className="avm-grid-3">

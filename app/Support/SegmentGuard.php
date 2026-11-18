@@ -269,6 +269,41 @@ class SegmentGuard
         return ['po' => array_values(array_unique($po)), 'spi' => array_values(array_unique($spi))];
     }
 
+    /**
+     * Is this supplier ITSELF committed to a document? — i.e. named on a
+     * Purchase Order or Supplier Invoice that has left draft.
+     *
+     * Deliberately broader than vendorLockSources(), which only reports the
+     * SEGMENTS a document pins. A supplier's TYPE decides which documents may
+     * be raised against it at all, so once one exists the type is history the
+     * document depends on, whatever product was on it.
+     *
+     * Returns the strongest document holding it: 'po', 'spi', or null.
+     */
+    public static function vendorCommittedDocument(int $vendorId, int $clientId): ?string
+    {
+        $po = \Illuminate\Support\Facades\DB::table('p2p_purchase_orders')
+            ->where('client_id', $clientId)
+            ->where('vendor_id', $vendorId)
+            ->whereIn('status', self::PO_COMMITTED)
+            ->whereNull('deleted_at')
+            ->exists();
+        if ($po) return 'po';
+
+        // Same guard as above: the SPI tables may not exist yet.
+        if (\Illuminate\Support\Facades\Schema::hasTable('supplier_purchase_invoices')) {
+            $spi = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices')
+                ->where('client_id', $clientId)
+                ->where('vendor_id', $vendorId)
+                ->whereIn('status', self::SPI_COMMITTED)
+                ->whereNull('deleted_at')
+                ->exists();
+            if ($spi) return 'spi';
+        }
+
+        return null;
+    }
+
     public static function lockedSegmentNames(string $partyType, int $partyId, int $clientId): array
     {
         // Supplier/Vendor: segments of the products on an issued Purchase Order
