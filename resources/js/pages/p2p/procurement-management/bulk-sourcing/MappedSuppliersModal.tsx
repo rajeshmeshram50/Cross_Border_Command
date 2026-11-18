@@ -18,6 +18,8 @@ type Sup = {
   // Manual-supplier address snapshot (source='new' only) — prefills the Map
   // Supplier edit form.
   card?: string; gmaps?: string; address?: string; country?: string; state?: string; state_code?: string; city?: string;
+  // New Supplier not yet in the Supplier Master → show "Convert to Supplier".
+  canConvert?: boolean;
 };
 
 export type ManualSupplierEdit = {
@@ -42,8 +44,8 @@ const fmtPrice = (p: string) => {
   return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
 };
 
-export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, onEditMaster, canAdd = true }: {
-  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; onEditMaster?: (vendorId: number) => void; canAdd?: boolean;
+export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, onEditMaster, onConvert, canAdd = true }: {
+  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; onEditMaster?: (vendorId: number) => void; onConvert?: (s: { supplierId: number; name: string }) => void; canAdd?: boolean;
 }) {
   const [suppliers, setSuppliers] = useState<Sup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,14 +152,24 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                     <div className="sv-card-tags"><span className="sv-card-tag id">{sup.id}</span><SegmentTags segment={sup.segment} tagClassName="sv-card-tag seg" /><span className="sv-card-tag src">{sup.source === 'New Supplier' ? 'New Supplier' : 'Master'}</span></div>
                   </div>
                   {sup.source === 'New Supplier' ? (
-                    onEditManual && (
-                      <Tooltip label="Edit supplier details">
-                        <button type="button" className="sv-card-edit" onClick={() => editManual(sup)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                          Edit
-                        </button>
-                      </Tooltip>
-                    )
+                    <>
+                      {onConvert && sup.canConvert && sup.supplier_id != null && (
+                        <Tooltip label="Register this supplier in the Supplier Master">
+                          <button type="button" className="sv-card-edit" onClick={() => onConvert({ supplierId: Number(sup.supplier_id), name: sup.name })}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><polyline points="16 11 18 13 22 9" /></svg>
+                            Convert to Supplier
+                          </button>
+                        </Tooltip>
+                      )}
+                      {onEditManual && (
+                        <Tooltip label="Edit supplier details">
+                          <button type="button" className="sv-card-edit" onClick={() => editManual(sup)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            Edit
+                          </button>
+                        </Tooltip>
+                      )}
+                    </>
                   ) : (onEditMaster && sup.supplier_id != null) && (
                     <Tooltip label="Edit supplier details">
                       <button type="button" className="sv-card-edit" onClick={() => editMaster(sup)}>

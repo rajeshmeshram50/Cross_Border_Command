@@ -113,7 +113,19 @@ export const SUPPLIER_BEHAVIOUR_OPTS: { value: string; label: string }[] = [
   { value: 'Fraud Alert',                  label: 'Fraud Alert' },
 ];
 
+/** Convert to Supplier: GET /p2p/new-suppliers/{id}/convert → opens the form pre-filled. */
+export type SupplierPrefill = {
+  origin?: 'domestic' | 'international';
+  identity: { company_name?: string | null; legal_name?: string | null; segment_id?: number | null; gst_applicable?: 'Yes' | 'No' | null };
+  address: {
+    address_line?: string | null; country_id?: number | null; state_id?: number | null; state_code?: string | null; city?: string | null;
+    google_location?: string | null; contact_name?: string | null; contact_no?: string | null; email?: string | null;
+  };
+};
+
 export type VendorPayload = {
+  /** Id of the saved supplier (vendors.id). */
+  vendorId?: number | null;
   companyName: string;
   legalName: string;
   vendorType: string;
@@ -383,6 +395,10 @@ export default function AddVendorModal(props: {
    * the flow the user is standing in.
    */
   canMapProducts?: boolean;
+  /** Convert to Supplier: values to start a NEW supplier with. */
+  prefill?: SupplierPrefill | null;
+  /** Convert to Supplier: the P2P New Supplier being converted (its email is not a duplicate). */
+  convertSupplierId?: number | null;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
@@ -723,6 +739,29 @@ export default function AddVendorModal(props: {
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
   const [email,       setEmail]       = useState('');
+
+  /* Convert to Supplier — start the new supplier with the New Supplier's details,
+     so nothing has to be typed again (and the contact is not entered twice). */
+  useEffect(() => {
+    const pf = props.prefill;
+    if (isEdit || !pf) return;
+    const s = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+    if (pf.identity.company_name) setCompanyName(s(pf.identity.company_name));
+    if (pf.identity.legal_name) setLegalName(s(pf.identity.legal_name));
+    if (pf.identity.segment_id) setSegment([s(pf.identity.segment_id)]);
+    if (pf.identity.gst_applicable) setGstApplicable(pf.identity.gst_applicable);
+    const a = pf.address;
+    if (a.address_line) setRegisteredOffice(s(a.address_line));
+    if (a.country_id) setCountry(s(a.country_id));
+    if (a.state_id) setState(s(a.state_id));
+    if (a.state_code) setStateCode(s(a.state_code));
+    if (a.city) setCity(s(a.city));
+    if (a.google_location) setGoogleLocation(s(a.google_location));
+    if (a.contact_name) setContactName(s(a.contact_name));
+    if (a.contact_no) setContactNo(s(a.contact_no));
+    if (a.email) setEmail(s(a.email));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [primarySaved, setPrimarySaved] = useState(false);
@@ -1631,6 +1670,7 @@ export default function AddVendorModal(props: {
       Object.entries(pa).forEach(([k, v]) => fd.append(`primary_address[${k}]`, v));
       if (attachment) fd.append('primary_attachment', attachment);
       else if (primaryAttachmentPath) fd.append('primary_address[attachment_path]', primaryAttachmentPath);
+      if (props.convertSupplierId) fd.append('convert_supplier_id', String(props.convertSupplierId));
 
       const { data } = await api.post(`/vendors/${vendorId}/step/contacts`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -1821,6 +1861,7 @@ export default function AddVendorModal(props: {
       `${vendorCode ? vendorCode + ' — ' : ''}${companyName.trim() || 'Supplier'} completed and saved.`,
     );
     onSubmit({
+      vendorId,
       companyName, legalName, vendorType, website, gstApplicable, gstNumber, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
       registeredOffice, country, state, stateCode, city, pincode, googleLocation,

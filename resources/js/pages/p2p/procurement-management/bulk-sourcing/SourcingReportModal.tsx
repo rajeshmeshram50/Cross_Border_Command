@@ -4,7 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal, { type ManualSupplierEdit } from './MappedSuppliersModal';
-import AddVendorModal from '../../p2p-master-management/supplier-management/AddVendorModal';
+import AddVendorModal, { type SupplierPrefill, type VendorPayload } from '../../p2p-master-management/supplier-management/AddVendorModal';
 import { useModalGuard } from './useModalGuard';
 import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -138,6 +138,32 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
   // Master supplier edit — opens the Supplier edit wizard IN PLACE (no redirect
   // to the Suppliers module). `gi` remembers which product to reopen afterwards.
   const [editMaster, setEditMaster] = useState<{ gi: number; vendorId: number } | null>(null);
+  // Convert to Supplier: the New Supplier being registered in the Supplier Master.
+  const [convert, setConvert] = useState<{ gi: number; supplierId: number; name: string; prefill: SupplierPrefill } | null>(null);
+
+  const startConvert = async (gi: number, s: { supplierId: number; name: string }) => {
+    try {
+      const { data } = await api.get<{ data: SupplierPrefill & { converted?: boolean } }>(`/p2p/new-suppliers/${s.supplierId}/convert`);
+      if (data?.data?.converted) { toast.info('Already converted', `${s.name} is already in the Supplier Master.`); setViewIdx(gi); return; }
+      setConvert({ gi, ...s, prefill: data.data });
+    } catch {
+      toast.error('Could not open Convert to Supplier', 'Please try again.');
+      setViewIdx(gi);
+    }
+  };
+
+  const finishConvert = async (payload: VendorPayload) => {
+    const c = convert!;
+    try {
+      if (!payload.vendorId) throw new Error('no vendor id');
+      await api.post(`/p2p/new-suppliers/${c.supplierId}/convert`, { vendor_id: payload.vendorId });
+      toast.success(`${payload.companyName || c.name} added to Supplier Master`, 'The mapping now shows this supplier as Master.');
+    } catch {
+      toast.error('Supplier saved, but linking failed', 'Open Mapped Suppliers and try Convert again.');
+    }
+    setConvert(null);
+    setViewIdx(c.gi);
+  };
   const { pulse, guardOverlay } = useModalGuard();
 
   // Lock background page scroll while the report modal is open.
@@ -329,6 +355,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onAddSupplier={() => { const gi = viewIdx!; setViewIdx(null); setMapIdx(gi); }}
           onEditManual={canMap ? (sup) => { const gi = viewIdx!; setViewIdx(null); setEditManual({ gi, sup }); } : undefined}
           onEditMaster={canMap ? (vendorId) => { const gi = viewIdx!; setViewIdx(null); setEditMaster({ gi, vendorId }); } : undefined}
+          onConvert={canMap ? (s) => { const gi = viewIdx!; setViewIdx(null); startConvert(gi, s); } : undefined}
         />
       )}
       {editManual !== null && (
@@ -341,6 +368,17 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onClose={() => setEditManual(null)}
           onMapped={() => setEditManual(null)}
           onUpdated={(name) => { setEditManual(null); toast.success('Supplier updated', name); }}
+        />
+      )}
+      {convert !== null && (
+        <AddVendorModal
+          key={`convert-${convert.supplierId}`}
+          prefill={convert.prefill}
+          convertSupplierId={convert.supplierId}
+          scope={convert.prefill.origin}
+          canMapProducts={false}
+          onClose={() => { const gi = convert.gi; setConvert(null); setViewIdx(gi); }}
+          onSubmit={finishConvert}
         />
       )}
       {editMaster !== null && (
