@@ -17,8 +17,9 @@ import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
 } from './vendorBundleCache';
-import '../../../../components/ui/DataTable.css';   // .dt-tabrail / .dt-tab — the Customer list's tab rail
+import '../../../../components/ui/DataTable.css';   // .dt-root / .dt-search / .dt-table — the shared list table and search
 import './supplier-management.css';
+import './supplier-scope-gate-teal.css';
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-* - the Customer list's classes
 import { lazyPage } from '../../../../utils/lazyPage';
 
@@ -57,6 +58,8 @@ export type Vendor = {
   country?: string;
   pincode?: string;
   contacts: SupplierContact[];
+  /** dd/mm/yyyy the supplier was created, under its code in the list. */
+  createdOn?: string;
 };
 
 export type SupplierFacets = {
@@ -65,6 +68,8 @@ export type SupplierFacets = {
   scope?: { domestic: number; international: number };
   category: { star: number; general: number; high_risk: number; blacklisted: number };
   compliance: { compliant: number; non_compliant: number };
+  /** Rows per supplier-type tab (backend pending: the tabs show "—" until it is sent). */
+  kind?: { all: number; material: number; logistics: number; services: number };
 };
 
 export type SupplierContact = {
@@ -85,6 +90,7 @@ type ApiVendor = {
   company_name: string;
   legal_name: string | null;
   status: string;
+  created_at?: string | null;
   primary_email: string | null;
   vendor_type?: { id: number; name: string | null } | null;
   segment?: { id: number; name: string | null; regulatory_status?: string | null } | null;
@@ -146,13 +152,8 @@ function SegNameCell({ name }: { name: string }) {
   return clipped ? <Tooltip label={name}>{inner}</Tooltip> : inner;
 }
 
-/* Supplier Type pill colours - the Customer list's .smc-type-pill takes its
-   colours inline per value the same way. */
-const TYPE_PILL: Record<'material' | 'logistics' | 'services', { bg: string; color: string; border: string }> = {
-  material:  { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' },
-  logistics: { bg: 'rgba(13,148,136,0.16)', color: '#0d9488', border: 'rgba(13,148,136,0.40)' },
-  services:  { bg: 'rgba(245,158,11,0.16)', color: '#d97706', border: 'rgba(245,158,11,0.40)' },
-};
+/* Supplier Type pill colours: classes (.sup-type--material / --logistics / --services in
+   supplier-management.css), so light and dark mode both follow the design. */
 
 function typeKind(type: string): 'material' | 'logistics' | 'services' {
   const t = (type || '').toLowerCase();
@@ -224,167 +225,95 @@ function complianceTone(status?: string): { label: string; cls: string } | null 
   return { label: s, cls: no ? 'sl-compliant--no' : 'sl-compliant--yes' };
 }
 
-/* ── Refine Suppliers ─────────────────────────────────────────
- *
- * A popover, not a modal. Every choice in it is one click and is reflected in
- * the table behind immediately, so dimming that table to make the choice would
- * hide the only feedback the panel gives. "Done" just closes it.
- *
- * Filters apply as you tick — there is no Apply/Cancel pair. That means no
- * draft state to keep in sync, and the count in the footer is the live answer
- * rather than a promise about one.
- */
-const CAT_TILES: Array<{ key: string; label: string; icon: CatIcon }> = [
-  { key: 'star',        label: 'Star',        icon: 'star'  },
-  { key: 'general',     label: 'General',     icon: 'medal' },
-  { key: 'high_risk',   label: 'High Risk',   icon: 'warn'  },
-  { key: 'blacklisted', label: 'Blacklisted', icon: 'ban'   },
+/* ── Filter Suppliers (the design's centred modal) ──────────────────────────
+ * Ticks still apply as you go, so "N of M suppliers match" is the real answer
+ * from the server, not a guess. Apply keeps them; Cancel, ×, Esc and the
+ * backdrop put back what was set when the modal opened. */
+const CAT_OPTS: Array<{ key: string; label: string; hint: string; icon: CatIcon }> = [
+  { key: 'star',        label: 'Star Supplier',        hint: 'Top-rated, high-volume',      icon: 'star'  },
+  { key: 'general',     label: 'General Supplier',     hint: 'Standard approved suppliers', icon: 'medal' },
+  { key: 'high_risk',   label: 'High Risk Supplier',   hint: 'Flagged for closer review',   icon: 'warn'  },
+  { key: 'blacklisted', label: 'Blacklisted Supplier', hint: 'Blocked from new orders',     icon: 'ban'   },
 ];
 
-const COMP_TILES: Array<{ key: string; label: string; tone: string; glyph: ReactNode }> = [
+const COMP_OPTS: Array<{ key: string; label: string; hint: string; glyph: ReactNode }> = [
   {
-    key: 'compliant', label: 'Compliant', tone: 'ok',
-    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="8 12.5 11 15.5 16 9" /></svg>,
+    key: 'compliant', label: 'Compliant', hint: 'All KYC & documents verified',
+    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>,
   },
   {
-    key: 'non_compliant', label: 'Non Compliant', tone: 'no',
-    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="7.5" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12.01" y2="16.5" /></svg>,
+    key: 'non_compliant', label: 'Non Compliant', hint: 'Pending or failed compliance',
+    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12.01" y2="16.5" /></svg>,
   },
 ];
+
+const IcoFunnel = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>;
+const IcoTick = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
 
 function RefineSuppliers(props: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   facets: SupplierFacets | null;
-  /** Rows the current filters return — the left half of "N / M". */
+  /** Rows the current filters return: the N of "N of M suppliers match". */
   shown: number;
   active: number;
+  scopeLabel: string;
   catSel: string[];
   compSel: string[];
   onToggleCat: (k: string) => void;
   onToggleComp: (k: string) => void;
-  onClear: () => void;
+  /** Set both selections at once (Clear All, and Cancel restoring the opening state). */
+  onSet: (cat: string[], comp: string[]) => void;
 }) {
-  const { open, onOpenChange, facets } = props;
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const { open, onOpenChange, facets, catSel, compSel, onSet } = props;
+  const opened = useRef<{ cat: string[]; comp: string[] } | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  /* Close on an outside click and on Escape. The panel overlays the table it
-     filters, so leaving it open while the user reaches for a row would sit in
-     front of the result they opened it to see. */
+  // Remember the selection the modal opened with, so Cancel can put it back.
+  useEffect(() => {
+    if (open) { opened.current = { cat: catSel, comp: compSel }; dialogRef.current?.focus(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const cancel = useCallback(() => {
+    if (opened.current) onSet(opened.current.cat, opened.current.comp);
+    onOpenChange(false);
+  }, [onSet, onOpenChange]);
+
+  // Esc cancels; the page behind stays still (html too: a body-only lock still lets it scroll).
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) onOpenChange(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpenChange(false); };
-    document.addEventListener('mousedown', onDown, true);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancel(); };
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, onOpenChange]);
-
-  /* Freeze the page behind the panel while it is open, the same way the
-     Segments and Contact Persons overlays do. The panel is position:fixed and
-     the Filter button is not, so any scroll pulls the two apart — and which
-     element does the scrolling varies with the shell, so there is no one scroll
-     event to catch. Nothing moves, nothing comes apart.
-     BOTH <html> and <body>: a body-only lock still lets the html element
-     scroll on some layouts. */
-  useEffect(() => {
-    if (!open) return;
     const b = document.body.style.overflow;
     const h = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
-  }, [open]);
-
-  /* How tall the facet area may be before the panel runs off the bottom of the
-     screen. (#37)
-     The body already scrolled, but at a FIXED cap — min(56vh, 420px) — which
-     takes no account of where the button sits. On a page scrolled down, or a
-     short window, the panel opened below the fold: the top of it was visible
-     and Done was not, so it read as "hidden until you scroll the page".
-     Measured from the button instead, the panel always ends above the viewport
-     edge and the tiles scroll inside it. */
-  /* The panel is position:fixed, so it needs real coordinates. Below 720px the
-     stylesheet pins it edge-to-edge itself, so leave it alone there.
-     maxHeight caps the whole SHEET rather than the body: the head and foot are
-     flex:0 0 auto and the body takes the remainder, so the Done bar is on
-     screen whatever is left. Capping the body instead meant guessing the head
-     and foot heights, and the guess pushed Done past the bottom. */
-  const [popPos, setPopPos] = useState<React.CSSProperties | undefined>(undefined);
-  const [popUp, setPopUp] = useState(false);
-  useEffect(() => {
-    if (!open) { setPopPos(undefined); setPopUp(false); return; }
-    const measure = () => {
-      const r = wrapRef.current?.getBoundingClientRect();
-      if (!r) return;
-      if (window.innerWidth <= 720) { setPopPos(undefined); setPopUp(false); return; }
-      /* The viewport bottom is NOT the usable bottom: the horizontal shell
-         pins .footer there, and the panel ran underneath it. Stop at whichever
-         comes first. */
-      const footTop = document.querySelector('.footer')?.getBoundingClientRect().top;
-      const floorY = Math.min(window.innerHeight, footTop && footTop > r.bottom ? footTop : window.innerHeight);
-      const ceilY = (document.querySelector('#page-topbar')?.getBoundingClientRect().bottom ?? 0) + 8;
-
-      const right = Math.max(12, window.innerWidth - r.right);
-      const below = floorY - (r.bottom + 11) - 10;
-      const above = (r.top - 11) - ceilY - 10;
-
-      /* Flip above the button when there isn't room below. Zoomed in, or on a
-         short window, the toolbar sits near the footer and no cap can make a
-         downward panel fit — it just loses its bottom. */
-      const flip = below < 260 && above > below;
-      setPopUp(flip);
-      setPopPos(flip
-        ? { bottom: window.innerHeight - r.top + 11, right, maxHeight: Math.max(200, above) }
-        : { top: r.bottom + 11, right, maxHeight: Math.max(200, below) });
-    };
-    measure();
-
-    /* Scrolling the page closes it rather than dragging it along: the panel is
-       fixed, so it used to hang over a table that had moved on underneath,
-       anchored to a Filter button no longer beside it.
-       Watched by the button's own position rather than by scroll events. Which
-       element scrolls depends on the shell — window, .main-content, or a
-       wrapper inside it — and listening for the one that fires meant guessing.
-       If the button has moved, the page scrolled, whatever did the scrolling.
-       The facet list scrolls inside the panel without moving the button, so it
-       is unaffected. */
-    let anchor = wrapRef.current?.getBoundingClientRect().top ?? 0;
-    let raf = 0;
-    const watch = () => {
-      const r = wrapRef.current?.getBoundingClientRect();
-      if (r && Math.abs(r.top - anchor) > 2) { onOpenChange(false); return; }
-      raf = requestAnimationFrame(watch);
-    };
-    raf = requestAnimationFrame(watch);
-
-    // A resize re-anchors instead of closing — the user has not scrolled away.
-    const onResize = () => {
-      measure();
-      anchor = wrapRef.current?.getBoundingClientRect().top ?? anchor;
-    };
-    window.addEventListener('resize', onResize);
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = b;
+      document.documentElement.style.overflow = h;
     };
-  }, [open, onOpenChange]);
+  }, [open, cancel]);
 
   const grand = facets?.grand_total ?? 0;
-  const pct = grand > 0 ? Math.round((Math.min(props.shown, grand) / grand) * 100) : 100;
+
+  const option = (key: string, label: string, hint: string, ico: ReactNode, n: number | null, on: boolean, toggle: () => void) => (
+    <button key={key} type="button" role="checkbox" aria-checked={on} className={`supfm-opt${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`} onClick={toggle}>
+      <span className="supfm-chk"><IcoTick /></span>
+      <span className="supfm-ico">{ico}</span>
+      <span className="supfm-txt"><b>{label}</b><small>{hint}</small></span>
+      <span className="supfm-n">{n ?? '–'}</span>
+    </button>
+  );
 
   return (
-    <div className="sl-refine" ref={wrapRef}>
+    <div className="sl-refine">
       <button
         type="button"
-        /* The Supplier list's own filled Filter button, at the right end of the toolbar. */
         className={`sl-refine-btn${open ? ' is-open' : ''}${props.active ? ' has-active' : ''}`}
-        onClick={() => onOpenChange(!open)}
+        onClick={() => onOpenChange(true)}
+        aria-haspopup="dialog"
         aria-expanded={open}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -394,98 +323,91 @@ function RefineSuppliers(props: {
         {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
       </button>
 
-      {open && (
-        <div className={popUp ? 'sl-refine-pop is-up' : 'sl-refine-pop'} role="dialog" aria-label="Refine Suppliers" style={popPos}>
-          <div className="sl-refine-sheet">
-            <div className="sl-refine-head">
-              <span className="sl-refine-head-ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                </svg>
-              </span>
-              <span className="sl-refine-title">Refine Suppliers</span>
-              {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
-              <span className="sl-refine-sp" />
-              {/* Reset sits with the title, not the footer: it undoes what the
-                  panel did, while Done only dismisses it. */}
-              {props.active > 0 && (
-                <button type="button" className="sl-refine-reset" onClick={props.onClear}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 3 3 9 9 9" /></svg>
-                  Reset
-                </button>
-              )}
-              <button type="button" className="sl-refine-x" onClick={() => onOpenChange(false)} aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      {open && createPortal(
+        <div className="supfm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) cancel(); }}>
+          <div className="supfm" role="dialog" aria-modal="true" aria-label="Filter Suppliers" ref={dialogRef} tabIndex={-1}>
+            <div className="supfm-hd">
+              <span className="supfm-hd__ico"><IcoFunnel /></span>
+              <div className="supfm-hd__t">
+                <b>Filter Suppliers</b>
+                <small>Narrow the list by category and compliance · <span>{props.scopeLabel}</span></small>
+              </div>
+              <button type="button" className="supfm-x" onClick={cancel} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
 
-            <div className="sl-refine-body">
-              <div className="sl-refine-group">
-                <div className="sl-refine-k"><span>Category</span></div>
-                <div className="sl-refine-grid sl-refine-grid--4">
-                  {CAT_TILES.map(t => {
-                    const n = facets ? facets.category[t.key as keyof SupplierFacets['category']] : null;
-                    const on = props.catSel.includes(t.key);
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        /* is-empty, not disabled: a zero facet is still worth
-                           showing — it answers "are there any?" — but it must
-                           not read as an equal choice beside a live one. */
-                        className={`sl-refine-tile sl-refine-tile--${t.icon}${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
-                        onClick={() => props.onToggleCat(t.key)}
-                        aria-pressed={on}
-                      >
-                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
-                        <span className="sl-refine-tile-ico"><CatIconSvg kind={t.icon} /></span>
-                        <span className="sl-refine-tile-lbl">{t.label}</span>
-                        <span className="sl-refine-tile-n">{n ?? '–'}</span>
-                      </button>
-                    );
-                  })}
+            <div className="supfm-body">
+              <section className="supfm-sec">
+                <div className="supfm-sec__hd">
+                  <span className="supfm-sec__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
+                  <div className="supfm-sec__t"><b>Supplier Category</b><small>Filter by supplier rating</small></div>
                 </div>
-              </div>
+                <div className="supfm-grid">
+                  {CAT_OPTS.map(t => option(
+                    t.key, t.label, t.hint, <CatIconSvg kind={t.icon} />,
+                    facets ? facets.category[t.key as keyof SupplierFacets['category']] : null,
+                    catSel.includes(t.key), () => props.onToggleCat(t.key),
+                  ))}
+                </div>
+              </section>
 
-              <div className="sl-refine-group">
-                <div className="sl-refine-k"><span>Compliance</span></div>
-                <div className="sl-refine-grid sl-refine-grid--2">
-                  {COMP_TILES.map(t => {
-                    const n = facets ? facets.compliance[t.key as keyof SupplierFacets['compliance']] : null;
-                    const on = props.compSel.includes(t.key);
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        className={`sl-refine-tile sl-refine-tile--${t.tone}${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
-                        onClick={() => props.onToggleComp(t.key)}
-                        aria-pressed={on}
-                      >
-                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
-                        <span className="sl-refine-tile-ico">{t.glyph}</span>
-                        <span className="sl-refine-tile-lbl">{t.label}</span>
-                        <span className="sl-refine-tile-n">{n ?? '–'}</span>
-                      </button>
-                    );
-                  })}
+              <section className="supfm-sec">
+                <div className="supfm-sec__hd">
+                  <span className="supfm-sec__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /><path d="M9 12l2 2 4-4" /></svg></span>
+                  <div className="supfm-sec__t"><b>Compliant Status</b><small>Filter by KYC / compliance result</small></div>
                 </div>
-              </div>
-              {/* The two compliance counts need not add up to the total: the
-                  master holds ten states, and a supplier still Under Review or
-                  Pending is settled neither way, so it is in neither bucket. */}
+                <div className="supfm-grid">
+                  {COMP_OPTS.map(t => option(
+                    t.key, t.label, t.hint, t.glyph,
+                    facets ? facets.compliance[t.key as keyof SupplierFacets['compliance']] : null,
+                    compSel.includes(t.key), () => props.onToggleComp(t.key),
+                  ))}
+                </div>
+              </section>
             </div>
 
-            <div className="sl-refine-foot">
-              <div className="sl-refine-res"><b>{props.shown}</b><i>/{grand}</i></div>
-              <div className="sl-refine-meter"><span style={{ width: `${pct}%` }} /></div>
-              <button type="button" className="sl-refine-done" onClick={() => onOpenChange(false)}>Done</button>
+            <div className="supfm-ft">
+              <button type="button" className="supfm-clear" onClick={() => onSet([], [])} disabled={!props.active}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /></svg>
+                Clear All
+              </button>
+              <span className="supfm-res"><b>{props.shown}</b> of {grand} suppliers match</span>
+              <span className="supfm-sp" />
+              <button type="button" className="supfm-cancel" onClick={cancel}>Cancel</button>
+              <button type="button" className="supfm-apply" onClick={() => onOpenChange(false)}><IcoTick />Apply Filters</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
 }
+
+/** The design's supplier-type tabs. They send `kind` to /vendors and read `facets.kind` counts
+    (backend pending: filter + counts by the same rule as typeKind). */
+type SupplierKind = 'all' | 'material' | 'logistics' | 'services';
+const SUPPLIER_KINDS: { key: SupplierKind; label: string; icon: string }[] = [
+  { key: 'all', label: 'All Suppliers', icon: 'ri-group-line' },
+  { key: 'material', label: 'Material/ Goods Suppliers', icon: 'ri-box-3-line' },
+  { key: 'logistics', label: 'FFD/ Transporter Suppliers', icon: 'ri-truck-line' },
+  { key: 'services', label: 'Service Suppliers', icon: 'ri-tools-line' },
+] as const;
+
+/** Rows a type tab may load at once while the API cannot filter by type. */
+const KIND_FETCH_CAP = 1000;
+const matchesKind = (v: Vendor, k: SupplierKind) =>
+  k === 'all' || (!!v.type && v.type !== 'Pending' && typeKind(v.type) === k);
+const countKinds = (rows: Vendor[]): Record<SupplierKind, number> => ({
+  all: rows.length,
+  material: rows.filter(v => matchesKind(v, 'material')).length,
+  logistics: rows.filter(v => matchesKind(v, 'logistics')).length,
+  services: rows.filter(v => matchesKind(v, 'services')).length,
+});
+
+/** "State, Country" for the supplier cell (either may be missing). */
+const place = (v: Vendor) => [v.state !== '—' ? v.state : '', v.country ?? ''].filter(Boolean).join(', ');
 
 export default function Vendors() {
   const { user } = useAuth();
@@ -518,10 +440,13 @@ export default function Vendors() {
      Two tabs, no "All": the list is always looking at one side or the other,
      and Domestic is the landing state because it is the larger book. */
   const [scopeTab, setScopeTab] = useState<'domestic' | 'international'>('domestic');
-  /* Read once here rather than comparing the string at each of the three places
-     the GST State Code column is built (header, cell, empty-row span) — those
-     three have to agree or the table's columns stop lining up. */
+  /* International rows have no GST State Code: the Location cell leaves its
+     "GST nn" line out. */
   const isIntlScope = scopeTab === 'international';
+  const [kindTab, setKindTab] = useState<SupplierKind>('all');
+  const [kindCounts, setKindCounts] = useState<Record<SupplierKind, number> | null>(null);
+  const kindCacheRef = useRef('');    // filters + type of the list a type tab holds
+  const countsKeyRef = useRef('');    // filters the tab counts were taken for
   const [addOpen, setAddOpen] = useState(false);
   /* Domestic / International is asked BEFORE the form opens, because the
      answer changes what the form may OFFER — Country, and the GST block that
@@ -694,6 +619,7 @@ export default function Vendors() {
       phone:       row.primary_address?.contact_no ?? '—',
       email:       row.primary_address?.email ?? row.primary_email ?? '—',
       status:      row.status === 'active' ? 'Active' : 'Inactive',
+      createdOn:   row.created_at ? row.created_at.slice(0, 10).split('-').reverse().join('/') : undefined,
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
       segment:     row.segment?.name ? segmentLabel(row.segment.name, row.segment.regulatory_status) : undefined,
       segmentItems: (() => {
@@ -721,29 +647,64 @@ export default function Vendors() {
   }, [search]);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    const filterKey = JSON.stringify([debouncedSearch, catParam, compParam, scopeTab, tab]);
+    const kindMode = kindTab !== 'all';
+    // A type tab holds the whole filtered list and pages it here, so a page change needs no fetch.
+    if (kindMode && !opts?.silent && kindCacheRef.current === `${filterKey}|${kindTab}`) {
+      // After this render's effects (the swap effect below sets the shimmer on a page change).
+      void Promise.resolve().then(() => setSwapping(false));
+      return;
+    }
     if (!opts?.silent) {
       if (bootedRef.current) setRefetching(true);
       else                   setLoading(true);
     }
     const token = ++reqRef.current;
+    const base = {
+      ...(debouncedSearch ? { q: debouncedSearch } : {}),
+      ...(catParam  ? { categories: catParam }  : {}),
+      ...(compParam ? { compliance: compParam } : {}),
+      scope: scopeTab,
+      tab,
+    };
+    const fetchAll = () => api.get<any>('/vendors', { params: { ...base, page: 1, per_page: KIND_FETCH_CAP } });
     try {
-      const res = await api.get<{ data: ApiVendor[]; total?: number }>('/vendors', {
-        params: {
-          page,
-          per_page: rpp,
-          ...(debouncedSearch ? { q: debouncedSearch } : {}),
-          ...(catParam  ? { categories: catParam }  : {}),
-          ...(compParam ? { compliance: compParam } : {}),
-          scope: scopeTab,
-          tab,
-        },
-      });
+      /* Until /vendors filters and counts by `kind` (backend pending), a type tab loads the whole
+         filtered list once, keeps its type, and pages it on screen. */
+      const res = kindMode
+        ? await fetchAll()
+        : await api.get<any>('/vendors', { params: { ...base, page, per_page: rpp } });
       if (token !== reqRef.current) return;
       const body: any = res.data ?? {};
-      const rows: ApiVendor[] = Array.isArray(body) ? body : (body.data ?? []);
-      setVendors(rows.map(apiToVendor));
-      setTotal(Number(body.total ?? rows.length) || 0);
+      const rows: Vendor[] = (Array.isArray(body) ? body : (body.data ?? [])).map(apiToVendor);
+      if (kindMode) {
+        const ofKind = rows.filter(v => matchesKind(v, kindTab));
+        setVendors(ofKind);
+        setTotal(ofKind.length);
+        kindCacheRef.current = `${filterKey}|${kindTab}`;
+      } else {
+        setVendors(rows);
+        setTotal(Number(body.total ?? rows.length) || 0);
+        kindCacheRef.current = '';
+      }
       setFacets(body.facets ?? null);
+
+      // Tab counts: the API's own when it sends them; otherwise counted here, once per filter set.
+      if (body.facets?.kind) {
+        setKindCounts(body.facets.kind);
+      } else if (kindMode) {
+        setKindCounts(countKinds(rows));
+        countsKeyRef.current = filterKey;
+      } else if (opts?.silent || countsKeyRef.current !== filterKey) {
+        countsKeyRef.current = filterKey;
+        fetchAll()
+          .then(r => {
+            if (countsKeyRef.current !== filterKey) return;
+            const b: any = r.data ?? {};
+            setKindCounts(countKinds((Array.isArray(b) ? b : (b.data ?? [])).map(apiToVendor)));
+          })
+          .catch(() => { /* counts stay as they were; the list itself loaded */ });
+      }
     } catch {
       if (token !== reqRef.current) return;
       toast.error('Load failed', 'Could not load suppliers');
@@ -755,15 +716,15 @@ export default function Vendors() {
         setSwapping(false);
       }
     }
-  }, [page, rpp, debouncedSearch, scopeTab, tab, catParam, compParam]);
+  }, [page, rpp, debouncedSearch, scopeTab, kindTab, tab, catParam, compParam]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, catParam, compParam]);
+  useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, kindTab, catParam, compParam]);
 
   useEffect(() => {
     if (bootedRef.current) setSwapping(true);
-  }, [scopeTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
+  }, [scopeTab, kindTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
 
   useEffect(() => {
     const recompute = () => {
@@ -849,7 +810,9 @@ useEffect(() => {
   const pages = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pages);
   const start = (curPage - 1) * rpp;   // Sr No offset for the rows on this page
-  const pageRows = vendors;
+  /* Until /vendors filters by `kind`, the type tab narrows the loaded page on screen; once the
+     API filters, every row already matches and this is a no-op. */
+  const pageRows = kindTab === 'all' ? vendors : vendors.slice(start, start + rpp);
 
   const handleSave = () => {
     setAddOpen(false);
@@ -884,7 +847,7 @@ useEffect(() => {
          {/* The Customer list's layout (.smc-root): header block in .sup-fig,
              then the .smc-table-card list - same classes, same overrides. */}
          <div className="smc-root sup-list" ref={rootRef}>
-          {loading ? <div className="sup-fig"><ShimmerClmMaster cols={7} rows={8} twoTab /></div> : (<>
+          {loading ? <div className="sup-fig"><ShimmerClmMaster cols={11} rows={8} twoTab /></div> : (<>
 
           <div className="sup-fig">
           <div className="cstrip">
@@ -972,40 +935,21 @@ useEffect(() => {
           {/* .sup-fig stays the ancestor: the category / compliance pills and
               the Refine panel are styled under it. */}
           <div className="sup-fig">
-          <div className="smc-table-card dt-root hr-dt" data-accent="violet">
+          <div className="smc-table-card dt-root hr-dt" data-accent="teal">
             <div className="smc-toolbar">
-              {/* The Customer list's tab rail (QA #47) — same component, same
-                  violet HR-style pills, a count on each tab. */}
-              <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
-                <div className="dt-tabs" role="tablist">
-                  <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`dt-tab ${scopeTab === 'domestic' ? 'on' : 'off'}`} onClick={() => setScopeTab('domestic')}>
-                    <i className="ri-home-4-line" /> Domestic Supplier
-                    {facets?.scope && <span className="dt-tab-count">{facets.scope.domestic}</span>}
-                  </button>
-                  <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`dt-tab ${scopeTab === 'international' ? 'on' : 'off'}`} onClick={() => setScopeTab('international')}>
-                    <i className="ri-global-line" /> International Supplier
-                    {facets?.scope && <span className="dt-tab-count">{facets.scope.international}</span>}
-                  </button>
-                </div>
+              {/* Domestic / International: the design's main tabs (icon tile, label, count). */}
+              <div className="sup-tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`sup-tab${scopeTab === 'domestic' ? ' is-on' : ''}`} onClick={() => setScopeTab('domestic')}>
+                  <span className="sup-tab__ico"><i className="ri-home-4-line" /></span>Domestic Supplier
+                  {facets?.scope && <span className="sup-tab__c">{facets.scope.domestic}</span>}
+                </button>
+                <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`sup-tab${scopeTab === 'international' ? ' is-on' : ''}`} onClick={() => setScopeTab('international')}>
+                  <span className="sup-tab__ico"><i className="ri-global-line" /></span>International Supplier
+                  {facets?.scope && <span className="sup-tab__c">{facets.scope.international}</span>}
+                </button>
               </div>
-              <div className="dt-search">
-                <i className="ri-search-line dt-search-icon" />
-                <input
-                  type="search"
-                  name="supplier-list-search"
-                  autoComplete="new-password"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  placeholder="Search suppliers by name, code or contact…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                {search && (
-                  <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setSearch('')}>
-                    <i className="ri-close-line" />
-                  </button>
-                )}
-              </div>
+              {/* Filter, then search, on the right — the design's order. */}
+              <div className="sup-tools">
               <RefineSuppliers
                 open={filterOpen}
                 onOpenChange={setFilterOpen}
@@ -1016,49 +960,90 @@ useEffect(() => {
                 compSel={compSel}
                 onToggleCat={k => toggleIn(catSel, setCatSel, k)}
                 onToggleComp={k => toggleIn(compSel, setCompSel, k)}
-                onClear={() => { setCatSel([]); setCompSel([]); }}
+                onSet={(cat, comp) => { setCatSel(cat); setCompSel(comp); }}
+                scopeLabel={isIntlScope ? 'International Suppliers' : 'Domestic Suppliers'}
               />
+              <div className="dt-search">
+                <i className="ri-search-line dt-search-icon" />
+                <input
+                  type="search"
+                  name="supplier-list-search"
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  placeholder="Search by supplier code, name, type, state, country, contact, phone or email…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setSearch('')}>
+                    <i className="ri-close-line" />
+                  </button>
+                )}
+              </div>
+              </div>
+            </div>
+            <div className="sup-kinds" role="tablist" aria-label="Supplier type">
+              {SUPPLIER_KINDS.map(k => {
+                const on = kindTab === k.key;
+                const count = kindCounts?.[k.key] ?? (k.key === 'all' && kindTab === 'all' ? total : null);
+                return (
+                  <button key={k.key} type="button" role="tab" aria-selected={on} className={`sup-kind${on ? ' is-on' : ''}`} onClick={() => setKindTab(k.key)}>
+                    <span className="sup-kind__ico" aria-hidden><i className={k.icon} /></span>{k.label}
+                    <span className="sup-kind__c">{count ?? '—'}</span>
+                  </button>
+                );
+              })}
             </div>
             <div className="smc-table-wrap sup-table-wrap">
             {loading || swapping ? (
-              <ShimmerTable rows={Math.min(rpp, 12)} cols={isIntlScope ? 14 : 15} />
+              <ShimmerTable rows={Math.min(rpp, 12)} cols={11} />
             ) : (
               <>
                 <div className={`table-responsive${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>
-                  <table className={`table align-middle table-nowrap mb-0 dt-table${isIntlScope ? ' is-intl' : ''}`}>
+                  <table className="table align-middle table-nowrap mb-0 dt-table">
                     <thead className="table-light">
                       <tr>
-                        <th style={{ textAlign: 'center' }}>Sr No</th>
+                        <th style={{ textAlign: 'center' }}>Sr. No</th>
                         <th style={{ textAlign: 'center' }}>Supplier Code</th>
-                        <th>Supplier Name</th>
-                        <th>Supplier Type</th>
+                        <th>Supplier</th>
+                        <th style={{ textAlign: 'center' }}>Supplier Type</th>
                         <th>Segment</th>
-                        <th style={{ textAlign: 'center' }}>Country</th>
-                        <th>State</th>
-                        {!isIntlScope && <th style={{ textAlign: 'center' }}>GST State Code</th>}
+                        <th>Location</th>
                         <th>Contact Person</th>
-                        <th>Contact No</th>
-                        <th>Email</th>
-                        <th>Supplier Category</th>
+                        <th style={{ textAlign: 'center' }}>Supplier Category</th>
                         <th style={{ textAlign: 'center' }}>Compliant Status</th>
                         <th style={{ textAlign: 'center' }}>Mapped Products</th>
-                        <th style={{ textAlign: 'center' }}>Actions</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
-                        const tp = TYPE_PILL[kind];
                         const flag = supplierCategory(v.category);
                         const compliance = complianceTone(v.compliance);
                         return (
                           <tr key={v.id}>
                             <td style={{ textAlign: 'center' }}><span className="dt-serial">{start + i + 1}</span></td>
-                            <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{v.code}</span></td>
-                            <td><ClipCell value={v.companyName} className="smc-company" /></td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className="sup-code">
+                                <span className="dt-id-chip">{v.code}</span>
+                                {v.createdOn && <span className="sup-sub">{v.createdOn}</span>}
+                              </span>
+                            </td>
                             <td>
+                              {/* Icon tile, name, location. Type and contact count have their own columns. */}
+                              <span className="sup-cell">
+                                <span className="sup-cell__ico" aria-hidden><i className="ri-building-2-line" /></span>
+                                <span className="sup-cell__txt">
+                                  <ClipCell value={v.companyName} className="smc-company sup-name" />
+                                  {place(v) && <span className="sup-sub sup-sub--loc"><i className="ri-map-pin-line" aria-hidden />{place(v)}</span>}
+                                </span>
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
                               {v.type && v.type !== 'Pending'
-                                ? <span className="smc-type-pill" style={{ background: tp.bg, color: tp.color, borderColor: tp.border }}>{v.type}</span>
+                                ? <span className={`smc-type-pill sup-type sup-type--${kind}`}>{v.type}</span>
                                 : <span className="text-muted">—</span>}
                             </td>
                             <td>
@@ -1087,26 +1072,29 @@ useEffect(() => {
                                 </span>
                               ) : <span className="text-muted">—</span>}
                             </td>
-                            <td style={{ textAlign: 'center' }}><ClipCell value={v.country} className="smc-country" /></td>
-                            <td><ClipCell value={v.state} className="smc-country" /></td>
-                            {!isIntlScope && (
-                              <td style={{ textAlign: 'center' }}>{v.stateCode ? <span className="smc-mono">{v.stateCode}</span> : <span className="text-muted">—</span>}</td>
-                            )}
                             <td>
-                              <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
-                                <ClipCell value={v.contactName} className="smc-contact" />
-                                {v.contacts.length > 1 && (
-                                  <Tooltip label={`View all ${v.contacts.length} contacts`}>
-                                    <button type="button" className="smc-seg-more" onClick={() => setContactsTarget(v)}>
-                                      +{v.contacts.length - 1}
-                                    </button>
-                                  </Tooltip>
-                                )}
+                              <span className="sup-loc">
+                                <span><b className="sup-strong">{v.state !== '—' ? v.state : (v.country ?? '—')}</b>{v.state !== '—' && v.country && <span className="sup-sub">, {v.country}</span>}</span>
+                                {!isIntlScope && v.stateCode && <span className="sup-sub">GST <b className="smc-mono sup-strong">{v.stateCode}</b></span>}
                               </span>
                             </td>
-                            <td><span className="smc-mono">{v.phone || '—'}</span></td>
-                            <td><ClipCell value={v.email} className="smc-email" /></td>
                             <td>
+                              <span className="sup-ct">
+                                <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+                                  <ClipCell value={v.contactName} className="smc-contact sup-strong" />
+                                  {v.contacts.length > 1 && (
+                                    <Tooltip label={`View all ${v.contacts.length} contacts`}>
+                                      <button type="button" className="smc-seg-more" onClick={() => setContactsTarget(v)}>
+                                        +{v.contacts.length - 1}
+                                      </button>
+                                    </Tooltip>
+                                  )}
+                                </span>
+                                {v.phone && v.phone !== '—' && <span className="sup-sub"><i className="ri-phone-line" aria-hidden /><span className="smc-mono">{v.phone}</span></span>}
+                                {v.email && v.email !== '—' && <span className="sup-sub"><i className="ri-mail-line" aria-hidden /><ClipCell value={v.email} className="smc-email" /></span>}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
                               {flag
                                 ? (
                                   <span className={`sl-cat ${flag.cls}`}>
@@ -1120,11 +1108,7 @@ useEffect(() => {
                               {compliance
                                 ? (
                                   <span className={`sl-compliant ${compliance.cls}`}>
-                                    {compliance.cls === 'sl-compliant--yes'
-                                      ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                      : compliance.cls === 'sl-compliant--pending'
-                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
-                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>}
+                                    <span className="sl-compliant__dot" aria-hidden />
                                     {compliance.label}
                                   </span>
                                 )
@@ -1220,7 +1204,7 @@ useEffect(() => {
       )}
 
       {segPop && createPortal(
-        <div className="sup-fig">
+        <div className="sup-fig sup-list">
           <div className="sl-seg-pop-backdrop" onClick={() => setSegPop(null)} />
           <div
             ref={segPopRef}
@@ -1244,7 +1228,7 @@ useEffect(() => {
       )}
 
       {contactsTarget && (
-        <div className="sup-fig">
+        <div className="sup-fig sup-list">
           <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setContactsTarget(null); }}>
             <div className="sc-pop" role="dialog" aria-modal="true">
               <div className="sc-head">
