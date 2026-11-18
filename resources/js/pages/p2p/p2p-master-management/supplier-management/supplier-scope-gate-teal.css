@@ -1,0 +1,93 @@
+/* ═════ Add Supplier origin chooser (SupplierScopeGate) — teal ═════
+   Exact values from the Figma export (.slm-teal .supch-*). The chooser is shared
+   (Sourcing, PO, Products), so these rules apply only on the Supplier Management
+   page and the Sourcing Management Tracker (both teal); everywhere else it keeps
+   its own look. Imported by Vendors.tsx and the tracker's MapSupplierModal.tsx. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-ov { background: rgba(20,10,40,.68); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-box {
+  width: min(630px, calc(100vw - 28px)); border-radius: 22px; background: #fff;
+  border: 1px solid rgba(255,255,255,.7);
+  box-shadow: 0 40px 90px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.12);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-header {
+  padding: 22px 24px;
+  background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 72%, #22d3ee 100%);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-header-pattern { opacity: .35; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-title-wrap { gap: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-hicon {
+  width: 46px; height: 46px; border-radius: 14px; border: 0;
+  background: linear-gradient(145deg, #fff, #e0f7fb);
+  box-shadow: 0 8px 20px -8px rgba(0,0,0,.35);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-hicon svg { stroke: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-title { font-size: 19px; font-weight: 800; letter-spacing: -.3px; line-height: 1.2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-sub { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.85); margin: 3px 0 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-close {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4); color: #fff;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-close:hover { background: #fff; color: #0e7490; }
+
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-body { padding: 22px 24px 6px; background: linear-gradient(#f6fdfe, #fff 40%); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-grid { gap: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card {
+  padding: 18px; gap: 10px; border-radius: 16px;
+  background: #fff; border: 1.5px solid #e2eef2; box-shadow: none; transform: none;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:hover {
+  border-color: #a5e4f0; box-shadow: 0 12px 24px -16px rgba(8,145,178,.55); transform: none;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:focus-visible { outline: 2px solid #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card.is-selected {
+  border-color: #22d3ee; background: linear-gradient(135deg, #ecfeff, #fff);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.16); transform: none;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-glow { display: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-check { border: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card.is-selected .supch-check {
+  background: linear-gradient(135deg, #22d3ee, #0891b2); color: #fff;
+  box-shadow: 0 3px 8px rgba(8,145,178,.4);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-iconbox {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: #e0f7fb; border: 1px solid #c4ecf4; color: #0891b2; box-shadow: none;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-iconbox svg { stroke: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:hover .supch-iconbox { transform: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card.is-selected .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-title { font-size: 14.5px; font-weight: 800; letter-spacing: -.2px; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-desc { font-size: 11px; font-weight: 500; line-height: 1.4; margin-top: -4px; color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-divider { height: 1px; margin: 2px 0; background: #eef7fa; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-pills { gap: 5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-pill {
+  gap: 3px; padding: 4px 9px; font-size: 9.5px; font-weight: 700;
+  background: #ecfeff; border: 1px solid #bfe9f1; color: #0e7490;
+}
+
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-footer {
+  gap: 10px; padding: 16px 24px 22px; margin-top: 0;
+  background: #fbfeff; border-top: 1px solid #e2f1f5;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-cancel,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-continue { height: 40px; border-radius: 12px; font-size: 12.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-cancel {
+  padding: 0 20px; font-weight: 700; color: #475569; background: #fff; border: 1px solid #e2e8f0;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-cancel:hover { background: #f8fafc; border-color: #cbd5e1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-continue {
+  padding: 0 22px; font-weight: 800; color: #fff; border: 0;
+  background: linear-gradient(135deg, #0b4f63, #0e7490 35%, #0891b2 70%, #22d3ee);
+  box-shadow: 0 10px 24px -8px rgba(8,145,178,.65);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-continue:disabled { background: #e2eef2; color: #94a3b8; box-shadow: none; }
+
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.supch-box, .supch-body, .supch-footer) { background: #0c1a22; border-color: rgba(103,232,249,.14); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card { background: #10222b; border-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.supch-card:hover, .supch-card.is-selected) { background: linear-gradient(135deg, rgba(8,145,178,.18), #10222b); border-color: #22d3ee; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-title { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-desc { color: #94b4bf; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.supch-iconbox, .supch-pill) { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(103,232,249,.3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-divider { background: rgba(103,232,249,.12); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-cancel { background: transparent; color: #cfe3ea; border-color: rgba(103,232,249,.25); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-btn-continue:disabled { background: rgba(255,255,255,.08); color: rgba(255,255,255,.35); }
