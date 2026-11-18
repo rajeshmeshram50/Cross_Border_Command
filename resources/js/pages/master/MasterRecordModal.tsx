@@ -34,18 +34,33 @@ export function MasterRecordModal({
   slug,
   onClose,
   onSaved,
+  defaults,
 }: {
   slug: string;
   onClose: () => void;
   onSaved: (row: Record<string, unknown>) => void;
+  /** Optional starting values, e.g. the service type a Service Category is being added for. */
+  defaults?: Record<string, string>;
 }) {
   const cfg = getMasterConfig(slug);
   const toast = useToast();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [radioValues, setRadioValues] = useState<Record<string, string>>({});
+  const [radioValues, setRadioValues] = useState<Record<string, string>>(() => ({ ...(defaults ?? {}) }));
   const [saving, setSaving] = useState(false);
 
   if (!cfg) return null;
+  const firstOpt = (name: string): string => {
+    const src = cfg.fields.find(ff => ff.n === name);
+    const o = src?.opts?.[0];
+    return o == null ? '' : String(typeof o === 'string' ? o : o.value);
+  };
+  const isShown = (f: FieldDef): boolean => {
+    if (!f.showWhen) return true;
+    const cur = String(radioValues[f.showWhen.field] ?? defaults?.[f.showWhen.field] ?? firstOpt(f.showWhen.field));
+    const need = Array.isArray(f.showWhen.equals) ? f.showWhen.equals.map(String) : [String(f.showWhen.equals)];
+    return need.includes(cur);
+  };
+  const shownFields = cfg.fields.filter(isShown);
   const singular = cfg.titleSingular || cfg.title;
   const clearFieldError = (name: string) =>
     setFieldErrors(prev => { if (!prev[name]) return prev; const n = { ...prev }; delete n[name]; return n; });
@@ -56,7 +71,7 @@ export function MasterRecordModal({
 
     // Client-side required check (server still validates).
     const errs: Record<string, string> = {};
-    for (const f of cfg.fields) {
+    for (const f of shownFields) {
       if (f.sec || !f.n || f.t === 'sublist' || f.t === 'file' || f.auto) continue;
       if (f.r && String(fd.get(f.n) ?? '').trim() === '') errs[f.n] = `${f.l} is required`;
     }
@@ -70,6 +85,7 @@ export function MasterRecordModal({
     const payload: Record<string, unknown> = {};
     for (const f of cfg.fields as FieldDef[]) {
       if (f.sec || !f.n || f.t === 'sublist' || f.t === 'file' || f.auto) continue;
+      if (!isShown(f)) { payload[f.n] = null; continue; }
       const raw = fd.get(f.n);
       if (f.t === 'number') {
         payload[f.n] = raw == null || raw === '' ? null : Number(raw);
@@ -132,8 +148,8 @@ export function MasterRecordModal({
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
             <Row className="g-2">
-              {cfg.fields.map((f, i) =>
-                renderField(f, i, null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
+              {shownFields.map((f, i) =>
+                renderField(f, i, defaults ?? null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
               )}
             </Row>
           </ModalBody>

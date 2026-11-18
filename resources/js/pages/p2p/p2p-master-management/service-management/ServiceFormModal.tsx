@@ -15,6 +15,11 @@ import {
 import { SupplierMapPanel } from './ServiceSupplierModal';
 import ServiceGstModal from './ServiceGstModal';
 import { SVC_ICONS } from './serviceIcons';
+import { MasterRecordModal } from '../../../master/MasterRecordModal';
+import { SegmentModal, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
+import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
+import api from '../../../../api';
 import { SavingLock, ShimServiceForm } from './serviceLoading';
 import './service-form.css';
 
@@ -31,6 +36,9 @@ export interface ServiceFormInput {
 }
 
 type ShownImage = { id: number; name: string; src?: string };
+
+type QuickSlug = 'service_categories' | 'segments' | 'hsn_codes' | 'uom' | 'haz_class' | 'conditions' | 'packaging_material';
+type AddMaster = (slug: QuickSlug, field: keyof ServiceVals) => void;
 
 type FormOpts = {
   categories: Opt[]; segments: Opt[]; hsn: Opt[]; uom: Opt[]; depts: Opt[]; hazClasses: Opt[];
@@ -100,6 +108,8 @@ export default function ServiceFormModal({
   const [serviceId, setServiceId] = useState<number | undefined>(record?.id);
   const [saving, setSaving] = useState(false);
   const [supBusy, setSupBusy] = useState(false);
+  const [quickAdd, setQuickAdd] = useState<{ slug: QuickSlug; field: keyof ServiceVals } | null>(null);
+  const addMaster: AddMaster = (slug, field) => setQuickAdd({ slug, field });
   const [bundle, setBundle] = useState<ServiceBundle | null>(null);
   const [savedImages, setSavedImages] = useState<ExistingImage[]>(input.images ?? []);
   const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
@@ -170,7 +180,7 @@ export default function ServiceFormModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop, .apm-gst-overlay')) return;
+      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop, .apm-gst-overlay, .clm-modal-bd, .master-modal.show, .svf-imgmodal-backdrop')) return;
       onClose();
     };
     window.addEventListener('keydown', onKey);
@@ -259,6 +269,21 @@ export default function ServiceFormModal({
     }
   };
 
+  const masterAdded = async (field: keyof ServiceVals, row: Record<string, unknown>, label: string) => {
+    const id = row?.id != null ? String(row.id) : '';
+    setQuickAdd(null);
+    bustAllMasterBundles();
+    if (row?.status != null && String(row.status).toLowerCase() !== 'active') {
+      toast.info('Saved as Inactive', `Only Active records appear in this dropdown. Set the ${label} to Active to select it here.`);
+    }
+    try {
+      setBundle(await loadServiceBundle(true));
+      if (id && (row?.status == null || String(row.status).toLowerCase() === 'active')) set(field, id as never);
+    } catch (e) {
+      toast.error('Could not refresh the list', apiError(e, 'Close and reopen the form to see the new record.'));
+    }
+  };
+
   const submit = async () => {
     if (saving || serviceId == null) return;
     setSaving(true);
@@ -326,10 +351,10 @@ export default function ServiceFormModal({
           {stage === 1 && formLoading && (
             <ShimServiceForm sections={kind === 'soft' || kind === 'other' ? [9, 2] : [6, 6, 2]} />
           )}
-          {stage === 1 && !formLoading && kind === 'soft' && <SoftFields o={opts} savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
-          {stage === 1 && !formLoading && kind === 'other' && <OtherFields o={opts} savedAtt={savedAtt} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && kind === 'soft' && <SoftFields o={opts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && kind === 'other' && <OtherFields o={opts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
           {stage === 1 && !formLoading && (kind === 'trackable' || kind === 'consumable') && (
-            <MaterialFields o={opts} savedAtt={savedAtt} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
+            <MaterialFields o={opts} addMaster={addMaster} savedAtt={savedAtt} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
               primarySaved={primarySaved} secondarySaved={secondarySaved} onRemoveSaved={removeSavedImage} />
           )}
 
@@ -369,6 +394,40 @@ export default function ServiceFormModal({
         </div>
       </div>
 
+      {quickAdd?.slug === 'segments' && (
+        <>
+          <style>{CLM_CSS}</style>
+          <SegmentModal
+            existing={null}
+            nextCode={`S-${String((bundle?.segments.length ?? 0) + 1).padStart(3, '0')}`}
+            existingSegments={(bundle?.segments ?? []).map(sg => ({ name: sg.name, regulatory_status: sg.regulatory_status ?? undefined }))}
+            onClose={() => setQuickAdd(null)}
+            onSave={async (form: SegmentForm) => {
+              try {
+                const { data } = await api.post('/clm/segments', form);
+                const row = (data?.data ?? data) as Record<string, unknown>;
+                toast.success('Segment added', String(row?.name ?? form.name ?? ''));
+                await masterAdded('segment', row, 'segment');
+              } catch (e) {
+                toast.error('Save failed', apiError(e, 'Could not save the segment.'));
+              }
+            }}
+          />
+        </>
+      )}
+      {quickAdd && quickAdd.slug !== 'segments' && (
+        <MasterRecordModal
+          slug={quickAdd.slug}
+          defaults={quickAdd.slug === 'service_categories'
+            ? (kind === 'other'
+              ? { service_type: 'other_operational', classification: vals.otype ?? 'professional' }
+              : { service_type: 'soft_digital' })
+            : undefined}
+          onClose={() => setQuickAdd(null)}
+          onSaved={(row) => { void masterAdded(quickAdd.field, row, quickAdd.slug === 'service_categories' ? 'category' : 'record'); }}
+        />
+      )}
+
       {gstOpen && (
         <ServiceGstModal
           value={gstRateId}
@@ -387,6 +446,7 @@ type ImageKey = 'img1' | 'img2';
 type FileMap = { att?: File; img1?: File[]; img2?: File[] };
 type GroupProps = {
   o?: FormOpts;
+  addMaster?: AddMaster;
   savedAtt?: SavedAttachment;
   vals: ServiceVals; set: SetFn; errors: Errors; files: FileMap;
   pick: (k: FileKey, f: File | null) => void;
@@ -426,7 +486,7 @@ function ContractToggle({ vals, set }: { vals: ServiceVals; set: SetFn }) {
   );
 }
 
-function SoftFields({ o: opts, savedAtt, vals, set, errors, files, pick, setImages }: GroupProps) {
+function SoftFields({ o: opts, addMaster, savedAtt, vals, set, errors, files, pick, setImages }: GroupProps) {
   const o = opts!;
   return (
     <>
@@ -435,22 +495,22 @@ function SoftFields({ o: opts, savedAtt, vals, set, errors, files, pick, setImag
           <Field label="Service Name" required error={errors.name}>
             <TextInput value={vals.name} onChange={v => set('name', v)} placeholder="e.g. Microsoft 365 Business" />
           </Field>
-          <Field label="Service Category" required add error={errors.category}>
+          <Field label="Service Category" required add onAdd={() => addMaster?.('service_categories', 'category')} error={errors.category}>
             <Select value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
           </Field>
           <Field label="Service Provider / Brand" required error={errors.provider}>
             <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Microsoft, AWS, Anthropic" />
           </Field>
-          <Field label="Service Segment" required add error={errors.segment}>
+          <Field label="Service Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Service Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
           <Field label="Service Delivery Type" required error={errors.delivery}>
             <Select value={vals.delivery} options={o.delivery} label="Service Delivery Type" onChange={v => set('delivery', v)} invalid={!!errors.delivery} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Unit of Measurement" required add error={errors.uom}>
+          <Field label="Unit of Measurement" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
@@ -466,7 +526,7 @@ function SoftFields({ o: opts, savedAtt, vals, set, errors, files, pick, setImag
   );
 }
 
-function OtherFields({ o: opts, savedAtt, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
+function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
   const ot = (vals.otype ?? 'professional') as OtherType;
   const o = { ...opts!, ph: OTHER_OPTS[ot].ph };
   return (
@@ -479,7 +539,7 @@ function OtherFields({ o: opts, savedAtt, vals, set, setOtype, errors, files, pi
           <Field label="Service Type" required error={errors.otype}>
             <Select value={vals.otype} options={OTHER_TYPES} label="Service Type" onChange={setOtype} invalid={!!errors.otype} />
           </Field>
-          <Field label="Service Category" required add error={errors.category}>
+          <Field label="Service Category" required add onAdd={() => addMaster?.('service_categories', 'category')} error={errors.category}>
             <Select key={`cat-${ot}`} value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
           </Field>
           <Field label="Service Provider / Vendor" required error={errors.provider}>
@@ -491,10 +551,10 @@ function OtherFields({ o: opts, savedAtt, vals, set, setOtype, errors, files, pi
           <Field label="Billing Frequency" required error={errors.billing}>
             <Select value={vals.billing} options={o.billing} label="Billing Frequency" onChange={v => set('billing', v)} invalid={!!errors.billing} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Unit of Measurement" required add error={errors.uom}>
+          <Field label="Unit of Measurement" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
@@ -510,7 +570,7 @@ function OtherFields({ o: opts, savedAtt, vals, set, setOtype, errors, files, pi
   );
 }
 
-function MaterialFields({ o: opts, savedAtt, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
+function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
   kind: 'trackable' | 'consumable'; primarySaved: ShownImage[]; secondarySaved: ShownImage[]; onRemoveSaved: (id: number) => void;
 }) {
   const o = { ...opts!, ph: MATERIAL_OPTS[kind].ph };
@@ -525,7 +585,7 @@ function MaterialFields({ o: opts, savedAtt, kind, vals, set, errors, files, pic
           <Field label="Make / Brand / Specifications" required error={errors.make}>
             <TextInput value={vals.make} onChange={v => set('make', v)} placeholder="e.g. Dell · Latitude 5440" />
           </Field>
-          <Field label="Segment" required add error={errors.segment}>
+          <Field label="Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
           <Field label="Printable Description" required error={errors.desc} span="full">
@@ -553,21 +613,21 @@ function MaterialFields({ o: opts, savedAtt, kind, vals, set, errors, files, pic
             <Select value={vals.haz} options={o.haz} label="Haz / Non Haz" invalid={!!errors.haz}
               onChange={v => set('haz', v)} />
           </Field>
-          <Field label="Haz Class" required={vals.haz === 'Hazardous'} add={vals.haz === 'Hazardous'} error={errors.hazClass}>
+          <Field label="Haz Class" required={vals.haz === 'Hazardous'} add={vals.haz === 'Hazardous'} onAdd={() => addMaster?.('haz_class', 'hazClass')} error={errors.hazClass}>
             <Select value={vals.hazClass} options={o.hazClasses} label="Haz Class" onChange={v => set('hazClass', v)}
               invalid={!!errors.hazClass} disabled={vals.haz !== 'Hazardous'}
               placeholder={vals.haz === 'Hazardous' ? undefined : 'Choose Haz first'} />
           </Field>
-          <Field label="UOM" required add error={errors.uom}>
+          <Field label="UOM" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="UOM" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Condition" required add error={errors.condition}>
+          <Field label="Condition" required add onAdd={() => addMaster?.('conditions', 'condition')} error={errors.condition}>
             <Select value={vals.condition} options={o.conditions} label="Condition" onChange={v => set('condition', v)} invalid={!!errors.condition} />
           </Field>
-          <Field label="Packaging Material" required add error={errors.packaging}>
+          <Field label="Packaging Material" required add onAdd={() => addMaster?.('packaging_material', 'packaging')} error={errors.packaging}>
             <Select value={vals.packaging} options={o.packaging} label="Packaging Material" onChange={v => set('packaging', v)} invalid={!!errors.packaging} />
           </Field>
         </div>
@@ -611,8 +671,8 @@ function Section({ icon, title, sub, extra, children }: { icon: ReactNode; title
   );
 }
 
-function Field({ label, required, optional, add, error, span, children }: {
-  label: string; required?: boolean; optional?: boolean; add?: boolean; error?: string; span?: 'full' | '3'; children: ReactNode;
+function Field({ label, required, optional, add, onAdd, error, span, children }: {
+  label: string; required?: boolean; optional?: boolean; add?: boolean; onAdd?: () => void; error?: string; span?: 'full' | '3'; children: ReactNode;
 }) {
   const toast = useToast();
   const cls = ['svf-field', error ? 'has-error' : '', span === 'full' ? 'svf-span-full' : span === '3' ? 'svf-span-3' : ''].filter(Boolean).join(' ');
@@ -626,6 +686,7 @@ function Field({ label, required, optional, add, error, span, children }: {
             <button type="button" className="svf-plus" tabIndex={-1} aria-label={`Add new ${label}`}
               onClick={(e) => {
                 e.preventDefault();
+                if (onAdd) { onAdd(); return; }
                 toast.info(`Add new ${label}`, 'New options can be added once this list is connected to its master.');
               }}>
               {SVC_ICONS.plus}
