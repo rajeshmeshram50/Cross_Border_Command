@@ -394,6 +394,15 @@ class SourcingController extends Controller
         if (! $this->assigneeAllowed($user->client_id, $data['assignee_id'] ?? null)) {
             throw ValidationException::withMessages(['assignee_id' => ['Pick an active team member of your company to assign this sourcing target.']]);
         }
+        /* A sourcing target is work handed to someone else, so its creator may
+           not be its assignee. The picker disables the creator's own row; this
+           is the same refusal for a stale tab or a direct call. Create only —
+           an existing target keeps the assignee it was saved with. */
+        if ((int) ($data['assignee_id'] ?? 0) === (int) $user->id) {
+            throw ValidationException::withMessages([
+                'assignee_id' => ['You are creating this sourcing target, so it has to be assigned to another team member.'],
+            ]);
+        }
 
         $target = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
 import { type ReportRow } from './SourcingReportModal';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
@@ -54,7 +55,8 @@ function ClarityCell({ clarity, onEdit, onRemovePdf, onUpdate }: { clarity?: Cla
   const pdfs = clarity.type === 'pdf' && clarity.val ? clarity.val.split('\n').filter(Boolean) : [];
   return (
     <div className="ast-clarity-cell">
-      <Tooltip label="Edit clarity"><button type="button" className="ast-clarity-edit" onClick={onEdit}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button></Tooltip>
+      {/* Content first, Edit after it: the cell reads as "what the clarity is,
+          then the action on it" rather than leading with the pencil. */}
       {clarity.type === 'pdf' ? (
         /* First PDF as a chip; when there are more, a "+N" opens a popover
            listing every PDF with Download / View / Delete. */
@@ -112,6 +114,7 @@ function ClarityCell({ clarity, onEdit, onRemovePdf, onUpdate }: { clarity?: Cla
           </span>
         </Tooltip>
       )}
+      <Tooltip label="Edit clarity"><button type="button" className="ast-clarity-edit" onClick={onEdit}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button></Tooltip>
     </div>
   );
 }
@@ -129,6 +132,7 @@ const LockIco = () => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" 
 
 export default function AssignSourcingTargetModal({ editRow = null, onClose, onSaved }: { editRow?: ReportRow | null; onClose: () => void; onSaved?: () => void }) {
   const toast = useToast();
+  const { user } = useAuth();
   const isEdit = !!editRow;
   const { pulse, guardOverlay } = useModalGuard();
   const [autoCode, setAutoCode] = useState('');
@@ -354,6 +358,14 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const clarityTitle = clarity ? (clarity.kind === 'master' ? `${masterRows[clarity.idx]?.code} — ${masterRows[clarity.idx]?.name}` : manualRows[clarity.idx]?.name) : '';
 
   const teamList = teamMembers.filter(m => { const q = teamSearch.toLowerCase(); return !q || (m.name + ' ' + m.role).toLowerCase().includes(q); });
+  /* A sourcing target is work handed to someone else, so the creator cannot be
+     its assignee. Only the create flow reaches the picker (the assignee is
+     locked on edit), so "created by" is always the signed-in user here. */
+  const isSelf = (id: string) => !!user && id === String(user.id);
+  const selfToast = () => toast.warning(
+    'Can’t assign to yourself',
+    'You are creating this sourcing target, so it has to go to another team member.',
+  );
   const openTeam = () => { setTeamPick(teamMembers.find(m => m.name === team)?.id ?? null); setTeamSearch(''); setTeamOpen(true); };
   const togglePick = (code: string) => setPicks(p => p.includes(code) ? p.filter(c => c !== code) : [...p, code]);
   const addMaster = () => {
@@ -408,6 +420,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     // be in the filtered team list). New targets resolve the pick by name.
     const resolvedAssigneeId = (isEdit ? assigneeId : null) ?? teamMembers.find(m => m.name === team)?.id ?? null;
     if (!resolvedAssigneeId) { toast.warning('Assign required', 'Assign this sourcing target to a team member before saving.'); return; }
+    // Only on create: an existing target keeps whatever assignee it was saved
+    // with, so an older self-assigned row stays editable.
+    if (!isEdit && isSelf(resolvedAssigneeId)) { selfToast(); return; }
     const body = {
       due_date: due, source,
       assignee_id: resolvedAssigneeId,
@@ -672,13 +687,21 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               <SearchClear show={teamSearch} onClear={() => { setTeamSearch(''); }} />
             </div>
             <div className="astp-body">
-              {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => (
-                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''}`} onClick={() => setTeamPick(p => p === m.id ? null : m.id)}>
+              {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => {
+                /* The creator's own row stays visible but unselectable, so it is
+                   clear why they cannot pick it — hiding it would just look like
+                   a missing team member. */
+                const self = isSelf(m.id);
+                return (
+                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''} ${self ? 'is-disabled' : ''}`}
+                  aria-disabled={self || undefined}
+                  onClick={() => { if (self) { selfToast(); return; } setTeamPick(p => p === m.id ? null : m.id); }}>
                   <span className="astp-av">{tInit(m.name)}</span>
-                  <span className="astp-main"><span className="astp-name">{m.name}</span><span className="astp-role">{m.role}</span></span>
+                  <span className="astp-main"><span className="astp-name">{m.name}{self ? ' (You)' : ''}</span><span className="astp-role">{self ? 'Created by you — assign to someone else' : m.role}</span></span>
                   <span className="astp-check">{teamPick === m.id ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="16 9 11 14 8.5 11.5" /></svg> : <span className="astp-radio" />}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
             <div className="astp-foot">
               <button className="ast-btn ast-btn-ghost" onClick={() => setTeamOpen(false)} disabled={teamAssigning}>Cancel</button>
