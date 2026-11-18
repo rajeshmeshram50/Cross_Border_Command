@@ -10,16 +10,16 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('p2p_service_suppliers', function (Blueprint $table) {
-            if (!Schema::hasColumn('p2p_service_suppliers', 'origin')) {
+            if (! Schema::hasColumn('p2p_service_suppliers', 'origin')) {
                 $table->string('origin', 16)->default('domestic')->after('vendor_id');
             }
-            if (!Schema::hasColumn('p2p_service_suppliers', 'currency_code')) {
+            if (! Schema::hasColumn('p2p_service_suppliers', 'currency_code')) {
                 $table->string('currency_code', 8)->default('INR')->after('origin');
             }
-            if (!Schema::hasColumn('p2p_service_suppliers', 'exchange_rate')) {
+            if (! Schema::hasColumn('p2p_service_suppliers', 'exchange_rate')) {
                 $table->decimal('exchange_rate', 14, 4)->nullable()->after('total_amount');
             }
-            if (!Schema::hasColumn('p2p_service_suppliers', 'inr_amount')) {
+            if (! Schema::hasColumn('p2p_service_suppliers', 'inr_amount')) {
                 $table->decimal('inr_amount', 14, 2)->nullable()->after('exchange_rate');
             }
         });
@@ -31,7 +31,9 @@ return new class extends Migration
     {
         Schema::table('p2p_service_suppliers', function (Blueprint $table) {
             foreach (['origin', 'currency_code', 'exchange_rate', 'inr_amount'] as $c) {
-                if (Schema::hasColumn('p2p_service_suppliers', $c)) $table->dropColumn($c);
+                if (Schema::hasColumn('p2p_service_suppliers', $c)) {
+                    $table->dropColumn($c);
+                }
             }
         });
     }
