@@ -644,3 +644,14 @@ body:has(.avm-backdrop) .stmap-overlay,
 body:has(.avm-backdrop) .sta-overlay {
     visibility: hidden;
 }
+
+/* Supplier Name list: the Supplier Type badge is what tells the suppliers apart here, so it keeps
+   its full width and the long supplier name takes the "…" instead. The shared MasterSelect sets the
+   badge wrapper's width inline (it lets the badge shrink first, right for product lists), so this
+   override has to be !important. The searchable list renders at body level (outside the form), so
+   it is scoped to "while the Supplier Master form is open" — no other list is on screen then. */
+body:has(.stsm-box) .master-select-item span[style*="max-width: 55%"] {
+    flex: none !important;
+    max-width: none !important;
+    overflow: visible !important;
+}
