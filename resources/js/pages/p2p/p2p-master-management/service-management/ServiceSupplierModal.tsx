@@ -146,7 +146,6 @@ export function SupplierMapPanel({
   }, [toast]);
 
   const overflow = suppliers.length > SUP_VISIBLE_ROWS;
-  const grandTotal = suppliers.reduce((sum, s) => sum + supplierInr(s), 0);
 
   const [step, setStep] = useState<'closed' | 'choose' | 'form'>('closed');
   const [origin, setOrigin] = useState<SupplierOrigin>('domestic');
@@ -363,9 +362,6 @@ export function SupplierMapPanel({
               <div className="svs-tablefoot">
                 <span className="svs-tablefoot-count">
                   Showing <b>{suppliers.length}</b> mapped suppliers
-                </span>
-                <span className="svs-tablefoot-total">
-                  Total Service Cost <b>{suppliers.some(isIntl) ? '≈ ' : ''}{money(grandTotal)}</b>
                 </span>
               </div>
             )}
