@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DraftProduct } from './data';
 import { IcoPen, IcoUpload, IcoX } from './icons';
+import { clarityPaths, fileOf } from './targetProducts';
+import AttachedFiles from './AttachedFiles';
 import AttachPicker from './AttachPicker';
 import { usePopup } from './popupHooks';
 
@@ -9,22 +11,30 @@ import { usePopup } from './popupHooks';
    for one product. Document upload offers Upload file / Take photo (AttachPicker). */
 
 
-/** Clarity document: PDF, Word, Excel, JPG or PNG, one file, up to 10 MB (CS-2211 V-T13). */
-const CLARITY_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png';
-const CLARITY_EXT = /\.(pdf|docx?|xlsx?|jpe?g|png)$/i;
-const CLARITY_TYPE_ERR = 'Upload a PDF, Word, Excel, JPG or PNG file up to 10 MB.';
+/** Clarity document: what POST /p2p/upload accepts — PDF, JPG, PNG or WEBP, one file, up to 5 MB. */
+const CLARITY_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp';
+const CLARITY_EXT = /\.(pdf|jpe?g|png|webp)$/i;
+const CLARITY_TYPE_ERR = 'Upload a PDF, JPG, PNG or WEBP file up to 5 MB.';
 
-/** Largest clarity document (CS-2211 V-T13). */
-const CLARITY_MAX_BYTES = 10 * 1024 * 1024;
+/** Largest clarity document (the upload API's limit). */
+const CLARITY_MAX_BYTES = 5 * 1024 * 1024;
 
 type ClarityType = 'text' | 'link' | 'pdf';
-/** Clarity of one product: a note, a link, or a document (uploaded with the API). */
+/** Clarity of one product: a note, a link, or a document. A document picked in this session has
+    `file` (uploaded on save); a saved one has only `value` = its stored path(s), newline-joined. */
 export type Clarity = { type: ClarityType; value: string; file?: File };
 /** The saved-clarity chip label (Figma: ✓ Text / ✓ Link / ✓ Pdf). */
 export const CLARITY_LABEL: Record<ClarityType, string> = { text: 'Text', link: 'Link', pdf: 'Pdf' };
+/** A document clarity's display name: the picked file's name, or the stored file's name (+N more). */
+const clarityFileName = (c: Clarity) => {
+  if (c.file) return c.file.name;
+  const paths = c.value.split('\n').filter(Boolean);
+  const base = (paths[0] ?? '').split('/').pop() ?? '';
+  return paths.length > 1 ? `${base} +${paths.length - 1}` : base;
+};
 /** Hover preview of a saved clarity: the first 40 characters of the note, the link, or the file name. */
 export const clarityPreview = (c: Clarity) => {
-  const v = c.type === 'pdf' ? (c.file?.name ?? c.value) : c.value;
+  const v = c.type === 'pdf' ? clarityFileName(c) : c.value;
   return c.type === 'text' && v.length > 40 ? `${v.slice(0, 40).trimEnd()}…` : v;
 };
 
@@ -35,14 +45,19 @@ export default function ClarityDialog({ product, initial, onCancel, onSave }: {
   const [type, setType] = useState<ClarityType>(initial?.type ?? 'text');
   const [text, setText] = useState(initial?.type === 'text' ? initial.value : '');
   const [link, setLink] = useState(initial?.type === 'link' ? initial.value : '');
-  const [file, setFile] = useState<File | undefined>(initial?.file);
-  const [fileName, setFileName] = useState(initial?.type === 'pdf' ? initial.value : '');
+  // Document: a file picked in this session (uploaded on save), or the stored one(s) of a saved
+  // clarity (paths; a target saved in Bulk Sourcing can hold several). One document per product
+  // (V-T13), so a new pick replaces what was there.
+  const initialPaths = initial?.type === 'pdf' && !initial.file ? clarityPaths(initial) : [];
+  const [file, setFile] = useState<File | undefined>(initial?.type === 'pdf' ? initial.file : undefined);
+  const [paths, setPaths] = useState<string[]>(initialPaths);
   const [err, setErr] = useState('');
+  const hasDoc = !!file || paths.length > 0;
 
   const pickFile = (f?: File) => {
     if (!f) return;
     if (!CLARITY_EXT.test(f.name) || f.size > CLARITY_MAX_BYTES) { setErr(CLARITY_TYPE_ERR); return; }
-    setErr(''); setFile(f); setFileName(f.name);
+    setErr(''); setFile(f); setPaths([]);
   };
 
   // "Add attachment" menu under the upload area: Upload file / Take photo.
@@ -53,7 +68,8 @@ export default function ClarityDialog({ product, initial, onCancel, onSave }: {
   // attachment menu is open (it takes that Esc; so does the camera), and not once the clarity has
   // been changed (only × / Cancel close it then, so typed text is never lost to one key press).
   const dirty = type !== (initial?.type ?? 'text') || text !== (initial?.type === 'text' ? initial.value : '')
-    || link !== (initial?.type === 'link' ? initial.value : '') || fileName !== (initial?.type === 'pdf' ? initial.value : '');
+    || link !== (initial?.type === 'link' ? initial.value : '')
+    || file !== (initial?.type === 'pdf' ? initial.file : undefined) || paths.join('\n') !== initialPaths.join('\n');
   const dialogRef = useRef<HTMLDivElement>(null);
   usePopup(dialogRef, { onClose: onCancel, blocked: () => attachOpen || dirty });
 
@@ -68,8 +84,9 @@ export default function ClarityDialog({ product, initial, onCancel, onSave }: {
       if (!/^https?:\/\/\S+\.\S+/i.test(v)) { setErr('Enter a valid link starting with http:// or https://'); return; }
       return onSave({ type, value: v });
     }
-    if (!fileName) return onSave(null);
-    onSave({ type, value: fileName, file });
+    if (file) return onSave({ type, value: '', file });            // uploaded on save
+    if (paths.length) return onSave({ type, value: paths.join('\n') });   // the stored document(s), kept
+    onSave(null);                                                    // removed
   };
 
   return createPortal(
@@ -101,13 +118,17 @@ export default function ClarityDialog({ product, initial, onCancel, onSave }: {
           )}
           {type === 'pdf' && (
             <>
-              <button type="button" ref={dropRef} className={`sta-drop${fileName ? ' has-file' : ''}`} onClick={() => setAttachOpen(true)}
+              <button type="button" ref={dropRef} className={`sta-drop${hasDoc ? ' has-file' : ''}`} onClick={() => setAttachOpen(true)}
                 aria-haspopup="menu" aria-expanded={attachOpen}
                 onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); pickFile(e.dataTransfer.files?.[0]); }}>
                 <IcoUpload size={16} />
-                <b>{fileName || 'Click to upload a PDF specification'}</b>
-                <small>{fileName ? 'Click to replace' : 'or drag and drop · PDF, Word, Excel, JPG or PNG · max 10 MB'}</small>
+                <b>{hasDoc ? 'Replace document' : 'Click to upload a PDF specification'}</b>
+                <small>{hasDoc ? 'Click or drop a new file to replace it' : 'or drag and drop · PDF, JPG, PNG or WEBP · max 5 MB'}</small>
               </button>
+              {/* The attached document(s): open it in a new tab to check it, or remove it. */}
+              <AttachedFiles
+                items={file ? [{ key: 'new', name: file.name, src: file }] : paths.map(p => ({ key: p, name: fileOf(p), src: p }))}
+                onRemove={k => { if (k === 'new') setFile(undefined); else setPaths(ps => ps.filter(x => x !== k)); }} />
               <AttachPicker anchorRef={dropRef} open={attachOpen} onClose={closeAttach} accept={CLARITY_ACCEPT} onFile={pickFile}
                 camera={{ title: 'Take a photo of the specification', subject: product.name, namePrefix: 'clarity' }} />
             </>

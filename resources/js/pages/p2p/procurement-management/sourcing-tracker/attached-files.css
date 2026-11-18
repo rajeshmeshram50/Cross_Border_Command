@@ -1,0 +1,77 @@
+/* AttachedFiles.tsx — the files attached in an upload field (Product Clarity document, New
+   Supplier business card): icon, name, View, Remove; the same row as Bulk Sourcing's clarity
+   PDFs, in the module's teal. Plain colours (no popup variables), so it works in any popup. */
+.stfile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    max-height: 172px;
+    margin-top: 10px;
+    overflow-y: auto;
+}
+.stfile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px 9px 12px;
+    background: #f0fdff;
+    border: 1px solid #a5e4f0;
+    border-radius: 11px;
+}
+.stfile__ico {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: #cffafe;
+    color: #0e7490;
+}
+.stfile__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f172a;
+}
+.stfile__new {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #0e7490;
+    background: #ecfeff;
+    border: 1px solid #bfe9f1;
+}
+.stfile__btn {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 9px;
+    color: #0e7490;
+    background: #ecfeff;
+    border: 1px solid #a5e4f0;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s;
+}
+.stfile__btn:hover { background: #cffafe; border-color: #67e8f9; }
+.stfile__btn.is-del { color: #e11d48; background: #fff1f2; border-color: #fecdd3; }
+.stfile__btn.is-del:hover { background: #fee2e2; border-color: #fca5a5; }
+.stfile__btn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+[data-bs-theme="dark"] .stfile { background: rgba(255, 255, 255, .03); border-color: rgba(34, 211, 238, .25); }
+[data-bs-theme="dark"] .stfile__ico,
+[data-bs-theme="dark"] .stfile__btn { background: rgba(34, 211, 238, .14); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .stfile__new { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .stfile__btn.is-del { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .3); color: #fca5a5; }
+[data-bs-theme="dark"] .stfile__name { color: #e2e8f0; }
+.stfile__btn:disabled { opacity: .5; cursor: not-allowed; }

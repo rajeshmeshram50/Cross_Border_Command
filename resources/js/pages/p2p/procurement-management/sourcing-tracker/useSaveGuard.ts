@@ -5,14 +5,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * creates one record"). `run` ignores every call while a save is in flight; `saving` drives the
  * button spinner and locks the form (the popups put `inert` on their body and disable × / Cancel).
  *
- * If the popup unmounts while a save is waiting (route change, parent closing it), the save is
- * dropped: `save()` never runs and no state is set on the unmounted popup.
- *
- * Design build: the data is dummy, so a save would finish in the same frame and the loading state
- * could never be seen or tested. SAVE_PREVIEW_MS stands in for the API round trip — replace the
- * wait with the real request when the API lands (and abort it in the same unmount cleanup).
+ * `save` is the request itself (it awaits the API). If the popup unmounts while it runs, no state
+ * is set on the unmounted popup.
  */
-const SAVE_PREVIEW_MS = 700;
 
 export function useSaveGuard() {
   const [saving, setSaving] = useState(false);
@@ -29,7 +24,6 @@ export function useSaveGuard() {
     busy.current = true;
     setSaving(true);
     try {
-      await new Promise(res => setTimeout(res, SAVE_PREVIEW_MS));   // API call goes here
       if (alive.current) await save();
     } finally {
       busy.current = false;
