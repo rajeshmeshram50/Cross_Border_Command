@@ -2222,68 +2222,6 @@ class SegmentDocUploadController extends Controller
     }
 
     /**
-     * Customer / Consignee top-level Agreements bucket — the agreements applicable
-     * to the ENTITY'S OWN segments (segment-driven, exactly like the Buyer
-     * Profile's agr cell), overlaid with this entity's COMPLETED agreement
-     * e-signatures. Unlike buildShipmentAgreements() this is NOT gated on a
-     * shipment order existing, so a party with applicable agreements but no
-     * shipment still lists them (CBC #66: popup read "0 of 0" while the profile
-     * cell read N). The customer counts every segment agreement; the consignee is
-     * party-filtered to the consignee side — matching ClmBuyerProfileController.
-     *
-     * @param  int[]  $segmentIds  the entity's resolved segment ids
-     * @return array<int,array<string,mixed>>  VaultDoc-shaped rows (name + status)
-     */
-    private function buildEntityAgreements(int $cid, string $type, int $entityId, array $segmentIds): array
-    {
-        if (!in_array($type, ['customer', 'consignee'], true) || !$cid || empty($segmentIds)) return [];
-
-        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
-        if ($segments->isEmpty()) return [];
-
-        // Completed agreement e-signatures for THIS entity → set of signed lib ids.
-        $modelName = $type === 'consignee' ? 'Consignee' : 'Customer';
-        $signed = [];
-        foreach (
-            ClmSignatureRequest::where('client_id', $cid)
-                ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
-                ->where('status', 'completed')
-                ->where('model_name', $modelName)
-                ->where('party_id', $entityId)
-                ->get(['trade_doc_ids']) as $sr
-        ) {
-            foreach ((is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : []) as $aid) {
-                $signed[(int) $aid] = true;
-            }
-        }
-
-        $rows = [];
-        $seen = [];
-        foreach ($segments as $seg) {
-            foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
-                $aid = (int) $a->id;
-                if (isset($seen[$aid])) continue;
-                /* Each vault lists its OWN side. The customer path used to list
-                 * every segment agreement, so a Consignee-marked one surfaced in
-                 * the customer's vault — and when the consignee IS the customer
-                 * that read as the same company being asked twice. The party
-                 * marking decides who owes a document; the entity relationship
-                 * does not change it. */
-                [$forBuyer, $forCons] = $this->partyFlags($a->party);
-                if (!($type === 'consignee' ? $forCons : $forBuyer)) continue;
-                $seen[$aid] = true;
-                $rows[] = [
-                    'db_id'     => $aid,
-                    'name'      => $a->title ?: $a->code,
-                    'authority' => null,
-                    'status'    => isset($signed[$aid]) ? 'Signed' : 'Pending',
-                ];
-            }
-        }
-        return $rows;
-    }
-
-    /**
      * One Evidence-Vault shipment-doc row for an applicable library doc. With
      * no signature request the doc is "Draft" (not yet sent); otherwise the
      * Zoho status maps to Signed / Pending / Declined / Recalled / Expired.

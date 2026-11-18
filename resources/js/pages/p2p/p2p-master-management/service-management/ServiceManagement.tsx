@@ -13,13 +13,15 @@ import {
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceTab,
 } from './serviceData';
 import {
-  TAB_TO_TYPE, apiError, fetchServiceList, fetchServiceSuppliers, rowToRecord, setServiceStatus,
+  TAB_TO_TYPE, addServiceSupplier, apiError, fetchServiceDetail, fetchServiceList, fetchServiceSuppliers,
+  rowToRecord, setServiceStatus, unmapServiceSupplier,
   type ServiceCounts,
 } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
 import ServiceTypeGate from './ServiceTypeGate';
 import ServiceFormModal, { type ServiceFormInput } from './ServiceFormModal';
 import ServiceSupplierModal from './ServiceSupplierModal';
+import { ShimServiceRows, type ShimCol } from './serviceLoading';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
@@ -75,6 +77,12 @@ const COLUMNS: Record<ServiceTab, Col[]> = {
   ],
 };
 
+const SHIM_OF: Record<ColKey, ShimCol> = {
+  sr: 'sr', code: 'code', name: 'name', desc: 'text', otype: 'pill', kind: 'pill', category: 'pill', hsn: 'pill',
+  provider: 'text', segment: 'pill', delivery: 'text', billing: 'text', uom: 'text', condition: 'pill',
+  contract: 'pill', mapped: 'mapped', action: 'action',
+};
+
 const dash = (v?: string) => (!v || /^select\b/i.test(v.trim()) ? <span className="ord-dash">—</span> : v);
 
 export default function ServiceManagement() {
@@ -98,6 +106,9 @@ export default function ServiceManagement() {
   const [gateOpen, setGateOpen] = useState(false);
   const [formFor, setFormFor] = useState<ServiceFormInput | null>(null);
   const [mapFor, setMapFor] = useState<ServiceRecord | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapBusy, setMapBusy] = useState(false);
+  const [formKey, setFormKey] = useState(0);
 
   const sub = subs[tab];
 
@@ -146,41 +157,89 @@ export default function ServiceManagement() {
 
   const chooseType = useCallback((kind: ServiceKind, otype?: OtherType) => {
     setGateOpen(false);
+    setFormKey(k => k + 1);
+    setFormFor({ kind, otype, code: '…', loading: true });
     api.get<{ code?: string }>('/p2p/services/next-code')
       .then(res => res.data?.code || 'SVC-NEW')
       .catch(() => 'SVC-NEW')
-      .then(code => setFormFor({ kind, otype, code }));
+      .then(code => {
+        setFormKey(k => k + 1);
+        setFormFor(cur => (cur && cur.loading && !cur.record ? { kind, otype, code } : cur));
+      });
   }, []);
 
-  const edit = (r: ServiceRecord) => setFormFor({ kind: r.kind, record: r, code: r.code });
+  const edit = async (r: ServiceRecord) => {
+    if (r.id == null) { setFormFor({ kind: r.kind, record: r, code: r.code }); return; }
+    setFormKey(k => k + 1);
+    setFormFor({ kind: r.kind, record: r, code: r.code, loading: true });
+    try {
+      const d = await fetchServiceDetail(r.id);
+      setFormKey(k => k + 1);
+      setFormFor(cur => (cur && cur.loading && cur.code === r.code ? {
+        kind: d.record.kind, record: d.record, code: d.record.code,
+        attachmentIds: d.attachmentIds, attachments: d.attachments, hasPrimaryImage: d.hasPrimaryImage, images: d.images,
+      } : cur));
+    } catch (e) {
+      setFormFor(null);
+      toast.error(`Could not open ${r.code}`, apiError(e, 'Please try again.'));
+    }
+  };
 
   const submitForm = (rec: ServiceRecord, isEdit: boolean) => {
-    setRows(prev => (isEdit ? prev.map(r => (r.code === rec.code ? rec : r)) : [...prev, rec]));
     const t = tabOfKind(rec.kind);
     setTab(t);
     if (!isEdit) { setSubs(s => ({ ...s, [t]: 'all' })); setPage(1); }
     setFormFor(null);
+    reload();
     toast.success(`Service ${rec.code} ${isEdit ? 'updated' : 'created'}`, rec.vals.name);
   };
 
-  const saveMap = (next: MappedSupplier[]) => {
+  const saveMap = async (next: MappedSupplier[]) => {
     if (!mapFor) return;
-    const code = mapFor.code;
-    setRows(prev => prev.map(r => (r.code === code ? { ...r, suppliers: next } : r)));
-    setMapFor({ ...mapFor, suppliers: next });
+    const svc = mapFor;
+    if (svc.id == null) {
+      setRows(prev => prev.map(r => (r.code === svc.code ? { ...r, suppliers: next } : r)));
+      setMapFor({ ...svc, suppliers: next });
+      return;
+    }
+    const nextKeys = new Set(next.map(s => s.mapId ?? `new-${s.vendorId}`));
+    const removed = svc.suppliers.filter(s => s.mapId != null && !nextKeys.has(s.mapId));
+    const added = next.filter(s => s.mapId == null);
+    setMapFor({ ...svc, suppliers: next });
+    setMapBusy(true);
+    try {
+      for (const s of removed) await unmapServiceSupplier(svc.id, s.mapId!);
+      for (const s of added) await addServiceSupplier(svc.id, s);
+    } catch (e) {
+      toast.error('Could not save the supplier change', apiError(e, 'Please try again.'));
+    }
+    try {
+      const fresh = await fetchServiceSuppliers(svc.id);
+      setMapFor(cur => (cur && cur.id === svc.id ? { ...cur, suppliers: fresh } : cur));
+    } catch { }
+    setMapBusy(false);
+    reload();
   };
 
   const openMap = async (r: ServiceRecord) => {
     if (r.id == null) { setMapFor(r); return; }
+    setMapFor({ ...r, suppliers: [] });
+    setMapLoading(true);
     try {
-      const suppliers = await fetchServiceSuppliers(r.id);
-      setMapFor({ ...r, suppliers });
+      const d = await fetchServiceDetail(r.id);
+      setMapFor(cur => (cur && cur.id === r.id
+        ? { ...r, suppliers: d.record.suppliers, vals: { ...r.vals, gstPct: d.record.vals.gstPct, gstId: d.record.vals.gstId } }
+        : cur));
     } catch (e) {
+      setMapFor(null);
       toast.error('Could not load mapped suppliers', apiError(e, 'Please try again.'));
+    } finally {
+      setMapLoading(false);
     }
   };
 
   const toggleActive = async (r: ServiceRecord) => {
+    if (r.status === 'draft') return;
     const next = r.status ? r.status !== 'active' : !r.active;
     const ok = await confirm({
       title: next ? 'Activate service?' : 'Deactivate service?',
@@ -312,15 +371,8 @@ export default function ServiceManagement() {
                 <tr>{columns.map((c, i) => <th key={c.key} className={`mv-th-${i}`} scope="col">{c.header}</th>)}</tr>
               </thead>
               <tbody>
-                {loading && pageRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={columns.length} className="mv-empty">
-                      <div className="mv-empty__box">
-                        <div className="mv-empty__ico">{SVC_ICONS.wrench}</div>
-                        <div className="mv-empty__t">Loading services…</div>
-                      </div>
-                    </td>
-                  </tr>
+                {loading ? (
+                  <ShimServiceRows cols={columns.map(c => SHIM_OF[c.key])} rows={Math.min(pageSize, 8)} />
                 ) : pageRows.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length} className="mv-empty">
@@ -361,7 +413,7 @@ export default function ServiceManagement() {
       {gateOpen && <ServiceTypeGate onClose={() => setGateOpen(false)} onChoose={chooseType} />}
 
       {formFor && (
-        <ServiceFormModal input={formFor} onClose={() => setFormFor(null)} onSubmit={submitForm} />
+        <ServiceFormModal key={formKey} input={formFor} onClose={() => { setFormFor(null); reload(); }} onSubmit={submitForm} />
       )}
 
       {mapFor && (
@@ -372,6 +424,8 @@ export default function ServiceManagement() {
           suppliers={mapFor.suppliers}
           onClose={() => setMapFor(null)}
           onChange={saveMap}
+          loading={mapLoading}
+          busy={mapBusy}
         />
       )}
     </div>
@@ -474,7 +528,7 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
             : r.active ? 'Active — click to deactivate' : 'Inactive — click to activate'}>
             <button type="button" className={`whm-toggle${(r.status ? r.status === 'active' : r.active) ? ' is-on' : ''}`}
               role="switch" aria-checked={r.status ? r.status === 'active' : r.active} aria-label={`Toggle status of ${r.code}`}
-              onClick={() => act.toggle(r)}>
+              disabled={r.status === 'draft'} onClick={() => act.toggle(r)}>
               <span />
             </button>
           </Tooltip>

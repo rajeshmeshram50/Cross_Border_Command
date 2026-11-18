@@ -6,6 +6,7 @@ export type MaterialSub = 'trackable' | 'consumable';
 export type SupplierOrigin = 'domestic' | 'international';
 
 export interface MappedSupplier {
+  mapId?: number;
   vendorId?: string;
   code: string;
   name: string;

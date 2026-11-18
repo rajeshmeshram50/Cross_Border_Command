@@ -7,11 +7,6 @@ use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 /* Fanned out to by qpiMasterBundle() so each list keeps its own scoping
  * and response shape rather than being reimplemented there. */
-use App\Http\Controllers\Api\ConsigneeController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\MasterController;
-use App\Http\Controllers\Api\ProductController;
-use App\Http\Controllers\Api\SalesLeadController;
 use App\Models\Customer;
 use App\Models\Quotation;
 use App\Models\QuotationItem;

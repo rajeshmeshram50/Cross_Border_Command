@@ -2972,66 +2972,6 @@ class PayrollController extends Controller
         return $row;
     }
 
-    /**
-     * A roster row for an employee the run has not computed yet (#121).
-     *
-     * Deliberately the SAME shape serializePayslip() returns, so the grid, the
-     * filters and the export all treat it as an ordinary row — the only
-     * differences are a status of its own and a null payslip_id, which is what
-     * stops the payslip actions offering anything for a slip that does not
-     * exist. Money columns are zero rather than null: every consumer sums them.
-     */
-    private function serializePendingEmployee(\App\Models\Employee $e): array
-    {
-        $name = trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: ($e->display_name ?: 'Employee');
-        $parts = preg_split('/\s+/', trim($name));
-        $initials = strtoupper(substr($parts[0] ?? '', 0, 1) . substr(end($parts) ?: '', 0, 1));
-
-        return [
-            'id'          => 'pending-' . $e->id,
-            'payslip_id'  => null,
-            'empId'       => $e->emp_code ?: ('EMP-' . $e->id),
-            'employee_id' => $e->id,
-            'encryptedId' => $this->encId($e->id),
-            'name'        => $name,
-            'initials'    => $initials ?: 'NA',
-            'accent'      => $this->accentFor($e->id),
-            'department'  => $e->department?->name ?? '—',
-            'designation' => $e->designation?->name ?? '—',
-            'ctc'         => 0.0,
-            'earnings'    => 0.0,
-            'deductions'  => 0.0,
-            'netPay'      => 0.0,
-            'attendance'  => 0.0,
-            'workingDays' => 0.0,
-            'lop_days'    => 0.0,
-            'status'      => 'Not in Run',
-            'present'     => 0.0,
-            'absent'      => 0.0,
-            'lateMarks'   => 0,
-            'missingPunch'=> 0,
-            'unpaidLeave' => 0.0,
-            'paidLeave'   => 0.0,
-            // Null, not 0: this employee has no slip in the run, so we are not
-            // asserting they had no weekly offs. (CBC #7)
-            'weekOffDays' => null,
-            'holidayDays' => null,
-            'holidayDaysWorked' => null,
-            'attSource'   => 'Manual',
-            'mismatch'    => null,
-            'attMismatch' => false,
-            'pfEmp'       => 0.0,
-            'esi'         => 0.0,
-            'pt'          => 0.0,
-            'tds'         => 0.0,
-            'lopDeducted' => 0.0,
-            'advanceRec'  => 0.0,
-            'holdReason'  => 'Joined after this payroll was generated — re-run payroll to include them.',
-            'reasons'     => ['Not included in the current run — re-run payroll to compute their salary.'],
-            'bankVerified'=> (bool) ($e->bank_account_number && $e->ifsc_code),
-        ];
-    }
-
     private function accentFor(int $id): string
     {
         $palette = ['#7c5cfc', '#0ab39c', '#3b82f6', '#f59e0b', '#e83e8c', '#0c63b0', '#108548', '#a06f00'];

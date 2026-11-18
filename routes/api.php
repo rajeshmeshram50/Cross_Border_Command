@@ -28,7 +28,6 @@ use App\Http\Controllers\Api\ClmTradeLicenseController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
-use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmailController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeeDocumentController;

@@ -486,11 +486,6 @@ class OnboardingController extends Controller
         return $base;
     }
 
-    /** Full onboarding URL — the real target the short link redirects to. */
-    private function buildOnboardingUrl(string $token, ?string $appOrigin = null): string
-    {
-        return $this->resolveShareBase($appOrigin) . "/onboarding/{$token}";
-    }
 
     /** Short shareable link (/o/{slug}) → resolved by the web redirect route. */
     private function buildShortUrl(string $slug, ?string $appOrigin = null): string

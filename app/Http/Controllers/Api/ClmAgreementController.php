@@ -17,7 +17,6 @@ use App\Models\Quotation;
 use App\Models\Product;
 use App\Models\SegmentDocUpload;
 use App\Support\MasterVisibility;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -27,7 +26,6 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
-use PhpOffice\PhpWord\Shared\Html;
 
 class ClmAgreementController extends Controller
 {

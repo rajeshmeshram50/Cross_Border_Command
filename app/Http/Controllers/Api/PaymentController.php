@@ -9,7 +9,6 @@ use App\Services\InvoiceMailer;
 use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Storage;
 
 class PaymentController extends Controller
 {

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendWelcomeCredentials;
 use App\Mail\EmployeeEmailChangedMail;
 use App\Mail\PasswordChangedMail;
-use App\Mail\WelcomeCredentialsMail;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Holiday;

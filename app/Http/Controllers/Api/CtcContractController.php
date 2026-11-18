@@ -337,24 +337,6 @@ class CtcContractController extends Controller
         })->filter()->values()->all();
     }
 
-    /**
-     * Same as cpNames() but each name is suffixed with its entity type —
-     * "Royal Cashews (Customer)" — so the +N counterparty popover tells the
-     * user whether a company is the Customer, Consignee or Supplier (a company
-     * can appear as more than one role on the same agreement).
-     */
-    private function cpNamesLabeled(CtcContract $c): array
-    {
-        return collect($this->resolveCounterparties($c))
-            ->map(function ($x) {
-                $name = trim((string) ($x['name'] ?? ''));
-                if ($name === '') return '';
-                $role = $this->cpRoleLabel($x);
-                return $role !== '' ? "{$name} ({$role})" : $name;
-            })
-            ->filter()->values()->all();
-    }
-
     /** Map a counterparty's source_type / role to a display label. */
     private function cpRoleLabel(array $cp): string
     {

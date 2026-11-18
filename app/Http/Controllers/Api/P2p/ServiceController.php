@@ -255,12 +255,49 @@ class ServiceController extends Controller
 
     public function stats(Request $request)
     {
+        $request->validate([
+            'status' => ['nullable', Rule::in(Service::STATUSES)],
+            'supplier' => 'nullable|in:mapped,zero',
+        ]);
+
         return response()->json($this->tabCounts($request));
+    }
+
+    private function applyRowFilters($query, Request $request): void
+    {
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+        match ($request->query('supplier')) {
+            'mapped' => $query->has('activeSuppliers'),
+            'zero' => $query->doesntHave('activeSuppliers'),
+            default => null,
+        };
+
+        if ($q = trim((string) $request->query('q', ''))) {
+            $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $q).'%';
+            $query->where(function ($w) use ($like) {
+                $w->where('code', 'ilike', $like)
+                    ->orWhere('name', 'ilike', $like)
+                    ->orWhere('description', 'ilike', $like)
+                    ->orWhere('provider_brand', 'ilike', $like)
+                    ->orWhere('delivery_type', 'ilike', $like)
+                    ->orWhere('billing_frequency', 'ilike', $like)
+                    ->orWhereHas('category', fn ($r) => $r->where('name', 'ilike', $like))
+                    ->orWhereHas('segment', fn ($r) => $r->where('name', 'ilike', $like))
+                    ->orWhereHas('hsn', fn ($r) => $r->where('hsn_code', 'ilike', $like))
+                    ->orWhereHas('uom', fn ($r) => $r->where('title', 'ilike', $like)->orWhere('short_code', 'ilike', $like))
+                    ->orWhereHas('condition', fn ($r) => $r->where('title', 'ilike', $like))
+                    ->orWhereHas('activeSuppliers.vendor', fn ($r) => $r->where('company_name', 'ilike', $like)->orWhere('vendor_code', 'ilike', $like));
+            });
+        }
     }
 
     private function tabCounts(Request $request): array
     {
-        $rows = $this->scoped($request, true)
+        $query = $this->scoped($request, true);
+        $this->applyRowFilters($query, $request);
+        $rows = $query
             ->selectRaw('service_type, classification, COUNT(*) AS n')
             ->groupBy('service_type', 'classification')
             ->get();
@@ -314,32 +351,7 @@ class ServiceController extends Controller
         if ($class = $request->query('classification')) {
             $query->where('classification', $class);
         }
-        if ($status = $request->query('status')) {
-            $query->where('status', $status);
-        }
-        match ($request->query('supplier')) {
-            'mapped' => $query->has('activeSuppliers'),
-            'zero' => $query->doesntHave('activeSuppliers'),
-            default => null,
-        };
-
-        if ($q = trim((string) $request->query('q', ''))) {
-            $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $q).'%';
-            $query->where(function ($w) use ($like) {
-                $w->where('code', 'ilike', $like)
-                    ->orWhere('name', 'ilike', $like)
-                    ->orWhere('description', 'ilike', $like)
-                    ->orWhere('provider_brand', 'ilike', $like)
-                    ->orWhere('delivery_type', 'ilike', $like)
-                    ->orWhere('billing_frequency', 'ilike', $like)
-                    ->orWhereHas('category', fn ($r) => $r->where('name', 'ilike', $like))
-                    ->orWhereHas('segment', fn ($r) => $r->where('name', 'ilike', $like))
-                    ->orWhereHas('hsn', fn ($r) => $r->where('hsn_code', 'ilike', $like))
-                    ->orWhereHas('uom', fn ($r) => $r->where('title', 'ilike', $like)->orWhere('short_code', 'ilike', $like))
-                    ->orWhereHas('condition', fn ($r) => $r->where('title', 'ilike', $like))
-                    ->orWhereHas('activeSuppliers.vendor', fn ($r) => $r->where('company_name', 'ilike', $like)->orWhere('vendor_code', 'ilike', $like));
-            });
-        }
+        $this->applyRowFilters($query, $request);
 
         match ($request->query('sort')) {
             'oldest' => $query->orderBy('created_at')->orderBy('id'),
@@ -838,15 +850,35 @@ class ServiceController extends Controller
             'status' => 'active',
         ];
 
-        if ($existing) {
-            $existing->fill($fields + ['updated_by' => $userId])->save();
+        $map = DB::transaction(function () use ($service, $existing, $fields, $data, $userId) {
+            if ($existing) {
+                $existing->fill($fields + ['updated_by' => $userId])->save();
+                $map = $existing;
+            } else {
+                $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
+            }
+            $this->completeStageTwo($service, $userId);
 
-            return response()->json($this->supplierRowFresh($existing));
+            return $map;
+        });
+
+        return response()->json($this->supplierRowFresh($map) + [
+            'service_status' => $service->status,
+            'step_completed' => (int) $service->step_completed,
+        ], $existing ? 200 : 201);
+    }
+
+    private function completeStageTwo(Service $service, ?int $userId): void
+    {
+        if ((int) $service->step_completed >= 2 && $service->status !== 'draft') {
+            return;
         }
-
-        $map = $service->suppliers()->create($fields + ['vendor_id' => $data['vendor_id'], 'created_by' => $userId]);
-
-        return response()->json($this->supplierRowFresh($map), 201);
+        $service->step_completed = max((int) $service->step_completed, 2);
+        if ($service->status === 'draft') {
+            $service->status = 'active';
+        }
+        $service->updated_by = $userId;
+        $service->save();
     }
 
     public function updateSupplier(Request $request, int $id, int $mapId)

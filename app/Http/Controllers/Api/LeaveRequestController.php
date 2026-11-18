@@ -1948,17 +1948,6 @@ class LeaveRequestController extends Controller
         return $q->get()->all();
     }
 
-    /**
-     * Backward-compatible wrapper used by older callers — returns the
-     * FIRST recipient or null. New code should call the array version
-     * directly so role-based levels notify everyone.
-     */
-    private function resolveApproverNotifiable(LeaveRequest $row, int $level, Employee $employee): mixed
-    {
-        $list = $this->resolveApproverNotifiables($row, $level, $employee);
-        return $list[0] ?? null;
-    }
-
     private function employeeAsRecipient(Employee $emp): mixed
     {
         if ($emp->user_id) {

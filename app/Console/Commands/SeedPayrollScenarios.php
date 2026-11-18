@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
  * Seeds the 14 payroll QA scenarios for a branch and month.

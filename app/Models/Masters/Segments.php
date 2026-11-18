@@ -8,7 +8,6 @@ use App\Models\Client;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\DB;
 
 /**
  * "Segments" master — backed by the unified `clm_segments` table.

@@ -11,6 +11,7 @@ use App\Models\Masters\GstPercentage;
 use App\Models\Masters\Segments;
 use App\Models\Masters\StateCodes;
 use App\Models\Masters\States;
+use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
 use App\Models\P2p\Supplier as P2pSupplier;
@@ -40,6 +41,27 @@ class SourcingController extends Controller
         return SourcingTarget::where('client_id', $request->user()->client_id)
             ->where('code', $code)
             ->first() ?? abort(404, 'Sourcing target not found.');
+    }
+
+    private function viewDenial(Request $request, SourcingTarget $t)
+    {
+        $user = $request->user();
+        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)
+            || (int) $t->created_by === (int) $user->id
+            || (int) $t->assignee_id === (int) $user->id) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Only the creator, the assignee or the client admin can open this sourcing target.',
+        ], 403);
+    }
+
+    private function assigneeAllowed($clientId, $assigneeId): bool
+    {
+        return $assigneeId && User::where('client_id', $clientId)->whereKey($assigneeId)
+            ->where('user_type', '!=', 'super_admin')->whereRaw('LOWER(status) = ?', ['active'])->exists();
     }
 
     private function sourceLabel(?string $s): string
@@ -300,7 +322,7 @@ class SourcingController extends Controller
         $file = $request->file('file');
         $token = Str::random(24);
         $safeName = $this->safeUploadName($file->getClientOriginalName(), $ext);
-        $dir = 'p2p/'.($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity').'/'.$token;
+        $dir = 'p2p/'.($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity').'/c'.((int) $request->user()->client_id).'/'.$token;
         $path = $file->storeAs($dir, $safeName, 'public');
 
         return $this->ok([
@@ -336,6 +358,15 @@ class SourcingController extends Controller
             abort(404);
         }
 
+        $clientId = (int) $request->user()->client_id;
+        $own = str_starts_with($rel, 'p2p/clarity/c'.$clientId.'/')
+            || (! preg_match('#^p2p/clarity/c\d+/#', $rel) && SourcingProduct::query()
+                ->whereHas('target', fn ($q) => $q->where('client_id', $clientId))
+                ->where('clarity_value', 'like', '%'.$rel.'%')->exists());
+        if (! $own) {
+            abort(404);
+        }
+
         $disk = Storage::disk('public');
         if (! $disk->exists($rel)) {
             abort(404);
@@ -360,6 +391,9 @@ class SourcingController extends Controller
         }
 
         $data = $this->validatePayload($request, true);
+        if (! $this->assigneeAllowed($user->client_id, $data['assignee_id'] ?? null)) {
+            throw ValidationException::withMessages(['assignee_id' => ['Pick an active team member of your company to assign this sourcing target.']]);
+        }
 
         $target = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -468,6 +502,9 @@ class SourcingController extends Controller
     public function show(Request $request, string $target)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
 
         $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
 
@@ -517,6 +554,9 @@ class SourcingController extends Controller
     public function report(Request $request, string $target)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
 
         $clarity = fn ($p) => $p->clarity_type
@@ -555,6 +595,9 @@ class SourcingController extends Controller
     public function setProductStatus(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $data = $request->validate(['status' => 'required|in:Completed,In Progress']);
 
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
@@ -569,6 +612,9 @@ class SourcingController extends Controller
     public function updateProductClarity(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $data = $request->validate([
@@ -976,6 +1022,9 @@ class SourcingController extends Controller
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $target = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;

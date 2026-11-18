@@ -1,6 +1,5 @@
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
@@ -8,11 +7,12 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
 import {
-  FX_DEFAULTS, GST_RATES, SAMPLE_INTL_VENDORS, SUPPLIER_CURRENCIES,
-  fmtCurrency, isIntl, makeIntlSupplier, makeSupplier, supplierInr,
+  GST_RATES, fmtCurrency, isIntl, makeIntlSupplier, makeSupplier, supplierInr,
   type MappedSupplier, type SupplierOrigin,
 } from './serviceData';
+import { loadServiceBundle, loadSupplierPool, type BundleVendor, type ServiceBundle } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
+import { SavingLock, ShimSupplierRows } from './serviceLoading';
 import '../product-management/product-management.css';
 import './service-management.css';
 import './service-suppliers.css';
@@ -21,16 +21,31 @@ const AddVendorModal = lazyPage(() => import('../supplier-management/AddVendorMo
 
 const SUP_VISIBLE_ROWS = 4;
 
-type VendorOpt = { id: string; code: string; name: string; type: string; state: string; contact: string };
-
-type BundleVendorRow = {
-  id: number | string;
-  vendor_code?: string | null;
-  company_name?: string | null;
-  vendor_type_name?: string | null;
-  state?: string | null;
-  primary_address?: { contact_name?: string | null } | null;
+type VendorOpt = {
+  id: string; code: string; name: string; type: string; state: string; contact: string;
+  origin: SupplierOrigin; country: string; city: string; gstStateCode: string; currency: string; active: boolean;
 };
+
+type CurrencyOpt = { code: string; rate: number };
+
+const toVendors = (list: BundleVendor[]): VendorOpt[] => list.map(v => ({
+  id: String(v.id),
+  code: String(v.vendor_code ?? ''),
+  name: String(v.company_name ?? ''),
+  type: String(v.supplier_type ?? ''),
+  state: String(v.state ?? ''),
+  contact: String(v.contact_person ?? ''),
+  origin: v.origin === 'international' ? 'international' : 'domestic',
+  country: String(v.country ?? ''),
+  city: String(v.city ?? ''),
+  gstStateCode: String(v.gst_state_code ?? ''),
+  currency: String(v.currency ?? ''),
+  active: String(v.status ?? 'active').toLowerCase() !== 'inactive',
+}));
+
+const toCurrencies = (b: ServiceBundle): CurrencyOpt[] => (b.currencies ?? [])
+  .map(c => ({ code: String(c.code).toUpperCase(), rate: Number(c.exchange_rate) || 0 }))
+  .filter(c => c.code && c.code !== 'INR');
 
 export const formatSupplierCode = (raw: string): string => {
   const m = String(raw ?? '').match(/(\d+)\s*$/);
@@ -39,29 +54,13 @@ export const formatSupplierCode = (raw: string): string => {
 
 const money = (n: number) => `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const GST_STATE_CODES: Record<string, string> = {
-  'jammu and kashmir': '01', 'himachal pradesh': '02', punjab: '03', chandigarh: '04', uttarakhand: '05',
-  haryana: '06', delhi: '07', rajasthan: '08', 'uttar pradesh': '09', bihar: '10', sikkim: '11',
-  'arunachal pradesh': '12', nagaland: '13', manipur: '14', mizoram: '15', tripura: '16', meghalaya: '17',
-  assam: '18', 'west bengal': '19', jharkhand: '20', odisha: '21', chhattisgarh: '22', 'madhya pradesh': '23',
-  gujarat: '24', 'dadra and nagar haveli and daman and diu': '26', maharashtra: '27', karnataka: '29',
-  goa: '30', lakshadweep: '31', kerala: '32', 'tamil nadu': '33', puducherry: '34',
-  'andaman and nicobar islands': '35', telangana: '36', 'andhra pradesh': '37', ladakh: '38',
-};
-const gstStateCode = (state: string) => GST_STATE_CODES[String(state ?? '').trim().toLowerCase()] ?? '';
-
 let vendorCache: VendorOpt[] | null = null;
+let currencyCache: CurrencyOpt[] = [];
 async function loadVendors(force = false): Promise<VendorOpt[]> {
   if (vendorCache && !force) return vendorCache;
-  const res = await api.get<{ vendors?: BundleVendorRow[] }>('/products/master-bundle');
-  vendorCache = (res.data?.vendors ?? []).map(r => ({
-    id: String(r.id),
-    code: String(r.vendor_code ?? ''),
-    name: String(r.company_name ?? ''),
-    type: String(r.vendor_type_name ?? ''),
-    state: String(r.state ?? ''),
-    contact: String(r.primary_address?.contact_name ?? ''),
-  }));
+  const [b, pool] = await Promise.all([loadServiceBundle(force), loadSupplierPool()]);
+  vendorCache = toVendors(pool);
+  currencyCache = toCurrencies(b);
   return vendorCache;
 }
 
@@ -117,11 +116,12 @@ function OriginCard({ origin, available, onPick }: { origin: SupplierOrigin; ava
 }
 
 export function SupplierMapPanel({
-  serviceName, suppliers, onChange, defaultGst,
+  serviceName, suppliers, onChange, defaultGst, loading = false,
 }: {
   serviceName: string;
   suppliers: MappedSupplier[];
   onChange: (next: MappedSupplier[]) => void;
+  loading?: boolean;
   /** GST % mapped on the service — prefills a domestic supplier's GST %. */
   defaultGst?: number;
 }) {
@@ -140,7 +140,7 @@ export function SupplierMapPanel({
   useEffect(() => {
     let live = true;
     loadVendors()
-      .then(v => { if (live) setVendors(v); })
+      .then(v => { if (live) { setVendors(v); setCurrencies(currencyCache); } })
       .catch(() => { if (live) toast.error('Could not load suppliers', 'Please refresh and try again.'); })
       .finally(() => { if (live) setVendorsLoading(false); });
     return () => { live = false; };
@@ -156,7 +156,9 @@ export function SupplierMapPanel({
   const [price, setPrice] = useState('');
   const [gst, setGst] = useState(gstDefault);
   const [currency, setCurrency] = useState('USD');
-  const [fx, setFx] = useState(String(FX_DEFAULTS.USD));
+  const [currencies, setCurrencies] = useState<CurrencyOpt[]>(currencyCache);
+  const rateOf = (c: string) => currencies.find(x => x.code === c)?.rate ?? 0;
+  const [fx, setFx] = useState('');
   const [errors, setErrors] = useState<{ supplier?: string; price?: string; fx?: string }>({});
 
   const [addScope, setAddScope] = useState<SupplierScope | null>(null);
@@ -175,12 +177,12 @@ export function SupplierMapPanel({
     [suppliers],
   );
   const domPool = useMemo(
-    () => vendors.filter(v => v.code && !mappedDom.has(formatSupplierCode(v.code))),
+    () => vendors.filter(v => v.active && v.origin === 'domestic' && v.code && !mappedDom.has(formatSupplierCode(v.code))),
     [vendors, mappedDom],
   );
   const intlPool = useMemo(
-    () => SAMPLE_INTL_VENDORS.filter(v => !mappedIntl.has(formatSupplierCode(v.code))),
-    [mappedIntl],
+    () => vendors.filter(v => v.active && v.origin === 'international' && v.code && !mappedIntl.has(formatSupplierCode(v.code))),
+    [vendors, mappedIntl],
   );
 
   const pickOpts = intl
@@ -189,7 +191,8 @@ export function SupplierMapPanel({
 
   const domSel = !intl ? domPool.find(v => v.code === selCode) ?? null : null;
   const intlSel = intl ? intlPool.find(v => v.code === selCode) ?? null : null;
-  const editableId = domSel && /^d+$/.test(domSel.id) ? Number(domSel.id) : null;
+  const selVendor = domSel ?? intlSel;
+  const editableId = selVendor && /^\d+$/.test(selVendor.id) ? Number(selVendor.id) : null;
 
   const refreshVendors = (selectName?: string) => {
     setVendorsLoading(true);
@@ -212,7 +215,7 @@ export function SupplierMapPanel({
   const domTotal = +(priceNum + gstAmt).toFixed(2);
 
   const resetForm = () => {
-    setSelCode(''); setPrice(''); setGst(gstDefault); setCurrency('USD'); setFx(String(FX_DEFAULTS.USD)); setErrors({});
+    setSelCode(''); setPrice(''); setGst(gstDefault); setCurrency(currencies[0]?.code ?? 'USD'); setFx(currencies[0] ? String(currencies[0].rate) : ''); setErrors({});
   };
   const openChooser = () => { resetForm(); setStep('choose'); };
   const pickOrigin = (o: SupplierOrigin) => { resetForm(); setOrigin(o); setStep('form'); };
@@ -220,7 +223,7 @@ export function SupplierMapPanel({
 
   const changeCurrency = (c: string) => {
     setCurrency(c);
-    setFx(String(FX_DEFAULTS[c] ?? ''));
+    setFx(rateOf(c) ? String(rateOf(c)) : '');
     setErrors(e => ({ ...e, fx: undefined }));
   };
 
@@ -241,7 +244,7 @@ export function SupplierMapPanel({
           vendorId: domSel.id, code: domSel.code, name: domSel.name, type: domSel.type || '—',
           state: domSel.state || '—', contact: domSel.contact || '—',
         }, priceNum, gstNum),
-        origin: 'domestic', country: 'India', gstStateCode: gstStateCode(domSel.state) || undefined,
+        origin: 'domestic', country: 'India', gstStateCode: domSel.gstStateCode || undefined,
       };
     } else {
       return;
@@ -274,13 +277,15 @@ export function SupplierMapPanel({
         <div className="svs-card-head">
           <span className="svs-card-ico">{SVC_ICONS.mapUser}</span>
           <span className="svs-card-title">Mapped Service Suppliers</span>
-          {suppliers.length > 0 && <span className="svs-card-count">{suppliers.length}</span>}
-          <button type="button" className="svs-btn svs-btn--primary svs-card-act" onClick={openChooser}>
+          {!loading && suppliers.length > 0 && <span className="svs-card-count">{suppliers.length}</span>}
+          <button type="button" className="svs-btn svs-btn--primary svs-card-act" onClick={openChooser} disabled={loading}>
             {SVC_ICONS.plus} Map Supplier
           </button>
         </div>
 
-        {suppliers.length === 0 ? (
+        {loading ? (
+          <ShimSupplierRows />
+        ) : suppliers.length === 0 ? (
           <div className="svs-empty">
             <b>No suppliers mapped yet</b>
             <span>
@@ -383,7 +388,7 @@ export function SupplierMapPanel({
             <div className="svms-bd">
               <div className="svms-ocgrid">
                 <OriginCard origin="domestic" available={vendorsLoading ? 0 : domPool.length} onPick={() => pickOrigin('domestic')} />
-                <OriginCard origin="international" available={intlPool.length} onPick={() => pickOrigin('international')} />
+                <OriginCard origin="international" available={vendorsLoading ? 0 : intlPool.length} onPick={() => pickOrigin('international')} />
               </div>
             </div>
             <div className="svms-ft">
@@ -429,16 +434,14 @@ export function SupplierMapPanel({
                       placeholder="Select Supplier Name"
                       searchable
                       searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code or name'}
-                      loading={!intl && vendorsLoading}
+                      loading={vendorsLoading}
                       emptyText="No suppliers available"
                       invalid={!!errors.supplier}
                       onChange={(v) => { setSelCode(v); setErrors(e => ({ ...e, supplier: undefined })); }}
                     />
                   </div>
                   {selCode && (
-                    <Tooltip label={editableId != null
-                      ? 'Edit the selected supplier'
-                      : 'Sample supplier — editable once international suppliers come from the API'}>
+                    <Tooltip label="Edit the selected supplier">
                       <button type="button" className="svms-editsq" aria-label="Edit the selected supplier"
                         disabled={editableId == null} onClick={() => setEditVendorId(editableId)}>
                         {SVC_ICONS.edit}
@@ -468,7 +471,7 @@ export function SupplierMapPanel({
                       <input className="svms-i is-ro" value={auto(domSel?.state)} readOnly tabIndex={-1} placeholder="—" />
                     </SvmsField>
                     <SvmsField label="GST State Code" auto>
-                      <input className="svms-i is-ro" value={domSel ? (gstStateCode(domSel.state) || '—') : ''} readOnly tabIndex={-1} placeholder="—" />
+                      <input className="svms-i is-ro" value={domSel ? (domSel.gstStateCode || '—') : ''} readOnly tabIndex={-1} placeholder="—" />
                     </SvmsField>
                   </>
                 )}
@@ -488,7 +491,7 @@ export function SupplierMapPanel({
                       <div className="svms-select is-key">
                         <MasterSelect
                           value={currency}
-                          options={SUPPLIER_CURRENCIES.map(c => ({ value: c, label: c }))}
+                          options={currencies.map(c => ({ value: c.code, label: c.code }))}
                           placeholder="Select currency"
                           onChange={changeCurrency}
                         />
@@ -519,16 +522,23 @@ export function SupplierMapPanel({
                       <input className="svms-i is-key" type="number" min={0} step={0.01} placeholder="Enter service price"
                         value={price} onChange={e => { setPrice(e.target.value); setErrors(er => ({ ...er, price: undefined })); }} />
                     </SvmsField>
-                    <SvmsField label="GST %" required>
-                      <div className="svms-select is-key">
-                        <MasterSelect
-                          value={gst}
-                          options={gstOpts}
-                          placeholder="Select GST %"
-                          onChange={setGst}
-                        />
-                      </div>
-                    </SvmsField>
+                    {defaultGst != null ? (
+                      <SvmsField label="GST %" auto>
+                        <input className="svms-i is-calc" value={`${defaultGst}%`} readOnly tabIndex={-1}
+                          title="GST % comes from the GST mapped on this service" />
+                      </SvmsField>
+                    ) : (
+                      <SvmsField label="GST %" required>
+                        <div className="svms-select is-key">
+                          <MasterSelect
+                            value={gst}
+                            options={gstOpts}
+                            placeholder="Select GST %"
+                            onChange={setGst}
+                          />
+                        </div>
+                      </SvmsField>
+                    )}
                     <SvmsField label="GST Amount (₹)" auto>
                       <input className="svms-i is-calc" value={price.trim() === '' ? '' : gstAmt.toFixed(2)} readOnly tabIndex={-1} placeholder="Auto-computed" />
                     </SvmsField>
@@ -561,12 +571,7 @@ export function SupplierMapPanel({
             canMapProducts={false}
             onClose={() => setAddScope(null)}
             onSubmit={(payload) => {
-              const scope = addScope;
               setAddScope(null);
-              if (scope === 'international') {
-                toast.info('Supplier saved', 'International suppliers in this list are sample data until the supplier country API is connected.');
-                return;
-              }
               refreshVendors(String(payload.companyName ?? '').trim().toLowerCase());
             }}
           />
@@ -577,7 +582,7 @@ export function SupplierMapPanel({
         <Suspense fallback={null}>
           <AddVendorModal
             vendorId={editVendorId}
-            scope="domestic"
+            scope={origin}
             canMapProducts={false}
             onClose={() => setEditVendorId(null)}
             onSubmit={() => {
@@ -593,11 +598,13 @@ export function SupplierMapPanel({
 }
 
 export default function ServiceSupplierModal({
-  code, serviceName, suppliers, onClose, onChange, defaultGst,
+  code, serviceName, suppliers, onClose, onChange, defaultGst, loading = false, busy = false,
 }: {
   code: string;
   serviceName: string;
   defaultGst?: number;
+  loading?: boolean;
+  busy?: boolean;
   suppliers: MappedSupplier[];
   onClose: () => void;
   onChange: (next: MappedSupplier[]) => void;
@@ -612,6 +619,7 @@ export default function ServiceSupplierModal({
   return createPortal((
     <div className="svs-overlay svs-teal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="svs-modal" role="dialog" aria-modal="true" aria-label={`Map Service Suppliers · ${code}`}>
+        {busy && <SavingLock label="Saving suppliers…" />}
         <div className="svs-head">
           <div className="svs-head-ico">{SVC_ICONS.mapUser}</div>
           <div className="svs-head-txt">
@@ -621,7 +629,7 @@ export default function ServiceSupplierModal({
           <button type="button" className="svs-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
         </div>
         <div className="svs-body">
-          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} />
+          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} loading={loading} />
         </div>
         <div className="svs-foot">
           <span className="svs-note">{SVC_ICONS.info} Changes apply to <code>{code}</code></span>

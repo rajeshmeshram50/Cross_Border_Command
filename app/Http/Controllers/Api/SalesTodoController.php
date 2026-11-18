@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
-use App\Models\Employee;
 use App\Models\SalesMeeting;
 use App\Models\SalesReminder;
 use Illuminate\Http\Request;
