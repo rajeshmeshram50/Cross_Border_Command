@@ -42,6 +42,12 @@ class SourcingController extends Controller
             ->first() ?? abort(404, 'Sourcing target not found.');
     }
 
+    private function assigneeAllowed($clientId, $assigneeId): bool
+    {
+        return $assigneeId && User::where('client_id', $clientId)->whereKey($assigneeId)
+            ->where('user_type', '!=', 'super_admin')->whereRaw('LOWER(status) = ?', ['active'])->exists();
+    }
+
     private function sourceLabel(?string $s): string
     {
         return $s === 'manual' ? 'Manual Entry' : 'Product Master';
@@ -360,6 +366,9 @@ class SourcingController extends Controller
         }
 
         $data = $this->validatePayload($request, true);
+        if (! $this->assigneeAllowed($user->client_id, $data['assignee_id'] ?? null)) {
+            throw ValidationException::withMessages(['assignee_id' => ['Pick an active team member of your company to assign this sourcing target.']]);
+        }
 
         $target = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
