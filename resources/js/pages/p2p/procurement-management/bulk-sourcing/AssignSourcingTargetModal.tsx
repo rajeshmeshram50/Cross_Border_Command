@@ -248,15 +248,32 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     const has = clType === 'pdf' ? !!clVal : !!clVal.trim();
     const c: Clarity = has ? { type: clType, val: clVal } : null;
     const target = clarity;
-    // Brief loader so the save reads as a deliberate action, then confirm.
-    setClSaving(true);
-    setTimeout(() => {
+    const apply = () => {
       if (target.kind === 'master') setMasterRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
       else setManualRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
+    };
+    const row = target.kind === 'master' ? masterRows[target.idx] : manualRows[target.idx];
+    setClSaving(true);
+    // Editing a saved product: write the clarity to the database now, so it is
+    // not lost when the popup is closed without "Update Target".
+    if (isEdit && editRow && row?.id) {
+      api.put(`/p2p/sourcing-targets/${editRow.id}/products/${row.id}/clarity`, { clarity_type: c?.type ?? null, clarity_value: c?.val ?? null })
+        .then(() => {
+          apply();
+          setClarity(null);
+          toast.success(c ? 'Clarity saved' : 'Clarity cleared', c ? 'Saved to this product.' : 'Removed the clarity from this product.');
+        })
+        .catch((e: any) => toast.error('Save failed', e?.response?.data?.message ?? 'Could not save the clarity.'))
+        .finally(() => setClSaving(false));
+      return;
+    }
+    // New product / new target: kept on the row and saved with the target.
+    setTimeout(() => {
+      apply();
       setClSaving(false);
       setClarity(null);
-      toast.success(c ? 'Clarity saved' : 'Clarity cleared', c ? `${c.type.charAt(0).toUpperCase() + c.type.slice(1)} added to the product.` : 'Removed the clarity from this product.');
-    }, 500);
+      toast.success(c ? 'Clarity added' : 'Clarity cleared', c ? `It is saved when you ${isEdit ? 'click Update Target' : 'assign the target'}.` : 'Removed the clarity from this product.');
+    }, 300);
   };
   // Upload a clarity PDF and keep its /storage/... path in clVal (saveClarity
   // then stores it on the row). Previously only the filename was kept, so the
@@ -304,7 +321,16 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
       const rest = (x.clarity.val || '').split('\n').filter(p => p && p !== path);
       return { ...x, clarity: rest.length ? { type: 'pdf' as const, val: rest.join('\n') } : null };
     });
-    if (kind === 'master') setMasterRows(upd); else setManualRows(upd);
+    const row = kind === 'master' ? masterRows[idx] : manualRows[idx];
+    const apply = () => { if (kind === 'master') setMasterRows(upd); else setManualRows(upd); };
+    if (isEdit && editRow && row?.id && row.clarity?.type === 'pdf') {
+      const rest = (row.clarity.val || '').split('\n').filter(p => p && p !== path);
+      api.put(`/p2p/sourcing-targets/${editRow.id}/products/${row.id}/clarity`, { clarity_type: rest.length ? 'pdf' : null, clarity_value: rest.length ? rest.join('\n') : null })
+        .then(() => { apply(); toast.success('File removed', 'Saved to this product.'); })
+        .catch((e: any) => toast.error('Remove failed', e?.response?.data?.message ?? 'Could not update the clarity.'));
+      return;
+    }
+    apply();
   };
   // Persist a single product's clarity to the DB straight away (the popover's
   // "Update" button) — no need to re-save the whole target. Edit-mode only: a
