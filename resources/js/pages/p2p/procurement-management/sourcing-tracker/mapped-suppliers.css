@@ -693,3 +693,101 @@
         border-radius: 14px;
     }
 }
+
+/* ── Supplier card · price row (Figma "Mapped Suppliers popup — price row", .sv-price) ──
+   The quote stored with the mapping: Domestic = unit price, GST, GST amount, price incl. GST
+   (+ valid till); International = origin, unit price in its currency, exchange rate, no GST,
+   INR equivalent. The total tile carries the server's "vs target" line. */
+.stsv-price {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e0eef2;
+}
+.stsv-price-k {
+    flex: 1 1 110px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 11px;
+    border-radius: 9px;
+    background: #f6fcfd;
+    border: 1px solid #e0f2f6;
+}
+.stsv-price-k span {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.stsv-price-k b {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: -.1px;
+    color: #0f172a;
+}
+.stsv-price-k small {
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+}
+.stsv-price-k.tot {
+    background: linear-gradient(135deg, #ecfeff, #e0f7fa);
+    border-color: #b2ebf2;
+}
+.stsv-price-k.tot b { color: #0e7490; }
+.stsv-vs { font-style: normal; font-size: 10px; font-weight: 700; }
+.stsv-vs.ok { color: #059669; }
+.stsv-vs.hi { color: #d97706; }
+.stsv-vs.eq { color: #0e7490; }
+.stsv-price--none span {
+    font-size: 11px;
+    font-weight: 600;
+    font-style: italic;
+    color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .stsv-price { border-top-color: rgba(103, 232, 249, .14); }
+[data-bs-theme="dark"] .stsv-price-k { background: rgba(255, 255, 255, .03); border-color: rgba(103, 232, 249, .14); }
+[data-bs-theme="dark"] .stsv-price-k span { color: #94a3b8; }
+[data-bs-theme="dark"] .stsv-price-k b { color: #e2f3f7; }
+[data-bs-theme="dark"] .stsv-price-k small { color: #7c93a0; }
+[data-bs-theme="dark"] .stsv-price-k.tot { background: linear-gradient(135deg, rgba(8, 145, 178, .2), rgba(8, 145, 178, .08)); border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .stsv-price-k.tot b { color: #67e8f9; }
+[data-bs-theme="dark"] .stsv-vs.ok { color: #34d399; }
+[data-bs-theme="dark"] .stsv-vs.hi { color: #fbbf24; }
+[data-bs-theme="dark"] .stsv-vs.eq { color: #67e8f9; }
+
+/* Edit on a supplier card (assignee): a small teal icon button beside Convert to Supplier.
+   Off (muted, not clickable) on a Supplier Master card, which is edited in the Supplier Master. */
+.stsv-card-edit-btn {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-left: auto;
+    padding: 0;
+    border-radius: 10px;
+    color: #0e7490;
+    background: #ecfeff;
+    border: 1px solid #a5e4f0;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s, transform .15s;
+}
+.stsv-card-edit-btn:hover { background: #cffafe; border-color: #22d3ee; transform: translateY(-1px); }
+.stsv-card-edit-btn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+.stsv-card-edit-btn:disabled,
+.stsv-card-edit-btn:disabled:hover { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; transform: none; cursor: not-allowed; }
+.stsv-card-top .sct-frozen-wrap { margin-left: auto; }
+.stsv-card-top .sct-frozen-wrap .stsv-card-edit-btn { margin-left: 0; }
+.stsv-card-edit-btn + .stsv-card-convert-btn,
+.stsv-card-top .sct-frozen-wrap + .stsv-card-convert-btn { margin-left: 8px; }
+[data-bs-theme="dark"] .stsv-card-edit-btn { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .stsv-card-edit-btn:disabled { color: #64748b; background: rgba(148, 163, 184, .1); border-color: rgba(148, 163, 184, .2); }

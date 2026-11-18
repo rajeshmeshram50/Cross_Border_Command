@@ -1,9 +1,13 @@
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import { todayIso, type SourcingTarget } from './data';
 import { dmy, initials, inr } from './format';
+import { money } from './currency';
+import ClipText from './ClipText';
+import type { MapEdit } from './MapSupplierModal';
 import { usePopup } from './popupHooks';
 import type { ReportProduct } from './targetProducts';
 import './mapped-suppliers.css';
@@ -11,20 +15,114 @@ import { IcoCheck, IcoUserPlus, IcoUsers, IcoX, Svg } from './icons';
 
 /* Mapped Suppliers popup (Figma) — opens from the Supplier Count badge in the Sourcing Target
    Report. Same design as Bulk Sourcing's MappedSuppliersModal, under this module's own .stsv-*
-   class names (mapped-suppliers.css), with static dummy suppliers: design-only, API later. */
+   class names (mapped-suppliers.css). Cards: GET /p2p/sourcing-targets/{id}/products/{product}/suppliers.
+   The server masks contact / mobile / email ("••••") for people who may not see them. */
 
-type Sup = { id: string; name: string; segment: string; contact: string; mobile: string; email: string; source: 'Master' | 'New Supplier' };
+type Sup = {
+  /** The mapping's id (one row per supplier on this product). */
+  id: string;
+  /** Supplier Master id (source Master) or New Supplier directory id (source New Supplier). */
+  supplierId: number | null;
+  name: string; segment: string; contact: string; mobile: string; email: string;
+  source: 'Master' | 'New Supplier';
+  origin: 'domestic' | 'international' | null;
+  /** New Supplier not yet in the Supplier Master: show "Convert to Supplier". */
+  canConvert: boolean;
+  /** The quote stored with the mapping (null price = mapped before pricing existed). */
+  quote: Quote;
+  /** Unmasked saved values, to open a New Supplier for Edit ('' where the server masked one). */
+  raw: { contact: string; mobile: string; email: string; gmaps: string; address: string; stateCode: string; city: string; card: string };
+};
 
-/* Dummy directory. A product's suppliers are picked from it by its count, so the same
-   product always shows the same suppliers. */
-const DIRECTORY: Omit<Sup, 'segment'>[] = [
-  { id: 'S-NEW', name: 'Bluewave Components', contact: '—', mobile: '—', email: '—', source: 'New Supplier' },
-  { id: 'S-004', name: 'Instrumentation Hub', contact: 'Neha Patel', mobile: '9823456789', email: 'neha@insthub.in', source: 'Master' },
-  { id: 'S-001', name: 'TechParts India Pvt Ltd', contact: 'Rahul Shah', mobile: '9876543210', email: 'rahul@techparts.in', source: 'Master' },
-  { id: 'S-007', name: 'Valve World India', contact: 'Ravi Joshi', mobile: '9856789012', email: 'ravi@valveworld.in', source: 'Master' },
-  { id: 'S-002', name: 'Electro Components Co', contact: 'Priya Mehta', mobile: '9876501234', email: 'priya@electrocomp.in', source: 'Master' },
-];
+/** A mapping's quote, as the API computes it (GST split, totals, ₹ equivalent, vs target). */
+type Quote = {
+  price: number | null; currency: string; country: string; state: string;
+  gstPercentage: number; gstType: 'intra' | 'inter' | 'none' | null; gstAmount: number; total: number;
+  exchangeRate: number | null; inrAmount: number | null; validTill: string | null;
+  vs: { percent: number; status: 'below' | 'at' | 'above' } | null;
+};
 
+type ApiSup = {
+  id: string | number; supplier_id?: number | null; name?: string; segment?: string | null;
+  contact?: string | null; mobile?: string | null; email?: string | null;
+  source?: string; origin?: string | null; canConvert?: boolean;
+  country?: string | null; state?: string | null; currency?: string | null; price?: number | null;
+  gstPercentage?: number | null; gstType?: string | null; gstAmount?: number | null; total?: number | null;
+  exchangeRate?: number | null; inrAmount?: number | null; validTill?: string | null;
+  vsTarget?: { percent?: number | null; status?: string | null } | null;
+  gmaps?: string | null; address?: string | null; state_code?: string | null; city?: string | null; card?: string | null;
+};
+/** A value the server masked ("••••") is not a real value: an Edit form must not save it back. */
+const real = (v?: string | null) => (v && !v.includes('•') ? v.trim() : '');
+
+const dash = (v?: string | null) => (v && String(v).trim() ? String(v) : '—');
+const toSup = (r: ApiSup): Sup => ({
+  id: String(r.id),
+  supplierId: r.supplier_id ?? null,
+  name: r.name || '—',
+  segment: r.segment?.trim() || '',
+  contact: dash(r.contact), mobile: dash(r.mobile), email: dash(r.email),
+  source: r.source === 'New Supplier' ? 'New Supplier' : 'Master',
+  origin: r.origin === 'international' ? 'international' : r.origin === 'domestic' ? 'domestic' : null,
+  canConvert: !!r.canConvert,
+  raw: {
+    contact: real(r.contact), mobile: real(r.mobile), email: real(r.email), gmaps: real(r.gmaps), address: real(r.address),
+    stateCode: real(r.state_code), city: real(r.city), card: real(r.card),
+  },
+  quote: {
+    price: r.price ?? null,
+    currency: (r.currency || 'INR').toUpperCase(),
+    country: r.country || '', state: r.state || '',
+    gstPercentage: r.gstPercentage ?? 0,
+    gstType: r.gstType === 'intra' || r.gstType === 'inter' || r.gstType === 'none' ? r.gstType : null,
+    gstAmount: r.gstAmount ?? 0, total: r.total ?? 0,
+    exchangeRate: r.exchangeRate ?? null, inrAmount: r.inrAmount ?? null, validTill: r.validTill ?? null,
+    vs: r.vsTarget && r.vsTarget.percent != null && r.vsTarget.status
+      ? { percent: Number(r.vsTarget.percent), status: r.vsTarget.status === 'below' ? 'below' : r.vsTarget.status === 'above' ? 'above' : 'at' }
+      : null,
+  },
+});
+
+/** "₹37,881.00" — the Figma's rupee amounts (two decimals, Indian grouping, no space). */
+const rupee = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** The quote's "vs target" line, from the server's comparison of the ₹ unit price with the target. */
+function VsTarget({ vs }: { vs: Quote['vs'] }) {
+  if (!vs) return null;
+  if (vs.status === 'at' || Math.abs(vs.percent) < 0.005) return <em className="stsv-vs eq">At target</em>;
+  return vs.status === 'below'
+    ? <em className="stsv-vs ok">{Math.abs(vs.percent).toFixed(2)}% below target</em>
+    : <em className="stsv-vs hi">{Math.abs(vs.percent).toFixed(2)}% above target</em>;
+}
+
+/** The price row under a supplier card's contacts (Figma "Mapped Suppliers popup — price row"). */
+function PriceRow({ q, origin }: { q: Quote; origin: Sup['origin'] }) {
+  if (q.price == null) {
+    return <div className="stsv-price stsv-price--none"><span>Price &amp; GST not mapped for this supplier</span></div>;
+  }
+  if (origin === 'international') {
+    return (
+      <div className="stsv-price">
+        <div className="stsv-price-k"><span>Origin</span><b className="stsv-txt">International</b>{q.country && <small>{q.country}</small>}</div>
+        <div className="stsv-price-k"><span>Unit Price</span><b>{money(q.currency, q.price)}</b></div>
+        <div className="stsv-price-k"><span>Exchange Rate</span><b>₹{(q.exchangeRate ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 4 })}</b><small>per {q.currency}</small></div>
+        <div className="stsv-price-k"><span>GST</span><b className="stsv-txt">No GST</b><small>Overseas supplier</small></div>
+        <div className="stsv-price-k tot"><span>INR Equivalent</span><b>{rupee(q.inrAmount ?? 0)}</b><VsTarget vs={q.vs} /></div>
+      </div>
+    );
+  }
+  const half = q.gstPercentage / 2;
+  const split = q.gstType === 'intra' ? `CGST ${half}% + SGST ${half}%` : `IGST ${q.gstPercentage}%`;
+  return (
+    <div className="stsv-price">
+      <div className="stsv-price-k"><span>Unit Price</span><b>{rupee(q.price)}</b></div>
+      <div className="stsv-price-k"><span>GST</span><b>{q.gstPercentage}%</b><small>{split}</small></div>
+      <div className="stsv-price-k"><span>GST Amount</span><b>{rupee(q.gstAmount)}</b></div>
+      <div className="stsv-price-k tot"><span>Price incl. GST</span><b>{rupee(q.total)}</b><VsTarget vs={q.vs} /></div>
+      {q.validTill && <div className="stsv-price-k"><span>Valid Till</span><b>{dmy(q.validTill)}</b></div>}
+    </div>
+  );
+}
 
 const IcoType = () => <Svg size={9} sw={2.5}><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></Svg>;
 const CONTACT_ICONS: Record<'user' | 'phone' | 'mail', ReactNode> = {
@@ -33,8 +131,8 @@ const CONTACT_ICONS: Record<'user' | 'phone' | 'mail', ReactNode> = {
   mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></>,
 };
 
-/** A mapped supplier's key, so a conversion is remembered per target · product · supplier. */
-export const supKey = (row: SourcingTarget, product: ReportProduct, supId: string) => `${row.code}|${product.key}|${supId}`;
+/** A New Supplier's key (its directory id): a conversion applies to every product it is mapped on. */
+export const supKey = (supplierId: number | null, mappingId: string) => (supplierId != null ? `new-${supplierId}` : `map-${mappingId}`);
 
 type Props = {
   row: SourcingTarget;
@@ -42,18 +140,55 @@ type Props = {
   onClose: () => void;
   /** Add Supplier opens the Map Supplier Directory popup for this product. */
   onAddSupplier: () => void;
-  /** Convert to Supplier on a New Supplier card (CS-2222): opens Supplier Management's Add Supplier form. */
-  onConvert?: (key: string, name: string) => void;
-  /** Suppliers already converted (supKey): their card reads Master and the button is gone. */
+  /** Convert to Supplier on a New Supplier card (CS-2222): opens Supplier Management's Add Supplier
+      form for this New Supplier (its directory id). */
+  onConvert?: (supplierId: number, name: string) => void;
+  /** Converted in this session (supKey), before the list is loaded again: the button is gone. */
   converted?: ReadonlySet<string>;
+  /** Only the target's assignee maps suppliers: Add Supplier is off for anyone else. */
+  canMap: boolean;
+  /** Edit a mapped New Supplier (its details and quote) — the assignee only. */
+  onEdit?: (edit: MapEdit) => void;
 };
 
-export default function MappedSuppliers({ row, product, onClose, onAddSupplier, onConvert, converted }: Props) {
+/** A mapped New Supplier's saved values, as the New Supplier form holds them. */
+const editOf = (s: Sup): MapEdit => {
+  const intl = s.origin === 'international';
+  const q = s.quote;
+  return {
+    mappingId: s.id,
+    scope: intl ? 'international' : 'domestic',
+    card: s.raw.card,
+    values: {
+      coName: s.name, contact: s.raw.contact, segment: s.segment, email: s.raw.email, gmaps: s.raw.gmaps,
+      // A domestic mobile is kept as its 10 digits (the form's own rule); an overseas one as typed.
+      mobile: intl ? s.raw.mobile : s.raw.mobile.replace(/\D/g, '').slice(-10),
+      addr: s.raw.address, country: intl ? q.country : 'India', state: q.state, stateCode: s.raw.stateCode, city: s.raw.city,
+      price: q.price != null ? String(q.price) : '', gst: String(q.gstPercentage || 18),
+      gstType: q.gstType === 'intra' ? 'intra' : 'inter', validTill: q.validTill ?? '',
+      ...(intl ? { cur: q.currency, fx: q.exchangeRate != null ? String(q.exchangeRate) : '' } : {}),
+    },
+  };
+};
+
+export default function MappedSuppliers({ row, product, onClose, onAddSupplier, onConvert, converted, canMap, onEdit }: Props) {
   const segment = product.segment && product.segment !== '—' ? product.segment : '';
-  const suppliers: Sup[] = DIRECTORY.slice(0, Math.min(product.suppliers, DIRECTORY.length))
-    .map(s => ({ ...s, segment: segment || 'General' }))
-    .map(s => (s.source === 'New Supplier' && converted?.has(supKey(row, product, s.id)) ? { ...s, source: 'Master' as const } : s));
-  const count = suppliers.length;
+  const [loaded, setLoaded] = useState<Sup[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setFailed(false);
+    api.get<{ data: ApiSup[] }>(`/p2p/sourcing-targets/${encodeURIComponent(row.code)}/products/${product.id}/suppliers`)
+      .then(r => { if (alive) setLoaded((r.data?.data ?? []).map(toSup)); })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [row.code, product.id, retry]);
+  const loading = loaded === null && !failed;
+  const suppliers: Sup[] = (loaded ?? []).map(s => (
+    s.source === 'New Supplier' && converted?.has(supKey(s.supplierId, s.id)) ? { ...s, source: 'Master' as const, canConvert: false } : s));
+  // Until the cards arrive the header keeps the report's count.
+  const count = loaded ? suppliers.length : product.suppliers;
   const source = product.source === 'Product Master' ? 'Product Master' : 'Manual Entry';
 
   // Scroll lock, Esc (this is the top popup, so the report behind stays open) and focus.
@@ -99,7 +234,13 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
             <span className="stsv-count-badge"><IcoCheck size={10} sw={2.5} />{count} Mapped</span>
           </div>
           <div className="stsv-cards">
-            {count === 0 ? (
+            {loading || (failed && !loaded) ? (
+              <div className="stsv-empty">
+                {loading
+                  ? <div className="stsv-empty-sub"><span className="sct-spin sct-spin--dark" aria-hidden />Loading the mapped suppliers…</div>
+                  : <><div className="stsv-empty-title">Couldn’t load the suppliers</div><button type="button" className="str-retry" onClick={() => setRetry(n => n + 1)}>Retry</button></>}
+              </div>
+            ) : suppliers.length === 0 ? (
               <div className="stsv-empty">
                 <div className="stsv-empty-icon"><IcoUserPlus size={24} sw={2.3} /></div>
                 <div className="stsv-empty-title">No Suppliers Mapped</div>
@@ -113,14 +254,32 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                   <div className="stsv-card-info">
                     <FitTip label={s.name}><div className="stsv-card-name">{s.name}</div></FitTip>
                     <div className="stsv-card-tags">
-                      <span className="stsv-card-tag id">{s.id}</span>
-                      <span className="stsv-card-tag seg">{s.segment}</span>
+                      {/* The API sends no supplier code, so the first tag is the origin. */}
+                      {s.origin && <span className="stsv-card-tag id">{s.origin === 'international' ? 'International' : 'Domestic'}</span>}
+                      {(s.segment || segment) && <ClipText text={s.segment || segment} className="stsv-card-tag seg" />}
                       <span className="stsv-card-tag src">{s.source}</span>
                     </div>
                   </div>
+                  {/* Edit (assignee only): a New Supplier's details and quote. A Supplier Master mapping is
+                      edited in the Supplier Master (the API edits only New Supplier rows). */}
+                  {canMap && onEdit && (s.source === 'New Supplier' ? (
+                    <Tooltip label="Edit supplier & quote">
+                      <button type="button" className="stsv-card-edit-btn" aria-label={`Edit ${s.name}`} onClick={() => onEdit(editOf(s))}>
+                        <Svg sw={2.3} size={13}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></Svg>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip label="A Supplier Master supplier is edited in the Supplier Master">
+                      <span className="sct-frozen-wrap">
+                        <button type="button" className="stsv-card-edit-btn" disabled aria-label={`${s.name} is edited in the Supplier Master`}>
+                          <Svg sw={2.3} size={13}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></Svg>
+                        </button>
+                      </span>
+                    </Tooltip>
+                  ))}
                   {/* Only on New Supplier cards — never on Master ones (V-T23); gone once converted (V-T46). */}
-                  {s.source === 'New Supplier' && onConvert && (
-                    <button type="button" className="stsv-card-convert-btn" onClick={() => onConvert(supKey(row, product, s.id), s.name)}>
+                  {s.canConvert && onConvert && s.supplierId != null && (
+                    <button type="button" className="stsv-card-convert-btn" onClick={() => onConvert(s.supplierId as number, s.name)}>
                       <Svg sw={2.3} size={12}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><polyline points="17 11 19 13 23 9" /></Svg>
                       Convert to Supplier
                     </button>
@@ -134,6 +293,7 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                     </div>
                   ))}
                 </div>
+                <PriceRow q={s.quote} origin={s.origin} />
               </div>
             ))}
           </div>
@@ -141,12 +301,20 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
 
         <div className="stsv-footer">
           {(() => {
-            const note = count ? `${count} supplier${count !== 1 ? 's' : ''} mapped to ${product.name}` : 'No suppliers mapped yet';
+            const note = loading ? 'Loading…' : count ? `${count} supplier${count !== 1 ? 's' : ''} mapped to ${product.name}` : 'No suppliers mapped yet';
             return <FitTip label={note}><span className="stsv-footer-note">{note}</span></FitTip>;
           })()}
           <div className="stsv-footer-actions">
             <button type="button" className="stsv-close-btn" onClick={onClose}>Close</button>
-            <button type="button" className="stsv-footer-btn" onClick={onAddSupplier}><IcoUserPlus size={13} sw={2.3} />Add Supplier</button>
+            {canMap ? (
+              <button type="button" className="stsv-footer-btn" onClick={onAddSupplier}><IcoUserPlus size={13} sw={2.3} />Add Supplier</button>
+            ) : (
+              <Tooltip label="Only the assignee maps suppliers to this target">
+                <span className="sct-frozen-wrap">
+                  <button type="button" className="stsv-footer-btn" disabled style={{ opacity: .5, cursor: 'not-allowed' }}><IcoUserPlus size={13} sw={2.3} />Add Supplier</button>
+                </span>
+              </Tooltip>
+            )}
           </div>
         </div>
       </div>
