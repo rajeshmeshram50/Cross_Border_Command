@@ -5376,8 +5376,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       templateCode={genTpl?.code}
       employeeId={employee?.id ?? null}
       employeeName={employee?.name}
-      onSent={fetchRuns}
-      onGenerated={fetchGenerated}
+      /* fresh=true: both default to the memoised bundle, which still holds
+         the pre-send response, so the row kept showing Send for Signature. */
+      onSent={() => fetchRuns(true)}
+      onGenerated={() => fetchGenerated(true)}
     />
 
     <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">

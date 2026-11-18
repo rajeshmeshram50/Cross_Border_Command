@@ -210,7 +210,7 @@ export default function Inbox() {
     },
     {
       header: 'Action', id: 'view', enableSorting: false,
-      meta: { width: '10%', align: 'right' },
+      meta: { width: '10%', align: 'center' },
       cell: info => (
         <div onClick={e => e.stopPropagation()}>
           <button type="button" onClick={() => setViewRun(info.row.original)}
@@ -301,8 +301,8 @@ export default function Inbox() {
       cell: info => <span className="ib-cell-muted text-nowrap">{new Date(info.row.original.created_at).toLocaleString()}</span>,
     },
     {
-      header: 'Take Action', id: 'take_action', enableSorting: false,
-      meta: { width: '18%', align: 'right' },
+      header: 'Action', id: 'take_action', enableSorting: false,
+      meta: { width: '18%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
@@ -362,7 +362,7 @@ export default function Inbox() {
       cell: info => <span className="ib-cell-reason ib-cell-muted d-inline-block" title={info.row.original.reason || ''}>{info.row.original.reason || '—'}</span>,
     },
     {
-      header: 'Action', id: 'action', enableSorting: false, meta: { width: '14%', align: 'right' },
+      header: 'Action', id: 'action', enableSorting: false, meta: { width: '14%', align: 'center' },
       cell: info => {
         const id = info.row.original.id;
         return (
@@ -858,6 +858,9 @@ export default function Inbox() {
                 accent="violet"
                 paginate
                 pageSize={PAGE_SIZE}
+                /* Without this the table is pinned to 100% and the action
+                   buttons overflow their cell with no way to scroll to them. */
+                minWidth={1180}
                 className="ib-leave-dt"
                 loading={leaveLoading}
                 onRowClick={(r) => openLeaveReview(r.id)}
@@ -1109,6 +1112,7 @@ export default function Inbox() {
                       accent="violet"
                       paginate
                       pageSize={PAGE_SIZE}
+                      minWidth={1180}
                       className="ib-leave-dt"
                       loading={histLoading}
                       emptyMessage={
@@ -1263,6 +1267,9 @@ export default function Inbox() {
                 accent="violet"
                 paginate
                 pageSize={PAGE_SIZE}
+                /* Without this the table is pinned to 100% and the action
+                   buttons overflow their cell with no way to scroll to them. */
+                minWidth={1180}
                 className="ib-leave-dt"
                 loading={loading}
                 emptyMessage={

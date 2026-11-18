@@ -154,9 +154,13 @@
 .ib-lr-grid .ib-pill-leave { align-self: flex-start; }
 
 /* Compact row action buttons (Approve / Reject) in the leave table. */
-.ib-leave-table .ib-btn-sm {
+/* .ib-leave-dt, not .ib-leave-table: the table became a <DataTable> and the
+   selector was left on the old class, so the buttons rendered full-size and
+   overflowed the Action column, clipped by .dt-root's overflow:hidden. */
+.ib-leave-dt .ib-btn-sm {
   display: inline-flex; align-items: center; padding: 5px 12px;
   font-size: 11.5px; font-weight: 600; border-radius: 8px;
+  white-space: nowrap;
 }
 /* The pager lives in the table's <tfoot>, so it reads as part of the table
    rather than the heavy detached band WorklistPager paints by default. */
@@ -553,3 +557,9 @@
 /* Subject-employee avatar on the Documents worklist — indigo, so it reads
    as the documents section the way ib-avatar--leave does for leave. */
 .ib-avatar--doc { background: linear-gradient(135deg, #7c5cfc, #5a3fd1); }
+
+/* A big rows-per-page grew the card instead of scrolling, pushing the sections
+   below off-screen. Cap the body so the rows scroll inside the card; released
+   for the empty state so it is not squashed (same rule as .rec-req-modal). */
+.ib-cardbody-0 .dt-scroll { max-height: min(56vh, 520px); }
+.ib-cardbody-0 .dt-scroll:has(.dt-table-empty) { max-height: none; }

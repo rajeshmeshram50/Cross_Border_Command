@@ -58,7 +58,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
   const columns = useMemo<DataTableColumn<GstApprovalInboxRow>[]>(() => [
     {
       header: 'Purchase Order', id: 'po', accessorFn: (r) => r.po_code ?? '',
-      meta: { width: '14%' },
+      meta: { width: '13%' },
       cell: info => {
         const r = info.row.original;
         return (
@@ -71,7 +71,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
     },
     {
       header: 'Supplier', id: 'supplier', accessorFn: (r) => r.supplier_name ?? '',
-      meta: { width: '16%', wrap: true },
+      meta: { width: '15%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -84,7 +84,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
     },
     {
       header: 'PO Amount', id: 'amount', accessorFn: (r) => Number(r.grand_total ?? 0),
-      meta: { width: '11%' },
+      meta: { width: '10%' },
       cell: info => {
         const r = info.row.original;
         return <span className="pga-amt-cell">{fmtMoney(r.grand_total, r.currency_code)}</span>;
@@ -92,7 +92,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
     },
     {
       header: history ? 'Decision' : 'Why Approval', id: 'why', enableSorting: false,
-      meta: { width: '19%', wrap: true },
+      meta: { width: '16%', wrap: true },
       cell: info => {
         const r = info.row.original;
         const approved = r.status === 'approved';
@@ -116,7 +116,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
     },
     {
       header: 'Requested By', id: 'who', accessorFn: (r) => r.requested_by_name ?? '',
-      meta: { width: '16%', wrap: true },
+      meta: { width: '14%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -136,15 +136,15 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
     {
       header: history ? 'Decided On' : 'Received', id: 'when',
       accessorFn: (r) => (history ? r.decided_at : r.requested_at) ?? '',
-      meta: { width: '12%' },
+      meta: { width: '10%' },
       cell: info => {
         const r = info.row.original;
         return <span className="pga-sub text-nowrap">{fmtDateTime(history ? r.decided_at : r.requested_at)}</span>;
       },
     },
     {
-      header: 'Take Action', id: 'act', enableSorting: false,
-      meta: { width: '12%', align: 'right' },
+      header: 'Action', id: 'act', enableSorting: false,
+      meta: { width: '16%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (

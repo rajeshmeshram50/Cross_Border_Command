@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -435,8 +435,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     setPromoTemplates(stamp);
   };
 
+  /* Ref, not the state flag: `sendingTplId` only disables the button on the
+     next render, so a double-click sent the document twice (QA #143). */
+  const sendingRef = useRef(false);
+
   const sendDocForSignature = async (tplId: number, name: string | null) => {
-    if (!employee || sendingTplId) return;
+    if (!employee || sendingRef.current) return;
+    sendingRef.current = true;
     setSendingTplId(tplId);
     try {
       const { data } = await api.post('/hr-document-signatures', {
@@ -448,6 +453,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     } catch (err: any) {
       toast.error('Could not send', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
+      sendingRef.current = false;
       setSendingTplId(null);
     }
   };
