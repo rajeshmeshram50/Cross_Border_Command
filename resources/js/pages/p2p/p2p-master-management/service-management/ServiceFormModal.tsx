@@ -501,16 +501,16 @@ function SoftFields({ o: opts, addMaster, savedAtt, vals, set, errors, files, pi
           <Field label="Service Provider / Brand" required error={errors.provider}>
             <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Microsoft, AWS, Anthropic" />
           </Field>
-          <Field label="Service Segment" required add error={errors.segment}>
+          <Field label="Service Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Service Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
           <Field label="Service Delivery Type" required error={errors.delivery}>
             <Select value={vals.delivery} options={o.delivery} label="Service Delivery Type" onChange={v => set('delivery', v)} invalid={!!errors.delivery} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Unit of Measurement" required add error={errors.uom}>
+          <Field label="Unit of Measurement" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
@@ -551,10 +551,10 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
           <Field label="Billing Frequency" required error={errors.billing}>
             <Select value={vals.billing} options={o.billing} label="Billing Frequency" onChange={v => set('billing', v)} invalid={!!errors.billing} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Unit of Measurement" required add error={errors.uom}>
+          <Field label="Unit of Measurement" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
@@ -585,7 +585,7 @@ function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors,
           <Field label="Make / Brand / Specifications" required error={errors.make}>
             <TextInput value={vals.make} onChange={v => set('make', v)} placeholder="e.g. Dell · Latitude 5440" />
           </Field>
-          <Field label="Segment" required add error={errors.segment}>
+          <Field label="Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
           <Field label="Printable Description" required error={errors.desc} span="full">
@@ -613,21 +613,21 @@ function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors,
             <Select value={vals.haz} options={o.haz} label="Haz / Non Haz" invalid={!!errors.haz}
               onChange={v => set('haz', v)} />
           </Field>
-          <Field label="Haz Class" required={vals.haz === 'Hazardous'} add={vals.haz === 'Hazardous'} error={errors.hazClass}>
+          <Field label="Haz Class" required={vals.haz === 'Hazardous'} add={vals.haz === 'Hazardous'} onAdd={() => addMaster?.('haz_class', 'hazClass')} error={errors.hazClass}>
             <Select value={vals.hazClass} options={o.hazClasses} label="Haz Class" onChange={v => set('hazClass', v)}
               invalid={!!errors.hazClass} disabled={vals.haz !== 'Hazardous'}
               placeholder={vals.haz === 'Hazardous' ? undefined : 'Choose Haz first'} />
           </Field>
-          <Field label="UOM" required add error={errors.uom}>
+          <Field label="UOM" required add onAdd={() => addMaster?.('uom', 'uom')} error={errors.uom}>
             <Select value={vals.uom} options={o.uom} label="UOM" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
-          <Field label="HSN / SAC Code" required add error={errors.hsn}>
+          <Field label="HSN / SAC Code" required add onAdd={() => addMaster?.('hsn_codes', 'hsn')} error={errors.hsn}>
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
-          <Field label="Condition" required add error={errors.condition}>
+          <Field label="Condition" required add onAdd={() => addMaster?.('conditions', 'condition')} error={errors.condition}>
             <Select value={vals.condition} options={o.conditions} label="Condition" onChange={v => set('condition', v)} invalid={!!errors.condition} />
           </Field>
-          <Field label="Packaging Material" required add error={errors.packaging}>
+          <Field label="Packaging Material" required add onAdd={() => addMaster?.('packaging_material', 'packaging')} error={errors.packaging}>
             <Select value={vals.packaging} options={o.packaging} label="Packaging Material" onChange={v => set('packaging', v)} invalid={!!errors.packaging} />
           </Field>
         </div>
