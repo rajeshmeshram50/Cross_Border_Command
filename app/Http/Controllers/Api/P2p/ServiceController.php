@@ -130,7 +130,7 @@ class ServiceController extends Controller
             : self::BUNDLE_SECTIONS;
         sort($only);
         $type = $request->query('service_type');
-        $key = MasterBundleCache::key('service:master-bundle:v3:'.md5(implode(',', $only).':'.($type ?? 'all')), $user?->id);
+        $key = MasterBundleCache::key('service:master-bundle:v4:'.md5(implode(',', $only).':'.($type ?? 'all')), $user?->id);
 
         $bundle = Cache::remember($key, now()->addMinutes(5), function () use ($user, $only, $type) {
             $active = fn (string $cls, array $cols) => $this->masterQuery($cls, $user)->orderBy('id')->get($cols);
@@ -143,7 +143,13 @@ class ServiceController extends Controller
                 'service_categories' => fn () => $this->masterQuery(ServiceCategory::class, $user)
                     ->when($type, fn ($q) => $q->where('service_type', $type))
                     ->orderBy('id')->get(['id', 'name', 'service_type', 'classification']),
-                'segments' => fn () => $active(Segments::class, ['id', 'name']),
+                'segments' => fn () => $active(Segments::class, ['id', 'name', 'regulatory_status'])
+                    ->map(fn ($seg) => [
+                        'id' => $seg->id,
+                        'name' => $seg->name,
+                        'title' => $seg->title,
+                        'regulatory_status' => strtolower((string) $seg->regulatory_status) === 'highly' ? 'High' : 'Low',
+                    ])->values(),
                 'hsn_codes' => fn () => $active(HsnCodes::class, ['id', 'hsn_code', 'description']),
                 'uom' => fn () => $active(Uom::class, ['id', 'title', 'short_code', 'unit_type']),
                 'haz_class' => fn () => $active(HazClass::class, ['id', 'name']),
