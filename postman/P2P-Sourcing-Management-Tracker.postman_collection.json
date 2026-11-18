@@ -185,7 +185,7 @@
     },
     {
       "name": "1. Sourcing Target list (3 tabs)",
-      "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged.\n\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
+      "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products / totalProducts (total) · completed / completedProducts (products marked Completed) · pending · progress (number 0–100) + progressPercent (text, e.g. \"25%\") · progressStatus (In Progress | Completed) · mappedSuppliers (total suppliers mapped across all products of the target).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged.\n\nResponse envelope for every request in this module: { \"status\": true, \"data\": … }. Errors: { \"message\", \"errors\" } (422) or { \"status\": false, \"message\" } (403).",
       "item": [
         {
           "name": "All Sourcing Targets",
@@ -221,7 +221,7 @@
                 }
               ]
             },
-            "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
+            "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products / totalProducts (total) · completed / completedProducts (products marked Completed) · pending · progress (number 0–100) + progressPercent (text, e.g. \"25%\") · progressStatus (In Progress | Completed) · mappedSuppliers (total suppliers mapped across all products of the target).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
           },
           "response": [
             {
@@ -258,7 +258,7 @@
                     }
                   ]
                 },
-                "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products (total) · completed (Mapped Suppliers = products with ≥1 supplier) · pending · progress (%) · progressStatus (In Progress | Completed).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
+                "description": "ONE common list API for the three tabs — change only `tab`.\n• tab = all → All Sourcing Targets (created by me + assigned to me, each once)\n• tab = created → Sourcing Target Created by Me\n• tab = assigned → Sourcing Target Assigned to Me\nOptional: q (search: target ID, source, created by, assignee, status, product names) · status (In Progress | Completed | Overdue) · page · per_page (≤200, default 10).\n\ndata.counts {all, created, assigned} = the three badges (always all three, not affected by search).\ndata.rows[] columns: id (Sourcing Target ID) · start (date under the ID) · sources[] (I Want to Source To: Product Master / Manual Entry) · due + overdue (Procurement TAT + OVERDUE pill) · createdBy · assignee · firstProduct + moreProducts (Total Products \"Ball Valve 1.5\\\" +12\") · products / totalProducts (total) · completed / completedProducts (products marked Completed) · pending · progress (number 0–100) + progressPercent (text, e.g. \"25%\") · progressStatus (In Progress | Completed) · mappedSuppliers (total suppliers mapped across all products of the target).\nWithout `tab` the endpoint returns the old Bulk Sourcing shape { assigned[], created[] } — unchanged."
               },
               "status": "OK",
               "code": 200,
@@ -269,7 +269,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-17\",\n        \"due\": \"2026-12-01\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-02\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressPercent\": \"0%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 0,\n        \"mappedSuppliers\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -353,7 +353,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-17\",\n        \"due\": \"2026-12-01\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-02\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressPercent\": \"0%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 0,\n        \"mappedSuppliers\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -437,7 +437,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -536,6 +536,147 @@
               ]
             }
           }
+        },
+        {
+          "name": "Row with progress % and supplier count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "assigned"
+                }
+              ]
+            },
+            "description": "Each row: progress + progressPercent, totalProducts, completedProducts and mappedSuppliers (total supplier count)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "assigned"
+                    }
+                  ]
+                },
+                "description": "Each row: progress + progressPercent, totalProducts, completedProducts and mappedSuppliers (total supplier count)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-09\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 4,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 3,\n        \"pending\": 3,\n        \"progress\": 25,\n        \"progressPercent\": \"25%\",\n        \"totalProducts\": 4,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 4,\n        \"progressStatus\": \"In Progress\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 1,\n      \"created\": 0,\n      \"assigned\": 1\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 1,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 404 · sourcing target not found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/NOPE-999",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "NOPE-999"
+              ]
+            },
+            "description": "Unknown target code → 404 { \"message\": \"Sourcing target not found.\" }. An unknown product → \"Product not found in this sourcing target.\""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "404 ",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/NOPE-999",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "NOPE-999"
+                  ]
+                },
+                "description": "Unknown target code → 404 { \"message\": \"Sourcing target not found.\" }. An unknown product → \"Product not found in this sourcing target.\""
+              },
+              "status": "",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"Sourcing target not found.\",\n  \"exception\": \"Symfony\\\\Component\\\\HttpKernel\\\\Exception\\\\NotFoundHttpException\",\n  \"file\": \"C:\\\\xampp\\\\htdocs\\\\Cross_Border_Command\\\\vendor\\\\laravel\\\\framework\\\\src\\\\Illuminate\\\\Foundation\\\\Application.php\",\n  \"line\": 1437,\n  \"trace\": [\n    {\n      \"file\": \"C:\\\\xampp\\\\htdocs\\\\Cross_Border_Command\\\\vendor\\\\laravel\\\\framework\\\\src\\\\Illuminate\\\\Foundation\\\\helpers.php\",\n      \"line\": 67,\n      \"function\": \"abort\",\n      \"class\": \"Illuminate\\\\Foundation\\\\Application\",\n      \"type\": \"->\"\n    },\n    {\n      \"file\": \"C:\\\\xampp\\\\htdocs\\\\Cross_Border_Command\\\\app\\\\Http\\\\Controllers\\\\Api\\\\P2p\\\\SourcingController.php\",\n      \"line\": 42,\n      \"function\": \"abort\"\n    },\n    {\n      \"file\": \"C:\\\\xampp\\\\htdocs\\\\Cross_Border_Command\\\\app\\\\Http\\\\Controllers\\\\Api\\\\P2p\\\\SourcingController.php\",\n      \"line\": 470,\n      \"function\": \"target\",\n      \"class\": \"App\\\\Http\\\\Controllers\\\\Api\\\\P2p\\\\SourcingController\",\n      \"type\": \"->\"\n    }\n  ]\n}"
+            }
+          ]
         }
       ]
     },
@@ -1132,7 +1273,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-17\",\n    \"due\": \"2026-12-01\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 27,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 28,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 29,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-02\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 59,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 60,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 61,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1299,7 +1440,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-17\",\n    \"due\": \"2026-12-08\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 28,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 27,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 29,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-09\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 60,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 59,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 61,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1391,7 +1532,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 28,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 60,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
             }
           ]
         },
@@ -1483,7 +1624,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 28,\n    \"status\": \"Completed\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 60,\n    \"status\": \"Completed\"\n  }\n}"
             }
           ]
         },
@@ -1601,7 +1742,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"20\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"21\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"22\",\n      \"supplier_id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"52\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"53\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"54\",\n      \"supplier_id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
             }
           ]
         },
@@ -2252,6 +2393,109 @@
           ]
         },
         {
+          "name": "Expect 422 · price too large",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "sourcing-targets",
+                "{{target_id}}",
+                "products",
+                "{{product_id}}",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"price\": 1800000000000000000000000000000000050\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Limits: price ≤ 9,999,999,999.99 · exchange_rate ≤ 99,999.9999 · total / ₹ value ≤ 999,999,999,999.99."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/suppliers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "suppliers"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"price\": 1800000000000000000000000000000000050\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Limits: price ≤ 9,999,999,999.99 · exchange_rate ≤ 99,999.9999 · total / ₹ value ≤ 999,999,999,999.99."
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"The unit price cannot be more than 9,999,999,999.99.\",\n  \"errors\": {\n    \"price\": [\n      \"The unit price cannot be more than 9,999,999,999.99.\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
           "name": "Expect 422 · no unit price",
           "request": {
             "method": "POST",
@@ -2721,7 +2965,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"20\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"21\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"22\",\n      \"supplier_id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-17\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-17T11:39:50+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"52\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"53\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"54\",\n      \"supplier_id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
             }
           ]
         },
@@ -2815,7 +3059,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"22\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"54\"\n  }\n}"
             }
           ]
         }
@@ -2896,7 +3140,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 8,\n    \"origin\": \"domestic\",\n    \"converted\": false,\n    \"converted_vendor_id\": null,\n    \"sourcing_count\": 1,\n    \"identity\": {\n      \"company_name\": \"Smoke Valves Pvt Ltd\",\n      \"legal_name\": \"Smoke Valves Pvt Ltd\",\n      \"primary_email\": null,\n      \"segment_id\": null,\n      \"segment\": null,\n      \"gst_applicable\": null\n    },\n    \"address\": {\n      \"address_line\": null,\n      \"country_id\": 104,\n      \"country\": \"India\",\n      \"state_id\": 14,\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"google_location\": null,\n      \"contact_name\": \"Rohit S.\",\n      \"contact_no\": null,\n      \"email\": null,\n      \"is_primary\": true\n    },\n    \"business_card\": null\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 24,\n    \"origin\": \"domestic\",\n    \"converted\": false,\n    \"converted_vendor_id\": null,\n    \"sourcing_count\": 1,\n    \"identity\": {\n      \"company_name\": \"Smoke Valves Pvt Ltd\",\n      \"legal_name\": \"Smoke Valves Pvt Ltd\",\n      \"primary_email\": null,\n      \"segment_id\": null,\n      \"segment\": null,\n      \"gst_applicable\": null\n    },\n    \"address\": {\n      \"address_line\": null,\n      \"country_id\": 104,\n      \"country\": \"India\",\n      \"state_id\": 14,\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"google_location\": null,\n      \"contact_name\": \"Rohit S.\",\n      \"contact_no\": null,\n      \"email\": null,\n      \"is_primary\": true\n    },\n    \"business_card\": null\n  }\n}"
             }
           ]
         },
@@ -3021,7 +3265,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 8,\n    \"vendor_id\": 5,\n    \"vendor_code\": \"S-005\",\n    \"vendor_name\": \"ASASAS\",\n    \"mappings_moved\": 1,\n    \"mappings_merged\": 0,\n    \"message\": \"Smoke Valves Pvt Ltd is now in the Supplier Master as S-005.\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 24,\n    \"vendor_id\": 5,\n    \"vendor_code\": \"S-005\",\n    \"vendor_name\": \"ASASAS\",\n    \"mappings_moved\": 1,\n    \"mappings_merged\": 0,\n    \"message\": \"Smoke Valves Pvt Ltd is now in the Supplier Master as S-005.\"\n  }\n}"
             }
           ]
         },
@@ -3279,7 +3523,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": 9,\n      \"name\": \"Rhein Armaturen GmbH\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Industriestr. 4\",\n      \"country\": \"Germany\",\n      \"state\": \"NRW\",\n      \"state_code\": null,\n      \"city\": \"Cologne\",\n      \"gmaps\": null,\n      \"origin\": \"international\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-11-17T11:39:50+00:00\"\n    },\n    {\n      \"id\": 8,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": null,\n      \"contact\": \"••••\",\n      \"mobile\": null,\n      \"email\": null,\n      \"address\": null,\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 0,\n      \"converted\": true,\n      \"converted_vendor_id\": 5,\n      \"converted_at\": \"2026-11-17T11:39:50+00:00\",\n      \"created_at\": \"2026-11-17T11:39:50+00:00\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Durgesh\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi High Street,\",\n      \"country\": \"India\",\n      \"state\": \"Andhra Pradesh\",\n      \"state_code\": \"37\",\n      \"city\": \"mumbai\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-07-20T07:09:44+00:00\"\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": 25,\n      \"name\": \"Rhein Armaturen GmbH\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Industriestr. 4\",\n      \"country\": \"Germany\",\n      \"state\": \"NRW\",\n      \"state_code\": null,\n      \"city\": \"Cologne\",\n      \"gmaps\": null,\n      \"origin\": \"international\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-11-18T06:36:23+00:00\"\n    },\n    {\n      \"id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": null,\n      \"contact\": \"••••\",\n      \"mobile\": null,\n      \"email\": null,\n      \"address\": null,\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 0,\n      \"converted\": true,\n      \"converted_vendor_id\": 5,\n      \"converted_at\": \"2026-11-18T06:36:23+00:00\",\n      \"created_at\": \"2026-11-18T06:36:23+00:00\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Durgesh\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi High Street,\",\n      \"country\": \"India\",\n      \"state\": \"Andhra Pradesh\",\n      \"state_code\": \"37\",\n      \"city\": \"mumbai\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-07-20T07:09:44+00:00\"\n    }\n  ]\n}"
             }
           ]
         }
