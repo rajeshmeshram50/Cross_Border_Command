@@ -378,6 +378,15 @@ const supplierTypeId = (name: string, opts: { value: string; label: string }[]) 
   return Number.isFinite(id) && id > 0 ? id : null;
 };
 
+/* Sub-tab icons (Figma); shown only where the wizard is themed. */
+const KYC_TAB_ICON: Record<KycTab, ReactNode> = {
+  company: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
+  owner:   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="11" r="2.5" /><line x1="14" y1="10" x2="18" y2="10" /><line x1="14" y1="14" x2="18" y2="14" /><path d="M5.5 17a3.5 3.5 0 0 1 7 0" /></svg>,
+  license: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><polyline points="8.2 13.9 7 22 12 19 17 22 15.8 13.9" /></svg>,
+  bank:    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22" /><line x1="6" y1="18" x2="6" y2="11" /><line x1="10" y1="18" x2="10" y2="11" /><line x1="14" y1="18" x2="14" y2="11" /><line x1="18" y1="18" x2="18" y2="11" /><polygon points="12 2 20 7 4 7" /></svg>,
+  gst:     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /><path d="M9 12l2 2 4-4" /></svg>,
+};
+
 const KYC_TAB_TITLE: Record<string, string> = {
   company: 'Company Due Diligence',
   owner:   'Owner KYC',
@@ -3509,14 +3518,14 @@ export default function AddVendorModal(props: {
           {step === 2 && (<>
             {/* Sub-tab strip sits ABOVE the section card (Figma layout). */}
             <div className="avm-pill-tabs">
-              <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence</button>
-              <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}>Owner KYC</button>
-              <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}>Trade Licence</button>
-              <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Bank Details</button>
+              <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.company}</span>Company Due Diligence</button>
+              <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.owner}</span>Owner KYC</button>
+              <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.license}</span>Trade Licence</button>
+              <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.bank}</span>Bank Details</button>
               {/* Hidden entirely when the supplier isn't GST-registered — there
                   is no GSTIN to scrutinise. See kycTabOrder. */}
               {gstApplicable === 'Yes' && (
-                <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
+                <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.gst}</span>GST Scrutiny</button>
               )}
             </div>
             <SectionCard tone="purple" icon={<i className="ri-file-line" style={{ transform: 'scaleX(-1)' }} />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
@@ -4813,7 +4822,7 @@ function SupplierSegmentRefTable(props: {
       {/* Search bar (Figma) */}
       <div className="avm-kyc-search">
         <i className="ri-search-line" />
-        <input autoComplete="off" value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').toLowerCase()} name…`} />
+        <input autoComplete="off" value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').split(' ').map(w => (w.length <= 3 ? w.toUpperCase() : w.toLowerCase())).join(' ')} name…`} />
         {q && <button type="button" className="avm-kyc-search-clear" onClick={() => setQ('')} aria-label="Clear"><i className="ri-close-line" /></button>}
       </div>
       <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
@@ -4861,9 +4870,9 @@ function SupplierSegmentRefTable(props: {
                   <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'} ${expTone}`}>{expiryText}</span></td>
                   <td>
                     <div className="avm-req-pair">
-                      {r.requirement === 'M'
-                        ? <span className="avm-req-pill on-m">✓ Mandatory</span>
-                        : <span className="avm-req-pill on-o">Optional</span>}
+                      {/* Both options shown, the document's own one lit (Figma toggle). */}
+                      <span className={`avm-req-pill ${r.requirement === 'M' ? 'on-m' : 'off'}`}>{r.requirement === 'M' && '✓ '}Mandatory</span>
+                      <span className={`avm-req-pill ${r.requirement === 'O' ? 'on-o' : 'off'}`}>Optional</span>
                     </div>
                   </td>
                   <td>
