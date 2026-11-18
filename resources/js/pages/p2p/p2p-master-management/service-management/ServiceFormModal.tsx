@@ -8,9 +8,9 @@ import {
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceVals,
 } from './serviceData';
 import {
-  apiError, fetchServiceSuppliers, loadServiceBundle, loadServiceFile, saveServiceCore, saveServiceSuppliersStep, segmentReg,
+  apiError, fetchServiceSuppliers, loadServiceBundle, loadServiceCategories, loadServiceFile, saveServiceCore, saveServiceSuppliersStep, segmentReg,
   syncServiceSuppliers,
-  type ExistingImage, type Opt, type SavedAttachment, type ServiceBundle,
+  type ExistingImage, type Opt, type SavedAttachment, type ServiceBundle, type ServiceCategoryRow,
 } from './serviceApi';
 import { SupplierMapPanel } from './ServiceSupplierModal';
 import ServiceGstModal from './ServiceGstModal';
@@ -45,13 +45,13 @@ type FormOpts = {
   conditions: Opt[]; packaging: Opt[]; delivery: string[]; billing: string[]; haz: string[];
 };
 
-const buildOpts = (b: ServiceBundle | null, kind: ServiceKind, otype?: OtherType): FormOpts => {
+const buildOpts = (b: ServiceBundle | null, kind: ServiceKind, otype?: OtherType, cats?: ServiceCategoryRow[] | null): FormOpts => {
   const type = kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : 'self_consumable';
   const o = <T,>(rows: T[] | undefined, id: (r: T) => number, label: (r: T) => string): Opt[] =>
     (rows ?? []).map(r => ({ value: String(id(r)), label: label(r) }));
   return {
     categories: o(
-      (b?.service_categories ?? []).filter(c => c.service_type === type && (type !== 'other_operational' || c.classification === (otype ?? 'professional'))),
+      (cats ?? []).filter(c => c.service_type === type && (type !== 'other_operational' || c.classification === (otype ?? 'professional'))),
       c => c.id, c => c.name,
     ),
     segments: (b?.segments ?? []).map(r => {
@@ -111,6 +111,20 @@ export default function ServiceFormModal({
   const [quickAdd, setQuickAdd] = useState<{ slug: QuickSlug; field: keyof ServiceVals } | null>(null);
   const addMaster: AddMaster = (slug, field) => setQuickAdd({ slug, field });
   const [bundle, setBundle] = useState<ServiceBundle | null>(null);
+  const catType = kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : null;
+  const [categories, setCategories] = useState<ServiceCategoryRow[] | null>(catType ? null : []);
+  useEffect(() => {
+    if (!catType) return;
+    let live = true;
+    loadServiceCategories(catType)
+      .then(rows => { if (live) setCategories(rows); })
+      .catch(e => {
+        if (!live) return;
+        setCategories([]);
+        toast.error('Could not load service categories', apiError(e, 'Close the form and try again.'));
+      });
+    return () => { live = false; };
+  }, [catType, toast]);
   const [savedImages, setSavedImages] = useState<ExistingImage[]>(input.images ?? []);
   const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
   const [attachmentIds, setAttachmentIds] = useState<number[]>(input.attachmentIds ?? []);
@@ -151,8 +165,8 @@ export default function ServiceFormModal({
     return () => { live = false; };
   }, [toast]);
 
-  const opts = useMemo(() => buildOpts(bundle, kind, vals.otype), [bundle, kind, vals.otype]);
-  const formLoading = !!input.loading || !bundle;
+  const opts = useMemo(() => buildOpts(bundle, kind, vals.otype, categories), [bundle, kind, vals.otype, categories]);
+  const formLoading = !!input.loading || !bundle || categories === null;
   const gstRateId = useMemo(() => {
     if (vals.gstId) return vals.gstId;
     if (vals.gstPct == null) return undefined;
@@ -278,6 +292,7 @@ export default function ServiceFormModal({
     }
     try {
       setBundle(await loadServiceBundle(true));
+      if (field === 'category' && catType) setCategories(await loadServiceCategories(catType, true));
       if (id && (row?.status == null || String(row.status).toLowerCase() === 'active')) set(field, id as never);
     } catch (e) {
       toast.error('Could not refresh the list', apiError(e, 'Close and reopen the form to see the new record.'));

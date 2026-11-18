@@ -429,3 +429,18 @@ export async function syncServiceSuppliers(id: number, prev: MappedSupplier[], n
   for (const s of next) if (s.mapId == null) await addServiceSupplier(id, s);
   return fetchServiceSuppliers(id);
 }
+
+export type ServiceCategoryRow = ServiceBundle['service_categories'][number];
+
+const categoryCache = new Map<ApiServiceType, Promise<ServiceCategoryRow[]>>();
+/** Service categories of one service type — the separate master-bundle call the form's Service Category dropdown uses. */
+export function loadServiceCategories(type: ApiServiceType, force = false): Promise<ServiceCategoryRow[]> {
+  if (!categoryCache.has(type) || force) {
+    const p = api.get<{ service_categories?: ServiceCategoryRow[] }>('/p2p/services/master-bundle', {
+      params: { only: 'service_categories', service_type: type },
+    }).then(r => r.data?.service_categories ?? []);
+    p.catch(() => { if (categoryCache.get(type) === p) categoryCache.delete(type); });
+    categoryCache.set(type, p);
+  }
+  return categoryCache.get(type)!;
+}
