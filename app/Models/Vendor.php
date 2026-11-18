@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Concerns\EnforcesUniqueEmail;
+use App\Support\MasterBundleCache;
 use App\Models\Masters\ComplianceBehaviours;
 use App\Models\Masters\CustomerClassifications;
 use App\Models\Masters\RiskLevels;
@@ -28,6 +29,15 @@ class Vendor extends Model
     protected static array  $emailColumns = ['primary_email'];
 
     use SoftDeletes;
+
+    // Supplier name, code, type and status feed the cached master bundles
+    // (supplier pickers) — refresh them on every change.
+    protected static function booted(): void
+    {
+        static::saved(fn () => MasterBundleCache::bump());
+        static::deleted(fn () => MasterBundleCache::bump());
+        static::restored(fn () => MasterBundleCache::bump());
+    }
 
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
