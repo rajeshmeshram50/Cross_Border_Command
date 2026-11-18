@@ -14,7 +14,6 @@ use App\Models\Masters\Segments;
 use App\Models\Masters\ServiceCategory;
 use App\Models\Masters\Uom;
 use App\Models\P2p\Service;
-use App\Models\P2p\ServiceAttachment;
 use App\Models\P2p\ServiceImage;
 use App\Models\P2p\ServiceSupplier;
 use App\Models\Vendor;
