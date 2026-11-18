@@ -805,20 +805,6 @@ class HrDocumentTemplateController extends Controller
     /* ───── ONBOARDING INTEGRATION ───── */
 
     /**
-     * Department-name → employee_category. The Document Template Master
-     * categorises templates into IT / Non-IT / Legal; the onboarding flow
-     * picks the employee's department and we have to slot it into one of
-     * those buckets. Anything that doesn't smell like IT or Legal goes to
-     * Non-IT (Accounts, Logistics, HR, Operations, etc.).
-     */
-    /* Moved to App\Support\HrTemplateMatch so the onboarding-completion guard
-       matches templates by exactly the same rules this endpoint does. */
-    private function mapDepartmentToCategory(?string $deptName): string
-    {
-        return HrTemplateMatch::categoryForDepartment($deptName);
-    }
-
-    /**
      * GET /api/hr-document-templates/match?employee_id=N
      *
      * Returns the Active templates whose (employee_category, role_type)
