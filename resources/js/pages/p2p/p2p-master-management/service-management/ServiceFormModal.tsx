@@ -36,6 +36,12 @@ export interface ServiceFormInput {
   loading?: boolean;
 }
 
+/* The server's own caps (ServiceController: description max:10000, remark
+   max:2000). Enforced here too, so a long description is stopped as it is
+   typed instead of failing the save after the whole form is filled in. */
+const DESC_MAX = 10000;
+const NOTE_MAX = 2000;
+
 type ShownImage = { id: number; name: string; src?: string };
 
 type QuickSlug = 'service_categories' | 'segments' | 'hsn_codes' | 'uom' | 'haz_class' | 'conditions' | 'packaging_material';
@@ -382,7 +388,13 @@ export default function ServiceFormModal({
 
           {stage === 2 && (
             <div className="svs-teal svf-sup-panel">
-              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={(next) => { void mapSuppliers(next); }} defaultGst={vals.gstPct} />
+              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={(next) => { void mapSuppliers(next); }} defaultGst={vals.gstPct}
+                /* This service's own type — the dropdown offers only suppliers
+                   that serve it. Soft / Digital has no sub-type. */
+                bucket={{
+                  service_type: kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : 'self_consumable',
+                  classification: kind === 'soft' ? null : kind === 'other' ? (vals.otype ?? 'professional') : kind,
+                }} />
             </div>
           )}
         </div>
@@ -485,8 +497,8 @@ function AttachmentRemarks({ vals, set, files, pick, savedAtt, noteKey, noteLabe
           <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images"
             accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onPick={f => pick('att', f)} />
         </Field>
-        <Field label={noteLabel} span="3">
-          <textarea className="svf-input svf-textarea" rows={3} placeholder={notePh}
+        <Field label={noteLabel} span="3" count={{ len: (vals[noteKey] ?? '').length, max: NOTE_MAX }}>
+          <textarea className="svf-input svf-textarea" rows={3} maxLength={NOTE_MAX} placeholder={notePh}
             value={vals[noteKey] ?? ''} onChange={e => set(noteKey, e.target.value)} />
         </Field>
       </div>
@@ -536,8 +548,8 @@ function SoftFields({ o: opts, addMaster, savedAtt, vals, set, errors, files, pi
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
-          <Field label="Service Description" required error={errors.desc} span="full">
-            <textarea className="svf-input svf-textarea" rows={3} placeholder="Describe the scope of this service"
+          <Field label="Service Description" required error={errors.desc} span="full" count={{ len: vals.desc.length, max: DESC_MAX }}>
+            <textarea className="svf-input svf-textarea" rows={3} maxLength={DESC_MAX} placeholder="Describe the scope of this service"
               value={vals.desc} onChange={e => set('desc', e.target.value)} />
           </Field>
         </div>
@@ -582,8 +594,8 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
             <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
-          <Field label="Service Description" required error={errors.desc} span="3">
-            <textarea className="svf-input svf-textarea" rows={3} placeholder="Describe the scope of this service"
+          <Field label="Service Description" required error={errors.desc} span="3" count={{ len: vals.desc.length, max: DESC_MAX }}>
+            <textarea className="svf-input svf-textarea" rows={3} maxLength={DESC_MAX} placeholder="Describe the scope of this service"
               value={vals.desc} onChange={e => set('desc', e.target.value)} />
           </Field>
         </div>
@@ -612,8 +624,8 @@ function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors,
           <Field label="Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
-          <Field label="Printable Description" required error={errors.desc} span="full">
-            <textarea className="svf-input svf-textarea" rows={3} placeholder="Enter printable description"
+          <Field label="Printable Description" required error={errors.desc} span="full" count={{ len: vals.desc.length, max: DESC_MAX }}>
+            <textarea className="svf-input svf-textarea" rows={3} maxLength={DESC_MAX} placeholder="Enter printable description"
               value={vals.desc} onChange={e => set('desc', e.target.value)} />
           </Field>
           <div className="svf-grid svf-grid-2 svf-span-full">
@@ -695,8 +707,12 @@ function Section({ icon, title, sub, extra, children }: { icon: ReactNode; title
   );
 }
 
-function Field({ label, required, optional, add, onAdd, error, span, children }: {
-  label: string; required?: boolean; optional?: boolean; add?: boolean; onAdd?: () => void; error?: string; span?: 'full' | '3'; children: ReactNode;
+function Field({ label, required, optional, add, onAdd, error, span, count, children }: {
+  label: string; required?: boolean; optional?: boolean; add?: boolean; onAdd?: () => void; error?: string; span?: 'full' | '3';
+  /** Live "123/10000" for a capped textarea — the cap used to surface only as
+      a save failure after the whole form had been filled in. */
+  count?: { len: number; max: number };
+  children: ReactNode;
 }) {
   const toast = useToast();
   const cls = ['svf-field', error ? 'has-error' : '', span === 'full' ? 'svf-span-full' : span === '3' ? 'svf-span-3' : ''].filter(Boolean).join(' ');
@@ -716,6 +732,11 @@ function Field({ label, required, optional, add, onAdd, error, span, children }:
               {SVC_ICONS.plus}
             </button>
           </Tooltip>
+        )}
+        {count && (
+          <span className={`svf-charcount${count.len >= count.max ? ' is-full' : ''}`}>
+            {count.len.toLocaleString('en-IN')}/{count.max.toLocaleString('en-IN')}
+          </span>
         )}
       </span>
       {children}

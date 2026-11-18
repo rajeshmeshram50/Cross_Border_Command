@@ -316,7 +316,7 @@
   cursor: pointer;
   transition: all .15s;
 }
-.svs-del svg { width: 13px; height: 13px; }
+.svs-del svg { width: 14px; height: 14px; }   /* same as every other table's delete */
 .svs-del:hover { background: #fef2f2; border-color: #f87171; color: #ef4444; }
 .svs-pager.wl-pager { margin-top: 0; padding: 10px 14px; border-radius: 0; }
 .svs-empty {

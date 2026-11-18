@@ -169,6 +169,9 @@ export interface BundleVendor {
   company_name: string | null;
   status: string | null;
   supplier_type: string | null;
+  /** Which service bucket this supplier's type serves (null = unclassified). */
+  supplier_service_type: ApiServiceType | null;
+  supplier_classification: string | null;
   origin: 'domestic' | 'international';
   country: string | null;
   state: string | null;
@@ -176,6 +179,12 @@ export interface BundleVendor {
   city: string | null;
   currency: string | null;
   contact_person: string | null;
+}
+
+/** The service bucket a supplier pool is being fetched for. */
+export interface SupplierBucket {
+  service_type: ApiServiceType;
+  classification?: string | null;
 }
 
 export interface ServiceBundle {
@@ -205,11 +214,16 @@ export function loadServiceBundle(force = false): Promise<ServiceBundle> {
   return bundlePromise;
 }
 
-export async function loadSupplierPool(): Promise<BundleVendor[]> {
+/* A bucket narrows the pool server-side, so mapping a Trackable service does
+   not offer every vendor in the tenant. No bucket = the whole pool. */
+export async function loadSupplierPool(bucket?: SupplierBucket | null): Promise<BundleVendor[]> {
   const out: BundleVendor[] = [];
+  const scope = bucket
+    ? { service_type: bucket.service_type, ...(bucket.classification ? { classification: bucket.classification } : {}) }
+    : {};
   for (let page = 1; page <= 50; page++) {
     const res = await api.get<{ data: BundleVendor[]; last_page: number }>('/p2p/services/supplier-pool', {
-      params: { per_page: 100, page },
+      params: { per_page: 100, page, ...scope },
     });
     out.push(...(res.data?.data ?? []));
     if (page >= (Number(res.data?.last_page) || 1)) break;
