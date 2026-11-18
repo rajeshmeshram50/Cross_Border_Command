@@ -2,8 +2,11 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
-import { progressOf, tatState, todayIso, type SourcingTarget } from './data';
-import { reportProducts, type ReportProduct } from './targetProducts';
+import { tatState, todayIso, type SourcingTarget } from './data';
+import { productProgress, useTargetReport, type ReportProduct } from './targetProducts';
+import ClarityChip from './ClarityChip';
+import ClipText from './ClipText';
+import type { MapEdit } from './MapSupplierModal';
 import { dmy, inr } from './format';
 import { useFitRows, usePopup } from './popupHooks';
 import MappedSuppliers from './MappedSuppliers';
@@ -12,7 +15,7 @@ import './sourcing-target-report.css';
 import { IcoBars, IcoCal, IcoClock, IcoDb, IcoEdit, IcoPin, IcoUser, IcoUsers, IcoX, Svg } from './icons';
 
 /* Sourcing Target Report popup (Figma). Opens from the row's "Sourcing Target Report" button and
-   the Mapped Suppliers count. Products are dummy data (targetProducts.ts) until the API lands. */
+   the Mapped Suppliers count. Products: GET /p2p/sourcing-targets/{id}/report (useTargetReport). */
 
 /** Rows shown before the product table scrolls inside the popup. */
 const VISIBLE_ROWS = 5;
@@ -34,10 +37,16 @@ type Props = {
   row: SourcingTarget;
   onClose: () => void;
   onMapSupplier: (row: SourcingTarget, product: ReportProduct) => void;
+  /** Edit a mapped New Supplier (from its card in Mapped Suppliers). */
+  onEditSupplier?: (row: SourcingTarget, product: ReportProduct, edit: MapEdit) => void;
   /** Convert to Supplier from the Mapped Suppliers popup (CS-2222); the page closes this report. */
-  onConvert?: (key: string, name: string) => void;
+  onConvert?: (supplierId: number, name: string) => void;
   /** Mapped suppliers already converted to Supplier Master (supKey). */
   converted?: ReadonlySet<string>;
+  /** Only the target's assignee maps suppliers (the API answers 403 to anyone else). */
+  canMap: boolean;
+  /** Bumped by the page after a supplier is mapped: the report loads again. */
+  refreshKey?: number;
 };
 type Tab = 'master' | 'manual';
 
@@ -47,11 +56,15 @@ const IcoTag = () => <Svg size={10} sw={2.4}><path d="M20.59 13.41l-7.17 7.17a2 
 /** One of 5 pill colours per segment, stable for the same name. */
 const segClass = (name: string) => `str-seg--${[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 5}`;
 
-export default function SourcingTargetReport({ row, onClose, onMapSupplier, onConvert, converted }: Props) {
-  const products = useMemo(() => reportProducts(row), [row]);
+export default function SourcingTargetReport({ row, onClose, onMapSupplier, onEditSupplier, onConvert, converted, canMap, refreshKey = 0 }: Props) {
+  const { products: loaded, loading, failed, reload } = useTargetReport(row, refreshKey);
+  const products = useMemo(() => loaded ?? [], [loaded]);
   const masters = products.filter(p => p.source === 'Product Master');
   const manuals = products.filter(p => p.source === 'Manual Entry');
-  const [tab, setTab] = useState<Tab>(masters.length || !manuals.length ? 'master' : 'manual');
+  const [picked, setPicked] = useState<Tab | null>(null);
+  // Opens on Product Master when it has rows, otherwise on Manual Entry (decided once the products load).
+  const tab: Tab = picked ?? (masters.length || !manuals.length ? 'master' : 'manual');
+  const setTab = setPicked;
   // The product whose Supplier Count was clicked: its Mapped Suppliers popup is open.
   const [mapped, setMapped] = useState<ReportProduct | null>(null);
 
@@ -59,7 +72,10 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
   const dialogRef = useRef<HTMLDivElement>(null);
   usePopup(dialogRef, { onClose });
 
-  const { done, pending, pct, full } = progressOf(row);
+  // From the loaded products (the list row's numbers until they arrive).
+  const fromRow = { total: row.totalProducts, done: Math.min(row.completedProducts, row.totalProducts) };
+  const prog = loaded ? productProgress(loaded) : { ...fromRow, pending: fromRow.total - fromRow.done, pct: fromRow.total ? Math.round((fromRow.done / fromRow.total) * 100) : 0, full: fromRow.total > 0 && fromRow.done >= fromRow.total };
+  const { total, done, pending, pct, full } = prog;
   const overdue = tatState(row) === 'overdue';
   const isM = tab === 'master';
   const shown = isM ? masters : manuals;
@@ -113,7 +129,7 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
           </div>
 
           <div className="str-stats">
-            <div className="str-stat"><span>Total Products</span><b>{row.totalProducts}</b></div>
+            <div className="str-stat"><span>Total Products</span><b>{total}</b></div>
             <div className="str-stat is-done"><span>Completed</span><b>{done}</b></div>
             <div className="str-stat is-pend"><span>Pending</span><b>{pending}</b></div>
             <div className="str-prog">
@@ -133,7 +149,11 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
         </div>
 
         <div className="str-scroll sct-scroller" ref={scrollRef} style={boxH ? { height: boxH } : undefined}>
-          {shown.length === 0 ? (
+          {loading ? (
+            <div className="str-empty"><span><span className="sct-spin sct-spin--dark" aria-hidden />Loading the products…</span></div>
+          ) : failed && !loaded ? (
+            <div className="str-empty"><span>Couldn’t load the products.<button type="button" className="str-retry" onClick={reload}>Retry</button></span></div>
+          ) : shown.length === 0 ? (
             <div className="str-empty">{isM ? 'No Product Master products on this sourcing target.' : 'No manually entered products on this sourcing target.'}</div>
           ) : (
             <div>
@@ -148,9 +168,9 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
                   <span className="c"><span className="str-no">{i + 1}</span></span>
                   {isM && <span className="c str-code">{p.code}</span>}
                   <ProductName name={p.name} />
-                  {isM && <><span className="c"><span className={`str-seg ${segClass(p.segment)}`}>{p.segment}</span></span><span className="c str-hsn">{p.hsn}</span></>}
+                  {isM && <><span className="c"><ClipText text={p.segment} className={`str-seg ${segClass(p.segment)}`} /></span><span className="c str-hsn">{p.hsn}</span></>}
                   <span className="c str-price">{inr(p.targetPrice)}</span>
-                  <span className="c str-dash">—</span>
+                  <span className="c"><ClarityChip clarity={p.clarity} productName={p.name} /></span>
                   <span className="c"><span className={`str-status${p.done ? '' : ' is-pend'}`}><i />{p.done ? 'Completed' : 'Pending'}</span></span>
                   <span className="c">
                     {/* 0 suppliers: a plain badge, not clickable (Figma; CS-2220 V-T48). */}
@@ -164,7 +184,16 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
                     ) : <span className="str-count is-zero"><span aria-hidden>0</span><span className="visually-hidden">No suppliers mapped</span></span>}
                   </span>
                   <span className="c">
-                    <button type="button" className="sta-btn sta-btn-primary str-map" onClick={() => onMapSupplier(row, p)}><IcoPin size={13} />Map Supplier Directory</button>
+                    {canMap ? (
+                      <button type="button" className="sta-btn sta-btn-primary str-map" onClick={() => onMapSupplier(row, p)}><IcoPin size={13} />Map Supplier Directory</button>
+                    ) : (
+                      // A disabled button gets no hover, so the tooltip sits on a wrapper.
+                      <Tooltip label="Only the assignee maps suppliers to this target">
+                        <span className="str-map-wrap">
+                          <button type="button" className="sta-btn sta-btn-primary str-map is-off" disabled><IcoPin size={13} />Map Supplier Directory</button>
+                        </span>
+                      </Tooltip>
+                    )}
                   </span>
                 </div>
               ))}
@@ -173,8 +202,9 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onCo
         </div>
       </div>
       {mapped && (
-        <MappedSuppliers row={row} product={mapped} onClose={() => setMapped(null)} converted={converted}
+        <MappedSuppliers row={row} product={mapped} onClose={() => setMapped(null)} converted={converted} canMap={canMap}
           onAddSupplier={() => { const p = mapped; setMapped(null); onMapSupplier(row, p); }}
+          onEdit={onEditSupplier ? e => { const p = mapped; setMapped(null); onEditSupplier(row, p, e); } : undefined}
           onConvert={onConvert ? (k, n) => { setMapped(null); onConvert(k, n); } : undefined} />
       )}
     </div>,

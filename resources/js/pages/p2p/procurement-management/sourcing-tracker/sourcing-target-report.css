@@ -398,6 +398,88 @@
     color: var(--c-ph);
 }
 
+/* Real master data can hold long unbroken names / segments: a cell wraps in its own column. */
+.str-row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* Product Clarity chip — the green "✓ Text / Link / Pdf" chip of the Figma, sized for the report
+   row. Text opens the note, Link opens the link, Pdf opens the document. */
+.str-cla {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    color: #047857;
+    background: #d1fae5;
+    border: 1.5px solid #a7f3d0;
+    border-radius: 8px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s;
+}
+.str-cla:hover,
+.str-cla:focus-visible {
+    color: #047857;
+    background: #a7f3d0;
+    border-color: #6ee7b7;
+}
+.str-cla:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; }
+span.str-cla { cursor: default; }
+button.str-cla { font-family: inherit; }
+.str-cla.is-busy { cursor: progress; }
+.str-cla__n {
+    margin-left: 1px;
+    font-size: 10px;
+    opacity: .8;
+}
+.sct-spin.sct-spin--cla {
+    width: 11px;
+    height: 11px;
+    border-width: 2px;
+    border-color: rgba(4, 120, 87, .25);
+    border-top-color: #047857;
+}
+[data-bs-theme="dark"] .str-cla {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .14);
+    border-color: rgba(16, 185, 129, .38);
+}
+[data-bs-theme="dark"] .str-cla:hover,
+[data-bs-theme="dark"] .str-cla:focus-visible {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .24);
+}
+
+/* The off Map Supplier button keeps the full cell width inside its tooltip wrapper. */
+.str-map-wrap {
+    display: block;
+    width: 100%;
+}
+
+/* Map Supplier Directory for someone who is not the assignee: muted, not clickable. */
+.str-map.is-off,
+.str-map.is-off:hover {
+    background: #e2e8f0;
+    color: #94a3b8;
+    box-shadow: none;
+    transform: none;
+    filter: none;
+    cursor: not-allowed;
+}
+[data-bs-theme="dark"] .str-map.is-off,
+[data-bs-theme="dark"] .str-map.is-off:hover {
+    background: rgba(148, 163, 184, .14);
+    color: #64748b;
+}
+
 .str-seg {
     display: inline-block;
     padding: 3px 11px;

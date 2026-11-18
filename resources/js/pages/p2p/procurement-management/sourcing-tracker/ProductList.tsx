@@ -1,16 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
-import { progressOf, type SourcingTarget } from './data';
-import { reportProducts, type ReportProduct } from './targetProducts';
+import { type SourcingTarget } from './data';
+import { productProgress, useTargetReport, type ReportProduct } from './targetProducts';
 import { dmy, inr } from './format';
 import { useFitRows, usePopup } from './popupHooks';
+import ClipText from './ClipText';
 import './product-list.css';
 import { IcoCheck, IcoDb, IcoEdit, IcoX, Svg } from './icons';
 
 /* Product List popup ("View More" from the list's Total Products cell) — Figma #bstProdModal
-   (stpl-* classes). Read-only (CS-2216 V-T71). Same dummy products as the Sourcing Target Report,
-   so Total / Completed / Pending / % match the list row and the report (V-T69). API later. */
+   (stpl-* classes). Read-only (CS-2216 V-T71). Same products as the Sourcing Target Report
+   (GET /p2p/sourcing-targets/{id}/report), so Total / Completed / Pending / % match it (V-T69). */
 
 type Tab = 'master' | 'manual';
 
@@ -29,13 +30,22 @@ function Status({ done }: { done: boolean }) {
 }
 
 export default function ProductList({ row, onClose }: { row: SourcingTarget; onClose: () => void }) {
-  const products = useMemo(() => reportProducts(row), [row]);
+  const { products: loaded, loading, failed, reload } = useTargetReport(row);
+  const products = useMemo(() => loaded ?? [], [loaded]);
   const masters = products.filter(p => p.source === 'Product Master');
   const manuals = products.filter(p => p.source === 'Manual Entry');
   // Opens on Product Master when it has rows, otherwise on Manual Entry (V-T74).
-  const [tab, setTab] = useState<Tab>(masters.length || !manuals.length ? 'master' : 'manual');
+  const [picked, setPicked] = useState<Tab | null>(null);
+  const tab: Tab = picked ?? (masters.length || !manuals.length ? 'master' : 'manual');
+  const setTab = setPicked;
 
-  const { total, done, pending, pct, full } = progressOf(row);
+  // From the loaded products (the list row's numbers until they arrive).
+  const rowDone = Math.min(row.completedProducts, row.totalProducts);
+  const { total, done, pending, pct, full } = loaded ? productProgress(loaded) : {
+    total: row.totalProducts, done: rowDone, pending: row.totalProducts - rowDone,
+    pct: row.totalProducts ? Math.round((rowDone / row.totalProducts) * 100) : 0,
+    full: row.totalProducts > 0 && rowDone >= row.totalProducts,
+  };
   const shown: ReportProduct[] = tab === 'master' ? masters : manuals;
 
   // One fixed table height for both tabs (sticky header + up to 5 rows); see useFitRows.
@@ -95,7 +105,13 @@ export default function ProductList({ row, onClose }: { row: SourcingTarget; onC
         </div>
 
         <div className="stpl-body sct-scroller" ref={bodyRef} style={boxH ? { height: boxH, flex: '0 1 auto', minHeight: 0 } : undefined}>
-          {shown.length === 0 ? (
+          {loading || (failed && !loaded) ? (
+            <div className="stpl-empty">
+              {loading
+                ? <p><span className="sct-spin sct-spin--dark" aria-hidden />Loading the products…</p>
+                : <><p>Couldn’t load the products</p><button type="button" className="str-retry" onClick={reload}>Retry</button></>}
+            </div>
+          ) : shown.length === 0 ? (
             <div className="stpl-empty">
               <IcoEmpty />
               <p>No {tab === 'master' ? 'Product Master' : 'Manual Entry'} products</p>
@@ -120,7 +136,7 @@ export default function ProductList({ row, onClose }: { row: SourcingTarget; onC
                     {tab === 'master' && <td><span className="stpl-code">{p.code}</span></td>}
                     <td className="stpl-l"><FitTip label={p.name}><div className="stpl-pname">{p.name}</div></FitTip></td>
                     {tab === 'master' && <>
-                      <td className="stpl-c-seg"><span className="stpl-segment">{p.segment && p.segment !== '—' ? p.segment : 'N/A'}</span></td>
+                      <td className="stpl-c-seg"><ClipText text={p.segment && p.segment !== '—' ? p.segment : 'N/A'} className="stpl-segment" /></td>
                       <td className="stpl-c-hsn"><span className="stpl-hsn">{p.hsn && p.hsn !== '—' ? p.hsn : 'N/A'}</span></td>
                     </>}
                     <td className="stpl-price">{inr(p.targetPrice)}</td>
