@@ -4,10 +4,13 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import {
-  BILLING_FREQ, CONDITIONS, DEPARTMENTS, HAZ_CLASSES, HAZ_OPTS, KIND_SUB, KIND_TITLE, MATERIAL_OPTS,
-  OTHER_OPTS, OTHER_TYPES, PACKAGING, SOFT_CATEGORIES, SOFT_DELIVERY, SOFT_HSN, SOFT_SEGMENTS, SOFT_UOM,
+  KIND_SUB, KIND_TITLE, MATERIAL_OPTS, OTHER_OPTS, OTHER_TYPES,
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceVals,
 } from './serviceData';
+import {
+  apiError, loadServiceBundle, loadServiceFile, saveServiceCore, saveServiceSuppliersStep, segmentReg,
+  type ExistingImage, type Opt, type ServiceBundle,
+} from './serviceApi';
 import { SupplierMapPanel } from './ServiceSupplierModal';
 import ServiceGstModal from './ServiceGstModal';
 import { SVC_ICONS } from './serviceIcons';
@@ -18,7 +21,42 @@ export interface ServiceFormInput {
   record?: ServiceRecord;
   code: string;
   otype?: OtherType;
+  attachmentIds?: number[];
+  hasPrimaryImage?: boolean;
+  images?: ExistingImage[];
 }
+
+type ShownImage = { id: number; name: string; src?: string };
+
+type FormOpts = {
+  categories: Opt[]; segments: Opt[]; hsn: Opt[]; uom: Opt[]; depts: Opt[]; hazClasses: Opt[];
+  conditions: Opt[]; packaging: Opt[]; delivery: string[]; billing: string[]; haz: string[];
+};
+
+const buildOpts = (b: ServiceBundle | null, kind: ServiceKind, otype?: OtherType): FormOpts => {
+  const type = kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : 'self_consumable';
+  const o = <T,>(rows: T[] | undefined, id: (r: T) => number, label: (r: T) => string): Opt[] =>
+    (rows ?? []).map(r => ({ value: String(id(r)), label: label(r) }));
+  return {
+    categories: o(
+      (b?.service_categories ?? []).filter(c => c.service_type === type && (type !== 'other_operational' || c.classification === (otype ?? 'professional'))),
+      c => c.id, c => c.name,
+    ),
+    segments: (b?.segments ?? []).map(r => {
+      const reg = segmentReg(r.regulatory_status);
+      return { value: String(r.id), label: r.name, ...(reg ? { badges: [{ text: '', reg }] } : {}) };
+    }),
+    hsn: o(b?.hsn_codes, r => r.id, r => (r.description ? `${r.hsn_code} · ${r.description}` : r.hsn_code)),
+    uom: o(b?.uom, r => r.id, r => (r.short_code ? `${r.title} (${r.short_code})` : r.title)),
+    depts: o(b?.departments, r => r.id, r => r.name),
+    hazClasses: o(b?.haz_class, r => r.id, r => r.name),
+    conditions: o(b?.conditions, r => r.id, r => r.title),
+    packaging: o(b?.packaging_material, r => r.id, r => r.title),
+    delivery: b?.delivery_types ?? [],
+    billing: b?.billing_frequencies ?? [],
+    haz: b?.haz_types ?? ['Non Hazardous', 'Hazardous'],
+  };
+};
 
 type Stage = 1 | 2;
 type Errors = Partial<Record<keyof ServiceVals, string>>;
@@ -53,7 +91,54 @@ export default function ServiceFormModal({
   const [errors, setErrors] = useState<Errors>({});
   const [files, setFiles] = useState<FileMap>({});
   const [gstOpen, setGstOpen] = useState(false);
+  const [serviceId, setServiceId] = useState<number | undefined>(record?.id);
+  const [saving, setSaving] = useState(false);
+  const [bundle, setBundle] = useState<ServiceBundle | null>(null);
+  const [savedImages, setSavedImages] = useState<ExistingImage[]>(input.images ?? []);
+  const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
+  const [attachmentIds, setAttachmentIds] = useState<number[]>(input.attachmentIds ?? []);
+  const [imageUrls, setImageUrls] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    let live = true;
+    const created: string[] = [];
+    savedImages.forEach(img => {
+      if (imageUrls[img.id]) return;
+      loadServiceFile(img.path)
+        .then(url => {
+          if (!live) { URL.revokeObjectURL(url); return; }
+          created.push(url);
+          setImageUrls(m => ({ ...m, [img.id]: url }));
+        })
+        .catch(() => {});
+    });
+    return () => { live = false; };
+  }, [savedImages]);
+  useEffect(() => () => { Object.values(imageUrls).forEach(u => URL.revokeObjectURL(u)); }, []);
+
+  const keptImages = savedImages.filter(i => !removedImageIds.includes(i.id));
+  const primarySaved: ShownImage[] = (files.img1?.length ? [] : keptImages.filter(i => i.isPrimary))
+    .map(i => ({ id: i.id, name: i.name, src: imageUrls[i.id] }));
+  const secondarySaved: ShownImage[] = keptImages.filter(i => !i.isPrimary)
+    .map(i => ({ id: i.id, name: i.name, src: imageUrls[i.id] }));
+  const removeSavedImage = (id: number) => setRemovedImageIds(ids => (ids.includes(id) ? ids : [...ids, id]));
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let live = true;
+    loadServiceBundle()
+      .then(b => { if (live) setBundle(b); })
+      .catch(e => { if (live) toast.error('Could not load form options', apiError(e, 'Please close the form and try again.')); });
+    return () => { live = false; };
+  }, [toast]);
+
+  const opts = useMemo(() => buildOpts(bundle, kind, vals.otype), [bundle, kind, vals.otype]);
+  const gstRateId = useMemo(() => {
+    if (vals.gstId) return vals.gstId;
+    if (vals.gstPct == null) return undefined;
+    const hit = (bundle?.gst_percentage ?? []).find(g => Number(g.percentage) === vals.gstPct);
+    return hit ? String(hit.id) : undefined;
+  }, [vals.gstId, vals.gstPct, bundle]);
 
   const pick = (k: FileKey, f: File | null) => {
     setFiles(p => ({ ...p, [k]: f ?? undefined }));
@@ -90,14 +175,14 @@ export default function ServiceFormModal({
   };
 
   const setOtype = (v: string) => {
-    setVals(p => ({ ...p, otype: v as OtherType, category: '', hsn: '', uom: '' }));
+    setVals(p => ({ ...p, otype: v as OtherType, category: '' }));
     setErrors(e => ({ ...e, otype: undefined }));
   };
 
   const validate = (): boolean => {
     const next: Errors = {};
     REQUIRED[kind].forEach(k => {
-      if (k === 'img1' && isEdit) return;
+      if (k === 'img1' && (files.img1?.length || keptImages.some(i => i.isPrimary))) return;
       const v = vals[k];
       if (v == null || String(v).trim() === '') next[k] = 'This field is required';
     });
@@ -115,27 +200,54 @@ export default function ServiceFormModal({
     return n === 0;
   };
 
-  const goNext = () => {
-    if (!validate()) return;
-    if (!vals.gstId) {
+  const goNext = async () => {
+    if (saving || !validate()) return;
+    if (!gstRateId) {
       toast.error('GST is mandatory', 'Map a GST % to this service before continuing.');
       setGstOpen(true);
       return;
     }
-    setStage(2);
-    bodyRef.current?.scrollTo({ top: 0 });
+    setSaving(true);
+    try {
+      const saved = await saveServiceCore({
+        id: serviceId, kind, vals: { ...vals, gstId: gstRateId }, files,
+        replaceAttachmentIds: files.att ? attachmentIds : undefined,
+        removeImageIds: removedImageIds,
+      });
+      setServiceId(saved.id);
+      setSavedImages(saved.images);
+      setRemovedImageIds([]);
+      setAttachmentIds(saved.attachmentIds);
+      setFiles({});
+      setStage(2);
+      bodyRef.current?.scrollTo({ top: 0 });
+    } catch (e) {
+      toast.error('Could not save the service', apiError(e, 'Please check the fields and try again.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const submit = () => {
-    const rec: ServiceRecord = {
-      code,
-      kind,
-      created: record?.created ?? new Date().toISOString(),
-      vals: { ...vals, name: vals.name.trim(), desc: vals.desc.trim() },
-      suppliers,
-      active: record?.active ?? true,
-    };
-    onSubmit(rec, isEdit);
+  const submit = async () => {
+    if (saving || serviceId == null) return;
+    setSaving(true);
+    try {
+      await saveServiceSuppliersStep(serviceId, suppliers);
+      const rec: ServiceRecord = {
+        id: serviceId,
+        code,
+        kind,
+        created: record?.created ?? new Date().toISOString(),
+        vals: { ...vals, name: vals.name.trim(), desc: vals.desc.trim() },
+        suppliers,
+        active: true,
+      };
+      onSubmit(rec, isEdit);
+    } catch (e) {
+      toast.error('Could not save the suppliers', apiError(e, 'Please check the mapped suppliers and try again.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const title = `${isEdit ? 'Edit' : 'Add'} ${KIND_TITLE[kind]}`;
@@ -160,7 +272,7 @@ export default function ServiceFormModal({
           <div className="svf-head-actions">
             <Tooltip label="Map / manage GST %">
               <button type="button" className="apm-head-btn" onClick={() => setGstOpen(true)}>
-                {vals.gstId && vals.gstPct != null ? `GST ${vals.gstPct}%` : 'GST (%)'}
+                {vals.gstPct != null ? `GST ${vals.gstPct}%` : 'GST (%)'}
               </button>
             </Tooltip>
             <button type="button" className="svf-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
@@ -174,10 +286,11 @@ export default function ServiceFormModal({
         </div>
 
         <div className="svf-body" ref={bodyRef}>
-          {stage === 1 && kind === 'soft' && <SoftFields vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
-          {stage === 1 && kind === 'other' && <OtherFields vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && kind === 'soft' && <SoftFields o={opts} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && kind === 'other' && <OtherFields o={opts} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
           {stage === 1 && (kind === 'trackable' || kind === 'consumable') && (
-            <MaterialFields kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />
+            <MaterialFields o={opts} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
+              primarySaved={primarySaved} secondarySaved={secondarySaved} onRemoveSaved={removeSavedImage} />
           )}
 
           {stage === 2 && (
@@ -198,17 +311,17 @@ export default function ServiceFormModal({
             {stage === 1 ? (
               <>
                 <button type="button" className="svf-btn-ghost" onClick={onClose}>Cancel</button>
-                <button type="button" className="svf-btn-primary" onClick={goNext}>
-                  {SVC_ICONS.save} Save &amp; Next <span className="svf-btn-chev">{SVC_ICONS.chevron}</span>
+                <button type="button" className="svf-btn-primary" onClick={() => { void goNext(); }} disabled={saving}>
+                  {SVC_ICONS.save} {saving ? 'Saving…' : 'Save & Next'} <span className="svf-btn-chev">{SVC_ICONS.chevron}</span>
                 </button>
               </>
             ) : (
               <>
-                <button type="button" className="svf-btn-outline" onClick={() => setStage(1)}>
+                <button type="button" className="svf-btn-outline" onClick={() => setStage(1)} disabled={saving}>
                   <span className="svf-btn-chev is-back">{SVC_ICONS.chevron}</span> Previous
                 </button>
-                <button type="button" className="svf-btn-primary" onClick={submit}>
-                  {SVC_ICONS.save} {isEdit ? 'Update Service' : 'Submit Service'}
+                <button type="button" className="svf-btn-primary" onClick={() => { void submit(); }} disabled={saving}>
+                  {SVC_ICONS.save} {saving ? 'Saving…' : isEdit ? 'Update Service' : 'Submit Service'}
                 </button>
               </>
             )}
@@ -218,7 +331,7 @@ export default function ServiceFormModal({
 
       {gstOpen && (
         <ServiceGstModal
-          value={vals.gstId}
+          value={gstRateId}
           onClose={() => setGstOpen(false)}
           onMap={(r) => setVals(p => ({ ...p, gstId: r.id, gstPct: r.pct }))}
           onRemoved={(id) => setVals(p => (p.gstId === id ? { ...p, gstId: undefined, gstPct: undefined } : p))}
@@ -233,6 +346,7 @@ type FileKey = 'att';
 type ImageKey = 'img1' | 'img2';
 type FileMap = { att?: File; img1?: File[]; img2?: File[] };
 type GroupProps = {
+  o?: FormOpts;
   vals: ServiceVals; set: SetFn; errors: Errors; files: FileMap;
   pick: (k: FileKey, f: File | null) => void;
   setImages: (k: ImageKey, list: File[]) => void;
@@ -271,7 +385,8 @@ function ContractToggle({ vals, set }: { vals: ServiceVals; set: SetFn }) {
   );
 }
 
-function SoftFields({ vals, set, errors, files, pick, setImages }: GroupProps) {
+function SoftFields({ o: opts, vals, set, errors, files, pick, setImages }: GroupProps) {
+  const o = opts!;
   return (
     <>
       <Section icon={SVC_ICONS.soft} title="Service Core Information" sub="Service identity, provider and classification">
@@ -280,22 +395,22 @@ function SoftFields({ vals, set, errors, files, pick, setImages }: GroupProps) {
             <TextInput value={vals.name} onChange={v => set('name', v)} placeholder="e.g. Microsoft 365 Business" />
           </Field>
           <Field label="Service Category" required add error={errors.category}>
-            <Select value={vals.category} options={SOFT_CATEGORIES} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
+            <Select value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
           </Field>
           <Field label="Service Provider / Brand" required error={errors.provider}>
             <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Microsoft, AWS, Anthropic" />
           </Field>
           <Field label="Service Segment" required add error={errors.segment}>
-            <Select value={vals.segment} options={SOFT_SEGMENTS} label="Service Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
+            <Select value={vals.segment} options={o.segments} label="Service Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
           </Field>
           <Field label="Service Delivery Type" required error={errors.delivery}>
-            <Select value={vals.delivery} options={SOFT_DELIVERY} label="Service Delivery Type" onChange={v => set('delivery', v)} invalid={!!errors.delivery} />
+            <Select value={vals.delivery} options={o.delivery} label="Service Delivery Type" onChange={v => set('delivery', v)} invalid={!!errors.delivery} />
           </Field>
           <Field label="HSN / SAC Code" required add error={errors.hsn}>
-            <Select value={vals.hsn} options={SOFT_HSN} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
+            <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
           <Field label="Unit of Measurement" required add error={errors.uom}>
-            <Select value={vals.uom} options={SOFT_UOM} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
+            <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
           <Field label="Service Description" required error={errors.desc} span="full">
@@ -310,9 +425,9 @@ function SoftFields({ vals, set, errors, files, pick, setImages }: GroupProps) {
   );
 }
 
-function OtherFields({ vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
+function OtherFields({ o: opts, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
   const ot = (vals.otype ?? 'professional') as OtherType;
-  const o = OTHER_OPTS[ot];
+  const o = { ...opts!, ph: OTHER_OPTS[ot].ph };
   return (
     <>
       <Section icon={SVC_ICONS.other} title="Service Core Information" sub="Service identity, vendor and billing details">
@@ -324,22 +439,22 @@ function OtherFields({ vals, set, setOtype, errors, files, pick, setImages }: Gr
             <Select value={vals.otype} options={OTHER_TYPES} label="Service Type" onChange={setOtype} invalid={!!errors.otype} />
           </Field>
           <Field label="Service Category" required add error={errors.category}>
-            <Select key={`cat-${ot}`} value={vals.category} options={o.cats} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
+            <Select key={`cat-${ot}`} value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
           </Field>
           <Field label="Service Provider / Vendor" required error={errors.provider}>
             <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Sharma & Associates" />
           </Field>
           <Field label="Department / Cost Centre" required error={errors.dept}>
-            <Select value={vals.dept} options={DEPARTMENTS} label="Department / Cost Centre" onChange={v => set('dept', v)} invalid={!!errors.dept} />
+            <Select value={vals.dept} options={o.depts} label="Department / Cost Centre" onChange={v => set('dept', v)} invalid={!!errors.dept} />
           </Field>
           <Field label="Billing Frequency" required error={errors.billing}>
-            <Select value={vals.billing} options={BILLING_FREQ} label="Billing Frequency" onChange={v => set('billing', v)} invalid={!!errors.billing} />
+            <Select value={vals.billing} options={o.billing} label="Billing Frequency" onChange={v => set('billing', v)} invalid={!!errors.billing} />
           </Field>
           <Field label="HSN / SAC Code" required add error={errors.hsn}>
-            <Select key={`hsn-${ot}`} value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
+            <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
           <Field label="Unit of Measurement" required add error={errors.uom}>
-            <Select key={`uom-${ot}`} value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
+            <Select value={vals.uom} options={o.uom} label="Unit of Measurement" onChange={v => set('uom', v)} invalid={!!errors.uom} />
           </Field>
           <ContractToggle vals={vals} set={set} />
           <Field label="Service Description" required error={errors.desc} span="3">
@@ -354,8 +469,10 @@ function OtherFields({ vals, set, setOtype, errors, files, pick, setImages }: Gr
   );
 }
 
-function MaterialFields({ kind, vals, set, errors, files, pick, setImages }: GroupProps & { kind: 'trackable' | 'consumable' }) {
-  const o = MATERIAL_OPTS[kind];
+function MaterialFields({ o: opts, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
+  kind: 'trackable' | 'consumable'; primarySaved: ShownImage[]; secondarySaved: ShownImage[]; onRemoveSaved: (id: number) => void;
+}) {
+  const o = { ...opts!, ph: MATERIAL_OPTS[kind].ph };
   return (
     <>
       <Section icon={SVC_ICONS[kind]} title={`${kind === 'trackable' ? 'Trackable' : 'Consumable'} Material / Goods Core Information`}
@@ -377,10 +494,12 @@ function MaterialFields({ kind, vals, set, errors, files, pick, setImages }: Gro
           <div className="svf-grid svf-grid-2 svf-span-full">
             <Field label="Primary Image" required error={errors.img1}>
               <ImageUpload label="Primary Image" files={files.img1 ?? []} invalid={!!errors.img1}
+                saved={primarySaved} onRemoveSaved={onRemoveSaved}
                 hint="Click to upload primary image" onChange={list => setImages('img1', list)} />
             </Field>
             <Field label="Secondary Images">
               <ImageUpload label="Secondary Images" multiple files={files.img2 ?? []}
+                saved={secondarySaved} onRemoveSaved={onRemoveSaved}
                 hint="Click to upload — you can add multiple images" onChange={list => setImages('img2', list)} />
             </Field>
           </div>
@@ -390,11 +509,11 @@ function MaterialFields({ kind, vals, set, errors, files, pick, setImages }: Gro
       <Section icon={SVC_ICONS.all} title="General Information" sub="Handling, classification and packaging attributes">
         <div className="svf-grid svf-grid-3">
           <Field label="Haz / Non Haz" required error={errors.haz}>
-            <Select value={vals.haz} options={HAZ_OPTS} label="Haz / Non Haz" invalid={!!errors.haz}
+            <Select value={vals.haz} options={o.haz} label="Haz / Non Haz" invalid={!!errors.haz}
               onChange={v => set('haz', v)} />
           </Field>
           <Field label="Haz Class" required={vals.haz === 'Hazardous'} add={vals.haz === 'Hazardous'} error={errors.hazClass}>
-            <Select value={vals.hazClass} options={HAZ_CLASSES} label="Haz Class" onChange={v => set('hazClass', v)}
+            <Select value={vals.hazClass} options={o.hazClasses} label="Haz Class" onChange={v => set('hazClass', v)}
               invalid={!!errors.hazClass} disabled={vals.haz !== 'Hazardous'}
               placeholder={vals.haz === 'Hazardous' ? undefined : 'Choose Haz first'} />
           </Field>
@@ -405,10 +524,10 @@ function MaterialFields({ kind, vals, set, errors, files, pick, setImages }: Gro
             <Select value={vals.hsn} options={o.hsn} label="HSN / SAC Code" onChange={v => set('hsn', v)} invalid={!!errors.hsn} />
           </Field>
           <Field label="Condition" required add error={errors.condition}>
-            <Select value={vals.condition} options={CONDITIONS} label="Condition" onChange={v => set('condition', v)} invalid={!!errors.condition} />
+            <Select value={vals.condition} options={o.conditions} label="Condition" onChange={v => set('condition', v)} invalid={!!errors.condition} />
           </Field>
           <Field label="Packaging Material" required add error={errors.packaging}>
-            <Select value={vals.packaging} options={PACKAGING} label="Packaging Material" onChange={v => set('packaging', v)} invalid={!!errors.packaging} />
+            <Select value={vals.packaging} options={o.packaging} label="Packaging Material" onChange={v => set('packaging', v)} invalid={!!errors.packaging} />
           </Field>
         </div>
       </Section>
@@ -485,7 +604,7 @@ function TextInput({ value, onChange, placeholder }: { value?: string; onChange:
 
 function Select({ value, options, label, onChange, invalid, disabled, placeholder }: {
   value?: string;
-  options: Array<string | { value: string; label: string }>;
+  options: Array<string | Opt>;
   label: string;
   onChange: (v: string) => void;
   invalid?: boolean;
@@ -496,19 +615,21 @@ function Select({ value, options, label, onChange, invalid, disabled, placeholde
   return (
     <div className="svf-select">
       <MasterSelect value={value ?? ''} options={opts} placeholder={placeholder ?? `Select ${label}`}
-        searchable={opts.length > 7} invalid={invalid} disabled={disabled} onChange={onChange} />
+        searchable={opts.length > 7} invalid={invalid} disabled={disabled} onChange={onChange}
+        menuClassName="svf-select-menu" />
     </div>
   );
 }
 
 const MAX_THUMBS = 6;
 
-function ImageUpload({ label, files, multiple, hint, invalid, onChange }: {
+function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = [], onRemoveSaved }: {
   label: string; files: File[]; multiple?: boolean; hint: string; invalid?: boolean; onChange: (list: File[]) => void;
+  saved?: ShownImage[]; onRemoveSaved?: (id: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const urls = useMemo(() => files.map(f => URL.createObjectURL(f)), [files]);
-  useEffect(() => () => urls.forEach(u => URL.revokeObjectURL(u)), [urls]);
+  const fileUrls = useMemo(() => files.map(f => URL.createObjectURL(f)), [files]);
+  useEffect(() => () => fileUrls.forEach(u => URL.revokeObjectURL(u)), [fileUrls]);
 
   const add = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('image/'));
@@ -516,15 +637,27 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange }: {
     if (!picked.length) return;
     onChange(multiple ? [...files, ...picked] : [picked[0]]);
   };
-  const remove = (i: number) => {
+  const removeFile = (i: number) => {
     const next = files.filter((_, k) => k !== i);
     onChange(next);
-    if (next.length <= MAX_THUMBS) setShowAll(false);
+    if (next.length + saved.length <= MAX_THUMBS) setShowAll(false);
   };
 
-  const total = files.length;
+  const items = [
+    ...saved.map(s => ({ key: `s-${s.id}`, src: s.src, name: s.name, remove: () => onRemoveSaved?.(s.id) })),
+    ...files.map((f, i) => ({ key: fileUrls[i] ?? `f-${i}`, src: fileUrls[i], name: f.name, remove: () => removeFile(i) })),
+  ];
+  const total = items.length;
   const overflow = total > MAX_THUMBS;
-  const visible = overflow ? urls.slice(0, MAX_THUMBS - 1) : urls;
+  const visible = overflow ? items.slice(0, MAX_THUMBS - 1) : items;
+  const thumb = (it: typeof items[number], lg = false) => (
+    <div key={it.key} className={`svf-thumb${lg ? ' svf-thumb--lg' : ''}`} title={it.name}>
+      {it.src ? <img src={it.src} alt={it.name} /> : <span className="svf-thumb-load" />}
+      <button type="button" aria-label={`Remove ${it.name}`} onClick={(e) => { e.preventDefault(); it.remove(); }}>
+        {SVC_ICONS.x}
+      </button>
+    </div>
+  );
 
   return (
     <>
@@ -539,18 +672,11 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange }: {
 
       {total > 0 && (
         <div className="svf-thumbs">
-          {visible.map((src, i) => (
-            <div key={src} className="svf-thumb" title={files[i]?.name}>
-              <img src={src} alt={files[i]?.name ?? ''} />
-              <button type="button" aria-label={`Remove ${files[i]?.name ?? 'image'}`} onClick={(e) => { e.preventDefault(); remove(i); }}>
-                {SVC_ICONS.x}
-              </button>
-            </div>
-          ))}
+          {visible.map(it => thumb(it))}
           {overflow && (
             <button type="button" className="svf-thumb svf-thumb--more" aria-label={`Show all ${total} images`}
               onClick={() => setShowAll(true)}>
-              <img src={urls[MAX_THUMBS - 1]} alt="" />
+              {items[MAX_THUMBS - 1]?.src ? <img src={items[MAX_THUMBS - 1].src} alt="" /> : <span className="svf-thumb-load" />}
               <span>+{total - (MAX_THUMBS - 1)}</span>
             </button>
           )}
@@ -565,12 +691,7 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange }: {
               <button type="button" className="svf-imgmodal-close" aria-label="Close" onClick={() => setShowAll(false)}>{SVC_ICONS.x}</button>
             </div>
             <div className="svf-imgmodal-grid">
-              {urls.map((src, i) => (
-                <div key={src} className="svf-thumb svf-thumb--lg" title={files[i]?.name}>
-                  <img src={src} alt={files[i]?.name ?? ''} />
-                  <button type="button" aria-label={`Remove ${files[i]?.name ?? 'image'}`} onClick={() => remove(i)}>{SVC_ICONS.x}</button>
-                </div>
-              ))}
+              {items.map(it => thumb(it, true))}
             </div>
           </div>
         </div>

@@ -1366,3 +1366,13 @@
 [data-bs-theme="dark"] .svf-gst .apm-gst-table thead th,
 [data-bs-theme="dark"] .svf-gst .apm-gst-table tbody td { border-bottom-color: rgba(34, 211, 238, .1); }
 [data-bs-theme="dark"] .svf-gst .apm-gst-table tbody tr:hover { background: rgba(8, 145, 178, .12); }
+
+.svf-select .seg-reg-badge, .svf-select-menu .seg-reg-badge { padding: 1px 8px !important; font-weight: 800 !important; letter-spacing: .02em; }
+.svf-select .seg-reg-badge:is([title="Highly Regulated"], [aria-label="Highly Regulated"]), .svf-select-menu .seg-reg-badge:is([title="Highly Regulated"], [aria-label="Highly Regulated"]) { color: #fff !important; background: linear-gradient(135deg, #22b8d6, #0891b2 55%, #0e7490) !important; border-color: transparent !important; box-shadow: 0 2px 6px -2px rgba(8, 145, 178, .55); }
+.svf-select .seg-reg-badge:is([title="Less Regulated"], [aria-label="Less Regulated"]), .svf-select-menu .seg-reg-badge:is([title="Less Regulated"], [aria-label="Less Regulated"]) { color: #0e7490 !important; background: #ecfeff !important; border-color: #a5e8f2 !important; }
+[data-bs-theme="dark"] :is(.svf-select, .svf-select-menu) .seg-reg-badge:is([title="Highly Regulated"], [aria-label="Highly Regulated"]) { color: #fff !important; background: linear-gradient(135deg, #0891b2, #0e7490) !important; border-color: transparent !important; }
+[data-bs-theme="dark"] :is(.svf-select, .svf-select-menu) .seg-reg-badge:is([title="Less Regulated"], [aria-label="Less Regulated"]) { color: #67e8f9 !important; background: rgba(34, 211, 238, .12) !important; border-color: rgba(34, 211, 238, .35) !important; }
+
+.svf-thumb-load { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #eef7fa 0%, #dcf1f6 50%, #eef7fa 100%); background-size: 200% 100%; animation: svfThumbLoad 1.1s linear infinite; }
+@keyframes svfThumbLoad { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+[data-bs-theme="dark"] .svf-thumb-load { background: linear-gradient(90deg, rgba(34, 211, 238, .06) 0%, rgba(34, 211, 238, .14) 50%, rgba(34, 211, 238, .06) 100%); background-size: 200% 100%; }
