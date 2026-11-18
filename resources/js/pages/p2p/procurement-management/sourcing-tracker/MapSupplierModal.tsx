@@ -1,64 +1,105 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import api from '../../../../api';
+import { useToast } from '../../../../contexts/ToastContext';
+import { apiErrorMessage, apiFieldErrors } from './apiError';
+import { uploadP2pFile } from './upload';
 import type { ReportProduct } from './targetProducts';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import { useSaveGuard } from './useSaveGuard';
 import { inr } from './format';
 import { usePopup } from './popupHooks';
-import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
 import SupplierMasterForm from './SupplierMasterForm';
 import SupplierTypeChooser from './SupplierTypeChooser';
-import NewSupplierForm from './NewSupplierForm';
+import NewSupplierForm, { type NewSupplierValues } from './NewSupplierForm';
 import './map-supplier-modal.css';
 import { IcoCheck, IcoDb, IcoNext, IcoPin, IcoUserPlus, IcoX } from './icons';
 
-/* Map Supplier Directory popup. Step 1: choose Supplier Master or New Supplier. Supplier Master
-   opens the app's Domestic / International gate, then SupplierMasterForm in this popup's place;
-   New Supplier opens the teal Domestic / International chooser, then NewSupplierForm in this
-   popup's body. Suppliers are dummy data until the API lands. */
+/* Map Supplier Directory popup. Step 1: choose Supplier Master or New Supplier. Each opens the
+   Figma's Domestic / International step (SupplierTypeChooser: "Supplier Master — Choose the
+   supplier type" with the available counts, or "New Supplier"), then SupplierMasterForm in this
+   popup's place, or NewSupplierForm in its body. Both forms hand their mapping here, and this popup saves it:
+     POST /p2p/upload (kind = card)  → a New Supplier's business card, first
+     POST /p2p/sourcing-targets/{id}/products/{product}/suppliers → the mapping (assignee only).
+   Edit (a mapped New Supplier): opens straight on NewSupplierForm with its saved values and saves
+   with PUT …/suppliers/{mapping}. A Supplier Master mapping cannot be edited here (the API edits
+   only New Supplier rows). */
+
+/** Edit a mapped New Supplier: its mapping id, origin, saved values and stored business card. */
+export type MapEdit = { mappingId: string; scope: SupplierScope; values: NewSupplierValues; card: string };
+
+/** A mapping a form asks to save: the request body (supplier_id or new_supplier, plus the price
+    fields), the supplier's name for the toast, and a New Supplier's business card to upload. */
+export type MapRequest = { body: Record<string, unknown>; supplierName: string; card?: File | null };
 
 type Props = {
+  /** The sourcing target the product belongs to. */
+  targetCode: string;
   product: ReportProduct;
+  /** Set to edit a mapped New Supplier instead of mapping a new one. */
+  edit?: MapEdit | null;
   onClose: () => void;
   onMapped: (supplier: string) => void;
 };
-type Step = 'choose' | 'master' | 'newType' | 'new';
+type Step = 'choose' | 'masterType' | 'master' | 'newType' | 'new';
 
 const Pill = ({ cls, children }: { cls: string; children: ReactNode }) => (
   <span className={`stmap-ocpill ${cls}`}><IcoCheck size={8} sw={3} />{children}</span>
 );
 
-// The app's existing Domestic / International chooser (Supplier Master), used as-is.
-const SupplierScopeGate = lazyPage(() => import('../../p2p-master-management/supplier-management/SupplierScopeGate'));
 
-export default function MapSupplierModal({ product, onClose, onMapped }: Props) {
-  const [step, setStep] = useState<Step>('choose');
-  // Supplier Master: the existing Domestic / International gate opens first; the chosen scope
-  // decides the form that follows.
-  const [gateOpen, setGateOpen] = useState(false);
+export default function MapSupplierModal({ targetCode, product, edit, onClose, onMapped }: Props) {
+  const toast = useToast();
+  const [step, setStep] = useState<Step>(edit ? 'new' : 'choose');
+  // Supplier Master: the Figma's "Supplier Master — Choose the supplier type" step opens first; the
+  // chosen scope decides the form that follows. Its cards show how many suppliers each origin has.
   const [scope, setScope] = useState<SupplierScope | null>(null);
+  const [masterCounts, setMasterCounts] = useState<Record<SupplierScope, number> | null>(null);
+  useEffect(() => {
+    if (step !== 'masterType' || masterCounts) return;
+    api.get<{ data: { origin?: string }[] }>('/p2p/suppliers')
+      .then(r => {
+        const rows = r.data?.data ?? [];
+        setMasterCounts({
+          domestic: rows.filter(s => s.origin !== 'international').length,
+          international: rows.filter(s => s.origin === 'international').length,
+        });
+      })
+      .catch(() => setMasterCounts({ domestic: 0, international: 0 }));
+  }, [step, masterCounts]);
   // New Supplier: Domestic / International, chosen on the teal chooser before the form.
-  const [newScope, setNewScope] = useState<SupplierScope>('domestic');
+  const [newScope, setNewScope] = useState<SupplierScope>(edit?.scope ?? 'domestic');
   const [formDirty, setFormDirty] = useState(false);
   // One save at a time: spinner on Map / Save Supplier, form locked, × / Back / Esc off while it runs (V-C01).
   const { saving, busy, run } = useSaveGuard();
+  // The server's 422 field messages, shown under the form's fields until the form changes.
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
+  const clearServerErrors = useCallback(() => setServerErrors({}), []);
+  const save = (req: MapRequest) => {
+    void run(async () => {
+      try {
+        let body = req.body;
+        if (req.card) body = { ...body, new_supplier: { ...(body.new_supplier as object), card: await uploadP2pFile(req.card, 'card') } };
+        const url = `/p2p/sourcing-targets/${encodeURIComponent(targetCode)}/products/${product.id}/suppliers`;
+        if (edit) await api.put(`${url}/${encodeURIComponent(edit.mappingId)}`, body);
+        else await api.post(url, body);
+        onMapped(req.supplierName);
+      } catch (e) {
+        setServerErrors(apiFieldErrors(e));
+        toast.error(edit ? 'Supplier not updated' : 'Supplier not mapped', apiErrorMessage(e, 'Please try again.'));
+      }
+    });
+  };
 
   // Scroll lock, Esc (this is the top popup, so the report behind stays open; not while saving) and focus.
   const dialogRef = useRef<HTMLDivElement>(null);
   // Esc closes the popup only before anything is picked or typed; after that only × closes it.
   const dirty = formDirty;
-  // While the gate is open it owns Esc (it closes itself on Esc and on its backdrop).
-  usePopup(dialogRef, { onClose, blocked: () => busy.current || dirty || gateOpen });
-  // Keyboard focus goes onto the gate's first card when it opens (it does not move focus itself).
-  useEffect(() => {
-    if (!gateOpen) return;
-    const id = window.setTimeout(() => document.querySelector<HTMLElement>('.supch-card')?.focus(), 0);
-    return () => window.clearTimeout(id);
-  }, [gateOpen]);
-  const chooseScope = (s: SupplierScope) => { setScope(s); setGateOpen(false); setStep('master'); };
-  // Back from the form returns to the Domestic / International gate (as the design does).
-  const backToGate = () => { setStep('choose'); setFormDirty(false); setGateOpen(true); };
+  usePopup(dialogRef, { onClose, blocked: () => busy.current || dirty });
+  const chooseScope = (s: SupplierScope) => { setScope(s); setStep('master'); };
+  // Back from the form returns to the Domestic / International step (as the design does).
+  const backToGate = () => { setStep('masterType'); setFormDirty(false); setServerErrors({}); };
   // A step change removes the element that had focus (the chosen card, or Back): move focus to the
   // new step's first field, or to the dialog on the choose step.
   const firstStep = useRef(true);
@@ -71,16 +112,19 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
   return createPortal(
     // A click on the backdrop does nothing. Esc closes only while nothing is picked or typed; × always closes.
     <div className="stmap-overlay">
-      {step === 'newType' ? (
+      {step === 'masterType' ? (
+        <SupplierTypeChooser mode="master" counts={masterCounts} productName={product.name} dialogRef={dialogRef}
+          onChoose={chooseScope} onBack={() => setStep('choose')} onCancel={onClose} />
+      ) : step === 'newType' ? (
         <SupplierTypeChooser productName={product.name} dialogRef={dialogRef}
           onChoose={s => { setNewScope(s); setStep('new'); }} onBack={() => setStep('choose')} onCancel={onClose} />
       ) : step === 'master' && scope ? (
-        <SupplierMasterForm key={scope} scope={scope} productName={product.name} saving={saving} dialogRef={dialogRef}
-          onDirty={setFormDirty} onBack={backToGate} onCancel={onClose}
-          onSave={name => { void run(() => onMapped(name)); }} />
+        <SupplierMasterForm key={scope} scope={scope} targetCode={targetCode} productId={product.id} productName={product.name}
+          saving={saving} dialogRef={dialogRef} serverErrors={serverErrors} onClearServerErrors={clearServerErrors}
+          onDirty={setFormDirty} onBack={backToGate} onCancel={onClose} onSave={save} />
       ) : (
       <div ref={dialogRef} className={`stmap-box${step === 'new' ? ' stmap-box--wide' : ''}${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true"
-        aria-busy={saving || undefined} aria-label="Map Supplier Directory" inert={gateOpen}>
+        aria-busy={saving || undefined} aria-label="Map Supplier Directory">
 
         <div className="stmap-header">
           <div className="stmap-hrow">
@@ -89,7 +133,7 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
               <div className="stmap-title-block">
                 <div className="stmap-title-line">
                   <h3 className="stmap-title">Map Supplier Directory</h3>
-                  {step === 'new' && <span className="stmap-step">New · {newScope === 'domestic' ? 'Domestic' : 'International'}</span>}
+                  {step === 'new' && <span className="stmap-step">{edit ? 'Edit' : 'New'} · {newScope === 'domestic' ? 'Domestic' : 'International'}</span>}
                 </div>
                 <p className="stmap-sub">Procurement Supplier Mapping&nbsp;·&nbsp;Product Procurement</p>
               </div>
@@ -103,7 +147,7 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
             <div className="stmap-ppill"><div className="stmap-ppill-lbl">Product Code</div><div className="stmap-ppill-val cyan">{product.code || '—'}</div></div>
             {product.segment && product.segment !== '—' && (<>
               <div className="stmap-ppill-sep" />
-              <div className="stmap-ppill"><div className="stmap-ppill-lbl">Segment</div><div className="stmap-ppill-val">{product.segment}</div></div>
+              <div className="stmap-ppill stmap-ppill--seg"><div className="stmap-ppill-lbl">Segment</div><FitTip label={product.segment}><div className="stmap-ppill-val">{product.segment}</div></FitTip></div>
             </>)}
             <div className="stmap-ppill-sep" />
             <div className="stmap-ppill"><div className="stmap-ppill-lbl">Target Price</div><div className="stmap-ppill-val amber">{inr(product.targetPrice)}</div></div>
@@ -115,7 +159,7 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
         {step === 'choose' && (
           <div className="stmap-choose-body sct-scroller">
             <div className="stmap-opt-grid">
-              <div className="stmap-ocard stmap-master-card" role="button" tabIndex={0} onClick={() => setGateOpen(true)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setGateOpen(true); } }}>
+              <div className="stmap-ocard stmap-master-card" role="button" tabIndex={0} onClick={() => setStep('masterType')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep('masterType'); } }}>
                 <div className="stmap-oc-glow stmap-master-glow" />
                 <div className="stmap-oc-top"><div className="stmap-oc-iconbox stmap-master-iconbox"><IcoDb size={20} sw={1.9} /></div></div>
                 <div className="stmap-oc-title">Supplier Master</div>
@@ -147,22 +191,15 @@ export default function MapSupplierModal({ product, onClose, onMapped }: Props) 
 
         {step === 'new' && (
           <NewSupplierForm key={newScope} scope={newScope} product={product} saving={saving} onDirty={setFormDirty}
-            onBack={() => { setFormDirty(false); setStep('newType'); }}
-            onSave={name => { void run(() => onMapped(name)); }} />
+            serverErrors={serverErrors} onClearServerErrors={clearServerErrors}
+            // Edit has no chooser behind it: Back closes the popup.
+            onBack={edit ? onClose : () => { setFormDirty(false); setServerErrors({}); setStep('newType'); }}
+            initial={edit?.values} initialCard={edit?.card || undefined}
+            onSave={save} />
         )}
       </div>
       )}
 
-      {/* Rendered inside this overlay so it stacks above the popup (its own z-index is lower). */}
-      {gateOpen && (
-        <Suspense fallback={null}>
-          {/* Like every popup in this module, the gate closes only with × or Cancel: a click on its
-              backdrop is stopped here (capture phase) before the gate's own backdrop handler sees it. */}
-          <div className="stmap-gate" onClickCapture={e => { if ((e.target as Element).classList.contains('supch-ov')) e.stopPropagation(); }}>
-            <SupplierScopeGate onChoose={chooseScope} onClose={() => setGateOpen(false)} />
-          </div>
-        </Suspense>
-      )}
     </div>,
     document.body,
   );

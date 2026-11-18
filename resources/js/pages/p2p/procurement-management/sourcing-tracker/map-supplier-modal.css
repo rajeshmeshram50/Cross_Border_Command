@@ -201,10 +201,19 @@
    and the full name shows in the tooltip. */
 .stmap-ppill--name {
     flex: 0 1 auto;
+    min-width: 110px;
     max-width: 260px;
 }
 
-.stmap-ppill--name .stmap-ppill-val {
+/* The segment is master data and can be long too: same cap, shorter. */
+.stmap-ppill--seg {
+    flex: 0 1 auto;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+.stmap-ppill--name .stmap-ppill-val,
+.stmap-ppill--seg .stmap-ppill-val {
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -1035,6 +1044,40 @@
     color: #94a3b8;
 }
 
+/* Business card attached: the same box, solid, as one row — the file (click it to replace) on the
+   left, NEW · View · Remove on the right (the shared AttachedFiles buttons, .stfile__*). */
+.stnf-upload.is-attached {
+    gap: 8px;
+    padding: 8px 10px 8px 14px;
+    cursor: default;
+    border-style: solid;
+    border-width: 1.5px;
+    border-color: #a5e4f0;
+}
+.stnf-upload.is-attached:hover { background: #f0fdff; border-color: #67e8f9; }
+.stnf-upload-pick {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.stnf-upload-pick:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; }
+.stnf-upload-main.is-file {
+    font-size: 13.5px;
+    color: #0f172a;
+}
+.stnf-upload-pick:hover .stnf-upload-main.is-file { color: #0e7490; }
+[data-bs-theme="dark"] .stnf-upload.is-attached { border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .stnf-upload-main.is-file { color: #e2e8f0; }
+
 .stnf-foot {
     position: sticky;
     bottom: 0;
@@ -1181,9 +1224,4 @@
 
 [data-bs-theme="dark"] .stnf-err {
     color: #fb7185;
-}
-
-/* Wrapper around the reused Domestic / International gate: adds no box of its own. */
-.stmap-gate {
-    display: contents;
 }
