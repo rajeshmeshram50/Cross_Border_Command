@@ -303,7 +303,7 @@ export function SupplierMapPanel({
             <table className="svs-table">
               <thead>
                 <tr>
-                  <th>Sr. No</th><th className="is-l">Supplier</th><th>Supplier Origin</th>
+                  <th>Sr. No</th><th className="is-l">Supplier</th><th className="is-l">Supplier Type</th><th>Supplier Origin</th>
                   <th className="is-l">State / Country</th><th className="is-l">Contact Person</th><th className="is-r">Price</th>
                   <th>GST (%)</th><th className="is-r">GST Value</th><th className="is-r">Total Service Cost</th><th>Action</th>
                 </tr>
@@ -321,6 +321,7 @@ export function SupplierMapPanel({
                           <em>{formatSupplierCode(s.code)}</em>
                         </span>
                       </td>
+                      <td className="is-l">{s.type && s.type !== '—' ? <span className="svs-pill">{s.type}</span> : <span className="svms-dash">—</span>}</td>
                       <td>
                         <span className={`svms-org svms-org--${foreign ? 'intl' : 'dom'}`}>
                           {foreign ? GLOBE : FLAG}{foreign ? 'International' : 'Domestic'}
