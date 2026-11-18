@@ -3255,6 +3255,47 @@ function iconForField(f: FieldDef): string {
   return 'ri-edit-box-line';
 }
 
+/**
+ * Live "12/50" beside a text field's label.
+ *
+ * The cap is enforced (maxLength + validate()) but was invisible, so a long
+ * name simply stopped accepting keys with no explanation. The input is
+ * uncontrolled, so this reads it from the DOM on each input event rather than
+ * lifting every master field into state.
+ */
+function CharCount({ name, max }: { name: string; max: number }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const [len, setLen] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current?.closest('.master-field-row')?.querySelector(
+      `input[name="${name}"], textarea[name="${name}"]`,
+    ) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!el) return;
+    const read = () => setLen(el.value.length);
+    read();
+    el.addEventListener('input', read);
+    return () => el.removeEventListener('input', read);
+  }, [name]);
+
+  const full = len >= max;
+  return (
+    <span
+      ref={ref}
+      className="ms-auto fw-semibold"
+      style={{
+        fontSize: 10.5,
+        letterSpacing: '0.02em',
+        color: full ? 'var(--vz-danger, #f06548)' : 'var(--vz-secondary-color)',
+        opacity: len === 0 ? 0.65 : 1,
+      }}
+      title={`Up to ${max} characters`}
+    >
+      {len}/{max}
+    </span>
+  );
+}
+
 export function renderField(
   f: FieldDef,
   i: number,
@@ -3628,11 +3669,19 @@ export function renderField(
   const optTag = f.optionalLabel;
   const isMandatoryTag = !!optTag && /mandator/i.test(optTag);
 
+  /* The cap renderField already applies to every text input — shown so the
+     field stops silently refusing keystrokes at the limit. */
+  const textCap = (f.t === 'text' || (f.t === 'textarea' && typeof (f as any).maxLen === 'number'))
+    && !isAutogen && !f.auto && !viewOnly
+      ? (typeof (f as any).maxLen === 'number' ? (f as any).maxLen : 50)
+      : null;
+
   return (
-    <Col md={span} key={f.n || `f-${i}`}>
+    <Col md={span} key={f.n || `f-${i}`} className="master-field-row">
       <Label className="d-flex align-items-center gap-2">
         {f.icon && <i className={f.icon} style={{ fontSize: 13, color: 'var(--vz-secondary-color)' }} />}
         <span>{f.l}{f.r && <span className="req-star">*</span>}</span>
+        {textCap !== null && f.n && <CharCount name={f.n} max={textCap} />}
         {optTag && (
           <span
             className="text-uppercase fw-semibold"
