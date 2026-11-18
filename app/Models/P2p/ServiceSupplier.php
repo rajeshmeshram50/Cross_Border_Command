@@ -36,11 +36,4 @@ class ServiceSupplier extends Model
     {
         return $this->belongsTo(Vendor::class, 'vendor_id')->withTrashed();
     }
-
-    public static function amounts(float $price, float $gstPct): array
-    {
-        $price = round($price, 2);
-        $gst   = round($price * $gstPct / 100, 2);
-        return ['price' => $price, 'gst_percentage' => $gstPct, 'gst_amount' => $gst, 'total_amount' => round($price + $gst, 2)];
-    }
 }
