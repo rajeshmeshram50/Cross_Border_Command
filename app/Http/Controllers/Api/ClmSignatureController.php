@@ -1611,21 +1611,6 @@ class ClmSignatureController extends Controller
         return [null, ''];
     }
 
-    /**
-     * Convert a CTC's audit arrays (versions / clarifications / approvers) from
-     * stored UTC to the display timezone, so this endpoint's live-polled record
-     * renders the SAME timestamps as show()-fed views. Without it the Stage-3
-     * Negotiation timeline showed raw UTC while show() showed IST (CBC-574).
-     *
-     * Both controllers now delegate to the ONE implementation in CtcAuditTime.
-     * They previously held two hand-maintained copies with a "keep these in
-     * sync" comment — which is exactly how CBC-574 happened.
-     */
-    private function istCtcStr(?string $s): string
-    {
-        return CtcAuditTime::str($s);
-    }
-
     private function istCtcEntries($arr): array
     {
         return CtcAuditTime::entries($arr);
