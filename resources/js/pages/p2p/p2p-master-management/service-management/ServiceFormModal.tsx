@@ -21,6 +21,7 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import api from '../../../../api';
 import { SavingLock, ShimServiceForm } from './serviceLoading';
+import { Shimmer } from '../../../../components/ui/Shimmer';
 import './service-form.css';
 
 export interface ServiceFormInput {
@@ -41,6 +42,7 @@ type QuickSlug = 'service_categories' | 'segments' | 'hsn_codes' | 'uom' | 'haz_
 type AddMaster = (slug: QuickSlug, field: keyof ServiceVals) => void;
 
 type FormOpts = {
+  categoriesLoading?: boolean;
   categories: Opt[]; segments: Opt[]; hsn: Opt[]; uom: Opt[]; depts: Opt[]; hazClasses: Opt[];
   conditions: Opt[]; packaging: Opt[]; delivery: string[]; billing: string[]; haz: string[];
 };
@@ -114,15 +116,17 @@ export default function ServiceFormModal({
   const catType = kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : null;
   const catClass = kind === 'other' ? (vals.otype ?? 'professional') : undefined;
   const [categories, setCategories] = useState<ServiceCategoryRow[] | null>(catType ? null : []);
+  const [catLoading, setCatLoading] = useState(false);
   useEffect(() => {
     if (!catType) return;
     let live = true;
-    setCategories(null);
+    setCatLoading(true);
     loadServiceCategories(catType, catClass)
-      .then(rows => { if (live) setCategories(rows); })
+      .then(rows => { if (live) { setCategories(rows); setCatLoading(false); } })
       .catch(e => {
         if (!live) return;
         setCategories([]);
+        setCatLoading(false);
         toast.error('Could not load service categories', apiError(e, 'Close the form and try again.'));
       });
     return () => { live = false; };
@@ -169,6 +173,7 @@ export default function ServiceFormModal({
 
   const opts = useMemo(() => buildOpts(bundle, kind, vals.otype, categories), [bundle, kind, vals.otype, categories]);
   const formLoading = !!input.loading || !bundle || categories === null;
+  const fieldOpts = useMemo(() => ({ ...opts, categoriesLoading: catLoading }), [opts, catLoading]);
   const gstRateId = useMemo(() => {
     if (vals.gstId) return vals.gstId;
     if (vals.gstPct == null) return undefined;
@@ -368,8 +373,8 @@ export default function ServiceFormModal({
           {stage === 1 && formLoading && (
             <ShimServiceForm sections={kind === 'soft' || kind === 'other' ? [9, 2] : [6, 6, 2]} />
           )}
-          {stage === 1 && !formLoading && kind === 'soft' && <SoftFields o={opts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
-          {stage === 1 && !formLoading && kind === 'other' && <OtherFields o={opts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && kind === 'soft' && <SoftFields o={fieldOpts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && kind === 'other' && <OtherFields o={fieldOpts} addMaster={addMaster} savedAtt={savedAtt} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
           {stage === 1 && !formLoading && (kind === 'trackable' || kind === 'consumable') && (
             <MaterialFields o={opts} addMaster={addMaster} savedAtt={savedAtt} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
               primarySaved={primarySaved} secondarySaved={secondarySaved} onRemoveSaved={removeSavedImage} />
@@ -557,7 +562,9 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
             <Select value={vals.otype} options={OTHER_TYPES} label="Service Type" onChange={setOtype} invalid={!!errors.otype} />
           </Field>
           <Field label="Service Category" required add onAdd={() => addMaster?.('service_categories', 'category')} error={errors.category}>
-            <Select key={`cat-${ot}`} value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
+            {o.categoriesLoading
+              ? <Shimmer height={42} radius={12} />
+              : <Select key={`cat-${ot}`} value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />}
           </Field>
           <Field label="Service Provider / Vendor" required error={errors.provider}>
             <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Sharma & Associates" />
