@@ -407,16 +407,9 @@ export default function SourcingTracker() {
   const startConvert = useCallback(async (supplierId: number, name: string) => {
     const row = reportRow;
     setReportRow(null);
-    type Prefill = {
-      origin?: string; converted?: boolean;
-      identity?: { company_name?: string | null; legal_name?: string | null; segment_id?: number | null } | null;
-      address?: {
-        address_line?: string | null; country_id?: number | null; state_id?: number | null; state_code?: string | null;
-        city?: string | null; google_location?: string | null; contact_name?: string | null; contact_no?: string | null; email?: string | null;
-      } | null;
-    };
     try {
-      const r = await api.get<{ data: Prefill }>(`/p2p/new-suppliers/${supplierId}/convert`);
+      // The response is the shared Add Supplier prefill (the same one Bulk Sourcing uses), plus `converted`.
+      const r = await api.get<{ data: Partial<SupplierPrefill> & { converted?: boolean } }>(`/p2p/new-suppliers/${supplierId}/convert`);
       const d = r.data?.data ?? {};
       if (d.converted) {
         toast.info(`${name} is already in the Supplier Master`, 'Its mappings show it as Master.');
@@ -424,19 +417,10 @@ export default function SourcingTracker() {
         if (row) setReportRow(row);
         return;
       }
-      const a = d.address;
+      const origin = d.origin === 'international' ? 'international' : 'domestic';
       setConverting({
-        supplierId, name, row,
-        scope: d.origin === 'international' ? 'international' : 'domestic',
-        prefill: {
-          companyName: d.identity?.company_name ?? name,
-          legalName: d.identity?.legal_name,
-          segmentId: d.identity?.segment_id,
-          address: a ? {
-            addressLine: a.address_line, countryId: a.country_id, stateId: a.state_id, stateCode: a.state_code,
-            city: a.city, googleLocation: a.google_location, contactName: a.contact_name, contactNo: a.contact_no, email: a.email,
-          } : null,
-        },
+        supplierId, name, row, scope: origin,
+        prefill: { origin, identity: { ...d.identity, company_name: d.identity?.company_name ?? name }, address: d.address ?? {} },
       });
     } catch (e) {
       toast.error('Couldn’t open Convert to Supplier', apiErrorMessage(e, 'Please try again.'));
@@ -592,6 +576,7 @@ export default function SourcingTracker() {
           <AddVendorModal
             scope={converting.scope}
             prefill={converting.prefill}
+            convertSupplierId={converting.supplierId}   // the server knows this New Supplier's email is not a duplicate
             canMapProducts={false}
             onClose={closeConvert}   // cancelled: stays New Supplier with its mapping (V-T46)
             onSubmit={p => { void finishConvert(p); }}
