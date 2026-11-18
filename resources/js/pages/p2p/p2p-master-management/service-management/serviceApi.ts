@@ -209,7 +209,7 @@ export async function loadSupplierPool(): Promise<BundleVendor[]> {
   const out: BundleVendor[] = [];
   for (let page = 1; page <= 50; page++) {
     const res = await api.get<{ data: BundleVendor[]; last_page: number }>('/p2p/services/supplier-pool', {
-      params: { status: 'active', per_page: 100, page },
+      params: { per_page: 100, page },
     });
     out.push(...(res.data?.data ?? []));
     if (page >= (Number(res.data?.last_page) || 1)) break;

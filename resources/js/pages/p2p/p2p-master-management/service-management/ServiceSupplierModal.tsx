@@ -23,7 +23,7 @@ const SUP_VISIBLE_ROWS = 4;
 
 type VendorOpt = {
   id: string; code: string; name: string; type: string; state: string; contact: string;
-  origin: SupplierOrigin; country: string; city: string; gstStateCode: string; currency: string; active: boolean;
+  origin: SupplierOrigin; country: string; city: string; gstStateCode: string; currency: string;
 };
 
 type CurrencyOpt = { code: string; rate: number };
@@ -40,7 +40,6 @@ const toVendors = (list: BundleVendor[]): VendorOpt[] => list.map(v => ({
   city: String(v.city ?? ''),
   gstStateCode: String(v.gst_state_code ?? ''),
   currency: String(v.currency ?? ''),
-  active: String(v.status ?? 'active').toLowerCase() !== 'inactive',
 }));
 
 const toCurrencies = (b: ServiceBundle): CurrencyOpt[] => (b.currencies ?? [])
@@ -177,11 +176,11 @@ export function SupplierMapPanel({
     [suppliers],
   );
   const domPool = useMemo(
-    () => vendors.filter(v => v.active && v.origin === 'domestic' && v.code && !mappedDom.has(formatSupplierCode(v.code))),
+    () => vendors.filter(v => v.origin === 'domestic' && v.code && !mappedDom.has(formatSupplierCode(v.code))),
     [vendors, mappedDom],
   );
   const intlPool = useMemo(
-    () => vendors.filter(v => v.active && v.origin === 'international' && v.code && !mappedIntl.has(formatSupplierCode(v.code))),
+    () => vendors.filter(v => v.origin === 'international' && v.code && !mappedIntl.has(formatSupplierCode(v.code))),
     [vendors, mappedIntl],
   );
 
