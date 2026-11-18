@@ -14,7 +14,6 @@ use App\Models\Masters\PackagingMaterial;
 use App\Models\Masters\Segments;
 use App\Models\Masters\Uom;
 use App\Models\Product;
-use App\Models\ProductQcRecord;
 use App\Models\ProductVendorMap;
 use App\Models\User;
 use App\Models\Vendor;
