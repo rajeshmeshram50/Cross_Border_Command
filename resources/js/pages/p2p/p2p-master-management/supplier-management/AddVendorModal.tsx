@@ -327,11 +327,29 @@ const SEED_DD: DueDiligenceRow[] = [];
 
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
-const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] = [
-  { value: 'Material / Goods',  label: 'Material / Goods' },
-  { value: 'Services',          label: 'Services' },
-  { value: 'FFD / Transporter', label: 'FFD / Transporter' },
+/* Supplier Type, grouped as in the Figma. Group headings are labels only;
+   their children are what gets saved. The server find-or-creates the type by
+   name, so new names need no master setup. Every service name contains
+   "service", so the list page puts them all under the Service Suppliers tab. */
+type SupplierTypeNode = { value: string; label: string } | { group: string; items: { value: string; label: string }[] };
+const SUPPLIER_TYPE_TREE: SupplierTypeNode[] = [
+  { value: 'Material / Goods',      label: 'Material/ Goods' },
+  { value: 'FFD / Transporter',     label: 'FFD/ Transporter' },
+  { value: 'Soft Service Provider', label: 'Soft Service Provider' },
+  { group: 'Self Consumable Service Provider', items: [
+    { value: 'Trackable Services',  label: 'Trackable Services' },
+    { value: 'Consumable Services', label: 'Consumable Services' },
+  ] },
+  { group: 'Other Operational Service Provider', items: [
+    { value: 'Professional Services', label: 'Professional Services' },
+    { value: 'Utility Services',      label: 'Utility Services' },
+    { value: 'Facility Services',     label: 'Facility Services' },
+    { value: 'Maintenance Services',  label: 'Maintenance Services' },
+    { value: 'Outsourcing Services',  label: 'Outsourcing Services' },
+  ] },
 ];
+const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
+  SUPPLIER_TYPE_TREE.flatMap(n => 'group' in n ? n.items : [n]);
 
 const KYC_TAB_TITLE: Record<string, string> = {
   company: 'Company Due Diligence',
@@ -2868,7 +2886,7 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                     <Field label="Supplier Type" required error={fieldErrors.vendorType}>
-                      <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={SUPPLIER_TYPE_OPTS} />
+                      <SupplierTypeSelect value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} invalid={!!fieldErrors.vendorType} />
                     </Field>
                   </div>
                   <div className="avm-grid-3">
@@ -4334,6 +4352,107 @@ function SelectInput(props: {
         disabled={props.disabled}
         emptyText={props.emptyText}
       />
+    </div>
+  );
+}
+
+/** Grouped Supplier Type picker (Figma .slmdd). Group headings are not
+ *  selectable; their children sit under a small tree connector. The panel is
+ *  portalled to body with fixed position, so the modal body's scroll box
+ *  cannot clip it. A saved value that is not in the list (an older type such
+ *  as "Services") still shows in the box, so editing never blanks it. */
+function SupplierTypeSelect(props: { value: string; onChange: (v: string) => void; invalid?: boolean; disabled?: boolean }) {
+  const { value, onChange } = props;
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxH: number; up: boolean } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const label = SUPPLIER_TYPE_OPTS.find(o => o.value === value)?.label ?? value;
+
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const below = window.innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    const up = below < 220 && above > below;
+    setPos({ left: r.left, width: r.width, top: up ? r.top - 6 : r.bottom + 6, maxH: Math.min(320, up ? above : below), up });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btnRef.current?.focus(); } };
+    const onMove = (e: Event) => { if (!panelRef.current?.contains(e.target as Node)) place(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', onMove, true);
+    // Bring the chosen option into view when the list opens.
+    requestAnimationFrame(() => panelRef.current?.querySelector('.is-sel')?.scrollIntoView({ block: 'nearest' }));
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', onMove, true);
+    };
+  }, [open]);
+
+  const pick = (v: string) => { onChange(v); setOpen(false); btnRef.current?.focus(); };
+  const tick = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
+  const opt = (o: { value: string; label: string }, sub: boolean) => (
+    <button
+      key={o.value}
+      type="button"
+      role="option"
+      aria-selected={o.value === value}
+      className={`avm-tsel-opt${sub ? ' is-sub' : ''}${o.value === value ? ' is-sel' : ''}`}
+      onClick={() => pick(o.value)}
+    >
+      {sub && <b className="avm-tsel-tree" aria-hidden />}
+      <span>{o.label}</span>
+      <i aria-hidden>{tick}</i>
+    </button>
+  );
+
+  return (
+    <div className={`avm-tsel${open ? ' is-open' : ''}${props.invalid ? ' is-invalid' : ''}`}>
+      <button
+        ref={btnRef}
+        type="button"
+        className={`avm-tsel-btn${value ? '' : ' is-ph'}`}
+        disabled={props.disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="avm-tsel-val">{value ? label : 'Select Supplier Type'}</span>
+        <span className="avm-tsel-chev" aria-hidden>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+        </span>
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={panelRef}
+          className={`avm-tsel-panel${pos.up ? ' is-up' : ''}`}
+          role="listbox"
+          aria-label="Supplier Type"
+          style={{ left: pos.left, width: pos.width, maxHeight: pos.maxH, ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }) }}
+        >
+          <div className="avm-tsel-list">
+            {SUPPLIER_TYPE_TREE.map(n => 'group' in n ? (
+              <div key={n.group} className="avm-tsel-grp" role="group" aria-label={n.group}>
+                <div className="avm-tsel-head">{n.group}</div>
+                {n.items.map(o => opt(o, true))}
+              </div>
+            ) : opt(n, false))}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
