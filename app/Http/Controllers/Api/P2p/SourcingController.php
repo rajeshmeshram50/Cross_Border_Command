@@ -11,6 +11,7 @@ use App\Models\Masters\GstPercentage;
 use App\Models\Masters\Segments;
 use App\Models\Masters\StateCodes;
 use App\Models\Masters\States;
+use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
 use App\Models\P2p\Supplier as P2pSupplier;
@@ -321,7 +322,7 @@ class SourcingController extends Controller
         $file = $request->file('file');
         $token = Str::random(24);
         $safeName = $this->safeUploadName($file->getClientOriginalName(), $ext);
-        $dir = 'p2p/'.($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity').'/'.$token;
+        $dir = 'p2p/'.($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity').'/c'.((int) $request->user()->client_id).'/'.$token;
         $path = $file->storeAs($dir, $safeName, 'public');
 
         return $this->ok([
@@ -354,6 +355,15 @@ class SourcingController extends Controller
         $rel = preg_replace('#^storage/#', '', $rel);
 
         if (str_contains($rel, '..') || ! str_starts_with($rel, 'p2p/clarity/')) {
+            abort(404);
+        }
+
+        $clientId = (int) $request->user()->client_id;
+        $own = str_starts_with($rel, 'p2p/clarity/c'.$clientId.'/')
+            || (! preg_match('#^p2p/clarity/c\d+/#', $rel) && SourcingProduct::query()
+                ->whereHas('target', fn ($q) => $q->where('client_id', $clientId))
+                ->where('clarity_value', 'like', '%'.$rel.'%')->exists());
+        if (! $own) {
             abort(404);
         }
 
