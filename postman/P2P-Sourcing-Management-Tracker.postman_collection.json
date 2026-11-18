@@ -179,6 +179,55 @@
                 ]
               }
             }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"token\": \"••••\",\n  \"user\": {\n    \"id\": 3,\n    \"name\": \"Admin Health Care\",\n    \"email\": \"••••\",\n    \"user_type\": \"branch_user\",\n    \"initials\": \"AC\",\n    \"client_id\": 1,\n    \"branch_id\": 2,\n    \"employee_id\": null,\n    \"employee_code\": null,\n    \"client_name\": \"Inorbvict Agrotech\",\n    \"branch_name\": \"Inorbvict HealthCare Private Limited\",\n    \"client_logo\": null,\n    \"branch_logo\": null,\n    \"client_logo_web\": null,\n    \"branch_logo_web\": null,\n    \"client_profile_photo\": null,\n    \"branch_profile_photo\": null,\n    \"employee_profile_photo\": null,\n    \"user_profile_photo\": null,\n    \"primary_color\": \"#4F46E5\",\n    \"secondary_color\": \"#10B981\",\n    \"is_reporting_manager\": true,\n    \"has_direct_reports\": false,\n    \"inbox_count\": 0,\n    \"onboarding_pending\": false,\n    \"onboarding_stage\": 6,\n    \"status\": \"active\",\n    \"designation\": null,\n    \"employee_designation\": null,\n    \"department\": null,\n    \"phone\": \"••••\",\n    \"avatar\": null,\n    \"permissions\": {\n      \"master.overtime_rates\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.analytics\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.productivity_tracker\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.p2p_summary\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.diagnosis\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.resolution_center\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.performance\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.customers\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.consignee\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.lead_ack_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.workplace\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.quotation_vs_pi\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.sign_tracker\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.lead_distribution\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.lead_detail\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.enquiries\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"sales.leads_details\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.company\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.bank_accounts\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.departments\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.roles\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.designations\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.kpis\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.countries\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.states\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.state_codes\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.address_types\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.port_of_loading\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.port_of_discharge\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.segments\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.hsn_codes\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.gst_percentage\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.currencies\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.uom\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.packaging_material\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.conditions\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.incoterms\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.customer_types\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.customer_classifications\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.vendor_types\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.vendor_behaviour\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.applicable_types\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.license_name\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.risk_levels\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.document_type\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.haz_class\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.compliance_behaviours\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.assets\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.asset_categories\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.expense_category\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.payment_terms\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.approval_authority\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.procurement_category\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.sourcing_type\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.deviation_reason\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.match_exception\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.advance_payment_rules\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.exchange_rate_log\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.goods_service_flag\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.vendor_directory\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.warehouse_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.zone_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.rack_type_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.temp_class_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.racks\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.shelf_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.digital_twin\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.freezers\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.leave_type\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.leave_plan\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.overview\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.pip\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.reports\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.ai_master\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.recruitment\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.onboarding\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.exit\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.payroll\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.attendance\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.leave\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.holiday\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.expense\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.doc_dashboard\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.templates\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.policies\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.broadcast\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.doc_category\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.doc_types\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.doc_gen_rules\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.custom_fields\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.doc_templates\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"master.trigger_point\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.analytics\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.diagnosis_resolution\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.regulatory_defense\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.buyer_profile\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.supplier_profile\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.case_to_case\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.agreements_sent\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"hr.employee\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.order\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.agreements_to_approve\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.segment\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.authority\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.quality_docs\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.kyc\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.due_diligence\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.trade_licenses\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.document_panel\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.trade_documents\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.agreements\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.terms_conditions\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"clm.clause_library\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"developers.shipment\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.analytics\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.diagnosis\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.sales_summary\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.product\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.supplier\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.bulk_sourcing\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"p2p.case_to_case\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"dashboard\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"branches\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"profile\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"credentials-vault\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"project-navigator\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"gts\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"inventory\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"dev-tools\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      },\n      \"permissions\": {\n        \"can_view\": true,\n        \"can_add\": false,\n        \"can_edit\": false,\n        \"can_delete\": false,\n        \"can_export\": false,\n        \"can_import\": false,\n        \"can_approve\": false\n      },\n      \"p2p.payment_request\": {\n        \"can_view\": true,\n        \"can_add\": true,\n        \"can_edit\": true,\n        \"can_delete\": true,\n        \"can_export\": true,\n        \"can_import\": true,\n        \"can_approve\": true\n      }\n    },\n    \"plan\": {\n      \"suggested_plan_id\": 4,\n      \"has_plan\": true,\n      \"expired\": false,\n      \"plan_name\": \"Business\",\n      \"plan_type\": \"paid\",\n      \"expires_at\": \"2027-12-22\"\n    }\n  }\n}"
+            }
           ]
         }
       ]
@@ -269,7 +318,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-02\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressPercent\": \"0%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 0,\n        \"mappedSuppliers\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -353,7 +402,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-02\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 3,\n        \"completed\": 0,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 3,\n        \"progress\": 0,\n        \"progressPercent\": \"0%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 0,\n        \"mappedSuppliers\": 0,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 6,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -437,7 +486,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 6,\n      \"created\": 6,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -471,7 +520,51 @@
                 }
               ]
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&q=valve",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "all"
+                    },
+                    {
+                      "key": "q",
+                      "value": "valve"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 0,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Filter · Overdue only",
@@ -503,7 +596,51 @@
                 }
               ]
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=assigned&status=Overdue",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "assigned"
+                    },
+                    {
+                      "key": "status",
+                      "value": "Overdue"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 1,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Filter · Completed only",
@@ -535,7 +672,51 @@
                 }
               ]
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets?tab=all&status=Completed",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "all"
+                    },
+                    {
+                      "key": "status",
+                      "value": "Completed"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-001\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-23\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 2,\n        \"completed\": 2,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"ECG Machine\",\n        \"moreProducts\": 1,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 2,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 4,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 3,\n      \"last_page\": 1\n    }\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Row with progress % and supplier count",
@@ -603,7 +784,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-008\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-11-18\",\n        \"due\": \"2026-12-09\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Diya Nair\",\n        \"products\": 4,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"8\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 3,\n        \"pending\": 3,\n        \"progress\": 25,\n        \"progressPercent\": \"25%\",\n        \"totalProducts\": 4,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 4,\n        \"progressStatus\": \"In Progress\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 1,\n      \"created\": 0,\n      \"assigned\": 1\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 1,\n      \"last_page\": 1\n    }\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"rows\": [\n      {\n        \"id\": \"SRC-005\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\",\n          \"Manual Entry\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 3,\n        \"completed\": 2,\n        \"overdue\": true,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 2,\n        \"pending\": 1,\n        \"progress\": 67,\n        \"progressPercent\": \"67%\",\n        \"totalProducts\": 3,\n        \"completedProducts\": 2,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"In Progress\"\n      },\n      {\n        \"id\": \"SRC-004\",\n        \"source\": \"Product Master\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-06-30\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 3,\n        \"progressStatus\": \"Completed\"\n      },\n      {\n        \"id\": \"SRC-003\",\n        \"source\": \"Manual Entry\",\n        \"sources\": [\n          \"Product Master\"\n        ],\n        \"start\": \"2026-06-25\",\n        \"due\": \"2026-12-31\",\n        \"createdBy\": \"Admin Health Care\",\n        \"assignee\": \"Admin Health Care\",\n        \"products\": 1,\n        \"completed\": 1,\n        \"overdue\": false,\n        \"createdById\": \"3\",\n        \"assigneeId\": \"3\",\n        \"firstProduct\": \"Generic Medicens\",\n        \"moreProducts\": 0,\n        \"pending\": 0,\n        \"progress\": 100,\n        \"progressPercent\": \"100%\",\n        \"totalProducts\": 1,\n        \"completedProducts\": 1,\n        \"mappedSuppliers\": 1,\n        \"progressStatus\": \"Completed\"\n      }\n    ],\n    \"counts\": {\n      \"all\": 5,\n      \"created\": 5,\n      \"assigned\": 5\n    },\n    \"pagination\": {\n      \"page\": 1,\n      \"per_page\": 10,\n      \"total\": 5,\n      \"last_page\": 1\n    }\n  }\n}"
             }
           ]
         },
@@ -643,7 +824,7 @@
           ],
           "response": [
             {
-              "name": "404 ",
+              "name": "404 Not Found",
               "originalRequest": {
                 "method": "GET",
                 "header": [
@@ -665,7 +846,7 @@
                 },
                 "description": "Unknown target code → 404 { \"message\": \"Sourcing target not found.\" }. An unknown product → \"Product not found in this sourcing target.\""
               },
-              "status": "",
+              "status": "Not Found",
               "code": 404,
               "_postman_previewlanguage": "json",
               "header": [
@@ -906,8 +1087,89 @@
                 "upload"
               ]
             },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "required · pdf, jpg, png, webp · ≤5 MB"
+                },
+                {
+                  "key": "kind",
+                  "value": "clarity",
+                  "type": "text",
+                  "description": "clarity | card (visiting card for New Supplier)"
+                }
+              ]
+            },
             "description": "multipart/form-data: file (pdf, jpg, png, webp · ≤5 MB) + kind = clarity. Returns { path, name } — send the path as clarity.val with type = pdf."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.path) pm.collectionVariables.set('clarity_path', j.data.path);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/upload",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "upload"
+                  ]
+                },
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "description": "required · pdf, jpg, png, webp · ≤5 MB"
+                    },
+                    {
+                      "key": "kind",
+                      "value": "clarity",
+                      "type": "text",
+                      "description": "clarity | card (visiting card for New Supplier)"
+                    }
+                  ]
+                },
+                "description": "multipart/form-data: file (pdf, jpg, png, webp · ≤5 MB) + kind = clarity. Returns { path, name } — send the path as clarity.val with type = pdf."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"path\": \"/storage/p2p/clarity/PfESdm6L9058CvKlYj6oIoWi/sample.pdf\",\n    \"name\": \"sample.pdf\"\n  }\n}"
+            }
+          ]
         }
       ]
     },
@@ -1059,6 +1321,54 @@
                 ]
               }
             }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"source\": \"manual\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\",\n      \"target_price\": \"18500\"\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"Laser Toner Cartridge 76A\",\n      \"target_price\": \"3,200\",\n      \"clarity\": {\n        \"type\": \"link\",\n        \"val\": \"https://example.com/toner-spec.pdf\"\n      }\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-009\"\n  }\n}"
+            }
           ]
         },
         {
@@ -1107,6 +1417,54 @@
                   "pm.test('created', () => pm.response.to.have.status(200));"
                 ]
               }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"source\": \"master\",\n  \"due_date\": \"{{due_date}}\",\n  \"assignee_id\": \"{{assignee_id}}\",\n  \"products\": [\n    {\n      \"from\": \"master\",\n      \"code\": \"{{product_code}}\",\n      \"target_price\": \"1200\",\n      \"clarity\": {\n        \"type\": \"text\",\n        \"val\": \"ISI marked, 1.5 inch, brass body\"\n      }\n    },\n    {\n      \"from\": \"manual\",\n      \"name\": \"Office Printer A4\",\n      \"target_price\": \"18500\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "ASSIGN TARGET button. Body (JSON):\n• due_date — required · SOURCING TAT (YYYY-MM-DD, today or later)\n• assignee_id — required · ASSIGN TO (an id from GET /p2p/team-members)\n• source — required · master | manual (the I WANT TO SOURCE FROM radio that was picked first)\n• products[] — required, at least 1 (the PRODUCT LIST; Masters + Manual can be mixed)\n   – from — required · master | manual\n   – code — required when from = master (code from GET /p2p/products)\n   – name — required when from = manual · PRODUCT NAME\n   – target_price — required when from = manual (optional for master) · TARGET PRICE (₹) e.g. 1200 · 1,200 · 1200.50\n   – clarity — optional · { type: text | link | pdf, val } (pdf val = path from POST /p2p/upload; several paths newline-joined)\nSTART DATE is always today (set by the server). The ID is allocated on save.\nResponse: { status: true, data: { id: \"SRC-008\" } }."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-010\"\n  }\n}"
             }
           ]
         },
@@ -1273,7 +1631,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-02\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 59,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 60,\n        \"mapped\": false,\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": null,\n        \"hsn\": null,\n        \"price\": \"850.50\",\n        \"clarity\": null\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 61,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18,500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-010\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-31\",\n    \"assignee\": \"Diya Nair\",\n    \"assigneeId\": \"8\",\n    \"assigneeActive\": true,\n    \"masterRows\": [\n      {\n        \"id\": 90,\n        \"mapped\": false,\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch, brass body\"\n        }\n      }\n    ],\n    \"manualRows\": [\n      {\n        \"id\": 91,\n        \"mapped\": false,\n        \"name\": \"Office Printer A4\",\n        \"price\": \"18500\",\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1359,7 +1717,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-010\"\n  }\n}"
             }
           ]
         }
@@ -1440,7 +1798,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-008\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-09\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 60,\n        \"type\": \"master\",\n        \"code\": \"P-002\",\n        \"name\": \"Paracetamol Tablets 500mg\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"850.50\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 59,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1200\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 61,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"17,900\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"SRC-010\",\n    \"source\": \"Product Master\",\n    \"start\": \"2026-11-18\",\n    \"due\": \"2026-12-31\",\n    \"createdBy\": \"Admin Health Care\",\n    \"assignee\": \"Diya Nair\",\n    \"products\": [\n      {\n        \"id\": 90,\n        \"type\": \"master\",\n        \"code\": \"P-001\",\n        \"name\": \"Generic Medicens\",\n        \"segment\": \"Mediciens\",\n        \"hsn\": \"08062000\",\n        \"price\": \"1150\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": {\n          \"type\": \"text\",\n          \"val\": \"ISI marked, 1.5 inch\"\n        }\n      },\n      {\n        \"id\": 91,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"Office Printer A4 (Duplex)\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"19500\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      },\n      {\n        \"id\": 92,\n        \"type\": \"manual\",\n        \"code\": \"\",\n        \"name\": \"A4 Paper Ream 75 GSM\",\n        \"segment\": \"\",\n        \"hsn\": \"\",\n        \"price\": \"280\",\n        \"status\": \"In Progress\",\n        \"supplierCount\": 0,\n        \"clarity\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1532,7 +1890,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 60,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 90,\n    \"clarity_type\": \"link\",\n    \"clarity_value\": \"https://example.com/spec.pdf\"\n  }\n}"
             }
           ]
         },
@@ -1624,7 +1982,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 60,\n    \"status\": \"Completed\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 90,\n    \"status\": \"Completed\"\n  }\n}"
             }
           ]
         },
@@ -1665,7 +2023,58 @@
                 }
               }
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/sourcing-targets/{{target_id}}/products/{{product_id}}/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "sourcing-targets",
+                    "{{target_id}}",
+                    "products",
+                    "{{product_id}}",
+                    "status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"In Progress\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": 90,\n    \"status\": \"In Progress\"\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Mapped suppliers of a product",
@@ -1742,7 +2151,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"52\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"53\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"54\",\n      \"supplier_id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": []\n}"
             }
           ]
         },
@@ -1773,7 +2182,52 @@
                 }
               ]
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/clarity/download?path={{clarity_path}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "clarity",
+                    "download"
+                  ],
+                  "query": [
+                    {
+                      "key": "path",
+                      "value": "{{clarity_path}}"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/pdf"
+                },
+                {
+                  "key": "Content-Disposition",
+                  "value": "attachment; filename=sample.pdf"
+                }
+              ],
+              "body": "(binary file — the response is the file itself)"
+            }
+          ]
         }
       ]
     },
@@ -2693,7 +3147,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"message\": \"This supplier is based in United States — map it as an International supplier.\",\n  \"errors\": {\n    \"origin\": [\n      \"This supplier is based in United States — map it as an International supplier.\"\n    ]\n  }\n}"
+              "body": "{\n  \"status\": false,\n  \"message\": \"“arfgdhgsfadgf” is already mapped to this product.\"\n}"
             }
           ]
         },
@@ -2965,7 +3419,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"52\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 249.5,\n        \"percent\": 29.34,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"53\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 356.63,\n        \"percent\": 41.93,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"54\",\n      \"supplier_id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": \"Industrial\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-18\",\n      \"vsTarget\": {\n        \"target\": 850.5,\n        \"difference\": 299.5,\n        \"percent\": 35.21,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T06:36:23+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": \"74\",\n      \"supplier_id\": 3,\n      \"name\": \"ADFSGDHF\",\n      \"segment\": \"Tobacco & Tobacco Products\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"India\",\n      \"state\": \"Karnataka\",\n      \"state_code\": \"29\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"gstPercentage\": 18,\n      \"gstType\": \"inter\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 198,\n      \"gstAmount\": 198,\n      \"total\": 1298,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1298,\n      \"validTill\": \"2026-12-31\",\n      \"vsTarget\": {\n        \"target\": 1150,\n        \"difference\": -50,\n        \"percent\": 4.35,\n        \"status\": \"below\"\n      },\n      \"mappedOn\": \"2026-11-18T07:24:15+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"75\",\n      \"supplier_id\": 7,\n      \"name\": \"arfgdhgsfadgf\",\n      \"segment\": \"Pharmaceuticals & APIs\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"\",\n      \"address\": \"\",\n      \"country\": \"United States\",\n      \"state\": \"Alabama\",\n      \"state_code\": \"\",\n      \"city\": \"Pune\",\n      \"source\": \"Master\",\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 14.5,\n      \"gstPercentage\": 0,\n      \"gstType\": \"none\",\n      \"cgst\": 0,\n      \"sgst\": 0,\n      \"igst\": 0,\n      \"gstAmount\": 0,\n      \"total\": 14.5,\n      \"exchangeRate\": 83.25,\n      \"inrAmount\": 1207.13,\n      \"validTill\": null,\n      \"vsTarget\": {\n        \"target\": 1150,\n        \"difference\": 57.13,\n        \"percent\": 4.97,\n        \"status\": \"above\"\n      },\n      \"mappedOn\": \"2026-11-18T07:24:15+00:00\",\n      \"canConvert\": false\n    },\n    {\n      \"id\": \"76\",\n      \"supplier_id\": 36,\n      \"name\": \"Shree Valves Pvt Ltd\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"card\": \"\",\n      \"gmaps\": \"https://maps.google.com/?q=Pune\",\n      \"address\": \"Plot 12, MIDC Bhosari\",\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": \"27\",\n      \"city\": \"Pune\",\n      \"source\": \"New Supplier\",\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1150,\n      \"gstPercentage\": 18,\n      \"gstType\": \"intra\",\n      \"cgst\": 103.5,\n      \"sgst\": 103.5,\n      \"igst\": 0,\n      \"gstAmount\": 207,\n      \"total\": 1357,\n      \"exchangeRate\": null,\n      \"inrAmount\": 1357,\n      \"validTill\": \"2026-12-31\",\n      \"vsTarget\": {\n        \"target\": 1150,\n        \"difference\": 0,\n        \"percent\": 0,\n        \"status\": \"at\"\n      },\n      \"mappedOn\": \"2026-11-18T07:24:15+00:00\",\n      \"canConvert\": true\n    }\n  ]\n}"
             }
           ]
         },
@@ -3059,7 +3513,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"54\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"id\": \"76\"\n  }\n}"
             }
           ]
         }
@@ -3140,7 +3594,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 24,\n    \"origin\": \"domestic\",\n    \"converted\": false,\n    \"converted_vendor_id\": null,\n    \"sourcing_count\": 1,\n    \"identity\": {\n      \"company_name\": \"Smoke Valves Pvt Ltd\",\n      \"legal_name\": \"Smoke Valves Pvt Ltd\",\n      \"primary_email\": null,\n      \"segment_id\": null,\n      \"segment\": null,\n      \"gst_applicable\": null\n    },\n    \"address\": {\n      \"address_line\": null,\n      \"country_id\": 104,\n      \"country\": \"India\",\n      \"state_id\": 14,\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"google_location\": null,\n      \"contact_name\": \"Rohit S.\",\n      \"contact_no\": null,\n      \"email\": null,\n      \"is_primary\": true\n    },\n    \"business_card\": null\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 36,\n    \"origin\": \"domestic\",\n    \"converted\": false,\n    \"converted_vendor_id\": null,\n    \"sourcing_count\": 1,\n    \"identity\": {\n      \"company_name\": \"Shree Valves Pvt Ltd\",\n      \"legal_name\": \"Shree Valves Pvt Ltd\",\n      \"primary_email\": null,\n      \"segment_id\": null,\n      \"segment\": null,\n      \"gst_applicable\": null\n    },\n    \"address\": {\n      \"address_line\": null,\n      \"country_id\": 104,\n      \"country\": \"India\",\n      \"state_id\": 14,\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"google_location\": null,\n      \"contact_name\": \"••••\",\n      \"contact_no\": \"••••\",\n      \"email\": null,\n      \"is_primary\": true\n    },\n    \"business_card\": null\n  }\n}"
             }
           ]
         },
@@ -3179,7 +3633,56 @@
               }
             },
             "description": "♻ EXISTING API — the purple Add Supplier form. Continue with /vendors/{id}/step/contacts → kyc → products as usual, then copy the new vendor id into {{vendor_id}}."
-          }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/step/identity",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "step",
+                    "identity"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"company_name\": \"Shree Valves Pvt Ltd\",\n  \"legal_name\": \"Shree Valves Pvt Ltd\",\n  \"gst_applicable\": \"Yes\",\n  \"vendor_type_id\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "♻ EXISTING API — the purple Add Supplier form. Continue with /vendors/{id}/step/contacts → kyc → products as usual, then copy the new vendor id into {{vendor_id}}."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": 17,\n    \"vendor_code\": \"S-003\",\n    \"company_name\": \"Shree Valves Pvt Ltd\",\n    \"legal_name\": \"Shree Valves Pvt Ltd\",\n    \"website\": null,\n    \"gst_applicable\": \"Yes\",\n    \"gst_number\": null,\n    \"status\": \"draft\",\n    \"step_completed\": 1,\n    \"client_id\": 1,\n    \"branch_id\": 2,\n    \"created_by\": 3,\n    \"primary_email\": null,\n    \"vendor_type_id\": 1,\n    \"vendor_type_name\": \"Farmer\",\n    \"risk_level_id\": null,\n    \"risk_level_name\": null,\n    \"vendor_behaviour_id\": null,\n    \"vendor_behaviour_name\": null,\n    \"segment_id\": null,\n    \"segment_name\": null,\n    \"segment_ids\": [],\n    \"segments\": [],\n    \"compliance_behaviour_id\": null,\n    \"supplier_category\": null,\n    \"compliance_behaviour_name\": null,\n    \"classification_id\": null,\n    \"classification_name\": null,\n    \"primary_address\": null,\n    \"extra_contacts\": [],\n    \"due_diligence\": [],\n    \"trade_licenses\": [],\n    \"owner_kyc\": [],\n    \"bank_accounts\": [],\n    \"gst_scrutiny\": [],\n    \"product_mappings\": [],\n    \"created_at\": \"2026-11-18 07:24:15\",\n    \"updated_at\": \"2026-11-18 07:24:15\"\n  }\n}"
+            }
+          ]
         },
         {
           "name": "3 · Link the saved supplier",
@@ -3265,7 +3768,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 24,\n    \"vendor_id\": 5,\n    \"vendor_code\": \"S-005\",\n    \"vendor_name\": \"ASASAS\",\n    \"mappings_moved\": 1,\n    \"mappings_merged\": 0,\n    \"message\": \"Smoke Valves Pvt Ltd is now in the Supplier Master as S-005.\"\n  }\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": {\n    \"supplier_id\": 36,\n    \"vendor_id\": 17,\n    \"vendor_code\": \"S-003\",\n    \"vendor_name\": \"Shree Valves Pvt Ltd\",\n    \"mappings_moved\": 1,\n    \"mappings_merged\": 0,\n    \"message\": \"Shree Valves Pvt Ltd is now in the Supplier Master as S-003.\"\n  }\n}"
             }
           ]
         },
@@ -3362,7 +3865,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": false,\n  \"message\": \"“Smoke Valves Pvt Ltd” is already converted to another supplier in the Supplier Master.\"\n}"
+              "body": "{\n  \"message\": \"Unknown supplier in the Supplier Master.\",\n  \"errors\": {\n    \"vendor_id\": [\n      \"Unknown supplier in the Supplier Master.\"\n    ]\n  }\n}"
             }
           ]
         },
@@ -3465,7 +3968,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": false,\n  \"message\": \"“Smoke Valves Pvt Ltd” is already in the Supplier Master — map it from Supplier Master.\"\n}"
+              "body": "{\n  \"status\": false,\n  \"message\": \"“Shree Valves Pvt Ltd” is already in the Supplier Master — map it from Supplier Master.\"\n}"
             }
           ]
         },
@@ -3523,7 +4026,69 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": 25,\n      \"name\": \"Rhein Armaturen GmbH\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Industriestr. 4\",\n      \"country\": \"Germany\",\n      \"state\": \"NRW\",\n      \"state_code\": null,\n      \"city\": \"Cologne\",\n      \"gmaps\": null,\n      \"origin\": \"international\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-11-18T06:36:23+00:00\"\n    },\n    {\n      \"id\": 24,\n      \"name\": \"Smoke Valves Pvt Ltd\",\n      \"segment\": null,\n      \"contact\": \"••••\",\n      \"mobile\": null,\n      \"email\": null,\n      \"address\": null,\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 0,\n      \"converted\": true,\n      \"converted_vendor_id\": 5,\n      \"converted_at\": \"2026-11-18T06:36:23+00:00\",\n      \"created_at\": \"2026-11-18T06:36:23+00:00\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Durgesh\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi High Street,\",\n      \"country\": \"India\",\n      \"state\": \"Andhra Pradesh\",\n      \"state_code\": \"37\",\n      \"city\": \"mumbai\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-07-20T07:09:44+00:00\"\n    }\n  ]\n}"
+              "body": "{\n  \"status\": true,\n  \"data\": [\n    {\n      \"id\": 37,\n      \"name\": \"Rhein Armaturen GmbH\",\n      \"segment\": \"Valves\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Industriestr. 4\",\n      \"country\": \"Germany\",\n      \"state\": \"NRW\",\n      \"state_code\": null,\n      \"city\": \"Cologne\",\n      \"gmaps\": null,\n      \"origin\": \"international\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-11-18T07:24:15+00:00\"\n    },\n    {\n      \"id\": 36,\n      \"name\": \"Shree Valves Pvt Ltd\",\n      \"segment\": null,\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": null,\n      \"address\": null,\n      \"country\": \"India\",\n      \"state\": \"Maharashtra\",\n      \"state_code\": null,\n      \"city\": \"Pune\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 0,\n      \"converted\": true,\n      \"converted_vendor_id\": 17,\n      \"converted_at\": \"2026-11-18T07:24:15+00:00\",\n      \"created_at\": \"2026-11-18T07:24:15+00:00\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Durgesh\",\n      \"segment\": \"Mediciens\",\n      \"contact\": \"••••\",\n      \"mobile\": \"••••\",\n      \"email\": \"••••\",\n      \"address\": \"Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi High Street,\",\n      \"country\": \"India\",\n      \"state\": \"Andhra Pradesh\",\n      \"state_code\": \"37\",\n      \"city\": \"mumbai\",\n      \"gmaps\": null,\n      \"origin\": \"domestic\",\n      \"sourcing_count\": 1,\n      \"converted\": false,\n      \"converted_vendor_id\": null,\n      \"converted_at\": null,\n      \"created_at\": \"2026-07-20T07:09:44+00:00\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sourcing targets of a New Supplier",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/sourcings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "new-suppliers",
+                "{{new_supplier_id}}",
+                "sourcings"
+              ]
+            },
+            "description": "Drill-down from the New Supplier directory: each sourcing target the supplier is mapped on { code, due_date, products[] }. Mappings already moved to the Supplier Master by Convert to Supplier are not listed."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/p2p/new-suppliers/{{new_supplier_id}}/sourcings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "p2p",
+                    "new-suppliers",
+                    "{{new_supplier_id}}",
+                    "sourcings"
+                  ]
+                },
+                "description": "Drill-down from the New Supplier directory: each sourcing target the supplier is mapped on { code, due_date, products[] }. Mappings already moved to the Supplier Master by Convert to Supplier are not listed."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"data\": []\n}"
             }
           ]
         }
