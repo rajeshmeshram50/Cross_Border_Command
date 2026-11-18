@@ -432,15 +432,21 @@ export async function syncServiceSuppliers(id: number, prev: MappedSupplier[], n
 
 export type ServiceCategoryRow = ServiceBundle['service_categories'][number];
 
-const categoryCache = new Map<ApiServiceType, Promise<ServiceCategoryRow[]>>();
-/** Service categories of one service type — the separate master-bundle call the form's Service Category dropdown uses. */
-export function loadServiceCategories(type: ApiServiceType, force = false): Promise<ServiceCategoryRow[]> {
-  if (!categoryCache.has(type) || force) {
-    const p = api.get<{ service_categories?: ServiceCategoryRow[] }>('/p2p/services/master-bundle', {
-      params: { only: 'service_categories', service_type: type },
-    }).then(r => r.data?.service_categories ?? []);
-    p.catch(() => { if (categoryCache.get(type) === p) categoryCache.delete(type); });
-    categoryCache.set(type, p);
+const categoryCache = new Map<string, Promise<ServiceCategoryRow[]>>();
+/**
+ * Service categories for the form's Service Category dropdown — the Service Category master list,
+ * filtered by service_type, by classification for Other Operational (professional / utility / …), and Active only.
+ */
+export function loadServiceCategories(type: ApiServiceType, classification?: string, force = false): Promise<ServiceCategoryRow[]> {
+  const key = `${type}:${classification ?? ''}`;
+  if (!categoryCache.has(key) || force) {
+    const p = api.get<Array<ServiceCategoryRow & { status?: string | null }>>('/master/service_categories', {
+      params: { service_type: type, status: 'Active', ...(classification ? { classification } : {}) },
+    }).then(r => (Array.isArray(r.data) ? r.data : [])
+      .map(c => ({ id: c.id, name: c.name, service_type: c.service_type, classification: c.classification ?? null }))
+      .sort((x, y) => x.name.localeCompare(y.name)));
+    p.catch(() => { if (categoryCache.get(key) === p) categoryCache.delete(key); });
+    categoryCache.set(key, p);
   }
-  return categoryCache.get(type)!;
+  return categoryCache.get(key)!;
 }

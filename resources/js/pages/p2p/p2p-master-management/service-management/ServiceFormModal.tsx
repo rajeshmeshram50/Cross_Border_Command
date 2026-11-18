@@ -112,11 +112,13 @@ export default function ServiceFormModal({
   const addMaster: AddMaster = (slug, field) => setQuickAdd({ slug, field });
   const [bundle, setBundle] = useState<ServiceBundle | null>(null);
   const catType = kind === 'soft' ? 'soft_digital' : kind === 'other' ? 'other_operational' : null;
+  const catClass = kind === 'other' ? (vals.otype ?? 'professional') : undefined;
   const [categories, setCategories] = useState<ServiceCategoryRow[] | null>(catType ? null : []);
   useEffect(() => {
     if (!catType) return;
     let live = true;
-    loadServiceCategories(catType)
+    setCategories(null);
+    loadServiceCategories(catType, catClass)
       .then(rows => { if (live) setCategories(rows); })
       .catch(e => {
         if (!live) return;
@@ -124,7 +126,7 @@ export default function ServiceFormModal({
         toast.error('Could not load service categories', apiError(e, 'Close the form and try again.'));
       });
     return () => { live = false; };
-  }, [catType, toast]);
+  }, [catType, catClass, toast]);
   const [savedImages, setSavedImages] = useState<ExistingImage[]>(input.images ?? []);
   const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
   const [attachmentIds, setAttachmentIds] = useState<number[]>(input.attachmentIds ?? []);
@@ -292,7 +294,7 @@ export default function ServiceFormModal({
     }
     try {
       setBundle(await loadServiceBundle(true));
-      if (field === 'category' && catType) setCategories(await loadServiceCategories(catType, true));
+      if (field === 'category' && catType) setCategories(await loadServiceCategories(catType, catClass, true));
       if (id && (row?.status == null || String(row.status).toLowerCase() === 'active')) set(field, id as never);
     } catch (e) {
       toast.error('Could not refresh the list', apiError(e, 'Close and reopen the form to see the new record.'));
