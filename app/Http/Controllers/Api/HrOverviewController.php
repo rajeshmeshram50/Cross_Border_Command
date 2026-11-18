@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeOnboardingInvite;
-use App\Models\EmployeeExit;
 use App\Models\ExpenseClaim;
 use App\Models\Recruitment;
 use App\Models\Masters\Departments;
