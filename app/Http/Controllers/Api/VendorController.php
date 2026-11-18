@@ -1042,7 +1042,19 @@ class VendorController extends Controller
             // path echoed back on edit when the file is unchanged.
             'primary_address.attachment_path'          => 'nullable|string|max:500',
             'primary_attachment'                       => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
+            // Convert to Supplier: the P2P New Supplier being converted into this vendor.
+            'convert_supplier_id'                      => 'nullable|integer',
         ], [], self::FIELD_LABELS);
+
+        if (! empty($data['convert_supplier_id'])) {
+            $source = \App\Models\P2p\Supplier::where('client_id', $user->client_id)->find($data['convert_supplier_id']);
+            if (! $source || ($source->converted_vendor_id && (int) $source->converted_vendor_id !== (int) $vendor->id)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'convert_supplier_id' => ['This New Supplier cannot be converted into this supplier.'],
+                ]);
+            }
+            Vendor::$convertingSupplierId = (int) $source->id;
+        }
         // NB: additional contacts are NOT handled here — they have their own
         // CRUD endpoints (storeContact / updateContact / destroyContact) so
         // each persists independently and can be edited/deleted on its own.
@@ -1051,46 +1063,50 @@ class VendorController extends Controller
         // from disk if this save replaces or removes it.
         $oldPrimaryAttachment = optional($vendor->addresses()->where('is_primary', true)->first())->attachment_path;
 
-        DB::transaction(function () use ($request, $vendor, $data, $oldPrimaryAttachment) {
-            // Replace ONLY the primary row. Additional contacts (is_primary
-            // = false) are owned by the /contacts CRUD endpoints and must be
-            // left untouched here.
-            $vendor->addresses()->where('is_primary', true)->delete();
+        try {
+            DB::transaction(function () use ($request, $vendor, $data, $oldPrimaryAttachment) {
+                // Replace ONLY the primary row. Additional contacts (is_primary
+                // = false) are owned by the /contacts CRUD endpoints and must be
+                // left untouched here.
+                $vendor->addresses()->where('is_primary', true)->delete();
 
-            // Primary contact business card: store the new upload, else keep
-            // the existing path the frontend echoed back on edit.
-            $primaryAttachment = $this->absorbFile(
-                $request,
-                'primary_attachment',
-                $vendor->id,
-                'contact',
-                $data['primary_address']['attachment_path'] ?? null,
-            );
+                // Primary contact business card: store the new upload, else keep
+                // the existing path the frontend echoed back on edit.
+                $primaryAttachment = $this->absorbFile(
+                    $request,
+                    'primary_attachment',
+                    $vendor->id,
+                    'contact',
+                    $data['primary_address']['attachment_path'] ?? null,
+                );
 
-            $primary = new VendorAddress(array_merge($data['primary_address'], [
-                'vendor_id'       => $vendor->id,
-                'is_primary'      => true,
-                'attachment_path' => $primaryAttachment,
-            ]));
-            $primary->save();
+                $primary = new VendorAddress(array_merge($data['primary_address'], [
+                    'vendor_id'       => $vendor->id,
+                    'is_primary'      => true,
+                    'attachment_path' => $primaryAttachment,
+                ]));
+                $primary->save();
 
-            // Mirror the primary contact's email onto the vendor row.
-            // Same normalisation as validateContact() — see the note there.
-            $primaryEmail = $data['primary_address']['email'] ?? null;
-            $primaryEmail = $primaryEmail === null ? null : Str::lower(trim($primaryEmail));
-            $data['primary_address']['email'] = $primaryEmail;
-            $vendor->primary_email  = $primaryEmail;
-            $vendor->step_completed = max((int) $vendor->step_completed, 1);
-            $vendor->save();
+                // Mirror the primary contact's email onto the vendor row.
+                // Same normalisation as validateContact() — see the note there.
+                $primaryEmail = $data['primary_address']['email'] ?? null;
+                $primaryEmail = $primaryEmail === null ? null : Str::lower(trim($primaryEmail));
+                $data['primary_address']['email'] = $primaryEmail;
+                $vendor->primary_email  = $primaryEmail;
+                $vendor->step_completed = max((int) $vendor->step_completed, 1);
+                $vendor->save();
 
-            // Best-effort: drop the replaced business card from disk.
-            if ($oldPrimaryAttachment && $oldPrimaryAttachment !== $primaryAttachment) {
-                try {
-                    Storage::disk('public')->delete($oldPrimaryAttachment);
-                } catch (\Throwable $e) { /* swallow */
+                // Best-effort: drop the replaced business card from disk.
+                if ($oldPrimaryAttachment && $oldPrimaryAttachment !== $primaryAttachment) {
+                    try {
+                        Storage::disk('public')->delete($oldPrimaryAttachment);
+                    } catch (\Throwable $e) { /* swallow */
+                    }
                 }
-            }
-        });
+            });
+        } finally {
+            Vendor::$convertingSupplierId = null;
+        }
 
         $vendor->load(self::SHOW_WITH);
         return response()->json(['data' => $this->shape($vendor)]);

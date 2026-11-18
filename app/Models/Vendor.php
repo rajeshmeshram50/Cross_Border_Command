@@ -28,6 +28,23 @@ class Vendor extends Model
     protected static string $emailScope   = 'vendor';
     protected static array  $emailColumns = ['primary_email'];
 
+    // Convert to Supplier: the P2P New Supplier this vendor is being created
+    // from (set by VendorController for the request). It is the same party, so
+    // its email is not a duplicate of this vendor's.
+    public static ?int $convertingSupplierId = null;
+
+    public function sameEmailOwnerRows(): array
+    {
+        $ids = $this->exists
+            ? \App\Models\P2p\Supplier::where('converted_vendor_id', $this->getKey())->pluck('id')->all()
+            : [];
+        if (static::$convertingSupplierId) {
+            $ids[] = static::$convertingSupplierId;
+        }
+
+        return array_map(fn ($id) => ['table' => 'p2p_suppliers', 'id' => (int) $id], array_unique($ids));
+    }
+
     use SoftDeletes;
 
     // Supplier name, code, type and status feed the cached master bundles

@@ -68,12 +68,19 @@ trait EnforcesUniqueEmail
                 $value = $model->{$col};
                 if (EmailGuard::normalise($value) === '') continue;
 
+                // exists() so a CREATE has no id to exclude and an UPDATE does.
+                $ignore = $model->exists ? [['table' => $model->getTable(), 'id' => $model->getKey()]] : [];
+                // Rows that are the same real party (e.g. the New Supplier a vendor
+                // is converted from) — the model says which, see Vendor.
+                if (method_exists($model, 'sameEmailOwnerRows')) {
+                    $ignore = array_merge($ignore, $model->sameEmailOwnerRows());
+                }
+
                 $conflict = EmailGuard::conflict(
                     $scope,
                     $value,
                     $model->client_id ?? null,
-                    // exists() so a CREATE has no id to exclude and an UPDATE does.
-                    $model->exists ? ['table' => $model->getTable(), 'id' => $model->getKey()] : [],
+                    $ignore,
                 );
 
                 if ($conflict) {
