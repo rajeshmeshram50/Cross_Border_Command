@@ -8,10 +8,6 @@ import '../product-management/product-management.css';
 import './service-management.css';
 import './service-form.css';
 
-/* The same "Map GST (%)" popup the Product master opens from its header,
- * for every service type form. Rates come from the shared GST % master
- * (/master/gst_percentage), so a rate added here is available to products too. */
-
 export interface GstRate { id: string; pct: number; label: string }
 
 type Row = { id: number | string; percentage?: number | string | null; status?: string | null };

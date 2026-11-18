@@ -8,7 +8,6 @@ const row = (gap = 8, center = false): CSSProperties =>
 
 export type ShimCol = 'sr' | 'code' | 'name' | 'pill' | 'text' | 'mapped' | 'action';
 
-/** List rows while a page loads — each cell takes the shape of its column. */
 export function ShimServiceRows({ cols, rows = 8 }: { cols: ShimCol[]; rows?: number }) {
   return (
     <>
@@ -39,7 +38,6 @@ export function ShimServiceRows({ cols, rows = 8 }: { cols: ShimCol[]; rows?: nu
   );
 }
 
-/** The add / edit form body while its data loads: section cards with label + input placeholders. */
 export function ShimServiceForm({ sections = [8, 3] }: { sections?: number[] }) {
   return (
     <div aria-busy="true" aria-label="Loading form">
@@ -65,7 +63,6 @@ export function ShimServiceForm({ sections = [8, 3] }: { sections?: number[] }) 
   );
 }
 
-/** Mapped-supplier table rows while the service's suppliers load. */
 export function ShimSupplierRows({ rows = 3 }: { rows?: number }) {
   return (
     <div className="svs-tablewrap" aria-busy="true" aria-label="Loading suppliers">
@@ -87,7 +84,6 @@ export function ShimSupplierRows({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** The My Vault "saving" lock: a blurred veil over the popup with a ring spinner and a caption. */
 export function SavingLock({ label }: { label: string }) {
   return (
     <div role="status" aria-live="polite" aria-busy="true" className="svf-lock">

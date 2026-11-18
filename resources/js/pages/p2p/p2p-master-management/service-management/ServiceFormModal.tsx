@@ -4,7 +4,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import {
-  KIND_SUB, KIND_TITLE, MATERIAL_OPTS, OTHER_OPTS, OTHER_TYPES,
+  KIND_SUB, KIND_TITLE, MATERIAL_NAME_PH, OTHER_NAME_PH, OTHER_TYPES,
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceVals,
 } from './serviceData';
 import {
@@ -284,7 +284,7 @@ export default function ServiceFormModal({
       setSuppliers(await syncServiceSuppliers(serviceId, prev, next));
     } catch (e) {
       toast.error('Could not save the supplier change', apiError(e, 'Please try again.'));
-      try { setSuppliers(await fetchServiceSuppliers(serviceId)); } catch { /* keep what is shown */ }
+      try { setSuppliers(await fetchServiceSuppliers(serviceId)); } catch {  }
     } finally {
       setSupBusy(false);
     }
@@ -550,7 +550,7 @@ function SoftFields({ o: opts, addMaster, savedAtt, vals, set, errors, files, pi
 
 function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
   const ot = (vals.otype ?? 'professional') as OtherType;
-  const o = { ...opts!, ph: OTHER_OPTS[ot].ph };
+  const o = { ...opts!, ph: OTHER_NAME_PH[ot] };
   return (
     <>
       <Section icon={SVC_ICONS.other} title="Service Core Information" sub="Service identity, vendor and billing details">
@@ -597,7 +597,7 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
 function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
   kind: 'trackable' | 'consumable'; primarySaved: ShownImage[]; secondarySaved: ShownImage[]; onRemoveSaved: (id: number) => void;
 }) {
-  const o = { ...opts!, ph: MATERIAL_OPTS[kind].ph };
+  const o = { ...opts!, ph: MATERIAL_NAME_PH[kind] };
   return (
     <>
       <Section icon={SVC_ICONS[kind]} title={`${kind === 'trackable' ? 'Trackable' : 'Consumable'} Material / Goods Core Information`}

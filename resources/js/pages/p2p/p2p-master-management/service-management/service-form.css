@@ -1333,10 +1333,8 @@
 [data-bs-theme="dark"] .svf-modal .svf-select .master-select-toggle:disabled .master-select-chev { color: #3f5865; }
 [data-bs-theme="dark"] .svf-modal .svf-select .master-select-toggle:disabled .master-select-placeholder { color: #5d7480 !important; }
 
-/* Header actions — GST (%) button beside the close button (same as the Product form). */
 .svf-head-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-/* Map GST (%) / GST (%) Master popups — the Product popups, in the service teal. */
 .svf-gst .apm-gst-modal { border-color: rgba(103, 232, 249, .55); box-shadow: 0 30px 80px rgba(8, 47, 73, .45); }
 .svf-gst .apm-gst-head { background: linear-gradient(115deg, #0c4a6e 0%, #0e7490 35%, #0891b2 65%, #22d3ee 100%); }
 .svf-gst .apm-gst-label { color: #0c4a6e; }

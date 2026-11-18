@@ -39,7 +39,6 @@ export function MasterRecordModal({
   slug: string;
   onClose: () => void;
   onSaved: (row: Record<string, unknown>) => void;
-  /** Optional starting values, e.g. the service type a Service Category is being added for. */
   defaults?: Record<string, string>;
 }) {
   const cfg = getMasterConfig(slug);

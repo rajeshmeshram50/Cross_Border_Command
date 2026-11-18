@@ -8,7 +8,7 @@ import WorklistPager from '../../../../components/ui/WorklistPager';
 import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
 import {
-  GST_RATES, fmtCurrency, isIntl, makeIntlSupplier, makeSupplier, supplierInr,
+  GST_RATES, fmtCurrency, isIntl, makeIntlSupplier, makeSupplier,
   type MappedSupplier, type SupplierOrigin,
 } from './serviceData';
 import { loadServiceBundle, loadSupplierPool, type BundleVendor, type ServiceBundle } from './serviceApi';
@@ -122,7 +122,6 @@ export function SupplierMapPanel({
   suppliers: MappedSupplier[];
   onChange: (next: MappedSupplier[]) => void;
   loading?: boolean;
-  /** GST % mapped on the service — prefills a domestic supplier's GST %. */
   defaultGst?: number;
 }) {
   const toast = useToast();

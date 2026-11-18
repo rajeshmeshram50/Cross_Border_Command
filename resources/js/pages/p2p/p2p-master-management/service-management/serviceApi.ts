@@ -422,7 +422,6 @@ export const apiError = (e: unknown, fallback: string): string => {
   return first || d?.message || fallback;
 };
 
-/** Saves the difference between two supplier lists straight to the service, then returns the server's list. */
 export async function syncServiceSuppliers(id: number, prev: MappedSupplier[], next: MappedSupplier[]): Promise<MappedSupplier[]> {
   const keep = new Set(next.filter(s => s.mapId != null).map(s => s.mapId));
   for (const s of prev) if (s.mapId != null && !keep.has(s.mapId)) await unmapServiceSupplier(id, s.mapId);
@@ -433,10 +432,6 @@ export async function syncServiceSuppliers(id: number, prev: MappedSupplier[], n
 export type ServiceCategoryRow = ServiceBundle['service_categories'][number];
 
 const categoryCache = new Map<string, Promise<ServiceCategoryRow[]>>();
-/**
- * Service categories for the form's Service Category dropdown — the Service Category master list,
- * filtered by service_type, by classification for Other Operational (professional / utility / …), and Active only.
- */
 export function loadServiceCategories(type: ApiServiceType, classification?: string, force = false): Promise<ServiceCategoryRow[]> {
   const key = `${type}:${classification ?? ''}`;
   if (!categoryCache.has(key) || force) {
