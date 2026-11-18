@@ -377,13 +377,6 @@ trait HandlesDocxHtmlRoundtrip
         return $text;
     }
 
-    /** Convert a single <w:r> run to HTML (text + <br>/<tab>, with b/i/u + colour). */
-    private function xmlRunToHtml(\DOMElement $r, \DOMXPath $xp): string
-    {
-        $p = $this->xmlRunParts($r, $xp);
-        return $p ? $this->wrapRunText($p['text'], $p['fmt']) : '';
-    }
-
     /** Convert a <w:p> paragraph to <p>/<hN>, honouring style, alignment, breaks. */
     private function xmlParaToHtml(\DOMElement $p, \DOMXPath $xp): string
     {
