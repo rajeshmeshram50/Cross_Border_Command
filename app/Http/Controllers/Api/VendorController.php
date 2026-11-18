@@ -165,7 +165,7 @@ class VendorController extends Controller
                 // All address-contacts (primary + extras) so the list page can
                 // render the "+N" contact badge + Contact Persons popup.
                 'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',
-                'vendorType:id,name',
+                'vendorType:id,name,kind,service_type,classification',
                 'segment:id,name,regulatory_status',
                 // All mapped segments (vendor_segments pivot) so the list can
                 // render the Segment column + "+N" badge, not just the scalar one.
@@ -2094,7 +2094,8 @@ class VendorController extends Controller
                 ->get(['id', 'state_id', 'state_code', 'status']);
 
             return [
-                'vendor_types'          => $active(VendorTypes::class,          ['id', 'name']),
+                'vendor_types'          => $active(VendorTypes::class,          ['id', 'name', 'kind', 'service_type', 'classification'])
+                    ->map(fn ($t) => $t->toArray() + ['group' => $t->group])->values(),
                 'risk_levels'           => $active(RiskLevels::class,           ['id', 'name']),
                 'vendor_behaviour'      => $active(VendorBehaviour::class,      ['id', 'name']),
                 'segments'              => $active(Segments::class,             ['id', 'code', 'name', 'regulatory_status']),

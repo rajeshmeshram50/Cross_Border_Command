@@ -150,11 +150,20 @@ class ClmSupplierProfileController extends Controller
             return ['d' => $d, 't' => count($ids)];
         };
         // Map a supplier-type name → one of the three buckets.
-        $bucketForType = function (?string $name): string {
-            $n = mb_strtolower(trim((string) $name));
+        /* The stored kind, not the name. This matched EXACTLY ('material',
+           'logistic'), so the moment the types were renamed to "Material/ Goods"
+           and "FFD/ Transporter" every supplier fell through to services and
+           two of these three tables emptied. */
+        $bucketForType = function ($vendorType): string {
+            $kind = is_string($vendorType) ? null : ($vendorType->kind ?? null);
+            if ($kind === 'material')  return 'material';
+            if ($kind === 'logistics') return 'logistic';
+            if ($kind === 'services')  return 'services';
+
+            $n = mb_strtolower(trim((string) (is_string($vendorType) ? $vendorType : ($vendorType->name ?? ''))));
             if ($n === 'material')  return 'material';
             if ($n === 'logistic' || $n === 'logistics') return 'logistic';
-            return 'services';   // Tech / Advisory / Risk Services + anything else
+            return 'services';
         };
         // Segment regulatory tier → the Reg. Status pill value used by the
         // transaction-wise tables ('highly' → High, everything else → Low).
@@ -164,7 +173,7 @@ class ClmSupplierProfileController extends Controller
 
         /* ── Vendors. ── */
         $vendors = Vendor::query()->forUser($user)
-            ->with(['vendorType:id,name', 'primaryAddress:id,vendor_id,state_id'])
+            ->with(['vendorType:id,name,kind', 'primaryAddress:id,vendor_id,state_id'])
             ->orderBy('id')
             ->get();
 
@@ -208,7 +217,7 @@ class ClmSupplierProfileController extends Controller
                 'ship'  => $ship,
             ];
 
-            $bucket = $bucketForType(optional($v->vendorType)->name);
+            $bucket = $bucketForType($v->vendorType);
             if ($bucket === 'services') {
                 $row['sr'] = ++$counters['wos_svc']; $out['wos_svc'][] = $row;
             } elseif ($bucket === 'material') {
