@@ -83,6 +83,7 @@ class SourcingController extends Controller
             && Carbon::parse($t->due_date)->endOfDay()->isPast();
 
         $first = $t->products->sortBy('id')->first();
+        $progress = $total > 0 ? (int) round($done * 100 / $total) : 0;
 
         return [
             'id' => $t->code,
@@ -101,7 +102,11 @@ class SourcingController extends Controller
             'firstProduct' => $first->name ?? null,
             'moreProducts' => max(0, $total - 1),
             'pending' => $total - $done,
-            'progress' => $total > 0 ? (int) round($done * 100 / $total) : 0,
+            'progress' => $progress,
+            'progressPercent' => $progress.'%',
+            'totalProducts' => $total,
+            'completedProducts' => $done,
+            'mappedSuppliers' => (int) $t->products->sum(fn ($p) => (int) ($p->suppliers_count ?? 0)),
             'progressStatus' => $isComplete ? 'Completed' : 'In Progress',
         ];
     }
@@ -116,7 +121,7 @@ class SourcingController extends Controller
         }
 
         $targets = SourcingTarget::where('client_id', $user->client_id)
-            ->with('products:id,sourcing_target_id,status,source,name')
+            ->with(['products' => fn ($q) => $q->select('id', 'sourcing_target_id', 'status', 'source', 'name')->withCount('suppliers')])
             ->latest()
             ->get();
 
