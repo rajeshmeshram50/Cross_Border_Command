@@ -2487,20 +2487,28 @@ class PayrollController extends Controller
         if (!$period || $slips->isEmpty()) {
             return [];
         }
-        $patterns = \App\Models\Employee::withTrashed()
+        $employees = \App\Models\Employee::withTrashed()
             ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
-            ->pluck('weekly_off', 'id');
+            ->get(['id', 'weekly_off', 'date_of_joining']);
 
         $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
         $end   = (clone $start)->endOfMonth()->startOfDay();
 
         $out = [];
-        foreach ($patterns as $empId => $label) {
+        foreach ($employees as $e) {
+            /* Days before joining are out of scope, not off days — the same
+               guard attendanceDaysMap() applies, so the two agree (QA #166). */
+            $joined = $e->date_of_joining
+                ? Carbon::parse($e->date_of_joining)->startOfDay()->toDateString()
+                : null;
+
             $n = 0;
             for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
-                if (\App\Support\WeekOff::isOff((string) ($label ?? ''), $d)) $n++;
+                $ds = $d->toDateString();
+                if ($joined !== null && $ds < $joined) continue;
+                if (\App\Support\WeekOff::isOff((string) ($e->weekly_off ?? ''), $d)) $n++;
             }
-            $out[$empId] = $n;
+            $out[$e->id] = $n;
         }
         return $out;
     }
