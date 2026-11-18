@@ -938,9 +938,17 @@ class MyTeamController extends Controller
         if (!$user) return false;
         if ($user->user_type === 'super_admin') return true;
 
+        /* The approval hierarchy starts at the branch, so the pending queue
+           belongs to the branch user — not the client above them, who was
+           seeing every branch's claims in their inbox. The client tier keeps
+           its authority on Expense Management; this is the inbox only. */
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            return false;
+        }
+
         $moduleId = Module::where('slug', 'hr.expense')->value('id');
         if (!$moduleId) {
-            return in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
+            return $user->user_type === 'branch_user';
         }
         return Permission::where('user_id', $user->id)
             ->where('module_id', $moduleId)

@@ -598,16 +598,22 @@ class LeaveRequestController extends Controller
            tab strip counts across, so status has to be the last clause added or
            the counts would each be filtered by the tab that is already open. */
 
-        // Super admin sees everything. Client admin / branch user see their
-        // tenant's requests so HR can act regardless of who the direct
-        // reporting manager is. Anyone else only sees requests where they
-        // are the reporting manager of the requestor OR are explicitly
-        // named on the approval chain.
-        $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        /* Super admin sees everything, and a branch_user sees their branch —
+           the approval hierarchy STARTS at the branch, so that is the HR desk.
+           The client tier used to sit in the same blanket and so received every
+           branch's pending leave in its Inbox. It now takes the normal path and
+           sees only what it is actually named on, which still covers a Client
+           admin set as someone's reporting manager (matched by user id below).
+           Everyone else: reporting manager of the requestor, or named on the
+           approval chain. */
+        $isAdminScope = in_array($user->user_type, ['super_admin', 'branch_user'], true);
         $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = $user->employee_id;
-            if (!$myEmployeeId) {
+            // A login user with no employee row can still be named on a chain
+            // by user id (approver_user_id / approved_by), so only a user that
+            // is neither an employee nor an admin tier is given up on here.
+            if (!$myEmployeeId && !in_array($user->user_type, ['client_admin', 'client_user'], true)) {
                 return response()->json(['data' => []]);
             }
             // Pre-filter: anything in my tenant where I might appear on
@@ -630,23 +636,31 @@ class LeaveRequestController extends Controller
                 // My OWN leave requests — I'm the requestor, so the Leave page
                 // must show them (with their live status) even though I'm never
                 // an approver on my own chain. This is what a regular employee
-                // with `hr.leave` view expects to see.
-                $w->where('employee_id', $myEmployeeId)
-                  ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                })->orWhere('approved_by', $user->id)
+                // with `hr.leave` view expects to see. Skipped for a login with
+                // no employee row (a client admin), which has neither.
+                if ($myEmployeeId) {
+                    $w->where('employee_id', $myEmployeeId)
+                      ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                        $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                    });
+                }
+                $w->orWhere('approved_by', $user->id)
                   ->orWhere(function ($w2) use ($uid) {
                       $w2->where('approval_chain', 'ilike', '%"approver_user_id":' . $uid . ',%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '}%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . ',%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . '}%');
-                  })
-                  ->orWhere(function ($w2) use ($eid) {
-                      $w2->where('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . ',%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '}%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . ',%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . '}%');
                   });
+                // Only when there IS an employee id — matching on 0 would be a
+                // pattern no chain carries, but it is still a lie to ask for it.
+                if ($eid) {
+                    $w->orWhere(function ($w2) use ($eid) {
+                        $w2->where('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . ',%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '}%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . ',%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . '}%');
+                    });
+                }
             });
             if ($user->client_id) {
                 $q->where('client_id', $user->client_id);
@@ -1933,15 +1947,15 @@ class LeaveRequestController extends Controller
             return [];
         }
 
-        $userTypes = $role === 'branch_admin'
-            ? ['branch_user']
-            : ['branch_user', 'client_admin'];
-
+        /* HR is the BRANCH admin's desk. The client tier sits above the
+           hierarchy, so it used to receive every escalation in the tenant —
+           and branch_user was unscoped, so branch 2's admin got branch 3's.
+           Both roles now resolve to the requester's own branch admin. */
         $q = User::query()
-            ->whereIn('user_type', $userTypes)
+            ->where('user_type', 'branch_user')
             ->whereNotNull('email');
         if ($employee->client_id) $q->where('client_id', $employee->client_id);
-        if ($role === 'branch_admin' && $employee->branch_id) {
+        if ($employee->branch_id) {
             $q->where('branch_id', $employee->branch_id);
         }
 
