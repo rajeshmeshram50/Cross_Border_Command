@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * Bulk Sourcing target (Procure to Pay).
  *
- * Header row for a sourcing request: an auto per-client code (SRC-0001),
+ * Header row for a sourcing request: an auto per-client code (ST-001),
  * the "source from" mode, start/due dates, and the team member it is
  * assigned to. Product line items hang off it via products().
  */

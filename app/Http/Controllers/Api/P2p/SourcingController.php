@@ -380,7 +380,7 @@ class SourcingController extends Controller
         $user = $request->user();
         $seq = SourcingTarget::withTrashed()->where('client_id', $user->client_id)->count() + 1;
 
-        return $this->ok(['code' => sprintf('SRC-%03d', $seq)]);
+        return $this->ok(['code' => sprintf('ST-%03d', $seq)]);
     }
 
     public function store(Request $request)
@@ -407,7 +407,7 @@ class SourcingController extends Controller
         $target = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $seq = SourcingTarget::withTrashed()->where('client_id', $user->client_id)->count() + 1;
-            $code = sprintf('SRC-%03d', $seq);
+            $code = sprintf('ST-%03d', $seq);
 
             $assignee = $this->resolveAssignee($user->client_id, $data['assignee_id'] ?? null);
 

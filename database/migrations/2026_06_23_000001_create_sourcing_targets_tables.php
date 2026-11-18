@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
  * Bulk Sourcing Management (Procure to Pay).
  *
  *  sourcing_targets         → one row per sourcing request the user raises.
- *                             Header: auto code (SRC-001, per-client), the
+ *                             Header: auto code (ST-001, per-client), the
  *                             "source from" mode, start/due dates, and the
  *                             team member it is assigned to.
  *  sourcing_target_products → the product line items mapped to a target.
@@ -30,7 +30,7 @@ return new class extends Migration
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
 
-            $table->string('code', 32);                  // SRC-001 (sequential per client)
+            $table->string('code', 32);                  // ST-001 (sequential per client)
             $table->string('source', 16)->default('master'); // master|manual — primary entry mode
             $table->date('start_date');
             $table->date('due_date');

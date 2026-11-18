@@ -9,7 +9,7 @@
 export type SourceType = 'Product Master' | 'Manual Entry';
 
 export type SourcingTarget = {
-  /** SRC-001 — per-client sequential. */
+  /** ST-001 — per-client sequential. */
   code: string;
   /** Start date, ISO yyyy-mm-dd. Always the day the target was created. */
   startDate: string;

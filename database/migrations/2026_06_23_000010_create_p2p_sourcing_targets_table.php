@@ -21,7 +21,7 @@ return new class extends Migration
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
             $table->unsignedBigInteger('branch_id')->nullable()->index();
 
-            $table->string('code', 16);                         // SRC-001 (per-client sequential)
+            $table->string('code', 16);                         // ST-001 (per-client sequential)
             $table->string('source', 16)->default('master');    // master | manual
 
             $table->date('start_date')->nullable();
