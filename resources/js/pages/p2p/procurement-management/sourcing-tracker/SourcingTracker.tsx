@@ -1,11 +1,17 @@
-import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { Shimmer } from '../../../../components/ui/Shimmer';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
+import api from '../../../../api';
+// Type-only: the Add Supplier form itself stays lazy-loaded (below).
+import type { SupplierPrefill, VendorPayload } from '../../p2p-master-management/supplier-management/AddVendorModal';
+import { apiErrorMessage } from './apiError';
+import type { MapEdit } from './MapSupplierModal';
 import {
-  DUMMY_TARGETS, ME, isComplete, progressOf, tatState, type SourcingTarget, type TargetDraft,
+  fromApi, progressOf, tatState, type ApiTargetRow, type SourcingTarget,
 } from './data';
 import type { ReportProduct } from './targetProducts';
 import { dmy, initials } from './format';
@@ -23,12 +29,13 @@ const AddVendorModal = lazy(() => import('../../p2p-master-management/supplier-m
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sourcing Management Tracker — Procure to Pay (P2P) · Procurement Management.
- * Route: /p2p/sourcing-tracker. DESIGN BUILD on dummy data (./data.ts).
+ * Route: /p2p/sourcing-tracker.
  *
  * The markup follows the Figma prototype element for element, and
- * sourcing-tracker.css carries the Figma's computed values, so the page
- * matches it pixel for pixel. The API is wired in after the design is
- * signed off. Bulk Sourcing is untouched.
+ * sourcing-tracker.css carries the Figma's computed values. The list is
+ * GET /p2p/sourcing-targets?tab=all|created|assigned: the server does the
+ * tab, search and paging; data.counts fills the three badges. Bulk Sourcing
+ * reads the same targets and is untouched.
  * ───────────────────────────────────────────────────────────────────────── */
 
 type MainTab = 'targets' | 'rfq';
@@ -67,12 +74,19 @@ const SUB_TABS: { key: SubTab; label: string; icon: ReactNode }[] = [
 const RFQ_COUNT = 129;
 
 /* ── Loading ──────────────────────────────────────────────────────────────
-   Page open and tab switch show skeleton rows in the table's own grid (same .sct-row class, so
-   the header stays and the auto-fit page size keeps measuring). Design build: the data is dummy
-   and would arrive in the same frame, so LOAD_PREVIEW_MS stands in for the API round trip —
-   replace it with the real request when the API lands. */
-const LOAD_PREVIEW_MS = 600;
-const SWAP_PREVIEW_MS = 400;
+   While a page is fetched the table shows skeleton rows in its own grid (same .sct-row class, so
+   the header stays and the auto-fit page size keeps measuring). */
+
+/** Typing in the search waits this long before asking the server. */
+const SEARCH_DEBOUNCE_MS = 300;
+
+type ListResponse = {
+  data?: {
+    rows?: ApiTargetRow[];
+    counts?: Partial<Record<SubTab, number>>;
+    pagination?: { page?: number; total?: number };
+  };
+};
 
 /* One thin, even bar per column (like the CLM lists): calm while loading, and every column keeps
    its place so nothing jumps when the rows arrive. Widths are fixed per column, not random. */
@@ -91,8 +105,11 @@ const SkeletonRows = memo(function SkeletonRows({ n }: { n: number }) {
 });
 
 /* ── Row ────────────────────────────────────────────────────────────────── */
-const TargetRow = memo(function TargetRow({ row, sr, onAction }: {
-  row: SourcingTarget; sr: number; onAction: (a: RowAction, row: SourcingTarget) => void;
+const TargetRow = memo(function TargetRow({ row, sr, canEdit, onAction }: {
+  row: SourcingTarget; sr: number;
+  /** Only the target's creator may edit it (the API answers 403 to anyone else). */
+  canEdit: boolean;
+  onAction: (a: RowAction, row: SourcingTarget) => void;
 }) {
   const tat = tatState(row);
   const { done, pending, pct, full } = progressOf(row);
@@ -161,9 +178,19 @@ const TargetRow = memo(function TargetRow({ row, sr, onAction }: {
       </span>
       <span role="cell" className="sct-c">
         <span className="sct-actions">
-          <Tooltip label="Edit Sourcing Target">
-            <button type="button" className="sct-edit" aria-label={`Edit ${row.code}`} onClick={() => onAction('edit', row)}><IcoEdit size={15} sw={2.4} /></button>
-          </Tooltip>
+          {canEdit ? (
+            <Tooltip label="Edit Sourcing Target">
+              <button type="button" className="sct-edit" aria-label={`Edit ${row.code}`} onClick={() => onAction('edit', row)}><IcoEdit size={15} sw={2.4} /></button>
+            </Tooltip>
+          ) : (
+            // Kept in place (the column does not shift) but off: a disabled button gets no hover,
+            // so the tooltip sits on a wrapper.
+            <Tooltip label="Only the creator can edit this target">
+              <span className="sct-frozen-wrap">
+                <button type="button" className="sct-edit is-off" disabled aria-label={`Edit ${row.code} — only the creator can edit`}><IcoEdit size={15} sw={2.4} /></button>
+              </span>
+            </Tooltip>
+          )}
           {/* On tablet and phone the label hides and the button is icon-only;
               the tooltip and aria-label still name it. */}
           <Tooltip label="Sourcing Target Report">
@@ -195,45 +222,47 @@ const HEAD = (
 /* ── Page ───────────────────────────────────────────────────────────────── */
 export default function SourcingTracker() {
   const toast = useToast();
+  const { user } = useAuth();
+  const myId = user?.id != null ? String(user.id) : null;
   const [mainTab, setMainTab] = useState<MainTab>('targets');
   const [sub, setSub] = useState<SubTab>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [targets, setTargets] = useState<SourcingTarget[]>(DUMMY_TARGETS);
+  // The current page of the current tab, as the server returned it.
+  const [pageRows, setPageRows] = useState<SourcingTarget[]>([]);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<SubTab, number>>({ all: 0, created: 0, assigned: 0 });
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  // Bumped to fetch the same page again (Retry, after a save).
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
   const [assignOpen, setAssignOpen] = useState(false);
   const [editing, setEditing] = useState<SourcingTarget | null>(null);
   const [reportRow, setReportRow] = useState<SourcingTarget | null>(null);
   // Total Products → the read-only Product List popup ("View More").
   const [productsRow, setProductsRow] = useState<SourcingTarget | null>(null);
-  // Convert to Supplier (CS-2222): the New Supplier being converted, and the ones already done.
-  // The real Supplier Management form saves the supplier; our mapping side is dummy, so
-  // "converted" is remembered on screen only (the card then reads Master). API later.
-  const [converting, setConverting] = useState<{ key: string; name: string } | null>(null);
+  /* Convert to Supplier (CS-2222): 1. GET /p2p/new-suppliers/{id}/convert pre-fills the real Add
+     Supplier form (Supplier Management); 2. that form saves the supplier as usual; 3. POST
+     /p2p/new-suppliers/{id}/convert { vendor_id } links it, and its mappings become Supplier Master
+     rows. The report closes while the form is open (FR-2222-02) and comes back after. */
+  const [converting, setConverting] = useState<{
+    supplierId: number; name: string; row: SourcingTarget | null;
+    scope: 'domestic' | 'international'; prefill: SupplierPrefill;
+  } | null>(null);
   const [converted, setConverted] = useState<ReadonlySet<string>>(() => new Set());
-  const [mapTarget, setMapTarget] = useState<{ row: SourcingTarget; product: ReportProduct } | null>(null);
+  const [mapTarget, setMapTarget] = useState<{ row: SourcingTarget; product: ReportProduct; edit?: MapEdit } | null>(null);
 
-  /* As the Figma: "All" = created by me, then assigned to me, each target once. Built from the
-     in-memory dummy data; the loading skeleton below covers the wait the API will add. */
-  const { lists, counts } = useMemo(() => {
-    const created = targets.filter(r => r.createdBy === ME);
-    const assigned = targets.filter(r => r.assignedTo === ME);
-    const seen = new Set<string>();
-    const all = [...created, ...assigned].filter(r => (seen.has(r.code) ? false : (seen.add(r.code), true)));
-    return {
-      lists: { all, created, assigned },
-      counts: { all: all.length, created: created.length, assigned: assigned.length } as Record<SubTab, number>,
-    };
-  }, [targets]);
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return lists[sub];
-    return lists[sub].filter(r => [
-      r.code, r.sources.join(' '), r.createdBy, r.assignedTo, r.firstProduct,
-      isComplete(r) ? 'completed' : 'in progress', tatState(r) === 'overdue' ? 'overdue' : '',
-      dmy(r.startDate), dmy(r.dueDate),
-    ].join(' ').toLowerCase().includes(q));
-  }, [lists, sub, query]);
+  // Search goes to the server (q) once typing pauses.
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    // A new search starts on page 1; the page resets with the search itself, so typing fires no extra request.
+    const t = window.setTimeout(() => {
+      const next = query.trim();
+      setQ(prev => { if (prev !== next) setPage(1); return next; });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
   /* Rows per page fit the table area, as on every app list (useFitPageSize):
      no row is cut off at the bottom. The user's own pick in the pager sticks. */
@@ -261,29 +290,55 @@ export default function SourcingTracker() {
   }, []);
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
-  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safePage = Math.min(page, pages);
-  const start = (safePage - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
-
-  // Loading: the first open, then a short swap on every tab switch (skeleton rows meanwhile).
-  const [booting, setBooting] = useState(true);
-  const [swapping, setSwapping] = useState(false);
-  const swapTimer = useRef<number | undefined>(undefined);
+  /* One request per tab / page / page size / search. A newer request wins: the answer of an older
+     one that arrives late is dropped, so a fast tab switch never shows the wrong tab's rows. */
+  const reqSeq = useRef(0);
+  // What the last answer covered: when only the page size grows and that answer already held every
+  // row, there is nothing new to ask for (the auto-fit re-measures once the real rows are in).
+  const lastServed = useRef<{ key: string; complete: boolean } | null>(null);
   useEffect(() => {
-    const t = window.setTimeout(() => setBooting(false), LOAD_PREVIEW_MS);   // API call goes here
-    return () => { window.clearTimeout(t); window.clearTimeout(swapTimer.current); };
-  }, []);
-  const swap = () => {
-    setSwapping(true);
-    window.clearTimeout(swapTimer.current);
-    swapTimer.current = window.setTimeout(() => setSwapping(false), SWAP_PREVIEW_MS);   // API call goes here
-  };
-  const loading = booting || swapping;
+    if (mainTab !== 'targets') return;
+    const key = `${sub}|${q}|${reloadKey}`;
+    if (page === 1 && lastServed.current?.key === key && lastServed.current.complete) { setLoading(false); return; }
+    const seq = ++reqSeq.current;
+    setLoading(true);
+    setFailed(false);
+    // A short wait folds the quick page-size changes of the first layout into one request.
+    const t = window.setTimeout(() => {
+      api.get<ListResponse>('/p2p/sourcing-targets', {
+        params: { tab: sub, page, per_page: pageSize, ...(q ? { q } : {}) },
+      })
+        .then(res => {
+          if (seq !== reqSeq.current) return;
+          const d = res.data?.data;
+          const list = d?.rows ?? [];
+          const all = d?.pagination?.total ?? 0;
+          setPageRows(list.map(fromApi));
+          setTotal(all);
+          setCounts({ all: d?.counts?.all ?? 0, created: d?.counts?.created ?? 0, assigned: d?.counts?.assigned ?? 0 });
+          // The server clamps a page past the end (e.g. after the page size grew); follow it.
+          const served = d?.pagination?.page ?? page;
+          lastServed.current = { key, complete: served === 1 && list.length >= all };
+          if (served !== page) setPage(served);
+        })
+        .catch(() => {
+          if (seq !== reqSeq.current) return;
+          lastServed.current = null;
+          setPageRows([]); setTotal(0); setFailed(true);
+        })
+        .finally(() => { if (seq === reqSeq.current) setLoading(false); });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [mainTab, sub, page, pageSize, q, reloadKey]);
+
+  // The badges read 0 only until the first answer arrives.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loading && !booted) setBooted(true); }, [loading, booted]);
+  const start = (page - 1) * pageSize;
   // Re-fit on the real rows once the skeleton is gone (it has its own row height).
-  useEffect(() => { if (!loading && rows.length) refit(); }, [loading, rows.length, refit]);
-  const switchMain = (t: MainTab) => { if (t === mainTab) return; setMainTab(t); setPage(1); setQuery(''); swap(); };
-  const switchSub = (t: SubTab) => { if (t === sub) return; setSub(t); setPage(1); setQuery(''); swap(); };
+  useEffect(() => { if (!loading && pageRows.length) refit(); }, [loading, pageRows.length, refit]);
+  const switchMain = (t: MainTab) => { if (t === mainTab) return; setMainTab(t); setPage(1); setQuery(''); setQ(''); };
+  const switchSub = (t: SubTab) => { if (t === sub) return; setSub(t); setPage(1); setQuery(''); setQ(''); };
 
   // Row actions open the popups. Callbacks are stable (useCallback) so a page re-render does not
   // re-run the popups' Esc and scroll-lock effects.
@@ -296,34 +351,98 @@ export default function SourcingTracker() {
   const closeProducts = useCallback(() => setProductsRow(null), []);
   const closeReport = useCallback(() => setReportRow(null), []);
   const closeMap = useCallback(() => setMapTarget(null), []);
-  const closeConvert = useCallback(() => setConverting(null), []);
+  // Cancelled: the supplier stays a New Supplier with its mapping (V-T46); the report comes back.
+  const closeConvert = useCallback(() => {
+    if (converting?.row) setReportRow(converting.row);
+    setConverting(null);
+  }, [converting]);
   const openMap = useCallback((row: SourcingTarget, product: ReportProduct) => setMapTarget({ row, product }), []);
-  // Add: the current user creates it, and the list switches to Created by Me. Edit: Created By is kept.
-  const saveTarget = useCallback((t: TargetDraft) => {
-    if (editing) {
-      const updated = { ...t, createdBy: editing.createdBy };
-      setTargets(prev => prev.map(r => (r.code === t.code ? updated : r)));
-      toast.info(`${t.code} updated`, `${t.totalProducts} product(s) on this target.`);
+  // Edit a mapped New Supplier: the same Map Supplier popup, opened on its form with the saved values.
+  const openEditSupplier = useCallback((row: SourcingTarget, product: ReportProduct, edit: MapEdit) => setMapTarget({ row, product, edit }), []);
+  // Saved on the server: Add switches to Created by Me (the new target is on top); then the list is
+  // fetched again so it shows what the server holds.
+  const saveTarget = useCallback((r: { code: string; count: number; assignee: string; isEdit: boolean }) => {
+    if (r.isEdit) {
+      toast.success(`${r.code} updated`, `${r.count} product(s) on this target.`);
     } else {
-      setTargets(prev => [{ ...t, createdBy: ME }, ...prev]);
-      setSub('created'); setPage(1); setQuery('');
-      toast.info(`${t.code} created`, `${t.totalProducts} product(s) assigned to ${t.assignedTo}.`);
+      setSub('created'); setPage(1); setQuery(''); setQ('');
+      toast.success(`${r.code} created`, `${r.count} product(s) assigned to ${r.assignee || 'the team member'}.`);
     }
     setAssignOpen(false); setEditing(null);
-  }, [editing, toast]);
+    reload();
+  }, [toast, reload]);
+  // After a supplier is mapped the open report and the list load again (counts and status change).
+  const [reportRefresh, setReportRefresh] = useState(0);
   const finishMap = useCallback((supplier: string) => {
-    if (mapTarget) toast.info('Supplier mapped', `${supplier} mapped to ${mapTarget.product.name}.`);
-    setMapTarget(null);
-  }, [mapTarget, toast]);
-  const finishConvert = useCallback((payload: { companyName: string }) => {
-    if (converting) {
-      setConverted(prev => new Set(prev).add(converting.key));
-      toast.success(`${payload.companyName || converting.name} added to Supplier Master`, 'The mapping now shows this supplier as Master.');
+    if (mapTarget) {
+      if (mapTarget.edit) toast.success('Supplier updated', `${supplier} on ${mapTarget.product.name} is updated.`);
+      else toast.info('Supplier mapped', `${supplier} mapped to ${mapTarget.product.name}.`);
     }
+    setMapTarget(null);
+    setReportRefresh(n => n + 1);
+    reload();
+  }, [mapTarget, toast, reload]);
+  const finishConvert = useCallback(async (payload: VendorPayload) => {
+    const c = converting;
     setConverting(null);
-  }, [converting, toast]);
+    if (!c) return;
+    const back = () => { if (c.row) setReportRow(c.row); };
+    if (!payload.vendorId) {
+      toast.error('Supplier saved, not linked', `${payload.companyName || c.name} was saved, but its id did not come back. Open Convert to Supplier again to link it.`);
+      back();
+      return;
+    }
+    try {
+      const r = await api.post<{ data?: { message?: string } }>(`/p2p/new-suppliers/${c.supplierId}/convert`, { vendor_id: payload.vendorId });
+      setConverted(prev => new Set(prev).add(`new-${c.supplierId}`));
+      toast.success('Converted to Supplier', r.data?.data?.message || `${payload.companyName || c.name} is now in the Supplier Master.`);
+      setReportRefresh(n => n + 1);
+      reload();
+    } catch (e) {
+      toast.error('Supplier saved, not linked', apiErrorMessage(e, 'The supplier was saved but could not be linked. Please try again.'));
+    }
+    back();
+  }, [converting, toast, reload]);
   // FR-2222-02: the Mapped Suppliers popup and the report close, then the Add Supplier form opens.
-  const startConvert = useCallback((key: string, name: string) => { setReportRow(null); setConverting({ key, name }); }, []);
+  const startConvert = useCallback(async (supplierId: number, name: string) => {
+    const row = reportRow;
+    setReportRow(null);
+    type Prefill = {
+      origin?: string; converted?: boolean;
+      identity?: { company_name?: string | null; legal_name?: string | null; segment_id?: number | null } | null;
+      address?: {
+        address_line?: string | null; country_id?: number | null; state_id?: number | null; state_code?: string | null;
+        city?: string | null; google_location?: string | null; contact_name?: string | null; contact_no?: string | null; email?: string | null;
+      } | null;
+    };
+    try {
+      const r = await api.get<{ data: Prefill }>(`/p2p/new-suppliers/${supplierId}/convert`);
+      const d = r.data?.data ?? {};
+      if (d.converted) {
+        toast.info(`${name} is already in the Supplier Master`, 'Its mappings show it as Master.');
+        setReportRefresh(n => n + 1);
+        if (row) setReportRow(row);
+        return;
+      }
+      const a = d.address;
+      setConverting({
+        supplierId, name, row,
+        scope: d.origin === 'international' ? 'international' : 'domestic',
+        prefill: {
+          companyName: d.identity?.company_name ?? name,
+          legalName: d.identity?.legal_name,
+          segmentId: d.identity?.segment_id,
+          address: a ? {
+            addressLine: a.address_line, countryId: a.country_id, stateId: a.state_id, stateCode: a.state_code,
+            city: a.city, googleLocation: a.google_location, contactName: a.contact_name, contactNo: a.contact_no, email: a.email,
+          } : null,
+        },
+      });
+    } catch (e) {
+      toast.error('Couldn’t open Convert to Supplier', apiErrorMessage(e, 'Please try again.'));
+      if (row) setReportRow(row);
+    }
+  }, [reportRow, toast]);
 
   const isTargets = mainTab === 'targets';
 
@@ -362,7 +481,7 @@ export default function SourcingTracker() {
         <div className="sct-mainrow">
           <div className="sct-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={isTargets} className={`sct-tab${isTargets ? ' is-active' : ''}`} onClick={() => switchMain('targets')}>
-              <span className="sct-tab__ico"><IcoTarget /></span>Sourcing Target Management<span className="sct-tab__c">{booting ? 0 : counts.all}</span>
+              <span className="sct-tab__ico"><IcoTarget /></span>Sourcing Target Management<span className="sct-tab__c">{booted ? counts.all : 0}</span>
             </button>
             {/* Frozen with Create RFQ (out of scope, BR 1.2): the tab shows but cannot be opened. */}
             <Tooltip label="RFQ Management — coming soon">
@@ -376,8 +495,8 @@ export default function SourcingTracker() {
           <div className="sct-search">
             <IcoSearch size={15} />
             <input type="text" autoComplete="off" value={query} placeholder="Search by ID, person, source or status..."
-              aria-label="Search sourcing targets" onChange={e => { setQuery(e.target.value); setPage(1); }} />
-            {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => { setQuery(''); setPage(1); }}><IcoX size={13} sw={2.4} /></button>}
+              aria-label="Search sourcing targets" onChange={e => setQuery(e.target.value)} />
+            {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => setQuery('')}><IcoX size={13} sw={2.4} /></button>}
           </div>
         </div>
 
@@ -387,7 +506,7 @@ export default function SourcingTracker() {
               {SUB_TABS.map(t => (
                 <button key={t.key} type="button" role="tab" aria-selected={sub === t.key}
                   className={`sct-subtab${sub === t.key ? ' is-active' : ''}`} onClick={() => switchSub(t.key)}>
-                  <span className="sct-subtab__ico">{t.icon}</span>{t.label}<span className="sct-subtab__c">{booting ? 0 : counts[t.key]}</span>
+                  <span className="sct-subtab__ico">{t.icon}</span>{t.label}<span className="sct-subtab__c">{booted ? counts[t.key] : 0}</span>
                 </button>
               ))}
             </div>
@@ -405,15 +524,24 @@ export default function SourcingTracker() {
             <div className="sct-grid" role="table" aria-label="Sourcing targets" aria-busy={loading || undefined}>
               {HEAD}
               {loading ? <SkeletonRows n={pageSize} />
+              : failed
+                ? (
+                  <div className="sct-empty sct-empty--list" role="row">
+                    <span className="sct-empty__ico" aria-hidden><IcoX size={15} /></span>
+                    <b role="cell">Couldn’t load sourcing targets</b>
+                    <span role="cell">Check your connection and try again.</span>
+                    <button type="button" className="sct-retry" onClick={reload}>Retry</button>
+                  </div>
+                )
               : pageRows.length === 0
                 ? (
                   <div className="sct-empty sct-empty--list" role="row">
                     <span className="sct-empty__ico" aria-hidden><IcoSearch size={15} /></span>
-                    <b role="cell">{query ? 'No results found' : 'No sourcing targets yet'}</b>
-                    <span role="cell">{query ? 'Try a different search term.' : 'Use “Assign Sourcing Target” to create the first one.'}</span>
+                    <b role="cell">{q ? 'No results found' : 'No sourcing targets yet'}</b>
+                    <span role="cell">{q ? 'Try a different search term.' : 'Use “Assign Sourcing Target” to create the first one.'}</span>
                   </div>
                 )
-                : pageRows.map((r, i) => <TargetRow key={r.code} row={r} sr={start + i + 1} onAction={onAction} />)}
+                : pageRows.map((r, i) => <TargetRow key={r.code} row={r} sr={start + i + 1} canEdit={!!myId && r.createdById === myId} onAction={onAction} />)}
             </div>
           )}
         </div>
@@ -421,8 +549,8 @@ export default function SourcingTracker() {
         {isTargets && (
           <WorklistPager
             className="wl-teal"
-            total={rows.length}
-            page={safePage}
+            total={total}
+            page={page}
             pageSize={pageSize}
             onPage={setPage}
             onPageSize={n => { choosePageSize(n); setPage(1); }}
@@ -436,10 +564,9 @@ export default function SourcingTracker() {
       {(assignOpen || editing) && (
         <Suspense fallback={null}>
           <AssignTargetModal
-            existing={targets}
             initial={editing ?? undefined}
             onClose={closeAssign}
-            onSave={saveTarget}
+            onSaved={saveTarget}
           />
         </Suspense>
       )}
@@ -452,24 +579,31 @@ export default function SourcingTracker() {
             row={reportRow}
             onClose={closeReport}
             onMapSupplier={openMap}   // the report stays open behind
+            onEditSupplier={openEditSupplier}
             converted={converted}
             onConvert={startConvert}
+            canMap={!!myId && reportRow.assigneeId === myId}
+            refreshKey={reportRefresh}
           />
         </Suspense>
       )}
       {converting && (
         <Suspense fallback={null}>
           <AddVendorModal
+            scope={converting.scope}
+            prefill={converting.prefill}
             canMapProducts={false}
             onClose={closeConvert}   // cancelled: stays New Supplier with its mapping (V-T46)
-            onSubmit={finishConvert}
+            onSubmit={p => { void finishConvert(p); }}
           />
         </Suspense>
       )}
       {mapTarget && (
         <Suspense fallback={null}>
           <MapSupplierModal
+            targetCode={mapTarget.row.code}
             product={mapTarget.product}
+            edit={mapTarget.edit}
             onClose={closeMap}
             onMapped={finishMap}
           />

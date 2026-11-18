@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * Sourcing Management Tracker — list page. DESIGN BUILD.
+ * Sourcing Management Tracker — list page.
  *
  * Every number here is the Figma's own: taken from the computed styles of the
  * Figma prototype (Kryptone_Service Master.html → Sourcing Management
@@ -853,6 +853,22 @@
   box-shadow: 0 8px 20px -4px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
+/* Edit on a target someone else created: same place, muted, no lift (only the creator may edit). */
+.sct-edit.is-off,
+.sct-edit.is-off:hover {
+  background: #e2e8f0;
+  color: #94a3b8;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  cursor: not-allowed;
+}
+[data-bs-theme="dark"] .sct-edit.is-off,
+[data-bs-theme="dark"] .sct-edit.is-off:hover {
+  background: rgba(148, 163, 184, .14);
+  color: #64748b;
+}
+
 /* Empty state */
 .sct-empty {
   display: flex;
@@ -892,6 +908,26 @@
   line-height: 1.55;
   color: #64748b;
 }
+
+/* Retry on the "Couldn't load" state — a small teal outline button. */
+.sct-retry {
+  margin-top: 8px;
+  height: 32px;
+  padding: 0 16px;
+  border: 1.5px solid #a5e4f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #0e7490;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s;
+}
+.sct-retry:hover { background: #ecfeff; border-color: #22d3ee; }
+.sct-retry:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+[data-bs-theme="dark"] .sct-retry { background: transparent; border-color: rgba(34, 211, 238, .45); color: #67e8f9; }
+[data-bs-theme="dark"] .sct-retry:hover { background: rgba(34, 211, 238, .12); }
 
 /* ── Pager: the app's shared WorklistPager (teal) ─────────────────────────
    Only fitted into the card here: no gap above it, square bottom corners
@@ -1399,6 +1435,31 @@ body .sct-scroller::-webkit-scrollbar-button {
   animation: sct-spin .7s linear infinite;
 }
 @keyframes sct-spin { to { transform: rotate(360deg); } }
+/* The spinner on a light card ("Loading the products…" in the popups). In this always-loaded file
+   because the popups' own CSS loads only with the popup. */
+.sct-spin.sct-spin--dark {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 6px;
+  border-color: rgba(8, 145, 178, .25);
+  border-top-color: #0891b2;
+}
+/* Retry after a popup's products could not be loaded (Report, Product List). */
+.str-retry {
+  margin-left: 8px;
+  height: 28px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e7490;
+  background: #fff;
+  border: 1.5px solid #a5e4f0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.str-retry:hover { background: #ecfeff; border-color: #22d3ee; }
+[data-bs-theme="dark"] .str-retry { background: transparent; color: #67e8f9; border-color: rgba(34, 211, 238, .45); }
 @media (prefers-reduced-motion: reduce) {
   .sct-spin { animation-duration: 1.6s; }
 }
