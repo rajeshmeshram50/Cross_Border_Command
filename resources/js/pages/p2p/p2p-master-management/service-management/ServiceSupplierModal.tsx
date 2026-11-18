@@ -12,6 +12,7 @@ import {
 } from './serviceData';
 import { loadServiceBundle, loadSupplierPool, type BundleVendor, type ServiceBundle } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
+import { SavingLock, ShimSupplierRows } from './serviceLoading';
 import '../product-management/product-management.css';
 import './service-management.css';
 import './service-suppliers.css';
@@ -115,11 +116,12 @@ function OriginCard({ origin, available, onPick }: { origin: SupplierOrigin; ava
 }
 
 export function SupplierMapPanel({
-  serviceName, suppliers, onChange, defaultGst,
+  serviceName, suppliers, onChange, defaultGst, loading = false,
 }: {
   serviceName: string;
   suppliers: MappedSupplier[];
   onChange: (next: MappedSupplier[]) => void;
+  loading?: boolean;
   /** GST % mapped on the service — prefills a domestic supplier's GST %. */
   defaultGst?: number;
 }) {
@@ -275,13 +277,15 @@ export function SupplierMapPanel({
         <div className="svs-card-head">
           <span className="svs-card-ico">{SVC_ICONS.mapUser}</span>
           <span className="svs-card-title">Mapped Service Suppliers</span>
-          {suppliers.length > 0 && <span className="svs-card-count">{suppliers.length}</span>}
-          <button type="button" className="svs-btn svs-btn--primary svs-card-act" onClick={openChooser}>
+          {!loading && suppliers.length > 0 && <span className="svs-card-count">{suppliers.length}</span>}
+          <button type="button" className="svs-btn svs-btn--primary svs-card-act" onClick={openChooser} disabled={loading}>
             {SVC_ICONS.plus} Map Supplier
           </button>
         </div>
 
-        {suppliers.length === 0 ? (
+        {loading ? (
+          <ShimSupplierRows />
+        ) : suppliers.length === 0 ? (
           <div className="svs-empty">
             <b>No suppliers mapped yet</b>
             <span>
@@ -594,11 +598,13 @@ export function SupplierMapPanel({
 }
 
 export default function ServiceSupplierModal({
-  code, serviceName, suppliers, onClose, onChange, defaultGst,
+  code, serviceName, suppliers, onClose, onChange, defaultGst, loading = false, busy = false,
 }: {
   code: string;
   serviceName: string;
   defaultGst?: number;
+  loading?: boolean;
+  busy?: boolean;
   suppliers: MappedSupplier[];
   onClose: () => void;
   onChange: (next: MappedSupplier[]) => void;
@@ -613,6 +619,7 @@ export default function ServiceSupplierModal({
   return createPortal((
     <div className="svs-overlay svs-teal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="svs-modal" role="dialog" aria-modal="true" aria-label={`Map Service Suppliers · ${code}`}>
+        {busy && <SavingLock label="Saving suppliers…" />}
         <div className="svs-head">
           <div className="svs-head-ico">{SVC_ICONS.mapUser}</div>
           <div className="svs-head-txt">
@@ -622,7 +629,7 @@ export default function ServiceSupplierModal({
           <button type="button" className="svs-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
         </div>
         <div className="svs-body">
-          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} />
+          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} loading={loading} />
         </div>
         <div className="svs-foot">
           <span className="svs-note">{SVC_ICONS.info} Changes apply to <code>{code}</code></span>

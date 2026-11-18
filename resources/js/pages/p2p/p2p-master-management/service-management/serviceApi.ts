@@ -254,7 +254,7 @@ interface ApiDetail {
   status: 'draft' | 'active' | 'inactive';
   step_completed: number;
   images?: Array<{ id: number; is_primary: boolean; original_name: string | null; file_path: string }>;
-  attachments?: Array<{ id: number; original_name: string | null }>;
+  attachments?: Array<{ id: number; original_name: string | null; file_path?: string; size?: number | null }>;
   suppliers?: ApiSupplierRow[];
 }
 
@@ -263,8 +263,14 @@ export interface ExistingImage { id: number; isPrimary: boolean; name: string; p
 const toImages = (rows?: ApiDetail['images']): ExistingImage[] =>
   (rows ?? []).map(i => ({ id: i.id, isPrimary: !!i.is_primary, name: i.original_name ?? 'image', path: i.file_path }));
 
+export interface SavedAttachment { id: number; name: string; path: string; size?: number }
+
+const toAttachments = (rows?: ApiDetail['attachments']): SavedAttachment[] =>
+  (rows ?? []).filter(a => a.file_path).map(a => ({ id: a.id, name: a.original_name ?? 'attachment', path: a.file_path!, size: a.size ?? undefined }));
+
 export interface ServiceDetail {
   record: ServiceRecord;
+  attachments: SavedAttachment[];
   attachmentIds: number[];
   hasPrimaryImage: boolean;
   images: ExistingImage[];
@@ -285,6 +291,7 @@ export async function fetchServiceDetail(id: number): Promise<ServiceDetail> {
   const atts = d.attachments ?? [];
   return {
     attachmentIds: atts.map(a => a.id),
+    attachments: toAttachments(d.attachments),
     hasPrimaryImage: (d.images ?? []).some(i => i.is_primary),
     images: toImages(d.images),
     record: {
@@ -328,7 +335,8 @@ export interface CoreFiles { att?: File; img1?: File[]; img2?: File[] }
 export async function saveServiceCore(args: {
   id?: number; kind: ServiceKind; vals: ServiceRecord['vals']; files: CoreFiles; replaceAttachmentIds?: number[];
   removeImageIds?: number[];
-}): Promise<{ id: number; code: string; images: ExistingImage[]; attachmentIds: number[] }> {
+  removeAttachmentIds?: number[];
+}): Promise<{ id: number; code: string; images: ExistingImage[]; attachmentIds: number[]; attachments: SavedAttachment[] }> {
   const { id, kind, vals, files } = args;
   const fd = new FormData();
   const put = (k: string, v: string | number | boolean | null | undefined) => {
@@ -371,10 +379,9 @@ export async function saveServiceCore(args: {
       put('billing_frequency', vals.billing);
     }
   }
-  if (files.att) {
-    fd.append('attachment_files[]', files.att);
-    (args.replaceAttachmentIds ?? []).forEach(a => fd.append('remove_attachment_ids[]', String(a)));
-  }
+  if (files.att) fd.append('attachment_files[]', files.att);
+  const dropAtt = new Set([...(files.att ? args.replaceAttachmentIds ?? [] : []), ...(args.removeAttachmentIds ?? [])]);
+  dropAtt.forEach(a => fd.append('remove_attachment_ids[]', String(a)));
   const res = await api.post<ApiDetail>('/p2p/services/step/core', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -383,6 +390,7 @@ export async function saveServiceCore(args: {
     code: res.data.code,
     images: toImages(res.data.images),
     attachmentIds: (res.data.attachments ?? []).map(a => a.id),
+    attachments: toAttachments(res.data.attachments),
   };
 }
 
@@ -413,3 +421,11 @@ export const apiError = (e: unknown, fallback: string): string => {
   const first = d?.errors ? Object.values(d.errors)[0]?.[0] : undefined;
   return first || d?.message || fallback;
 };
+
+/** Saves the difference between two supplier lists straight to the service, then returns the server's list. */
+export async function syncServiceSuppliers(id: number, prev: MappedSupplier[], next: MappedSupplier[]): Promise<MappedSupplier[]> {
+  const keep = new Set(next.filter(s => s.mapId != null).map(s => s.mapId));
+  for (const s of prev) if (s.mapId != null && !keep.has(s.mapId)) await unmapServiceSupplier(id, s.mapId);
+  for (const s of next) if (s.mapId == null) await addServiceSupplier(id, s);
+  return fetchServiceSuppliers(id);
+}

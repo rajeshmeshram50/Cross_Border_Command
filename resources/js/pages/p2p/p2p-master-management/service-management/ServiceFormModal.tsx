@@ -8,12 +8,14 @@ import {
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceVals,
 } from './serviceData';
 import {
-  apiError, loadServiceBundle, loadServiceFile, saveServiceCore, saveServiceSuppliersStep, segmentReg,
-  type ExistingImage, type Opt, type ServiceBundle,
+  apiError, fetchServiceSuppliers, loadServiceBundle, loadServiceFile, saveServiceCore, saveServiceSuppliersStep, segmentReg,
+  syncServiceSuppliers,
+  type ExistingImage, type Opt, type SavedAttachment, type ServiceBundle,
 } from './serviceApi';
 import { SupplierMapPanel } from './ServiceSupplierModal';
 import ServiceGstModal from './ServiceGstModal';
 import { SVC_ICONS } from './serviceIcons';
+import { SavingLock, ShimServiceForm } from './serviceLoading';
 import './service-form.css';
 
 export interface ServiceFormInput {
@@ -24,6 +26,8 @@ export interface ServiceFormInput {
   attachmentIds?: number[];
   hasPrimaryImage?: boolean;
   images?: ExistingImage[];
+  attachments?: SavedAttachment[];
+  loading?: boolean;
 }
 
 type ShownImage = { id: number; name: string; src?: string };
@@ -88,15 +92,19 @@ export default function ServiceFormModal({
   const [stage, setStage] = useState<Stage>(1);
   const [vals, setVals] = useState<ServiceVals>(() => record ? { ...record.vals } : emptyVals(kind, input.otype));
   const [suppliers, setSuppliers] = useState<MappedSupplier[]>(() => record?.suppliers ?? []);
+  const gstLocked = suppliers.length > 0 && vals.gstPct != null;
   const [errors, setErrors] = useState<Errors>({});
   const [files, setFiles] = useState<FileMap>({});
   const [gstOpen, setGstOpen] = useState(false);
   const [serviceId, setServiceId] = useState<number | undefined>(record?.id);
   const [saving, setSaving] = useState(false);
+  const [supBusy, setSupBusy] = useState(false);
   const [bundle, setBundle] = useState<ServiceBundle | null>(null);
   const [savedImages, setSavedImages] = useState<ExistingImage[]>(input.images ?? []);
   const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
   const [attachmentIds, setAttachmentIds] = useState<number[]>(input.attachmentIds ?? []);
+  const [savedAtt, setSavedAtt] = useState<SavedAttachment | undefined>(input.attachments?.[0]);
+  const [attRemoved, setAttRemoved] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -133,6 +141,7 @@ export default function ServiceFormModal({
   }, [toast]);
 
   const opts = useMemo(() => buildOpts(bundle, kind, vals.otype), [bundle, kind, vals.otype]);
+  const formLoading = !!input.loading || !bundle;
   const gstRateId = useMemo(() => {
     if (vals.gstId) return vals.gstId;
     if (vals.gstPct == null) return undefined;
@@ -141,6 +150,8 @@ export default function ServiceFormModal({
   }, [vals.gstId, vals.gstPct, bundle]);
 
   const pick = (k: FileKey, f: File | null) => {
+    if (k === 'att' && !f) setAttRemoved(true);
+    if (k === 'att' && f) setAttRemoved(false);
     setFiles(p => ({ ...p, [k]: f ?? undefined }));
     setVals(p => ({ ...p, [k]: f ? f.name : '' }));
     if (errors[k]) setErrors(e => ({ ...e, [k]: undefined }));
@@ -212,12 +223,16 @@ export default function ServiceFormModal({
       const saved = await saveServiceCore({
         id: serviceId, kind, vals: { ...vals, gstId: gstRateId }, files,
         replaceAttachmentIds: files.att ? attachmentIds : undefined,
+        removeAttachmentIds: attRemoved && !files.att ? attachmentIds : undefined,
         removeImageIds: removedImageIds,
       });
       setServiceId(saved.id);
       setSavedImages(saved.images);
       setRemovedImageIds([]);
       setAttachmentIds(saved.attachmentIds);
+      setSavedAtt(saved.attachments[0]);
+      setAttRemoved(false);
+      setVals(p => ({ ...p, att: saved.attachments[0]?.name ?? '' }));
       setFiles({});
       setStage(2);
       bodyRef.current?.scrollTo({ top: 0 });
@@ -225,6 +240,21 @@ export default function ServiceFormModal({
       toast.error('Could not save the service', apiError(e, 'Please check the fields and try again.'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const mapSuppliers = async (next: MappedSupplier[]) => {
+    if (serviceId == null) { setSuppliers(next); return; }
+    const prev = suppliers;
+    setSuppliers(next);
+    setSupBusy(true);
+    try {
+      setSuppliers(await syncServiceSuppliers(serviceId, prev, next));
+    } catch (e) {
+      toast.error('Could not save the supplier change', apiError(e, 'Please try again.'));
+      try { setSuppliers(await fetchServiceSuppliers(serviceId)); } catch { /* keep what is shown */ }
+    } finally {
+      setSupBusy(false);
     }
   };
 
@@ -258,6 +288,8 @@ export default function ServiceFormModal({
   return createPortal((
     <div className="svf-backdrop">
       <div className="svf-modal" role="dialog" aria-modal="true" aria-label={title}>
+        {supBusy && !saving && <SavingLock label="Saving suppliers…" />}
+        {saving && <SavingLock label={stage === 1 ? (serviceId != null ? 'Saving changes…' : 'Saving…') : (isEdit ? 'Updating service…' : 'Submitting service…')} />}
         <div className="svf-head">
           <div className="svf-head-left">
             <div className="svf-head-icon">{SVC_ICONS.wrench}</div>
@@ -270,8 +302,12 @@ export default function ServiceFormModal({
             </div>
           </div>
           <div className="svf-head-actions">
-            <Tooltip label="Map / manage GST %">
-              <button type="button" className="apm-head-btn" onClick={() => setGstOpen(true)}>
+            <Tooltip label={gstLocked
+              ? `GST is locked — ${suppliers.length} supplier${suppliers.length === 1 ? ' is' : 's are'} mapped to this service`
+              : 'Map / manage GST %'}>
+              <button type="button" className={`apm-head-btn${gstLocked ? ' is-locked' : ''}`} disabled={gstLocked}
+                onClick={() => { if (!gstLocked) setGstOpen(true); }}>
+                {gstLocked && SVC_ICONS.lock}
                 {vals.gstPct != null ? `GST ${vals.gstPct}%` : 'GST (%)'}
               </button>
             </Tooltip>
@@ -286,16 +322,19 @@ export default function ServiceFormModal({
         </div>
 
         <div className="svf-body" ref={bodyRef}>
-          {stage === 1 && kind === 'soft' && <SoftFields o={opts} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
-          {stage === 1 && kind === 'other' && <OtherFields o={opts} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
-          {stage === 1 && (kind === 'trackable' || kind === 'consumable') && (
-            <MaterialFields o={opts} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
+          {stage === 1 && formLoading && (
+            <ShimServiceForm sections={kind === 'soft' || kind === 'other' ? [9, 2] : [6, 6, 2]} />
+          )}
+          {stage === 1 && !formLoading && kind === 'soft' && <SoftFields o={opts} savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && kind === 'other' && <OtherFields o={opts} savedAtt={savedAtt} vals={vals} set={set} setOtype={setOtype} errors={errors} files={files} pick={pick} setImages={setImages} />}
+          {stage === 1 && !formLoading && (kind === 'trackable' || kind === 'consumable') && (
+            <MaterialFields o={opts} savedAtt={savedAtt} kind={kind} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages}
               primarySaved={primarySaved} secondarySaved={secondarySaved} onRemoveSaved={removeSavedImage} />
           )}
 
           {stage === 2 && (
             <div className="svs-teal svf-sup-panel">
-              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={setSuppliers} defaultGst={vals.gstPct} />
+              <SupplierMapPanel serviceName={vals.name} suppliers={suppliers} onChange={(next) => { void mapSuppliers(next); }} defaultGst={vals.gstPct} />
             </div>
           )}
         </div>
@@ -311,7 +350,7 @@ export default function ServiceFormModal({
             {stage === 1 ? (
               <>
                 <button type="button" className="svf-btn-ghost" onClick={onClose}>Cancel</button>
-                <button type="button" className="svf-btn-primary" onClick={() => { void goNext(); }} disabled={saving}>
+                <button type="button" className="svf-btn-primary" onClick={() => { void goNext(); }} disabled={saving || formLoading}>
                   {SVC_ICONS.save} {saving ? 'Saving…' : 'Save & Next'} <span className="svf-btn-chev">{SVC_ICONS.chevron}</span>
                 </button>
               </>
@@ -320,7 +359,7 @@ export default function ServiceFormModal({
                 <button type="button" className="svf-btn-outline" onClick={() => setStage(1)} disabled={saving}>
                   <span className="svf-btn-chev is-back">{SVC_ICONS.chevron}</span> Previous
                 </button>
-                <button type="button" className="svf-btn-primary" onClick={() => { void submit(); }} disabled={saving}>
+                <button type="button" className="svf-btn-primary" onClick={() => { void submit(); }} disabled={saving || supBusy}>
                   {SVC_ICONS.save} {saving ? 'Saving…' : isEdit ? 'Update Service' : 'Submit Service'}
                 </button>
               </>
@@ -347,19 +386,20 @@ type ImageKey = 'img1' | 'img2';
 type FileMap = { att?: File; img1?: File[]; img2?: File[] };
 type GroupProps = {
   o?: FormOpts;
+  savedAtt?: SavedAttachment;
   vals: ServiceVals; set: SetFn; errors: Errors; files: FileMap;
   pick: (k: FileKey, f: File | null) => void;
   setImages: (k: ImageKey, list: File[]) => void;
 };
 
-function AttachmentRemarks({ vals, set, files, pick, noteKey, noteLabel, notePh, title, sub }: GroupProps & {
+function AttachmentRemarks({ vals, set, files, pick, savedAtt, noteKey, noteLabel, notePh, title, sub }: GroupProps & {
   noteKey: 'remark' | 'confidential'; noteLabel: string; notePh: string; title: string; sub: string;
 }) {
   return (
     <Section icon={SVC_ICONS.clip} title={title} sub={sub}>
       <div className="svf-grid svf-grid-4">
         <Field label="Attachment" optional>
-          <FilePick value={vals.att} file={files.att} hint="PDF, DOC, XLS or images"
+          <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images"
             accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onPick={f => pick('att', f)} />
         </Field>
         <Field label={noteLabel} span="3">
@@ -385,7 +425,7 @@ function ContractToggle({ vals, set }: { vals: ServiceVals; set: SetFn }) {
   );
 }
 
-function SoftFields({ o: opts, vals, set, errors, files, pick, setImages }: GroupProps) {
+function SoftFields({ o: opts, savedAtt, vals, set, errors, files, pick, setImages }: GroupProps) {
   const o = opts!;
   return (
     <>
@@ -419,13 +459,13 @@ function SoftFields({ o: opts, vals, set, errors, files, pick, setImages }: Grou
           </Field>
         </div>
       </Section>
-      <AttachmentRemarks vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="remark" noteLabel="Remark"
+      <AttachmentRemarks savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="remark" noteLabel="Remark"
         notePh="Enter any remark about this service" title="Attachment & Remarks" sub="Supporting document and internal notes" />
     </>
   );
 }
 
-function OtherFields({ o: opts, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
+function OtherFields({ o: opts, savedAtt, vals, set, setOtype, errors, files, pick, setImages }: GroupProps & { setOtype: (v: string) => void }) {
   const ot = (vals.otype ?? 'professional') as OtherType;
   const o = { ...opts!, ph: OTHER_OPTS[ot].ph };
   return (
@@ -463,13 +503,13 @@ function OtherFields({ o: opts, vals, set, setOtype, errors, files, pick, setIma
           </Field>
         </div>
       </Section>
-      <AttachmentRemarks vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="remark" noteLabel="Remark"
+      <AttachmentRemarks savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="remark" noteLabel="Remark"
         notePh="Enter any remark about this service" title="Attachment & Remarks" sub="Supporting document and internal notes" />
     </>
   );
 }
 
-function MaterialFields({ o: opts, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
+function MaterialFields({ o: opts, savedAtt, kind, vals, set, errors, files, pick, setImages, primarySaved, secondarySaved, onRemoveSaved }: GroupProps & {
   kind: 'trackable' | 'consumable'; primarySaved: ShownImage[]; secondarySaved: ShownImage[]; onRemoveSaved: (id: number) => void;
 }) {
   const o = { ...opts!, ph: MATERIAL_OPTS[kind].ph };
@@ -532,7 +572,7 @@ function MaterialFields({ o: opts, kind, vals, set, errors, files, pick, setImag
         </div>
       </Section>
 
-      <AttachmentRemarks vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="confidential" noteLabel="Confidential Info"
+      <AttachmentRemarks savedAtt={savedAtt} vals={vals} set={set} errors={errors} files={files} pick={pick} setImages={setImages} noteKey="confidential" noteLabel="Confidential Info"
         notePh="Enter confidential information" title="Attachment & Confidential Info" sub="Supporting document, certificate or specification" />
     </>
   );
@@ -703,26 +743,36 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
 const fileSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 
-function FilePick({ value, file, onPick, hint, accept, invalid }: {
-  value?: string; file?: File; onPick: (f: File | null) => void; hint: string; accept?: string; invalid?: boolean;
+function FilePick({ value, file, remote, onPick, hint, accept, invalid }: {
+  value?: string; file?: File; remote?: SavedAttachment; onPick: (f: File | null) => void; hint: string; accept?: string; invalid?: boolean;
 }) {
+  const toast = useToast();
+  const [fetching, setFetching] = useState<'view' | 'download' | null>(null);
   const ref = useRef<HTMLInputElement>(null);
   const change = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) onPick(f);
     e.target.value = '';
   };
-  const withUrl = (fn: (url: string) => void) => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    fn(url);
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const withUrl = (action: 'view' | 'download', fn: (url: string) => void) => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      fn(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    }
+    if (!remote || fetching) return;
+    setFetching(action);
+    loadServiceFile(remote.path)
+      .then(url => { fn(url); setTimeout(() => URL.revokeObjectURL(url), 60_000); })
+      .catch(() => toast.error('Could not open the attachment', 'Please try again.'))
+      .finally(() => setFetching(null));
   };
-  const view = () => withUrl(url => window.open(url, '_blank', 'noopener'));
-  const download = () => withUrl(url => {
+  const view = () => withUrl('view', url => window.open(url, '_blank', 'noopener'));
+  const download = () => withUrl('download', url => {
     const a = document.createElement('a');
     a.href = url;
-    a.download = file?.name ?? 'attachment';
+    a.download = file?.name ?? remote?.name ?? 'attachment';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -736,16 +786,20 @@ function FilePick({ value, file, onPick, hint, accept, invalid }: {
         <span className="svf-file-ico">{SVC_ICONS.upload}</span>
         <span className="svf-file-txt">
           <b title={value}>{value || 'Click to upload'}</b>
-          <span>{file ? fileSize(file.size) : hint}</span>
+          <span>{file ? fileSize(file.size) : remote?.size ? fileSize(remote.size) : hint}</span>
         </span>
       </button>
       {value && (
         <span className="svf-file-acts">
-          <Tooltip label={file ? 'View file' : noFile}>
-            <button type="button" className="svf-file-act" aria-label="View file" disabled={!file} onClick={view}>{SVC_ICONS.eye}</button>
+          <Tooltip label={file || remote ? 'View file' : noFile}>
+            <button type="button" className="svf-file-act" aria-label="View file" disabled={(!file && !remote) || !!fetching} aria-busy={fetching === 'view'} onClick={view}>
+              {fetching === 'view' ? <i className="ri-loader-4-line ri-spin svf-file-spin" aria-hidden="true" /> : SVC_ICONS.eye}
+            </button>
           </Tooltip>
-          <Tooltip label={file ? 'Download file' : noFile}>
-            <button type="button" className="svf-file-act" aria-label="Download file" disabled={!file} onClick={download}>{SVC_ICONS.download}</button>
+          <Tooltip label={file || remote ? 'Download file' : noFile}>
+            <button type="button" className="svf-file-act" aria-label="Download file" disabled={(!file && !remote) || !!fetching} aria-busy={fetching === 'download'} onClick={download}>
+              {fetching === 'download' ? <i className="ri-loader-4-line ri-spin svf-file-spin" aria-hidden="true" /> : SVC_ICONS.download}
+            </button>
           </Tooltip>
           <Tooltip label="Remove file">
             <button type="button" className="svf-file-act svf-file-act--del" aria-label="Remove file" onClick={() => onPick(null)}>{SVC_ICONS.x}</button>
