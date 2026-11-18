@@ -242,11 +242,14 @@ class SourcingController extends Controller
             ->where('onboarding_stage_completed', '>=', 6)
             ->whereNotNull('user_id')
             ->with('designation:id,name')
-            ->get(['id', 'user_id', 'designation_id']);
+            ->get(['id', 'user_id', 'designation_id', 'emp_code']);
 
         $eligibleUserIds = $eligibleEmployees->pluck('user_id');
         $designationByUser = $eligibleEmployees
             ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->designation->name ?? null)]);
+        // EMP-001 for the picker — two people can share a name, the code can't.
+        $codeByUser = $eligibleEmployees
+            ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->emp_code ?: null)]);
 
         $rows = User::where('client_id', $user->client_id)
             ->whereIn('id', $eligibleUserIds)
@@ -259,6 +262,7 @@ class SourcingController extends Controller
             ->map(fn ($u) => [
                 'id' => (string) $u->id,
                 'name' => $u->name,
+                'code' => $codeByUser[(int) $u->id] ?? null,
 
                 'role' => ($designationByUser[(int) $u->id] ?? null)
                     ?: ($u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type))),

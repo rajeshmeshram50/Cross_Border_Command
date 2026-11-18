@@ -44,7 +44,7 @@ type Props = {
 
 type MasterProduct = { code: string; name: string; segment: string; hsn: string };
 /** GET /p2p/team-members row. `emp_code` (or `code`) is the employee code, shown before the name
-    once the API sends it (employees.emp_code). */
+    (employees.emp_code). */
 type Member = { id: string | number; name: string; role?: string | null; emp_code?: string | null; code?: string | null };
 type ApiClarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
 type EditRow = { id: number; mapped?: boolean; code?: string; name: string; segment?: string | null; hsn?: string | null; price?: string | number | null; clarity?: ApiClarity };
@@ -103,7 +103,7 @@ const IcoTrash = () => <Svg size={13}><polyline points="3 6 5 6 21 6" /><path d=
 export default function AssignTargetModal({ initial, onClose, onSaved }: Props) {
   const isEdit = !!initial;
   const toast = useToast();
-  // The signed-in user creates the target, so they are not offered as its assignee.
+  // The signed-in user creates the target, so they cannot be its assignee.
   const { user } = useAuth();
   const myId = user?.id != null ? String(user.id) : null;
   // One save at a time: spinner on the button, form locked, × / Cancel / Esc off while it runs (V-C01).
@@ -350,19 +350,22 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
     return () => window.removeEventListener('resize', measure);
   }, [listTab, shown.length]);
   const rowCls = isM ? 'stsrc-row stsrc-row--m' : 'stsrc-row stsrc-row--n';
-  // Assign To: every eligible team member except the creator (a target is not assigned to oneself).
-  // The employee code, when the API sends it, shows as the option's code chip and before the name.
-  const memberOptions = members
-    .filter(m => String(m.id) !== myId)
-    .map(m => {
-      const empCode = (m.emp_code ?? m.code ?? '').trim();
-      return {
-        value: String(m.id),
-        ...(empCode ? { code: empCode } : {}),
-        label: m.role ? `${m.name} · ${m.role}` : m.name,
-        selectedLabel: empCode ? `${empCode} · ${m.name}` : m.name,
-      };
-    });
+  /* Assign To: every eligible team member, the creator's own row disabled
+     rather than dropped so the picker says why instead of hiding a colleague. */
+  const memberOptions = members.map(m => {
+    const empCode = (m.emp_code ?? m.code ?? '').trim();
+    return {
+      value: String(m.id),
+      ...(empCode ? { code: empCode } : {}),
+      label: m.role ? `${m.name} · ${m.role}` : m.name,
+      selectedLabel: empCode ? `${empCode} · ${m.name}` : m.name,
+      disabled: !isEdit && myId !== null && String(m.id) === myId,
+      disabledReason: 'You are creating this target — assign it to someone else.',
+    };
+  });
+  // Counts only the rows that can actually be picked, so a list holding just
+  // the creator still reads as "No team members available".
+  const assignableCount = memberOptions.filter(o => !o.disabled).length;
 
   return createPortal(
     // A click on the backdrop does nothing. Esc closes only an unchanged form; × and Cancel always close.
@@ -435,9 +438,13 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                       <div className="sta-inputwrap">
                         <span className="sta-input-ico"><IcoUsers size={13} /></span>
                         <div className="sta-ms">
-                          <MasterSelect value={assignee} placeholder={memberOptions.length ? 'Select team member' : 'No team members available'}
-                            searchable={memberOptions.length > 6} searchPlaceholder="Search people…" disabled={locked}
+                          <MasterSelect value={assignee} placeholder={assignableCount ? 'Select team member' : 'No team members available'}
+                            searchable={assignableCount > 6} searchPlaceholder="Search people…" disabled={locked}
                             invalid={!!(tried && errAssignee)} options={memberOptions}
+                            onDisabledClick={() => toast.warning(
+                              'Can’t assign to yourself',
+                              'You are creating this sourcing target, so it has to go to another team member.',
+                            )}
                             onChange={v => { setAssignee(v); setServerErr(s => ({ ...s, assignee: undefined })); }} />
                         </div>
                       </div>
@@ -571,16 +578,16 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                           value={r.targetPrice} readOnly={viewOnly} onChange={e => patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') })} /></span>
                         <span>
                           {clarities[r.key] ? (
-                            // Saved: ✏ edits it; the chip opens it (the note on hover, the link in a new tab,
-                            // the document in a new tab) — as in Bulk Sourcing's product list.
+                            // Chip first (opens it), ✏ after (edits it): what the
+                            // clarity is, then the action on it.
                             <span className="sta-cla-cell">
+                              <ClarityOpen c={clarities[r.key]} onViewNote={() => setNoteKey(r.key)} />
                               <Tooltip label="Edit clarity">
                                 <button type="button" className="sta-cla-edit" data-clarity={r.key} disabled={viewOnly} onClick={() => setClaKey(r.key)}
                                   aria-label={`Edit clarity of ${r.name}`}>
                                   <Svg size={12} sw={2.3}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></Svg>
                                 </button>
                               </Tooltip>
-                              <ClarityOpen c={clarities[r.key]} onViewNote={() => setNoteKey(r.key)} />
                             </span>
                           ) : (
                             <button type="button" className="sta-pl-clarity" data-clarity={r.key} disabled={viewOnly} onClick={() => setClaKey(r.key)}><IcoPlus size={11} sw={2.6} />Add clarity</button>
