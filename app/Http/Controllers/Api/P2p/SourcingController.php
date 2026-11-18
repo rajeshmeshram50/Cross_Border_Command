@@ -42,6 +42,21 @@ class SourcingController extends Controller
             ->first() ?? abort(404, 'Sourcing target not found.');
     }
 
+    private function viewDenial(Request $request, SourcingTarget $t)
+    {
+        $user = $request->user();
+        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)
+            || (int) $t->created_by === (int) $user->id
+            || (int) $t->assignee_id === (int) $user->id) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Only the creator, the assignee or the client admin can open this sourcing target.',
+        ], 403);
+    }
+
     private function assigneeAllowed($clientId, $assigneeId): bool
     {
         return $assigneeId && User::where('client_id', $clientId)->whereKey($assigneeId)
@@ -477,6 +492,9 @@ class SourcingController extends Controller
     public function show(Request $request, string $target)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
 
         $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
 
@@ -526,6 +544,9 @@ class SourcingController extends Controller
     public function report(Request $request, string $target)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
 
         $clarity = fn ($p) => $p->clarity_type
@@ -564,6 +585,9 @@ class SourcingController extends Controller
     public function setProductStatus(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $data = $request->validate(['status' => 'required|in:Completed,In Progress']);
 
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
@@ -578,6 +602,9 @@ class SourcingController extends Controller
     public function updateProductClarity(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $data = $request->validate([
@@ -985,6 +1012,9 @@ class SourcingController extends Controller
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
+        if ($denial = $this->viewDenial($request, $t)) {
+            return $denial;
+        }
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $target = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
