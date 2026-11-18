@@ -714,8 +714,11 @@ export default function AddVendorModal(props: {
 
   const supplierDocType: SegDocType = useMemo(() => {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
+    // No country known yet (the masters still loading): follow the origin the form was opened for,
+    // so a Domestic form does not show the International TIN field first.
+    if (!name) return scope === 'domestic' ? 'domestic' : 'international';
     return name === 'India' ? 'domestic' : 'international';
-  }, [country, countryOpts]);
+  }, [country, countryOpts, scope]);
   /* Derived from the chosen COUNTRY, not the scope the wizard was opened
      with: the user can change country mid-form, and the tax field has to
      follow what they actually picked. */
@@ -3290,17 +3293,20 @@ export default function AddVendorModal(props: {
                       </Field>
                     </div>
                     <div className="avm-grid-2">
-                      <Field label="WhatsApp Enabled ?">
-                        <div className="avm-radio-row">
-                          <label className="avm-radio">
-                            <input type="radio" checked={whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(true)} />
-                            <span>Yes</span>
-                          </label>
-                          <label className="avm-radio">
-                            <input type="radio" checked={!whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(false)} />
-                            <span>No</span>
-                          </label>
-                        </div>
+                      <Field label="WhatsApp Enabled?">
+                        {/* Figma switch in place of the Yes / No radios; same
+                            boolean, so saving is unchanged. */}
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={whatsappEnabled}
+                          className={`avm-wa-switch${whatsappEnabled ? ' is-on' : ''}`}
+                          disabled={primaryLocked}
+                          onClick={() => setWhatsappEnabled(v => !v)}
+                        >
+                          <span className="avm-wa-switch__track"><span className="avm-wa-switch__knob" /></span>
+                          <span className="avm-wa-switch__lbl">{whatsappEnabled ? 'Enabled' : 'Disabled'}</span>
+                        </button>
                       </Field>
                       <Field label="Attachment (Business Card)">
                         {/* Locked along with the rest of the primary contact.
@@ -4147,6 +4153,8 @@ function ContactAddPopup(props: {
               PopupShell, so it needs its own veil — otherwise every field stays
               editable mid-save and the attachment-delete confirm can fire. */}
           {saving && <div className="avm-cp-saving-veil" />}
+          {/* Figma wraps the popup fields in one section card. */}
+          <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-user-add-line" />} title="Contact Person Details" subtitle="Fields marked * are required">
           <div className="avm-grid-4">
             <Field label="Contact Person Name" required error={errors.name}>
               <input
@@ -4182,14 +4190,16 @@ function ContactAddPopup(props: {
 
           <div className="avm-grid-2">
             <Field label="WhatsApp Enabled?">
-              <div className="avm-radio-row">
-                <label className="avm-radio">
-                  <input type="radio" checked={draft.whatsapp} onChange={() => set('whatsapp', true)} /> Yes
-                </label>
-                <label className="avm-radio">
-                  <input type="radio" checked={!draft.whatsapp} onChange={() => set('whatsapp', false)} /> No
-                </label>
-              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={draft.whatsapp}
+                className={`avm-wa-switch${draft.whatsapp ? ' is-on' : ''}`}
+                onClick={() => set('whatsapp', !draft.whatsapp)}
+              >
+                <span className="avm-wa-switch__track"><span className="avm-wa-switch__knob" /></span>
+                <span className="avm-wa-switch__lbl">{draft.whatsapp ? 'Enabled' : 'Disabled'}</span>
+              </button>
             </Field>
             <Field label="Attachments">
               {/* FileChooser provides the empty-state input + populated-
@@ -4228,6 +4238,7 @@ function ContactAddPopup(props: {
               />
             </Field>
           </div>
+          </SectionCard>
         </div>
 
         <div className="avm-cp-foot">
