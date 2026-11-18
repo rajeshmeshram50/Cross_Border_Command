@@ -11,7 +11,7 @@ import {
   GST_RATES, fmtCurrency, isIntl, makeIntlSupplier, makeSupplier,
   type MappedSupplier, type SupplierOrigin,
 } from './serviceData';
-import { loadServiceBundle, loadSupplierPool, type BundleVendor, type ServiceBundle } from './serviceApi';
+import { loadServiceBundle, loadSupplierPool, type ApiServiceType, type BundleVendor, type ServiceBundle, type SupplierBucket } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
 import { SavingLock, ShimSupplierRows } from './serviceLoading';
 import '../product-management/product-management.css';
@@ -25,6 +25,8 @@ const SUP_VISIBLE_ROWS = 4;
 type VendorOpt = {
   id: string; code: string; name: string; type: string; state: string; contact: string;
   origin: SupplierOrigin; country: string; city: string; gstStateCode: string; currency: string;
+  /** The service bucket this supplier's type serves — null when unclassified. */
+  serviceType: ApiServiceType | null; classification: string | null;
 };
 
 type CurrencyOpt = { code: string; rate: number };
@@ -36,6 +38,8 @@ const toVendors = (list: BundleVendor[]): VendorOpt[] => list.map(v => ({
   type: String(v.supplier_type ?? ''),
   state: String(v.state ?? ''),
   contact: String(v.contact_person ?? ''),
+  serviceType: (v.supplier_service_type ?? null) as ApiServiceType | null,
+  classification: v.supplier_classification ?? null,
   origin: v.origin === 'international' ? 'international' : 'domestic',
   country: String(v.country ?? ''),
   city: String(v.city ?? ''),
@@ -54,15 +58,36 @@ export const formatSupplierCode = (raw: string): string => {
 
 const money = (n: number) => `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-let vendorCache: VendorOpt[] | null = null;
+/* Keyed by the service bucket: mapping a Trackable service must not reuse the
+   pool fetched for a Utility one. '' is the unfiltered pool. */
+const vendorCaches = new Map<string, VendorOpt[]>();
 let currencyCache: CurrencyOpt[] = [];
-async function loadVendors(force = false): Promise<VendorOpt[]> {
-  if (vendorCache && !force) return vendorCache;
-  const [b, pool] = await Promise.all([loadServiceBundle(force), loadSupplierPool()]);
-  vendorCache = toVendors(pool);
+const bucketKey = (b?: SupplierBucket | null) => (b ? `${b.service_type}:${b.classification ?? ''}` : '');
+
+async function loadVendors(bucket?: SupplierBucket | null, force = false): Promise<VendorOpt[]> {
+  const key = bucketKey(bucket);
+  const hit = vendorCaches.get(key);
+  if (hit && !force) return hit;
+  const [b, pool] = await Promise.all([loadServiceBundle(force), loadSupplierPool(bucket)]);
+  const list = toVendors(pool);
+  vendorCaches.set(key, list);
   currencyCache = toCurrencies(b);
-  return vendorCache;
+  return list;
 }
+
+/** The supplier-type pill shown on every option in the dropdown. */
+const CLASS_LABEL: Record<string, string> = {
+  trackable: 'Trackable', consumable: 'Consumable', professional: 'Professional',
+  utility: 'Utility', facility: 'Facility', maintenance: 'Maintenance', outsourcing: 'Outsourcing',
+};
+const SERVICE_LABEL: Record<string, string> = {
+  self_consumable: 'Self-Consumable', soft_digital: 'Soft / Digital', other_operational: 'Other Operational',
+};
+const typeBadge = (v: VendorOpt): string =>
+  (v.classification && CLASS_LABEL[v.classification])
+  || (v.serviceType && SERVICE_LABEL[v.serviceType])
+  || v.type
+  || 'Unclassified';
 
 const FLAG = (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21V4" /><path d="M3 4h13l-2 4 2 4H3" /></svg>
@@ -116,13 +141,15 @@ function OriginCard({ origin, available, onPick }: { origin: SupplierOrigin; ava
 }
 
 export function SupplierMapPanel({
-  serviceName, suppliers, onChange, defaultGst, loading = false,
+  serviceName, suppliers, onChange, defaultGst, loading = false, bucket = null,
 }: {
   serviceName: string;
   suppliers: MappedSupplier[];
   onChange: (next: MappedSupplier[]) => void;
   loading?: boolean;
   defaultGst?: number;
+  /** The service's own type — the dropdown lists only suppliers that serve it. */
+  bucket?: SupplierBucket | null;
 }) {
   const toast = useToast();
   const gstDefault = String(defaultGst ?? 18);
@@ -134,16 +161,19 @@ export function SupplierMapPanel({
   );
   const confirm = useConfirm();
 
-  const [vendors, setVendors] = useState<VendorOpt[]>(vendorCache ?? []);
-  const [vendorsLoading, setVendorsLoading] = useState(!vendorCache);
+  const bKey = bucketKey(bucket);
+  const [vendors, setVendors] = useState<VendorOpt[]>(vendorCaches.get(bKey) ?? []);
+  const [vendorsLoading, setVendorsLoading] = useState(!vendorCaches.has(bKey));
   useEffect(() => {
     let live = true;
-    loadVendors()
+    setVendorsLoading(!vendorCaches.has(bKey));
+    loadVendors(bucket)
       .then(v => { if (live) { setVendors(v); setCurrencies(currencyCache); } })
       .catch(() => { if (live) toast.error('Could not load suppliers', 'Please refresh and try again.'); })
       .finally(() => { if (live) setVendorsLoading(false); });
     return () => { live = false; };
-  }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, bKey]);
 
   const [supPage, setSupPage] = useState(1);
   const [supPageSize, setSupPageSize] = useState(10);
@@ -189,9 +219,15 @@ export function SupplierMapPanel({
     [vendors, mappedIntl],
   );
 
-  const pickOpts = intl
-    ? intlPool.map(v => ({ value: v.code, label: `${formatSupplierCode(v.code)}: ${v.name} · ${v.country}` }))
-    : domPool.map(v => ({ value: v.code, label: `${formatSupplierCode(v.code)}: ${v.name}` }));
+  /* The supplier-type pill: which service bucket this supplier serves. The list
+     is already narrowed to the service, so the pill confirms the match rather
+     than offering a choice. */
+  const toOpt = (v: VendorOpt, withCountry: boolean) => ({
+    value: v.code,
+    label: `${formatSupplierCode(v.code)}: ${v.name}${withCountry ? ` · ${v.country}` : ''}`,
+    badges: [{ text: typeBadge(v), tone: 'violet' as const, title: v.type || typeBadge(v) }],
+  });
+  const pickOpts = intl ? intlPool.map(v => toOpt(v, true)) : domPool.map(v => toOpt(v, false));
 
   const domSel = !intl ? domPool.find(v => v.code === selCode) ?? null : null;
   const intlSel = intl ? intlPool.find(v => v.code === selCode) ?? null : null;
@@ -200,7 +236,7 @@ export function SupplierMapPanel({
 
   const refreshVendors = (selectName?: string) => {
     setVendorsLoading(true);
-    loadVendors(true)
+    loadVendors(bucket, true)
       .then(v => {
         setVendors(v);
         if (selectName) {
@@ -440,7 +476,9 @@ export function SupplierMapPanel({
                       searchable
                       searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code or name'}
                       loading={vendorsLoading}
-                      emptyText="No suppliers available"
+                      emptyText={bucket
+                        ? 'No suppliers of this service type — add one, or set its Supplier Type.'
+                        : 'No suppliers available'}
                       invalid={!!errors.supplier}
                       onChange={(v) => { setSelCode(v); setErrors(e => ({ ...e, supplier: undefined })); }}
                     />
@@ -603,7 +641,7 @@ export function SupplierMapPanel({
 }
 
 export default function ServiceSupplierModal({
-  code, serviceName, suppliers, onClose, onChange, defaultGst, loading = false, busy = false,
+  code, serviceName, suppliers, onClose, onChange, defaultGst, loading = false, busy = false, bucket = null,
 }: {
   code: string;
   serviceName: string;
@@ -613,6 +651,8 @@ export default function ServiceSupplierModal({
   suppliers: MappedSupplier[];
   onClose: () => void;
   onChange: (next: MappedSupplier[]) => void;
+  /** The row's own service type — passed straight to the supplier dropdown. */
+  bucket?: SupplierBucket | null;
 }) {
 
   useEffect(() => {
@@ -634,7 +674,7 @@ export default function ServiceSupplierModal({
           <button type="button" className="svs-close" onClick={onClose} aria-label="Close">{SVC_ICONS.x}</button>
         </div>
         <div className="svs-body">
-          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} loading={loading} />
+          <SupplierMapPanel serviceName={serviceName} suppliers={suppliers} onChange={onChange} defaultGst={defaultGst} loading={loading} bucket={bucket} />
         </div>
         <div className="svs-foot">
           <span className="svs-note">{SVC_ICONS.info} Changes apply to <code>{code}</code></span>

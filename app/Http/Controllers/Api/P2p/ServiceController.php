@@ -185,6 +185,10 @@ class ServiceController extends Controller
             'q' => 'nullable|string|max:100',
             'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
             'service_id' => 'nullable|integer',
+            // The service bucket to narrow to — the map-supplier dropdown sends
+            // the service's own type so it lists only suppliers that serve it.
+            'service_type' => ['nullable', Rule::in(array_keys(Service::TYPES))],
+            'classification' => 'nullable|string|max:32',
             'per_page' => 'nullable|integer|min:1|max:100',
             'page' => 'nullable|integer|min:1',
         ]);
@@ -200,6 +204,34 @@ class ServiceController extends Controller
             ->when($data['service_id'] ?? null, function ($q, $sid) use ($request) {
                 $service = $this->findService($request, (int) $sid);
                 $q->whereNotIn('id', $service->suppliers()->where('status', 'active')->pluck('vendor_id'));
+            })
+            /* Only suppliers that serve THIS kind of service. A Trackable
+               service offers trackable-goods suppliers, not every vendor in
+               the tenant. Omitting classification keeps the whole bucket. */
+            ->when($data['service_type'] ?? null, function ($q, $st) use ($data) {
+                $cls = $data['classification'] ?? null;
+                $legacy = array_keys(array_filter(
+                    self::VENDOR_TYPE_BY_NAME,
+                    fn ($v) => $v[0] === $st && ($cls === null || $v[1] === $cls),
+                ));
+                $q->whereHas('vendorType', function ($t) use ($st, $cls, $legacy) {
+                    $t->where(function ($w) use ($st, $cls, $legacy) {
+                        $w->where(function ($c) use ($st, $cls) {
+                            $c->where('service_type', $st);
+                            if ($cls !== null) $c->where('classification', $cls);
+                        });
+                        // Same fallback as vendorServiceType(): a type row that
+                        // predates the fixed vocabulary is matched by name.
+                        if ($legacy) {
+                            $w->orWhere(function ($n) use ($legacy) {
+                                $n->whereNull('service_type')->whereRaw(
+                                    'LOWER(TRIM(name)) IN ('.implode(',', array_fill(0, count($legacy), '?')).')',
+                                    $legacy,
+                                );
+                            });
+                        }
+                    });
+                });
             });
         $origin = fn ($q, $o) => $o === SupplierPricing::INTERNATIONAL
             ? $q->whereHas('primaryAddress.country', $abroad)
@@ -445,8 +477,38 @@ class ServiceController extends Controller
         'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
         'primaryAddress.state:id,name',
         'primaryAddress.country:id,name',
-        'vendorType:id,name',
+        'vendorType:id,name,kind,service_type,classification',
     ];
+
+    /** Supplier type name => [service_type, classification] — the fallback. */
+    private const VENDOR_TYPE_BY_NAME = [
+        'soft service provider' => ['soft_digital', null],
+        'trackable services'    => ['self_consumable', 'trackable'],
+        'consumable services'   => ['self_consumable', 'consumable'],
+        'professional services' => ['other_operational', 'professional'],
+        'utility services'      => ['other_operational', 'utility'],
+        'facility services'     => ['other_operational', 'facility'],
+        'maintenance services'  => ['other_operational', 'maintenance'],
+        'outsourcing services'  => ['other_operational', 'outsourcing'],
+    ];
+
+    /**
+     * The service bucket a supplier type serves, as [service_type, classification].
+     *
+     * Reads the stored columns first. The name map is a FALLBACK for rows that
+     * predate the fixed vocabulary or were find-or-created by name from the Add
+     * Supplier form — those carry no service_type, and without this every
+     * service's supplier dropdown would come back empty. It goes away once the
+     * duplicates are folded onto the seeded types and the form posts an id.
+     */
+    private function vendorServiceType($type): array
+    {
+        if (!$type) return [null, null];
+        if ($type->service_type) {
+            return [$type->service_type, $type->classification];
+        }
+        return self::VENDOR_TYPE_BY_NAME[mb_strtolower(trim((string) $type->name))] ?? [null, null];
+    }
 
     private function vendorCard(Vendor $v): array
     {
@@ -459,6 +521,10 @@ class ServiceController extends Controller
             'company_name' => $v->company_name,
             'status' => $v->status,
             'supplier_type' => $v->vendorType?->name,
+            // Which service bucket this supplier serves, so the map-supplier
+            // dropdown can offer only the ones that match the service.
+            'supplier_service_type' => $this->vendorServiceType($v->vendorType)[0],
+            'supplier_classification' => $this->vendorServiceType($v->vendorType)[1],
             'origin' => SupplierPricing::originOf($country),
             'country' => $country ?: 'India',
             'state' => $addr?->state?->name ?? ($addr?->state_code ?: null),

@@ -272,6 +272,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* Full row width so .svf-count's margin-left:auto reaches the right edge. */
+  width: 100%;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .06em;
@@ -279,6 +281,20 @@
   color: #0c4a6e;
 }
 .svf-req { color: #ef4444; font-weight: 700; }
+
+/* Live character count at the right end of the label row. Plain muted text,
+   NOT a pill — `.svf-count` is already taken by the teal step badge. */
+.svf-charcount {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+}
+.svf-charcount.is-full { color: #ef4444; }
+[data-bs-theme="dark"] .svf-charcount { color: #94a3b8; }
 .svf-opt {
   margin-left: 2px;
   padding: 1px 7px;

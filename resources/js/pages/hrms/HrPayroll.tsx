@@ -9,6 +9,7 @@ import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/
 import SalaryHistoryModal from '../../components/SalaryHistoryModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import PayrollExecutionHistoryModal from './PayrollExecutionHistoryModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useToast } from '../../contexts/ToastContext';
 import useModulePermission from '../../hooks/useModulePermission';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -328,6 +329,9 @@ export default function HrPayroll() {
   const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number; total_month_days?: number } | null>(null);
   const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /* What the veil says while `busy` is up. Running payroll over a few hundred
+     employees takes seconds and the page gave no sign it had started. */
+  const [busyLabel, setBusyLabel] = useState('Working…');
   const [exportOpen, setExportOpen] = useState(false);
   /* Payroll Execution History — who ran payroll each month and when.
      Opened from the header, beside Run Payroll, because that is where the
@@ -1084,6 +1088,7 @@ export default function HrPayroll() {
       return;
     }
 
+    setBusyLabel('Running payroll…');
     setBusy(true);
     try {
       // Catch an empty cycle before the automatic attendance-finalize step.
@@ -1139,6 +1144,7 @@ export default function HrPayroll() {
     if (busy) return;
     const month = cycle?.month, year = cycle?.year;
     if (!month || !year) return;
+    setBusyLabel('Reopening cycle…');
     setBusy(true);
     try {
       await api.post('/payroll/reopen', { month, year });
@@ -1158,6 +1164,7 @@ export default function HrPayroll() {
     if (!runMeta?.id) { setRunOpen(false); return; }
     if (proceeding) return;
     setProceeding(true);
+    setBusyLabel('Approving payroll…');
     setBusy(true);
     try {
       if (runMeta.status !== 'approved' && runMeta.status !== 'paid') {
@@ -2122,6 +2129,11 @@ status: facetParam(facets.status),
   return (
     <>
       <MasterFormStyles />
+      {busy && <FullPageLoader label={busyLabel} />}
+      {/* Export / email run just as long and had only a button spinner. */}
+      {!busy && downloading && (
+        <FullPageLoader label={downloading === "email" ? "Emailing payslips…" : "Preparing the download…"} />
+      )}
       <div className="pay-page">
         {/* #22 — the page owns the viewport, so the table card below never
             scrolls out of reach. Everything down to the KPI strip lives in this

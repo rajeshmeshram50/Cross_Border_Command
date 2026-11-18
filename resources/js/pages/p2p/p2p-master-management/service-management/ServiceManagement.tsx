@@ -25,6 +25,17 @@ import { ShimServiceRows, type ShimCol } from './serviceLoading';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
+/* The row's own service type, handed to Map Suppliers so its dropdown offers
+   only suppliers that serve this kind of service. Soft / Digital has no
+   sub-type; the other two carry theirs (trackable / consumable, or the
+   Other-Operational type). */
+const bucketOf = (r: ServiceRecord | null) => {
+  if (!r) return null;
+  const tab = tabOfKind(r.kind);
+  const classification = r.kind === 'soft' ? null : subOf(r);
+  return { service_type: TAB_TO_TYPE[tab], classification };
+};
+
 const STEPS = [
   { no: '01', title: 'Create Service', desc: 'Define service name, code, scope and description.', icon: SVC_ICONS.tag },
   { no: '02', title: 'Service Classification', desc: 'Classify as Self-Consumable, Soft / Digital or Other Operational.', icon: SVC_ICONS.layers },
@@ -52,7 +63,11 @@ const C = {
   uom: { key: 'uom', header: 'UOM', width: 96 },
   contract: { key: 'contract', header: 'Contract Required', width: 120 },
   mapped: { key: 'mapped', header: 'Mapped Supplier', width: 104 },
-  action: { key: 'action', header: 'Action', width: 112 },
+  /* Edit 30 + map 30 + toggle 42, two 5px gaps and the cell's 8px padding
+     each side = 128. It was 112, which only fitted while the column could
+     stretch past its declared width; with the widths now binding, the status
+     toggle was clipped at the right edge. */
+  action: { key: 'action', header: 'Action', width: 132 },
 } satisfies Record<string, Col>;
 
 const COLUMNS: Record<ServiceTab, Col[]> = {
@@ -426,6 +441,7 @@ export default function ServiceManagement() {
           onChange={saveMap}
           loading={mapLoading}
           busy={mapBusy}
+          bucket={bucketOf(mapFor)}
         />
       )}
     </div>
@@ -457,7 +473,8 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
         <div className="svm-name">
           <span className="svm-name-ico">{SVC_ICONS[(r.kind === 'other' ? sub : r.kind === 'soft' ? 'soft' : r.kind) as keyof typeof SVC_ICONS]}</span>
           <span className="svm-name-txt">
-            <span className="svm-name-main">{v.name}</span>
+            {/* Clamped to two lines, so the full name lives in the tooltip. */}
+            <Tooltip label={v.name}><span className="svm-name-main">{v.name}</span></Tooltip>
             {tab === 'material' && <span className="svm-name-code">{r.code}</span>}
           </span>
         </div>
