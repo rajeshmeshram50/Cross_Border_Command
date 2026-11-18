@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\P2p;
 
 use App\Http\Controllers\Controller;
-use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
 use App\Models\Branch;
