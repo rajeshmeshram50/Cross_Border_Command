@@ -1189,6 +1189,8 @@ class SourcingController extends Controller
             $s->update(['converted_vendor_id' => $vendor->id, 'converted_at' => now(), 'converted_by' => $user->id]);
         });
 
+        $cardCopied = $this->copyBusinessCard($s, $vendor);
+
         return $this->ok([
             'supplier_id' => $s->id,
             'vendor_id' => $vendor->id,
@@ -1196,8 +1198,28 @@ class SourcingController extends Controller
             'vendor_name' => $vendor->company_name,
             'mappings_moved' => $moved,
             'mappings_merged' => $merged,
+            'business_card_copied' => $cardCopied,
             'message' => "{$s->name} is now in the Supplier Master as {$vendor->vendor_code}.",
         ]);
+    }
+
+    private function copyBusinessCard(P2pSupplier $s, Vendor $vendor): bool
+    {
+        $rel = ltrim(preg_replace('#^/?storage/#', '', (string) $s->card_path), '/');
+        $primary = $vendor->addresses()->where('is_primary', true)->first();
+        if ($rel === '' || str_contains($rel, '..') || ! $primary || $primary->attachment_path) {
+            return false;
+        }
+        $disk = Storage::disk('public');
+        if (! $disk->exists($rel)) {
+            return false;
+        }
+        $safe = preg_replace('/[^A-Za-z0-9 ._-]/', '_', pathinfo($rel, PATHINFO_FILENAME)) ?: 'business-card';
+        $to = "vendor_documents/{$vendor->id}/contact-".bin2hex(random_bytes(4)).'__'.$safe.'.'.(pathinfo($rel, PATHINFO_EXTENSION) ?: 'pdf');
+        $disk->copy($rel, $to);
+        $primary->update(['attachment_path' => $to]);
+
+        return true;
     }
 
     private function validatePayload(Request $request, bool $creating = false): array
