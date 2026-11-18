@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import '../../p2p-common.css';
 import '../../purchase-management/order/po-list/order.css';
 import './service-management.css';
@@ -7,14 +7,19 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { formatDmy } from '../../../../utils/formatDmy';
+import api from '../../../../api';
 import {
-  buildSeed, nextServiceCode, subLabel, subOf, SVC_TYPES, tabOfKind,
+  subLabel, subOf, SVC_TYPES, tabOfKind,
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceTab,
 } from './serviceData';
+import {
+  TAB_TO_TYPE, apiError, fetchServiceList, fetchServiceSuppliers, rowToRecord, setServiceStatus,
+  type ServiceCounts,
+} from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
 import ServiceTypeGate from './ServiceTypeGate';
 import ServiceFormModal, { type ServiceFormInput } from './ServiceFormModal';
-import ServiceSupplierModal, { formatSupplierCode } from './ServiceSupplierModal';
+import ServiceSupplierModal from './ServiceSupplierModal';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
@@ -76,11 +81,17 @@ export default function ServiceManagement() {
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [rows, setRows] = useState<ServiceRecord[]>(buildSeed);
+  const [rows, setRows] = useState<ServiceRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<ServiceCounts | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
   const [briefOpen, setBriefOpen] = useState(false);
   const [tab, setTab] = useState<ServiceTab>('material');
   const [subs, setSubs] = useState<Record<ServiceTab, string>>({ material: 'all', soft: 'all', other: 'all' });
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -89,40 +100,44 @@ export default function ServiceManagement() {
   const [mapFor, setMapFor] = useState<ServiceRecord | null>(null);
 
   const sub = subs[tab];
-  const tabCounts = useMemo(() => {
-    const out: Record<ServiceTab, number> = { material: 0, soft: 0, other: 0 };
-    rows.forEach(r => { out[tabOfKind(r.kind)] += 1; });
-    return out;
-  }, [rows]);
 
-  const inTab = useMemo(() => rows.filter(r => tabOfKind(r.kind) === tab), [rows, tab]);
-  const subCounts = useMemo(() => {
-    const out: Record<string, number> = { all: inTab.length };
-    inTab.forEach(r => { const s = subOf(r); out[s] = (out[s] ?? 0) + 1; });
-    return out;
-  }, [inTab]);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return inTab
-      .filter(r => sub === 'all' || subOf(r) === sub)
-      .filter(r => {
-        if (!q) return true;
-        const v = r.vals;
-        const hay = [
-          r.code, v.name, v.desc, v.category, v.provider, v.make, v.segment, v.delivery, v.hsn, v.uom,
-          v.condition, v.billing, subLabel(tab, subOf(r)),
-          ...r.suppliers.map(s => `${s.name} ${s.code} ${formatSupplierCode(s.code)}`),
-        ].join(' ').toLowerCase();
-        return hay.includes(q);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    fetchServiceList({ tab, sub, q: debouncedQuery, page, perPage: pageSize }, ctrl.signal)
+      .then(res => {
+        setRows((res.data ?? []).map(rowToRecord));
+        setTotal(Number(res.total) || 0);
+        setCounts(res.counts ?? null);
+        const last = Math.max(1, Number(res.last_page) || 1);
+        if (page > last) setPage(last);
       })
-      .sort((a, b) => b.created.localeCompare(a.created));
-  }, [inTab, sub, query, tab]);
+      .catch(e => {
+        if (ctrl.signal.aborted) return;
+        setRows([]);
+        setTotal(0);
+        toast.error('Could not load services', apiError(e, 'Please refresh and try again.'));
+      })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
+  }, [tab, sub, debouncedQuery, page, pageSize, reloadKey, toast]);
 
-  const pages = Math.max(1, Math.ceil(shown.length / pageSize));
-  const pageSafe = Math.min(page, pages);
+  const tabCounts: Record<ServiceTab, number> = {
+    material: counts?.self_consumable?.total ?? 0,
+    soft: counts?.soft_digital?.total ?? 0,
+    other: counts?.other_operational?.total ?? 0,
+  };
+  const typeCounts = counts?.[TAB_TO_TYPE[tab]];
+  const subCounts: Record<string, number> = { ...(typeCounts ?? {}), all: typeCounts?.total ?? 0 };
+
+  const pageSafe = page;
   const start = (pageSafe - 1) * pageSize;
-  const pageRows = shown.slice(start, start + pageSize);
+  const pageRows = rows;
   const columns = COLUMNS[tab];
   const tableWidth = columns.reduce((w, c) => w + c.width, 0);
 
@@ -131,8 +146,11 @@ export default function ServiceManagement() {
 
   const chooseType = useCallback((kind: ServiceKind, otype?: OtherType) => {
     setGateOpen(false);
-    setFormFor({ kind, otype, code: nextServiceCode(rows) });
-  }, [rows]);
+    api.get<{ code?: string }>('/p2p/services/next-code')
+      .then(res => res.data?.code || 'SVC-NEW')
+      .catch(() => 'SVC-NEW')
+      .then(code => setFormFor({ kind, otype, code }));
+  }, []);
 
   const edit = (r: ServiceRecord) => setFormFor({ kind: r.kind, record: r, code: r.code });
 
@@ -152,8 +170,18 @@ export default function ServiceManagement() {
     setMapFor({ ...mapFor, suppliers: next });
   };
 
+  const openMap = async (r: ServiceRecord) => {
+    if (r.id == null) { setMapFor(r); return; }
+    try {
+      const suppliers = await fetchServiceSuppliers(r.id);
+      setMapFor({ ...r, suppliers });
+    } catch (e) {
+      toast.error('Could not load mapped suppliers', apiError(e, 'Please try again.'));
+    }
+  };
+
   const toggleActive = async (r: ServiceRecord) => {
-    const next = !r.active;
+    const next = r.status ? r.status !== 'active' : !r.active;
     const ok = await confirm({
       title: next ? 'Activate service?' : 'Deactivate service?',
       message: next
@@ -164,8 +192,18 @@ export default function ServiceManagement() {
       icon: next ? 'checkbox-circle-line' : 'forbid-line',
     });
     if (!ok) return;
-    setRows(prev => prev.map(x => (x.code === r.code ? { ...x, active: next } : x)));
-    toast.success(`Service ${r.code} ${next ? 'activated' : 'deactivated'}`, r.vals.name);
+    if (r.id == null) {
+      setRows(prev => prev.map(x => (x.code === r.code ? { ...x, active: next } : x)));
+      toast.success(`Service ${r.code} ${next ? 'activated' : 'deactivated'}`, r.vals.name);
+      return;
+    }
+    try {
+      await setServiceStatus(r.id, next ? 'active' : 'inactive');
+      toast.success(`Service ${r.code} ${next ? 'activated' : 'deactivated'}`, r.vals.name);
+      reload();
+    } catch (e) {
+      toast.error(`Could not ${next ? 'activate' : 'deactivate'} ${r.code}`, apiError(e, 'Please try again.'));
+    }
   };
 
   const subTabs = SVC_TYPES[tab].subs;
@@ -274,7 +312,16 @@ export default function ServiceManagement() {
                 <tr>{columns.map((c, i) => <th key={c.key} className={`mv-th-${i}`} scope="col">{c.header}</th>)}</tr>
               </thead>
               <tbody>
-                {pageRows.length === 0 ? (
+                {loading && pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} className="mv-empty">
+                      <div className="mv-empty__box">
+                        <div className="mv-empty__ico">{SVC_ICONS.wrench}</div>
+                        <div className="mv-empty__t">Loading services…</div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : pageRows.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length} className="mv-empty">
                       <div className="mv-empty__box">
@@ -289,9 +336,9 @@ export default function ServiceManagement() {
                     </td>
                   </tr>
                 ) : pageRows.map((r, i) => (
-                  <tr key={r.code} className={r.active ? undefined : 'is-off'}>
+                  <tr key={r.id ?? r.code} className={r.active ? undefined : 'is-off'}>
                     {columns.map(c => (
-                      <td key={c.key} data-col={c.key}>{renderCell(c.key, r, start + i, { edit, map: setMapFor, toggle: toggleActive })}</td>
+                      <td key={c.key} data-col={c.key}>{renderCell(c.key, r, start + i, { edit, map: openMap, toggle: toggleActive })}</td>
                     ))}
                   </tr>
                 ))}
@@ -302,7 +349,7 @@ export default function ServiceManagement() {
 
         <WorklistPager
           className="wl-teal"
-          total={shown.length}
+          total={total}
           page={pageSafe}
           pageSize={pageSize}
           onPage={setPage}
@@ -399,9 +446,10 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
       return <span className={`svm-flag${yes ? ' svm-flag--yes' : ''}`}><i />{yes ? 'Required' : 'Not Required'}</span>;
     }
     case 'mapped': {
-      const n = r.suppliers.length;
+      const n = r.suppliersCount ?? r.suppliers.length;
+      const names = r.supplierNames ?? r.suppliers.map(s => s.name);
       return (
-        <Tooltip label={n ? r.suppliers.map(s => s.name).join(', ') : 'No suppliers mapped'}>
+        <Tooltip label={n ? names.join(', ') : 'No suppliers mapped'}>
           <button type="button" className={`svm-cnt${n ? '' : ' is-zero'}`} disabled={!r.active} onClick={() => act.map(r)} aria-label={`${n} mapped suppliers`}>
             {n}
           </button>
@@ -421,9 +469,11 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
               {SVC_ICONS.mapUser}
             </button>
           </Tooltip>
-          <Tooltip label={r.active ? 'Active — click to deactivate' : 'Inactive — click to activate'}>
-            <button type="button" className={`whm-toggle${r.active ? ' is-on' : ''}`}
-              role="switch" aria-checked={r.active} aria-label={`Toggle status of ${r.code}`}
+          <Tooltip label={r.status === 'draft'
+            ? 'Draft — map suppliers (Stage 2) to activate'
+            : r.active ? 'Active — click to deactivate' : 'Inactive — click to activate'}>
+            <button type="button" className={`whm-toggle${(r.status ? r.status === 'active' : r.active) ? ' is-on' : ''}`}
+              role="switch" aria-checked={r.status ? r.status === 'active' : r.active} aria-label={`Toggle status of ${r.code}`}
               onClick={() => act.toggle(r)}>
               <span />
             </button>
