@@ -92,7 +92,8 @@ export default function ServiceFormModal({
   const [stage, setStage] = useState<Stage>(1);
   const [vals, setVals] = useState<ServiceVals>(() => record ? { ...record.vals } : emptyVals(kind, input.otype));
   const [suppliers, setSuppliers] = useState<MappedSupplier[]>(() => record?.suppliers ?? []);
-  const gstLocked = suppliers.length > 0 && vals.gstPct != null;
+  const domesticCount = suppliers.filter(s => s.origin !== 'international').length;
+  const gstLocked = domesticCount > 0 && vals.gstPct != null;
   const [errors, setErrors] = useState<Errors>({});
   const [files, setFiles] = useState<FileMap>({});
   const [gstOpen, setGstOpen] = useState(false);
@@ -303,7 +304,7 @@ export default function ServiceFormModal({
           </div>
           <div className="svf-head-actions">
             <Tooltip label={gstLocked
-              ? `GST is locked — ${suppliers.length} supplier${suppliers.length === 1 ? ' is' : 's are'} mapped to this service`
+              ? `GST is locked — ${domesticCount} domestic supplier${domesticCount === 1 ? ' is' : 's are'} mapped to this service`
               : 'Map / manage GST %'}>
               <button type="button" className={`apm-head-btn${gstLocked ? ' is-locked' : ''}`} disabled={gstLocked}
                 onClick={() => { if (!gstLocked) setGstOpen(true); }}>
