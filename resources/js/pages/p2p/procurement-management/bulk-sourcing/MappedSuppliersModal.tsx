@@ -4,6 +4,7 @@ import api from '../../../../api';
 import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
 import Tooltip from '../../../../components/ui/Tooltip';
+import type { PriceEditRow } from './EditSupplierPriceModal';
 import './bulk-sourcing.css';
 
 /* Mapped Suppliers — suppliers mapped to a product.
@@ -20,7 +21,27 @@ type Sup = {
   card?: string; gmaps?: string; address?: string; country?: string; state?: string; state_code?: string; city?: string;
   // New Supplier not yet in the Supplier Master → show "Convert to Supplier".
   canConvert?: boolean;
+  // Quoted price (null = mapped before pricing existed).
+  origin?: 'domestic' | 'international' | null; currency?: string | null; price?: number | null; gstPercentage?: number | null;
+  gstAmount?: number | null; total?: number | null; exchangeRate?: number | null; inrAmount?: number | null; validTill?: string | null;
+  vsTarget?: { percent: number; status: 'below' | 'at' | 'above' } | null;
 };
+
+const inr = (n?: number | null) => (n == null ? '—' : `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+function PriceLine({ sup }: { sup: Sup }) {
+  if (sup.price == null) return <div className="sv-price-line" style={{ fontSize: 12, color: '#94a3b8', padding: '8px 2px 0' }}>Price not set for this supplier</div>;
+  const intl = sup.origin === 'international';
+  const vs = sup.vsTarget;
+  return (
+    <div className="sv-price-line" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 12, padding: '8px 2px 0', color: '#334155' }}>
+      <span><b>Unit:</b> {intl ? `${sup.currency} ${Number(sup.price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : inr(sup.price)}</span>
+      {intl ? <span><b>Rate:</b> ₹{sup.exchangeRate} / {sup.currency} · No GST</span> : <span><b>GST:</b> {sup.gstPercentage}% ({inr(sup.gstAmount)})</span>}
+      <span><b>{intl ? '₹ Equivalent' : 'Total'}:</b> {intl ? inr(sup.inrAmount) : inr(sup.total)}</span>
+      {vs && <span style={{ fontWeight: 700, color: vs.status === 'below' ? '#059669' : vs.status === 'above' ? '#dc2626' : '#334155' }}>{vs.status === 'at' ? 'At target' : `${vs.percent}% ${vs.status} target`}</span>}
+      {sup.validTill && <span><b>Valid till:</b> {sup.validTill.split('-').reverse().join('/')}</span>}
+    </div>
+  );
+}
 
 export type ManualSupplierEdit = {
   mappingId: string; name: string; contact: string; mobile: string; email: string; segment: string;
@@ -44,8 +65,8 @@ const fmtPrice = (p: string) => {
   return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
 };
 
-export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, onEditMaster, onConvert, canAdd = true }: {
-  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; onEditMaster?: (vendorId: number) => void; onConvert?: (s: { supplierId: number; name: string }) => void; canAdd?: boolean;
+export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, onEditMaster, onConvert, onEditPrice, canAdd = true }: {
+  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; onEditMaster?: (vendorId: number) => void; onConvert?: (s: { supplierId: number; name: string }) => void; onEditPrice?: (s: PriceEditRow) => void; canAdd?: boolean;
 }) {
   const [suppliers, setSuppliers] = useState<Sup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,6 +200,19 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                     </Tooltip>
                   )}
                 </div>
+                {onEditPrice && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 2px 6px' }}>
+                    <Tooltip label="Edit the unit price / exchange rate for this product">
+                      <button type="button" className="sv-card-edit" onClick={() => onEditPrice({
+                        mappingId: sup.id, name: sup.name, source: sup.source, origin: sup.origin, currency: sup.currency, price: sup.price,
+                        gstPercentage: sup.gstPercentage, exchangeRate: sup.exchangeRate, validTill: sup.validTill,
+                      })}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        Edit Price
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
                 <div className="sv-card-contacts">
                   {[['Contact Person', sup.contact, 'user'], ['Mobile', sup.mobile, 'phone'], ['Email', sup.email, 'mail']].map(([lbl, val, ico]) => (
                     <div className="sv-contact-item" key={lbl}>
@@ -187,6 +221,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                     </div>
                   ))}
                 </div>
+                <PriceLine sup={sup} />
               </div>
             ))}
           </div>

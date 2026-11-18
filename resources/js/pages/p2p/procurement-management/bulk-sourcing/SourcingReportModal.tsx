@@ -4,6 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal, { type ManualSupplierEdit } from './MappedSuppliersModal';
+import EditSupplierPriceModal, { type PriceEditRow } from './EditSupplierPriceModal';
 import AddVendorModal, { type SupplierPrefill, type VendorPayload } from '../../p2p-master-management/supplier-management/AddVendorModal';
 import { useModalGuard } from './useModalGuard';
 import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
@@ -138,6 +139,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
   // Master supplier edit — opens the Supplier edit wizard IN PLACE (no redirect
   // to the Suppliers module). `gi` remembers which product to reopen afterwards.
   const [editMaster, setEditMaster] = useState<{ gi: number; vendorId: number } | null>(null);
+  const [editPrice, setEditPrice] = useState<{ gi: number; row: PriceEditRow } | null>(null);
   // Convert to Supplier: the New Supplier being registered in the Supplier Master.
   const [convert, setConvert] = useState<{ gi: number; supplierId: number; name: string; prefill: SupplierPrefill } | null>(null);
 
@@ -356,6 +358,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onEditManual={canMap ? (sup) => { const gi = viewIdx!; setViewIdx(null); setEditManual({ gi, sup }); } : undefined}
           onEditMaster={canMap ? (vendorId) => { const gi = viewIdx!; setViewIdx(null); setEditMaster({ gi, vendorId }); } : undefined}
           onConvert={canMap ? (s) => { const gi = viewIdx!; setViewIdx(null); startConvert(gi, s); } : undefined}
+          onEditPrice={canMap ? (r) => { const gi = viewIdx!; setViewIdx(null); setEditPrice({ gi, row: r }); } : undefined}
         />
       )}
       {editManual !== null && (
@@ -368,6 +371,17 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onClose={() => setEditManual(null)}
           onMapped={() => setEditManual(null)}
           onUpdated={(name) => { setEditManual(null); toast.success('Supplier updated', name); }}
+        />
+      )}
+      {editPrice !== null && (
+        <EditSupplierPriceModal
+          row={editPrice.row}
+          productName={products[editPrice.gi].name}
+          targetPrice={products[editPrice.gi].price}
+          targetId={row.id}
+          productId={products[editPrice.gi].id ?? ''}
+          onClose={() => { const gi = editPrice.gi; setEditPrice(null); setViewIdx(gi); }}
+          onSaved={() => { const gi = editPrice.gi; setEditPrice(null); setViewIdx(gi); }}
         />
       )}
       {convert !== null && (
