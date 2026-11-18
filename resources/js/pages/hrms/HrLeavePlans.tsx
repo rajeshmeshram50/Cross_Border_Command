@@ -16,6 +16,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import SearchClear from '../../components/ui/SearchClear';
 import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 
 
 type CalendarStart = 'fixed_month' | 'joining_date';
@@ -416,6 +417,9 @@ export default function HrLeavePlans() {
   const [showGuide, setShowGuide] = useState(false);
   const [catalog, setCatalog] = useState<CatalogType[]>([]);
   const [loading, setLoading] = useState(true);
+  /* Make-default / delete / clone close the menu and then run for a second or
+     two with nothing on screen. Holds the veil's label while one is in flight. */
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   /* Server-side paging for the plan list. 10 is the default the other HR
      tables use; the footer's selector can raise it and the backend caps at 100.
@@ -601,6 +605,7 @@ export default function HrLeavePlans() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setActionBusy('Deleting leave type…');
     try {
       await leaveTypesApi.remove(Number(id));
       toast.success('Leave type deleted', `"${row ? row.name : 'Leave type'}" deleted successfully!`);
@@ -609,6 +614,8 @@ export default function HrLeavePlans() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
       toast.error('Delete failed', msg);
+    } finally {
+      setActionBusy(null);
     }
   };
   const onCloseTypeModal = () => {
@@ -618,12 +625,14 @@ export default function HrLeavePlans() {
 
   const onMakeDefault = async () => {
     if (!activePlanId) return;
+    setActionBusy('Setting the default plan…');
     try {
       await leavePlansApi.makeDefault(Number(activePlanId));
       await loadPlans();
     } catch (err) {
       console.error('[HrLeavePlans] make-default failed', err);
     } finally {
+      setActionBusy(null);
       setPlanMenuOpen(false);
     }
   };
@@ -641,6 +650,7 @@ export default function HrLeavePlans() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setActionBusy('Deleting leave plan…');
     try {
       await leavePlansApi.remove(Number(activePlanId));
       const remaining = plans.filter(p => p.id !== activePlanId);
@@ -650,6 +660,8 @@ export default function HrLeavePlans() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
       toast.error('Delete failed', msg);
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -657,6 +669,7 @@ export default function HrLeavePlans() {
     if (!activePlanId) return;
     const source = plans.find(p => p.id === activePlanId);
     if (!source) return;
+    setActionBusy('Duplicating leave plan…');
     try {
       const cloned = await leavePlansApi.clone(Number(activePlanId), `${source.name} (Copy)`);
       await loadPlans();
@@ -664,6 +677,7 @@ export default function HrLeavePlans() {
     } catch (err) {
       console.error('[HrLeavePlans] clone failed', err);
     } finally {
+      setActionBusy(null);
       setPlanMenuOpen(false);
     }
   };
@@ -770,6 +784,7 @@ export default function HrLeavePlans() {
   return (
     <>
       <MasterFormStyles />
+      {actionBusy && <FullPageLoader label={actionBusy} />}
       <Row>
         <Col xs={12}>
           {/* Match the Leave Management layout: the shared header strip sits
@@ -2050,6 +2065,7 @@ function AddLeavePlanModal({
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-save-3-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Plan' : 'Save Plan')}
             </button>
+            {saving && <FullPageLoader label={editing ? 'Updating leave plan…' : 'Saving leave plan…'} />}
           </div>
         </div>
       </ModalBody>
@@ -2303,6 +2319,7 @@ function AddLeaveTypeModal({
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-add-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Leave Type' : 'Save Leave Type')}
             </button>
+            {saving && <FullPageLoader label={editing ? 'Updating leave type…' : 'Saving leave type…'} />}
           </div>
         </div>
       </ModalBody>
@@ -2537,6 +2554,7 @@ function AssignLeaveTypesModal({
               <i className={saving ? 'ri-loader-4-line' : 'ri-save-3-line'} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? 'Saving…' : `Save (${visibleSelectedCount})`}
             </button>
+            {saving && <FullPageLoader label="Assigning leave types…" />}
           </div>
         </div>
       </ModalBody>
@@ -2730,6 +2748,7 @@ function LeaveTypeSetupModal({
                       sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'
                     )}
                   </button>
+                  {saving && <FullPageLoader label={`Saving ${sectionMeta.label.toLowerCase()}…`} />}
                 </>
               )}
             </div>

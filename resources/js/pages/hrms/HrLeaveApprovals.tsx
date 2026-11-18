@@ -6,6 +6,7 @@ import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } 
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
@@ -675,6 +676,10 @@ export default function HrLeaveApprovals() {
               </>
             )}
           </div>
+          {/* QA #164 — the house veil over the decision and the waiver, both
+              of which post and then refetch the list behind the modal. */}
+          {acting && <FullPageLoader label={acting === 'approve' ? 'Approving leave…' : 'Rejecting leave…'} />}
+          {waiving && <FullPageLoader label={detail?.sandwich_waived ? 'Re-applying policy…' : 'Waiving policy…'} />}
         </ModalBody>
       </Modal>
     </Row>

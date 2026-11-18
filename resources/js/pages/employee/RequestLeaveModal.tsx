@@ -12,6 +12,7 @@ import {
 } from '../hrms/leavePlansApi';
 import '../../../css/request-leave-drawer.css';
 import SearchClear from '../../components/ui/SearchClear';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 
 interface NotifyEmployee {
   id: number;
@@ -683,6 +684,8 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
           >
             {submitting ? <><i className="ri-loader-4-line ri-spin" /> Submitting…</> : <><i className="ri-send-plane-2-line" /> Request</>}
           </button>
+          {/* The house veil, as every other form in the app (QA #164). */}
+          {submitting && <FullPageLoader label="Submitting leave request…" />}
         </div>
       </ModalBody>
     </Modal>

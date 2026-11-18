@@ -194,6 +194,7 @@ export default function HrBroadcastCentre() {
   const [editingRow, setEditingRow] = useState<AnnRow | null>(null);
 
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchList = useCallback(async () => {
     const token = ++reqRef.current;
@@ -237,7 +238,10 @@ export default function HrBroadcastCentre() {
     } catch { setStats(ZERO_STATS); }
   };
 
-  const fetchAll = () => { fetchStats(); fetchList(); };
+  /* Returns the round trip so a caller can hold its busy state until the
+     refreshed list is on screen. Dropping these two promises is why the
+     publish veil came down after the PUT and never showed (QA #167). */
+  const fetchAll = () => Promise.all([fetchStats(), fetchList()]);
 
   useEffect(() => { fetchStats(); }, []);
   useEffect(() => { fetchList(); }, [fetchList]);
@@ -388,13 +392,14 @@ export default function HrBroadcastCentre() {
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
       return [saved, ...prev];
     });
-    fetchAll();
+    return fetchAll();
   };
 
   const handleSaved = (saved: AnnRow) => {
-    mergeSavedRow(saved);
+    const done = mergeSavedRow(saved);
     setCreateOpen(false);
     setEditingRow(null);
+    return done;
   };
 
   const handleSilentSave = (saved: AnnRow) => {
@@ -411,12 +416,15 @@ export default function HrBroadcastCentre() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setDeleting(true);
     try {
       await api.delete(`/announcements/${row.id}`);
       toast.success('Deleted', `${row.code} removed.`);
-      fetchAll();
+      await fetchAll();
     } catch (err: any) {
       toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -440,7 +448,7 @@ export default function HrBroadcastCentre() {
         publish_at: null,
       });
       toast.success('Published', `${data.code} is now live.`);
-      handleSaved(data);
+      await handleSaved(data);
     } catch (err: any) {
       toast.error('Could not publish', err?.response?.data?.message || 'Please try again.');
     } finally {
@@ -451,6 +459,10 @@ export default function HrBroadcastCentre() {
   return (
     <>
       <MasterFormStyles />
+      {/* QA #167 — the row actions post and then refetch the list; the create /
+          edit wizard carries its own veil. */}
+      {publishingId !== null && <FullPageLoader label="Publishing announcement…" />}
+      {deleting && <FullPageLoader label="Deleting announcement…" />}
       <Row>
         <Col xs={12}>
           <div className="rec-page bcast-page">
