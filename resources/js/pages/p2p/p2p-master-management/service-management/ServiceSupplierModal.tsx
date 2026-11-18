@@ -4,6 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
 import {
@@ -145,7 +146,13 @@ export function SupplierMapPanel({
     return () => { live = false; };
   }, [toast]);
 
-  const overflow = suppliers.length > SUP_VISIBLE_ROWS;
+  const [supPage, setSupPage] = useState(1);
+  const [supPageSize, setSupPageSize] = useState(10);
+  const supPages = Math.max(1, Math.ceil(suppliers.length / supPageSize));
+  const supPageSafe = Math.min(supPage, supPages);
+  const supStart = (supPageSafe - 1) * supPageSize;
+  const pageSuppliers = suppliers.slice(supStart, supStart + supPageSize);
+  const overflow = pageSuppliers.length > SUP_VISIBLE_ROWS;
 
   const [step, setStep] = useState<'closed' | 'choose' | 'form'>('closed');
   const [origin, setOrigin] = useState<SupplierOrigin>('domestic');
@@ -302,7 +309,8 @@ export function SupplierMapPanel({
                 </tr>
               </thead>
               <tbody>
-                {suppliers.map((s, i) => {
+                {pageSuppliers.map((s, k) => {
+                  const i = supStart + k;
                   const foreign = isIntl(s);
                   return (
                     <tr key={`${s.code}-${i}`}>
@@ -358,13 +366,15 @@ export function SupplierMapPanel({
               </tbody>
             </table>
             </div>
-            {overflow && (
-              <div className="svs-tablefoot">
-                <span className="svs-tablefoot-count">
-                  Showing <b>{suppliers.length}</b> mapped suppliers
-                </span>
-              </div>
-            )}
+            <WorklistPager
+              className="wl-teal svs-pager"
+              total={suppliers.length}
+              page={supPageSafe}
+              pageSize={supPageSize}
+              onPage={setSupPage}
+              onPageSize={(n) => { setSupPageSize(n); setSupPage(1); }}
+              pageSizeOptions={[10, 25, 50]}
+            />
           </div>
         )}
       </div>
