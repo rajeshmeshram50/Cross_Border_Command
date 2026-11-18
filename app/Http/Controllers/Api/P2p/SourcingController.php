@@ -39,7 +39,7 @@ class SourcingController extends Controller
     {
         return SourcingTarget::where('client_id', $request->user()->client_id)
             ->where('code', $code)
-            ->firstOrFail();
+            ->first() ?? abort(404, 'Sourcing target not found.');
     }
 
     private function sourceLabel(?string $s): string
@@ -557,7 +557,7 @@ class SourcingController extends Controller
         $t = $this->target($request, $target);
         $data = $request->validate(['status' => 'required|in:Completed,In Progress']);
 
-        $p = $t->products()->where('id', $product)->firstOrFail();
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
         $p->update(['status' => $data['status']]);
 
         return $this->ok([
@@ -569,7 +569,7 @@ class SourcingController extends Controller
     public function updateProductClarity(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
-        $p = $t->products()->where('id', $product)->firstOrFail();
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $data = $request->validate([
             'clarity_type' => 'nullable|string|in:text,link,pdf',
@@ -727,7 +727,7 @@ class SourcingController extends Controller
             ], 403);
         }
 
-        $p = $t->products()->where('id', $product)->firstOrFail();
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $request->validate([
             'supplier_id' => 'nullable',
@@ -885,8 +885,8 @@ class SourcingController extends Controller
             ], 403);
         }
 
-        $p = $t->products()->where('id', $product)->firstOrFail();
-        $row = $p->suppliers()->where('id', $supplier)->firstOrFail();
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
+        $row = $p->suppliers()->where('id', $supplier)->first() ?? abort(404, 'Mapped supplier not found for this product.');
 
         if ($row->source !== 'new') {
             return response()->json(['status' => false, 'message' => 'Only new (manual) suppliers can be edited here. Edit master suppliers from the Supplier master.'], 422);
@@ -974,7 +974,7 @@ class SourcingController extends Controller
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
-        $p = $t->products()->where('id', $product)->firstOrFail();
+        $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
 
         $target = $p->target_price !== null && $p->target_price !== '' ? (float) str_replace(',', '', (string) $p->target_price) : null;
         $converted = P2pSupplier::where('client_id', $request->user()->client_id)
