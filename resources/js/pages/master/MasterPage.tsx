@@ -1510,18 +1510,6 @@ function MasterPageInner({
         .mp-cstrip__dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; box-shadow: 0 2px 4px rgba(34,197,94,.4); }
         .mp-cstrip__title { font-size: 14.5px; font-weight: 700; color: #3b0764; letter-spacing: -.3px; line-height: 1.2; }
         .mp-cstrip__sub { font-size: 10px; font-weight: 500; color: #6d28d9; opacity: .85; margin-top: 2px; line-height: 1.3; }
-        .mp-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--vz-border-color); border-radius: 12px; background: var(--vz-light, #f3f6f9); }
-        .mp-seg__opt { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; margin: 0; padding: 0 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--vz-secondary-color); cursor: pointer; text-align: center; transition: background .15s, color .15s, box-shadow .15s; }
-        .mp-seg__opt input { position: absolute; opacity: 0; pointer-events: none; }
-        .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { color: var(--vz-heading-color, var(--vz-body-color)); background: rgba(64, 81, 137, .06); }
-        .mp-seg__dot { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid #94a3b8; transition: border-color .15s, box-shadow .15s; }
-        .mp-seg__opt.is-on { color: #fff; background: linear-gradient(135deg, #405189, #5b73e8); box-shadow: 0 4px 12px -4px rgba(64, 81, 137, .55); }
-        .mp-seg__opt.is-on .mp-seg__dot { border-color: #fff; box-shadow: inset 0 0 0 3px #4a5fb3, inset 0 0 0 7px #fff; }
-        .mp-seg__opt.is-disabled { cursor: not-allowed; opacity: .65; }
-        .mp-seg__opt:has(input:focus-visible) { outline: 2px solid var(--vz-primary); outline-offset: 2px; }
-        [data-bs-theme="dark"] .mp-seg { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .12); }
-        [data-bs-theme="dark"] .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { background: rgba(255, 255, 255, .06); }
-        [data-bs-theme="dark"] .mp-seg__dot { border-color: #64748b; }
         .mp-cstrip__right { display: flex; align-items: center; gap: 7px; z-index: 1; flex-shrink: 0; }
         .mp-cstrip__back {
           display: inline-flex; align-items: center; justify-content: center; gap: 6px;

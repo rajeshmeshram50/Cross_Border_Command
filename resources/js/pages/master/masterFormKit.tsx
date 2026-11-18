@@ -413,6 +413,18 @@ export function MasterFormStyles() {
 }
 
 export const MASTER_MODAL_CSS = `
+  .mp-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--vz-border-color); border-radius: 12px; background: var(--vz-light, #f3f6f9); }
+  .mp-seg__opt { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; margin: 0; padding: 0 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--vz-secondary-color); cursor: pointer; text-align: center; transition: background .15s, color .15s, box-shadow .15s; }
+  .mp-seg__opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { color: var(--vz-heading-color, var(--vz-body-color)); background: rgba(64, 81, 137, .06); }
+  .mp-seg__dot { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid #94a3b8; transition: border-color .15s, box-shadow .15s; }
+  .mp-seg__opt.is-on { color: #fff; background: linear-gradient(135deg, #405189, #5b73e8); box-shadow: 0 4px 12px -4px rgba(64, 81, 137, .55); }
+  .mp-seg__opt.is-on .mp-seg__dot { border-color: #fff; box-shadow: inset 0 0 0 3px #4a5fb3, inset 0 0 0 7px #fff; }
+  .mp-seg__opt.is-disabled { cursor: not-allowed; opacity: .65; }
+  .mp-seg__opt:has(input:focus-visible) { outline: 2px solid var(--vz-primary); outline-offset: 2px; }
+  [data-bs-theme="dark"] .mp-seg { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .12); }
+  [data-bs-theme="dark"] .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { background: rgba(255, 255, 255, .06); }
+  [data-bs-theme="dark"] .mp-seg__dot { border-color: #64748b; }
   .master-modal .modal-content {
     border-radius: 20px !important;
     overflow: hidden;
