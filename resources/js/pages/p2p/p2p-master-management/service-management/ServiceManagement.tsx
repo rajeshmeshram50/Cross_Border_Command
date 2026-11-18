@@ -13,7 +13,8 @@ import {
   type MappedSupplier, type OtherType, type ServiceKind, type ServiceRecord, type ServiceTab,
 } from './serviceData';
 import {
-  TAB_TO_TYPE, apiError, fetchServiceList, fetchServiceSuppliers, rowToRecord, setServiceStatus,
+  TAB_TO_TYPE, addServiceSupplier, apiError, fetchServiceDetail, fetchServiceList, fetchServiceSuppliers,
+  rowToRecord, setServiceStatus, unmapServiceSupplier,
   type ServiceCounts,
 } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
@@ -152,35 +153,65 @@ export default function ServiceManagement() {
       .then(code => setFormFor({ kind, otype, code }));
   }, []);
 
-  const edit = (r: ServiceRecord) => setFormFor({ kind: r.kind, record: r, code: r.code });
+  const edit = async (r: ServiceRecord) => {
+    if (r.id == null) { setFormFor({ kind: r.kind, record: r, code: r.code }); return; }
+    try {
+      const d = await fetchServiceDetail(r.id);
+      setFormFor({
+        kind: d.record.kind, record: d.record, code: d.record.code,
+        attachmentIds: d.attachmentIds, hasPrimaryImage: d.hasPrimaryImage, images: d.images,
+      });
+    } catch (e) {
+      toast.error(`Could not open ${r.code}`, apiError(e, 'Please try again.'));
+    }
+  };
 
   const submitForm = (rec: ServiceRecord, isEdit: boolean) => {
-    setRows(prev => (isEdit ? prev.map(r => (r.code === rec.code ? rec : r)) : [...prev, rec]));
     const t = tabOfKind(rec.kind);
     setTab(t);
     if (!isEdit) { setSubs(s => ({ ...s, [t]: 'all' })); setPage(1); }
     setFormFor(null);
+    reload();
     toast.success(`Service ${rec.code} ${isEdit ? 'updated' : 'created'}`, rec.vals.name);
   };
 
-  const saveMap = (next: MappedSupplier[]) => {
+  const saveMap = async (next: MappedSupplier[]) => {
     if (!mapFor) return;
-    const code = mapFor.code;
-    setRows(prev => prev.map(r => (r.code === code ? { ...r, suppliers: next } : r)));
-    setMapFor({ ...mapFor, suppliers: next });
+    const svc = mapFor;
+    if (svc.id == null) {
+      setRows(prev => prev.map(r => (r.code === svc.code ? { ...r, suppliers: next } : r)));
+      setMapFor({ ...svc, suppliers: next });
+      return;
+    }
+    const nextKeys = new Set(next.map(s => s.mapId ?? `new-${s.vendorId}`));
+    const removed = svc.suppliers.filter(s => s.mapId != null && !nextKeys.has(s.mapId));
+    const added = next.filter(s => s.mapId == null);
+    setMapFor({ ...svc, suppliers: next });
+    try {
+      for (const s of removed) await unmapServiceSupplier(svc.id, s.mapId!);
+      for (const s of added) await addServiceSupplier(svc.id, s);
+    } catch (e) {
+      toast.error('Could not save the supplier change', apiError(e, 'Please try again.'));
+    }
+    try {
+      const fresh = await fetchServiceSuppliers(svc.id);
+      setMapFor(cur => (cur && cur.id === svc.id ? { ...cur, suppliers: fresh } : cur));
+    } catch { }
+    reload();
   };
 
   const openMap = async (r: ServiceRecord) => {
     if (r.id == null) { setMapFor(r); return; }
     try {
-      const suppliers = await fetchServiceSuppliers(r.id);
-      setMapFor({ ...r, suppliers });
+      const d = await fetchServiceDetail(r.id);
+      setMapFor({ ...r, suppliers: d.record.suppliers, vals: { ...r.vals, gstPct: d.record.vals.gstPct, gstId: d.record.vals.gstId } });
     } catch (e) {
       toast.error('Could not load mapped suppliers', apiError(e, 'Please try again.'));
     }
   };
 
   const toggleActive = async (r: ServiceRecord) => {
+    if (r.status === 'draft') return;
     const next = r.status ? r.status !== 'active' : !r.active;
     const ok = await confirm({
       title: next ? 'Activate service?' : 'Deactivate service?',
@@ -361,7 +392,7 @@ export default function ServiceManagement() {
       {gateOpen && <ServiceTypeGate onClose={() => setGateOpen(false)} onChoose={chooseType} />}
 
       {formFor && (
-        <ServiceFormModal input={formFor} onClose={() => setFormFor(null)} onSubmit={submitForm} />
+        <ServiceFormModal input={formFor} onClose={() => { setFormFor(null); reload(); }} onSubmit={submitForm} />
       )}
 
       {mapFor && (
@@ -474,7 +505,7 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
             : r.active ? 'Active — click to deactivate' : 'Inactive — click to activate'}>
             <button type="button" className={`whm-toggle${(r.status ? r.status === 'active' : r.active) ? ' is-on' : ''}`}
               role="switch" aria-checked={r.status ? r.status === 'active' : r.active} aria-label={`Toggle status of ${r.code}`}
-              onClick={() => act.toggle(r)}>
+              disabled={r.status === 'draft'} onClick={() => act.toggle(r)}>
               <span />
             </button>
           </Tooltip>
