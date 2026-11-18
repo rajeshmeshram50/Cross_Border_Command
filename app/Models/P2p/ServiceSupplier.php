@@ -12,7 +12,7 @@ class ServiceSupplier extends Model
 
     protected $fillable = [
         'service_id', 'vendor_id', 'origin', 'currency_code',
-        'price', 'exchange_rate', 'inr_amount', 'gst_percentage', 'gst_amount', 'total_amount',
+        'price', 'exchange_rate', 'inr_amount', 'gst_id', 'gst_percentage', 'gst_amount', 'total_amount',
         'remarks', 'status', 'created_by', 'updated_by',
     ];
 

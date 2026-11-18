@@ -405,6 +405,7 @@ class ServiceController extends Controller
             'currency' => $m->currency_code ?: 'INR',
             'price' => (float) $m->price,
             'exchange_rate' => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,
+            'gst_id' => $m->gst_id,
             'gst_percentage' => (float) $m->gst_percentage,
             'gst_amount' => (float) $m->gst_amount,
             'total_amount' => (float) $m->total_amount,
@@ -463,9 +464,14 @@ class ServiceController extends Controller
             }
 
             $service->fill(collect($data)->only((new Service)->getFillable())->except(['client_id', 'branch_id', 'created_by', 'code', 'status'])->all());
+            $gstChanged = ! $isNew && $service->isDirty('gst_id');
             $service->updated_by = $user->id;
             $service->step_completed = max((int) $service->step_completed, 1);
             $service->save();
+
+            if ($gstChanged) {
+                $this->repriceDomesticSuppliers($service, $user->id);
+            }
 
             $this->syncImages($request, $service);
             $this->syncAttachments($request, $service);
@@ -682,7 +688,7 @@ class ServiceController extends Controller
             'suppliers.*.vendor_id' => 'required|integer|distinct',
             'suppliers.*.origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'suppliers.*.price' => 'required|numeric|gt:0',
-            'suppliers.*.gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'suppliers.*.gst_id' => 'nullable|integer',
             'suppliers.*.currency' => 'nullable|string|size:3|alpha',
             'suppliers.*.exchange_rate' => 'nullable|numeric|gt:0',
             'suppliers.*.remarks' => 'nullable|string|max:1000',
@@ -743,7 +749,7 @@ class ServiceController extends Controller
             'vendor_id' => 'required|integer',
             'origin' => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
             'price' => 'required|numeric|gt:0',
-            'gst_percentage' => 'nullable|numeric|min:0|max:100',
+            'gst_id' => 'nullable|integer',
             'currency' => 'nullable|string|size:3|alpha',
             'exchange_rate' => 'nullable|numeric|gt:0',
             'remarks' => 'nullable|string|max:1000',
@@ -782,7 +788,7 @@ class ServiceController extends Controller
 
         $data = $request->validate([
             'price' => 'sometimes|required|numeric|gt:0',
-            'gst_percentage' => 'sometimes|required|numeric|min:0|max:100',
+            'gst_id' => 'sometimes|nullable|integer',
             'currency' => 'sometimes|required|string|size:3|alpha',
             'exchange_rate' => 'sometimes|required|numeric|gt:0',
             'remarks' => 'sometimes|nullable|string|max:1000',
@@ -792,7 +798,7 @@ class ServiceController extends Controller
             'vendor_id' => $map->vendor_id,
             'origin' => $map->origin ?: SupplierPricing::DOMESTIC,
             'price' => $data['price'] ?? $map->price,
-            'gst_percentage' => $data['gst_percentage'] ?? $map->gst_percentage,
+            'gst_id' => $data['gst_id'] ?? null,
             'currency' => $data['currency'] ?? $map->currency_code,
             'exchange_rate' => $data['exchange_rate'] ?? $map->exchange_rate,
         ], $service);
@@ -847,17 +853,38 @@ class ServiceController extends Controller
                 throw ValidationException::withMessages([$prefix.'exchange_rate' => ["Enter the exchange rate (₹ per {$currency})."]]);
             }
 
-            return SupplierPricing::international((float) $in['price'], $currency, $rate);
+            $amounts = SupplierPricing::international((float) $in['price'], $currency, $rate) + ['gst_id' => null];
+
+            return $amounts;
         }
 
-        $gst = isset($in['gst_percentage']) && $in['gst_percentage'] !== ''
-            ? (float) $in['gst_percentage']
-            : ($service->gst_percentage !== null ? (float) $service->gst_percentage : 18.0);
+        if (! $service->gst_id) {
+            throw ValidationException::withMessages([$prefix.'gst_id' => ['Map a GST % to this service first (Stage 1) — domestic suppliers use the service GST.']]);
+        }
+        if (! empty($in['gst_id']) && (int) $in['gst_id'] !== (int) $service->gst_id) {
+            throw ValidationException::withMessages([$prefix.'gst_id' => [
+                'The supplier GST must be the service GST ('.(float) $service->gst_percentage.'%, gst_id '.$service->gst_id.').',
+            ]]);
+        }
 
+        $amounts = $this->domesticAmounts((float) $in['price'], $service);
+
+        return $amounts;
+    }
+
+    private function domesticAmounts(float $price, Service $service): array
+    {
         return array_intersect_key(
-            SupplierPricing::domestic((float) $in['price'], $gst),
+            SupplierPricing::domestic($price, (float) $service->gst_percentage),
             array_flip(['origin', 'currency_code', 'exchange_rate', 'price', 'gst_percentage', 'gst_amount', 'total_amount', 'inr_amount'])
-        );
+        ) + ['gst_id' => $service->gst_id];
+    }
+
+    private function repriceDomesticSuppliers(Service $service, ?int $userId): void
+    {
+        $service->suppliers()->where(fn ($q) => $q->where('origin', SupplierPricing::DOMESTIC)->orWhereNull('origin'))
+            ->get()
+            ->each(fn (ServiceSupplier $m) => $m->fill($this->domesticAmounts((float) $m->price, $service) + ['updated_by' => $userId])->save());
     }
 
     private function priceMessages(): array
@@ -868,6 +895,7 @@ class ServiceController extends Controller
             'suppliers.*.price.required' => "Enter the supplier's price.",
             'suppliers.*.price.gt' => 'The price must be more than 0.',
             'exchange_rate.gt' => 'The exchange rate must be more than 0.',
+            'gst_id.required' => 'Map a GST % to this service.',
             'currency.size' => 'Pick a currency (3-letter code, e.g. USD).',
         ];
     }
