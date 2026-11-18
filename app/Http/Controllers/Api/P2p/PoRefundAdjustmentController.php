@@ -527,18 +527,6 @@ class PoRefundAdjustmentController extends Controller
         ]);
     }
 
-    /** Zoho after the save: a failure is stored on the row and reported, never undoes the save. */
-    private function tryZoho(callable $fn): array
-    {
-        if (!$this->zoho->configured()) return ['status' => 'skipped', 'message' => 'Zoho Books is not connected — sync it later.'];
-        try {
-            $fn();
-            return ['status' => 'synced', 'message' => null];
-        } catch (\RuntimeException $e) {
-            return ['status' => 'failed', 'message' => $e->getMessage()];
-        }
-    }
-
     private function abort(string $message, array $errors = []): never
     {
         abort(response()->json(['status' => false, 'message' => $message] + ($errors ? ['errors' => array_filter($errors)] : []), 422));
