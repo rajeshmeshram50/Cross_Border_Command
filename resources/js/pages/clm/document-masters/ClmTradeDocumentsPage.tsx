@@ -18,6 +18,7 @@ import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import SearchClear from '../../../components/ui/SearchClear';
 import useDismissPopover from '../shared/useDismissPopover';
+import { PARTY_LABELS } from './tradeDocParty';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
@@ -25,18 +26,9 @@ type TdName = { id: number; code: string; name: string; in_use?: number };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; regulatory?: 'highly'|'less'; segment?: string | null; file_path: string | null; content: string | null; is_signed?: boolean };
 type Seg    = { id: number; name: string; regulatory_status: 'highly' | 'less' };
 
-/* The Applicable-Party field stores internal values ("Buyer", "Supplier-Material")
-   but the form picks by label ("Customer", "Material"). Map stored values back to
-   their display labels so the column shows what the user selected. */
-const PARTY_LABELS: Record<string, string> = {
-  'Buyer': 'Customer',
-  'Consignee': 'Consignee',
-  'Supplier-Material': 'Material',
-  'Supplier-Logistic': 'Logistic',
-  'Supplier-Tech': 'Tech',
-  'Supplier-Advisory': 'Advisory',
-  'Supplier-Strategic Risk': 'Strategic Risk',
-};
+/* The Applicable-Party field stores internal values ("Buyer", "Supplier-Trackable")
+   but the form picks by label ("Customer", "Trackable Services"). PARTY_LABELS
+   (tradeDocParty.ts) maps stored values back so the column shows what was selected. */
 const LIST_VIEW = { view: 'list' } as const;
 
 const partyLabels = (party: string): string[] =>
