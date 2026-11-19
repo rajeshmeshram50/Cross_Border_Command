@@ -134,11 +134,9 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       <CvPortal onClose={onClose}>
         <div className="vd-ov is-open">
           <div className="vd-scrim" />
-          <aside className="vd" role="dialog" aria-label="Loading credential">
-            <div className="vd-body"><div className="vd-pane"><table style={{ width: '100%' }}><tbody>
-              {Array.from({ length: 8 }, (_, i) => <tr key={i} className="cv-shimrow"><td><i style={{ width: `${50 + (i * 11) % 45}%` }} /></td></tr>)}
-            </tbody></table></div></div>
-          </aside>
+          <div role="status" aria-live="polite" className="cv-lock vd-loading">
+            <div className="cv-lock__box"><span className="cv-lock__spin" />Opening credential…</div>
+          </div>
         </div>
       </CvPortal>
     );

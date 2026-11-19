@@ -19164,6 +19164,26 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   .cvx .cv-lock__spin { animation: none; }
 }
 
+.cvx .vd-ov .cv-lock.vd-loading {
+  position: fixed;
+  border-radius: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.cvx .vd-ov .cv-lock.vd-loading .cv-lock__box {
+  padding: 20px 28px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 50px -18px rgba(8, 47, 73, .45);
+}
+
+[data-bs-theme="dark"] .cvx .vd-ov .cv-lock.vd-loading .cv-lock__box {
+  background: #0b1d26;
+  box-shadow: 0 20px 50px -18px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .16);
+}
+
 /* ══ Recycle Bin · Retention period popup (CS-1493): shimmer while it opens, the save lock while it saves ══ */
 .cvx .dl-modal.rb-ret {
   position: relative;
