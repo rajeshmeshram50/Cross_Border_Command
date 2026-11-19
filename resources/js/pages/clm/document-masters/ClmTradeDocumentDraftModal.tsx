@@ -18,6 +18,9 @@ import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 import { PARTY_BUYER_CONSIGNEE, PARTY_SUPPLIER, PARTY_SUPPLIER_GROUPS, expandParty } from './tradeDocParty';
 
+/** Supplier types a trade document can apply to today (the rest are shown disabled). */
+const TRADE_DOC_SUPPLIER_TYPES = new Set(['Supplier-Material / Goods']);
+
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
  *
@@ -1026,15 +1029,23 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <div key={g.group ?? 'top'} className="tdw-party-group">
                         {g.group && <div className="tdw-party-group-title">{g.group}</div>}
                         <div className="tdw-party-options">
-                          {g.items.map(p => (
-                            <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
-                              title={hasBuyerParty ? 'A Customer/Consignee is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
-                              style={hasBuyerParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
-                              <input type="checkbox" checked={parties.has(p.value)} disabled={hasBuyerParty} onChange={() => toggleParty(p.value)} />
-                              <span className="tdw-checkbox-emoji">{p.icon}</span>
-                              <span className="tdw-checkbox-label">{p.label}</span>
-                            </label>
-                          ))}
+                          {g.items.map(p => {
+                            /* Trade documents apply to Material / Goods suppliers only for now: every other
+                               supplier type is disabled. One already ticked on an older document can still be
+                               unticked, so the document can be corrected. */
+                            const typeOff = !TRADE_DOC_SUPPLIER_TYPES.has(p.value) && !parties.has(p.value);
+                            const off = hasBuyerParty || typeOff;
+                            return (
+                              <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                                title={hasBuyerParty ? 'A Customer/Consignee is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.'
+                                  : typeOff ? 'Trade documents apply to Material / Goods suppliers only' : undefined}
+                                style={off ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                <input type="checkbox" checked={parties.has(p.value)} disabled={off} onChange={() => toggleParty(p.value)} />
+                                <span className="tdw-checkbox-emoji">{p.icon}</span>
+                                <span className="tdw-checkbox-label">{p.label}</span>
+                              </label>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}

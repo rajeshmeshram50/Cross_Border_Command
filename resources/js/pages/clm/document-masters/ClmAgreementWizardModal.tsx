@@ -20,6 +20,7 @@ import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MAR
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 import type { Editor } from '@tiptap/react';
+import { PARTY_BUYER_CONSIGNEE, PARTY_SUPPLIER, PARTY_SUPPLIER_GROUPS, expandParty } from './tradeDocParty';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Agreements Master → Library → "Add New Agreement" wizard
@@ -70,31 +71,11 @@ export type AgrLib = {
  * keep the two in step, or the UI will promise a limit the API doesn't hold. */
 const AGREEMENT_DOCX_MAX_BYTES = 1024 * 1024;   // 1 MB
 
-const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
-  { value: 'Consignee', label: 'Consignee', icon: '🚚' },
-];
-// Supplier party types mirror the PO Type options (Material / Goods, FFD /
-// Transporter, Services) so an agreement's applicable supplier aligns with how
-// suppliers are classified on the Purchase Order.
-const PARTY_SUPPLIER = [
-  { value: 'Supplier-Material / Goods',  label: 'Material / Goods',  icon: '📦' },
-  { value: 'Supplier-FFD / Transporter', label: 'FFD / Transporter', icon: '🚛' },
-  { value: 'Supplier-Services',          label: 'Services',          icon: '🛠️' },
-];
-
-// Legacy supplier party values (from before the 5→3 option change) → their
-// closest current value, so an existing agreement's saved supplier selection
-// still reflects (checked) when re-opened in the edit form.
-const SUPPLIER_PARTY_ALIAS: Record<string, string> = {
-  'Supplier':                'Supplier-Material / Goods',
-  'Supplier-Material':       'Supplier-Material / Goods',
-  'Supplier-Logistic':       'Supplier-FFD / Transporter',
-  'Supplier-Tech':           'Supplier-Services',
-  'Supplier-Advisory':       'Supplier-Services',
-  'Supplier-Strategic Risk': 'Supplier-Services',
-};
-const normalizeParty = (v: string): string => SUPPLIER_PARTY_ALIAS[v] ?? v;
+/* The party list is the Trade Document form's (tradeDocParty.ts): Customer / Consignee and the
+   grouped supplier types. The backend reads both forms' tokens the same way (SupplierPartyToken),
+   and an older agreement's "Services" opens with every service type ticked (expandParty). */
+/** Supplier types an agreement can apply to today (the rest are shown disabled), as trade documents. */
+const AGREEMENT_SUPPLIER_TYPES = new Set(['Supplier-Material / Goods']);
 
 const STEPS = [
   { key: 1, label: 'Agreement Basic Details', sub: 'Type, title, parties' },
@@ -516,7 +497,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setTitle(existing.title ?? '');
       setRegulatory(existing.regulatory ?? 'less');
       setPurpose(existing.purpose ?? '');
-      setParties(new Set((existing.party ?? '').split(',').map(s => normalizeParty(s.trim())).filter(Boolean)));
+      setParties(new Set((existing.party ?? '').split(',').flatMap(s => expandParty(s.trim())).filter(Boolean)));
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       /* The list omits `content` — it was 92.9% of that response and the table
          never shows it — so an undefined one means "fetch it". A row that does
@@ -979,17 +960,32 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                   </div>
                 </div>
 
-                <div className="agw-party-row">
+                <div className="agw-party-row agw-party-row--top">
                   <div className="agw-party-label agw-party-label-supplier">SUPPLIER</div>
-                  <div className="agw-party-options">
-                    {PARTY_SUPPLIER.map(p => (
-                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
-                        title={hasBuyerParty ? 'A Customer/Consignee is selected — an agreement applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
-                        style={hasBuyerParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
-                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasBuyerParty} onChange={() => toggleParty(p.value)} />
-                        <span className="agw-checkbox-emoji">{p.icon}</span>
-                        <span className="agw-checkbox-label">{p.label}</span>
-                      </label>
+                  {/* Same as the Trade Document form: the top-level types, then each service group under
+                      its title. Only Material / Goods can be picked; one already ticked on an older
+                      agreement can still be unticked. */}
+                  <div className="agw-party-groups">
+                    {PARTY_SUPPLIER_GROUPS.map(g => (
+                      <div key={g.group ?? 'top'} className="agw-party-group">
+                        {g.group && <div className="agw-party-group-title">{g.group}</div>}
+                        <div className="agw-party-options">
+                          {g.items.map(p => {
+                            const typeOff = !AGREEMENT_SUPPLIER_TYPES.has(p.value) && !parties.has(p.value);
+                            const off = hasBuyerParty || typeOff;
+                            return (
+                              <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                                title={hasBuyerParty ? 'A Customer/Consignee is selected — an agreement applies to either the Customer/Consignee side or the Supplier side, not both.'
+                                  : typeOff ? 'Agreements apply to Material / Goods suppliers only' : undefined}
+                                style={off ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                <input type="checkbox" checked={parties.has(p.value)} disabled={off} onChange={() => toggleParty(p.value)} />
+                                <span className="agw-checkbox-emoji">{p.icon}</span>
+                                <span className="agw-checkbox-label">{p.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1893,6 +1889,19 @@ const AGW_CSS = `
 .agw-checkbox.is-on { background: #f0fdff; border-color: #0891b2; color: #0e7490; box-shadow: 0 2px 8px rgba(8,145,178,.18); }
 .agw-checkbox-all { padding: 6px 12px; font-size: 12px; letter-spacing: .04em; font-weight: 800; }
 .agw-party-hint { font-size: 11.5px; color: #94a3b8; }
+/* Grouped supplier types, as the Trade Document form (.tdw-party-groups). */
+.agw-party-row--top { align-items: start; }
+.agw-party-row--top > .agw-party-label { padding-top: 21px; }
+.agw-party-groups { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.agw-party-group { display: flex; flex-direction: column; gap: 9px; min-width: 0; padding: 11px 12px 12px; border: 1px solid rgba(6,182,212,.16); border-radius: 12px; background: rgba(240,253,255,.6); }
+.agw-party-group-title { display: flex; align-items: center; gap: 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #0e7490; }
+.agw-party-group-title::before { content: ''; flex: none; width: 3px; height: 11px; border-radius: 2px; background: linear-gradient(180deg, #22d3ee, #0891b2); }
+.agw-party-group-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(6,182,212,.28), rgba(6,182,212,0)); }
+.agw-party-groups .agw-party-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 8px; }
+.agw-party-groups .agw-checkbox { min-width: 0; padding: 7px 11px; gap: 7px; border-radius: 9px; font-size: 12.5px; }
+.agw-party-groups .agw-checkbox input, .agw-party-groups .agw-checkbox-emoji { flex: none; }
+.agw-party-groups .agw-checkbox-emoji { font-size: 14px; }
+.agw-party-groups .agw-checkbox-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Signing Workflow + Expiry Conditions CSS removed — markup is gone. */
 .agw-select {
   appearance: none; -webkit-appearance: none;
@@ -2157,6 +2166,8 @@ const AGW_CSS = `
   box-shadow: 0 6px 18px rgba(34,197,94,.25);
 }
 [data-bs-theme="dark"] .agw-party-label { color: #cbd5e1; }
+[data-bs-theme="dark"] .agw-party-group-title { color: #67e8f9; }
+[data-bs-theme="dark"] .agw-party-group { background: rgba(8,145,178,.06); border-color: rgba(6,182,212,.18); }
 [data-bs-theme="dark"] .agw-party-label-buyer    { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-party-label-supplier { color: #4ade80; }
 [data-bs-theme="dark"] .agw-party-label-combined { color: #c4b5fd; }
