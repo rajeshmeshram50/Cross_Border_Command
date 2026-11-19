@@ -2271,6 +2271,9 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
 }
 .avm-btn-stack > .avm-btn-stack-busy { visibility: hidden; }
+/* The hidden "Saving..." spinner only reserves the button width: don't let it spin while hidden,
+   or it keeps the page restyling every frame (scroll lag) for as long as the form is open. */
+.avm-btn-stack:not([data-busy]) .avm-spinner { animation: none; }
 .avm-btn-stack[data-busy] > .avm-btn-stack-idle { visibility: hidden; }
 .avm-btn-stack[data-busy] > .avm-btn-stack-busy { visibility: visible; }
 

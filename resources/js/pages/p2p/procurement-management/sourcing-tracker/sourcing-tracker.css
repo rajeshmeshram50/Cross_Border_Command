@@ -1444,6 +1444,15 @@ body .sct-scroller::-webkit-scrollbar-button {
   border-color: rgba(8, 145, 178, .25);
   border-top-color: #0891b2;
 }
+/* Stacked popups (Report -> Mapped Suppliers -> Map Supplier -> Add Supplier): only the TOP overlay
+   blurs. Each lower overlay keeps its dark tint, but a full-screen blur under another full-screen blur
+   is invisible work that the browser redoes on every scroll frame, which made the Add Supplier form lag. */
+body:has(.stsv-overlay, .stmap-overlay, .avm-backdrop) .sta-overlay,
+body:has(.stmap-overlay, .avm-backdrop) .stsv-overlay,
+body:has(.avm-backdrop) .stmap-overlay {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 /* Retry after a popup's products could not be loaded (Report, Product List). */
 .str-retry {
   margin-left: 8px;
