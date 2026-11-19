@@ -380,6 +380,23 @@
     color: var(--sm-ro-ph);
 }
 
+/* A locked / auto field must not look typeable: no caret, no selection, no focus ring on click. */
+.stsm-i.is-ro,
+.stsm-i.is-calc {
+    caret-color: transparent;
+    user-select: none;
+}
+.stsm-i.is-ro:focus,
+.stsm-i.is-calc:focus {
+    border-color: var(--sm-ro-bd);
+    box-shadow: none;
+    outline: 0;
+}
+.stsm-i.is-ro::selection,
+.stsm-i.is-calc::selection {
+    background: transparent;
+}
+
 .stsm-i.is-calc {
     font-weight: 800;
     color: var(--sm-calc-text);

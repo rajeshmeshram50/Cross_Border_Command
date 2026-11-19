@@ -378,6 +378,16 @@
     border-style: dashed;
     color: var(--c-muted);
     cursor: not-allowed;
+    /* A locked field must not look typeable: no caret, no selection, no focus ring on click. */
+    caret-color: transparent;
+    user-select: none;
+}
+.is-frozen .sta-inp:focus {
+    border-color: var(--c-input-bd);
+    box-shadow: none;
+}
+.is-frozen .sta-inp::selection {
+    background: transparent;
 }
 
 .sta-inp.has-err {
