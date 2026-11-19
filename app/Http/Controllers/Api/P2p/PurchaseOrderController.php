@@ -20,19 +20,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * P2P · Create Purchase Order — /api/p2p/orders
- *
- * Stage 01 creates a draft; stages 02 and 03 update it; stage 03 submits.
- * Tenant scoping comes from the global BelongsToTenant scope (set by the
- * `tenant` middleware); client_id / branch_id / created_by are always taken
- * from the authenticated user, never from the request body.
- */
 class PurchaseOrderController extends Controller
 {
     public function __construct(private PurchaseOrderService $svc) {}
 
-    /** Writes need a tenant: a super admin has no client to create a PO under. */
     private function tenantUser(Request $request)
     {
         $user = $request->user();
@@ -40,23 +31,18 @@ class PurchaseOrderController extends Controller
         return $user;
     }
 
-    /** A PO the caller can see — the global tenant scope does the filtering. */
     private function findPo(int $id): PurchaseOrder
     {
         return PurchaseOrder::findOrFail($id);
     }
 
-    /* ══════════════════════════ LOOKUPS ══════════════════════════ */
 
-    /** GET /p2p/orders/next-code — preview only; nothing is written until Step 01 is saved. */
     public function nextCode(Request $request)
     {
         try {
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            // The SAME branch store() will file the order under, so the number
-            // the form shows is the number it gets.
             $code = $this->svc->previewPoCode((int) $user->client_id, $user->branch_id ? (int) $user->branch_id : null);
 
             DB::commit();
@@ -71,10 +57,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/orders/shipments/{shipment}/pi-lines?exclude_po=
-     * Each PI line with what is already ordered and what is still pending.
-     */
     public function piLines(Request $request, int $shipment)
     {
         try {
@@ -96,12 +78,6 @@ class PurchaseOrderController extends Controller
                 ]], 200);
             }
 
-            /* Whatever is being edited leaves its own claim out, so the screen
-               shows what is left for IT — not what is left once it is counted
-               twice. exclude_po has always done this for an order; a Direct SPI
-               needs the same now that its lines hold PI quantity too, or
-               reopening a saved invoice reads its own quantities as billed by
-               someone else. */
             $exclude    = $request->integer('exclude_po') ?: null;
             $excludeSpi = $request->integer('exclude_spi') ?: null;
 
@@ -121,15 +97,8 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * Other open POs holding this PI's quantity, with where each stands — so an empty
-     * Stage 02 can say why (e.g. the lines are on a PO still waiting for senior approval).
-     */
     private function piHolders(int $piId, int $clientId, ?int $excludePoId, ?int $excludeSpiId = null): array
     {
-        /* Direct SPIs hold quantity as well, and a screen that lists only the
-           orders tells someone the line is free when an invoice has it. Same
-           test as orderedByPiItem(): standalone, alive, not cancelled. */
         $invoices = DB::table('p2p_supplier_invoice_items as si')
             ->join('p2p_supplier_invoices as s', 's.id', '=', 'si.supplier_invoice_id')
             ->join('proforma_invoice_items as pi', 'pi.id', '=', 'si.pi_item_id')
@@ -139,7 +108,6 @@ class PurchaseOrderController extends Controller
             ->whereNull('s.deleted_at')
             ->whereNull('si.deleted_at')
             ->where('s.status', '!=', SupplierInvoice::STATUS_CANCELLED)
-            // The invoice being edited does not hold quantity against itself.
             ->when($excludeSpiId, fn ($q) => $q->where('s.id', '!=', $excludeSpiId))
             ->groupBy('s.id', 's.code', 's.status')
             ->selectRaw('s.id, s.code, s.status, COUNT(*) as lines, SUM(si.qty_spi) as qty')
@@ -157,11 +125,6 @@ class PurchaseOrderController extends Controller
             ->where('pi.proforma_invoice_id', $piId)
             ->where('po.client_id', $clientId)
             ->whereNull('po.deleted_at')
-            /* Named because they hold quantity, so this asks exactly what
-               orderedByPiItem asks: submitted, or a draft with a senior on it. */
-            /* A cancelled order holds nothing. Without this the approval
-               branch below kept its hold alive after cancellation —
-               the rows survive, so the EXISTS stayed true for ever. */
             ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
             ->where(fn ($q) => $q
                 ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
@@ -175,7 +138,6 @@ class PurchaseOrderController extends Controller
             ->orderBy('po.id')
             ->get();
         if ($rows->isEmpty()) return $invoices;
-        // Latest senior-approval request per PO.
         $approvals = DB::table('p2p_po_gst_approvals')->whereIn('purchase_order_id', $rows->pluck('id'))
             ->orderBy('id')->get(['purchase_order_id', 'status'])->keyBy('purchase_order_id');
         return array_merge($rows->map(fn ($r) => [
@@ -186,10 +148,7 @@ class PurchaseOrderController extends Controller
         ])->all(), $invoices);
     }
 
-    /* ══════════════════════════ LIST / SHOW ══════════════════════════ */
 
-    // The list's tabs, as SQL conditions. A PO cancelled with money released stays
-    // "initiated" until its refund adjustment is fully recovered; otherwise it closes at once.
     private const TABS = [
         'all'          => 'TRUE',
         'with'         => "link_type = 'with_shipment'",
@@ -198,50 +157,15 @@ class PurchaseOrderController extends Controller
         'cancelclosed' => "status = 'cancelled' AND COALESCE(cancel_stage, 'closed') = 'closed'",
     ];
 
-    /* An order of magnitude typed into the rate used to pass every check here
-       and fail hours later inside Zoho Books, which converts to the base
-       currency and refuses the result with a message it never fills in
-       ("out of range value ... contact {0}"). A PO of 1,987 cars at
-       13,000,000,000 each reached 25,831,000,000,000 that way. These are
-       deliberately generous — they catch a slipped decimal, not a big deal. */
-    /* THE order ceiling, and it is a RUPEE one: Zoho converts a PO at its own
-       rate and posts the rupee figure to the ledger, so that is the only number
-       it judges. Evidence from this org: 20.88 trillion synced, 2,546 trillion
-       refused as "out of range" — Zoho's amount field is a 14-digit whole part,
-       the same shape as ours. What a PO may be in ITS OWN currency follows from
-       this and the exchange rate, rather than being fixed per currency.
+    private const MAX_ZOHO_BASE = 1000000000;
 
-       ₹1 BILLION, not the 1 trillion this started at — tightened deliberately
-       so the guard catches a typo nearer the size of a real order instead of
-       only an absurd one. Measured against this org's own 17 orders before
-       choosing it: the largest GENUINE order is ₹1.73 crore, so a 100-crore
-       ceiling still leaves ~58x headroom. The three above it are the known
-       bad rows (₹20.88 tn, ₹11.06 tn, ₹123.6 bn) — exactly what this is for. */
-    private const MAX_ZOHO_BASE = 1000000000;  // 1 billion rupees (₹100 crore)
-
-    /* A unit rate is judged in rupees too, for the same reason the order is: a
-       billion yen and a billion dollars are 150x apart.
-
-       Tied to the order ceiling rather than carrying a second hand-picked
-       number — one unit cannot be worth more than the whole order may be, and
-       at any quantity above 1 the order ceiling binds first anyway. It was
-       10 billion while the order was 1 trillion; left there it would now be
-       ten times the order it belongs to. */
     private const MAX_UNIT_RATE_BASE = self::MAX_ZOHO_BASE;
 
-    /* Currency-agnostic, so they stay plain numbers. */
-    private const MAX_QUANTITY      = 10000000;   // 10 million units on a line
-    /* The shared bound — see App\Support\FxRate for why 10,000 and not some
-       larger round number. Referenced rather than repeated, so the PO, the
-       quotation, the PI and the supplier invoice cannot drift apart. */
+    private const MAX_QUANTITY      = 10000000;
     private const MAX_EXCHANGE_RATE = FxRate::MAX;
 
-    // Only what a list row shows (plus the ids its references are read through).
     private const LIST_COLUMNS = [
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
-        // link_procurement says where the order's procurement case came from -
-        // 'yes' means one that already existed, 'no' means it was not linked to
-        // one. The SPI picker reads it; only the detail carried it before.
         'shipment_order_id', 'proforma_invoice_id', 'link_procurement', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
@@ -249,10 +173,6 @@ class PurchaseOrderController extends Controller
         'cancel_stage', 'zoho_status', 'zoho_purchaseorder_id', 'zoho_bill_id', 'zoho_bill_number', 'zoho_error',
     ];
 
-    /**
-     * GET /p2p/orders?tab=&search=&status=&link_type=&shipment_order_id=&procurement_request_id=&vendor_id=&page=&per_page=
-     * Server-side paging (10 by default); meta.counts gives every tab's total in one query.
-     */
     public function index(Request $request)
     {
         try {
@@ -266,28 +186,19 @@ class PurchaseOrderController extends Controller
                 'search'    => 'nullable|string|max:100',
             ]);
 
-            // Filters every tab shares; the tab itself is applied after the counts.
             $base = PurchaseOrder::query();
             if ($s = $request->query('status')) $base->where('status', $s);
             if ($id = $request->integer('shipment_order_id')) $base->where('shipment_order_id', $id);
             if ($id = $request->integer('vendor_id')) $base->where('vendor_id', $id);
             if ($t = $request->query('link_type')) $base->where('link_type', $t);
             if ($id = $request->integer('procurement_request_id')) $base->where('procurement_request_id', $id);
-            // Every id the list shows is searchable, not just the PO number: the linked
-            // shipment / opportunity / PI codes live on other tables, so they match
-            // through their own id (the PO is already tenant-scoped).
             if ($s = trim((string) $request->query('search'))) {
                 $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $s) . '%';
-                /* The list prints labels, not the values stored behind them, so the
-                   words on screen are searchable too: "Domestics", "International",
-                   "Material / Goods". Two letters would pull in half the list, so a
-                   label only joins the search from three characters. */
                 $needle = mb_strtolower($s);
                 $byLabel = fn (array $labels) => mb_strlen($needle) < 3 ? []
                     : array_keys(array_filter($labels, fn ($label) => str_contains(mb_strtolower($label), $needle)));
                 $docTypes = $byLabel(PurchaseOrder::DOC_TYPE_LABELS);
                 $poTypes  = $byLabel(PurchaseOrder::PO_TYPE_LABELS);
-                // The search box has always offered status; it reads the same way.
                 $statuses = $byLabel(array_combine(
                     [PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED],
                     ['Draft', 'Submitted', 'Cancelled'],
@@ -318,13 +229,9 @@ class PurchaseOrderController extends Controller
             $page = $base->whereRaw(self::TABS[$tab])
                 ->select(self::LIST_COLUMNS)
                 ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
-                // Request count and the two notes under the payment bar, as subqueries — not one query per row.
                 ->withCount('paymentRequests')
-                // The cancellation and, as a subquery, its refunds still to reach Zoho.
                 ->with(['refundAdjustment' => fn ($q) => $q->withCount(['recoveries as zoho_pending_recoveries' => fn ($r) => $r->whereNull('zoho_refund_id')])])
-                // Payments not yet posted to the Zoho bill.
                 ->withCount(['payments as zoho_unposted_payments' => fn ($q) => $q->whereColumn('zoho_applied_amount', '<', 'amount')])
-                // A document out for signature or signed — Edit PO becomes View PO.
                 ->withExists(['documents as signing_started' => fn ($q) => $q->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])])
                 ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
                 ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
@@ -349,17 +256,14 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** GET /p2p/orders/{id} */
     public function show(int $id)
     {
         try {
             DB::beginTransaction();
 
             $po = $this->findPo($id);
-            // So signing_started reflects documents sent from Step 04 and any request Zoho has since declined.
             $this->refreshSigning($po);
             $out = $this->shapeDetail($po);
-            // The whole supplier record, alongside the short `supplier` block.
             $out['supplier_details'] = $this->supplierDetails((int) $po->vendor_id);
 
             DB::commit();
@@ -371,20 +275,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * The supplier's own single view, embedded in the PO detail.
-     *
-     * Delegated to VendorController::show rather than rebuilt here, so the
-     * shape is the one the vendor screen already renders — address, bank
-     * accounts, GST scrutiny, segments, product mappings and the segment
-     * uploads — and stays that shape when the vendor master changes.
-     *
-     * Only on show(): the write paths return shapeDetail() too, and they do
-     * not need to pay for this.
-     *
-     * Null when the PO has no supplier yet, or when the supplier is soft
-     * deleted — the short `supplier` block reads those, this one does not.
-     */
     private function supplierDetails(?int $vendorId): ?array
     {
         if (!$vendorId) return null;
@@ -395,7 +285,6 @@ class PurchaseOrderController extends Controller
                 true
             );
         } catch (\Throwable $e) {
-            // A missing supplier must not take the PO detail down with it.
             Log::warning('P2P PO: could not embed the supplier detail', [
                 'vendor_id' => $vendorId,
                 'error'     => $e->getMessage(),
@@ -405,7 +294,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** GET /p2p/orders/{id}/qty-history */
     public function qtyHistory(int $id)
     {
         try {
@@ -424,9 +312,7 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /* ══════════════════════════ STAGE 01 ══════════════════════════ */
 
-    /** Stage 01 rules (CS-403): all eight basic fields, plus the seven trade fields on an international PO. */
     private function stage1Rules(): array
     {
         $intl = 'required_if:document_type,international|nullable';
@@ -438,7 +324,6 @@ class PurchaseOrderController extends Controller
             'delivery_location'      => 'required|string|max:255',
             'payment_type'           => ['required', Rule::in(PurchaseOrder::PAYMENT_TYPES)],
             'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
-            // An import is priced in the supplier's currency, never INR.
             'currency_code'          => [...explode('|', $intl), 'string', 'max:8', 'not_in:INR,inr'],
             'exchange_rate'          => "{$intl}|numeric|gt:0|max:" . self::MAX_EXCHANGE_RATE,
             'inco_term'              => [...explode('|', $intl), Rule::in(PurchaseOrder::INCO_TERMS)],
@@ -471,7 +356,6 @@ class PurchaseOrderController extends Controller
         ];
     }
 
-    /** POST /p2p/orders — Stage 01: create the PO as a draft. */
     public function store(Request $request)
     {
         try {
@@ -504,7 +388,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** PUT /p2p/orders/{id}/stage-1 */
     public function updateStage1(Request $request, int $id)
     {
         try {
@@ -521,7 +404,6 @@ class PurchaseOrderController extends Controller
                     'message' => 'Remove the product lines before changing the shipment — they are matched to its PI.',
                 ], 422));
             }
-            // The supplier stays open until the PO goes to the senior; an approval (or a pending request) fixes it.
             $sentToSenior = $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->exists();
             if ($sentToSenior && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
                 abort(response()->json([
@@ -530,8 +412,6 @@ class PurchaseOrderController extends Controller
                     'errors'  => ['vendor_id' => ['The supplier is fixed once the PO is sent for senior approval.']],
                 ], 422));
             }
-            /* The lines may already be saved, so a new rate can push an order that
-               was fine past what Zoho takes. Checked here, where the rate is typed. */
             $newRate = (float) ($data['exchange_rate'] ?? 0);
             if ($newRate > 0 && (float) $po->grand_total > 0
                 && (float) $po->grand_total * $newRate > self::MAX_ZOHO_BASE) {
@@ -548,16 +428,13 @@ class PurchaseOrderController extends Controller
 
             $vendorChanged = (int) $po->vendor_id !== (int) $data['vendor_id'];
             $attrs = $this->stage1Attributes($data, $resolved) + ['updated_by' => $user->id];
-            // A different supplier invalidates any GST approval taken on the old one.
             if ($vendorChanged) {
                 $attrs += ['gst_approval_status' => null, 'gst_approval_by' => null, 'gst_approval_at' => null,
                     'gst_approval_requested_by' => null, 'gst_approval_requested_at' => null, 'gst_approval_note' => null];
-                // Open requests were about the old supplier; decided rejections stay as history.
                 $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->delete();
             }
             if ($attrs['physical_inspection'] === $po->physical_inspection) unset($attrs['inspection_status']);
             $taxChanged = $po->tax_mode !== $attrs['tax_mode'] || $po->document_type !== $attrs['document_type'];
-            // The old supplier keeps its currency only if another order still holds it.
             $wasVendor = (int) $po->vendor_id;
             $po->update($attrs);
             if ($taxChanged) $this->retaxItems($po);
@@ -583,7 +460,6 @@ class PurchaseOrderController extends Controller
         return app(VendorCurrencyGuard::class);
     }
 
-    /** Record this PO's currency against its supplier (see VendorCurrencyGuard). */
     private function rememberCurrency(PurchaseOrder $po): void
     {
         if (!$po->vendor_id) return;
@@ -598,18 +474,6 @@ class PurchaseOrderController extends Controller
         );
     }
 
-    /**
-     * Move this PO's supplier invoices onto the new supplier.
-     *
-     * The PO reads its supplier live from vendors, so its own detail is right
-     * the moment vendor_id changes. An SPI does not: it copies vendor_id when
-     * it is raised, and nothing re-read it — so the SPI list, its supplier
-     * chip and the per-supplier invoice-number check all stayed on the old
-     * supplier while the PO showed the new one.
-     *
-     * Each move is written to the SPI's own trail, because the change is made
-     * from the PO and would otherwise be invisible on the invoice.
-     */
     private function resupplyInvoices(PurchaseOrder $po, int $wasVendor): void
     {
         $invoices = SupplierInvoice::where('purchase_order_id', $po->id)
@@ -634,7 +498,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** Validates shipment and supplier against the tenant; returns what Stage 01 derives. */
     private function resolveStage1(array $data, $user, ?int $exceptPoId = null): array
     {
         $ship = null;
@@ -642,7 +505,6 @@ class PurchaseOrderController extends Controller
             $ship = $this->svc->scopeTenant(DB::table('shipment_orders'), 'shipment_orders')
                 ->where('id', $data['shipment_order_id'])->first();
             if (!$ship) abort(response()->json(['status' => false, 'message' => 'Shipment not found', 'errors' => ['shipment_order_id' => ['Shipment not found.']]], 422));
-            // Stage 02 matches lines against this PI, so a shipment without one is unusable.
             if (!$this->svc->piIdForShipment($ship)) abort(response()->json(['status' => false, 'message' => 'This shipment has no Proforma Invoice', 'errors' => ['shipment_order_id' => ['This shipment has no Proforma Invoice to order against.']]], 422));
         }
         $vendor = $this->loadVendor((int) $data['vendor_id']);
@@ -654,7 +516,6 @@ class PurchaseOrderController extends Controller
                 'errors'  => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']],
             ], 422));
         }
-        // The supplier's type has to fit the PO type (a Material / Goods PO needs a Material / Goods supplier).
         $needType = PurchaseOrder::PO_TYPE_SUPPLIER_TYPE[$data['po_type']] ?? null;
         if ($needType && strcasecmp(trim((string) $vendor->vendor_type), $needType) !== 0) {
             abort(response()->json([
@@ -665,7 +526,6 @@ class PurchaseOrderController extends Controller
                 ]],
             ], 422));
         }
-        // Document type follows the supplier's origin: India → domestic, any other country → international.
         $origin = $this->vendorOrigin($vendor);
         if ($data['document_type'] !== $origin) {
             abort(response()->json([
@@ -678,16 +538,8 @@ class PurchaseOrderController extends Controller
             ], 422));
         }
 
-        /* One currency per supplier: Zoho Books pins a contact to the currency of
-           its first transaction and refuses every later one in another. Caught
-           here so the mismatch is said before the PO is built, not at sync. */
         $currency = $data['document_type'] === 'international' ? ($data['currency_code'] ?? null) : 'INR';
 
-        /* A currency Zoho Books has not enabled cannot reach it at all: the PO
-           posts in the org's base currency with no word said, which is how an
-           SGD order came to sit in the books as rupees. Refused here rather than
-           discovered in the ledger. An empty list means Zoho is unreachable —
-           not a reason to stop someone raising a PO. */
         $enabled = app(\App\Services\ZohoBooksService::class)->enabledCurrencies();
         if ($currency && $enabled && !in_array(strtoupper($currency), $enabled, true)) {
             abort(response()->json([
@@ -725,7 +577,6 @@ class PurchaseOrderController extends Controller
     private function stage1Attributes(array $d, array $r): array
     {
         $intl = $d['document_type'] === 'international';
-        // High-risk suppliers default to inspection on the form; the user's choice is kept.
         $inspection = $d['physical_inspection'] ?? ($r['mandatory'] ? 'yes' : 'no');
         $v = $r['vendor'];
         $procYes = $d['link_type'] === 'with_shipment' && ($d['link_procurement'] ?? null) === 'yes';
@@ -746,7 +597,6 @@ class PurchaseOrderController extends Controller
             'final_destination'      => $intl ? ($d['final_destination'] ?? null) : null,
             'country_of_origin'      => $intl ? ($d['country_of_origin'] ?? null) : null,
             'link_type'              => $d['link_type'],
-            // Procurement link only exists on a shipment PO, and only when toggled yes.
             'link_procurement'       => $d['link_type'] === 'with_shipment' ? $d['link_procurement'] : null,
             'procurement_request_id'   => $procYes ? (int) $d['procurement_request_id'] : null,
             'procurement_request_code' => $procYes ? ($d['procurement_request_code'] ?? null) : null,
@@ -762,13 +612,7 @@ class PurchaseOrderController extends Controller
         ];
     }
 
-    /* ══════════════════════════ STAGE 02 ══════════════════════════ */
 
-    /**
-     * PUT /p2p/orders/{id}/items — Stage 02: the 2-way match and the charges.
-     * Lines are matched in place (by PI line, or by product for a line with no
-     * PI line) so every quantity change lands in the history table.
-     */
     public function updateItems(Request $request, int $id)
     {
         try {
@@ -777,13 +621,10 @@ class PurchaseOrderController extends Controller
             $user = $this->tenantUser($request);
             $po = $this->findPo($id);
             $this->editBlock($po);
-            // The stored balance and TDS rest on this value once money has been paid against it.
             if ((float) $po->paid_amount > 0) {
                 abort(response()->json(['status' => false, 'message' => 'Payments are already recorded on this PO — its product lines and charges can no longer change.'], 422));
             }
 
-            /* Both ceilings are rupee ones, so what this PO may hold in ITS currency
-               is read back through its own rate. A domestic PO is already in rupees. */
             $fx       = (float) ($po->exchange_rate ?: 0) ?: 1.0;
             $maxRate  = self::MAX_UNIT_RATE_BASE / $fx;
             $maxTotal = self::MAX_ZOHO_BASE / $fx;
@@ -813,7 +654,6 @@ class PurchaseOrderController extends Controller
                     ->whereIn('i.id', $piItemIds)->select('i.*', 'p.product_code')->get()->keyBy('id')
                 : collect();
 
-            // Every PI line must belong to this PO's own PI.
             $errors = [];
             foreach ($data['lines'] as $i => $line) {
                 if (empty($line['pi_item_id'])) continue;
@@ -823,10 +663,6 @@ class PurchaseOrderController extends Controller
                 }
             }
 
-            /* A PI line that is still open may be over-ordered — trade quantities
-               round to containers and minimum order sizes. Over-drawing takes the
-               line's pending to zero, which closes it to every later PO, so the
-               total across POs cannot compound: at most one PO draws over. */
             $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piItemIds, $po->id);
             foreach ($data['lines'] as $i => $line) {
                 if (empty($line['pi_item_id']) || isset($errors["lines.$i.pi_item_id"])) continue;
@@ -837,7 +673,6 @@ class PurchaseOrderController extends Controller
                 }
             }
 
-            // A shipment PO orders only its PI lines; a product the PI doesn't carry needs a standalone PO.
             if ($po->link_type === 'with_shipment') {
                 foreach ($data['lines'] as $i => $line) {
                     if (empty($line['pi_item_id'])) $errors["lines.$i.product_id"] = ['A PO against a shipment orders only its PI lines — remove this line.'];
@@ -847,16 +682,13 @@ class PurchaseOrderController extends Controller
             if ($manual->count() !== $manual->unique()->count()) {
                 $errors['lines'] = ['The same product appears on two lines without a PI line — merge them into one.'];
             }
-            // The ordered product: the replacement if given, else the PI line's own product.
             $effective = [];
             foreach ($data['lines'] as $i => $line) {
                 $pi = !empty($line['pi_item_id']) ? $piItems->get((int) $line['pi_item_id']) : null;
                 $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
             }
             $products = $this->loadProducts(array_values(array_filter($effective)));
-            // The PI line's own product decides the segment a replacement has to stay in.
             $piProducts = $this->loadProducts($piItems->pluck('product_id')->filter()->map(fn ($v) => (int) $v)->all());
-            // A PO orders only products in a segment its supplier deals in.
             $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
             $supplierProducts = $this->svc->vendorProductIds((int) $po->vendor_id);
             foreach ($data['lines'] as $i => $line) {
@@ -868,10 +700,8 @@ class PurchaseOrderController extends Controller
                 } elseif (($products->get($effective[$i])->status ?? 'active') !== 'active') {
                     $errors[$field] = ['This product is ' . $products->get($effective[$i])->status . ' in the product master — activate it there to order it.'];
                 } elseif ($piProduct && $piProduct->segment_id && (int) $piProduct->segment_id !== (int) $products->get($effective[$i])->segment_id) {
-                    // The replacement must sit in the same segment as the PI line it covers.
                     $errors[$field] = ['The PI line is in ' . ($piProduct->segment_name ?: 'no segment') . ' — pick a product from the same segment.'];
                 } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
-                    // Purchase GST comes only from the product master, never the sales PI.
                     $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
                 } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)
                     && !in_array((int) $effective[$i], $supplierProducts, true)) {
@@ -879,9 +709,6 @@ class PurchaseOrderController extends Controller
                     $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
                 }
             }
-            /* Each line can be within its own limits and the order still absurd, and
-               it is the TOTAL that Zoho converts and refuses. Checked here so the
-               mistake lands on the line that caused it, not on a sync hours later. */
             $lineTotals = [];
             foreach ($data['lines'] as $i => $line) {
                 $lineTotals[$i] = (float) $line['quantity'] * (float) $line['rate'];
@@ -890,15 +717,11 @@ class PurchaseOrderController extends Controller
                 + (float) ($data['shipping_charges'] ?? 0)
                 + (float) ($data['packaging_charges'] ?? 0)
                 + (float) ($data['other_charges'] ?? 0);
-            /* The ceiling is a RUPEE one, because the rupee figure is the only one
-               Zoho judges: it converts at the PO's own rate and posts that to the
-               ledger. A cap in the PO's currency would mean something different for
-               every currency — AUD 10bn and USD 10bn are not the same order. */
-            $base = $orderTotal * $fx;   // $fx and $maxTotal come from the rules above
+            $base = $orderTotal * $fx;
             if ($base > self::MAX_ZOHO_BASE) {
                 arsort($lineTotals);
                 $worst   = (int) array_key_first($lineTotals);
-                $allowed = $maxTotal;    // the same ceiling said in their currency
+                $allowed = $maxTotal;
                 $errors["lines.$worst.rate"] = [sprintf(
                     'This PO comes to %s in rupees, more than Zoho Books will accept. At an exchange rate of %s the most this PO can be is %s %s — check the rate on this line.',
                     number_format($base, 2),
@@ -941,7 +764,6 @@ class PurchaseOrderController extends Controller
                 }
             }
 
-            // Lines no longer on the PO release their quantity.
             foreach ($existing as $k => $old) {
                 if (isset($kept[$k])) continue;
                 $pi = $old->pi_item_id ? DB::table('proforma_invoice_items')->find($old->pi_item_id) : null;
@@ -964,14 +786,12 @@ class PurchaseOrderController extends Controller
 
     private function lineAttributes(PurchaseOrder $po, array $line, ?object $pi, ?object $product, int $lineNo): array
     {
-        // An import carries no Indian GST on the PO: tax is 0 until the customs duty is known.
         $gst = $po->document_type === 'international' ? 0.0 : (float) $product->gst_pct;
         $amounts = $this->svc->lineAmounts((float) $line['quantity'], (float) $line['rate'], $gst, $po->tax_mode ?: 'intra');
         return [
             'purchase_order_id' => $po->id,
             'line_no'           => $lineNo,
             'pi_item_id'        => $pi->id ?? null,
-            // The PO product defaults to the PI's when no replacement is chosen.
             'product_id'        => $product->id ?? ($pi->product_id ?? null),
             'description'       => $line['description'] ?? ($product->description ?? null),
             'quantity'          => $line['quantity'],
@@ -980,12 +800,10 @@ class PurchaseOrderController extends Controller
         ] + $amounts;
     }
 
-    /** Re-applies tax to every line after the tax mode changed (supplier or branch state). */
     private function retaxItems(PurchaseOrder $po): void
     {
         $items = $po->items()->get();
         $intl = $po->document_type === 'international';
-        // Back to domestic: GST comes from the product master again (an import stored 0).
         $master = $intl ? collect() : $this->loadProducts($items->pluck('product_id')->filter()->all());
         foreach ($items as $item) {
             $gst = $intl ? 0.0 : (float) ($master->get($item->product_id)->gst_pct ?? $item->gst_pct);
@@ -997,10 +815,7 @@ class PurchaseOrderController extends Controller
         $this->svc->recomputeTotals($po);
     }
 
-    /** One append-only history row. pending_after = PI qty − (ordered on other POs + this line now). */
-    /* ══════════════════════════ STAGE 03 ══════════════════════════ */
 
-    /** PUT /p2p/orders/{id}/terms — Stage 03: terms, and optionally submit the PO. */
     public function updateTerms(Request $request, int $id)
     {
         try {
@@ -1023,7 +838,6 @@ class PurchaseOrderController extends Controller
                 if (!$po->items()->exists()) {
                     abort(response()->json(['status' => false, 'message' => 'Add at least one product line before submitting.'], 422));
                 }
-                // The supplier may have changed after the lines were saved — every line must still be in its segments.
                 $segs = $this->vendorSegmentIds((int) $po->vendor_id);
                 $outside = DB::table('p2p_purchase_order_items as i')->join('products as p', 'p.id', '=', 'i.product_id')
                     ->where('i.purchase_order_id', $po->id)->where(fn ($w) => $w->whereNull('p.segment_id')->orWhereNotIn('p.segment_id', $segs ?: [0]))
@@ -1033,7 +847,6 @@ class PurchaseOrderController extends Controller
                     abort(response()->json(['status' => false, 'message' => $outside->implode(', ')
                         . ' — neither the product nor its segment is mapped to this supplier. Map one of them, or change the lines in Stage 02, before submitting.'], 422));
                 }
-                // Re-read the supplier's GST position at the moment of submission.
                 $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
                 $po->forceFill(['gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date']]);
                 if ($gst['gate'] === 'blocked') {
@@ -1041,7 +854,6 @@ class PurchaseOrderController extends Controller
                         . PurchaseOrderService::GST_STALE_MONTHS . ' months — refresh it on the supplier record before submitting.',
                         'gst' => $gst], 422));
                 }
-                // Hard rule: an overdue return needs the latest request to be approved by the senior.
                 $approval = $po->latestGstApproval()->first();
                 if ($gst['gate'] === 'approval_required' && $approval?->status !== PoGstApproval::STATUS_APPROVED) {
                     $msg = match ($approval?->status) {
@@ -1053,16 +865,11 @@ class PurchaseOrderController extends Controller
                         'gst' => $gst, 'gst_approval_status' => $approval?->status], 422));
                 }
 
-                // The supplier's standard paperwork must still be in date. An
-                // expired KYC / DD / trade licence is no cover at all, so the PO
-                // does not leave Stage 03 until it is renewed (CS-407).
                 if ($expired = $this->expiredStandardDocs($po)) {
                     abort(response()->json(['status' => false, 'message' => $this->expiredDocsMessage($expired),
                         'expired_documents' => $expired], 422));
                 }
 
-                // Case to Case: this supplier's earlier POs must have their necessary
-                // Stage 04 paperwork signed before another order is placed on it.
                 if ($outstanding = $this->unsignedCaseToCase($po)) {
                     abort(response()->json(['status' => false, 'message' => $outstanding['message'],
                         'case_to_case' => $outstanding['documents']], 422));
@@ -1076,7 +883,6 @@ class PurchaseOrderController extends Controller
             $po->update($attrs);
             if ($submit) $this->svc->ensureDefaultDocuments($po, $user->id);
 
-            // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
             if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
 
             $out = $this->shapeDetail($po->fresh());
@@ -1090,26 +896,11 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * The supplier's standard documents — KYC, due diligence and trade licences
-     * — whose expiry date has passed.
-     *
-     * Only an upload carries an expiry: the segment rule's own validity is free
-     * prose ("Lifetime", "2 years"), so a document with no date on it is treated
-     * as not expiring. Quality documents are left out; the Evidence Vault counts
-     * KYC, DD and licences as the supplier's one-time standard paperwork, and
-     * that is what this gate is about.
-     *
-     * @return array<int, array{code: string, name: string, expiry: string}>
-     */
-    /* Moved to PurchaseOrderService so a Direct SPI can ask the same question.
-       Kept here as a one-liner because the submit path reads better with it. */
     private function expiredStandardDocs(PurchaseOrder $po): array
     {
         return $this->svc->expiredStandardDocs($po->vendor_id, (int) $po->client_id);
     }
 
-    /** "X expired on …, Y expired on … — renew them in the Evidence Vault." */
     private function expiredDocsMessage(array $expired): string
     {
         $named = collect($expired)->take(3)
@@ -1122,16 +913,6 @@ class PurchaseOrderController extends Controller
             . '. Renew it in the Evidence Vault before submitting this PO.';
     }
 
-    /**
-     * Documents marked necessary on an EARLIER PO of the same supplier that are
-     * still unsigned. A PO is not placed on a supplier while the paperwork of the
-     * last one is outstanding — the signature is what closes it, so "sent" or
-     * "generated" is not enough.
-     *
-     * The PO being submitted is excluded: its own Stage 04 comes after this step.
-     *
-     * @return array{message: string, documents: array}|null  null = nothing outstanding
-     */
     private function unsignedCaseToCase(PurchaseOrder $po): ?array
     {
         if (!$po->vendor_id) return null;
@@ -1144,9 +925,7 @@ class PurchaseOrderController extends Controller
             ->where('prev.status', PurchaseOrder::STATUS_SUBMITTED)
             ->whereNull('prev.deleted_at')
             ->whereNull('d.deleted_at')
-            // Stage 04 paperwork only; the PO document itself is not case-to-case.
             ->where('d.doc_kind', '!=', 'purchase_order')
-            // Necessary is what Stage 04 marked; is_required is a default older rows carry.
             ->where('d.needed', 'yes')
             ->where(fn ($w) => $w->whereNull('d.status')->orWhere('d.status', '!=', 'signed'))
             ->orderBy('prev.id')
@@ -1172,9 +951,7 @@ class PurchaseOrderController extends Controller
         ];
     }
 
-    /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
 
-    /** POST /p2p/orders/{id}/cancel — releases every line's quantity back to the PI. */
     public function cancel(Request $request, int $id)
     {
         try {
@@ -1187,7 +964,6 @@ class PurchaseOrderController extends Controller
             if ($po->isCancelled()) {
                 abort(response()->json(['status' => false, 'message' => 'This PO is already cancelled.'], 422));
             }
-            // Money released must be recovered through the advance refund adjustment, not dropped.
             if ((float) $po->paid_amount > 0) {
                 abort(response()->json([
                     'status'  => false,
@@ -1199,7 +975,6 @@ class PurchaseOrderController extends Controller
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
                 'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id,
                 'cancel_stage' => PurchaseOrder::CANCEL_CLOSED, 'cancel_closed_at' => now()]);
-            // A cancelled order no longer speaks for the supplier's currency.
             $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
 
             $out = $this->shapeDetail($po->fresh());
@@ -1213,7 +988,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** POST /p2p/orders/{id}/zoho-sync — the whole chain: PO + bill, payments, vendor credit, refunds. */
     public function zohoSync(Request $request, int $id)
     {
         try {
@@ -1226,7 +1000,6 @@ class PurchaseOrderController extends Controller
             try {
                 $r = $zoho->syncAll($po, $user->id);
             } catch (\RuntimeException $e) {
-                // Zoho saying no is an answer, not a server failure.
                 abort(response()->json(['status' => false, 'message' => $e->getMessage()], 422));
             }
 
@@ -1244,11 +1017,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/orders/{id}/proofs - the money files of one order for the Evidence Vault:
-     * the refund adjustment raised on it, every payment released, and every refund
-     * recovered back, each with the proof filed against it.
-     */
     public function proofs(Request $request, int $id)
     {
         try {
@@ -1278,7 +1046,6 @@ class PurchaseOrderController extends Controller
                 'url'    => $r->proof_path ? file_url($r->proof_path) : null,
             ];
 
-            // The adjustment itself: its reference attachment, and the receipt that can be generated from it.
             $adj = DB::table('p2p_po_refund_adjustments')
                 ->where('purchase_order_id', $po->id)->whereNull('deleted_at')
                 ->orderByDesc('id')->first();
@@ -1303,7 +1070,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** GET /p2p/orders/{id}/zoho-tracker — where this PO stands in Zoho Books, from our own columns. */
     public function zohoTracker(Request $request, int $id)
     {
         try {
@@ -1321,7 +1087,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** DELETE /p2p/orders/{id} — drafts only; a submitted PO is cancelled instead. */
     public function destroy(Request $request, int $id)
     {
         try {
@@ -1351,14 +1116,7 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
 
-    /**
-     * Brings the PO's documents in step with their signature requests before
-     * the edit lock is read, so a declined / recalled request frees the PO.
-     * Each row already knows its request — Stage 04 records it when it sends.
-     * Best effort — a Zoho outage must not stop the PO from opening.
-     */
     private function refreshSigning(PurchaseOrder $po): void
     {
         try {
@@ -1368,7 +1126,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** Stages 01–03 are editable only while the PO is not cancelled, out for signature / signed, or in payment. */
     private function editBlock(PurchaseOrder $po): void
     {
         if ($po->isCancelled()) {
@@ -1395,7 +1152,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** A supplier of this tenant, with its primary address state code. */
     private function loadVendor(int $id): ?object
     {
         $q = DB::table('vendors as v')
@@ -1409,7 +1165,6 @@ class PurchaseOrderController extends Controller
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
-    /** Like loadVendor, but still finds a supplier deleted after the PO was raised. */
     private function loadVendorAnyState(int $id): ?object
     {
         $q = DB::table('vendors as v')
@@ -1419,7 +1174,6 @@ class PurchaseOrderController extends Controller
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
-    /** Same rule as the supplier dropdown: no country or India → domestic; any other country → international. */
     private function vendorOrigin(object $vendor): string
     {
         if (empty($vendor->country_id)) return 'domestic';
@@ -1427,7 +1181,6 @@ class PurchaseOrderController extends Controller
         return (int) $vendor->country_id === (int) $india ? 'domestic' : 'international';
     }
 
-    /** High / medium risk together with a high-risk or blacklisted category forces inspection. */
     private function inspectionMandatory(object $vendor): bool
     {
         $risk = strtolower((string) ($vendor->risk_level ?? ''));
@@ -1436,7 +1189,6 @@ class PurchaseOrderController extends Controller
             && (str_contains($cat, 'high') || str_contains($cat, 'blacklist'));
     }
 
-    /** Segment ids a supplier deals in: the vendor_segments mapping, else its single legacy segment. */
     private function vendorSegmentIds(int $vendorId): array
     {
         if (!$vendorId) return [];
@@ -1445,7 +1197,6 @@ class PurchaseOrderController extends Controller
         return $ids;
     }
 
-    /** Products of this tenant with their GST %, HSN and UOM resolved from the masters. */
     private function loadProducts(array $ids)
     {
         if (!$ids) return collect();
@@ -1461,11 +1212,8 @@ class PurchaseOrderController extends Controller
         return $this->svc->scopeTenant($q, 'p')->get()->keyBy('id');
     }
 
-    /** PI lines with ordered and pending quantity (all branches of the client count). */
     private function piLinesWithPending(int $piId, int $clientId, ?int $excludePoId, ?int $excludeSpiId = null): array
     {
-        // The PI line rarely carries its own HSN / unit — fall back to the product
-        // master's, through the same hsn_id / uom_id the PO column reads.
         $lines = DB::table('proforma_invoice_items as i')
             ->leftJoin('products as p', 'p.id', '=', 'i.product_id')
             ->leftJoin('master_gst_percentage as g', 'g.id', '=', 'p.gst_id')
@@ -1488,7 +1236,6 @@ class PurchaseOrderController extends Controller
                 'hsn_code'     => $l->hsn_code,
                 'uom'          => $l->unit,
                 'rate'         => (float) $l->rate,
-                // Purchase GST from the product master; null = not set there
                 'gst_pct'      => $l->gst_pct !== null ? (float) $l->gst_pct : null,
                 'description'  => $l->description,
                 'pi_quantity'  => (float) $l->quantity,
@@ -1498,21 +1245,10 @@ class PurchaseOrderController extends Controller
         })->all();
     }
 
-    /**
-     * Each mapped SPI's paid / status as the Mapped SPI's column shows it.
-     *
-     * Payment lives on the PO: a request names an SPI only when one was picked,
-     * so an advance (or any request raised without an SPI) was paid on the PO
-     * but never reached an SPI chip — a PO at 100% still listed its SPIs as
-     * "Payment Not Initiated". Now a request linked to an SPI counts against
-     * it first; whatever the PO paid beyond that settles the SPIs oldest first,
-     * up to what each is still due; and once the PO owes nothing, every SPI on
-     * it reads as fully paid, since no further payment can be raised on it.
-     */
     private function spiPaidShares($po, $rows, $spiPaid): array
     {
         $poPaid   = (float) ($po->paid_amount ?? 0);
-        $settled  = $poPaid > 0 && (float) ($po->balance_amount ?? 0) <= 0.001;
+        $settled  = $poPaid > 0 && (float) ($po->balance_amount ?? 0) < 1;
         $lines = $rows->map(function ($s) use ($spiPaid) {
             $amount = max(0, (float) $s->grand_total - (float) $s->tds_amount);
             return [
@@ -1536,20 +1272,17 @@ class PurchaseOrderController extends Controller
         return $lines;
     }
 
-    /** Shipment, PI, opportunity and customer codes for the header pills and list, read live. */
     private function linkRefs($pos): array
     {
         $shipIds = $pos->pluck('shipment_order_id')->filter()->unique()->values()->all();
         $piIds   = $pos->pluck('proforma_invoice_id')->filter()->unique()->values()->all();
         $ships = $shipIds ? DB::table('shipment_orders')->whereIn('id', $shipIds)->get(['id', 'shipment_code', 'created_at'])->keyBy('id') : collect();
         $pis   = $piIds ? DB::table('proforma_invoices')->whereIn('id', $piIds)->get(['id', 'code', 'customer_name', 'opp_code', 'created_at'])->keyBy('id') : collect();
-        // The SPIs mapped to each order, oldest first, for the SPI Number chip.
         $poIds = $pos->pluck('id')->all();
         $spis  = $poIds ? DB::table('p2p_supplier_invoices')->whereIn('purchase_order_id', $poIds)
             ->whereNull('deleted_at')->where('status', '!=', SupplierInvoice::STATUS_CANCELLED)
             ->orderBy('id')->get(['id', 'purchase_order_id', 'code', 'invoice_date', 'created_at', 'grand_total', 'tds_amount', 'status'])
             ->groupBy('purchase_order_id') : collect();
-        // What has actually been paid against each SPI: approved requests linked to it.
         $spiIds  = $spis->flatten(1)->pluck('id')->all();
         $spiPaid = $spiIds ? DB::table('p2p_po_payment_requests')->whereIn('supplier_invoice_id', $spiIds)
             ->where('status', 'approved')
@@ -1569,9 +1302,6 @@ class PurchaseOrderController extends Controller
                 'opportunity_code' => $pi->opp_code ?? null,
                 'pi_date'          => isset($pi->created_at) ? substr((string) $pi->created_at, 0, 10) : null,
                 'spis'             => $this->spiPaidShares($po, $spis->get($po->id) ?? collect(), $spiPaid),
-                /* CS-937 — what is still to be invoiced on the order, summed
-                   over its lines, so the SPI chooser can lock an order whose
-                   every line is already billed. Null = the order has no lines. */
                 'open_qty'         => $openQty[$po->id] ?? null,
                 'fully_invoiced'   => isset($openQty[$po->id]) && $openQty[$po->id] <= 0,
             ];
@@ -1579,16 +1309,6 @@ class PurchaseOrderController extends Controller
         return $out;
     }
 
-    /**
-     * Quantity each order still has open to invoice: per line, ordered minus
-     * billed on live (not deleted, not cancelled) SPIs, floored at 0 because an
-     * over-supplied line does not make room on another — then summed per order.
-     * The same counting as SupplierInvoiceService::openQtyByPoItem, batched for
-     * a list. Orders without lines are left out.
-     *
-     * @param  int[] $poIds
-     * @return array<int,float> po_id => open qty
-     */
     private function openQtyByPo(array $poIds): array
     {
         if (!$poIds) return [];
@@ -1632,9 +1352,6 @@ class PurchaseOrderController extends Controller
             'supplier_name'       => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
             'link_type'           => $po->link_type,
             'shipment_order_id'   => $po->shipment_order_id,
-            // Where the order's procurement case came from: 'yes' one that
-            // already existed, 'no' one it was not linked to, null on a
-            // standalone order, which cannot carry the field at all.
             'link_procurement'    => $po->link_procurement,
             'procurement_request_id'   => $po->procurement_request_id,
             'procurement_request_code' => $po->procurement_request_code,
@@ -1642,11 +1359,9 @@ class PurchaseOrderController extends Controller
             'supplier_category'   => $po->vendor?->supplier_category,
             'expected_delivery_date' => $po->expected_delivery_date?->toDateString(),
             'grand_total'         => (float) $po->grand_total,
-            // The value split the payment screens show: base, GST and extra charges.
             'taxable_total'       => (float) $po->taxable_total,
             'gst_total'           => round((float) $po->total_cgst + (float) $po->total_sgst + (float) $po->total_igst, 2),
             'charges_total'       => round((float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges, 2),
-            // Stored payment position (rebuilt on every payment) for the list's payment bar.
             'tds_amount'          => (float) $po->tds_amount,
             'paid_amount'         => (float) $po->paid_amount,
             'balance_amount'      => (float) $po->balance_amount,
@@ -1657,21 +1372,17 @@ class PurchaseOrderController extends Controller
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
             'cancel_stage'        => $po->cancel_stage,
-            // The advance refund adjustment raised to cancel it, when money was released.
             'refund'              => ($a = $po->relationLoaded('refundAdjustment') ? $po->refundAdjustment : null) ? [
                 'id' => $a->id, 'code' => $a->code, 'date' => $a->refund_date?->toDateString(),
                 'paid' => (float) $a->paid_amount, 'refund' => (float) $a->refund_amount, 'retained' => (float) $a->retained_amount,
                 'recovered' => (float) $a->recovered_amount, 'balance' => (float) $a->balance_amount, 'status' => $a->status,
-                // The PO row is only "Synced" once its cancellation is in Zoho too.
                 'zoho_synced' => $a->zoho_sync_status === 'synced' && (int) ($a->zoho_pending_recoveries ?? 0) === 0,
             ] : null,
             'zoho_status'         => $po->zoho_status,
-            // Anything at all in Zoho — the tracker has something to show only then.
             'zoho_started'        => !empty($po->zoho_purchaseorder_id) || !empty($po->zoho_bill_id),
             'zoho_bill_number'    => $po->zoho_bill_number,
             'zoho_error'          => $po->zoho_error,
             'zoho_unposted_payments' => (int) ($po->zoho_unposted_payments ?? 0),
-            // Documents out for signature / signed — Edit PO opens view-only.
             'signing_started'     => (bool) ($po->signing_started ?? false),
             'created_at'          => $po->created_at?->toIso8601String(),
         ];
@@ -1688,27 +1399,15 @@ class PurchaseOrderController extends Controller
         }
         $out = $po->toArray() + ($this->linkRefs(collect([$po]))[$po->id] ?? []);
         $out['created_by_name'] = $po->creator?->name;
-        /* The Terms & Conditions the PDF prints, on the record the screen already
-         * loads — no second call for them.
-         *
-         * Stage 4 drew the typed terms alone, so the global entry and the
-         * segment-matched clauses lived on the printed PO and nowhere before
-         * it: editing the T&C library changed the document and nothing on
-         * screen (QA #142). Composed by SalesPdfController, de-duplication
-         * included, so the screen and the document cannot give two answers. */
         $out['terms_layers'] = app(\App\Http\Controllers\Api\SalesPdfController::class)->poTncLayers($po);
-        // View-only once payments have started (the edit form opens read-only).
         $out['payments_started'] = $po->paymentsStarted();
-        // And once any document has gone out for signature (until declined / recalled).
         $out['signing_started'] = $po->signingStarted();
-        // Step 03 shows where the senior-approval request stands.
         $ap = $po->latestGstApproval()->first();
         $out['gst_approval'] = $ap ? [
             'id' => $ap->id, 'status' => $ap->status, 'reason' => $ap->reason,
             'requested_to_name' => DB::table('users')->where('id', $ap->requested_to)->value('name'),
             'requested_at' => $ap->requested_at?->toIso8601String(), 'decided_at' => $ap->decided_at?->toIso8601String(),
         ] : null;
-        // Supplier is read live from vendors (same shape as the Stage 01 supplier lookup).
         $v = $po->vendor_id ? $this->loadVendorAnyState((int) $po->vendor_id) : null;
         $out['supplier'] = $v ? [
             'vendor_id'           => $v->id,
@@ -1720,12 +1419,10 @@ class PurchaseOrderController extends Controller
         $inter = $po->tax_mode === 'inter';
         $live = $this->svc->lineDetails($po->items);
         $out['items'] = $po->items->map(fn ($it) => $it->toArray() + $live[$it->id] + [
-            // Rate split and GST total are derived from the stored amounts, not stored twice.
             'cgst_pct'   => $inter ? 0 : round((float) $it->gst_pct / 2, 2),
             'sgst_pct'   => $inter ? 0 : round((float) $it->gst_pct / 2, 2),
             'igst_pct'   => $inter ? (float) $it->gst_pct : 0,
             'gst_amount' => round((float) $it->cgst_amount + (float) $it->sgst_amount + (float) $it->igst_amount, 2),
-            // What this PI line could still take on this PO (excluding this PO's own qty).
             'pending_before_this_po' => $it->pi_item_id ? ($pending[$it->pi_item_id] ?? null) : null,
             'missing_qty'            => $live[$it->id]['pi_quantity'] !== null ? max(0, $live[$it->id]['pi_quantity'] - (float) $it->quantity) : null,
         ])->all();

@@ -1,25 +1,10 @@
 import { memo } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { formatINR } from './MoneyCell';
-import { invoiceBalance, invoicePaidPercent, type InvoiceRow } from '../types';
+import { invoiceBalance, invoicePaidPercent, invoiceSettled, type InvoiceRow } from '../types';
 import type { InvoiceAction } from './RowActions';
 
-/**
- * Payment progress, built on the Order module's classes.
- *
- * `.ord-paycell`, `.ord-progress`, `.ord-pill`, `.ord-paynote` — the PO list's
- * Payment Progress column is the same column showing the same thing, so this
- * renders the same markup rather than a second set of rules that looks almost
- * identical and then drifts. Nothing in invoice.css styles this cell.
- */
 
-/**
- * How far through payment an invoice is.
- *
- * The three values are the Order module's own state names, so they drop
- * straight into `is-${state}` and `ord-pill--${state}` with no lookup table in
- * between. 'pending', not 'none' — matching PO is the whole point.
- */
 type PayState = 'full' | 'partial' | 'pending';
 
 const PAY_LABEL: Record<PayState, string> = {
@@ -28,17 +13,9 @@ const PAY_LABEL: Record<PayState, string> = {
   pending: 'Payment Not Initiated',
 };
 
-/**
- * Derived from the money, never stored.
- *
- * Note it keys off `totalPaid` against `netPayable` rather than off the
- * percentage: at 99.6% paid the rounded percentage reads 100 while a rupee is
- * still outstanding, and an invoice that says "Fully Paid" with a balance due
- * is the kind of bug nobody notices until reconciliation.
- */
 function payState(row: InvoiceRow): PayState {
   if (row.totalPaid <= 0) return 'pending';
-  return row.totalPaid >= row.netPayable ? 'full' : 'partial';
+  return invoiceSettled(row) ? 'full' : 'partial';
 }
 
 const HistoryIcon = () => (
@@ -63,20 +40,10 @@ const TickIcon = () => (
   </svg>
 );
 
-/**
- * The button changes identity, not just its label, once the invoice is settled:
- * with a zero balance there is nothing left to manage — no request can be
- * raised and none released — so it becomes "View Request Details" on the
- * `.is-record` variant the Order module already ships. It stays live, because
- * the record is still worth opening.
- */
 function PaymentProgressCellBase({
   row, onAction,
 }: {
   row: InvoiceRow;
-  /* The same (action, row) handler every other cell takes. A narrower prop
-     would force the table to wrap it in an inline arrow, which is a new value
-     on every render and defeats the memo on this component. */
   onAction: (action: InvoiceAction, row: InvoiceRow) => void;
 }) {
   const state = payState(row);
@@ -95,9 +62,6 @@ function PaymentProgressCellBase({
           <span className="ord-progress__pct">{pct}%</span>
         </div>
 
-        {/* role=progressbar so the bar is not just a coloured div to a screen
-            reader. The visible percentage and the announced one come from the
-            same number, so they cannot disagree. */}
         <div
           className="ord-progress__bar"
           role="progressbar"
@@ -120,8 +84,6 @@ function PaymentProgressCellBase({
           </span>
         </div>
 
-        {/* Money cleared by an approver and waiting to be released. Without this
-            line the only clue that payment is unblocked is inside a modal. */}
         {readyAmount != null && readyAmount > 0 && (
           <span
             className="ord-paynote ord-paynote--ready"
