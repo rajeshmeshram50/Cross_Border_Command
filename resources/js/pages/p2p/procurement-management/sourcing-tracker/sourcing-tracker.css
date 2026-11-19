@@ -912,14 +912,14 @@
 /* Retry on the "Couldn't load" state — a small teal outline button. */
 .sct-retry {
   margin-top: 8px;
-  height: 32px;
+  height: 40px; /* every text button in the module: 40px / 12.5px */
   padding: 0 16px;
   border: 1.5px solid #a5e4f0;
   border-radius: 10px;
   background: #fff;
   color: #0e7490;
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
   transition: background-color .15s, border-color .15s;
@@ -1456,10 +1456,10 @@ body:has(.avm-backdrop) .stmap-overlay {
 /* Retry after a popup's products could not be loaded (Report, Product List). */
 .str-retry {
   margin-left: 8px;
-  height: 28px;
-  padding: 0 12px;
+  height: 40px; /* every text button in the module: 40px / 12.5px */
+  padding: 0 14px;
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   color: #0e7490;
   background: #fff;

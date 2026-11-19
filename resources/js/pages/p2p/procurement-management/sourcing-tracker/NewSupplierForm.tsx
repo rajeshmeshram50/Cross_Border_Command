@@ -146,6 +146,9 @@ const SERVER_FIELD: Record<string, keyof NewForm> = {
   'new_supplier.email': 'email', 'new_supplier.gmaps': 'gmaps', 'new_supplier.address': 'addr', 'new_supplier.country': 'country',
   'new_supplier.state': 'state', 'new_supplier.state_code': 'stateCode', 'new_supplier.city': 'city',
   price: 'price', exchange_rate: 'fx', valid_till: 'validTill', currency: 'cur',
+  // A duplicate email is caught when the supplier row is saved (EnforcesUniqueEmail), which keys
+  // the 422 on the column name, not on the request field.
+  email: 'email',
 };
 
 export default function NewSupplierForm({ scope, product, saving, serverErrors = {}, onClearServerErrors, onDirty, onBack, onSave, initial, initialCard }: Props) {
@@ -401,7 +404,6 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
                 <span className="stnf-upload-sub">Business card · click to replace</span>
               </span>
             </button>
-            {file && <span className="stfile__new">New</span>}
             <Tooltip label="View document">
               <button type="button" className="stfile__btn" aria-label={`View ${cardName}`}
                 onClick={() => { const src = file ?? cardPath; if (src) viewDocument(src).catch(() => toast.error('Couldn’t open the document', 'Please try again.')); }}>

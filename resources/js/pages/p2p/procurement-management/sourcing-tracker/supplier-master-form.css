@@ -575,7 +575,7 @@
     gap: 7px;
     height: 40px; /* every text button in the module is 40px */
     padding: 0 24px;
-    font: 800 12px 'DM Sans', system-ui, sans-serif;
+    font: 800 12.5px 'DM Sans', system-ui, sans-serif; /* every text button in the module: 12.5px */
     white-space: nowrap;
     cursor: pointer;
     border-radius: 12px;

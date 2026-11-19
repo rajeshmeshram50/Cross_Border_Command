@@ -295,11 +295,14 @@ export default function SourcingTracker() {
   const reqSeq = useRef(0);
   // What the last answer covered: when only the page size grows and that answer already held every
   // row, there is nothing new to ask for (the auto-fit re-measures once the real rows are in).
-  const lastServed = useRef<{ key: string; complete: boolean } | null>(null);
+  // Only while every row still FITS the new size: shrinking 25 → 10 must ask again, or the 25-row
+  // answer stays on screen under a "10 per page" pager.
+  const lastServed = useRef<{ key: string; complete: boolean; total: number } | null>(null);
   useEffect(() => {
     if (mainTab !== 'targets') return;
     const key = `${sub}|${q}|${reloadKey}`;
-    if (page === 1 && lastServed.current?.key === key && lastServed.current.complete) { setLoading(false); return; }
+    const held = lastServed.current;
+    if (page === 1 && held?.key === key && held.complete && pageSize >= held.total) { setLoading(false); return; }
     const seq = ++reqSeq.current;
     setLoading(true);
     setFailed(false);
@@ -318,7 +321,7 @@ export default function SourcingTracker() {
           setCounts({ all: d?.counts?.all ?? 0, created: d?.counts?.created ?? 0, assigned: d?.counts?.assigned ?? 0 });
           // The server clamps a page past the end (e.g. after the page size grew); follow it.
           const served = d?.pagination?.page ?? page;
-          lastServed.current = { key, complete: served === 1 && list.length >= all };
+          lastServed.current = { key, complete: served === 1 && list.length >= all, total: all };
           if (served !== page) setPage(served);
         })
         .catch(() => {
@@ -478,7 +481,7 @@ export default function SourcingTracker() {
           </div>
           <div className="sct-search">
             <IcoSearch size={15} />
-            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, person, source or status..."
+            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, product, person, TAT date or status..."
               aria-label="Search sourcing targets" onChange={e => setQuery(e.target.value)} />
             {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => setQuery('')}><IcoX size={13} sw={2.4} /></button>}
           </div>
