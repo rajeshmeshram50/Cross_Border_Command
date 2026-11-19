@@ -13,6 +13,7 @@ import { usePopup } from './popupHooks';
 import ClipText from './ClipText';
 import ClarityDialog, { clarityPreview, type Clarity } from './ClarityDialog';
 import { clarityPaths, viewDocument } from './targetProducts';
+import { Shimmer } from '../../../../components/ui/Shimmer';
 import ClarityNoteView from './ClarityNoteView';
 import { apiErrorMessage, apiFieldErrors } from './apiError';
 import { uploadP2pFile } from './upload';
@@ -121,9 +122,12 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
 
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [assignee, setAssignee] = useState('');   // team member id (Add only; fixed on Edit)
-  const [source, setSource] = useState<SourceType>('Product Master');
+  // Edit: start on the row's own source (the list already has it), so a Manual target doesn't
+  // show "From Product Master" first and jump to Manual when the server's copy arrives.
+  const rowSource: SourceType = initial?.sources?.[0] === 'Manual Entry' ? 'Manual Entry' : 'Product Master';
+  const [source, setSource] = useState<SourceType>(rowSource);
   const [list, setList] = useState<DraftProduct[]>([]);
-  const [listTab, setListTab] = useState<SourceType>('Product Master');
+  const [listTab, setListTab] = useState<SourceType>(rowSource);
   const [tried, setTried] = useState(false);
   // Field messages the server sent back (422), shown under the field until it changes.
   const [serverErr, setServerErr] = useState<{ due?: string; assignee?: string }>({});
@@ -170,7 +174,11 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
         setList([...masters, ...manuals]);
         setClarities(cl);
         setSource(first);
-        setListTab(masters.length || !manuals.length ? 'Product Master' : 'Manual Entry');
+        // The Product List opens on the target's own source (Manual target -> Manual tab); only when
+        // that source has no rows does it show the other tab.
+        const ownRows = first === 'Manual Entry' ? manuals.length : masters.length;
+        const otherRows = first === 'Manual Entry' ? masters.length : manuals.length;
+        setListTab(ownRows || !otherRows ? first : (first === 'Manual Entry' ? 'Product Master' : 'Manual Entry'));
         if (d.due) setDueDate(d.due);
         if (d.start) setStartDate(d.start);
         if (d.id) setCode(d.id);
@@ -466,20 +474,25 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
             <div className="sta-srccard-body">
               <div className={`sta-field${viewOnly ? '' : ' sta-field--gap'}`}>
                 <div className="sta-lab">I want to source from <span className="sta-req">*</span>{isEdit && <span className="sta-locked"><IcoLock size={10} /> Locked</span>}</div>
-                <div className="sta-radios" role="radiogroup">
+                {loadingEdit ? (
+                  // Edit: shimmer until the target's source is known, so no option shows selected and then switches.
+                  <div className="sta-radios" aria-hidden><Shimmer height={58} radius={12} /><Shimmer height={58} radius={12} /></div>
+                ) : <div className="sta-radios" role="radiogroup">
                   <button type="button" role="radio" aria-checked={source === 'Product Master'} className={`sta-radio${source === 'Product Master' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} aria-disabled={isEdit || undefined} onClick={() => switchSource('Product Master')}>
                     <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span>
                   </button>
                   <button type="button" role="radio" aria-checked={source === 'Manual Entry'} className={`sta-radio${source === 'Manual Entry' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} aria-disabled={isEdit || undefined} onClick={() => switchSource('Manual Entry')}>
                     <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span>
                   </button>
-                </div>
+                </div>}
               </div>
 
               {/* Add products — on Add, and on Edit too (the creator adds to the target; the PUT adds
                   every product sent without an id). The source is locked on Edit, so the adder of the
                   target's own source shows. Not on a view-only target. */}
-              {viewOnly || loadingEdit ? null : source === 'Product Master' ? (
+              {loadingEdit ? (
+                <div className="sta-shim-adder" aria-hidden><Shimmer height={46} radius={10} /><Shimmer height={46} radius={10} /><Shimmer height={46} radius={10} /></div>
+              ) : viewOnly ? null : source === 'Product Master' ? (
                 <div className="sta-field">
                   <div className="sta-lab">Select Products <span className="sta-hint">(choose one or more, then click Add)</span></div>
                   <div className="stsrc-picker">
@@ -543,13 +556,15 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
               <span className="sta-srccard-ico sta-srccard-ico--teal"><Svg size={16} stroke="#fff"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></Svg></span>
               <div className="sta-srccard-htxt"><b>Product List</b><small>Mapped products for this sourcing</small></div>
               <div className="stsrc-listtabs" role="tablist" aria-label="Product list">
-                <button type="button" role="tab" aria-selected={isM} className={`stsrc-ltab${isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="stsrc-ltab-c">{masters.length}</span></button>
-                <button type="button" role="tab" aria-selected={!isM} className={`stsrc-ltab${!isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="stsrc-ltab-c">{manuals.length}</span></button>
+                <button type="button" role="tab" aria-selected={!loadingEdit && isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="stsrc-ltab-c">{loadingEdit ? '·' : masters.length}</span></button>
+                <button type="button" role="tab" aria-selected={!loadingEdit && !isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && !isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="stsrc-ltab-c">{loadingEdit ? '·' : manuals.length}</span></button>
               </div>
             </div>
             <div className="sta-srccard-body sta-srccard-body--list">
               {loadingEdit ? (
-                <div className="sta-empty"><span className="sct-spin sct-spin--dark" aria-hidden /> Loading the target’s products…</div>
+                <div className="sta-shim-list" aria-busy="true" aria-label="Loading the target’s products">
+                  {[0, 1, 2].map(i => <Shimmer key={i} height={44} radius={10} />)}
+                </div>
               ) : shown.length === 0 ? (
                 <div className={`sta-empty${tried && errNone ? ' has-err' : ''}`}>
                   {tried && errNone ? 'Add at least one product'

@@ -1176,3 +1176,8 @@
 }
 [data-bs-theme="dark"] .sta-note-view { color: #e2e8f0; background: rgba(255, 255, 255, .03); border-color: rgba(34, 211, 238, .2); }
 
+
+/* Edit: shimmer while the target loads (source choice, the adder row, the product rows), so the form
+   doesn't show a default and then switch to the target's real source. */
+.sta-shim-adder { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 14px; }
+.sta-shim-list { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
