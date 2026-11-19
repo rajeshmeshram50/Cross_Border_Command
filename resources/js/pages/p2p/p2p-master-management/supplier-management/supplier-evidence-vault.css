@@ -549,78 +549,6 @@
 }
 
 /* Case-to-case shipment tabs (horizontal, scrollable) */
-.cev-ov-shiptabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 12px 18px 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(8, 145, 178, .3) transparent;
-}
-
-.cev-ov-shiptabs::-webkit-scrollbar {
-  height: 6px;
-}
-
-.cev-ov-shiptabs::-webkit-scrollbar-thumb {
-  background: rgba(8, 145, 178, .3);
-  border-radius: 99px;
-}
-
-.cev-ov-shiptab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  border: 1.5px solid rgba(6, 182, 212, .22);
-  background: #fff;
-  color: #0e7490;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: all .15s;
-}
-
-.cev-ov-shiptab:hover {
-  background: #ecfeff;
-}
-
-.cev-ov-shiptab.is-active {
-  background: linear-gradient(135deg, #0e7490, #06b6d4);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
-}
-
-.cev-ov-shiptab-opp {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 7px;
-  border-radius: 20px;
-  background: rgba(8, 145, 178, .1);
-  color: #0891b2;
-}
-
-.cev-ov-shiptab.is-active .cev-ov-shiptab-opp {
-  background: rgba(255, 255, 255, .22);
-  color: #fff;
-}
-
-[data-bs-theme="dark"] .cev-ov-shiptab {
-  background: rgba(8, 145, 178, .12);
-  color: #67e8f9;
-  border-color: rgba(8, 145, 178, .34);
-}
-
-[data-bs-theme="dark"] .cev-ov-shiptab.is-active {
-  background: linear-gradient(135deg, #06b6d4, #22d3ee);
-  color: #fff;
-  border-color: transparent;
-}
 
 .cev-ov-table {
   width: 100%;
@@ -692,44 +620,6 @@
 }
 
 /* Shipment group header row inside the Case-to-Case overview. */
-.cev-ov-ship-head td {
-  background: #ecfeff !important;
-  border-bottom: 1px solid #a5f3fc !important;
-  padding: 9px 12px !important;
-  font-weight: 800;
-  font-size: 12px;
-  color: #0e7490;
-  letter-spacing: .02em;
-}
-
-.cev-ov-ship-head td i {
-  margin-right: 6px;
-}
-
-.cev-ov-ship-opp {
-  display: inline-block;
-  margin-left: 10px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #fed7aa;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .03em;
-}
-
-[data-bs-theme="dark"] .cev-ov-ship-head td {
-  background: rgba(8, 145, 178, .16) !important;
-  color: #67e8f9;
-  border-bottom-color: rgba(8, 145, 178, .3) !important;
-}
-
-[data-bs-theme="dark"] .cev-ov-ship-opp {
-  background: rgba(194, 65, 12, .18);
-  color: #fdba74;
-  border-color: rgba(194, 65, 12, .4);
-}
 
 .cev-ov-dl {
   display: inline-flex;
@@ -1034,8 +924,6 @@
   gap: 0;
 }
 
-
-
 .cev-section {
   display: flex;
   align-items: center;
@@ -1088,21 +976,6 @@
   justify-content: flex-end;
 }
 
-.cev-section-count {
-  font-size: 26px;
-  font-weight: 800;
-  color: #0c4a6e;
-  line-height: 1;
-}
-
-.cev-section-count-label {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  color: #0891b2;
-  margin-top: 2px;
-}
-
 /* Figma-style status count pills on the section header band. */
 .cev-sec-pill {
   display: inline-flex;
@@ -1131,16 +1004,6 @@
 
 .cev-sec-pill-ok .cev-sec-dot {
   background: #10b981;
-}
-
-.cev-sec-pill-warn {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
-}
-
-.cev-sec-pill-warn .cev-sec-dot {
-  background: #f59e0b;
 }
 
 .cev-sec-pill-bad {
@@ -1248,41 +1111,6 @@
 
 [data-bs-theme="dark"] .cev-sk::after {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .10), transparent);
-}
-
-.cev-filter-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cev-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  border: 1px solid transparent;
-}
-
-.cev-filter-verified {
-  background: #d1fae5;
-  color: #047857;
-  border-color: rgba(5, 150, 105, .30);
-}
-
-.cev-filter-expiring {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: rgba(217, 119, 6, .30);
-}
-
-.cev-filter-pending {
-  background: #fee2e2;
-  color: #b91c1c;
-  border-color: rgba(239, 68, 68, .30);
 }
 
 .cev-table-wrap {
@@ -1761,8 +1589,6 @@
   color: #dc2626;
 }
 
-
-
 /* ─── FOOTER ─── */
 .cev-footer {
   position: relative;
@@ -1990,14 +1816,6 @@
   color: #67e8f9;
 }
 
-[data-bs-theme="dark"] .cev-section-count {
-  color: #cffafe;
-}
-
-[data-bs-theme="dark"] .cev-section-count-label {
-  color: #67e8f9;
-}
-
 [data-bs-theme="dark"] .cev-table-wrap {
   background: #0a2a33;
   border-color: rgba(8, 145, 178, .28);
@@ -2102,8 +1920,6 @@
   background: rgba(8, 145, 178, .18);
 }
 
-
-
 /* All badges — translucent colour fills on dark (match the segment chips). */
 [data-bs-theme="dark"] .cev-req-m {
   background: rgba(16, 185, 129, .18) !important;
@@ -2121,12 +1937,6 @@
   background: rgba(16, 185, 129, .18) !important;
   color: #6ee7b7 !important;
   border-color: rgba(16, 185, 129, .4) !important;
-}
-
-[data-bs-theme="dark"] .cev-sec-pill-warn {
-  background: rgba(245, 158, 11, .18) !important;
-  color: #fcd34d !important;
-  border-color: rgba(245, 158, 11, .4) !important;
 }
 
 [data-bs-theme="dark"] .cev-sec-pill-bad {
@@ -2214,24 +2024,6 @@
   border-color: rgba(245, 158, 11, .4) !important;
 }
 
-[data-bs-theme="dark"] .cev-filter-verified {
-  background: rgba(16, 185, 129, .18);
-  color: #6ee7b7;
-  border-color: rgba(16, 185, 129, .30);
-}
-
-[data-bs-theme="dark"] .cev-filter-expiring {
-  background: rgba(245, 158, 11, .18);
-  color: #fcd34d;
-  border-color: rgba(217, 119, 6, .30);
-}
-
-[data-bs-theme="dark"] .cev-filter-pending {
-  background: rgba(239, 68, 68, .18);
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, .30);
-}
-
 /* ─── RESPONSIVE ─── */
 @media (max-width: 1440px) {
   .cev-card {
@@ -2307,10 +2099,6 @@
 
   .cev-section {
     padding: 12px 14px;
-  }
-
-  .cev-section-count {
-    font-size: 22px;
   }
 
   .cev-footer {
@@ -3586,25 +3374,6 @@
   color: #a5b9c9;
 }
 
-.sev-ov .sev-ov-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 9.5px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-.sev-ov .sev-ov-pill-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
 .sev-ov .cev-ov-dl {
   display: inline-flex;
   align-items: center;
@@ -3732,8 +3501,7 @@
    of every trade document, so a row can name the shipment it belongs to.
    Both header buttons sit on the teal band, so they are drawn as translucent
    white chips like the close button next to them. */
-.sev-ov .sev-ov-back,
-.sev-ov .sev-ov-bulk {
+.sev-ov .sev-ov-back {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3751,14 +3519,8 @@
   white-space: nowrap;
 }
 
-.sev-ov .sev-ov-back:hover,
-.sev-ov .sev-ov-bulk:hover:not(:disabled) {
+.sev-ov .sev-ov-back:hover {
   background: rgba(255, 255, 255, .28);
-}
-
-.sev-ov .sev-ov-bulk:disabled {
-  opacity: .5;
-  cursor: not-allowed;
 }
 
 .sev-ov .sev-ov-back i {
@@ -3864,35 +3626,10 @@
    to child positions (1 / 3 / 4 on the standard four-column table) lands on
    the wrong cells. Restate it for this five-column shape: only the document
    name stays left. */
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(3) {
-  text-align: left;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(2),
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(5) {
-  text-align: center;
-}
 
 /* Same story for the standard list now that it carries Issued Date and
    Expired At: the base rule centres children 1 / 3 / 4, which would leave
    Status and Action left-aligned. Everything after the name is centred. */
-.sev-ov .cev-ov-table.sev-ov-std thead th:nth-child(n+3),
-.sev-ov .cev-ov-table.sev-ov-std tbody td:nth-child(n+3) {
-  text-align: center;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
-  accent-color: #0891b2;
-  cursor: pointer;
-  vertical-align: middle;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"]:disabled {
-  opacity: .4;
-  cursor: not-allowed;
-}
 
 .sev-ov .sev-ov-acts {
   display: inline-flex;
@@ -3946,27 +3683,6 @@
 
 /* Remind chases a document already out for signature — amber keeps it apart
    from Resend, which sends a new one. */
-.sev-ov .sev-ov-act-remind {
-  background: #fffbeb;
-  color: #b45309;
-  border: 1px solid rgba(217, 119, 6, .30);
-}
-
-.sev-ov .sev-ov-act-remind:hover:not(:disabled) {
-  background: #fef3c7;
-  border-color: rgba(217, 119, 6, .55);
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-act-remind {
-  background: rgba(180, 83, 9, .18);
-  color: #fcd34d;
-  border-color: rgba(217, 119, 6, .40);
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-act-remind:hover:not(:disabled) {
-  background: rgba(180, 83, 9, .30);
-  border-color: rgba(252, 211, 77, .55);
-}
 
 .sev-ov .sev-ov-act:disabled {
   opacity: .45;
@@ -4273,7 +3989,6 @@
   border-color: #67e8f9;
 }
 
-
 [data-bs-theme="dark"] .sev-ov .cev-ov-body {
   background: #08222b;
 }
@@ -4360,7 +4075,6 @@
 .cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
 .cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cev-reup-cur:hover { background:#ede9fe; }
-.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
 .cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
 .cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
 .cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
@@ -4397,10 +4111,7 @@
 .cev-reup-grid > * { min-width: 0; }
 /* The read-only value already ellipsises; the editable one has nowhere to put
    the overflow, so it scrolls within its own width like any input. */
-.cev-reup-in { min-width: 0; }
 .cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
-.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
-.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
 .cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
 .cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
 .cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
@@ -4423,11 +4134,9 @@
 [data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
 [data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
 [data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
-[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
 [data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
 [data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
 [data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
 [data-bs-theme="dark"] .cev-reup-code { color:#fbbf24; }
 @media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
 
@@ -4491,7 +4200,6 @@
 }
 
 [data-bs-theme="dark"] .cev-reup-ro,
-[data-bs-theme="dark"] .cev-reup-in,
 [data-bs-theme="dark"] .cev-reup-toggle,
 [data-bs-theme="dark"] .cev-reup-drop {
   background: #1f1637;
@@ -4684,22 +4392,8 @@
 
 /* Case to Case carries the widest action set in the vault (Resend, Remind,
    Track). Below this width the table scrolls rather than wrapping a row. */
-.sev-ov .cev-ov-table.sev-ov-c2c {
-  min-width: 720px;
-}
 
 /* The reference under a document name — the PO number on a purchase order. */
-.sev-ov .sev-ov-name-sub {
-  margin-top: 2px;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #5e94a1;
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-name-sub {
-  color: #7dd3e8;
-}
 
 /* ══ Working state ═══════════════════════════════════════════════════════
    Sending or reminding takes a moment. Until it lands the veil takes every
@@ -4749,3 +4443,39 @@
 @media (prefers-reduced-motion: reduce) {
   .cev-row-working > td { animation: none; }
 }
+
+/* ===== Supplier vault, Standard Documents overview (Figma): 760px card that grows with the list
+   (up to 84% of the vault), # / Document Name / Status / Action, a bordered status pill with a
+   dot, one button per row (Download, or Upload when no file). .spev-ov is on the Supplier vault
+   only: the Customer and Consignee overviews share .sev-ov and stay as they are. ===== */
+.spev-ov.spev-ov-std .cev-ov-card { width: 760px; display: flex; flex-direction: column; }
+.spev-ov.spev-ov-std .cev-ov-body { height: auto; max-height: none; flex: 1 1 auto; }
+.spev-ov.spev-ov-std .cev-ov-table { table-layout: fixed; }
+.spev-ov.spev-ov-std .cev-ov-table th:nth-child(2),
+.spev-ov.spev-ov-std .cev-ov-table td:nth-child(2) { width: auto; max-width: none; }
+.spev-ov.spev-ov-std .cev-ov-table thead th { color: rgba(255, 255, 255, .72); }
+.spev-ov.spev-ov-std .cev-ov-table thead th:nth-child(2) { text-align: left; }
+.spev-ov.spev-ov-std .cev-ov-acts { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.spev-ov-pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 6px;
+  font-size: 9.5px; font-weight: 700; white-space: nowrap; border: 1px solid;
+}
+.spev-ov-pill i { width: 5px; height: 5px; border-radius: 50%; flex: none; }
+.spev-ov-pill.is-ok   { color: #059669; border-color: #6ee7b7; background: linear-gradient(135deg, #ecfdf5, #fff); }
+.spev-ov-pill.is-ok i { background: #10b981; }
+.spev-ov-pill.is-warn   { color: #d97706; border-color: #fcd34d; background: linear-gradient(135deg, #fffbeb, #fff); }
+.spev-ov-pill.is-warn i { background: #f59e0b; }
+.spev-ov-pill.is-bad   { color: #dc2626; border-color: #fecaca; background: linear-gradient(135deg, #fef2f2, #fff); }
+.spev-ov-pill.is-bad i { background: #ef4444; }
+/* Re-upload beside Download: the light Download style, not the solid Upload. */
+.spev-ov .cev-ov-up.cev-ov-reup {
+  background: linear-gradient(135deg, #f0fdff, #e0f9ff); color: #0891b2; border: 1px solid rgba(6, 182, 212, .25); box-shadow: none;
+}
+.spev-ov .cev-ov-up.cev-ov-reup:hover { transform: none; background: linear-gradient(135deg, #e0f9ff, #cffafe); box-shadow: none; }
+[data-bs-theme="dark"] .spev-ov-pill.is-ok   { color: #6ee7b7; border-color: rgba(110, 231, 183, .4); background: rgba(16, 185, 129, .12); }
+[data-bs-theme="dark"] .spev-ov-pill.is-warn { color: #fcd34d; border-color: rgba(252, 211, 77, .4); background: rgba(245, 158, 11, .12); }
+[data-bs-theme="dark"] .spev-ov-pill.is-bad  { color: #fca5a5; border-color: rgba(252, 165, 165, .4); background: rgba(239, 68, 68, .12); }
+[data-bs-theme="dark"] .spev-ov .cev-ov-up.cev-ov-reup { background: rgba(34, 211, 238, .1); color: #67e8f9; border-color: rgba(103, 232, 249, .3); }
+
+/* Supplier vault (.spev only): the group cards' overview / send buttons are 40px tall (Figma). */
+.spev .cev-group-overview { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 11px; gap: 7px; }

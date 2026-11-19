@@ -418,7 +418,8 @@ export default function Vendors() {
   /* The facet Filter (the two-pane PartyFilterModal the Customer list uses)
      was removed from this page. Search plus the Fresh/Recurring and
      Domestic/International tabs are the whole narrowing story here now. */
-  const [tab, setTab] = useState<SupplierTab>('all');
+  // The list has no status tab any more: always the whole list.
+  const tab: SupplierTab = 'all';
 
   /* Refine Suppliers — two facet groups, both server-applied. The counts come
      back with the list (VendorController::index) rather than being tallied from

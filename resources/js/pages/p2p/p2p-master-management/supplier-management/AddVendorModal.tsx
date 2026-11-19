@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import SegmentBadge, { SEG_TAG_DARK, segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -13,6 +13,8 @@ import { Shimmer, ShimmerForm, ShimmerTable } from '../../../../components/ui/Sh
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+// The app's "Add attachment" menu (Upload file / Take photo with the shared camera).
+import AttachPicker from '../../procurement-management/sourcing-tracker/AttachPicker';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -25,7 +27,6 @@ import {
   validateTin, sanitizeTin, TIN_MAX,
 } from '../../../../utils/fieldValidators';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
-import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -134,7 +135,8 @@ export type VendorPayload = {
   gstNumber: string;
   riskLevel: string;
   vendorBehaviour: string;
-  segment: string;
+  /** The supplier's segment ids (a supplier can be in several segments). */
+  segment: string[];
   complianceBehaviour: string;
   registeredOffice: string;
   country: string;
@@ -331,9 +333,7 @@ export type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
 
 const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
 
-const KYC_SUB_ORDER: KycSubTab[] = ['owner', 'company', 'license'];
 type TradeTab = 'kyc' | 'trade';
-type KycSubTab = 'owner' | 'company' | 'license';
 
 const SEED_DD: DueDiligenceRow[] = [];
 
@@ -438,16 +438,12 @@ export default function AddVendorModal(props: {
   const [kycTab,   setKycTab]   = useState<KycTab>(initialKycTab && initialKycTab !== 'gst' ? initialKycTab : 'company');
   const pendingGstTab = useRef(initialKycTab === 'gst');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
-  const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
   const [prevOpen, setPrevOpen] = useState(false);
 
   type Opt = { value: string; label: string; reg?: string; code?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
-  const [complianceOpts, setComplianceOpts]     = useState<Opt[]>([]);
-  const [classificationOpts, setClassificationOpts] = useState<Opt[]>([]);
-  const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
   const [stateRows, setStateRows] = useState<Array<{
     id: string;
@@ -570,7 +566,6 @@ export default function AddVendorModal(props: {
     return next;
   });
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
-  const [classificationId, setClassificationId] = useState('');
 
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; authority_list?:string[]|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
@@ -582,7 +577,6 @@ export default function AddVendorModal(props: {
      the moment a user is most likely to conclude something is broken. */
   const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
-  const [segmentDocKeys, setSegmentDocKeys] = useState<Record<string, string[]>>({});
 
   type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string; issue?: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
@@ -1020,14 +1014,11 @@ export default function AddVendorModal(props: {
     const hydrate = (b: Bundle) => {
       setVendorTypeOpts(toOpt(b.vendor_types));
       setRiskLevelOpts(toOpt(b.risk_levels));
-      setBehaviourOpts(toOpt(b.vendor_behaviour));
       setSegmentOpts(
         (b.segments || [])
           .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status, code: (r as { code?: string }).code }))
           .filter(o => o.value !== '' && o.label !== '')
       );
-      setComplianceOpts(toOpt(b.compliance_behaviours));
-      setClassificationOpts(toOpt(b.classifications));
       setCountryOpts(toOpt(b.countries));
       setStateCodeRows(
         (b.state_codes || [])
@@ -1105,7 +1096,7 @@ export default function AddVendorModal(props: {
     const ids = (segment ?? [])
       .map(s => Number(s))
       .filter(n => Number.isFinite(n) && n > 0);
-    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); setSegmentDocKeys({}); setSegmentDocsLoading(false); return; }
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); setSegmentDocsLoading(false); return; }
 
     let cancelled = false;
     setSegmentDocsLoading(true);
@@ -1124,15 +1115,6 @@ export default function AddVendorModal(props: {
         .catch(() => [] as Array<{ code: string; name: string }>),
     ]).then(([results, partyDocs]) => {
       if (cancelled) return;
-      const docKeyMap: Record<string, string[]> = {};
-      results.forEach((r: any, i: number) => {
-        const keys: string[] = [];
-        for (const d of (Array.isArray(r?.dd)  ? r.dd  : [])) keys.push(`company::${d.code}`);
-        for (const d of (Array.isArray(r?.kyc) ? r.kyc : [])) keys.push(`owner::${d.code}`);
-        for (const d of (Array.isArray(r?.tl)  ? r.tl  : [])) keys.push(`license::${d.code}`);
-        docKeyMap[String(ids[i])] = keys;
-      });
-      setSegmentDocKeys(docKeyMap);
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
         for (const r of results) {
@@ -1171,10 +1153,6 @@ export default function AddVendorModal(props: {
     return () => { cancelled = true; setSegmentDocsLoading(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, segment, supplierDocType, vendorType]);
-
-  const segGuardReady = !initialVendorId || (segment ?? [])
-    .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
-    .every(s => segmentDocKeys[String(s)] !== undefined);
 
   useEffect(() => {
     if (!bundledSegUploads || bundledSegUploads.length === 0) return;
@@ -1362,7 +1340,6 @@ export default function AddVendorModal(props: {
         setSegReqKeys((v as any).segment_required_doc_keys && typeof (v as any).segment_required_doc_keys === 'object' ? (v as any).segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray((v as any).uploaded_doc_keys) ? (v as any).uploaded_doc_keys : []);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
-        setClassificationId(numStr(v.classification_id));
 
         const pa = v.primary_address;
         if (pa) {
@@ -1459,7 +1436,7 @@ export default function AddVendorModal(props: {
         setGstRows((v.gst_scrutiny ?? []).map(r => ({
           id: String(r.id),
           gstNumber: r.gst_number ?? '',
-          status: (r.status === 'Active' ? 'Active' : 'Inactive'),
+          status: (r.status === 'Active' ? 'Active' : 'Inactive') as GstScrutinyRow['status'],
           scrutinyDate: r.scrutiny_date ?? '',
           lastFilingDate: r.last_filing_date ?? '',
           prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
@@ -2150,7 +2127,7 @@ export default function AddVendorModal(props: {
       setGstRows(prev => [{
         id: String(g.id),
         gstNumber: gstNo,
-        status: (g.status === 'Active' ? 'Active' : 'Inactive'),
+        status: (g.status === 'Active' ? 'Active' : 'Inactive') as GstScrutinyRow['status'],
         scrutinyDate: g.scrutiny_date ?? new Date().toISOString().slice(0, 10),
         lastFilingDate: g.last_filing_date ?? '',
         prevNonGst2aInvoice: g.prev_non_gst_2a_invoice ?? '',
@@ -3883,7 +3860,7 @@ export default function AddVendorModal(props: {
               }
               case 'compliance_behaviours': {
                 const label = String(row.name ?? '');
-                if (label) { setComplianceOpts(prev => [...prev, { value: id, label }]); setComplianceBehaviour(id); clearFieldError('complianceBehaviour'); }
+                if (label) { setComplianceBehaviour(id); clearFieldError('complianceBehaviour'); }
                 break;
               }
               case 'countries': {
@@ -3940,189 +3917,6 @@ export default function AddVendorModal(props: {
 }
 
 type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
-
-type QaField = { name: string; label: string; type?: 'text' | 'number' | 'textarea' | 'select'; required?: boolean; placeholder?: string; options?: string[] };
-
-const STATUS_FIELD: QaField = { name: 'status', label: 'Status', type: 'select', required: true, options: ['Active', 'Inactive'] };
-const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; singular: string; icon: string; fields: QaField[] }> = {
-  vendor_types:          { title: 'Add Supplier Type', singular: 'Supplier Type', icon: 'ri-shield-check-line', fields: [
-    { name: 'name',  label: 'Supplier Type', required: true, placeholder: 'e.g. Genuine / Verified' },
-    STATUS_FIELD,
-  ] },
-  risk_levels:           { title: 'Add Risk Level', singular: 'Risk Level', icon: 'ri-flashlight-line', fields: [
-    { name: 'name',            label: 'Risk Level',      type: 'select', required: true, options: ['Low', 'Medium', 'High', 'Critical'] },
-    { name: 'description',     label: 'Description',      placeholder: 'Risk criteria' },
-    { name: 'action_required', label: 'Action Required',  placeholder: 'e.g. Escalate' },
-    STATUS_FIELD,
-  ] },
-  vendor_behaviour:      { title: 'Add Supplier Behaviour', singular: 'Supplier Behaviour', icon: 'ri-pulse-line', fields: [
-    { name: 'name',        label: 'Behaviour Type', required: true, placeholder: 'e.g. Excellent, Good' },
-    { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Behaviour definition' },
-    STATUS_FIELD,
-  ] },
-  segments:              { title: 'Add Segment', singular: 'Segment', icon: 'ri-focus-3-line', fields: [
-    { name: 'title', label: 'Segment Name', required: true, placeholder: 'e.g. Dry Fruits' },
-    STATUS_FIELD,
-  ] },
-  compliance_behaviours: { title: 'Add Compliance Behaviour', singular: 'Compliance Behaviour', icon: 'ri-scales-3-line', fields: [
-    { name: 'name',            label: 'Behaviour Name',  required: true, placeholder: 'e.g. Compliant, Under Review' },
-    { name: 'action_required', label: 'Action Required', placeholder: 'Next steps' },
-    STATUS_FIELD,
-  ] },
-  countries:             { title: 'Add Country', singular: 'Country', icon: 'ri-earth-line', fields: [
-    { name: 'name',     label: 'Country Name', required: true, placeholder: 'e.g. India' },
-    { name: 'iso_code', label: 'ISO Code', placeholder: 'e.g. IN' },
-    STATUS_FIELD,
-  ] },
-};
-
-function MasterQuickAddPopup(props: {
-  slug: VendorMasterSlug;
-  onClose: () => void;
-  onSaved: (row: Record<string, unknown>) => void;
-}) {
-  const { slug, onClose, onSaved } = props;
-  const toast = useToast();
-  const schema = QUICK_ADD_SCHEMAS[slug];
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    if (schema.fields.some(f => f.name === 'status')) init.status = 'Active';
-    return init;
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  const set = (k: string, v: string) => {
-    setValues(prev => ({ ...prev, [k]: v }));
-    if (errors[k]) setErrors(prev => { const n = { ...prev }; delete n[k]; return n; });
-  };
-
-  const submit = async () => {
-    const errs: Record<string, string> = {};
-    const QA_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
-    const QA_NAME_WHITELIST = /^[A-Za-z0-9\s\-.,()&/'%]+$/;
-    schema.fields.forEach(f => {
-      const raw = (values[f.name] ?? '').toString().trim();
-      if (f.required && !raw) {
-        errs[f.name] = `${f.label} is required`;
-        return;
-      }
-      if (!raw || f.type === 'number') return;
-      if (/[<>]/.test(raw)) {
-        errs[f.name] = `${f.label} cannot contain HTML characters (< or >)`;
-        return;
-      }
-      if (QA_SQL_RE.test(raw)) {
-        errs[f.name] = `${f.label} contains disallowed patterns (possible SQL/JS injection)`;
-        return;
-      }
-      if (!/[A-Za-z0-9]/.test(raw)) {
-        errs[f.name] = `${f.label} must contain meaningful text (letters or numbers)`;
-        return;
-      }
-      if (!QA_NAME_WHITELIST.test(raw)) {
-        errs[f.name] = `${f.label} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
-        return;
-      }
-      if (raw.length > 80) {
-        errs[f.name] = `${f.label} must be 80 characters or fewer`;
-        return;
-      }
-    });
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      toast.error('Missing required fields', 'Please fix the highlighted fields');
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = { status: 'Active', ...values };
-      schema.fields.forEach(f => {
-        if (f.type === 'number' && payload[f.name] !== undefined) {
-          payload[f.name] = Number(payload[f.name]);
-        }
-      });
-      const res = await api.post<Record<string, unknown>>(`/master/${slug}`, payload);
-      toast.success('Saved', `${schema.title.replace('Add ', '')} added`);
-      onSaved(res.data);
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
-      const fieldErr = err?.response?.data?.errors;
-      if (fieldErr) {
-        const flat: Record<string, string> = {};
-        Object.entries(fieldErr).forEach(([k, v]) => { if (v?.[0]) flat[k] = v[0]; });
-        setErrors(flat);
-      }
-      toast.error('Save failed', err?.response?.data?.message || `Could not add to ${slug}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return createPortal((
-    <div className="avm-qa-backdrop">
-      <div className="avm-qa-popup">
-        <div className="avm-qa-head">
-          {/* Mirrors the master Add modal: frosted icon badge + title +
-              "Fill in the details to register a new X" subtitle. */}
-          <span className="avm-qa-head-glow" aria-hidden />
-          <div className="avm-qa-head-main">
-            <span className="avm-qa-head-ico"><i className={schema.icon} /></span>
-            <div className="avm-qa-head-text">
-              <div className="avm-qa-title">{schema.title}</div>
-              <div className="avm-qa-sub">Fill in the details to register a new {schema.singular.toLowerCase()}</div>
-            </div>
-          </div>
-          <button className="avm-close avm-qa-close" onClick={onClose} aria-label="Close" disabled={saving}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        <div className="avm-qa-body">
-          {/* Footer Cancel was already guarded; the ✕ was not — closing mid-POST
-              let the user reopen and submit the same master row twice. */}
-          {saving && <div className="avm-cp-saving-veil" />}
-          {schema.fields.map(f => (
-            <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
-              {f.type === 'textarea' ? (
-                <textarea
-                  className="avm-input"
-                  rows={3}
-                  placeholder={f.placeholder ?? ''}
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => set(f.name, e.target.value)}
-                  style={{ resize: 'vertical' }}
-                />
-              ) : f.type === 'select' ? (
-                <select
-                  className="avm-input"
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => set(f.name, e.target.value)}
-                >
-                  <option value="">— Select —</option>
-                  {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : (
-                <input
-                  className="avm-input"
-                  type={f.type === 'number' ? 'number' : 'text'}
-                  placeholder={f.placeholder ?? ''}
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => set(f.name, e.target.value)}
-                />
-              )}
-            </Field>
-          ))}
-        </div>
-        <div className="avm-qa-foot">
-          <button className="avm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="avm-btn-primary" onClick={submit} disabled={saving}>
-            <i className="ri-save-line" /> {saving ? 'Saving…' : `Save ${schema.singular}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
-}
 
 type ContactDraft = {
   name: string;
@@ -4462,6 +4256,9 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
   const panelRef = useRef<HTMLDivElement>(null);
   const label = SUPPLIER_TYPE_OPTS.find(o => o.value === value)?.label ?? value;
 
+  /* Open: place the panel under (or above) the box and FIX its height for as long as it is open.
+     It used to recompute the height on every scroll of the form, so the list shrank and grew as
+     the box moved, and each scroll went through React state, one frame behind the real scroll. */
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
@@ -4479,17 +4276,40 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
       if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btnRef.current?.focus(); } };
-    const onMove = (e: Event) => { if (!panelRef.current?.contains(e.target as Node)) place(); };
+    /* The form behind scrolls: the panel follows its box in the same frame (position written to the
+       panel directly, height unchanged). Once the box leaves the form's visible area the list
+       closes, as a native select does. Scrolling inside the list is the list's own (CSS:
+       overscroll-behavior: contain), so it never moves the form. */
+    let frame = 0;
+    const follow = () => {
+      frame = 0;
+      const btn = btnRef.current, panel = panelRef.current;
+      if (!btn || !panel) return;
+      const r = btn.getBoundingClientRect();
+      const box = (btn.closest('.avm-body') as HTMLElement | null)?.getBoundingClientRect();
+      if (box && (r.bottom < box.top || r.top > box.bottom)) { setOpen(false); return; }
+      const up = panel.classList.contains('is-up');
+      panel.style.left = `${r.left}px`;
+      panel.style.width = `${r.width}px`;
+      if (up) panel.style.bottom = `${window.innerHeight - (r.top - 6)}px`;
+      else panel.style.top = `${r.bottom + 6}px`;
+    };
+    const onMove = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return;
+      if (!frame) frame = requestAnimationFrame(follow);
+    };
+    const onResize = () => setOpen(false);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', place);
+    window.addEventListener('resize', onResize);
     window.addEventListener('scroll', onMove, true);
     // Bring the chosen option into view when the list opens.
     requestAnimationFrame(() => panelRef.current?.querySelector('.is-sel')?.scrollIntoView({ block: 'nearest' }));
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', place);
+      window.removeEventListener('resize', onResize);
       window.removeEventListener('scroll', onMove, true);
     };
   }, [open]);
@@ -4959,6 +4779,18 @@ export function SegmentRefUploadPopup(props: {
      at today: a certificate cannot have been issued in the future. */
   const [issueDate, setIssueDate] = useState<string>(existing?.issue ?? '');
   const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
+  // Upload: the tile opens the "Add attachment" menu; a file from either option gets the same
+  // checks as the file chooser (no unsafe types, JPG / PNG / WEBP / PDF only, 2 MB at most).
+  const tileRef = useRef<HTMLButtonElement>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const closeAttach = useCallback(() => setAttachOpen(false), []);
+  const pickFile = (f: File) => {
+    if (FILE_DENY_EXT_RE.test(f.name)) { toast.error('Unsafe file type blocked', `${f.name} — executable / script files are not allowed`); return; }
+    if (!(f.type && IMG_PDF_MIME_RE.test(f.type)) && !IMG_PDF_EXT_RE.test(f.name)) { toast.error('Unsupported file', `Only ${IMG_PDF_LABEL} files are allowed`); return; }
+    if (f.size > FILE_MAX_BYTES) { toast.error('File too large', `${f.name} exceeds the 2 MB limit`); return; }
+    setFile(f);
+  };
+  const hasDoc = !!file || !!existing?.url;
   const save = async () => {
     if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
     // The server enforces this too (after_or_equal:issue_date); this is the immediate answer.
@@ -4983,19 +4815,20 @@ export function SegmentRefUploadPopup(props: {
   };
   const today = todayIso();
   return (
-    <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} onClose={onClose} onSave={save}>
-      <div className="avm-grid-2">
+    <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} panelClassName="avm-cp-popup-doc" onClose={onClose} onSave={save}>
+      {/* Figma wraps the popup fields in one section card (as the Bank / GST / Contact popups). */}
+      <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-file-shield-2-line" />} title={`${catLabel} Document`} subtitle="Fields marked * are required">
+      {/* Code, name and authority come from the segment's document library: shown locked, in one
+          row (the popup stays short); the two dates sit side by side below. */}
+      <div className="avm-doc-lib">
         <Field label="Auto Code">
-          <input className="avm-input" value={row.code} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
+          <input className="avm-input avm-input-ro avm-input-code" value={row.code} readOnly tabIndex={-1} />
         </Field>
         <Field label="Document Name">
-          <input className="avm-input" value={row.name} readOnly />
+          <Tooltip label={row.name}><input className="avm-input avm-input-ro" value={row.name} readOnly tabIndex={-1} /></Tooltip>
         </Field>
-      </div>
-      {/* Authority on its own row so the two dates sit side by side below it. */}
-      <div className="avm-grid-1">
         <Field label="Issuing Authority">
-          <input className="avm-input" value={row.authority || '—'} readOnly />
+          <Tooltip label={row.authority || '—'}><input className="avm-input avm-input-ro" value={row.authority || '—'} readOnly tabIndex={-1} /></Tooltip>
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -5020,17 +4853,28 @@ export function SegmentRefUploadPopup(props: {
       </div>
       <div className="avm-grid-1">
         <Field label="Upload Document" required>
-          <FileChooser
-            file={file}
-            existingUrl={existing && !existing.file ? existing.url : undefined}
-            existingName={existing && !existing.file ? existing.name : undefined}
-            onPick={f => setFile(f)}
-            placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
-            imagesPdfOnly
-            noDelete
-          />
+          {hasDoc ? (
+            <FileChooser
+              file={file}
+              existingUrl={existing && !existing.file ? existing.url : undefined}
+              existingName={existing && !existing.file ? existing.name : undefined}
+              onPick={f => setFile(f)}
+              placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
+              imagesPdfOnly
+              noDelete
+            />
+          ) : (
+            <button type="button" ref={tileRef} className="avm-doc-upload" onClick={() => setAttachOpen(true)}
+              aria-haspopup="menu" aria-expanded={attachOpen}>
+              <span className="avm-doc-upload-ico"><i className="ri-upload-2-line" /></span>
+              <span className="avm-doc-upload-txt"><b>Click to upload</b><small>JPG, PNG, WEBP or PDF · max 2 MB</small></span>
+            </button>
+          )}
+          <AttachPicker anchorRef={tileRef} open={attachOpen} onClose={closeAttach} accept={IMG_PDF_ACCEPT} onFile={pickFile}
+            camera={{ title: `Take a photo of the ${row.name}`, subject: row.name, namePrefix: row.code.toLowerCase() || 'document' }} />
         </Field>
       </div>
+      </SectionCard>
     </PopupShell>
   );
 }
@@ -5573,11 +5417,12 @@ function MappedProductsPopup(props: {
    the card, and the card holding only the table and its pager. The table is
    the Supplier list's (.dt-root.hr-dt + .dt-table, serial badge, id chip,
    segment chip, 28px edit icon). */
+/** ₹ in Indian grouping, up to 2 decimals (Figma: ₹22,260 · ₹4,006.8). */
+const inrAmt = (n: number) => `₹${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
 function MappedProductsListCard(props: {
   paging: ReturnType<typeof useMappedProductsPaging>;
   total: number;
-  onAdd: () => void;
-  addDisabled?: boolean;
   onEdit: (id: string) => void;
   busy?: boolean;
   empty?: ReactNode;
@@ -5602,12 +5447,6 @@ function MappedProductsListCard(props: {
           />
           <SearchClear show={paging.search} onClear={() => paging.setSearch('')} />
         </div>
-        <div className="smp-toolbar-right">
-          <span className="smp-count">{props.total} {props.total === 1 ? 'product' : 'products'}</span>
-          <button type="button" className="smp-add" onClick={props.onAdd} disabled={props.addDisabled}>
-            <i className="ri-add-line" /> Map New Product
-          </button>
-        </div>
       </div>
       <div className="smp-card">
         {props.empty ? (
@@ -5620,13 +5459,13 @@ function MappedProductsListCard(props: {
               <table className="smp-table dt-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'center' }}>SR NO</th>
+                    <th style={{ textAlign: 'center' }}>SR. NO</th>
                     <th>PRODUCT</th>
-                    <th>CODE</th>
-                    <th>HSN/SAC</th>
-                    <th>SEGMENT</th>
+                    <th style={{ textAlign: 'center' }}>PRODUCT CODE</th>
+                    <th>HSN / SAC</th>
+                    <th style={{ textAlign: 'center' }}>SEGMENT</th>
                     <th style={{ textAlign: 'right' }}>PRICE (₹)</th>
-                    <th style={{ textAlign: 'right' }}>GST %</th>
+                    <th style={{ textAlign: 'center' }}>GST %</th>
                     <th style={{ textAlign: 'right' }}>GST (₹)</th>
                     <th style={{ textAlign: 'right' }}>TOTAL (₹)</th>
                     <th style={{ textAlign: 'center' }}>ACTIONS</th>
@@ -5638,10 +5477,15 @@ function MappedProductsListCard(props: {
                     return (
                       <tr key={r.id}>
                         <td style={{ textAlign: 'center' }}><span className="dt-serial">{paging.start + i + 1}</span></td>
-                        <td>{r.productName}</td>
-                        <td><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
-                        <td>{r.hsnSacCode || '—'}</td>
                         <td>
+                          <span className="smp-prod">
+                            <span className="smp-prod-ico" aria-hidden><i className="ri-box-3-line" /></span>
+                            <Tooltip label={r.productName}><span className="smp-prod-name">{r.productName}</span></Tooltip>
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
+                        <td><span className="smp-hsn">{r.hsnSacCode || '—'}</span></td>
+                        <td style={{ textAlign: 'center' }}>
                           {segName ? (
                             <span className="smc-seg smc-seg--withbadge">
                               <span className="smc-seg-name">{segName}</span>
@@ -5649,11 +5493,11 @@ function MappedProductsListCard(props: {
                             </span>
                           ) : '—'}
                         </td>
-                        <td style={{ textAlign: 'right' }}>₹{r.purchasePrice.toFixed(2)}</td>
+                        <td style={{ textAlign: 'right' }}><span className="smp-price">{inrAmt(r.purchasePrice)}</span></td>
                         {/* 0% is a value, not a blank (CS-168) — only a bad parse reads as a dash. */}
-                        <td style={{ textAlign: 'right' }}>{Number.isFinite(r.gstPercentage) ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
-                        <td style={{ textAlign: 'right' }}>₹{r.gstAmount.toFixed(2)}</td>
-                        <td style={{ textAlign: 'right' }}>₹{r.totalAmount.toFixed(2)}</td>
+                        <td style={{ textAlign: 'center' }}>{Number.isFinite(r.gstPercentage) ? <span className="smp-gst">{`${Number(r.gstPercentage.toFixed(2))}%`}</span> : '—'}</td>
+                        <td style={{ textAlign: 'right' }}><span className="smp-gst-amt">{inrAmt(r.gstAmount)}</span></td>
+                        <td style={{ textAlign: 'right' }}><span className="smp-total">{inrAmt(r.totalAmount)}</span></td>
                         <td style={{ textAlign: 'center' }}>
                           {/* Edit only (CS-168): unmapping stays in the supplier form. */}
                           <Tooltip label="Edit product">
@@ -5939,16 +5783,25 @@ export function MappedProductsViewPopup(props: {
     <>
     <PopupChrome
       title={`Mapped Products — ${props.code}`}
-      subtitle={`${props.name} · Products linked to this supplier with price & GST`}
+      subtitle={<>
+        {/* A long supplier name ends in "…" (full name on hover); the rest of the line always shows. */}
+        <Tooltip label={props.name}><span className="smp-sub-name">{props.name}</span></Tooltip>
+        <span className="smp-sub-rest"> · Products linked to this supplier with price & GST</span>
+      </>}
       icon="ri-box-3-line"
-      panelClassName="avm-cp-popup-wide"
+      panelClassName="avm-cp-popup-wide avm-cp-popup-mapped"
       onClose={props.onClose}
       /* Backdrop dismisses while nothing is being edited. Once the Map Product
          form is up it holds unsaved input, so a stray click must not bin it. */
       dismissOnBackdrop={!mapOpen}
       busy={saving}
-      /* No footer: the header's × closes it. Map New Product lives in the
-         list card's toolbar, beside the search, as on the Supplier list. */
+      /* Figma: Map New Product in the header (beside ×), Close in the footer. */
+      headerAction={
+        <button type="button" className="smp-head-add" onClick={openMapForm} disabled={saving}>
+          <i className="ri-add-line" aria-hidden /> Map New Product
+        </button>
+      }
+      footer={<button type="button" className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
     >
       {rows === null ? (
         <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={9} />
@@ -5961,8 +5814,6 @@ export function MappedProductsViewPopup(props: {
         <MappedProductsListCard
           paging={paging}
           total={rows.length}
-          onAdd={openMapForm}
-          addDisabled={saving}
           onEdit={openEditForm}
           busy={saving}
           empty={failed
@@ -6031,7 +5882,7 @@ export function MappedProductsViewPopup(props: {
 function PopupChrome(props: {
   title: string;
   icon: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   tone?: 'purple' | 'amber';
   /** Extra class on the panel — e.g. avm-cp-popup-wide for the wide tables. */
   panelClassName?: string;
@@ -6089,6 +5940,10 @@ function PopupShell(props: {
   icon: string;
   subtitle?: string;
   tone?: 'purple' | 'amber';
+  /** Extra class on the panel, e.g. avm-cp-popup-doc for the narrow document upload. */
+  panelClassName?: string;
+  /** A short note on the footer's left, e.g. "Fields marked Auto are fetched and locked". */
+  footNote?: ReactNode;
   onClose: () => void;
   onSave: () => void | Promise<void>;
   children: ReactNode;
@@ -6101,9 +5956,11 @@ function PopupShell(props: {
       icon={props.icon}
       subtitle={props.subtitle}
       tone={props.tone}
+      panelClassName={props.panelClassName}
       onClose={props.onClose}
       busy={saving}
       footer={<>
+        {props.footNote && <span className="avm-cp-footnote"><i aria-hidden /><span>{props.footNote}</span></span>}
         <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
         <button
           className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`}
@@ -6125,7 +5982,7 @@ function PopupShell(props: {
   );
 }
 
-type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string };
+type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string; existingPath?: string };
 
 const VENDOR_KYC_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
 
@@ -6287,7 +6144,7 @@ function DdAddPopup(props: {
   );
 }
 
-type OwnerKycAddPopupDraft = { documentName: string; issuingAuthority: string; documentNumber: string; issueDate: string; expiry: string; status: 'Active' | 'Inactive'; file: File | null; fileName: string };
+type OwnerKycAddPopupDraft = { documentName: string; issuingAuthority: string; documentNumber: string; issueDate: string; expiry: string; status: 'Active' | 'Inactive'; file: File | null; fileName: string; existingPath?: string };
 function OwnerKycAddPopup(props: {
   nextCodePreview: string;
   draft: OwnerKycAddPopupDraft;
@@ -6389,7 +6246,7 @@ function OwnerKycAddPopup(props: {
   );
 }
 
-type TradeLicenseAddPopupDraft = { licenseType: string; licenseNumber: string; issuingAuthority: string; issueDate: string; expiryDate: string; file: File | null; fileName: string };
+type TradeLicenseAddPopupDraft = { licenseType: string; licenseNumber: string; issuingAuthority: string; issueDate: string; expiryDate: string; file: File | null; fileName: string; existingPath?: string };
 function TradeLicenseAddPopup(props: {
   draft: TradeLicenseAddPopupDraft;
   setDraft: Setter<TradeLicenseAddPopupDraft>;
@@ -6730,9 +6587,20 @@ function AddProductMappingPopup(props: {
   /* The `set(key, value)` helper that used to live here is gone with the
      free-text product fallback that was its only caller. Every remaining input
      goes through setDraft(recompute(...)) because each one feeds the totals. */
+  /* A value fetched from the product (or computed): locked, with a lock and an AUTO pill (Figma). */
+  const auto = (value: string, placeholder: string, title?: string) => (
+    <div className="avm-auto" title={title}>
+      <i className="ri-lock-line avm-auto-lock" aria-hidden />
+      <input className="avm-input avm-auto-input" value={value} readOnly tabIndex={-1} placeholder={placeholder} />
+      <span className="avm-auto-pill">Auto</span>
+    </div>
+  );
   return (
-    <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier" onClose={onClose} onSave={onSave}>
-      <div className="avm-grid-2">
+    <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier"
+      panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>} onClose={onClose} onSave={onSave}>
+      {/* Figma: two section cards. 1. the product (picked; code / HSN / segment fill in). */}
+      <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-box-3-line" />} title="Product Details" subtitle="Pick a product — code, HSN / SAC and segment fill in automatically">
+      <div className="avm-grid-1">
         <Field label="Product Name" required addNew={!!props.onAddProduct && !props.editing} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
           {/* ALWAYS the dropdown — never a bare text box.
               An empty list used to swap this control for a read-only <input>
@@ -6758,23 +6626,22 @@ function AddProductMappingPopup(props: {
               : 'Loading products…'}
           />
         </Field>
-        <Field label="Product Code">
-          <input className="avm-input" value={formatProductCode(draft.productCode) || draft.productCode} readOnly placeholder="Auto-fills from product" />
-        </Field>
       </div>
-      {/* HSN/SAC + Segment only (2-col) — matches the Figma's Map Product
-          modal, which has no Batch/Serial/Lot field. */}
-      <div className="avm-grid-2">
-        <Field label="HSN / SAC Code">
-          <input className="avm-input" value={draft.hsnSacCode} readOnly placeholder="—" />
-        </Field>
-        <Field label="Segment">
-          <input className="avm-input" value={draft.segment} readOnly placeholder="—" />
-        </Field>
-      </div>
+      {/* Code, HSN / SAC and segment come from the product (the Figma has no Batch / Serial / Lot). */}
       <div className="avm-grid-3">
+        <Field label="Product Code">{auto(formatProductCode(draft.productCode) || draft.productCode, 'Auto-fills from product')}</Field>
+        <Field label="HSN / SAC Code">{auto(draft.hsnSacCode, '—')}</Field>
+        <Field label="Segment">{auto(draft.segment, '—')}</Field>
+      </div>
+      </SectionCard>
+      {/* 2. the price: typed; GST % comes from the product, amount and total are computed. */}
+      <SectionCard tone="violet" className="avm-cp-sec" icon={<b className="avm-sec-rs" aria-hidden>₹</b>} title="Pricing & GST" subtitle="Enter the purchase price — GST and total are calculated">
+      <div className="avm-grid-2">
         <Field label="Purchase Price (₹)" required>
-          <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter purchase price" value={draft.purchasePrice} onChange={e => setDraft(recompute({ ...draft, purchasePrice: e.target.value }))} />
+          <div className="avm-rs">
+            <span className="avm-rs-sym" aria-hidden>₹</span>
+            <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter purchase price" value={draft.purchasePrice} onChange={e => setDraft(recompute({ ...draft, purchasePrice: e.target.value }))} />
+          </div>
         </Field>
         {/* GST % is inherited from the selected product (set in the
             Product wizard's Sales Config step) and locked here so a
@@ -6782,21 +6649,14 @@ function AddProductMappingPopup(props: {
             the product itself. Same behavior as the product form's
             Map Vendor popup — the two flows are now symmetric. */}
         <Field label="GST %">
-          <input
-            className="avm-input"
-            value={draft.gstPercentage ? `${draft.gstPercentage}%` : ''}
-            readOnly
-            placeholder="Auto-fills from product"
-            title="GST % comes from the product's Sales Config — not editable here"
-          />
-        </Field>
-        <Field label="GST Amount (₹)">
-          <input className="avm-input" value={draft.gstAmount} readOnly placeholder="Auto-computed" />
+          {auto(draft.gstPercentage ? `${draft.gstPercentage}%` : '', 'Auto-fills from product', "GST % comes from the product's Sales Config — not editable here")}
         </Field>
       </div>
-      <Field label="Total Amount (₹)">
-        <input className="avm-input" value={draft.totalAmount} readOnly placeholder="Auto-computed" />
-      </Field>
+      <div className="avm-grid-2">
+        <Field label="GST Amount (₹)">{auto(draft.gstAmount, 'Auto-computed')}</Field>
+        <Field label="Total Amount (₹)">{auto(draft.totalAmount, 'Auto-computed')}</Field>
+      </div>
+      </SectionCard>
     </PopupShell>
   );
 }

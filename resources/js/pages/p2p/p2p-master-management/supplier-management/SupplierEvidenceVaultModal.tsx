@@ -742,7 +742,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     <VaultViewOnlyCtx.Provider value={viewOnly}>
     <ActionLockProvider>
     <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cev-card sev" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="cev-card sev spev" onMouseDown={(e) => e.stopPropagation()}>
 
         <div className="cev-header">
           <div className="cev-header-bg" aria-hidden />
@@ -1159,7 +1159,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
         void overviewPage;
         return (
-          <div className="cev-ov-overlay sev-ov" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) closeOverview(); }}>
+          <div className={`cev-ov-overlay sev-ov spev-ov${isStd ? ' spev-ov-std' : ''}`} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) closeOverview(); }}>
             <div className="cev-ov-card">
               <div className="cev-ov-head">
                 <span className="cev-ov-head-icon"><Glyph d={VAULT_GLYPHS.list} size={18} /></span>
@@ -1341,13 +1341,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 </div>
               ) : (
                 <div className="cev-ov-body">
-                  {/* The Customer vault's standard overview table: same headers,
-                      widths, status pill and Download / Upload pair. */}
+                  {/* Figma: # / Document Name / Status / Action (the dates stay in the tab tables). */}
                   <table className="cev-ov-table">
-                    <thead><tr><th style={{ width: 58 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 116 }}>ISSUED DATE</th><th style={{ width: 116 }}>EXPIRED AT</th><th style={{ width: 118 }}>STATUS</th><th style={{ width: 190 }}>ACTION</th></tr></thead>
+                    <colgroup><col style={{ width: 56 }} /><col /><col style={{ width: 150 }} /><col style={{ width: 196 }} /></colgroup>
+                    <thead><tr><th>#</th><th>DOCUMENT NAME</th><th>STATUS</th><th>ACTION</th></tr></thead>
                     <tbody>
                       {docs.length === 0 ? (
-                        <tr><td colSpan={6} className="cev-ov-empty">No documents available.</td></tr>
+                        <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
                       ) : docs.map((row, i) => {
                         const d = row.doc;
                         const absIdx = i;
@@ -1363,19 +1363,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                             <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
                               <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                             </Tooltip>
-                            <td><VaultDateBadge value={d.issue_date} /></td>
-                            {/* `expiry`, as the tab table beside it reads — the
-                                two lists must not disagree about one document. */}
-                            <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
-                            <td><StdStatusPill s={evEffectiveStatus(d)} /></td>
+                            <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
                             <td>
-                              {/* Download and Upload / Re-upload side by side, as
-                                  the Customer and Consignee overviews have them.
-                                  Upload used to replace Download only while no
-                                  file existed, so a document already on file
-                                  could not be replaced from here (QA #138). */}
+                              {/* Figma: Download when a file is on record, Upload when not. Re-upload
+                                  stays beside Download, so a file on record can still be replaced
+                                  from here (QA #138). */}
                               <span className="cev-ov-acts">
-                                <Tooltip label={!url ? 'No file uploaded yet' : (dling ? 'Downloading…' : `Download ${d.name}`)}>
+                                {(url || !canUpload) && <Tooltip label={!url ? 'No file uploaded yet' : (dling ? 'Downloading…' : `Download ${d.name}`)}>
                                   <button
                                     type="button"
                                     className="cev-ov-dl"
@@ -1395,7 +1389,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                       ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Download</>
                                       : <><i className="ri-download-2-line" aria-hidden /> Download</>}
                                   </button>
-                                </Tooltip>
+                                </Tooltip>}
                                 {canUpload && (
                                   <Tooltip label={url ? `Replace the file on ${d.name}` : `Upload ${d.name}`}>
                                     <button
@@ -1914,6 +1908,12 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
 
 /* The Customer vault's status pills: StatusPill for the standard rows and
    ShipmentStatusPill for the per-deal rows — same colours, same shape. */
+/* Standard overview status (Figma): a bordered pill with a dot — green Verified / Signed,
+   amber Expiring, red for the rest. Styled by .spev-ov in supplier-evidence-vault.css. */
+function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
+  const tone = (s === 'Verified' || s === 'Signed') ? 'ok' : s === 'Expiring' ? 'warn' : 'bad';
+  return <span className={`spev-ov-pill is-${tone}`}><i aria-hidden />{s}</span>;
+}
 function StdStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
   const tone =
     s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669' }

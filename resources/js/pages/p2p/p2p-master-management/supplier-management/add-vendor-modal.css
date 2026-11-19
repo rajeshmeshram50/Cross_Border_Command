@@ -12,7 +12,6 @@
  * Same selectors, same order, same output — Vite now extracts, minifies and
  * hashes it, and it loads in parallel with the chunk that needs it.
  * ───────────────────────────────────────────────────────────────────── */
-.avm-hint { font-size: 11px; font-weight: 600; color: #b45309; margin-top: 5px; line-height: 1.3; }
 .avm-lockwrap { position: relative; cursor: not-allowed; }
 .avm-lockwrap-inner { pointer-events: none; }
 /* Make a DISABLED / locked field clearly read-only (greyed + not-allowed cursor).
@@ -322,11 +321,8 @@
 .avm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
 
 /* Previous-stage summary */
-/* Step 2 / 3 / 4 carried-over summary header — restyled to match the
- * lavender Stage 1 vendor header (.avm-id-summary) so every read-only
- * header in the wizard reads as one component family. Previously this
- * was a green "completed" panel; design feedback wanted the same calm
- * violet palette applied across all stages. */
+/* Step 2 / 3 / 4 carried-over summary header: the same calm palette as the
+ * rest of the wizard, so every read-only header reads as one component family. */
 .avm-prev {
   position: relative;
   background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
@@ -492,16 +488,6 @@
   border: none;
   box-shadow: 0 4px 12px rgba(124, 58, 237, .42);
 }
-.avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.avm-sub-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: #fff; color: #475569;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
-}
-.avm-sub-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; display: inline-block; }
-.avm-sub-pill.on { color: #15803d; border-color: #86efac; background: #ecfdf5; }
-.avm-sub-pill.on::before { background: #16a34a; }
 
 /* Section card */
 .avm-section {
@@ -672,13 +658,7 @@
 [data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
 .avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
 /* Segment picker lock note — shown when uploaded docs pin the segment set. */
-.avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
-.avm-segment-lock-note i { font-size: 12px; }
-[data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
 /* Inline lock hint beside the Supplier Segment label (no extra row → no gap). */
-.avm-seg-hint { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; font-size: 9.5px; font-weight: 500; color: #b45309; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: help; }
-.avm-seg-hint i { font-size: 11px; }
-[data-bs-theme="dark"] .avm-seg-hint { color: #fbbf24; }
 /* Inline quick-add (+) buttons — let the user add a new master entry
    (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
    without leaving the form. */
@@ -877,11 +857,6 @@
   text-decoration: none;
 }
 .avm-fc-action i { font-size: 14px; line-height: 1; }
-.avm-fc-view:hover {
-  background: rgba(124, 58, 237, .10);
-  border-color: #7c3aed;
-  color: #7c3aed;
-}
 .avm-fc-replace { position: relative; }
 .avm-fc-replace:hover {
   background: rgba(124, 58, 237, .10);
@@ -901,7 +876,7 @@
 [data-bs-theme="dark"] .avm-fc-action {
   background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
 }
-[data-bs-theme="dark"] .avm-fc-view:hover,
+
 [data-bs-theme="dark"] .avm-fc-replace:hover {
   background: rgba(124, 58, 237, .18); border-color: #a78bfa; color: #ddd6fe;
 }
@@ -910,51 +885,13 @@
 }
 
 /* Extra contact rows */
-.avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
-.avm-extra-contact { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.avm-extra-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: #7c3aed; }
-.avm-extra-remove {
-  width: 28px; height: 28px; border-radius: 7px;
-  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
-  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-}
 
 .avm-empty { padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px; border: 1.5px dashed #e2e8f0; border-radius: 10px; background: #fff; }
 
 /* Doc table */
-.avm-doctable-wrap { display: flex; flex-direction: column; gap: 10px; }
-.avm-doctable-banner {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 14px; border-radius: 8px;
-  font-size: 12.5px; font-weight: 500; letter-spacing: .04em;
-  align-self: flex-start;
-}
-.avm-doctable-banner.tone-amber { background: linear-gradient(135deg, #fef3c7, #fef9c3); color: #92400e; border: 1px solid #fde68a; }
-.avm-doctable-banner.tone-teal  { background: linear-gradient(135deg, #ccfbf1, #f0fdfa); color: #0f766e; border: 1px solid #99f6e4; }
-.avm-doctable-icon {
-  width: 24px; height: 24px; border-radius: 6px;
-  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.avm-doctable-banner-label { color: inherit; }
-.avm-doctable-banner-sub { font-weight: 600; letter-spacing: 0; color: #b45309; }
-.avm-doctable-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.avm-doctable-search {
-  flex: 1; max-width: 360px;
-  position: relative;
-  height: 36px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  display: inline-flex; align-items: center; padding: 0 12px 0 36px;
-}
-.avm-doctable-search i { position: absolute; left: 12px; color: #94a3b8; font-size: 14px; }
-.avm-doctable-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-size: 13px; }
-.avm-doctable-count { font-size: 12px; color: #7c3aed; font-weight: 700; }
 
 /* Doc tables — keep the plain Velzon table-light header (same as the
    Clients master) so the chrome stays consistent across the app. */
-.avm-doctable-wrap .table thead th {
-  font-size: 11.5px; letter-spacing: .04em; font-weight: 700;
-}
 
 /* ───── Global table chrome inside the Vendor modal ─────
    Mirrors the Clients list table (resources/js/pages/client/Clients.tsx)
@@ -1087,23 +1024,8 @@
 [data-bs-theme="dark"] .avm-modal .table-responsive { border-color: rgba(167,139,250,.16) !important; }
 
 /* Bank grid */
-.avm-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
 /* Product list (Step 4) */
-.avm-product-list { display: flex; flex-direction: column; gap: 8px; }
-.avm-product-row {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
-  padding: 12px 14px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  cursor: pointer;
-  transition: border-color .15s, background .15s;
-}
-.avm-product-row.on { border-color: #16a34a; background: #ecfdf5; }
-.avm-product-row input { width: 18px; height: 18px; accent-color: #16a34a; }
-.avm-product-code { font-size: 11px; font-weight: 600; color: #7c3aed; letter-spacing: .06em; }
-.avm-product-name { font-size: 13px; font-weight: 500; color: #1e1b4b; }
-.avm-product-info { display: inline-flex; gap: 6px; }
-.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #f5f1fe; color: #7c3aed; font-size: 10.5px; font-weight: 500; }
 
 /* Footer */
 .avm-foot {
@@ -1161,12 +1083,6 @@
 /* Spin any icon in place — used on the row Download button while the file
    streams through the backend, so the user sees it's working. */
 .avm-spin { animation: avm-spinner-spin .7s linear infinite; display: inline-block; }
-.avm-spinner-lg {
-  width: 36px; height: 36px;
-  border-width: 3px;
-  border-color: rgba(124,58,237,.20);
-  border-top-color: #7c3aed;
-}
 
 /* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
  * is in flight. Form-shaped skeleton bars convey "data is loading" while
@@ -1443,13 +1359,11 @@
 
 @media (max-width: 880px) {
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
-  .avm-bank-grid { grid-template-columns: 1fr 1fr; }
   .avm-stepper { flex-direction: column; }
   .avm-step-arrow { display: none; }
 }
 @media (max-width: 540px) {
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
-  .avm-bank-grid { grid-template-columns: 1fr; }
 
   /* Header — was cramped: the long title wrapped and the Map Product + close
      buttons overlapped it. Tighten padding, shrink the title, drop the long
@@ -1581,12 +1495,9 @@
 [data-bs-theme="dark"] .avm-filechooser { background: #110c25; border-color: #4c1d95; color: #a89fc7; }
 [data-bs-theme="dark"] .avm-pill { background: #221852; color: #c4b5fd; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-pill.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
-[data-bs-theme="dark"] .avm-sub-pill { background: #1a1430; border-color: #3b2a6b; color: #a89fc7; }
-[data-bs-theme="dark"] .avm-sub-pill.on { background: #14241a; border-color: #14532d; color: #4ade80; }
 [data-bs-theme="dark"] .avm-tabs { border-bottom-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-tab { color: #6d6391; }
 [data-bs-theme="dark"] .avm-tab.on { color: #c4b5fd; border-bottom-color: #a78bfa; }
-[data-bs-theme="dark"] .avm-extra-contact { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-empty { background: #110c25; border-color: #3b2a6b; color: #6d6391; }
 [data-bs-theme="dark"] .avm-foot { background: #14102a; border-top-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
@@ -1595,15 +1506,7 @@
    so the Cancel button showed no hover feedback in dark mode (QA report). */
 [data-bs-theme="dark"] .avm-btn-ghost:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-product-row { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-product-row.on { background: #14241a; border-color: #14532d; }
-[data-bs-theme="dark"] .avm-product-name { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-product-tag { background: #2a1d5c; color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
-/* Dark mode — mirrors .avm-id-summary palette so all read-only headers
- * (Stage 1 + carried-over Stage 2/3/4) share the same dark violet shell. */
+/* Dark mode: the carried-over Stage 2/3/4 header in the dark violet shell. */
 [data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
 /* The light theme puts a WHITE body under the tinted header; dark needs the
    same separation, so the body drops to the modal's own surface rather than
@@ -1615,7 +1518,6 @@
 [data-bs-theme="dark"] .avm-prev-toggle-pill { background: #221940; color: #c4b5fd; box-shadow: none; }
 [data-bs-theme="dark"] .avm-prev-toggle:hover .avm-prev-toggle-pill { background: #2a1d5c; }
 [data-bs-theme="dark"] .avm-prev-toggle-chev { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
 [data-bs-theme="dark"] .avm-prev-k { color: #8d86a8; }
 /* The value is the thing being read here, so in dark it goes near-white rather
    than the muted lavender the old inline pair used. */
@@ -1632,67 +1534,6 @@
    lose that. Lightened for contrast on the dark ground. */
 [data-bs-theme="dark"] .avm-prev-stage-label { color: #86efac; }
 [data-bs-theme="dark"] .avm-prev-stage + .avm-prev-stage { border-top-color: rgba(167,139,250,.20); }
-
-/* ─── Master Quick-Add popup ─── */
-.avm-qa-backdrop {
-  position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .6);
-  backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px 20px;
-  font-family: var(--font-sans);
-}
-.avm-qa-popup {
-  width: 100%; max-width: 480px;
-  background: #fff; border-radius: 16px; overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
-}
-.avm-qa-head {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 16px 18px;
-  background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%);
-  color: #fff;
-}
-/* Soft radial glow — same accent the master Add modal header uses. */
-.avm-qa-head-glow {
-  position: absolute; bottom: -50px; left: -30px; width: 160px; height: 160px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%);
-  pointer-events: none;
-}
-.avm-qa-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; }
-.avm-qa-head-ico {
-  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
-  backdrop-filter: blur(6px);
-}
-.avm-qa-head-ico i { font-size: 20px; color: #fff; }
-.avm-qa-head-text { min-width: 0; }
-.avm-qa-title { font-size: 16px; font-weight: 800; letter-spacing: .01em; line-height: 1.2; }
-.avm-qa-sub { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 1px; }
-.avm-qa-close {
-  position: relative; flex-shrink: 0;
-  width: 30px; height: 30px; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.12); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-.avm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-/* position:relative so .avm-cp-saving-veil (absolute; inset:0) sizes to THIS
-   body. Without it the veil's containing block is .avm-qa-backdrop (fixed;
-   inset:0) and the 45% wash covers the whole viewport instead of the popup. */
-.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; position: relative; }
-.avm-qa-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 18px; border-top: 1px solid #ede9fe;
-}
-
-[data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%); }
-[data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
 
 /* ─── Contact Person popup ─── */
 .avm-cp-backdrop {
@@ -1823,30 +1664,11 @@
 .avm-cp-hact { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 10px; }
 /* Sits ON the purple header, so it is a frosted white outline rather than the
    solid purple .avm-section-add-btn used against the popup's white body. */
-.avm-cp-head-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 13px; border-radius: 9px;
-  border: 1px solid rgba(255,255,255,.42);
-  background: rgba(255,255,255,.18); color: #fff;
-  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: -0.1px;
-  /* line-height:1 so the label's line box is the text itself. Inherited leading
-     made the box taller than the glyphs, and align-items:center then centred
-     that box rather than what you can see in it. */
-  line-height: 1;
-  cursor: pointer; white-space: nowrap;
-  transition: background .15s, border-color .15s;
-}
 /* Same for the icon, and as a block so it is measured as a box rather than sat
    on the text baseline — an icon font's baseline is not the glyph's centre, so
    baseline alignment leaves the "+" riding high next to the label. */
-.avm-cp-head-btn i {
-  font-size: 15px; line-height: 1;
-  display: flex; align-items: center; justify-content: center;
-}
-.avm-cp-head-btn:hover:not(:disabled) { background: rgba(255,255,255,.32); border-color: rgba(255,255,255,.6); }
-.avm-cp-head-btn:disabled { opacity: .5; cursor: not-allowed; }
-/* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
-   (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
+/* position:relative anchors .avm-cp-saving-veil (absolute; inset:0) to the body, not the
+   whole viewport (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
 .avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; position: relative; }
 /* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
    dark-purple (the main form uses a lighter slate medium-weight label). */
@@ -1897,52 +1719,10 @@
  * "LABEL : Value" pairs, hover affordance, and ellipsis on long values.
  * Old layout was flex-wrap rows which produced uneven column widths
  * and mismatched the rest of the suite. */
-.avm-id-summary {
-  padding: 14px 18px 16px;
-  margin-bottom: 14px;
-  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
-  border: 1px solid #e9d5ff;
-  border-radius: 12px;
-  display: flex; flex-direction: column; gap: 13px;
-}
-.avm-id-summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 28px;
-  row-gap: 13px;
-  align-items: baseline;
-}
-.avm-id-pair {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; line-height: 1.4;
-  min-width: 0;
-  cursor: default; padding: 1px 2px; border-radius: 4px;
-  transition: background .12s;
-}
-.avm-id-pair:hover { background: rgba(124,58,237,0.06); }
-.avm-id-k {
-  font-size: 12px; font-weight: 600; letter-spacing: .01em;
-  color: #64748b;
-  white-space: nowrap; flex-shrink: 0;
-}
-.avm-id-v {
-  font-weight: 600; color: #6d28d9; line-height: 1.4;
-  min-width: 0; flex: 1 1 auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-@media (max-width: 900px) {
-  .avm-id-summary-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-[data-bs-theme="dark"] .avm-id-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-id-pair:hover { background: rgba(167,139,250,0.10); }
-[data-bs-theme="dark"] .avm-id-k { color: #94a3b8; }
-[data-bs-theme="dark"] .avm-id-v { color: #c4b5fd; }
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
 [data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; background: linear-gradient(180deg, transparent, rgba(124,58,237,.08)); }
-/* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
-   the rule block above. The dark-mode overrides used to live here. */
 
 /* Bootstrap "subtle" badge palette inside the modal's tables.
  * Bootstrap 5.3's bg-*-subtle / text-* tokens swap via --bs-* vars,
@@ -2041,20 +1821,23 @@
 .avm-exp-pill.is-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 .avm-exp-pill.is-valid   { background: #ecfdf5; color: #16a34a; border: 1px solid #bbf7d0; }
 /* Issuing-authority badges + "+N" overflow popover (reused AuthorityBadges component).
-   These .clm-* classes live in the CLM shared CSS, which isn't loaded in this modal,
-   so mirror the ones AuthorityBadges needs here. */
-.clm-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid; white-space: nowrap; letter-spacing: .01em; line-height: 1.35; }
-.clm-badge-teal { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
-.clm-code-pill { display: inline-block; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #0891b2; background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(6,182,212,.25); white-space: nowrap; }
-.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-.clm-pop::-webkit-scrollbar { width: 8px; }
-.clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
-.clm-pop-title { color: #0d9488; }
-.clm-pop-row-alt { background: #f0fdfa; }
-[data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
-[data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
-[data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
-[data-bs-theme="dark"] .clm-badge-teal { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(6,182,212,.4); }
+   These .clm-* classes live in the CLM shared CSS, which isn't loaded with the Supplier form
+   or the Supplier Evidence Vault, so the ones AuthorityBadges needs are mirrored here, SCOPED:
+   the badges to the two Supplier containers, the popover (portalled to <body>) to while one of
+   them is open. Unscoped, they overrode CLM's own badges on every CLM page once Supplier
+   Management had been opened. */
+:is(.avm-modal, .cev-card.sev) .clm-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid; white-space: nowrap; letter-spacing: .01em; line-height: 1.35; }
+:is(.avm-modal, .cev-card.sev) .clm-badge-teal { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-code-pill { display: inline-block; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #0891b2; background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(6,182,212,.25); white-space: nowrap; }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop::-webkit-scrollbar { width: 8px; }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop-title { color: #0d9488; }
+body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop-row-alt { background: #f0fdfa; }
+[data-bs-theme="dark"] body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop-title { color: #5eead4; }
+[data-bs-theme="dark"] body:has(:is(.avm-modal, .cev-card.sev)) .clm-pop-row-alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] :is(.avm-modal, .cev-card.sev) .clm-badge-teal { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(6,182,212,.4); }
 .avm-req-pair { display: inline-flex; align-items: center; gap: 4px; }
 .avm-req-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .avm-req-pill.on-m { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22,163,74,.3); }
@@ -2089,7 +1872,6 @@
 .avm-kyc-act.del { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 .avm-kyc-act.del:hover { background: #dc2626; color: #fff; border-color: transparent; transform: translateY(-1px); }
 /* Green "file uploaded" tick that fronts the action group. */
-.avm-uploaded-dot { display: inline-flex; align-items: center; color: #16a34a; font-size: 16px; margin-right: 1px; }
 .avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
 .avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
 /* The Upload / Re-upload actions are now <button>s that open a popup (no
@@ -2155,14 +1937,10 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   white-space: nowrap;
 }
 .avm-pill-success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
-.avm-pill-warning { background: #fef3c7; color: #854d0e; border-color: #fde68a; }
 .avm-pill-danger  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-.avm-pill-primary { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
 .avm-pill-muted   { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
 [data-bs-theme="dark"] .avm-pill-success { background: #0c2e1d; color: #4ade80; border-color: #15803d; }
-[data-bs-theme="dark"] .avm-pill-warning { background: #3a2a08; color: #fbbf24; border-color: #b45309; }
 [data-bs-theme="dark"] .avm-pill-danger  { background: #3a0e0e; color: #f87171; border-color: #b91c1c; }
-[data-bs-theme="dark"] .avm-pill-primary { background: #0f1e3a; color: #60a5fa; border-color: #1d4ed8; }
 [data-bs-theme="dark"] .avm-pill-muted   { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2189,24 +1967,11 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 
 /* Doc-table banners (Trade Document Management, Steps 3 & 4) were light
    amber / teal panels with no dark variant — bright blocks on the dark body. */
-[data-bs-theme="dark"] .avm-doctable-banner.tone-amber {
-  background: linear-gradient(135deg, #3a2a08, #2a2105); color: #fcd34d; border-color: #78521a;
-}
-[data-bs-theme="dark"] .avm-doctable-banner.tone-teal {
-  background: linear-gradient(135deg, #0c2522, #08201d); color: #5eead4; border-color: #155e56;
-}
-[data-bs-theme="dark"] .avm-doctable-banner-sub { color: #fbbf24; }
 
 /* Purple section tone — the only section colour left without a dark border. */
 [data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
 
-/* Extra-contact card: the navy heading + light-red remove button were tuned
-   for the white card and disappeared / glared on the dark card surface. */
-[data-bs-theme="dark"] .avm-extra-head   { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-extra-remove { background: #3a0e0e; border-color: #b91c1c; color: #fca5a5; }
-
 /* Remaining navy (#7c3aed) accents that dim out against the dark surface. */
-[data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
 
@@ -2227,7 +1992,6 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 [data-bs-theme="dark"] .avm-kyc-act.reup { background: rgba(217,119,6,.18); color: #fbbf24; border-color: rgba(251,191,36,.4); }
 [data-bs-theme="dark"] .avm-kyc-act.edit { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-kyc-act.del  { background: rgba(220,38,38,.18); color: #f87171; border-color: rgba(220,38,38,.4); }
-[data-bs-theme="dark"] .avm-uploaded-dot { color: #4ade80; }
 [data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
 [data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-mapped-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.3); color: #a78bfa; --ui-search-clear: #c4b5fd; }
@@ -2807,7 +2571,7 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser.avm-filechooser-has-file:hover { border-color: #22d3ee; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link { color: #0e7490; text-decoration-color: rgba(14,116,144,.35); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link:hover { color: #0b4f63; text-decoration-color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-fc-view:hover,
+
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-fc-replace:hover { background: #ecfeff; border-color: #0891b2; color: #0e7490; }
 
 /* "Saved — locked" chip and header action buttons */
@@ -3220,3 +2984,242 @@ body:has(.smc-root.sup-list) .master-select-item.active { background: rgba(8, 14
 [data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item:hover,
 [data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
 [data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
+/* Locked popup fields (.avm-input-ro): look read-only, not typeable (no caret, selection or focus
+   ring), and a document's auto code as a code (monospace, amber). Teal on the Supplier page. */
+.avm-input.avm-input-ro { border-style: dashed; caret-color: transparent; user-select: none; cursor: not-allowed; }
+.avm-input.avm-input-ro:focus { box-shadow: none; outline: 0; }
+.avm-input.avm-input-code { color: #d97706; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: .03em; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input.avm-input-ro:focus { border-color: #cfe3ea; }
+
+/* Yes / No toggle (document Expiry): teal on the Supplier page, not the default violet. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno { border-color: #cfe3ea; background: #f4fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn { border-right-color: #cfe3ea; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn:hover { background: #ecfeff; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on:hover { background: #0e7490; color: #fff; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno { border-color: rgba(103,232,249,.25); background: rgba(34,211,238,.05); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
+
+/* The document upload popup (Owner KYC / Due Diligence / Trade Licence) holds five fields:
+   a narrower panel (920px) than the 1200px the Supplier page gives its table popups. */
+.avm-cp-popup.avm-cp-popup-doc { max-width: 920px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-doc { max-width: 920px; }
+
+/* Upload Document popup, compact: the three library fields in one row; the upload as a short
+   tile that opens the "Add attachment" menu (Upload file / Take photo). */
+.avm-doc-lib { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.1fr) minmax(0, 1.1fr); gap: 14px; }
+@media (max-width: 720px) { .avm-doc-lib { grid-template-columns: 1fr; } }
+.avm-doc-lib .avm-input { text-overflow: ellipsis; }
+.avm-doc-upload {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; text-align: left;
+  border: 1.5px dashed #a5d8e6; border-radius: 12px; background: linear-gradient(135deg, #f4fdff, #ecfbff);
+  font-family: inherit; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.avm-doc-upload:hover, .avm-doc-upload[aria-expanded="true"] { border-color: #0891b2; background: #e6fafe; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
+.avm-doc-upload-ico {
+  width: 38px; height: 38px; flex: none; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 17px; background: linear-gradient(135deg, #22d3ee, #0e7490); box-shadow: 0 6px 14px -6px rgba(8, 145, 178, .7);
+}
+.avm-doc-upload-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.avm-doc-upload-txt b { font-size: 13px; font-weight: 700; color: #0e7490; }
+.avm-doc-upload-txt small { font-size: 11px; font-weight: 500; color: #64748b; }
+[data-bs-theme="dark"] .avm-doc-upload { border-color: rgba(103, 232, 249, .3); background: rgba(34, 211, 238, .06); }
+[data-bs-theme="dark"] .avm-doc-upload:hover, [data-bs-theme="dark"] .avm-doc-upload[aria-expanded="true"] { border-color: #22d3ee; background: rgba(34, 211, 238, .1); }
+[data-bs-theme="dark"] .avm-doc-upload-txt b { color: #67e8f9; }
+[data-bs-theme="dark"] .avm-doc-upload-txt small { color: #94a3b8; }
+/* Shorter body spacing in this popup. */
+.avm-cp-popup-doc .avm-cp-sec .avm-section-body { gap: 10px; }
+
+/* The upload popup's "Add attachment" menu and its camera dialog must open ABOVE the popup. From
+   the Evidence Vault the popup is raised to z-index 13000 (over the vault drawer), above the
+   menu's 3200 and the camera's 12000, so both are lifted while this popup is open. */
+body:has(.avm-cp-popup-doc) .sta-att { z-index: 13200; }
+body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
+/* ═════ Stepper + sub-tabs: exact Figma values (.slm-teal .sf-modal: .sf-stages / .sf-stage-* /
+   .sf-subtabs / .sf-subtab). Measured against the build; only what differed is set here. ═════ */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-stepper-wrap { padding: 8px 22px 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step { border-width: 1.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-ico { border-radius: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-title { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-sub { font-size: 10px; font-weight: 500; color: #64748b; margin-top: 1px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-arrow { flex: 0 0 36px; width: 36px; height: 3px; border-radius: 3px; background: #cdeef5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-body { padding: 8px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tabs { gap: 22px; height: 42px; margin-bottom: 8px; border-bottom: 1px solid #e2eef3; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab {
+  display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 2px;
+  font-size: 12.5px; font-weight: 700; color: #64748b;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab:hover { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab.on { color: #0c4a6e; font-weight: 700; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-sub { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-arrow { background: rgba(103,232,249,.25); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tabs { border-bottom-color: rgba(103,232,249,.18); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab.on { color: #67e8f9; }
+/* Supplier Type list: its scroll stays its own (reaching the end never scrolls the form behind),
+   and it can shrink inside the fixed-height panel so the list itself scrolls. */
+.avm-tsel-list { overscroll-behavior: contain; min-height: 0; }
+/* The other dropdowns on the Supplier page (MasterSelect lists, portalled to <body>): the same rule,
+   scrolling a list to its end never scrolls the form behind it. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-list { overscroll-behavior: contain; }
+/* ═════ Modal frame, header and footer: exact Figma values (.slm-teal .sf-modal / .sf-head /
+   .sf-footer / .sf-btn). Measured against the build; only what differed is set here. ═════ */
+/* Height stays FIXED (QA #133: no jump between stages), capped like the Figma's 93vh. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { height: min(880px, 93vh); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head { padding: 14px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head-icon {
+  width: 40px; height: 40px; border-radius: 13px;
+  background: linear-gradient(145deg, #fff, #e0f7fb); box-shadow: 0 8px 20px -8px rgba(0,0,0,.35);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-title { font-size: 18px; font-weight: 800; letter-spacing: -.4px; line-height: 1.1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-map-btn {
+  height: 40px; border-radius: 12px; gap: 7px; padding: 0 15px; font-size: 12px; font-weight: 700;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head .avm-close {
+  width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-note { font-size: 11.5px; font-weight: 600; color: #64748b; gap: 7px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-dot { width: 6px; height: 6px; background: #22d3ee; box-shadow: 0 0 0 3px rgba(14,166,205,.18); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot .avm-btn-primary {
+  height: 40px; border-radius: 12px; gap: 7px; padding: 0 17px; font-size: 12.5px; font-weight: 700;
+  background: linear-gradient(135deg, #0b4f63, #0e7490 35%, #0891b2 70%, #22d3ee);
+  box-shadow: 0 10px 24px -8px rgba(8,145,178,.65), inset 0 1px 0 rgba(255,255,255,.25);
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-note { color: #94a3b8; }/* The current stage card's ring + soft shadow were cut flat along the bottom: the form body below
+   (positioned, with its own background) painted over them. The stepper band sits above it. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-stepper-wrap { position: relative; z-index: 2; }/* Stage flag ("In Progress"): the Figma's teal pill, no border, no shadow (.slm-teal .sf-stage-flag). */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-badge {
+  background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; border: 0; box-shadow: none;
+}
+/* ═════ Map Product popup (Figma): 800px, two section cards, locked AUTO fields, footer note ═════ */
+.avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
+/* A fetched / computed value: grey, locked (lock icon), mono text, AUTO pill on the right. */
+.avm-auto { position: relative; }
+.avm-auto .avm-input.avm-auto-input {
+  padding-left: 32px; padding-right: 62px; background: #eef3f6; border: 1.5px solid #e2e8f0; color: #475569;
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;
+  caret-color: transparent; user-select: none; cursor: not-allowed; text-overflow: ellipsis;
+}
+.avm-auto .avm-input.avm-auto-input::placeholder { color: #94a3b8; }
+.avm-auto .avm-input.avm-auto-input:focus { box-shadow: none; outline: 0; border-color: #e2e8f0; }
+.avm-auto-lock { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #94a3b8; pointer-events: none; }
+.avm-auto-pill {
+  position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none;
+  padding: 3px 8px; border-radius: 999px; background: #7b8794; color: #fff;
+  font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+/* Purchase price with a ₹ prefix. */
+.avm-rs { position: relative; }
+.avm-rs .avm-input { padding-left: 30px; }
+.avm-rs-sym { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-weight: 700; font-size: 13px; color: #0891b2; pointer-events: none; }
+/* Footer note on the left ("Fields marked Auto are fetched and locked"). */
+.avm-cp-footnote { margin-right: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: #64748b; }
+.avm-cp-footnote i { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
+.avm-cp-footnote b { color: #334155; font-weight: 700; }
+.avm-cp-foot:has(.avm-cp-footnote) { align-items: center; }
+[data-bs-theme="dark"] .avm-auto .avm-input.avm-auto-input { background: rgba(255,255,255,.04); border-color: rgba(103,232,249,.16); color: #9db3c1; }
+[data-bs-theme="dark"] .avm-cp-footnote { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-cp-footnote b { color: #e2e8f0; }
+
+/* Mapped Products empty state: teal (it was the violet accent). */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty.avm-empty-accent {
+  color: #22b8d6; font-size: 14px; font-weight: 600; padding: 28px; border: 1.5px dashed #bfe3ec; background: #fff;
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty.avm-empty-accent { color: #67e8f9; border-color: rgba(103,232,249,.3); background: rgba(34,211,238,.04); }
+
+/* Map Product fixes: the lock / ₹ sat on the text (the Supplier page's input padding won); the
+   rupee section icon; the Mapped Products search box in teal. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup .avm-auto .avm-input.avm-auto-input { padding-left: 32px; padding-right: 62px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup .avm-rs .avm-input { padding-left: 30px; }
+.avm-sec-rs { font-size: 14px; font-weight: 800; line-height: 1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search { --ui-search-clear: #0891b2; border-color: #cfe3ea; color: #0891b2; background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search { border-color: rgba(103,232,249,.25); color: #67e8f9; background: rgba(255,255,255,.04); }
+
+/* ═════ Mapped Products popup (Supplier list), Figma: teal table, Map New Product in the header,
+   Close in the footer. Scoped to this popup (.avm-cp-popup-mapped): Bulk Sourcing also uses .smp-*. ═════ */
+.avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-hact { display: flex; align-items: center; gap: 10px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-head-add {
+  display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 16px; border-radius: 12px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; cursor: pointer;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.45); transition: background .15s, color .15s;
+}
+.avm-cp-popup.avm-cp-popup-mapped .smp-head-add:hover:not(:disabled) { background: #fff; color: #0e7490; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-head-add:disabled { opacity: .55; cursor: not-allowed; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-head-add i { font-size: 15px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-search > i { color: #0891b2; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-search input:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
+.avm-cp-popup.avm-cp-popup-mapped .smp-card { border: 1px solid #dceef3; border-radius: 14px; overflow: hidden; background: #fff; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table-wrap.dt-root { max-height: 520px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table thead th {
+  background: #f0fbfd !important; color: #0e7490 !important; font-size: 10px !important; font-weight: 800 !important;
+  letter-spacing: .08em; border-bottom: 1px solid #dceef3 !important; padding-top: 12px; padding-bottom: 12px;
+}
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td { border-bottom: 1px solid #eef6f8; padding-top: 9px; padding-bottom: 9px; vertical-align: middle; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody tr:hover td { background: #f7fdfe; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .dt-serial.dt-serial {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 8px;
+  background: #fff; color: #0e7490; border: 1px solid #cfe9f0; box-shadow: none;
+}
+.avm-cp-popup.avm-cp-popup-mapped .smp-prod { display: inline-flex; align-items: center; gap: 11px; min-width: 0; max-width: 280px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-prod-ico {
+  width: 32px; height: 32px; flex: none; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 15px; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); box-shadow: 0 6px 14px -8px rgba(8,145,178,.7);
+}
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-prod-name { font-size: 13px !important; font-weight: 700 !important; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .dt-id-chip.dt-id-chip { color: #0e7490; background: #f0fbfd; border: 1px solid #a5e4f0; border-radius: 7px; padding: 4px 9px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-hsn { font-family: 'JetBrains Mono', ui-monospace, monospace !important; font-size: 11.5px !important; color: #334155; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg { justify-content: center; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg-name { color: #0e7490; background: #f0fbfd; border: 1px solid #a5e4f0; border-radius: 999px; padding: 3px 11px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-price { font-size: 13px !important; font-weight: 700 !important; color: #0f172a; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-gst { display: inline-block; padding: 3px 9px; border-radius: 7px; color: #0e7490; background: #f0fbfd; border: 1px solid #cfe9f0; font-size: 11px !important; font-weight: 700 !important; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-gst-amt { color: #64748b; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-total { font-size: 13px !important; font-weight: 800 !important; color: #0e7490; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-act-edit { color: #0891b2; background: #f0fbfd; border-color: #a5e4f0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-empty { color: #22b8d6; font-weight: 600; font-size: 14px; padding: 30px 16px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager { border-top: 1px solid #dceef3; background: #fbfeff; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-card { background: #10222b; border-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table thead th { background: rgba(34,211,238,.08) !important; color: #67e8f9 !important; border-bottom-color: rgba(103,232,249,.16) !important; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td { border-bottom-color: rgba(103,232,249,.08); }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody tr:hover td { background: rgba(34,211,238,.05); }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-prod-name,
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-price { color: #e2e8f0; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-total { color: #67e8f9; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager { background: #10222b; border-top-color: rgba(103,232,249,.16); }
+
+/* Mapped Products popup: the last violet bits in teal (search box, segment frame, pager). */
+.avm-cp-popup.avm-cp-popup-mapped .smp-search input { background: #fff; border-color: #cfe3ea; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg { background: #f0fbfd; border-color: #a5e4f0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg--withbadge .smc-seg-name { border: 0; background: transparent; padding: 0 2px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-info { color: #64748b; background: transparent; border: 0; padding-left: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-hl { color: #0e7490; font-weight: 800; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-range { background: linear-gradient(135deg, #22d3ee, #0891b2); color: #fff; box-shadow: 0 4px 10px -4px rgba(8,145,178,.6); }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-btn { color: #0e7490; border-color: #cfe3ea; background: #fff; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-btn:hover:not(:disabled) { background: #ecfeff; border-color: #22d3ee; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-search input { background: rgba(255,255,255,.04); border-color: rgba(103,232,249,.25); }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg { background: rgba(34,211,238,.08); border-color: rgba(103,232,249,.3); }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-hl { color: #67e8f9; }
+
+/* Mapped Products popup: long names stay on one line and end in "…" (the tooltip shows the full name).
+   Without min-width: 0 a flex child never shrinks, so a long product name pushed Price / GST / Total
+   off the table and a long company name stretched the header. */
+.avm-cp-popup.avm-cp-popup-mapped .smp-prod { display: flex; max-width: 260px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-prod-name { display: block; flex: 1 1 auto; min-width: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg { max-width: 190px; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smc-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-head { gap: 16px; }
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-title,
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-htext { min-width: 0; flex: 1 1 auto; }
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-hact { flex: none; }
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-htitle,
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Subtitle: the supplier name is capped at 320px and ends in "…"; the "· Products linked…" part stays. */
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-subtitle { display: flex; align-items: baseline; min-width: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-sub-name { display: block; min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-sub-rest { flex: none; white-space: pre; }

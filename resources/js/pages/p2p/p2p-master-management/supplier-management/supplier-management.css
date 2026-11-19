@@ -166,8 +166,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 }
 .sup-fig .sl-refine-k::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(var(--sfr-a78bfa-rgb, 167, 139, 250),.32),transparent);}
 .sup-fig .sl-refine-grid{display:grid;gap:7px;}
-.sup-fig .sl-refine-grid--4{grid-template-columns:repeat(4,minmax(0,1fr));}
-.sup-fig .sl-refine-grid--2{grid-template-columns:repeat(2,minmax(0,1fr));}
 
 .sup-fig .sl-refine-grid--3{grid-template-columns:repeat(3,minmax(0,1fr));}
 
@@ -343,7 +341,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-cat--risk{color:#b45309;background:#FFFBEB;border-color:#FCD34D;}
 .sup-fig .sl-cat--black{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}
 .sup-fig .sl-compliant--yes{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
-.sup-fig .sl-compliant--pending{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
 .sup-fig .sl-compliant--no{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}
 .sup-fig .sl-prodcount{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:26px;padding:0 9px;font-family:inherit;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--sft-a78bfa, #a78bfa),var(--sft-7c3aed, #7c3aed));border-radius:8px;box-shadow:0 2px 6px -1px rgba(var(--sft-7c3aed-rgb, 124, 58, 237),.4);border:none;cursor:pointer;transition:transform .14s,box-shadow .14s;}
 .sup-fig .sl-prodcount:hover{transform:translateY(-1px);box-shadow:0 4px 10px -1px rgba(var(--sft-7c3aed-rgb, 124, 58, 237),.55);}
@@ -632,7 +629,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-compliant--yes {background:rgba(34,197,94,.14);color:#86efac;border-color:rgba(34,197,94,.32);}
-[data-bs-theme="dark"] .sup-fig .sl-compliant--pending {background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-compliant--no{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.32);}
 
 [data-bs-theme="dark"] .sup-fig .sl-cat--star{background:rgba(var(--sft-8b5cf6-rgb, 139, 92, 246),.14);color:var(--sft-c4b5fd, #c4b5fd);border-color:rgba(var(--sft-8b5cf6-rgb, 139, 92, 246),.32);}
@@ -1121,8 +1117,13 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .5);
 }
 .sup-list .sup-kind.is-on::after { background: linear-gradient(90deg, #22d3ee, #0891b2); }
+/* Figma (#slSubTabs .p2p-sub2tab): 12.5px / 700 on every tab, 8px gap, 9px under the text;
+   a 22px borderless grey icon tile (radius 7) with a 12px glyph. */
+.sup-list .sup-kind { gap: 8px; padding: 0 2px 9px; font-size: 12.5px; font-weight: 700; transition: color .18s ease; }
+.sup-list .sup-kind__ico { width: 22px; height: 22px; border-radius: 7px; border: 0; background: #f1f5f9; color: #94a3b8; font-size: 12px; transition: all .2s ease; }
+.sup-list .sup-kind.is-on .sup-kind__ico { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .5); }
 .sup-list .sup-kind:not(.is-on):hover { color: #0e7490; }
-.sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #0891b2; border-color: #a5e9f5; background: #f0fdff; }
+.sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #0891b2; background: #e6f9fd; }
 .sup-list .sup-kind:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; border-radius: 6px; }
 
 [data-bs-theme="dark"] .sup-list .sup-kinds { background: transparent; border-bottom-color: rgba(34, 211, 238, .14); }
@@ -1194,7 +1195,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-list .sl-compliant__dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
 .sup-list .sl-compliant--yes .sl-compliant__dot { background: #10b981; }
 .sup-list .sl-compliant--no .sl-compliant__dot { background: #ef4444; }
-.sup-list .sl-compliant--pending .sl-compliant__dot { background: #f59e0b; }
 
 /* Edit: a filled teal square like the design. */
 .sup-list .sup-fig .sl-act-btn--edit,

@@ -36,7 +36,8 @@
   background: #fff; border: 1.5px solid #e2eef2; box-shadow: none; transform: none;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:hover {
-  border-color: #a5e4f0; box-shadow: 0 12px 24px -16px rgba(8,145,178,.55); transform: none;
+  /* Hover lifts the card a little (as the original chooser), in teal. */
+  border-color: #a5e4f0; box-shadow: 0 14px 26px -16px rgba(8,145,178,.6); transform: translateY(-3px);
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:focus-visible { outline: 2px solid #0891b2; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card.is-selected {
@@ -54,8 +55,9 @@
   background: #e0f7fb; border: 1px solid #c4ecf4; color: #0891b2; box-shadow: none;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-iconbox svg { stroke: #0891b2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card:hover .supch-iconbox { transform: none; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card.is-selected .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
+/* Hover (and the picked card): the icon only moves (grows and tilts a little); its colours stay. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-iconbox { transition: transform .22s cubic-bezier(.34, 1.56, .64, 1); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.supch-card:hover, .supch-card.is-selected) .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-title { font-size: 14.5px; font-weight: 800; letter-spacing: -.2px; color: #0f172a; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-card-desc { font-size: 11px; font-weight: 500; line-height: 1.4; margin-top: -4px; color: #64748b; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-divider { height: 1px; margin: 2px 0; background: #eef7fa; }
