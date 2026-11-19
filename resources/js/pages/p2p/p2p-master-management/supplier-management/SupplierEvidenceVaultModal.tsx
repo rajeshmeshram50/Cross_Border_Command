@@ -1341,10 +1341,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 </div>
               ) : (
                 <div className="cev-ov-body">
-                  {/* Figma: # / Document Name / Status / Action (the dates stay in the tab tables). */}
+                  {/* Figma: Sr No / Document Name / Status / Action (the dates stay in the tab tables). */}
                   <table className="cev-ov-table">
-                    <colgroup><col style={{ width: 56 }} /><col /><col style={{ width: 150 }} /><col style={{ width: 196 }} /></colgroup>
-                    <thead><tr><th>#</th><th>DOCUMENT NAME</th><th>STATUS</th><th>ACTION</th></tr></thead>
+                    <colgroup><col style={{ width: 72 }} /><col /><col style={{ width: 130 }} /><col style={{ width: 292 }} /></colgroup>
+                    <thead><tr><th>SR NO</th><th>DOCUMENT NAME</th><th>STATUS</th><th>ACTION</th></tr></thead>
                     <tbody>
                       {docs.length === 0 ? (
                         <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>

@@ -3223,3 +3223,12 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-mapped .avm-cp-subtitle { display: flex; align-items: baseline; min-width: 0; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-sub-name { display: block; min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-sub-rest { flex: none; white-space: pre; }
+/* ===== Supplier module: every text button is 40px tall with 12.5px text (popup footers, header
+   buttons). Supplier page only (body:has(.smc-root.sup-list)); the same form opened from the Sourcing Tracker is unchanged.
+   Listed last so it wins over the earlier, equally specific footer rules. ===== */
+body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline),
+body:has(.smc-root.sup-list) .avm-modal :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-outline, .avm-map-btn, .avm-section-add-btn) {
+  height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; box-sizing: border-box;
+}
+body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline) { padding-left: 20px; padding-right: 20px; border-radius: 11px; }
+body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 40px; border-radius: 11px; }

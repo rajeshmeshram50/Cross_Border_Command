@@ -3768,15 +3768,7 @@ export default function AddVendorModal(props: {
                 if (o.value === mapDraft.productId) return true;
                 if (mapped.has(String(o.value))) return false;
                 return segSet.size === 0 || (o.segmentId != null && segSet.has(o.segmentId));
-              })
-              /* Segment as a badge (CS-175). The label is "CODE — Name", which
-                 never says which segment a product belongs to — and a supplier
-                 with several segments sees products from all of them in one
-                 list, where similarly named products are indistinguishable.
-                 Violet is MasterSelect's documented tone for a category tag. */
-              .map(o => (o.segment
-                ? { ...o, badges: [{ text: o.segmentName || o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}`, reg: o.segmentReg ?? null }] }
-                : o));
+              });
           })()}
           onProductChange={onMapProductChange}
           recompute={recomputeMapTotals}
@@ -5630,14 +5622,7 @@ export function MappedProductsViewPopup(props: {
         if (o.value === mapDraft.productId) return true;
         if (already.has(String(o.value))) return false;
         return segIds.size === 0 || (o.segmentId != null && segIds.has(o.segmentId));
-      })
-      /* Segment badge (CS-175), same as the wizard's Map Product step — this
-         popup shares AddProductMappingPopup with it, so the two lists have to
-         read the same or the dropdown looks different depending on which door
-         you came through. */
-      .map(o => (o.segment
-        ? { ...o, badges: [{ text: o.segmentName || o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}`, reg: o.segmentReg ?? null }] }
-        : o));
+      });
     // mapDraft.productId is a dependency now — the filter keeps whichever
     // product the draft points at, so the list has to recompute when it changes.
   }, [productOpts, rows, props.segmentIds, mapDraft.productId]);
@@ -6615,7 +6600,9 @@ function AddProductMappingPopup(props: {
             value={draft.productId}
             onChange={onProductChange}
             placeholder={props.optsLoaded ? 'Select Product Name' : 'Loading products…'}
-            options={productOpts}
+            /* Plain "CODE — Name" rows: no purple segment badge and no second code chip (the
+               Product Code and Segment fields below already show both). */
+            options={productOpts.map(o => ({ value: o.value, label: o.label }))}
             disabled={props.editing || !props.optsLoaded}
             /* Says why, and what to do about it. This list is filtered to the
                supplier's own segments, so "empty" nearly always means the

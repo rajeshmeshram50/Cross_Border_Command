@@ -954,7 +954,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .smc-root.sup-list .smc-toolbar { padding: 14px 20px 12px; background: #fff; border-bottom: 1px solid #e6f3f7; }
 .smc-root.sup-list .smc-table-card { box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(8, 145, 178, .1), 0 2px 8px rgba(0, 0, 0, .05); }
 .smc-root.sup-list .smc-table-wrap .table tbody td { border-bottom: 1px solid rgba(8, 145, 178, .08) !important; }
-.smc-root.sup-list .smc-empty { color: #22d3ee; }
+/* Empty list: a calm slate line, not the bright cyan that read as an odd colour. */
+.smc-root.sup-list .smc-empty { color: #64748b; font-size: 13px; font-weight: 600; }
+[data-bs-theme="dark"] .smc-root.sup-list .smc-empty { color: #94a3b8; }
 .smc-root.sup-list .smc-seg { color: #0e7490; border-color: #bfe8f0; }
 .smc-root.sup-list .smc-seg-more { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 2px 8px rgba(8, 145, 178, .35); }
 .smc-root.sup-list .smc-email { color: #0e7490; }
@@ -1358,3 +1360,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 
 /* The Add Supplier origin chooser (SupplierScopeGate) teal styles live in
    supplier-scope-gate-teal.css (also loaded by the Sourcing Tracker). */
+
+/* ===== Supplier module: every text button is 40px tall with 12.5px text (page header, row and
+   Filter panel buttons). Supplier page only. ===== */
+body:has(.smc-root.sup-list) .cstrip__action-btn,
+body:has(.smc-root.sup-list) .sl-evault-btn,
+body:has(.smc-root.sup-list) :is(.supfm-clear, .supfm-cancel, .supfm-apply) { height: 40px; font-size: 12.5px; }
+body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
+

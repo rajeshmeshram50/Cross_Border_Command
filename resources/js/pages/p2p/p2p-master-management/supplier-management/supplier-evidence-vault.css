@@ -4449,7 +4449,13 @@
    dot, one button per row (Download, or Upload when no file). .spev-ov is on the Supplier vault
    only: the Customer and Consignee overviews share .sev-ov and stay as they are. ===== */
 .spev-ov.spev-ov-std .cev-ov-card { width: 760px; display: flex; flex-direction: column; }
-.spev-ov.spev-ov-std .cev-ov-body { height: auto; max-height: none; flex: 1 1 auto; }
+/* One size whatever the list holds: the head band plus 5 rows (36 + 5 x 52); row 6 onwards
+   scrolls under the sticky head. It may still shrink on a short window (the card's 84% cap). */
+.spev-ov.spev-ov-std .cev-ov-body { height: 296px; max-height: 296px; min-height: 0; flex: 0 1 auto; }
+.spev-ov.spev-ov-std .cev-ov-table thead th { height: 36px; padding-top: 0; padding-bottom: 0; }
+.spev-ov.spev-ov-std .cev-ov-table tbody tr { height: 52px; }
+.spev-ov.spev-ov-std .cev-ov-table tbody td { padding-top: 0; padding-bottom: 0; }
+.spev-ov.spev-ov-std .cev-ov-table tbody td.cev-ov-empty { height: 260px; }
 .spev-ov.spev-ov-std .cev-ov-table { table-layout: fixed; }
 .spev-ov.spev-ov-std .cev-ov-table th:nth-child(2),
 .spev-ov.spev-ov-std .cev-ov-table td:nth-child(2) { width: auto; max-width: none; }
@@ -4479,3 +4485,36 @@
 
 /* Supplier vault (.spev only): the group cards' overview / send buttons are 40px tall (Figma). */
 .spev .cev-group-overview { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 11px; gap: 7px; }
+/* Supplier vault: every button outside the tables is 40px too (footer, header and overview close).
+   Row actions inside the tables stay compact so the rows keep their height. */
+.cev-card.sev.spev .cev-btn { height: 40px; padding: 0 18px; border-radius: 10px; font-size: 12px; }
+.spev .cev-close { width: 40px; height: 40px; border-radius: 11px; }
+.spev-ov .cev-ov-close { width: 40px; height: 40px; border-radius: 11px; font-size: 17px; }
+/* Standard overview row buttons (Download / Upload / Re-upload): 40px, as every vault button. */
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up) { height: 40px; padding: 0 14px; border-radius: 10px; font-size: 11.5px; gap: 6px; }
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up) i { font-size: 14px; }
+/* Download + Re-upload must fit the Action column side by side (they were cut off at 230px). */
+.spev-ov.spev-ov-std .cev-ov-table td:last-child { overflow: visible; padding-left: 12px; padding-right: 12px; }
+.spev-ov.spev-ov-std .cev-ov-acts { flex-wrap: nowrap; }
+/* Supplier vault: the row action buttons in every table (View / Download / Re-upload / Upload /
+   Delete / Send / Track) are 40px too, so one height runs through the whole vault. */
+.spev :is(.cev-row-act, .cev-sdp-act),
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) {
+  height: 40px; min-height: 40px; padding: 0 14px; border-radius: 10px; font-size: 11.5px; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; box-sizing: border-box;
+}
+.spev :is(.cev-row-act, .cev-sdp-act) svg,
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) svg { width: 14px; height: 14px; flex: none; }
+/* Supplier vault: every 40px button's text is 12.5px (group buttons, footer, overview and table
+   row actions). Listed after the rules that set the sizes, so this one wins. */
+.spev .cev-group-overview,
+.cev-card.sev.spev .cev-btn,
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up),
+.spev :is(.cev-row-act, .cev-sdp-act),
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) { font-size: 12.5px; }
+/* The labelled row buttons carry .sev-row-act-txt (26px / 10.5px, set under .sev): match that
+   specificity so the Supplier vault's 40px / 12.5px wins. */
+.cev-card.sev.spev .cev-row-act.sev-row-act-txt { height: 40px; padding: 0 14px; border-radius: 10px; font-size: 12.5px; gap: 6px; }
+/* Vault Re-upload popup footer: 40px / 12.5px like every Supplier button. */
+.spev .cev-reup-ft :is(.cev-reup-cancel, .cev-reup-save),
+body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
