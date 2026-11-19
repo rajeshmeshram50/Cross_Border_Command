@@ -1411,3 +1411,8 @@
 .svm-skrow td { padding-top: 14px !important; padding-bottom: 14px !important; }
 .svf-file-spin { font-size: 14px; line-height: 1; }
 .svf-file-act[aria-busy="true"]:disabled { opacity: 1; cursor: progress; color: #fff; border-color: transparent; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); }
+
+/* Form dropdowns open at their field's width instead of growing to the longest
+   option, so a long name can't push the menu past the form's edge. Long options
+   truncate and show in full on hover. */
+.master-select-menu.svf-select-menu[style*="min-width"] { width: 0 !important; }
