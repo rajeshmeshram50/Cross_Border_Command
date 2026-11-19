@@ -14,10 +14,15 @@ class VendorProductMapping extends Model
     protected $fillable = [
         'vendor_id', 'product_id', 'created_by',
         'batch_serial_lot',
+        // An international mapping prices in its own currency; inr_amount is
+        // what that was worth when it was mapped, not at today's rate.
+        'origin', 'currency_code', 'exchange_rate', 'inr_amount',
         'purchase_price', 'gst_percentage', 'gst_amount', 'total_amount',
     ];
 
     protected $casts = [
+        'exchange_rate'  => 'decimal:4',
+        'inr_amount'     => 'decimal:2',
         'purchase_price' => 'decimal:2',
         'gst_percentage' => 'decimal:2',
         'gst_amount'     => 'decimal:2',

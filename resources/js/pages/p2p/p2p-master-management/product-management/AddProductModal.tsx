@@ -37,6 +37,13 @@ export type VendorEntry = {
   gstPct: number;
   gstAmt: number;
   totalAmt: number;
+  /* An overseas supplier prices in its own currency and charges no GST;
+     inrAmount is what that was worth when it was mapped. Absent on the
+     domestic mappings that are everything saved before this existed. */
+  origin?: 'domestic' | 'international';
+  currency?: string;
+  exchangeRate?: number;
+  inrAmount?: number;
   mapDate: string;
   remarks: string;
 };
@@ -62,7 +69,13 @@ export type VendorOpt = {
   designation: string;
   status: string;
   type: string;
+  /** 'material' | 'logistics' | 'services' — from the Supplier Type master. */
+  typeKind: string;
   state: string;
+  country: string;
+  city: string;
+  origin: SupplierScope;
+  currency: string;
   segmentIds: number[];
 };
 
@@ -74,7 +87,12 @@ type BundleVendorRow = {
   primary_email?: string | null;
   status?: string | null;
   vendor_type_name?: string | null;
+  vendor_type_kind?: string | null;
   state?: string | null;
+  country?: string | null;
+  city?: string | null;
+  origin?: 'domestic' | 'international' | null;
+  currency?: string | null;
   segment_ids?: Array<number | string> | null;
   primary_address?: {
     contact_name?: string | null;
@@ -96,13 +114,86 @@ const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
     designation: String(r.primary_address?.designation ?? ''),
     status:      String(r.status ?? '').toLowerCase(),
     type:        String(r.vendor_type_name ?? ''),
+    typeKind:    String(r.vendor_type_kind ?? ''),
     state:       String(r.state ?? ''),
+    country:     String(r.country ?? ''),
+    city:        String(r.city ?? ''),
+    // Derived server-side from the supplier's country — see SupplierPricing.
+    origin:      (r.origin === 'international' ? 'international' : 'domestic') as SupplierScope,
+    currency:    String(r.currency ?? 'INR'),
     segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
   }));
+
+
+/* ── Mapped-supplier cells ───────────────────────────────────────────────
+ * Three tables in this file render the same supplier row, so the cells live
+ * here rather than being written out three times and drifting apart.
+ *
+ * An international mapping reads in its supplier's own currency with the
+ * rupee equivalent underneath, as Map Service Suppliers does — the figure the
+ * supplier quoted is the one the buyer has to recognise.
+ */
+const isIntlEntry = (v: VendorEntry) => v.origin === 'international';
+
+const money = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const OriginCell = ({ v }: { v: VendorEntry }) => (
+  isIntlEntry(v)
+    ? <span className="apm-sup-origin apm-sup-origin--intl">🌐 International</span>
+    : <span className="apm-sup-origin apm-sup-origin--dom">🏳 Domestic</span>
+);
+
+/** State for a domestic supplier, country (and city) for an overseas one. */
+const PlaceCell = ({ v, opt }: { v: VendorEntry; opt?: VendorOpt | null }) => (
+  isIntlEntry(v)
+    ? (
+      <>
+        <div>{opt?.country || '—'}</div>
+        {opt?.city ? <div className="apm-sup-sub">{opt.city}</div> : null}
+      </>
+    )
+    : <>{opt?.state || '—'}</>
+);
+
+const PriceCell = ({ v }: { v: VendorEntry }) => (
+  isIntlEntry(v)
+    ? (
+      <>
+        <div>{v.currency ?? ''} {money(v.purchasePrice)}</div>
+        {v.exchangeRate ? <div className="apm-sup-sub">@ ₹{v.exchangeRate} / {v.currency}</div> : null}
+      </>
+    )
+    : <>₹{money(v.purchasePrice)}</>
+);
+
+const GstPctCell = ({ v }: { v: VendorEntry }) => (
+  isIntlEntry(v)
+    ? <span className="apm-sup-nogst">No GST</span>
+    : <>{String(Number(v.gstPct.toFixed(2)))}%</>
+);
+
+const GstValueCell = ({ v }: { v: VendorEntry }) => (
+  isIntlEntry(v) ? <span className="apm-sup-dash">—</span> : <>₹{money(v.gstAmt)}</>
+);
+
+const TotalCell = ({ v }: { v: VendorEntry }) => (
+  isIntlEntry(v)
+    ? (
+      <>
+        <div>{v.currency ?? ''} {money(v.totalAmt)}</div>
+        {v.inrAmount ? <div className="apm-sup-sub">≈ ₹{money(v.inrAmount)}</div> : null}
+      </>
+    )
+    : <>₹{money(v.totalAmt)}</>
+);
 
 type Tab = 'core' | 'sales';
 
 const SUP_PAGE_SIZE = 3;
+
+/* Offered on an international mapping. Mirrors the Service flow's list; the
+   supplier's own currency is preselected from its country. */
+const INTL_CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SGD', 'JPY', 'CNY', 'AUD', 'CAD', 'CHF'];
 
 const formatSupplierCode = (raw: string): string => {
   const m = String(raw ?? '').match(/(\d+)\s*$/);
@@ -333,6 +424,14 @@ export default function AddProductModal(props: {
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
+  /* Map Supplier asks Domestic or International first, as Service Management
+     does. The scope then decides which suppliers the dropdown offers and
+     whether the form prices in rupees with GST or in the supplier's own
+     currency with an exchange rate. */
+  const [vendorMapGateOpen, setVendorMapGateOpen] = useState(false);
+  const [vendorScope, setVendorScope] = useState<SupplierScope>('domestic');
+  const [vendorCurrency, setVendorCurrency] = useState('USD');
+  const [vendorFxRate, setVendorFxRate] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
   const [supSearch, setSupSearch] = useState('');
   const [supPage, setSupPage] = useState(1);
@@ -366,8 +465,16 @@ export default function AddProductModal(props: {
   const vendorPickOpts = useMemo(
     () => vendorOpts.filter(v =>
       !mappedVendorKeys.ids.has(String(v.id))
-      && !(v.code && mappedVendorKeys.codes.has(String(v.code)))),
-    [vendorOpts, mappedVendorKeys],
+      && !(v.code && mappedVendorKeys.codes.has(String(v.code)))
+      /* …and of the scope being mapped. A Domestic mapping prices in rupees
+         with GST, so an overseas supplier has no place in that list, and the
+         reverse. The row being edited keeps its own supplier visible. */
+      && (v.origin === vendorScope || v.code === vendorSelectedCode)
+      /* …and a supplier of GOODS. A product is a physical item, so a
+         transporter or a service provider cannot supply one — their Supplier
+         Type says what they deal in, and only 'material' does. */
+      && (v.typeKind === 'material' || v.code === vendorSelectedCode)),
+    [vendorOpts, mappedVendorKeys, vendorScope, vendorSelectedCode],
   );
   const supPageSafe = Math.min(supPage, supPages);
   const supStart = (supPageSafe - 1) * SUP_PAGE_SIZE;
@@ -379,6 +486,13 @@ export default function AddProductModal(props: {
     document.body.classList.toggle('apm-supplier-wizard-open', open);
     return () => document.body.classList.remove('apm-supplier-wizard-open');
   }, [supplierGateOpen, supplierAddScope]);
+
+  /* The Map Supplier chooser opens FROM the Mapped Suppliers popup, which
+     outranks the gate's own layer — see .apm-map-gate-open in the stylesheet. */
+  useEffect(() => {
+    document.body.classList.toggle('apm-map-gate-open', vendorMapGateOpen);
+    return () => document.body.classList.remove('apm-map-gate-open');
+  }, [vendorMapGateOpen]);
 
   const refreshVendorOpts = async (selectCompanyName?: string) => {
     try {
@@ -400,6 +514,8 @@ export default function AddProductModal(props: {
     () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
     [vendorOpts, vendorSelectedCode]
   );
+  const vendorIsIntl = vendorScope === 'international';
+  const vendorFx = parseFloat(vendorFxRate) || 0;
   const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
   const vendorGp   = gstPctNum;
   const vendorGsta = +(vendorPp * (vendorGp / 100)).toFixed(2);
@@ -576,6 +692,9 @@ export default function AddProductModal(props: {
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
     if (String(vendorPurchasePrice ?? '').trim() === '') missing.push('Purchase Price');
+    // Without a rate there is no rupee equivalent, and the mapping cannot be
+    // compared with a domestic one.
+    if (vendorIsIntl && !(parseFloat(vendorFxRate) > 0)) missing.push('Exchange Rate');
     if (missing.length || !vendorSelected) {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
@@ -620,9 +739,15 @@ export default function AddProductModal(props: {
           email:         vendorSelected.email,
           designation:   vendorSelected.designation,
           purchasePrice: vendorPp,
-          gstPct:        vendorGp,
-          gstAmt:        vendorGsta,
-          totalAmt:      vendorTota,
+          /* Overseas: no GST, and the total IS the price in its currency.
+             inrAmount is the rupee equivalent at the rate entered here. */
+          gstPct:        vendorIsIntl ? 0 : vendorGp,
+          gstAmt:        vendorIsIntl ? 0 : vendorGsta,
+          totalAmt:      vendorIsIntl ? vendorPp : vendorTota,
+          origin:        vendorScope,
+          currency:      vendorIsIntl ? vendorCurrency : undefined,
+          exchangeRate:  vendorIsIntl ? vendorFx : undefined,
+          inrAmount:     vendorIsIntl ? Number((vendorPp * vendorFx).toFixed(2)) : undefined,
         }
       );
       if (await commitVendorList(newList, 'Supplier updated', `${vendorSelected.name} mapping updated`)) {
@@ -643,9 +768,13 @@ export default function AddProductModal(props: {
       email: vendorSelected.email,
       designation: vendorSelected.designation,
       purchasePrice: vendorPp,
-      gstPct: vendorGp,
-      gstAmt: vendorGsta,
-      totalAmt: vendorTota,
+      gstPct: vendorIsIntl ? 0 : vendorGp,
+      gstAmt: vendorIsIntl ? 0 : vendorGsta,
+      totalAmt: vendorIsIntl ? vendorPp : vendorTota,
+      origin: vendorScope,
+      currency: vendorIsIntl ? vendorCurrency : undefined,
+      exchangeRate: vendorIsIntl ? vendorFx : undefined,
+      inrAmount: vendorIsIntl ? Number((vendorPp * vendorFx).toFixed(2)) : undefined,
       mapDate: today(),
       remarks: '',
     };
@@ -662,6 +791,12 @@ export default function AddProductModal(props: {
     const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
     setVendorSelectedCode(opt?.code ?? v.vendorCode);
     setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
+    /* The row's own scope, falling back to the supplier's country for rows
+       saved before origin was stored. No chooser here — the mapping already
+       made that choice. */
+    setVendorScope(v.origin ?? opt?.origin ?? 'domestic');
+    setVendorCurrency(v.currency ?? opt?.currency ?? 'USD');
+    setVendorFxRate(v.exchangeRate ? String(v.exchangeRate) : '');
     setVendorDraftOpen(true);
   };
 
@@ -670,6 +805,8 @@ export default function AddProductModal(props: {
     setVendorEditingId(null);
     setVendorSelectedCode('');
     setVendorPurchasePrice('');
+    setVendorCurrency('USD');
+    setVendorFxRate('');
   };
 
   const closeSupplierPopup = () => {
@@ -911,6 +1048,12 @@ export default function AddProductModal(props: {
           gstPct: Number(v.gst_percentage ?? 0),
           gstAmt: Number(v.gst_amount ?? 0),
           totalAmt: Number(v.total_amount ?? 0),
+          /* Rows saved before international mappings existed carry no origin;
+             they are all domestic, which is what the fallback says. */
+          origin: v.origin === 'international' ? 'international' : 'domestic',
+          currency: v.currency_code ? String(v.currency_code) : undefined,
+          exchangeRate: v.exchange_rate != null ? Number(v.exchange_rate) : undefined,
+          inrAmount: v.inr_amount != null ? Number(v.inr_amount) : undefined,
           mapDate: v.map_date ? formatDate(String(v.map_date)) : '',
           remarks: String(v.remarks ?? ''),
         })));
@@ -1120,7 +1263,7 @@ export default function AddProductModal(props: {
 
     if (gstId) {
       setGstChecking(true);
-      let usage: { gst_locked?: boolean; gst_lock_codes?: string[] } = {};
+      let usage: { gst_locked?: boolean; gst_lock_codes?: string[]; gst_lock_suppliers?: string[] } = {};
       try {
         usage = (await api.get(`/products/${productId}/usage`)).data?.data ?? {};
       } catch {
@@ -1132,11 +1275,18 @@ export default function AddProductModal(props: {
 
       if (usage.gst_locked) {
         const used = (usage.gst_lock_codes ?? []).filter(Boolean);
+        /* A domestic mapping was priced off this rate, so it holds the rate as
+           firmly as an issued document does. Named, because the user can act
+           on it — unmap the supplier and the rate frees up again. */
+        const sups = (usage.gst_lock_suppliers ?? []).filter(Boolean);
+        const supList = sups.slice(0, 2).join(', ') + (sups.length > 2 ? ` and ${sups.length - 2} more` : '');
         toast.error(
           'GST % locked',
           used.length
             ? `This product is used in ${used.join(' and ')} — its GST % can no longer be changed.`
-            : 'This product is already used in a Purchase Order, Proforma Invoice or Supplier Invoice — its GST % can no longer be changed.',
+            : sups.length
+              ? `${supList} ${sups.length === 1 ? 'is' : 'are'} mapped to this product at this GST rate, so it can no longer be changed. Unmap ${sups.length === 1 ? 'it' : 'them'} first.`
+              : 'This product is already used in a Purchase Order, Proforma Invoice or Supplier Invoice — its GST % can no longer be changed.',
         );
         return;
       }
@@ -1203,6 +1353,9 @@ export default function AddProductModal(props: {
           contact_no: v.contactNo,
           email: v.email,
           designation: v.designation,
+          origin: v.origin ?? 'domestic',
+          currency: v.origin === 'international' ? (v.currency ?? 'USD') : null,
+          exchange_rate: v.origin === 'international' ? (v.exchangeRate ?? null) : null,
           purchase_price: v.purchasePrice,
           gst_percentage: v.gstPct,
           gst_amount: v.gstAmt,
@@ -1718,7 +1871,7 @@ export default function AddProductModal(props: {
                       toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
                       return;
                     }
-                    setVendorDraftOpen(true);
+                    setVendorMapGateOpen(true);
                   }}
                 >
                   <span>+</span> Map Supplier
@@ -1734,7 +1887,9 @@ export default function AddProductModal(props: {
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
                           <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Supplier' : 'Map Supplier'}</div>
-                          <div className="apm-mv-popup-title-sub">Link a supplier with purchase price &amp; GST for this product</div>
+                          <div className="apm-mv-popup-title-sub">{vendorIsIntl
+                            ? 'Link an overseas supplier with its price in foreign currency for this product'
+                            : 'Link a supplier with purchase price & GST for this product'}</div>
                         </div>
                       </div>
                       <button className="apm-close apm-mv-close" onClick={closeVendorDraft} disabled={saving} aria-label="Close">
@@ -1784,36 +1939,85 @@ export default function AddProductModal(props: {
                           <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.type || '—') : ''} readOnly placeholder="—" />
                         </Field>
 
-                        <Field label="State">
-                          <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.state || '—') : ''} readOnly placeholder="—" />
-                        </Field>
+                        {/* Where the supplier IS differs by scope: a domestic one
+                            is identified by its state (GST follows from it), an
+                            overseas one by country and city. */}
+                        {vendorIsIntl ? (
+                          <>
+                            <Field label="Country">
+                              <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.country || '—') : ''} readOnly placeholder="—" />
+                            </Field>
+                            <Field label="City / Region">
+                              <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.city || '—') : ''} readOnly placeholder="—" />
+                            </Field>
+                          </>
+                        ) : (
+                          <Field label="State">
+                            <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.state || '—') : ''} readOnly placeholder="—" />
+                          </Field>
+                        )}
                         <Field label="Contact Person">
                           <input className="apm-input apm-readonly" value={vendorSelected?.contact ?? ''} readOnly placeholder="—" />
                         </Field>
-                        <Field label="Purchase Price (₹)" required>
-                          <div className="apm-input-icon">
-                            <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
-                          </div>
-                        </Field>
 
-                        <Field label="GST %">
-                          <Tooltip label="GST % comes from the product's Sales Config (Step 2)">
-                            <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly />
-                          </Tooltip>
-                        </Field>
-                        <Field label="GST Amount (₹)">
-                          <div className="apm-input-icon">
-                            <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly" value={vendorPurchasePrice.trim() === '' ? '' : vendorGsta.toFixed(2)} readOnly placeholder="Auto-computed" />
-                          </div>
-                        </Field>
-                        <Field label="Total Amount (₹)">
-                          <div className="apm-input-icon">
-                            <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorPurchasePrice.trim() === '' ? '' : vendorTota.toFixed(2)} readOnly placeholder="Auto-computed" />
-                          </div>
-                        </Field>
+                        {vendorIsIntl ? (
+                          <>
+                            {/* No GST: an overseas supplier does not charge it. The
+                                rate turns the price into rupees for comparison, and
+                                is stored so the figure keeps its original meaning. */}
+                            <Field label="Currency" required>
+                              <SelectInput
+                                value={vendorCurrency}
+                                onChange={setVendorCurrency}
+                                placeholder="Select currency"
+                                options={INTL_CURRENCIES.map(c => ({ value: c, label: c }))}
+                              />
+                            </Field>
+                            <Field label={`Price (${vendorCurrency})`} required>
+                              <input className="apm-input" type="number" placeholder="Price in supplier currency"
+                                value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
+                            </Field>
+                            <Field label={`Exchange Rate (₹ per ${vendorCurrency})`} required>
+                              <input className="apm-input" type="number" placeholder="e.g. 83.50"
+                                value={vendorFxRate} onChange={e => setVendorFxRate(e.target.value)} disabled={saving} />
+                            </Field>
+                            <Field label="INR Equivalent (₹)">
+                              <div className="apm-input-icon">
+                                <span className="apm-input-icon-prefix">₹</span>
+                                <input className="apm-input has-prefix apm-readonly apm-total"
+                                  value={vendorPurchasePrice.trim() === '' || !vendorFx ? '' : (vendorPp * vendorFx).toFixed(2)}
+                                  readOnly placeholder="Auto-computed" />
+                              </div>
+                            </Field>
+                          </>
+                        ) : (
+                          <>
+                            <Field label="Purchase Price (₹)" required>
+                              <div className="apm-input-icon">
+                                <span className="apm-input-icon-prefix">₹</span>
+                                <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
+                              </div>
+                            </Field>
+
+                            <Field label="GST %">
+                              <Tooltip label="GST % comes from the product's Sales Config (Step 2)">
+                                <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly />
+                              </Tooltip>
+                            </Field>
+                            <Field label="GST Amount (₹)">
+                              <div className="apm-input-icon">
+                                <span className="apm-input-icon-prefix">₹</span>
+                                <input className="apm-input has-prefix apm-readonly" value={vendorPurchasePrice.trim() === '' ? '' : vendorGsta.toFixed(2)} readOnly placeholder="Auto-computed" />
+                              </div>
+                            </Field>
+                            <Field label="Total Amount (₹)">
+                              <div className="apm-input-icon">
+                                <span className="apm-input-icon-prefix">₹</span>
+                                <input className="apm-input has-prefix apm-readonly apm-total" value={vendorPurchasePrice.trim() === '' ? '' : vendorTota.toFixed(2)} readOnly placeholder="Auto-computed" />
+                              </div>
+                            </Field>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1834,6 +2038,27 @@ export default function AddProductModal(props: {
                       <SupplierScopeGate
                         onClose={() => setSupplierGateOpen(false)}
                         onChoose={(scope) => { setSupplierGateOpen(false); setSupplierAddScope(scope); }}
+                      />
+                    </Suspense>
+                  )}
+
+                  {/* Map Supplier asks the same question first, so the form that
+                      opens is already the right one — rupees and GST, or the
+                      supplier's own currency and an exchange rate. */}
+                  {vendorMapGateOpen && (
+                    <Suspense fallback={null}>
+                      <SupplierScopeGate
+                        title="Map Existing Supplier"
+                        subtitle="Choose the supplier&rsquo;s origin to continue"
+                        onClose={() => setVendorMapGateOpen(false)}
+                        onChoose={(scope) => {
+                          setVendorMapGateOpen(false);
+                          setVendorScope(scope);
+                          setVendorSelectedCode('');
+                          setVendorPurchasePrice('');
+                          setVendorFxRate('');
+                          setVendorDraftOpen(true);
+                        }}
                       />
                     </Suspense>
                   )}
@@ -1864,8 +2089,8 @@ export default function AddProductModal(props: {
                   <table className="apm-sup-table">
                     <thead>
                       <tr>
-                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
-                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
+                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>Origin</th><th>State / Country</th><th>Contact</th>
+                        <th>Price</th><th>GST %</th><th>GST Value</th><th>Total</th><th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1880,12 +2105,13 @@ export default function AddProductModal(props: {
                           </td>
                           <td><span className="apm-sup-code">{formatSupplierCode(v.vendorCode)}</span></td>
                           <td>{opt?.type || '—'}</td>
-                          <td>{opt?.state || '—'}</td>
+                          <td><OriginCell v={v} /></td>
+                          <td><PlaceCell v={v} opt={opt} /></td>
                           <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
-                          <td>₹{v.purchasePrice.toLocaleString()}</td>
-                          <td>{String(Number(v.gstPct.toFixed(2)))}%</td>
-                          <td>₹{v.gstAmt.toFixed(2)}</td>
-                          <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
+                          <td><PriceCell v={v} /></td>
+                          <td><GstPctCell v={v} /></td>
+                          <td><GstValueCell v={v} /></td>
+                          <td className="apm-sup-ctotal"><TotalCell v={v} /></td>
                           <td>
                             <div className="apm-sup-actions">
                               <Tooltip label="Edit supplier">
@@ -1984,8 +2210,8 @@ export default function AddProductModal(props: {
                 <table className="apm-sup-table">
                   <thead>
                     <tr>
-                      <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
-                      <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
+                      <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>Origin</th><th>State / Country</th><th>Contact</th>
+                      <th>Price</th><th>GST %</th><th>GST Value</th><th>Total</th><th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2001,12 +2227,13 @@ export default function AddProductModal(props: {
                         </td>
                         <td><span className="apm-sup-code">{formatSupplierCode(v.vendorCode)}</span></td>
                         <td>{opt?.type || '—'}</td>
-                        <td>{opt?.state || '—'}</td>
+                        <td><OriginCell v={v} /></td>
+                        <td><PlaceCell v={v} opt={opt} /></td>
                         <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
-                        <td>₹{v.purchasePrice.toLocaleString()}</td>
-                        <td>{String(Number(v.gstPct.toFixed(2)))}%</td>
-                        <td>₹{v.gstAmt.toFixed(2)}</td>
-                        <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
+                        <td><PriceCell v={v} /></td>
+                        <td><GstPctCell v={v} /></td>
+                        <td><GstValueCell v={v} /></td>
+                        <td className="apm-sup-ctotal"><TotalCell v={v} /></td>
                         <td>
                           <Tooltip label="Unmap supplier">
                             <button type="button" className="apm-sup-del" aria-label="Unmap supplier" disabled={saving} onClick={() => unmapForSegmentChange(v)}>
@@ -2256,14 +2483,15 @@ function SupplierSkeleton({ onClose }: { onClose: () => void }) {
             <table className="apm-sup-table">
               <thead>
                 <tr>
-                  <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
-                  <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
+                  <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>Origin</th><th>State / Country</th><th>Contact</th>
+                  <th>Price</th><th>GST %</th><th>GST Value</th><th>Total</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {[0, 1, 2].map(r => (
                   <tr key={r}>
-                    {Array.from({ length: 11 }).map((_, c) => (
+                    {/* 12 columns: Origin was added beside State / Country. */}
+                    {Array.from({ length: 12 }).map((_, c) => (
                       <td key={c}><span className="apm-shim apm-sup-shim-cell" /></td>
                     ))}
                   </tr>

@@ -15,6 +15,9 @@ class ProductVendorMap extends Model
         'vendor_code', 'vendor_name', 'vendor_website',
         'contact_person', 'contact_no', 'email', 'designation',
         'attachment_path',
+        // International mapping: price in its own currency, plus what that was
+        // worth in rupees on the day it was mapped.
+        'origin', 'currency_code', 'exchange_rate', 'inr_amount',
         'purchase_price', 'gst_percentage', 'gst_amount', 'total_amount',
         'map_date', 'remarks',
     ];

@@ -324,13 +324,32 @@ class ProductController extends Controller
         }
 
         $docs = $this->gstLockDocuments($product, $clientId);
-        if (empty($docs)) {
-            return null;
+        if (!empty($docs)) {
+            return 'GST % cannot be changed — this product is already used in '
+                . implode(' and ', $docs)
+                . '. The tax on that document was calculated from the current rate.';
         }
 
-        return 'GST % cannot be changed — this product is already used in '
-            . implode(' and ', $docs)
-            . '. The tax on that document was calculated from the current rate.';
+        /* A DOMESTIC supplier mapping stored its gst_amount and total from this
+           rate. Changing the rate under it leaves those figures describing a tax
+           that no longer exists, so the mapping has to go first. International
+           mappings carry no GST and do not hold the rate. */
+        $suppliers = ProductVendorMap::where('product_id', $product->id)
+            ->where(fn ($q) => $q->whereNull('origin')->orWhere('origin', '!=', \App\Support\SupplierPricing::INTERNATIONAL))
+            ->orderBy('id')
+            ->pluck('vendor_name')
+            ->filter()
+            ->values();
+        if ($suppliers->isNotEmpty()) {
+            $named = $suppliers->take(2)->implode(', ')
+                . ($suppliers->count() > 2 ? ' and ' . ($suppliers->count() - 2) . ' more' : '');
+
+            return "GST % cannot be changed — {$named} " . ($suppliers->count() === 1 ? 'is' : 'are')
+                . ' mapped to this product at the current rate. Unmap '
+                . ($suppliers->count() === 1 ? 'it' : 'them') . ' first.';
+        }
+
+        return null;
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -1088,6 +1107,18 @@ class ProductController extends Controller
         $spiCodes     = $docs['spi'];
         $gstLockCodes = $this->gstLockDocuments($product, $clientId, $docs);
 
+        /* A DOMESTIC supplier mapping is priced off this product's GST rate —
+           its gst_amount and total were computed from it and stored. Change the
+           rate afterwards and every one of those rows is quietly wrong. An
+           international mapping charges no GST, so it does not hold the rate.
+           Named like the documents above, so the UI can say which mapping. */
+        $gstLockSuppliers = ProductVendorMap::where('product_id', $product->id)
+            ->where(fn ($q) => $q->whereNull('origin')->orWhere('origin', '!=', \App\Support\SupplierPricing::INTERNATIONAL))
+            ->orderBy('id')
+            ->pluck('vendor_name')
+            ->filter()
+            ->values();
+
         return response()->json([
             'status' => true,
             'data'   => [
@@ -1113,7 +1144,9 @@ class ProductController extends Controller
                  * (The segment lock reaches PIs the other way round, through
                  * blocking_leads, which is why its own flag stays as it was.) */
                 'gst_lock_codes' => $gstLockCodes,
-                'gst_locked'     => !empty($gstLockCodes),
+                // The mapped domestic suppliers holding the rate, for the message.
+                'gst_lock_suppliers' => $gstLockSuppliers,
+                'gst_locked'     => !empty($gstLockCodes) || $gstLockSuppliers->isNotEmpty(),
             ],
         ]);
     }
@@ -1159,14 +1192,22 @@ class ProductController extends Controller
         ]);
 
         $price = round((float) $data['purchase_price'], 2);
-        $gstPct = (float) ($map->gst_percentage ?? 0);
-        $gstAmt = round($price * $gstPct / 100, 2);
-        $total  = round($price + $gstAmt, 2);
+        $intl  = $map->origin === \App\Support\SupplierPricing::INTERNATIONAL;
 
-        DB::transaction(function () use ($map, $price, $gstAmt, $total) {
+        /* An overseas mapping charges no GST, so repricing one only moves the
+           figure and its rupee equivalent — applying the product's GST rate to
+           it would invent a tax the supplier never charges. */
+        $gstPct = $intl ? 0.0 : (float) ($map->gst_percentage ?? 0);
+        $gstAmt = $intl ? 0.0 : round($price * $gstPct / 100, 2);
+        $total  = round($price + $gstAmt, 2);
+        $rate   = (float) ($map->exchange_rate ?? 0);
+        $inr    = $intl && $rate > 0 ? round($price * $rate, 2) : null;
+
+        DB::transaction(function () use ($map, $price, $gstAmt, $total, $inr) {
             $map->purchase_price = $price;
             $map->gst_amount     = $gstAmt;
             $map->total_amount   = $total;
+            $map->inr_amount     = $inr;
             $map->save();
 
             // Mirror onto the vendor side so both tables stay in sync.
@@ -1177,6 +1218,7 @@ class ProductController extends Controller
                         'purchase_price' => $price,
                         'gst_amount'     => $gstAmt,
                         'total_amount'   => $total,
+                        'inr_amount'     => $inr,
                     ]);
             }
         });
@@ -1253,6 +1295,11 @@ class ProductController extends Controller
             'vendors.*.email'            => 'nullable|email|max:255',
             'vendors.*.designation'      => 'nullable|string|max:100',
             'vendors.*.attachment_path'  => 'nullable|string|max:500',
+            /* An international mapping prices in the supplier's own currency.
+               Absent or 'domestic' keeps the rupee + GST behaviour. */
+            'vendors.*.origin'           => ['nullable', \Illuminate\Validation\Rule::in(\App\Support\SupplierPricing::ORIGINS)],
+            'vendors.*.currency'         => 'nullable|string|size:3|alpha',
+            'vendors.*.exchange_rate'    => 'nullable|numeric|gt:0|max:'.\App\Support\SupplierPricing::MAX_RATE,
             'vendors.*.purchase_price'   => 'nullable|numeric|min:0',
             'vendors.*.gst_percentage'   => 'nullable|numeric|min:0',
             'vendors.*.gst_amount'       => 'nullable|numeric|min:0',
@@ -1312,12 +1359,37 @@ class ProductController extends Controller
             $nowMappedVendorIds = [];
 
             foreach ($data['vendors'] as $v) {
-                // Force the GST to the product's current rate + recompute the
-                // amount/total from this row's own purchase price.
                 $price = (float) ($v['purchase_price'] ?? 0);
-                $v['gst_percentage'] = $gstPct;
-                $v['gst_amount']     = round($price * $gstPct / 100, 2);
-                $v['total_amount']   = round($price + $v['gst_amount'], 2);
+
+                if (($v['origin'] ?? null) === \App\Support\SupplierPricing::INTERNATIONAL) {
+                    /* Overseas supplier: the price is in its own currency and
+                       carries no GST. inr_amount is what it was worth on the day
+                       it was mapped — the rate moves, the record should not. */
+                    $amounts = \App\Support\SupplierPricing::international(
+                        $price,
+                        (string) ($v['currency'] ?? 'USD'),
+                        (float) ($v['exchange_rate'] ?? 0),
+                    );
+                    \App\Support\SupplierPricing::assertFits($amounts, 'vendors.');
+                    $v['origin']         = $amounts['origin'];
+                    $v['currency_code']  = $amounts['currency_code'];
+                    $v['exchange_rate']  = $amounts['exchange_rate'];
+                    $v['inr_amount']     = $amounts['inr_amount'];
+                    $v['gst_percentage'] = 0;
+                    $v['gst_amount']     = 0;
+                    $v['total_amount']   = $amounts['total_amount'];
+                } else {
+                    // Force the GST to the product's current rate + recompute the
+                    // amount/total from this row's own purchase price.
+                    $v['origin']         = \App\Support\SupplierPricing::DOMESTIC;
+                    $v['currency_code']  = null;
+                    $v['exchange_rate']  = null;
+                    $v['inr_amount']     = null;
+                    $v['gst_percentage'] = $gstPct;
+                    $v['gst_amount']     = round($price * $gstPct / 100, 2);
+                    $v['total_amount']   = round($price + $v['gst_amount'], 2);
+                }
+                unset($v['currency']);   // resolved into currency_code above
 
                 $product->vendorMaps()->create($v);
 
@@ -1331,6 +1403,11 @@ class ProductController extends Controller
                 \App\Models\VendorProductMapping::updateOrCreate(
                     ['vendor_id' => $vendorId, 'product_id' => $product->id],
                     [
+                        // Both tables carry the price, so both carry its origin.
+                        'origin'         => $v['origin']         ?? null,
+                        'currency_code'  => $v['currency_code']  ?? null,
+                        'exchange_rate'  => $v['exchange_rate']  ?? null,
+                        'inr_amount'     => $v['inr_amount']     ?? null,
                         'purchase_price' => $v['purchase_price'] ?? 0,
                         'gst_percentage' => $v['gst_percentage'] ?? 0,
                         'gst_amount'     => $v['gst_amount']     ?? 0,
@@ -1522,9 +1599,16 @@ class ProductController extends Controller
             $vendors = Vendor::query()
                 ->forUser($user)
                 ->with([
-                    'primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email,designation',
+                    'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
                     'primaryAddress.state:id,name',
-                    'vendorType:id,name',
+                    // The country decides Domestic vs International on the Map
+                    // Supplier chooser, and an overseas supplier prices in its
+                    // own currency rather than rupees.
+                    'primaryAddress.country:id,name',
+                    // kind: a product is a GOOD, so only Material / Goods
+                    // suppliers can be mapped to one — not a transporter or a
+                    // service provider.
+                    'vendorType:id,name,kind',
                     // Segments the supplier deals in — used to gate product↔supplier
                     // mapping (a supplier can only be mapped to a product in the
                     // same segment).
@@ -1540,6 +1624,7 @@ class ProductController extends Controller
                     'primary_email'  => $v->primary_email,
                     'status'         => $v->status,
                     'vendor_type_name' => optional($v->vendorType)->name,
+                    'vendor_type_kind' => optional($v->vendorType)->kind,
                     // Every segment this supplier is tagged with (pivot rows + the
                     // scalar first-segment), so the frontend can enforce the match.
                     'segment_ids'    => array_values(array_unique(array_filter(array_merge(
@@ -1550,6 +1635,16 @@ class ProductController extends Controller
                     // 2-letter state_code as a fallback when the relation is empty.
                     'state'          => optional(optional($v->primaryAddress)->state)->name
                         ?? (optional($v->primaryAddress)->state_code ?: null),
+                    'country'        => optional(optional($v->primaryAddress)->country)->name,
+                    'city'           => optional($v->primaryAddress)->city,
+                    // Derived, not stored: one rule for where a supplier is, shared
+                    // with the service and sourcing flows.
+                    'origin'         => \App\Support\SupplierPricing::originOf(
+                        optional(optional($v->primaryAddress)->country)->name,
+                    ),
+                    'currency'       => \App\Support\SupplierPricing::currencyFor(
+                        optional(optional($v->primaryAddress)->country)->name,
+                    ),
                     'primary_address' => $v->primaryAddress ? [
                         'contact_name' => $v->primaryAddress->contact_name,
                         'contact_no'   => $v->primaryAddress->contact_no,

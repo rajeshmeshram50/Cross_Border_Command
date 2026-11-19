@@ -26,6 +26,11 @@ export type SupplierScope = 'domestic' | 'international';
 type Props = {
   onChoose: (scope: SupplierScope) => void;
   onClose: () => void;
+  /* Defaults suit the Add Supplier flow. A caller that is MAPPING an existing
+     supplier rather than creating one says so, or the chooser promises a form
+     it is not about to open. */
+  title?: string;
+  subtitle?: string;
 };
 
 const SCOPED_CSS = `
@@ -235,7 +240,7 @@ const OPTIONS: Array<{
   },
 ];
 
-export default function SupplierScopeGate({ onChoose, onClose }: Props) {
+export default function SupplierScopeGate({ onChoose, onClose, title, subtitle }: Props) {
   const [selected, setSelected] = useState<SupplierScope | null>(null);
 
   // Esc closes, and the page behind must not scroll while this is up. The
@@ -280,8 +285,8 @@ export default function SupplierScopeGate({ onChoose, onClose }: Props) {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="supch-title">Add Supplier</h3>
-                  <p className="supch-sub">Choose the supplier&rsquo;s origin to continue</p>
+                  <h3 className="supch-title">{title ?? 'Add Supplier'}</h3>
+                  <p className="supch-sub">{subtitle ?? <>Choose the supplier&rsquo;s origin to continue</>}</p>
                 </div>
               </div>
               <button type="button" className="supch-close" onClick={onClose} aria-label="Close">
