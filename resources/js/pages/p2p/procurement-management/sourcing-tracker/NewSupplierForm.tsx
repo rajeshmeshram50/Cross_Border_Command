@@ -350,11 +350,10 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
           <div className="stnf-field"><span className="stnf-lbl">Price Valid Till</span>
             <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div>{msg('validTill')}</div>
         </div>
-        <div className="stnf-sum">
+        <div className="stnf-sum stnf-sum--3">
           <div className="stnf-k"><span>Total Amount</span><b>{money(f.cur, price)}</b><small>per unit · {f.cur}</small></div>
           <div className="stnf-k"><span>GST</span><b>No GST</b><small>Overseas supplier</small></div>
           <div className="stnf-k stnf-k--tot"><span>INR Equivalent</span><b>{rupees(inrEquivalent)}</b><small>@ ₹{fx} / {f.cur}</small></div>
-          <VsTarget value={inrEquivalent} target={target} empty="Enter price & rate" />
         </div>
       </div>
       ) : (

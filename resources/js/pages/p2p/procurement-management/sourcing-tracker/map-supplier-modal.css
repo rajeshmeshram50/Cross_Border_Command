@@ -849,6 +849,10 @@
     gap: 8px;
     margin-top: 8px;
 }
+/* International price summary: three tiles (no "vs Target Price"), filling the row. */
+.stnf-sum.stnf-sum--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 
 .stnf-k {
     display: flex;
