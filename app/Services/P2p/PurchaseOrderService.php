@@ -9,6 +9,7 @@ use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
+use App\Support\SupplierPartyToken;
 use App\Support\TenantContext;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -215,9 +216,17 @@ class PurchaseOrderService
             $agreements = $agreements->merge($this->clmLibraryRows('clm_agreement_library', 'agr_status', 'Active', $clientId, $segment));
         }
 
+        // The supplier's own type narrows both libraries; null keeps every Supplier-* document.
+        $typeToken = $po->vendor_id
+            ? SupplierPartyToken::forVendorTypeId(
+                (int) DB::table('vendors')->where('id', $po->vendor_id)->value('vendor_type_id') ?: null,
+                $clientId,
+            )
+            : null;
+
         $out = [];
         foreach ($trade->unique('id') as $row) {
-            if (!$this->appliesToSupplier($row->party ?? null)) continue;
+            if (!$this->appliesToSupplier($row->party ?? null, $typeToken)) continue;
             $out[] = [
                 'source_type' => 'trade',
                 'source_id'   => (int) $row->id,
@@ -227,7 +236,7 @@ class PurchaseOrderService
             ];
         }
         foreach ($agreements->unique('id') as $row) {
-            if (!$this->appliesToSupplier($row->party ?? null)) continue;
+            if (!$this->appliesToSupplier($row->party ?? null, $typeToken)) continue;
             $out[] = [
                 'source_type' => 'agreement',
                 'source_id'   => (int) $row->id,
@@ -267,14 +276,21 @@ class PurchaseOrderService
      * A document is for this PO only when the Supplier is one of its parties.
      * The master writes them as "Supplier-Material / Goods", "Supplier — Tech",
      * and similar, so the token only has to start with "supplier". An empty
-     * party means the document is not restricted to anyone.
+     * party means the document is not restricted to anyone. With the
+     * supplier's type token, the document must also name that type (or a
+     * legacy spelling it replaced).
      */
-    private function appliesToSupplier(?string $party): bool
+    private function appliesToSupplier(?string $party, ?string $typeToken = null): bool
     {
         $party = trim((string) $party);
         if ($party === '') return true;
+
+        $wanted = $typeToken ? SupplierPartyToken::aliases($typeToken) : null;
+
         foreach (preg_split('/[,;]/', $party) as $token) {
-            if (str_starts_with(strtolower(trim($token)), 'supplier')) return true;
+            $t = strtolower(trim($token));
+            if (!str_starts_with($t, 'supplier')) continue;
+            if ($wanted === null || in_array($t, $wanted, true)) return true;
         }
         return false;
     }
