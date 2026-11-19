@@ -250,7 +250,7 @@ class CredVaultController extends Controller
         $member = $this->memberFilter($u, $f);
         $memberShareIds = null;
         if ($member) {
-            $memberDept = $this->deptOf($member);
+            $memberDept = $this->teamShareDept($member);
             $memberShareIds = CredentialShare::live()->where('client_id', $u->client_id)
                 ->where(function ($s) use ($member, $memberDept) {
                     $s->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $member->id));
@@ -407,7 +407,7 @@ class CredVaultController extends Controller
     /** When the user's own Full share on $c ends — null when one of them never ends. */
     protected function ownShareEnd(User $u, Credential $c): ?Carbon
     {
-        $dept = $this->deptOf($u);
+        $dept = $this->teamShareDept($u);
         $ends = CredentialShare::live()->where('credential_id', $c->id)->where('permission', 'full')
             ->where(function ($w) use ($u, $dept) {
                 $w->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $u->id));
@@ -638,6 +638,7 @@ class CredVaultController extends Controller
         $branch = $this->shareBranchOf($u);
         $users = User::where('client_id', $u->client_id)->where('status', 'active')->where('id', '!=', $u->id)
             ->when($branch, fn ($q) => $q->where('branch_id', $branch))
+            ->where(fn ($q) => $this->onboardedOrAdmin($q))
             ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'email']))
             ->orderBy('name')->limit(200)->get(['id', 'name', 'email', 'user_type', 'designation']);
 
@@ -709,6 +710,9 @@ class CredVaultController extends Controller
                 ?? $this->reject('That person is not an active user of your company.', 'recipient_id', 404);
             if ($to->id === $c->owner_id) $this->reject('That person owns this credential already.', 'recipient_id');
             if ($to->id === $u->id) $this->reject('You cannot share a credential with yourself.', 'recipient_id');
+            if (!User::whereKey($to->id)->where(fn ($q) => $this->onboardedOrAdmin($q))->exists()) {
+                $this->reject("{$to->name} has not finished onboarding yet. Credentials can be shared once their onboarding is complete.", 'recipient_id');
+            }
             $branch = $this->shareBranchOf($u);
             if ($branch && (int) $to->branch_id !== $branch) $this->reject("{$to->name} is not in your branch. Share only with people in your branch.", 'recipient_id');
             // Shared With Me: never back to the person who shared it with you.
@@ -782,7 +786,7 @@ class CredVaultController extends Controller
         $ids = $emps->pluck('user_id')->filter()->all();
         $codes = $emps->pluck('emp_code')->filter()->all();
 
-        return User::where('client_id', $clientId)->where('status', 'active')
+        return User::where('client_id', $clientId)->where('status', 'active')->where(fn ($q) => $this->onboardedOrAdmin($q))
             ->where(fn ($w) => $w->where('department_id', $deptId)
                 ->orWhere(fn ($x) => $x->whereNull('department_id')->where(fn ($y) => $y->whereIn('id', $ids)->orWhereIn('employee_code', $codes))))
             ->orderBy('name')->get(['id', 'name', 'email', 'designation']);
@@ -1202,6 +1206,24 @@ class CredVaultController extends Controller
      * exit guard mirrors ExitController: a finished exit (Closed / Exited, not rehired) whose
      * employees.status was never written back still counts as gone.
      */
+    protected function onboardedOrAdmin($q)
+    {
+        return $q->whereIn('users.user_type', self::ADMIN_TYPES)
+            ->orWhereExists(fn ($e) => $e->select(DB::raw(1))->from('employees')
+                ->where(fn ($l) => $l->whereColumn('employees.user_id', 'users.id')->orWhereColumn('employees.emp_code', 'users.employee_code'))
+                ->whereColumn('employees.client_id', 'users.client_id')
+                ->whereNull('employees.deleted_at')->where('employees.onboarding_stage_completed', '>=', 6));
+    }
+
+    protected function teamShareDept(User $u): ?int
+    {
+        return $this->memo("teamdept:{$u->id}", function () use ($u) {
+            $dept = $this->deptOf($u);
+            if (!$dept) return null;
+            return User::whereKey($u->id)->where(fn ($q) => $this->onboardedOrAdmin($q))->exists() ? $dept : null;
+        });
+    }
+
     protected function onTeam(Builder $q): Builder
     {
         return $q->where('employees.status', 'Active')
@@ -5186,7 +5208,7 @@ class CredVaultController extends Controller
     protected function sharedToMeBy(User $u, Credential $c): array
     {
         return $this->memo("sharedby:{$u->id}:{$c->id}", function () use ($u, $c) {
-            $dept = $this->deptOf($u);
+            $dept = $this->teamShareDept($u);
 
             return CredentialShare::live()->where('client_id', $u->client_id)->where('credential_id', $c->id)
                 ->where(function ($w) use ($u, $dept) {
@@ -5202,7 +5224,7 @@ class CredVaultController extends Controller
     /** Subquery: ids of credentials with a live share to the user or the user's team. */
     protected function sharedWithMeIds(User $u)
     {
-        $dept = $this->deptOf($u);
+        $dept = $this->teamShareDept($u);
 
         return CredentialShare::live()->where('client_id', $u->client_id)->where(function ($w) use ($u, $dept) {
             $w->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $u->id));
@@ -5226,7 +5248,7 @@ class CredVaultController extends Controller
     {
         if ($creds->isEmpty()) return [];
 
-        $dept   = $this->deptOf($u);
+        $dept   = $this->teamShareDept($u);
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
@@ -5502,7 +5524,7 @@ class CredVaultController extends Controller
     /** [department_id => active employees] for the tenant. */
     protected function memberCounts(int $clientId): array
     {
-        return $this->memo("members:{$clientId}", fn () => Employee::where('client_id', $clientId)->where('status', 'Active')->whereNotNull('department_id')
+        return $this->memo("members:{$clientId}", fn () => Employee::where('client_id', $clientId)->where('status', 'Active')->whereNotNull('department_id')->where('onboarding_stage_completed', '>=', 6)
             ->selectRaw('department_id, count(*) as n')->groupBy('department_id')->pluck('n', 'department_id')
             ->map(fn ($n) => (int) $n)->all());
     }
