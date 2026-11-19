@@ -1498,6 +1498,44 @@ class PurchaseOrderController extends Controller
         })->all();
     }
 
+    /**
+     * Each mapped SPI's paid / status as the Mapped SPI's column shows it.
+     *
+     * Payment lives on the PO: a request names an SPI only when one was picked,
+     * so an advance (or any request raised without an SPI) was paid on the PO
+     * but never reached an SPI chip — a PO at 100% still listed its SPIs as
+     * "Payment Not Initiated". Now a request linked to an SPI counts against
+     * it first; whatever the PO paid beyond that settles the SPIs oldest first,
+     * up to what each is still due; and once the PO owes nothing, every SPI on
+     * it reads as fully paid, since no further payment can be raised on it.
+     */
+    private function spiPaidShares($po, $rows, $spiPaid): array
+    {
+        $poPaid   = (float) ($po->paid_amount ?? 0);
+        $settled  = $poPaid > 0 && (float) ($po->balance_amount ?? 0) <= 0.001;
+        $lines = $rows->map(function ($s) use ($spiPaid) {
+            $amount = max(0, (float) $s->grand_total - (float) $s->tds_amount);
+            return [
+                'id'     => (int) $s->id,
+                'code'   => $s->code,
+                'date'   => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
+                'status' => $s->status,
+                'amount' => $amount,
+                'paid'   => min($amount, (float) ($spiPaid[$s->id] ?? 0)),
+            ];
+        })->values()->all();
+
+        $spare = max(0, $poPaid - array_sum(array_column($lines, 'paid')));
+        foreach ($lines as &$l) {
+            if ($settled) { $l['paid'] = $l['amount']; continue; }
+            $take = min($spare, max(0, $l['amount'] - $l['paid']));
+            $l['paid'] = round($l['paid'] + $take, 2);
+            $spare -= $take;
+        }
+        unset($l);
+        return $lines;
+    }
+
     /** Shipment, PI, opportunity and customer codes for the header pills and list, read live. */
     private function linkRefs($pos): array
     {
@@ -1511,12 +1549,12 @@ class PurchaseOrderController extends Controller
             ->whereNull('deleted_at')->where('status', '!=', SupplierInvoice::STATUS_CANCELLED)
             ->orderBy('id')->get(['id', 'purchase_order_id', 'code', 'invoice_date', 'created_at', 'grand_total', 'tds_amount', 'status'])
             ->groupBy('purchase_order_id') : collect();
-        // What has been released against each SPI: approved payment requests linked to it.
+        // What has actually been paid against each SPI: approved requests linked to it.
         $spiIds  = $spis->flatten(1)->pluck('id')->all();
         $spiPaid = $spiIds ? DB::table('p2p_po_payment_requests')->whereIn('supplier_invoice_id', $spiIds)
             ->where('status', 'approved')
             ->groupBy('supplier_invoice_id')
-            ->selectRaw('supplier_invoice_id, SUM(COALESCE(paid_amount, approved_amount, 0)) AS paid')
+            ->selectRaw('supplier_invoice_id, SUM(COALESCE(paid_amount, 0)) AS paid')
             ->pluck('paid', 'supplier_invoice_id') : collect();
         $openQty = $this->openQtyByPo($poIds);
         $out = [];
@@ -1530,14 +1568,7 @@ class PurchaseOrderController extends Controller
                 'customer_name'    => $pi->customer_name ?? null,
                 'opportunity_code' => $pi->opp_code ?? null,
                 'pi_date'          => isset($pi->created_at) ? substr((string) $pi->created_at, 0, 10) : null,
-                'spis'             => ($spis->get($po->id) ?? collect())->map(fn ($s) => [
-                    'id'     => (int) $s->id,
-                    'code'   => $s->code,
-                    'date'   => substr((string) ($s->invoice_date ?: $s->created_at), 0, 10),
-                    'status' => $s->status,
-                    'amount' => max(0, (float) $s->grand_total - (float) $s->tds_amount),
-                    'paid'   => (float) ($spiPaid[$s->id] ?? 0),
-                ])->values()->all(),
+                'spis'             => $this->spiPaidShares($po, $spis->get($po->id) ?? collect(), $spiPaid),
                 /* CS-937 — what is still to be invoiced on the order, summed
                    over its lines, so the SPI chooser can lock an order whose
                    every line is already billed. Null = the order has no lines. */
