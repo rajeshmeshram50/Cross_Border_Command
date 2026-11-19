@@ -42,6 +42,26 @@ export interface ServiceFormInput {
    typed instead of failing the save after the whole form is filled in. */
 const DESC_MAX = 10000;
 const NOTE_MAX = 2000;
+const NAME_MAX = 150;
+const BRAND_MAX = 255;
+/* Same caps as the API: images 2 MB each and at most 10 secondary per save,
+   attachment 10 MB of the listed types. */
+const IMG_MAX_MB = 2;
+const ATT_MAX_MB = 10;
+const SECONDARY_MAX = 10;
+const IMG_EXT = ['jpg', 'jpeg', 'png', 'webp'];
+const ATT_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'webp'];
+const extOf = (f: File) => (f.name.split('.').pop() ?? '').toLowerCase();
+const overMb = (f: File, mb: number) => f.size > mb * 1024 * 1024;
+
+/* The API's field names, mapped to the form field that shows the error. */
+const API_FIELD: Record<string, keyof ServiceVals> = {
+  name: 'name', description: 'desc', provider_brand: 'provider', category_id: 'category', segment_id: 'segment',
+  hsn_id: 'hsn', uom_id: 'uom', gst_id: 'gstId', haz_type: 'haz', haz_class_id: 'hazClass', condition_id: 'condition',
+  packaging_id: 'packaging', department_id: 'dept', delivery_type: 'delivery', billing_frequency: 'billing',
+  remark: 'remark', confidential_info: 'confidential', classification: 'otype',
+  primary_image_file: 'img1', secondary_image_files: 'img2', attachment_files: 'att',
+};
 
 type ShownImage = { id: number; name: string; src?: string };
 
@@ -189,6 +209,15 @@ export default function ServiceFormModal({
   }, [vals.gstId, vals.gstPct, bundle]);
 
   const pick = (k: FileKey, f: File | null) => {
+    if (k === 'att' && f) {
+      const bad = !ATT_EXT.includes(extOf(f)) ? 'Use a PDF, DOC, DOCX, XLS, XLSX, CSV or image file'
+        : overMb(f, ATT_MAX_MB) ? `Attachment must be at most ${ATT_MAX_MB} MB` : '';
+      if (bad) {
+        setErrors(e => ({ ...e, att: bad }));
+        toast.warning('Attachment not added', `${f.name}: ${bad.toLowerCase()}.`);
+        return;
+      }
+    }
     if (k === 'att' && !f) setAttRemoved(true);
     if (k === 'att' && f) setAttRemoved(false);
     setFiles(p => ({ ...p, [k]: f ?? undefined }));
@@ -196,13 +225,29 @@ export default function ServiceFormModal({
     if (errors[k]) setErrors(e => ({ ...e, [k]: undefined }));
   };
 
-  const setImages = (k: ImageKey, list: File[]) => {
+  const setImages = (k: ImageKey, picked: File[]) => {
+    const rejected: string[] = [];
+    let list = picked.filter(f => {
+      if (!IMG_EXT.includes(extOf(f))) { rejected.push(`${f.name} is not a PNG, JPG or WEBP image`); return false; }
+      if (overMb(f, IMG_MAX_MB)) { rejected.push(`${f.name} is over ${IMG_MAX_MB} MB`); return false; }
+      return true;
+    });
+    if (k === 'img2' && list.length > SECONDARY_MAX) {
+      rejected.push(`only ${SECONDARY_MAX} secondary images can be added at a time`);
+      list = list.slice(0, SECONDARY_MAX);
+    }
+    if (rejected.length) {
+      const msg = rejected.length === 1 ? rejected[0] : `${rejected.length} images skipped`;
+      setErrors(e => ({ ...e, [k]: `Images must be PNG, JPG or WEBP, ${IMG_MAX_MB} MB max` }));
+      toast.warning('Some images were not added', rejected.length === 1 ? `${msg}.` : rejected.join(' · '));
+      if (list.length === (files[k]?.length ?? 0)) return;
+    }
     setFiles(p => ({ ...p, [k]: list }));
     setVals(p => ({
       ...p,
       [k]: list.length === 0 ? '' : list.length === 1 ? list[0].name : `${list.length} images`,
     }));
-    if (errors[k]) setErrors(e => ({ ...e, [k]: undefined }));
+    if (errors[k] && !rejected.length) setErrors(e => ({ ...e, [k]: undefined }));
   };
 
   useEffect(() => {
@@ -236,13 +281,16 @@ export default function ServiceFormModal({
       const v = vals[k];
       if (v == null || String(v).trim() === '') next[k] = 'This field is required';
     });
+    const brandKey = kind === 'trackable' || kind === 'consumable' ? 'make' : 'provider';
+    if (!next.name && vals.name.trim().length > NAME_MAX) next.name = `Service name must be at most ${NAME_MAX} characters`;
+    if (!next[brandKey] && (vals[brandKey] ?? '').trim().length > BRAND_MAX) next[brandKey] = `Must be at most ${BRAND_MAX} characters`;
     if (REQUIRED[kind].includes('haz') && vals.haz === 'Hazardous' && !vals.hazClass) {
       next.hazClass = 'Haz Class is required when Hazardous';
     }
     setErrors(next);
     const n = Object.keys(next).length;
     if (n) {
-      toast.warning(`${n} required field${n === 1 ? '' : 's'} still empty`, 'Fill the highlighted fields to continue.');
+      toast.warning(`${n} field${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} attention`, 'Fix the highlighted fields to continue.');
       requestAnimationFrame(() => {
         bodyRef.current?.querySelector('.svf-field.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
@@ -277,6 +325,22 @@ export default function ServiceFormModal({
       bodyRef.current?.scrollTo({ top: 0 });
     } catch (e) {
       toast.error('Could not save the service', apiError(e, 'Please check the fields and try again.'));
+      const apiErrors = (e as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors;
+      if (apiErrors) {
+        const brandKey = kind === 'trackable' || kind === 'consumable' ? 'make' : 'provider';
+        const next: Errors = {};
+        Object.entries(apiErrors).forEach(([k, msgs]) => {
+          const base = API_FIELD[k.split('.')[0]];
+          const field = base === 'provider' ? brandKey : base;
+          if (field && msgs?.[0]) next[field] = msgs[0];
+        });
+        if (Object.keys(next).length) {
+          setErrors(cur => ({ ...cur, ...next }));
+          requestAnimationFrame(() => {
+            bodyRef.current?.querySelector('.svf-field.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+        }
+      }
     } finally {
       setSaving(false);
     }
@@ -488,15 +552,15 @@ type GroupProps = {
   setImages: (k: ImageKey, list: File[]) => void;
 };
 
-function AttachmentRemarks({ vals, set, files, pick, savedAtt, noteKey, noteLabel, notePh, title, sub }: GroupProps & {
+function AttachmentRemarks({ vals, set, errors, files, pick, savedAtt, noteKey, noteLabel, notePh, title, sub }: GroupProps & {
   noteKey: 'remark' | 'confidential'; noteLabel: string; notePh: string; title: string; sub: string;
 }) {
   return (
     <Section icon={SVC_ICONS.clip} title={title} sub={sub}>
       <div className="svf-grid svf-grid-4">
-        <Field label="Attachment" optional>
-          <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onPick={f => pick('att', f)} />
+        <Field label="Attachment" optional error={errors.att}>
+          <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images · 10 MB max" invalid={!!errors.att}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.webp" onPick={f => pick('att', f)} />
         </Field>
         <Field label={noteLabel} span="3" count={{ len: (vals[noteKey] ?? '').length, max: NOTE_MAX }}>
           <textarea className="svf-input svf-textarea" rows={3} maxLength={NOTE_MAX} placeholder={notePh}
@@ -527,14 +591,14 @@ function SoftFields({ o: opts, addMaster, savedAtt, vals, set, errors, files, pi
     <>
       <Section icon={SVC_ICONS.soft} title="Service Core Information" sub="Service identity, provider and classification">
         <div className="svf-grid svf-grid-4">
-          <Field label="Service Name" required error={errors.name}>
-            <TextInput value={vals.name} onChange={v => set('name', v)} placeholder="e.g. Microsoft 365 Business" />
+          <Field label="Service Name" required error={errors.name} count={{ len: vals.name.length, max: NAME_MAX }}>
+            <TextInput value={vals.name} maxLength={NAME_MAX} invalid={!!errors.name} onChange={v => set('name', v)} placeholder="e.g. Microsoft 365 Business" />
           </Field>
           <Field label="Service Category" required add onAdd={() => addMaster?.('service_categories', 'category')} error={errors.category}>
             <Select value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />
           </Field>
-          <Field label="Service Provider / Brand" required error={errors.provider}>
-            <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Microsoft, AWS, Anthropic" />
+          <Field label="Service Provider / Brand" required error={errors.provider} count={{ len: (vals.provider ?? '').length, max: BRAND_MAX }}>
+            <TextInput value={vals.provider} maxLength={BRAND_MAX} invalid={!!errors.provider} onChange={v => set('provider', v)} placeholder="e.g. Microsoft, AWS, Anthropic" />
           </Field>
           <Field label="Service Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Service Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
@@ -568,8 +632,8 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
     <>
       <Section icon={SVC_ICONS.other} title="Service Core Information" sub="Service identity, vendor and billing details">
         <div className="svf-grid svf-grid-4">
-          <Field label="Service Name" required error={errors.name}>
-            <TextInput value={vals.name} onChange={v => set('name', v)} placeholder={o.ph} />
+          <Field label="Service Name" required error={errors.name} count={{ len: vals.name.length, max: NAME_MAX }}>
+            <TextInput value={vals.name} maxLength={NAME_MAX} invalid={!!errors.name} onChange={v => set('name', v)} placeholder={o.ph} />
           </Field>
           <Field label="Service Type" required error={errors.otype}>
             <Select value={vals.otype} options={OTHER_TYPES} label="Service Type" onChange={setOtype} invalid={!!errors.otype} />
@@ -579,8 +643,8 @@ function OtherFields({ o: opts, addMaster, savedAtt, vals, set, setOtype, errors
               ? <Shimmer height={42} radius={12} />
               : <Select key={`cat-${ot}`} value={vals.category} options={o.categories} label="Service Category" onChange={v => set('category', v)} invalid={!!errors.category} />}
           </Field>
-          <Field label="Service Provider / Vendor" required error={errors.provider}>
-            <TextInput value={vals.provider} onChange={v => set('provider', v)} placeholder="e.g. Sharma & Associates" />
+          <Field label="Service Provider / Vendor" required error={errors.provider} count={{ len: (vals.provider ?? '').length, max: BRAND_MAX }}>
+            <TextInput value={vals.provider} maxLength={BRAND_MAX} invalid={!!errors.provider} onChange={v => set('provider', v)} placeholder="e.g. Sharma & Associates" />
           </Field>
           <Field label="Department / Cost Centre" required error={errors.dept}>
             <Select value={vals.dept} options={o.depts} label="Department / Cost Centre" onChange={v => set('dept', v)} invalid={!!errors.dept} />
@@ -616,11 +680,11 @@ function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors,
       <Section icon={SVC_ICONS[kind]} title={`${kind === 'trackable' ? 'Trackable' : 'Consumable'} Material / Goods Core Information`}
         sub="Identity, description and classification">
         <div className="svf-grid svf-grid-3">
-          <Field label="Service Name" required error={errors.name}>
-            <TextInput value={vals.name} onChange={v => set('name', v)} placeholder={o.ph} />
+          <Field label="Service Name" required error={errors.name} count={{ len: vals.name.length, max: NAME_MAX }}>
+            <TextInput value={vals.name} maxLength={NAME_MAX} invalid={!!errors.name} onChange={v => set('name', v)} placeholder={o.ph} />
           </Field>
-          <Field label="Make / Brand / Specifications" required error={errors.make}>
-            <TextInput value={vals.make} onChange={v => set('make', v)} placeholder="e.g. Dell · Latitude 5440" />
+          <Field label="Make / Brand / Specifications" required error={errors.make} count={{ len: (vals.make ?? '').length, max: BRAND_MAX }}>
+            <TextInput value={vals.make} maxLength={BRAND_MAX} invalid={!!errors.make} onChange={v => set('make', v)} placeholder="e.g. Dell · Latitude 5440" />
           </Field>
           <Field label="Segment" required add onAdd={() => addMaster?.('segments', 'segment')} error={errors.segment}>
             <Select value={vals.segment} options={o.segments} label="Segment" onChange={v => set('segment', v)} invalid={!!errors.segment} />
@@ -635,8 +699,8 @@ function MaterialFields({ o: opts, addMaster, savedAtt, kind, vals, set, errors,
                 saved={primarySaved} onRemoveSaved={onRemoveSaved}
                 hint="Click to upload primary image" onChange={list => setImages('img1', list)} />
             </Field>
-            <Field label="Secondary Images">
-              <ImageUpload label="Secondary Images" multiple files={files.img2 ?? []}
+            <Field label="Secondary Images" error={errors.img2}>
+              <ImageUpload label="Secondary Images" multiple files={files.img2 ?? []} invalid={!!errors.img2}
                 saved={secondarySaved} onRemoveSaved={onRemoveSaved}
                 hint="Click to upload — you can add multiple images" onChange={list => setImages('img2', list)} />
             </Field>
@@ -746,8 +810,11 @@ function Field({ label, required, optional, add, onAdd, error, span, count, chil
   );
 }
 
-function TextInput({ value, onChange, placeholder }: { value?: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <input type="text" className="svf-input" value={value ?? ''} placeholder={placeholder} onChange={e => onChange(e.target.value)} />;
+function TextInput({ value, onChange, placeholder, maxLength, invalid }: {
+  value?: string; onChange: (v: string) => void; placeholder?: string; maxLength?: number; invalid?: boolean;
+}) {
+  return <input type="text" className={`svf-input${invalid ? ' is-invalid' : ''}`} value={value ?? ''} placeholder={placeholder}
+    maxLength={maxLength} aria-invalid={invalid || undefined} onChange={e => onChange(e.target.value)} />;
 }
 
 function Select({ value, options, label, onChange, invalid, disabled, placeholder }: {
@@ -815,7 +882,7 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
         <span className="svf-file-ico">{SVC_ICONS.upload}</span>
         <span className="svf-drop-txt">
           <b>{!multiple && total ? 'Replace primary image' : hint}</b>
-          <span>PNG, JPG or WEBP images{multiple && total ? ` · ${total} added` : ''}</span>
+          <span>PNG, JPG or WEBP · {IMG_MAX_MB} MB max{multiple && total ? ` · ${total} added` : ''}</span>
         </span>
       </button>
       <AttachPicker anchorRef={dropRef} open={pickOpen} onClose={() => setPickOpen(false)} accept="image/png,image/jpeg,image/webp"
