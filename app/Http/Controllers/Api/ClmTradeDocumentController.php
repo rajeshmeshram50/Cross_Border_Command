@@ -1085,8 +1085,9 @@ class ClmTradeDocumentController extends Controller
      * forms:
      *   buyer / customer → matches "Buyer"
      *   consignee        → matches "Consignee"
-     *   supplier         → matches ANY "Supplier-*" sub-type (Material,
-     *                       Logistic, Tech, Advisory, Strategic Risk).
+     *   supplier         → matches ANY "Supplier-*" sub-type, or only one
+     *                       supplier type's documents when ?vendor_type_id=
+     *                       or ?vendor_type= names a recognised type.
      * Anything else falls through to a literal substring match so a caller
      * can request a specific Supplier-* sub-type if needed.
      */
@@ -1105,7 +1106,17 @@ class ClmTradeDocumentController extends Controller
         } elseif ($key === 'consignee') {
             $q->where('party', 'like', '%Consignee%');
         } elseif ($key === 'supplier') {
-            $q->where('party', 'like', '%Supplier-%');
+            // ?vendor_type_id= / ?vendor_type= narrow it to that supplier type's documents.
+            $token = \App\Support\SupplierPartyToken::forVendorTypeId(
+                $request->integer('vendor_type_id') ?: null,
+                (int) $user->client_id,
+            ) ?: \App\Support\SupplierPartyToken::forVendorTypeName($request->query('vendor_type'));
+
+            if ($token) {
+                \App\Support\SupplierPartyToken::applyToQuery($q, $token);
+            } else {
+                $q->where('party', 'like', '%Supplier-%');
+            }
         } else {
             $q->where('party', 'like', '%' . $party . '%');
         }
