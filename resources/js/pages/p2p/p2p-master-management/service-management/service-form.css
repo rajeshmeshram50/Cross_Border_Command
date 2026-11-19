@@ -1421,3 +1421,14 @@
    name truncates before the badge gives up any space. */
 .svf-select-menu span:has(> .seg-reg-badge) { flex-shrink: 0 !important; max-width: none !important; min-width: max-content !important; overflow: visible !important; }
 .svf-select-menu .seg-reg-badge { flex-shrink: 0 !important; }
+
+/* Every popup button in Service Management uses one text size: the form
+   footer, the service-type picker, Map GST and its master, and Map Supplier. */
+:is(.svf-modal, .stg-modal, .svf-gst, .svs-overlay, .svf-sup-panel, .svms-ov)
+  :is(.svf-btn-primary, .svf-btn-ghost, .svf-btn-outline, .svx-btn, .svs-btn, .apm-btn-primary, .apm-btn-ghost, .apm-gst-addbtn) {
+  font-size: 12.5px !important;
+}
+
+/* The app-wide confirm (Activate / Deactivate service) gets the same size, but
+   only while Service Management is open: other modules keep theirs. */
+body:has(.svm-page) .cfm-popup .cfm-btn { font-size: 12.5px !important; }
