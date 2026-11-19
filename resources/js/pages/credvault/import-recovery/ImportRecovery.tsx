@@ -8,8 +8,8 @@ import ImportModal from './ImportModal';
 import { HistoryCard, IR_I } from './irShared';
 
 type Tab = 'import' | 'backup';
-interface Hist { rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; page: number }
-const EMPTY: Hist = { rows: [], meta: null, loading: true, error: '', page: 1 };
+interface Hist { rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; page: number; q: string }
+const EMPTY: Hist = { rows: [], meta: null, loading: true, error: '', page: 1, q: '' };
 
 export default function ImportRecovery() {
   const [params] = useSearchParams();
@@ -37,17 +37,19 @@ export default function ImportRecovery() {
   const loadImports = useCallback((page: number) => {
     const my = ++impSeq.current;
     setImp(h => ({ ...h, loading: true, page }));
-    cvApi.imports(page, impPer.current, impQ.current)
-      .then(r => { if (my === impSeq.current) setImp({ rows: r.data, meta: r.meta, loading: false, error: '', page }); })
+    const term = impQ.current;
+    cvApi.imports(page, impPer.current, term)
+      .then(r => { if (my === impSeq.current) setImp({ rows: r.data, meta: r.meta, loading: false, error: '', page, q: term }); })
       .catch(e => { if (my === impSeq.current) setImp(h => ({ ...h, loading: false, error: errMsg(e) })); });
   }, []);
   const loadBackups = useCallback((page: number) => {
     const my = ++bkSeq.current;
     setBk(h => ({ ...h, loading: true, page }));
-    cvApi.backups(false, page, bkPer.current, bkQ.current)
+    const term = bkQ.current;
+    cvApi.backups(false, page, bkPer.current, term)
       .then(r => {
         if (my !== bkSeq.current) return;
-        setBk({ rows: r.data, meta: r.meta, loading: false, error: '', page });
+        setBk({ rows: r.data, meta: r.meta, loading: false, error: '', page, q: term });
         setInfo({ scopes: r.scopes ?? [], columns: r.columns ?? null, lock_note: r.lock_note ?? '' });
       })
       .catch(e => { if (my === bkSeq.current) setBk(h => ({ ...h, loading: false, error: errMsg(e) })); });
@@ -91,11 +93,13 @@ export default function ImportRecovery() {
         <div className="ir-body is-fill">
           <div style={{ display: isImport ? 'contents' : 'none' }}>
             <HistoryCard kind="import" rows={imp.rows} meta={imp.meta} searching={!!dq}
+              shimmer={q.trim() !== dq || (imp.loading && imp.q !== dq)}
               loading={imp.loading} error={imp.error} onPage={loadImports}
               onPageSize={n => { impPer.current = n; loadImports(1); }} />
           </div>
           <div style={{ display: isImport ? 'none' : 'contents' }}>
-            <HistoryCard kind="backup" rows={bk.rows} meta={bk.meta} searching={!!dqBk} loading={bk.loading} error={bk.error} onPage={loadBackups}
+            <HistoryCard kind="backup" rows={bk.rows} meta={bk.meta} searching={!!dqBk}
+              shimmer={qBk.trim() !== dqBk || (bk.loading && bk.q !== dqBk)} loading={bk.loading} error={bk.error} onPage={loadBackups}
               onPageSize={n => { bkPer.current = n; loadBackups(1); }} />
           </div>
         </div>

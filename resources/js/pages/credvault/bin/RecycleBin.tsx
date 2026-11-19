@@ -68,7 +68,7 @@ export default function RecycleBin() {
     setLoading(true);
     cvApi.bin({ tab, vault, q: dq, page, per_page: perPage }).then(r => {
       if (!on) return;
-      setRows(r.data); setRowsKey(`${tab}|${vault}`); setMeta(r.meta); setTabs(r.tabs); setCounts(r.counts ?? null); setSummary(r.summary); setError('');
+      setRows(r.data); setRowsKey(`${tab}|${vault}|${dq}`); setMeta(r.meta); setTabs(r.tabs); setCounts(r.counts ?? null); setSummary(r.summary); setError('');
       if (r.purged > 0) toast.warning(`${r.purged} item${r.purged > 1 ? 's' : ''} permanently deleted after ${r.summary?.retention_days ?? ''} days`);
       if (r.meta.current_page > r.meta.last_page && r.meta.last_page >= 1) setPage(r.meta.last_page);
     }).catch(e => { if (on) { setError(errMsg(e)); setRows([]); } }).finally(() => { if (on) setLoading(false); });
@@ -118,7 +118,7 @@ export default function RecycleBin() {
 
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
 
-  const shimmer = loading && (!rows.length || rowsKey !== `${tab}|${vault}`);
+  const shimmer = q !== dq || (loading && (!rows.length || rowsKey !== `${tab}|${vault}|${dq}`));
 
   const askRow = ask?.kind === 'purge' ? ask.row : null;
   const empty = (summary?.items ?? 0) === 0;
