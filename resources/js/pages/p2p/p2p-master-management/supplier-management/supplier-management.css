@@ -1368,3 +1368,19 @@ body:has(.smc-root.sup-list) .sl-evault-btn,
 body:has(.smc-root.sup-list) :is(.supfm-clear, .supfm-cancel, .supfm-apply) { height: 40px; font-size: 12.5px; }
 body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 
+
+/* Supplier type tabs, Figma (#slSubTabs .p2p-sub2tab): each tab 40px tall (text centred in the
+   31px above the 9px underline gap). Count pill: grey and quiet when the tab is off; on the open
+   tab a cyan gradient pill with a 1.5px #67e8f9 border and a soft teal shadow. */
+.sup-list .sup-kind { height: 40px; box-sizing: border-box; }
+.sup-list .sup-kind__c {
+  min-width: 30px; height: 20px; padding: 0 9px; border: 1.5px solid #e2e8f0; background: #f1f5f9; color: #64748b;
+  font-size: 10px; font-weight: 800; box-sizing: border-box; transition: all .2s ease;
+}
+.sup-list .sup-kind.is-on .sup-kind__c {
+  color: #0e7490; background: linear-gradient(135deg, #d0fbff, #a8f1fa); border: 1.5px solid #67e8f9;
+  box-shadow: 0 2px 6px -1px rgba(8, 145, 178, .32);
+}
+[data-bs-theme="dark"] .sup-list .sup-kind.is-on .sup-kind__c {
+  color: #a5f3fc; background: linear-gradient(135deg, rgba(34, 211, 238, .22), rgba(8, 145, 178, .3)); border-color: rgba(103, 232, 249, .55); box-shadow: none;
+}

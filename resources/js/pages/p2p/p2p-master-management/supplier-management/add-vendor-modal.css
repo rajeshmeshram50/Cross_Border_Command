@@ -2849,6 +2849,75 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-k { color: #64748b; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { color: #0f172a; }
 
+/* Summary body, Figma pass: every value in its own light teal card, group labels with a rule
+   running after them, a solid teal tick on the stage title, and teal (not lilac) address /
+   contact boxes. Same markup; only the surfaces change. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-body { gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-stage { gap: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-stage-label { font-size: 12px; gap: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-check {
+  width: 22px; height: 22px; border: 0;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .55);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel {
+  display: flex; align-items: center; gap: 10px;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel::after {
+  content: ''; flex: 1; height: 1px; background: #d7eef4;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-grid { gap: 8px 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-cell {
+  gap: 4px; padding: 11px 14px;
+  background: #f4fbfd; border: 1px solid #d7eef4; border-radius: 10px;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-k { font-size: 9.5px; font-weight: 800; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { font-size: 13px; font-weight: 800; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-line {
+  font-size: 13px; font-weight: 700; color: #0f172a;
+  background: #f4fbfd; border-color: #d7eef4; border-radius: 10px; padding: 12px 14px;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-dot { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-cell, .avm-prev-line) {
+  background: rgba(34, 211, 238, .05); border-color: rgba(103, 232, 249, .16); color: #e2f3f7;
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel::after { background: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-glabel, .avm-prev-stage-label) { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { color: #e2f3f7; }
+
+/* Mapped Products popup opened from inside the form (.avm-mapped-paged): teal like the one
+   opened from the Supplier list (.avm-cp-popup-mapped), not the old violet — header band, the
+   Sr No and code pills, the card edge, the search, and the pager (Showing pill, 1 / 1). */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-wrap { border-color: #d7eef4 !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead tr { background: #f0fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead th { color: #0e7490; border-bottom-color: #d7eef4; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table tbody td { border-bottom-color: #eef7fa; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sr-pill { color: #0e7490; background: #ecfeff; border-color: #bfe9f1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table .avm-auto-code { color: #0e7490; border-color: #bfe9f1; background: #f0fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input { color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty-accent { color: #0e7490; border-color: #bfe9f1; background: #f4fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager {
+  border-color: #d7eef4; border-top: 1px solid #d7eef4; background: #fbfeff;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #0e7490; border-color: #bfe9f1; background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-range {
+  color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  box-shadow: 0 4px 10px -4px rgba(8, 145, 178, .6);
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-btn:hover:not(:disabled) { background: #ecfeff; border-color: #22d3ee; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-wrap { border-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead tr { background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead th { color: #67e8f9; border-bottom-color: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table :is(td, th) { border-color: rgba(103, 232, 249, .1); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table tbody td strong { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-sr-pill, .avm-mapped-table .avm-auto-code, .avm-empty-accent) { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager { background: #10222b; border-color: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #67e8f9; background: rgba(255, 255, 255, .04); border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #a5f3fc; }
+
 /* Sub-tabs: underline row with icon tiles, like Stage 1 */
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs {
   gap: 26px; padding: 0; margin-bottom: 10px;
@@ -3232,3 +3301,21 @@ body:has(.smc-root.sup-list) .avm-modal :is(.avm-btn-ghost, .avm-btn-primary, .a
 }
 body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline) { padding-left: 20px; padding-right: 20px; border-radius: 11px; }
 body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 40px; border-radius: 11px; }
+
+/* Contact Person tab skeleton table: the real table's eight columns, header line and row height. */
+.avm-skel-tbl-row {
+  display: grid; grid-template-columns: 64px 2fr 1.3fr 1fr 1.6fr .9fr 1fr .9fr; align-items: center; gap: 16px;
+  height: 56px; padding: 0 12px; border-bottom: 1px solid #eef4f7;
+}
+.avm-skel-tbl-row.is-head { height: 44px; }
+[data-bs-theme="dark"] .avm-skel-tbl-row { border-bottom-color: rgba(103, 232, 249, .1); }
+
+/* ===== Supplier form step tables (Company DD, Owner KYC, Trade Licence, Bank, GST, Products):
+   five rows, then the rest scroll inside the table under a pinned header. Every row is 57px
+   (the tallest, with its buttons), so "5 rows" is the same height on every tab:
+   37 head + 5 x 57 + 2 border = 324. ===== */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap {
+  max-height: 324px; overflow: auto; overscroll-behavior: contain;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { position: sticky; top: 0; z-index: 2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr { height: 57px; }

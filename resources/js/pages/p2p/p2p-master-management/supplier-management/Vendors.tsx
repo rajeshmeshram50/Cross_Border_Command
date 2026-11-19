@@ -388,11 +388,18 @@ function RefineSuppliers(props: {
 /** The design's supplier-type tabs. They send `kind` to /vendors and read `facets.kind` counts
     (backend pending: filter + counts by the same rule as typeKind). */
 type SupplierKind = 'all' | 'material' | 'logistics' | 'services';
-const SUPPLIER_KINDS: { key: SupplierKind; label: string; icon: string }[] = [
-  { key: 'all', label: 'All Suppliers', icon: 'ri-group-line' },
-  { key: 'material', label: 'Material/ Goods Suppliers', icon: 'ri-box-3-line' },
-  { key: 'logistics', label: 'FFD/ Transporter Suppliers', icon: 'ri-truck-line' },
-  { key: 'services', label: 'Service Suppliers', icon: 'ri-tools-line' },
+/* Tab glyphs as the Figma draws them: 12px line icons, stroke 2.2 (users / box / truck / wrench). */
+const KIND_ICON: Record<SupplierKind, ReactNode> = {
+  all: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  material: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
+  logistics: <><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>,
+  services: <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />,
+};
+const SUPPLIER_KINDS: { key: SupplierKind; label: string }[] = [
+  { key: 'all', label: 'All Suppliers' },
+  { key: 'material', label: 'Material/ Goods Suppliers' },
+  { key: 'logistics', label: 'FFD/ Transporter Suppliers' },
+  { key: 'services', label: 'Service Suppliers' },
 ] as const;
 
 /** Rows a type tab may load at once while the API cannot filter by type. */
@@ -990,7 +997,7 @@ useEffect(() => {
                 const count = kindCounts?.[k.key] ?? (k.key === 'all' && kindTab === 'all' ? total : null);
                 return (
                   <button key={k.key} type="button" role="tab" aria-selected={on} className={`sup-kind${on ? ' is-on' : ''}`} onClick={() => setKindTab(k.key)}>
-                    <span className="sup-kind__ico" aria-hidden><i className={k.icon} /></span>{k.label}
+                    <span className="sup-kind__ico" aria-hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{KIND_ICON[k.key]}</svg></span>{k.label}
                     <span className="sup-kind__c">{count ?? '—'}</span>
                   </button>
                 );

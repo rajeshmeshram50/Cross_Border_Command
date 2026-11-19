@@ -367,6 +367,20 @@ const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
 
 /** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
 const squashType = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+
+/** Supplier Type → the Service Management bucket it serves, as [service_type, classification].
+    Mirrors ServiceController::VENDOR_TYPE_BY_NAME; keyed by squashType of the type name. */
+export type ServiceBucket = { serviceType: 'soft_digital' | 'self_consumable' | 'other_operational'; classification: string | null };
+const SERVICE_BUCKET_BY_TYPE: Record<string, ServiceBucket> = {
+  [squashType('Soft Service Provider')]: { serviceType: 'soft_digital',      classification: null },
+  [squashType('Trackable Services')]:    { serviceType: 'self_consumable',   classification: 'trackable' },
+  [squashType('Consumable Services')]:   { serviceType: 'self_consumable',   classification: 'consumable' },
+  [squashType('Professional Services')]: { serviceType: 'other_operational', classification: 'professional' },
+  [squashType('Utility Services')]:      { serviceType: 'other_operational', classification: 'utility' },
+  [squashType('Facility Services')]:     { serviceType: 'other_operational', classification: 'facility' },
+  [squashType('Maintenance Services')]:  { serviceType: 'other_operational', classification: 'maintenance' },
+  [squashType('Outsourcing Services')]:  { serviceType: 'other_operational', classification: 'outsourcing' },
+};
 /** A saved supplier's type name → the dropdown's value (older rows were saved as "Material / Goods"). */
 const canonicalSupplierType = (name: string) =>
   SUPPLIER_TYPE_OPTS.find(o => o.value === name || squashType(o.value) === squashType(name))?.value ?? name;
@@ -538,6 +552,16 @@ export default function AddVendorModal(props: {
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
+  /** Only a Material/ Goods supplier carries products (spacing / case ignored, as saved rows vary). */
+  const isGoodsSupplier = squashType(vendorType) === squashType('Material/ Goods');
+  /** The service bucket a service-provider type serves (null for Material/ Goods, FFD/ Transporter
+      or no type yet). Same table as the server's ServiceController::VENDOR_TYPE_BY_NAME. */
+  const serviceBucket = SERVICE_BUCKET_BY_TYPE[squashType(vendorType)] ?? null;
+  /** Service mapping is built (Mapped Services / Map Service popups) but switched off for now:
+      flip this to true to open it for service-provider suppliers again. */
+  const SERVICE_MAPPING_ENABLED = false;
+  /** Map Product / Service has something to open: products for goods, services for a provider. */
+  const canMapAnything = isGoodsSupplier || (SERVICE_MAPPING_ENABLED && serviceBucket !== null);
   const [website,     setWebsite]     = useState('');
   /* Supplier Category — COMMERCIAL STANDING, not risk. Four fixed values, so
      no master lookup: they are product vocabulary and the list's Refine filter
@@ -961,6 +985,8 @@ export default function AddVendorModal(props: {
   const [newProductId,   setNewProductId]   = useState<number | null>(null);
   const [newProductBusy, setNewProductBusy] = useState(false);
   const [mappedListOpen, setMappedListOpen] = useState(false);
+  /** Map Product / Service for a service-provider supplier: the Mapped Services popup. */
+  const [mappedServicesOpen, setMappedServicesOpen] = useState(false);
 
   type MapDraft = {
     productId: string;         
@@ -2644,14 +2670,21 @@ export default function AddVendorModal(props: {
             {/* Map Product — opens the Mapped Products list popup (Figma).
                 Disabled until the supplier exists (Stage 1 saved → vendorId set);
                 you can't map products to a supplier that hasn't been created. */}
+            {/* Map Product / Service, by Supplier Type (read from the dropdown as it is now):
+                Material/ Goods → the Mapped Products popup; a service-provider type → Map Service
+                for its own bucket; FFD/ Transporter (or no type yet) → disabled. */}
             {canMapProducts && (
               <button
                 className="avm-map-btn"
-                onClick={() => setMappedListOpen(true)}
-                disabled={!vendorId}
-                title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
+                onClick={() => { if (isGoodsSupplier) setMappedListOpen(true); else if (SERVICE_MAPPING_ENABLED && serviceBucket) setMappedServicesOpen(true); }}
+                disabled={!vendorId || !canMapAnything}
+                title={serviceBucket && !SERVICE_MAPPING_ENABLED ? 'Service mapping is not available yet'
+                  : !vendorId ? 'Save the Supplier Legal Identity step first to map products or services'
+                  : isGoodsSupplier ? 'Map products to this supplier'
+                  : serviceBucket ? (SERVICE_MAPPING_ENABLED ? 'Map services to this supplier' : 'Service mapping is not available yet')
+                  : 'Products or services can’t be mapped to this Supplier Type'}
               >
-                <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product</span>
+                <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product / Service</span>
               </button>
             )}
             <button className="avm-close" onClick={onClose} aria-label="Close">
@@ -2714,9 +2747,14 @@ export default function AddVendorModal(props: {
                   .avm-body, so a 1100px cap made the skeleton visibly narrower
                   than the form replacing it. */}
               <div style={{ width: '100%' }}>
-                {step === 1 && idTab === 'identification'
+                {/* The skeleton follows where you are going: saving Identification (the
+                    Contact Person tab or Save & Next) leads to the Contact Person tab, so
+                    it draws that tab's two cards, not the Identification ones. */}
+                {step === 1 && idTab === 'identification' && !advancing
                   ? <Step1IdentitySkeleton />
-                  : <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header={false} />}
+                  : step === 1 && (idTab === 'identification' || !advancing)
+                    ? <Step1ContactSkeleton />
+                    : <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header={false} />}
               </div>
             </div>
           ) : (<>
@@ -3519,7 +3557,10 @@ export default function AddVendorModal(props: {
             </div>
             <SectionCard tone="purple" icon={<i className="ri-file-line" style={{ transform: 'scaleX(-1)' }} />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
               <div className="d-inline-flex align-items-center gap-2">
-                <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
+                {/* Bank Details and GST Scrutiny show only their Add button (no "N documents" badge). */}
+                {kycTab !== 'bank' && kycTab !== 'gst' && (
+                  <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
+                )}
                 {(kycTab === 'bank' || kycTab === 'gst') && (
                   <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
                     {kycTabAddMeta[kycTab].label}
@@ -3720,6 +3761,14 @@ export default function AddVendorModal(props: {
           onEdit={openMapEdit}
           onClose={() => setMappedListOpen(false)}
           busy={mappingBusy}
+        />
+      )}
+      {mappedServicesOpen && vendorId && serviceBucket && (
+        <MappedServicesPopup
+          vendorId={Number(vendorId)}
+          bucket={serviceBucket}
+          international={isInternational}
+          onClose={() => setMappedServicesOpen(false)}
         />
       )}
       {/* "+" beside Product Name: create the product without losing this
@@ -4134,6 +4183,38 @@ function SkelField({ label = 60 }: { label?: number }) {
   );
 }
 
+/* Contact Person tab skeleton: the real two cards (titles and icons as they are), the Primary card's
+   six fields four to a row with its Save Contact button, and the Additional card's Add button and
+   table, so nothing moves when the tab lands. */
+function Step1ContactSkeleton() {
+  return (
+    <>
+      <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier"
+        headerAction={<Shimmer width={136} height={30} radius={999} />}>
+        {/* Row 1: Name / Designation / Contact No / Email. Row 2: WhatsApp, a gap, then the
+            Business Card upload across the last two columns, as the real card lays them out. */}
+        <div className="avm-grid-4">
+          {[58, 44, 40, 30, 50].map((w, i) => <SkelField key={i} label={w} />)}
+          <div aria-hidden />
+          <div style={{ gridColumn: 'span 2' }}><SkelField label={34} /></div>
+        </div>
+      </SectionCard>
+      <SectionCard tone="violet" className="avm-section-grow" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier"
+        headerAction={<Shimmer width={194} height={40} radius={11} />}>
+        {/* The real table: no frame, eight columns (Sr No, Name, Designation, Phone, Email,
+            WhatsApp, Attachment, Actions), a header line and the contact rows. */}
+        <div className="avm-skel-tbl" aria-hidden>
+          {[0, 1, 2].map(r => (
+            <div key={r} className={`avm-skel-tbl-row${r === 0 ? ' is-head' : ''}`}>
+              {[30, 70, 60, 54, 72, 40, 48, 44].map((w, c) => <Shimmer key={c} width={`${r === 0 ? Math.min(w, 56) : w}%`} height={r === 0 ? 9 : 12} radius={4} />)}
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+    </>
+  );
+}
+
 function Step1IdentitySkeleton() {
   return (
     <>
@@ -4449,8 +4530,9 @@ function FileChooser(props: {
     if (readOnly) {
       return (
         <div className="avm-filechooser">
-          <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
-          <span className="avm-filechooser-text">No file attached</span>
+          {/* Same icon and words as the empty upload box, so a locked card and an open form read alike. */}
+          <span className="avm-filechooser-icon"><i className="ri-upload-2-line" /></span>
+          <span className="avm-filechooser-text">No files attached</span>
         </div>
       );
     }
@@ -4462,9 +4544,9 @@ function FileChooser(props: {
           accept={ACCEPT}
           onChange={onChange}
         />
-        {/* Upload-cloud icon for the EMPTY state so it reads as "upload here",
-            not an already-attached file (the paperclip stays for the filled state). */}
-        <span className="avm-filechooser-icon"><i className="ri-upload-cloud-2-line" /></span>
+        {/* Upload-arrow icon for the EMPTY state so it reads as "upload here", not an already-attached
+            file (the paperclip stays for the filled state). One icon everywhere the box appears. */}
+        <span className="avm-filechooser-icon"><i className="ri-upload-2-line" /></span>
         <span className="avm-filechooser-text">{placeholder ?? `Choose file (${FILE_TYPE_LABEL}, max 2 MB)`}</span>
       </div>
     );
@@ -4657,14 +4739,17 @@ function SupplierSegmentRefTable(props: {
               The Document Name column has no width, so it absorbs the slack. */}
           <thead className="table-light">
             <tr>
+              {/* Requirement holds the 146px Mandatory / Optional toggle and Actions its three
+                  buttons: at 140px each the toggle ran 16px into Actions and pushed the buttons
+                  out from under their header. The date and code columns had room to spare. */}
               <th style={{ width: 64 }}>SR NO</th>
-              <th style={{ width: 130 }}>AUTO CODE</th>
+              <th style={{ width: 120 }}>AUTO CODE</th>
               <th>{title}</th>
               <th style={{ width: 180 }}>ISSUING AUTHORITY</th>
-              <th style={{ width: 130 }}>ISSUE DATE</th>
-              <th style={{ width: 130 }}>EXPIRY</th>
-              <th style={{ width: 140 }}>REQUIREMENT</th>
-              <th style={{ width: 140 }}>ACTIONS</th>
+              <th style={{ width: 120 }}>ISSUE DATE</th>
+              <th style={{ width: 110 }}>EXPIRY</th>
+              <th style={{ width: 170 }}>REQUIREMENT</th>
+              <th style={{ width: 150 }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
@@ -5223,16 +5308,16 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null) {
   };
 }
 
-function MappedProductsSearch(props: { value: string; onChange: (v: string) => void }) {
+function MappedProductsSearch(props: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string }) {
   return (
     <div className="avm-mapped-search">
       <i className="ri-search-line" aria-hidden />
       <input
         type="text"
-        placeholder="Search product, code, HSN/SAC, segment…"
+        placeholder={props.placeholder ?? 'Search product, code, HSN/SAC, segment…'}
         value={props.value}
         onChange={e => props.onChange(e.target.value)}
-        aria-label="Search mapped products"
+        aria-label={props.label ?? 'Search mapped products'}
       />
       <SearchClear show={props.value} onClear={() => props.onChange('')} />
     </div>
@@ -5403,6 +5488,305 @@ function MappedProductsPopup(props: {
   );
 }
 
+
+/* ═════ Mapped Services — Map Product / Service for a service-provider supplier ═════
+   The service twin of Mapped Products. A supplier whose type serves a Service Management bucket
+   (Soft Service Provider → Soft / Digital, Trackable / Consumable → Self-Consumable, Professional …
+   Outsourcing → Other Operational) is mapped to services of THAT bucket only. No new API: the list
+   reads GET /p2p/services (bucket) + each service's /suppliers, and Map Service posts to the
+   existing POST /p2p/services/{id}/suppliers — the same call the Service Management form uses. */
+type ServiceListRow = {
+  id: number; code: string; name: string; category?: string | null; hsn_code?: string | null;
+  gst_percentage?: number | null; status?: string; suppliers_count?: number;
+};
+type ServiceSupplierApiRow = {
+  id: number; vendor_id: number; status?: string; currency?: string; price: number;
+  exchange_rate?: number | null; gst_percentage: number; gst_amount: number; total_amount: number;
+  inr_amount?: number;
+};
+type MappedServiceRow = {
+  serviceId: number; code: string; name: string; category: string; hsn: string;
+  currency: string; price: number; gstPercentage: number; gstAmount: number; total: number; inr: number;
+};
+type CurrencyOpt = { code: string; name?: string; exchange_rate?: string | number | null };
+
+const SERVICE_BUCKET_LABEL: Record<ServiceBucket['serviceType'], string> = {
+  soft_digital: 'Soft / Digital Services',
+  self_consumable: 'Self-Consumable Services',
+  other_operational: 'Other Operational Services',
+};
+const money = (n: number, cur = 'INR') =>
+  cur === 'INR' ? inrAmt(n) : `${cur} ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const svcApiError = (e: unknown, fallback: string) => {
+  const d = (e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
+  const first = d?.errors ? Object.values(d.errors).flat()[0] : undefined;
+  return first || d?.message || fallback;
+};
+
+function MappedServicesPopup(props: {
+  vendorId: number;
+  bucket: ServiceBucket;
+  /** International supplier: price in its own currency with an exchange rate, no GST. */
+  international: boolean;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const { vendorId, bucket, international } = props;
+  const [services, setServices] = useState<ServiceListRow[] | null>(null);
+  const [rows, setRows] = useState<MappedServiceRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [search, setSearchRaw] = useState('');
+  const [page, setPage] = useState(1);
+  const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
+
+  // Map Service form.
+  const [formOpen, setFormOpen] = useState(false);
+  const [serviceId, setServiceId] = useState('');
+  const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [rate, setRate] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [tried, setTried] = useState(false);
+  const [currencies, setCurrencies] = useState<CurrencyOpt[]>([]);
+
+  /** Every service of this bucket, then — for the ones that have suppliers — who they are, to
+      find this supplier's own mappings and their prices. */
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
+        params: { service_type: bucket.serviceType, ...(bucket.classification ? { classification: bucket.classification } : {}), per_page: 200, sort: 'name' },
+      });
+      const list = res.data?.data ?? [];
+      const withSuppliers = list.filter(s => (s.suppliers_count ?? 0) > 0);
+      const maps = await Promise.all(withSuppliers.map(async s => {
+        const r = await api.get<{ data?: ServiceSupplierApiRow[] }>(`/p2p/services/${s.id}/suppliers`);
+        const m = (r.data?.data ?? []).find(x => Number(x.vendor_id) === vendorId && (x.status ?? 'active') === 'active');
+        return m ? { s, m } : null;
+      }));
+      setServices(list);
+      setRows(maps.filter((x): x is { s: ServiceListRow; m: ServiceSupplierApiRow } => !!x).map(({ s, m }) => ({
+        serviceId: s.id, code: s.code, name: s.name, category: s.category || '—', hsn: s.hsn_code || '—',
+        currency: m.currency || 'INR', price: Number(m.price), gstPercentage: Number(m.gst_percentage ?? 0),
+        gstAmount: Number(m.gst_amount ?? 0), total: Number(m.total_amount ?? 0), inr: Number(m.inr_amount ?? m.total_amount ?? 0),
+      })));
+      setFailed(false);
+    } catch {
+      setFailed(true);
+      setServices([]);
+      setRows([]);
+      toast.error('Load failed', 'Could not load the services for this supplier.');
+    }
+  }, [bucket.serviceType, bucket.classification, vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [load]);
+
+  // Currencies (and their default ₹ rate) for an international supplier.
+  useEffect(() => {
+    if (!international) return;
+    api.get<{ currencies?: CurrencyOpt[] }>('/p2p/services/master-bundle')
+      .then(r => setCurrencies((r.data?.currencies ?? []).filter(c => c.code && c.code.toUpperCase() !== 'INR')))
+      .catch(() => setCurrencies([]));
+  }, [international]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows ?? []).filter(r => !q || [r.name, r.code, r.category, r.hsn].some(s => s.toLowerCase().includes(q)));
+  }, [rows, search]);
+  const pages = Math.max(1, Math.ceil(filtered.length / MAPPED_PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const start = (safePage - 1) * MAPPED_PAGE_SIZE;
+
+  // Services this supplier can still be mapped to: not already mapped, not inactive.
+  const mapped = useMemo(() => new Set((rows ?? []).map(r => r.serviceId)), [rows]);
+  const options = useMemo(() => (services ?? [])
+    .filter(s => !mapped.has(s.id) && s.status !== 'inactive')
+    .map(s => ({ value: String(s.id), label: `${s.code} — ${s.name}` })), [services, mapped]);
+  const picked = (services ?? []).find(s => String(s.id) === serviceId) ?? null;
+
+  // Live totals, as the server will compute them.
+  const p = Number(price) || 0;
+  const gstPct = Number(picked?.gst_percentage ?? 0);
+  const gstAmt = international ? 0 : Math.round(p * gstPct) / 100;
+  const total = Math.round((p + gstAmt) * 100) / 100;
+  const fx = Number(rate) || 0;
+
+  const errs = {
+    service: !serviceId ? 'Select a service' : '',
+    price: !(p > 0) ? 'Enter a price greater than 0' : '',
+    currency: international && !currency ? 'Select the supplier’s currency' : '',
+    rate: international && !(fx > 0) ? 'Enter the exchange rate (₹ per unit)' : '',
+    gst: !international && picked && picked.gst_percentage == null ? 'This service has no GST % yet — set it in Service Management first' : '',
+  };
+  const err = (k: keyof typeof errs) => (tried ? errs[k] || undefined : undefined);
+
+  const openForm = () => {
+    setServiceId(''); setPrice(''); setRemarks(''); setTried(false);
+    setCurrency(''); setRate('');
+    setFormOpen(true);
+  };
+  const pickCurrency = (c: string) => {
+    setCurrency(c);
+    const r = currencies.find(x => x.code.toUpperCase() === c)?.exchange_rate;
+    setRate(r != null && Number(r) > 0 ? String(Number(r)) : '');
+  };
+
+  const save = async () => {
+    setTried(true);
+    if (Object.values(errs).some(Boolean)) {
+      toast.warning('Fill in the service details', Object.values(errs).filter(Boolean)[0]);
+      return;
+    }
+    try {
+      await api.post(`/p2p/services/${serviceId}/suppliers`, {
+        vendor_id: vendorId,
+        origin: international ? 'international' : 'domestic',
+        price: p,
+        ...(international ? { currency, exchange_rate: fx } : {}),
+        remarks: remarks.trim() || null,
+      });
+      toast.success('Service mapped', `${picked?.name ?? 'The service'} is now mapped to this supplier.`);
+      setFormOpen(false);
+      setSearchRaw('');
+      await load();
+    } catch (e) {
+      toast.error('Could not map the service', svcApiError(e, 'Please try again.'));
+    }
+  };
+
+  const auto = (value: string, placeholder: string) => (
+    <div className="avm-auto">
+      <i className="ri-lock-line avm-auto-lock" aria-hidden />
+      <input className="avm-input avm-auto-input" value={value} readOnly tabIndex={-1} placeholder={placeholder} />
+      <span className="avm-auto-pill">Auto</span>
+    </div>
+  );
+  const bucketLabel = SERVICE_BUCKET_LABEL[bucket.serviceType];
+
+  return (
+    <>
+      <PopupChrome
+        title="Mapped Services"
+        subtitle={`${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
+        icon="ri-customer-service-2-line"
+        panelClassName="avm-cp-popup-wide"
+        onClose={props.onClose}
+        footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
+      >
+        <div className="avm-mapped-toolbar">
+          <MappedProductsSearch value={search} onChange={setSearch}
+            placeholder="Search service, code, category, HSN/SAC…" label="Search mapped services" />
+          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null}>
+            <i className="ri-add-line" /> Map Service
+          </button>
+        </div>
+        {rows === null ? (
+          <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={8} />
+        ) : rows.length === 0 ? (
+          <div className="avm-empty avm-empty-accent">
+            {failed ? 'Could not load the services. Close and open this popup to try again.' : 'No services mapped yet. Click “Map Service” to begin.'}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="avm-empty avm-empty-accent">No mapped services match "{search.trim()}".</div>
+        ) : (
+          <div className="avm-mapped-paged">
+            <KycTable
+              isEmpty={false}
+              empty=""
+              wrapClassName="avm-mapped-wrap"
+              tableClassName="avm-mapped-table"
+              headers={['SR NO', 'SERVICE', 'CODE', 'CATEGORY', 'HSN/SAC',
+                { label: international ? 'PRICE' : 'PRICE (₹)', className: 'text-end' },
+                ...(international ? [] : [{ label: 'GST %', className: 'text-end' }, { label: 'GST (₹)', className: 'text-end' }]),
+                { label: international ? 'TOTAL (₹ VALUE)' : 'TOTAL (₹)', className: 'text-end' }]}
+            >
+              {filtered.slice(start, start + MAPPED_PAGE_SIZE).map((r, i) => (
+                <tr key={r.serviceId}>
+                  <td><span className="avm-sr-pill">{String(start + i + 1).padStart(2, '0')}</span></td>
+                  <td><strong>{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30).trimEnd()}…</span></Tooltip> : r.name}</strong></td>
+                  <td><span className="avm-auto-code">{r.code}</span></td>
+                  <td>{r.category}</td>
+                  <td><span className="font-monospace fs-13">{r.hsn}</span></td>
+                  <td className="text-end avm-num fs-13">{money(r.price, r.currency)}</td>
+                  {!international && <td className="text-end avm-num fs-13">{r.gstPercentage.toFixed(2)}%</td>}
+                  {!international && <td className="text-end avm-num fs-13">{inrAmt(r.gstAmount)}</td>}
+                  <td className="text-end avm-num fs-13"><strong>{inrAmt(r.inr)}</strong></td>
+                </tr>
+              ))}
+            </KycTable>
+            <WorklistPager className="avm-mapped-pager" total={filtered.length} page={safePage} pageSize={MAPPED_PAGE_SIZE} onPage={setPage} />
+          </div>
+        )}
+      </PopupChrome>
+
+      {formOpen && (
+        <PopupShell title="Map Service" icon="ri-customer-service-2-line"
+          subtitle={`Link a ${bucketLabel.replace(/s$/, '').toLowerCase()} with its price for this supplier`}
+          panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>}
+          onClose={() => setFormOpen(false)} onSave={save}>
+          <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-customer-service-2-line" />} title="Service Details" subtitle={`Pick a service from ${bucketLabel} — code, category and HSN / SAC fill in automatically`}>
+            <div className="avm-grid-1">
+              <Field label="Service Name" required error={err('service')}>
+                <SelectInput value={serviceId} onChange={setServiceId}
+                  placeholder={services === null ? 'Loading services…' : 'Select Service'}
+                  options={options} disabled={services === null}
+                  emptyText={`No unmapped service in ${bucketLabel}${bucket.classification ? ` (${bucket.classification})` : ''} — add one in Service Management.`} />
+              </Field>
+            </div>
+            <div className="avm-grid-3">
+              <Field label="Service Code">{auto(picked?.code ?? '', 'Auto-fills from service')}</Field>
+              <Field label="Category">{auto(picked?.category ?? '', '—')}</Field>
+              <Field label="HSN / SAC Code">{auto(picked?.hsn_code ?? '', '—')}</Field>
+            </div>
+          </SectionCard>
+          <SectionCard tone="violet" className="avm-cp-sec" icon={<b className="avm-sec-rs" aria-hidden>{international ? '¤' : '₹'}</b>}
+            title={international ? 'Pricing & Exchange Rate' : 'Pricing & GST'}
+            subtitle={international ? 'Enter the price in the supplier’s currency — the ₹ value is calculated' : 'Enter the price — GST and total are calculated from the service GST %'}>
+            {international ? (
+              <>
+                <div className="avm-grid-3">
+                  <Field label="Currency" required error={err('currency')}>
+                    <SelectInput value={currency} onChange={pickCurrency} placeholder="Select Currency"
+                      options={currencies.map(c => ({ value: c.code.toUpperCase(), label: c.name ? `${c.code.toUpperCase()} · ${c.name}` : c.code.toUpperCase() }))} />
+                  </Field>
+                  <Field label={`Price${currency ? ` (${currency})` : ''}`} required error={err('price')}>
+                    <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter price" value={price} onChange={e => setPrice(e.target.value)} />
+                  </Field>
+                  <Field label="Exchange Rate (₹)" required error={err('rate')}>
+                    <input className="avm-input" type="number" min="0" step="0.0001" placeholder="₹ per unit" value={rate} onChange={e => setRate(e.target.value)} />
+                  </Field>
+                </div>
+                <div className="avm-grid-2">
+                  <Field label="Total">{auto(currency && p ? money(total, currency) : '', 'Auto-computed')}</Field>
+                  <Field label="₹ Value">{auto(p && fx ? inrAmt(Math.round(total * fx * 100) / 100) : '', 'Auto-computed')}</Field>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="avm-grid-2">
+                  <Field label="Price (₹)" required error={err('price')}>
+                    <div className="avm-rs">
+                      <span className="avm-rs-sym" aria-hidden>₹</span>
+                      <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter price" value={price} onChange={e => setPrice(e.target.value)} />
+                    </div>
+                  </Field>
+                  <Field label="GST %" error={err('gst')}>{auto(picked && picked.gst_percentage != null ? `${gstPct}%` : '', 'Auto-fills from service')}</Field>
+                </div>
+                <div className="avm-grid-2">
+                  <Field label="GST Amount (₹)">{auto(picked && p ? gstAmt.toFixed(2) : '', 'Auto-computed')}</Field>
+                  <Field label="Total Amount (₹)">{auto(picked && p ? total.toFixed(2) : '', 'Auto-computed')}</Field>
+                </div>
+              </>
+            )}
+            <div className="avm-grid-1">
+              <Field label="Remarks">
+                <textarea className="avm-input" rows={2} maxLength={1000} placeholder="Optional note about this service price" value={remarks} onChange={e => setRemarks(e.target.value)} />
+              </Field>
+            </div>
+          </SectionCard>
+        </PopupShell>
+      )}
+    </>
+  );
+}
 
 /* The Mapped Products popup body, laid out as the Consignee list's Mapped
    Customers popup: the search, a count pill and Map New Product in a row ABOVE
