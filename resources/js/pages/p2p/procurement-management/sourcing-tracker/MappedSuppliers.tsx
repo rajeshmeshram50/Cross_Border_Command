@@ -152,6 +152,8 @@ type Props = {
   canMap: boolean;
   /** Edit a mapped New Supplier (its details and quote) — the assignee only. */
   onEdit?: (edit: MapEdit) => void;
+  /** Bumped by the page after a save, so this list re-reads while it stays open. */
+  refreshKey?: number;
 };
 
 /** A mapped New Supplier's saved values, as the New Supplier form holds them. */
@@ -190,7 +192,7 @@ const masterEditOf = (s: Sup): MapEdit => {
   };
 };
 
-export default function MappedSuppliers({ row, product, onClose, onAddSupplier, onConvert, converted, canMap, onEdit }: Props) {
+export default function MappedSuppliers({ row, product, onClose, onAddSupplier, onConvert, converted, canMap, onEdit, refreshKey }: Props) {
   const segment = product.segment && product.segment !== '—' ? product.segment : '';
   const [loaded, setLoaded] = useState<Sup[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -202,7 +204,9 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
       .then(r => { if (alive) setLoaded((r.data?.data ?? []).map(toSup)); })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
-  }, [row.code, product.id, retry]);
+    // refreshKey: Edit price now opens ON TOP of this list rather than
+    // replacing it, so the saved row has to be re-read while it stays open.
+  }, [row.code, product.id, retry, refreshKey]);
   const loading = loaded === null && !failed;
   const suppliers: Sup[] = (loaded ?? []).map(s => (
     s.source === 'New Supplier' && converted?.has(supKey(s.supplierId, s.id)) ? { ...s, source: 'Master' as const, canConvert: false } : s));

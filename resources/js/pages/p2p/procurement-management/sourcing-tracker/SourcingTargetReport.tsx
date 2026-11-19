@@ -203,8 +203,11 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onEd
       </div>
       {mapped && (
         <MappedSuppliers row={row} product={mapped} onClose={() => setMapped(null)} converted={converted} canMap={canMap}
+          refreshKey={refreshKey}
           onAddSupplier={() => { const p = mapped; setMapped(null); onMapSupplier(row, p); }}
-          onEdit={onEditSupplier ? e => { const p = mapped; setMapped(null); onEditSupplier(row, p, e); } : undefined}
+          /* Stays OPEN behind the edit popup — the price being edited belongs to
+             a row in this list, so closing it loses the context. */
+          onEdit={onEditSupplier ? e => onEditSupplier(row, mapped, e) : undefined}
           onConvert={onConvert ? (k, n) => { setMapped(null); onConvert(k, n); } : undefined} />
       )}
     </div>,

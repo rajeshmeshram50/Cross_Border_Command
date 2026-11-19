@@ -2,7 +2,11 @@
 .stmap-overlay {
     position: fixed;
     inset: 0;
-    z-index: 3000;
+    /* Opens ON TOP of Mapped Suppliers (.stsv-overlay, 3000) — Add Supplier and
+       Edit price are both launched from that list. All three modals used to sit
+       at 3000, so which one painted on top came down to portal mount order.
+       Layers here: 3000 list modals · 3100 this · 3200 attach picker. */
+    z-index: 3100;
     display: flex;
     align-items: center;
     justify-content: center;
