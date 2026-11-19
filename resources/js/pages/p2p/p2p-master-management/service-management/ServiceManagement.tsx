@@ -98,7 +98,16 @@ const SHIM_OF: Record<ColKey, ShimCol> = {
   contract: 'pill', mapped: 'mapped', action: 'action',
 };
 
-const dash = (v?: string) => (!v || /^select\b/i.test(v.trim()) ? <span className="ord-dash">—</span> : v);
+const isBlank = (v?: string) => !v || /^select\b/i.test(v.trim());
+
+/* A cell value never runs past two lines: the rest is cut with an ellipsis and
+   the whole value shows on hover. */
+const clip = (v: string | undefined, cls: string) => (isBlank(v)
+  ? <span className="ord-dash">—</span>
+  : <Tooltip label={v!}><span className={`${cls} svm-clamp`}>{v}</span></Tooltip>);
+const clipBadge = (v: string | undefined, cls = 'svm-badge') => (isBlank(v)
+  ? <span className="ord-dash">—</span>
+  : <Tooltip label={v!}><span className={cls}><span className="svm-clamp">{v}</span></span></Tooltip>);
 
 export default function ServiceManagement() {
   const toast = useToast();
@@ -493,25 +502,19 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
       );
     }
     case 'category':
-      return v.category ? <span className="svm-badge">{v.category}</span> : <span className="ord-dash">—</span>;
+      return clipBadge(v.category);
     case 'hsn':
-      return v.hsn ? <span className="ord-idpill svm-hsn">{v.hsn}</span> : <span className="ord-dash">—</span>;
-    case 'provider': {
-      const p = tab === 'material' ? v.make : v.provider;
-      return p && !/^select\b/i.test(p.trim())
-        ? <Tooltip label={p}><span className="svm-strong svm-clamp">{p}</span></Tooltip>
-        : <span className="svm-strong">{dash(p)}</span>;
-    }
+      return clipBadge(v.hsn, 'ord-idpill svm-hsn');
+    case 'provider':
+      return clip(tab === 'material' ? v.make : v.provider, 'svm-strong');
     case 'segment':
-      return tab === 'material'
-        ? (v.segment ? <span className="svm-badge">{v.segment}</span> : <span className="ord-dash">—</span>)
-        : <span className="svm-plain">{dash(v.segment)}</span>;
+      return tab === 'material' ? clipBadge(v.segment) : clip(v.segment, 'svm-plain');
     case 'delivery':
-      return <span className="svm-plain">{dash(v.delivery)}</span>;
+      return clip(v.delivery, 'svm-plain');
     case 'billing':
-      return <span className="svm-plain">{dash(v.billing)}</span>;
+      return clip(v.billing, 'svm-plain');
     case 'uom':
-      return <span className="svm-plain">{dash(v.uom)}</span>;
+      return clip(v.uom, 'svm-plain');
     case 'condition':
       return v.condition
         ? <span className={`svm-flag svm-flag--fit${v.condition === 'New' ? ' svm-flag--yes' : ''}`} title={v.condition}><i /><span className="svm-flag-t">{v.condition}</span></span>

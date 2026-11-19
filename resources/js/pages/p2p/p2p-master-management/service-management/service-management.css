@@ -69,6 +69,8 @@
 .svm-strong { font-weight: 800; color: #0f3a4d; }
 .svm-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; overflow-wrap: anywhere; }
 .svm-plain { font-weight: 600; color: #335566; }
+.svm-table td :is(.svm-badge, .ord-idpill) { max-width: 100%; }
+.svm-table td :is(.svm-badge, .ord-idpill) > .svm-clamp { white-space: normal; text-align: center; min-width: 0; }
 
 .svm-badge {
   display: inline-flex;
