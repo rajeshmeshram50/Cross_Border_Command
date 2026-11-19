@@ -526,8 +526,8 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
     case 'mapped': {
       const n = r.suppliersCount ?? r.suppliers.length;
       return (
-        <Tooltip label={`Mapped Suppliers: ${n}`}>
-          <button type="button" className={`svm-cnt${n ? '' : ' is-zero'}`} disabled={!r.active} onClick={() => act.map(r)} aria-label={`${n} mapped suppliers`}>
+        <Tooltip label={n ? `Mapped Suppliers: ${n}` : "No suppliers mapped yet — use the Map Suppliers button in Action"}>
+          <button type="button" className={`svm-cnt${n ? '' : ' is-zero'}`} disabled={!r.active || n === 0} onClick={() => act.map(r)} aria-label={`${n} mapped suppliers`}>
             {n}
           </button>
         </Tooltip>

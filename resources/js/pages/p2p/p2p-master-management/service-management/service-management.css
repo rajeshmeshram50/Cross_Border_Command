@@ -798,3 +798,9 @@
 .svm-skrow td > div,
 .svm-skrow td > div > div { max-width: 100%; min-width: 0; }
 .svm-skrow .shimmer { max-width: 100%; flex-shrink: 1; min-width: 0; }
+
+/* A 0 count opens nothing: it keeps its light look on an active service but no
+   longer reacts (no hover lift, no pointer). Inactive rows stay greyed. */
+.svm-page tr:not(.is-off) .svm-cnt.is-zero:disabled { opacity: 1; filter: none; cursor: default; }
+.svm-page .svm-cnt:disabled:hover { transform: none; filter: grayscale(1); }
+.svm-page tr:not(.is-off) .svm-cnt.is-zero:disabled:hover { filter: none; }
