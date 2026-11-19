@@ -1118,7 +1118,8 @@ export default function AddVendorModal(props: {
         )
       ),
       // view=list — only `code` and `name` are read; see AddCustomerModal.
-      api.get('/clm/trade-doc-library/for-party/supplier', { params: { view: 'list' } })
+      // The supplier's own type narrows the list; switching type re-fetches it.
+      api.get('/clm/trade-doc-library/for-party/supplier', { params: { view: 'list', ...(vendorType ? { vendor_type: vendorType } : {}) } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string; name: string }>),
     ]).then(([results, partyDocs]) => {
@@ -1169,7 +1170,7 @@ export default function AddVendorModal(props: {
     }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; setSegmentDocsLoading(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, segment, supplierDocType]);
+  }, [step, segment, supplierDocType, vendorType]);
 
   const segGuardReady = !initialVendorId || (segment ?? [])
     .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
