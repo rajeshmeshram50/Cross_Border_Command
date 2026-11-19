@@ -76,7 +76,7 @@ const COLUMNS: Record<ServiceTab, Col[]> = {
     { key: 'kind', header: 'Service Category', width: 116 }, C.hsn,
     { key: 'provider', header: 'Service Provider / Brand', width: 170 },
     { key: 'segment', header: 'Segment', width: 150 }, C.uom,
-    { key: 'condition', header: 'Condition', width: 108 }, { ...C.mapped, header: 'Mapped Suppliers' }, C.action,
+    { key: 'condition', header: 'Condition', width: 130 }, { ...C.mapped, header: 'Mapped Suppliers' }, C.action,
   ],
   soft: [
     C.sr, C.code, C.name, C.desc, { key: 'category', header: 'Service Category', width: 170 }, C.hsn,
@@ -510,7 +510,7 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
       return <span className="svm-plain">{dash(v.uom)}</span>;
     case 'condition':
       return v.condition
-        ? <span className={`svm-flag${v.condition === 'New' ? ' svm-flag--yes' : ''}`}><i />{v.condition}</span>
+        ? <span className={`svm-flag svm-flag--fit${v.condition === 'New' ? ' svm-flag--yes' : ''}`} title={v.condition}><i /><span className="svm-flag-t">{v.condition}</span></span>
         : <span className="ord-dash">—</span>;
     case 'contract': {
       const yes = v.contract === 'Required';
