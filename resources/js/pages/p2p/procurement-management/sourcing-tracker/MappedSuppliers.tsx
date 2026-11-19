@@ -16,7 +16,10 @@ import { IcoCheck, IcoUserPlus, IcoUsers, IcoX, Svg } from './icons';
 /* Mapped Suppliers popup (Figma) — opens from the Supplier Count badge in the Sourcing Target
    Report. Same design as Bulk Sourcing's MappedSuppliersModal, under this module's own .stsv-*
    class names (mapped-suppliers.css). Cards: GET /p2p/sourcing-targets/{id}/products/{product}/suppliers.
-   The server masks contact / mobile / email ("••••") for people who may not see them. */
+   The server masks contact / mobile / email ("••••") for people who may not see them.
+   Edit (assignee only) opens the same form the supplier was mapped with: a New Supplier card its
+   New Supplier form; a Supplier Master card the Supplier Master form with the supplier locked and
+   only its price editable (the supplier's own details are edited in the Supplier Master). */
 
 type Sup = {
   /** The mapping's id (one row per supplier on this product). */
@@ -171,6 +174,22 @@ const editOf = (s: Sup): MapEdit => {
   };
 };
 
+/** A mapped Supplier Master supplier, for its Edit: the supplier stays, only the quote changes. */
+const masterEditOf = (s: Sup): MapEdit => {
+  const q = s.quote;
+  const intl = (s.origin ?? (q.country && q.country !== 'India' ? 'international' : 'domestic')) === 'international';
+  return {
+    mappingId: s.id,
+    scope: intl ? 'international' : 'domestic',
+    values: {},
+    card: '',
+    master: {
+      supplierId: s.supplierId != null ? String(s.supplierId) : '',
+      price: q.price, gst: q.gstPercentage, currency: q.currency, fx: q.exchangeRate, validTill: q.validTill,
+    },
+  };
+};
+
 export default function MappedSuppliers({ row, product, onClose, onAddSupplier, onConvert, converted, canMap, onEdit }: Props) {
   const segment = product.segment && product.segment !== '—' ? product.segment : '';
   const [loaded, setLoaded] = useState<Sup[] | null>(null);
@@ -260,8 +279,8 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       <span className="stsv-card-tag src">{s.source}</span>
                     </div>
                   </div>
-                  {/* Edit (assignee only): a New Supplier's details and quote. A Supplier Master mapping is
-                      edited in the Supplier Master (the API edits only New Supplier rows). */}
+                  {/* Edit (assignee only): a New Supplier's details and quote; a Supplier Master mapping's
+                      quote only, in the Supplier Master form (its details are edited in the Supplier Master). */}
                   {canMap && onEdit && (s.source === 'New Supplier' ? (
                     <Tooltip label="Edit supplier & quote">
                       <button type="button" className="stsv-card-edit-btn" aria-label={`Edit ${s.name}`} onClick={() => onEdit(editOf(s))}>
@@ -269,12 +288,10 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       </button>
                     </Tooltip>
                   ) : (
-                    <Tooltip label="A Supplier Master supplier is edited in the Supplier Master">
-                      <span className="sct-frozen-wrap">
-                        <button type="button" className="stsv-card-edit-btn" disabled aria-label={`${s.name} is edited in the Supplier Master`}>
-                          <Svg sw={2.3} size={13}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></Svg>
-                        </button>
-                      </span>
+                    <Tooltip label="Edit price">
+                      <button type="button" className="stsv-card-edit-btn" aria-label={`Edit the price of ${s.name}`} onClick={() => onEdit(masterEditOf(s))}>
+                        <Svg sw={2.3} size={13}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></Svg>
+                      </button>
                     </Tooltip>
                   ))}
                   {/* Only on New Supplier cards — never on Master ones (V-T23); gone once converted (V-T46). */}

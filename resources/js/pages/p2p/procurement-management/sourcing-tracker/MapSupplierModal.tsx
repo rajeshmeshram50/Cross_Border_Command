@@ -22,12 +22,18 @@ import { IcoCheck, IcoDb, IcoNext, IcoPin, IcoUserPlus, IcoX } from './icons';
    popup's place, or NewSupplierForm in its body. Both forms hand their mapping here, and this popup saves it:
      POST /p2p/upload (kind = card)  → a New Supplier's business card, first
      POST /p2p/sourcing-targets/{id}/products/{product}/suppliers → the mapping (assignee only).
-   Edit (a mapped New Supplier): opens straight on NewSupplierForm with its saved values and saves
-   with PUT …/suppliers/{mapping}. A Supplier Master mapping cannot be edited here (the API edits
-   only New Supplier rows). */
+   Edit (assignee only) opens straight on the form the supplier was mapped with:
+     a New Supplier  → NewSupplierForm with its saved values, saved with PUT …/suppliers/{mapping};
+     a Supplier Master supplier → SupplierMasterForm with the supplier locked and only its price
+       editable, saved with PATCH …/suppliers/{mapping}/price. */
 
-/** Edit a mapped New Supplier: its mapping id, origin, saved values and stored business card. */
-export type MapEdit = { mappingId: string; scope: SupplierScope; values: NewSupplierValues; card: string };
+/** A mapped Supplier Master supplier's saved quote (its Edit changes only the price). */
+export type MasterQuote = {
+  supplierId: string; price: number | null; gst: number; currency: string; fx: number | null; validTill: string | null;
+};
+/** Edit a mapped supplier: its mapping id and origin; a New Supplier's saved values and stored business
+    card, or (master set) a Supplier Master supplier's quote. */
+export type MapEdit = { mappingId: string; scope: SupplierScope; values: NewSupplierValues; card: string; master?: MasterQuote };
 
 /** A mapping a form asks to save: the request body (supplier_id or new_supplier, plus the price
     fields), the supplier's name for the toast, and a New Supplier's business card to upload. */
@@ -51,10 +57,10 @@ const Pill = ({ cls, children }: { cls: string; children: ReactNode }) => (
 
 export default function MapSupplierModal({ targetCode, product, edit, onClose, onMapped }: Props) {
   const toast = useToast();
-  const [step, setStep] = useState<Step>(edit ? 'new' : 'choose');
+  const [step, setStep] = useState<Step>(edit?.master ? 'master' : edit ? 'new' : 'choose');
   // Supplier Master: the Figma's "Supplier Master — Choose the supplier type" step opens first; the
   // chosen scope decides the form that follows. Its cards show how many suppliers each origin has.
-  const [scope, setScope] = useState<SupplierScope | null>(null);
+  const [scope, setScope] = useState<SupplierScope | null>(edit?.master ? edit.scope : null);
   const [masterCounts, setMasterCounts] = useState<Record<SupplierScope, number> | null>(null);
   useEffect(() => {
     if (step !== 'masterType' || masterCounts) return;
@@ -82,7 +88,8 @@ export default function MapSupplierModal({ targetCode, product, edit, onClose, o
         let body = req.body;
         if (req.card) body = { ...body, new_supplier: { ...(body.new_supplier as object), card: await uploadP2pFile(req.card, 'card') } };
         const url = `/p2p/sourcing-targets/${encodeURIComponent(targetCode)}/products/${product.id}/suppliers`;
-        if (edit) await api.put(`${url}/${encodeURIComponent(edit.mappingId)}`, body);
+        if (edit?.master) await api.patch(`${url}/${encodeURIComponent(edit.mappingId)}/price`, body);
+        else if (edit) await api.put(`${url}/${encodeURIComponent(edit.mappingId)}`, body);
         else await api.post(url, body);
         onMapped(req.supplierName);
       } catch (e) {
@@ -121,7 +128,9 @@ export default function MapSupplierModal({ targetCode, product, edit, onClose, o
       ) : step === 'master' && scope ? (
         <SupplierMasterForm key={scope} scope={scope} targetCode={targetCode} productId={product.id} productName={product.name}
           saving={saving} dialogRef={dialogRef} serverErrors={serverErrors} onClearServerErrors={clearServerErrors}
-          onDirty={setFormDirty} onBack={backToGate} onCancel={onClose} onSave={save} />
+          edit={edit?.master}
+          // Edit has no chooser behind it: Back closes the popup.
+          onDirty={setFormDirty} onBack={edit?.master ? onClose : backToGate} onCancel={onClose} onSave={save} />
       ) : (
       <div ref={dialogRef} className={`stmap-box${step === 'new' ? ' stmap-box--wide' : ''}${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true"
         aria-busy={saving || undefined} aria-label="Map Supplier Directory">

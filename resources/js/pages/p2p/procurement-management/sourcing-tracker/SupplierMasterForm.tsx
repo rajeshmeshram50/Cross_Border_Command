@@ -6,7 +6,7 @@ import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
 import { COUNTRY_CURRENCY, money } from './currency';
 import { rateOf, useFormMasters } from './formMasters';
-import type { MapRequest } from './MapSupplierModal';
+import type { MapRequest, MasterQuote } from './MapSupplierModal';
 import { IcoBack, IcoCheck, IcoFlag, IcoGlobe, IcoPlus, IcoUserPlus, IcoX } from './icons';
 import './supplier-master-form.css';
 
@@ -16,7 +16,9 @@ import './supplier-master-form.css';
    Data: GET /p2p/suppliers?origin=domestic|international (the Supplier Master list for the scope),
    GET /p2p/form-masters (GST rates, currencies + default rates), and the product's mapped
    suppliers (already-mapped ones cannot be picked again). Save hands { supplier_id, price … } to
-   the Map Supplier popup, which POSTs it. */
+   the Map Supplier popup, which POSTs it.
+   Edit (a mapped Supplier Master supplier): the same form, the supplier picked and locked (no "+"),
+   only the price fields editable; the popup saves it with PATCH …/suppliers/{mapping}/price. */
 
 type Supplier = {
   id: string; code: string; name: string; type: string; contact: string;
@@ -76,11 +78,14 @@ type Props = {
   onBack: () => void;
   onCancel: () => void;
   onSave: (req: MapRequest) => void;
+  /** Edit a mapped supplier: it opens picked and locked, with its saved quote in the price fields. */
+  edit?: MasterQuote;
 };
 
 export default function SupplierMasterForm({
-  scope, targetCode, productId, productName, saving, dialogRef, serverErrors = {}, onClearServerErrors, onDirty, onBack, onCancel, onSave,
+  scope, targetCode, productId, productName, saving, dialogRef, serverErrors = {}, onClearServerErrors, onDirty, onBack, onCancel, onSave, edit,
 }: Props) {
+  const isEdit = !!edit;
   const intl = scope === 'international';
   const toast = useToast();
   const { masters } = useFormMasters();
@@ -96,7 +101,7 @@ export default function SupplierMasterForm({
   useEffect(() => { void loadPool(); }, [loadPool]);
   useEffect(() => {
     api.get<{ data: { supplier_id?: number | null; source?: string }[] }>(`/p2p/sourcing-targets/${encodeURIComponent(targetCode)}/products/${productId}/suppliers`)
-      .then(r => setMappedIds(new Set((r.data?.data ?? []).filter(s => s.source !== 'New Supplier' && s.supplier_id != null).map(s => String(s.supplier_id)))))
+      .then(r => setMappedIds(new Set((r.data?.data ?? []).filter(s => s.source !== 'New Supplier' && s.supplier_id != null && String(s.supplier_id) !== edit?.supplierId).map(s => String(s.supplier_id)))))
       .catch(() => {});
   }, [targetCode, productId]);
 
@@ -115,11 +120,20 @@ export default function SupplierMasterForm({
   const gstRates = useMemo(() => (masters?.gstRates.length ? masters.gstRates : [0, 5, 12, 18, 28]), [masters]);
   const currencyOptions = useMemo(() => (masters?.currencies ?? []).map(c => ({ value: c.code.toUpperCase(), label: c.name ? `${c.code.toUpperCase()} · ${c.name}` : c.code.toUpperCase(), selectedLabel: c.code.toUpperCase() })), [masters]);
 
-  const [id, setId] = useState('');
-  const [price, setPrice] = useState('');
-  const [gst, setGst] = useState(String(DEFAULT_GST));
-  const [cur, setCur] = useState('USD');
-  const [fx, setFx] = useState('');
+  // Edit: the mapped supplier and its saved quote; Add: empty, 18% GST, USD.
+  const init = useMemo(() => ({
+    id: edit?.supplierId ?? '',
+    price: edit?.price != null ? String(edit.price) : '',
+    gst: String(edit?.price != null ? edit.gst : DEFAULT_GST),
+    cur: edit && edit.currency && edit.currency !== 'INR' ? edit.currency : 'USD',
+    fx: edit?.fx != null ? String(edit.fx) : '',
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+  const [id, setId] = useState(init.id);
+  const [price, setPrice] = useState(init.price);
+  const [gst, setGst] = useState(init.gst);
+  const [cur, setCur] = useState(init.cur);
+  const [fx, setFx] = useState(init.fx);
   const [tried, setTried] = useState(false);
   // 18% is the default when the GST master has it, otherwise its first rate.
   useEffect(() => {
@@ -131,7 +145,8 @@ export default function SupplierMasterForm({
 
   const sup = pool?.find(s => s.id === id);
   // While the Add Supplier form is open, Esc must not close the Map Supplier popup behind it.
-  const dirty = !!id || !!price || adding;
+  // Edit: only a changed price field counts.
+  const dirty = isEdit ? price !== init.price || gst !== init.gst || cur !== init.cur || fx !== init.fx : !!id || !!price || adding;
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
   useEffect(() => { if (Object.keys(serverErrors).length) onClearServerErrors?.(); }, [id, price, gst, cur, fx]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -170,12 +185,14 @@ export default function SupplierMasterForm({
   const save = () => {
     setTried(true);
     if (errs.sup || errs.price || errs.fx || !sup) return;
+    const quote = intl
+      ? { origin: 'international', price: p, currency: cur, exchange_rate: toNum(fx) }
+      // Domestic: the server picks CGST + SGST or IGST from the supplier's state vs ours.
+      : { origin: 'domestic', price: p, gst_percentage: Number(gst) };
     onSave({
       supplierName: sup.name,
-      body: intl
-        ? { supplier_id: sup.id, origin: 'international', price: p, currency: cur, exchange_rate: toNum(fx) }
-        // Domestic: the server picks CGST + SGST or IGST from the supplier's state vs ours.
-        : { supplier_id: sup.id, origin: 'domestic', price: p, gst_percentage: Number(gst) },
+      // Edit sends the quote only, with the saved Price Valid Till (the API clears one left out).
+      body: isEdit ? { ...quote, ...(edit?.validTill ? { valid_till: edit.validTill } : {}) } : { supplier_id: sup.id, ...quote },
     });
   };
 
@@ -185,11 +202,12 @@ export default function SupplierMasterForm({
         <div className="stsm-hd__ico"><IcoUserPlus size={18} sw={2.2} /></div>
         <div className="stsm-hd__txt">
           <div className="stsm-hd__t" id="stsm-title">
-            Supplier Master
+            {isEdit ? 'Edit Supplier Master' : 'Supplier Master'}
             <span className="stsm-hd__tag">{intl ? <><IcoGlobe size={11} sw={2.4} />International</> : <><IcoFlag size={11} sw={2.4} />Domestic</>}</span>
           </div>
           <div className="stsm-hd__s">
-            {intl ? 'Link an overseas supplier with its price in foreign currency for ' : 'Link an Indian supplier with price & GST for '}
+            {isEdit ? `Update this supplier's ${intl ? 'price & exchange rate' : 'price & GST'} for `
+              : intl ? 'Link an overseas supplier with its price in foreign currency for ' : 'Link an Indian supplier with price & GST for '}
             <b>{productName}</b>
           </div>
         </div>
@@ -201,17 +219,25 @@ export default function SupplierMasterForm({
         <div className="stsm-grid">
           <div className="stsm-f stsm-f--sup">
             <span className="stsm-l" id="stsm-sup-l">
-              Supplier Name <Req />
-              <button type="button" className="stsm-mini" aria-label="Add new supplier" title="Add new supplier" onClick={() => setAdding(true)}>
-                <IcoPlus size={11} sw={3} />
-              </button>
+              Supplier Name {isEdit ? <span className="stsm-auto">Locked</span> : <Req />}
+              {!isEdit && (
+                <button type="button" className="stsm-mini" aria-label="Add new supplier" title="Add new supplier" onClick={() => setAdding(true)}>
+                  <IcoPlus size={11} sw={3} />
+                </button>
+              )}
             </span>
+            {/* Edit: the mapped supplier is frozen, drawn like the other locked fields. */}
+            {isEdit ? (
+              <input className="stsm-i is-ro" aria-labelledby="stsm-sup-l" readOnly tabIndex={-1}
+                value={sup ? (sup.code ? `${sup.code} · ${sup.name}` : sup.name) : ''} placeholder={pool === null ? 'Loading supplier…' : '—'} />
+            ) : (
             <div className={`stsm-ms${bad('sup') ? ' is-err' : ''}`} aria-labelledby="stsm-sup-l">
               <MasterSelect value={id} options={options} invalid={bad('sup')}
                 placeholder={pool === null ? 'Loading suppliers…' : pool.length ? 'Select Supplier Name' : `No ${intl ? 'International' : 'Domestic'} suppliers in the Supplier Master`}
                 searchable searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code, name'}
                 onChange={c => pickSupplier(c)} />
             </div>
+            )}
             {err('sup', 'stsm-sup-err', 'supplier_id')}
           </div>
           <ReadOnly id="stsm-code" label="Supplier Code" value={sup?.code ?? ''} placeholder="Auto-fills from supplier" />
@@ -280,11 +306,11 @@ export default function SupplierMasterForm({
       </div>
 
       <div className="stsm-ft">
-        <button type="button" className="stsm-btn stsm-btn--ghost" onClick={onBack} disabled={saving}><IcoBack size={12} sw={2.6} />Back</button>
+        {!isEdit && <button type="button" className="stsm-btn stsm-btn--ghost" onClick={onBack} disabled={saving}><IcoBack size={12} sw={2.6} />Back</button>}
         <span className="stsm-ft__sp" />
         <button type="button" className="stsm-btn stsm-btn--ghost" onClick={onCancel} disabled={saving}>Cancel</button>
         <button type="button" className="stsm-btn stsm-btn--primary" onClick={save} disabled={saving} aria-busy={saving || undefined}>
-          {saving ? <><span className="sct-spin" aria-hidden />Saving…</> : <><IcoCheck size={13} sw={2.6} />Save</>}
+          {saving ? <><span className="sct-spin" aria-hidden />{isEdit ? 'Updating…' : 'Saving…'}</> : <><IcoCheck size={13} sw={2.6} />{isEdit ? 'Update' : 'Save'}</>}
         </button>
       </div>
 
