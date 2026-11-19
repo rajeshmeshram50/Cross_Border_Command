@@ -782,9 +782,6 @@
 .svm-page .whm-tbl.svm-table.is-empty tbody td.mv-empty { height: 100%; vertical-align: middle; }
 .svm-page .whm-toggle:disabled { opacity: .5; cursor: not-allowed; box-shadow: inset 0 1px 3px rgba(15, 23, 42, .12); }
 
-/* The list scrolls as one page instead of fitting the screen: the table card is
-   taller than the viewport, the page gets the scrollbar, and scrolling to the end
-   brings the pager and the app footer into view. */
 @media (min-width: 769px) {
   .page-content:has(> .container-fluid > .svm-page) { height: auto; min-height: 100%; }
   .page-content:has(> .container-fluid > .svm-page) > .container-fluid,
