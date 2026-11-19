@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -225,6 +225,28 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
   // Scroll lock, Esc and focus. Esc is held back while saving, while the product picker is open
   // (the picker closes itself on Esc) and once the form has changes.
   usePopup(dialogRef, { onClose, blocked: () => busy.current || picking || dirty });
+
+  /* The open list is pinned to the screen (position: fixed) at the search box, so it opens OVER the
+     popup's footer instead of being cut off inside the scrolling body. Below the box when there is
+     room, else above it; it follows the box when the body scrolls or the window resizes. */
+  const [pickAt, setPickAt] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    if (!picking) { setPickAt(null); return; }
+    const place = () => {
+      const r = pickRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 18;
+      const above = r.top - 18;
+      const up = below < 200 && above > below;
+      const maxHeight = Math.max(120, Math.min(248, up ? above : below));
+      setPickAt({ position: 'fixed', left: r.left, width: r.width, right: 'auto', maxHeight,
+        ...(up ? { top: 'auto', bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6, bottom: 'auto' }) });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [picking]);
 
   // The open picker closes on Esc, on a click outside it, and when focus leaves it (Tab out).
   useEffect(() => {
@@ -511,7 +533,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                         onFocus={() => setPicking(true)} onChange={e => { setQ(e.target.value); setPicking(true); }} />
                       <button type="button" className="sta-btn sta-btn-primary stsrc-pick-add" disabled={!pending.length} onClick={addMasters}><IcoPlus size={13} sw={2.6} /> Add</button>
                       {picking && (
-                        <div className="stsrc-pick-list sct-scroller" role="listbox" aria-multiselectable>
+                        <div className="stsrc-pick-list sct-scroller" role="listbox" aria-multiselectable style={pickAt ?? undefined}>
                           {options.length === 0 ? <div className="stsrc-pick-none">{products.length ? 'No products found' : 'No products in the Product Master'}</div>
                             : options.map(p => {
                               const isAdded = added.has(p.code);
