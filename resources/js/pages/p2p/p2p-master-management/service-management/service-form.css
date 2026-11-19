@@ -1432,3 +1432,5 @@
 /* The app-wide confirm (Activate / Deactivate service) gets the same size, but
    only while Service Management is open: other modules keep theirs. */
 body:has(.svm-page) .cfm-popup .cfm-btn { font-size: 12.5px !important; }
+
+.svf-gst-master { position: relative; }

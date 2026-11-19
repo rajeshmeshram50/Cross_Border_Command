@@ -7,6 +7,7 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import '../product-management/product-management.css';
 import './service-management.css';
 import './service-form.css';
+import { SavingLock } from './serviceLoading';
 
 export interface GstRate { id: string; pct: number; label: string }
 
@@ -38,7 +39,7 @@ export default function ServiceGstModal({
   const [pick, setPick] = useState(value ?? '');
   const [masterOpen, setMasterOpen] = useState(false);
   const [newRate, setNewRate] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<false | 'add' | 'remove'>(false);
 
   useEffect(() => {
     let live = true;
@@ -82,7 +83,7 @@ export default function ServiceGstModal({
       toast.error('Duplicate rate', `${num}% already exists`);
       return;
     }
-    setBusy(true);
+    setBusy('add');
     try {
       const res = await api.post<Row>('/master/gst_percentage', { percentage: num, status: 'Active' });
       const added = toRate(res.data);
@@ -100,7 +101,7 @@ export default function ServiceGstModal({
   };
 
   const removeRate = async (id: string) => {
-    setBusy(true);
+    setBusy('remove');
     try {
       await api.delete(`/master/gst_percentage/${id}`);
       sync(rates.filter(r => r.id !== id));
@@ -166,14 +167,15 @@ export default function ServiceGstModal({
 
       {masterOpen && createPortal((
         <div className="apm-gst-overlay apm-gst-overlay--master svs-teal svf-gst">
-          <div className="apm-gst-modal" role="dialog" aria-modal="true" aria-label="GST (%) Master">
+          <div className="apm-gst-modal svf-gst-master" role="dialog" aria-modal="true" aria-label="GST (%) Master" aria-busy={!!busy}>
+            {busy && <SavingLock label={busy === 'add' ? 'Saving GST rate…' : 'Removing GST rate…'} />}
             <div className="apm-gst-head">
               <div className="apm-gst-head-ico">{ico}</div>
               <div className="apm-gst-head-txt">
                 <div className="apm-gst-title">GST (%) Master</div>
                 <div className="apm-gst-sub">Manage the GST percentage values available across products and services</div>
               </div>
-              <button type="button" className="apm-gst-close" onClick={() => setMasterOpen(false)} aria-label="Back to Map GST">{x}</button>
+              <button type="button" className="apm-gst-close" onClick={() => setMasterOpen(false)} disabled={!!busy} aria-label="Back to Map GST">{x}</button>
             </div>
             <div className="apm-gst-body">
               <div className="apm-gst-bar">
@@ -182,7 +184,7 @@ export default function ServiceGstModal({
                   <input className="apm-input apm-gst-new" type="number" min="0" max="100" step="0.5" placeholder="e.g. 18"
                     value={newRate} onChange={(e) => setNewRate(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') void addRate(); }} />
-                  <button type="button" className="apm-gst-addbtn" disabled={busy} onClick={() => { void addRate(); }}>
+                  <button type="button" className="apm-gst-addbtn" disabled={!!busy} onClick={() => { void addRate(); }}>
                     {plus} Add Rate
                   </button>
                 </div>
@@ -202,7 +204,7 @@ export default function ServiceGstModal({
                           <td className="apm-gst-rate">{r.label}</td>
                           <td>
                             <Tooltip label="Remove rate">
-                              <button type="button" className="apm-sup-del" disabled={busy} onClick={() => { void removeRate(r.id); }}>×</button>
+                              <button type="button" className="apm-sup-del" disabled={!!busy} onClick={() => { void removeRate(r.id); }}>×</button>
                             </Tooltip>
                           </td>
                         </tr>
@@ -213,7 +215,7 @@ export default function ServiceGstModal({
               )}
             </div>
             <div className="apm-gst-foot">
-              <button type="button" className="apm-btn-primary" onClick={() => setMasterOpen(false)}>
+              <button type="button" className="apm-btn-primary" onClick={() => setMasterOpen(false)} disabled={!!busy}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Back to Map GST
               </button>
