@@ -788,3 +788,10 @@
   .svm-page { flex: 0 0 auto; }
   .svm-page .ord-list { flex: 0 0 auto; min-height: calc(100vh - 140px); }
 }
+
+/* Loading rows: every placeholder stays inside its own column, however narrow
+   the column is, instead of spilling over its neighbours. */
+.svm-skrow td { overflow: hidden; }
+.svm-skrow td > div,
+.svm-skrow td > div > div { max-width: 100%; min-width: 0; }
+.svm-skrow .shimmer { max-width: 100%; flex-shrink: 1; min-width: 0; }
