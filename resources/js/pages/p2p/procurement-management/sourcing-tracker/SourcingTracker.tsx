@@ -481,7 +481,7 @@ export default function SourcingTracker() {
           </div>
           <div className="sct-search">
             <IcoSearch size={15} />
-            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, product, person, TAT date or status..."
+            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, person, source or status..."
               aria-label="Search sourcing targets" onChange={e => setQuery(e.target.value)} />
             {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => setQuery('')}><IcoX size={13} sw={2.4} /></button>}
           </div>

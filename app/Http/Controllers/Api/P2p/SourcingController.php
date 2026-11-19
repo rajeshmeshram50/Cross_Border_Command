@@ -181,14 +181,9 @@ class SourcingController extends Controller
         $rows = $rows->map(fn ($t) => $this->row($t) + ['_names' => $t->products->pluck('name')->implode(' ')]);
 
         if ($q = mb_strtolower(trim((string) $request->query('q', '')))) {
-            // CS-2213: the Sourcing TAT is searchable in the format the list shows (18/11/2026) as well
-            // as the stored one (2026-11-18). Only the TAT: a start date matching would list targets
-            // whose TAT is another day.
-            $dates = fn (string $ymd) => $ymd === '' ? '' : $ymd.' '.Carbon::parse($ymd)->format('d/m/Y');
             $rows = $rows->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
                 $r['id'], $r['source'], implode(' ', $r['sources']), $r['createdBy'], $r['assignee'],
                 $r['progressStatus'], $r['overdue'] ? 'overdue' : '', $r['_names'],
-                $dates($r['due']),
             ])), $q));
         }
         if ($status = $request->query('status')) {
