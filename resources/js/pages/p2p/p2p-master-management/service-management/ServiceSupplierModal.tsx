@@ -234,7 +234,11 @@ export function SupplierMapPanel({
   const selVendor = domSel ?? intlSel;
   const editableId = selVendor && /^\d+$/.test(selVendor.id) ? Number(selVendor.id) : null;
 
+  /* The supplier wizard saves each stage as it goes, so a supplier can change
+     even when the wizard is closed with Cancel. Every bucket's cached list is
+     dropped, since an edit (name, type) can move a supplier between buckets. */
   const refreshVendors = (selectName?: string) => {
+    vendorCaches.clear();
     setVendorsLoading(true);
     loadVendors(bucket, true)
       .then(v => {
@@ -612,7 +616,7 @@ export function SupplierMapPanel({
           <AddVendorModal
             scope={addScope}
             canMapProducts={false}
-            onClose={() => setAddScope(null)}
+            onClose={() => { setAddScope(null); refreshVendors(); }}
             onSubmit={(payload) => {
               setAddScope(null);
               refreshVendors(String(payload.companyName ?? '').trim().toLowerCase());
@@ -627,7 +631,7 @@ export function SupplierMapPanel({
             vendorId={editVendorId}
             scope={origin}
             canMapProducts={false}
-            onClose={() => setEditVendorId(null)}
+            onClose={() => { setEditVendorId(null); refreshVendors(); }}
             onSubmit={() => {
               setEditVendorId(null);
               refreshVendors();
