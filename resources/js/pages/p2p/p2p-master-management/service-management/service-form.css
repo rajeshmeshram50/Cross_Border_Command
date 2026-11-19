@@ -1416,3 +1416,8 @@
    option, so a long name can't push the menu past the form's edge. Long options
    truncate and show in full on hover. */
 .master-select-menu.svf-select-menu[style*="min-width"] { width: 0 !important; }
+
+/* The High / Less badge keeps its full width in every option; a long segment
+   name truncates before the badge gives up any space. */
+.svf-select-menu span:has(> .seg-reg-badge) { flex-shrink: 0 !important; max-width: none !important; min-width: max-content !important; overflow: visible !important; }
+.svf-select-menu .seg-reg-badge { flex-shrink: 0 !important; }
