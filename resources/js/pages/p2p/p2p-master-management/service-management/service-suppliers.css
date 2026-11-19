@@ -698,3 +698,10 @@
 
 
 .master-select-menu.svf-select-menu[style*="min-width"] { width: 0 !important; }
+
+.svs-shimtbl tbody td { overflow: hidden; }
+.svs-shim { display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
+.svs-shim--c { align-items: center; }
+.svs-shim--l { align-items: flex-start; }
+.svs-shim--r { align-items: flex-end; }
+.svs-shim .shimmer { max-width: 100%; flex-shrink: 1; }

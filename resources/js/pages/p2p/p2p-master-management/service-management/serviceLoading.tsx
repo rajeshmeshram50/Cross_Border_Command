@@ -63,22 +63,45 @@ export function ShimServiceForm({ sections = [8, 3] }: { sections?: number[] }) 
   );
 }
 
+/* Same table, header and columns as the mapped-suppliers list, so each
+   placeholder sits in the column its value will fill. */
+const SUP_SHIM: Array<{ h: string; a?: 'l' | 'r'; w: number; ht?: number; r?: number; sub?: number }> = [
+  { h: 'Sr. No', w: 26, ht: 26, r: 8 },
+  { h: 'Supplier', a: 'l', w: 150, ht: 12, sub: 54 },
+  { h: 'Supplier Type', a: 'l', w: 84, ht: 22, r: 999 },
+  { h: 'Supplier Origin', w: 92, ht: 22, r: 999 },
+  { h: 'State / Country', a: 'l', w: 90, ht: 11, sub: 60 },
+  { h: 'Contact Person', a: 'l', w: 86, ht: 11 },
+  { h: 'Price', a: 'r', w: 70, ht: 12 },
+  { h: 'GST (%)', w: 46, ht: 22, r: 7 },
+  { h: 'GST Value', a: 'r', w: 62, ht: 11 },
+  { h: 'Total Service Cost', a: 'r', w: 82, ht: 13 },
+  { h: 'Action', w: 30, ht: 30, r: 9 },
+];
+
 export function ShimSupplierRows({ rows = 3 }: { rows?: number }) {
   return (
     <div className="svs-tablewrap" aria-busy="true" aria-label="Loading suppliers">
-      <div style={{ padding: '12px 14px', ...col(14) }}>
-        {Array.from({ length: rows }, (_, r) => (
-          <div key={r} style={{ ...row(14), width: '100%' }}>
-            <Shimmer width={26} height={26} radius={8} />
-            <div style={{ ...col(6), flex: '1 1 auto' }}><Shimmer width={150 + (r % 3) * 30} height={12} /><Shimmer width={60} height={9} /></div>
-            <Shimmer width={84} height={22} radius={999} />
-            <Shimmer width={90} height={11} />
-            <Shimmer width={80} height={11} />
-            <Shimmer width={46} height={22} radius={7} />
-            <Shimmer width={96} height={13} />
-            <Shimmer width={30} height={30} radius={9} />
-          </div>
-        ))}
+      <div className="svs-tablescroll">
+        <table className="svs-table svs-shimtbl">
+          <thead>
+            <tr>{SUP_SHIM.map(c => <th key={c.h} className={c.a ? `is-${c.a}` : undefined}>{c.h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }, (_, r) => (
+              <tr key={r} aria-hidden="true">
+                {SUP_SHIM.map((c, i) => (
+                  <td key={c.h} className={c.a ? `is-${c.a}` : undefined}>
+                    <div className={`svs-shim svs-shim--${c.a ?? 'c'}`}>
+                      <Shimmer width={i === 1 ? c.w - (r % 3) * 24 : c.w} height={c.ht} radius={c.r ?? 6} />
+                      {c.sub && <Shimmer width={c.sub} height={9} />}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
