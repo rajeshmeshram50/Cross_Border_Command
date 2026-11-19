@@ -3,7 +3,7 @@ import { Modal, ModalBody, ModalFooter, Form, Row, Button, Spinner } from 'react
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { getMasterConfig, masterEndpoint, type FieldDef } from './masterConfigs';
-import { MasterFormStyles } from './masterFormKit';
+import { MasterFormStyles, MasterSavingLock } from './masterFormKit';
 import { renderField } from './MasterPage';
 
 /**
@@ -153,7 +153,7 @@ export function MasterRecordModal({
             </Row>
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-            <button type="button" className="master-modal-cancel" onClick={onClose}>
+            <button type="button" className="master-modal-cancel" onClick={onClose} disabled={saving}>
               <i className="ri-close-line align-middle me-1" />Cancel
             </button>
             <Button type="submit" disabled={saving} className="master-modal-save waves-effect waves-light" style={{ fontSize: 14 }}>
@@ -161,6 +161,7 @@ export function MasterRecordModal({
             </Button>
           </ModalFooter>
         </Form>
+        {saving && <MasterSavingLock label={`Saving ${singular.toLowerCase()}…`} />}
       </Modal>
     </>
   );

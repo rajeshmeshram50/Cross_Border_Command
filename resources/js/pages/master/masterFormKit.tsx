@@ -695,4 +695,23 @@ export const MASTER_MODAL_CSS = `
   [data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
     background: rgba(167,139,250,0.45);
   }
+
+  /* Saving overlay: covers the whole form while a save is in flight, so nothing
+     can be edited or submitted twice. */
+  .master-lock { position: absolute; inset: 0; z-index: 20; border-radius: inherit; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.6); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); cursor: progress; }
+  .master-lock__box { display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; letter-spacing: .2px; color: #405189; }
+  .master-lock__spin { width: 40px; height: 40px; border-radius: 50%; border: 3.5px solid rgba(64,81,137,.2); border-top-color: #5562c4; animation: masterLockSpin .7s linear infinite; }
+  @keyframes masterLockSpin { to { transform: rotate(360deg); } }
+  [data-bs-theme="dark"] .master-lock { background: rgba(15,18,32,.62); }
+  [data-bs-theme="dark"] .master-lock__box { color: #c4b5fd; }
+  [data-bs-theme="dark"] .master-lock__spin { border-color: rgba(167,139,250,.22); border-top-color: #a78bfa; }
+  @media (prefers-reduced-motion: reduce) { .master-lock__spin { animation: none; } }
 `;
+
+export function MasterSavingLock({ label }: { label: string }) {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" className="master-lock">
+      <div className="master-lock__box"><span className="master-lock__spin" />{label}</div>
+    </div>
+  );
+}

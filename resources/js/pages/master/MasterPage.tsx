@@ -12,7 +12,7 @@ import { ShimmerStatCards } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import {  getMasterConfig, masterEndpoint, normalizeOpts, type FieldDef, type MasterConfig, shouldShowField } from './masterConfigs';
-import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles, MasterSavingLock } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
 import '../../../css/master.css';
@@ -2029,6 +2029,7 @@ function MasterPageInner({
             </div>
           </ModalFooter>
         </Form>
+        {saving && <MasterSavingLock label={editingId != null ? `Updating ${singular.toLowerCase()}…` : `Saving ${singular.toLowerCase()}…`} />}
       </Modal>
 
       <DeleteConfirmModal
