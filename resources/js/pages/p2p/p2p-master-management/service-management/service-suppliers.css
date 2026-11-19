@@ -696,3 +696,5 @@
 [data-bs-theme="dark"] .svs-pager .tc-wl-info .tc-wl-hl { color: #a5f3fc; }
 [data-bs-theme="dark"] .svs-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .10); border-color: #22d3ee; }
 
+
+.master-select-menu.svf-select-menu[style*="min-width"] { width: 0 !important; }

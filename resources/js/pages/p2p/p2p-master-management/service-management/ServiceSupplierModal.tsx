@@ -474,6 +474,7 @@ export function SupplierMapPanel({
                   <div className="svms-selrow">
                   <div className="svms-select is-key">
                     <MasterSelect
+                      menuClassName="svf-select-menu"
                       value={selCode}
                       options={pickOpts}
                       placeholder="Select Supplier Name"
@@ -537,6 +538,7 @@ export function SupplierMapPanel({
                     <SvmsField label="Currency" required>
                       <div className="svms-select is-key">
                         <MasterSelect
+                          menuClassName="svf-select-menu"
                           value={currency}
                           options={currencies.map(c => ({ value: c.code, label: c.code }))}
                           placeholder="Select currency"
@@ -578,6 +580,7 @@ export function SupplierMapPanel({
                       <SvmsField label="GST %" required>
                         <div className="svms-select is-key">
                           <MasterSelect
+                            menuClassName="svf-select-menu"
                             value={gst}
                             options={gstOpts}
                             placeholder="Select GST %"
