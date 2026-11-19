@@ -469,6 +469,9 @@ export type SpiZohoTracker = {
 export const putId = (code: string | null | undefined): string =>
   !code ? '' : /^B-\d+$/i.test(code) ? `PUT-${code}` : code;
 
+/** The warehouse master, fetched once per session (see spiApi.warehouses). */
+let warehouseCache: Promise<StorageWarehouse[]> | null = null;
+
 export const spiApi = {
   boxes: (spiId: number) =>
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`), (b) => {
@@ -528,8 +531,10 @@ export const spiApi = {
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
 
+  /* The warehouse master, read on every SPI form open and unchanged between
+     them. Cached per session; a warehouse added elsewhere needs a reload. */
   warehouses: () =>
-    call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
+    (warehouseCache ??= call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
       ((b as { data?: Array<{
         id: number; wh_code: string | null; wh_name: string | null; wh_type: string;
         location: string | null; address?: string | null; pincode?: string | null;
@@ -547,7 +552,8 @@ export const spiApi = {
           areaSqft: w.area_sqft != null ? Number(w.area_sqft) : undefined,
           kind: w.wh_type,
           addedOn: w.created_at ?? undefined,
-        }))),
+        })))
+      .catch((e) => { warehouseCache = null; throw e; })),
 
   /** Change the invoice's warehouse; null is a Third Party warehouse. Refused once Stage 03 is complete. */
   setWarehouse: (spiId: number, warehouseId: number | null) =>
@@ -662,7 +668,10 @@ export const spiApi = {
     }),
 
   vendorDetail: (vendorId: number) =>
-    call('Supplier detail', () => api.get(`/vendors/${vendorId}`), (b) => {
+    /* lite: the SPI form reads the supplier's own columns only. Without it
+       the server also builds the compliance payload (uploads, PO/SPI locks,
+       per-segment doc keys) that only the Add/Edit Supplier form reads. */
+    call('Supplier detail', () => api.get(`/vendors/${vendorId}`, { params: { lite: 1 } }), (b) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const v = ((b as { data?: Record<string, any> } | null)?.data ?? {}) as Record<string, any>;
       const a = (v.primary_address ?? {}) as Record<string, any>;

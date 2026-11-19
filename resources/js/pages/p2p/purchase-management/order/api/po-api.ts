@@ -323,7 +323,15 @@ export const poApi = {
 
   piLines: (shipmentId: number, excludePo?: number) =>
     call('PO PI lines', () => api.get(`/p2p/orders/shipments/${shipmentId}/pi-lines`, { params: excludePo ? { exclude_po: excludePo } : {} }),
-      dataOf<{ proforma_invoice_id: number | null; pi_date?: string | null; lines: PiLine[]; held_by?: PiHolder[] }>),
+      dataOf<PiLinesResult>),
+};
+
+/** What pi-lines answers with — named so the SPI prefetch can hold one. */
+export type PiLinesResult = {
+  proforma_invoice_id: number | null;
+  pi_date?: string | null;
+  lines: PiLine[];
+  held_by?: PiHolder[];
 };
 
 export type PiHolder = {
@@ -432,14 +440,41 @@ export const poInspectionApi = {
     call('PO inspection withdraw', () => api.post(`/p2p/orders/${poId}/inspection/withdraw`), dataOf<InspectionSummary>),
 };
 
+/* A read is reused for this long. Short enough that a list added elsewhere
+   shows up without a reload, long enough to cover one create flow. */
+const LOOKUP_TTL_MS = 60_000;
+const lookupCache = new Map<string, { at: number; p: Promise<unknown> }>();
+
+function cachedLookup<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const hit = lookupCache.get(key);
+  if (hit && Date.now() - hit.at < LOOKUP_TTL_MS) return hit.p as Promise<T>;
+  // A failed read is not cached — the next caller retries rather than
+  // inheriting the rejection for the rest of the minute.
+  const p = run().catch((e) => { lookupCache.delete(key); throw e; });
+  lookupCache.set(key, { at: Date.now(), p });
+  return p;
+}
+
 export const poLookupApi = {
+  /* Reference lists, cached for a short window.
+   *
+   * One SPI create asks for the same supplier list twice — the picker and then
+   * Stage 1, seconds apart from two different components, so neither sees the
+   * other's answer. Shipments go the same way across repeat opens. Both are
+   * read-only reference data, so the second asker reuses the first's promise.
+   * forgetLookups() drops them after something is created. */
   shipments: () =>
-    call('PO shipments', () => api.get('/p2p/orders/shipments'), dataOf<ShipmentOption[]>),
+    cachedLookup('shipments', () =>
+      call('PO shipments', () => api.get('/p2p/orders/shipments'), dataOf<ShipmentOption[]>)),
 
   suppliers: (documentType?: 'domestic' | 'international') =>
-    call('PO suppliers', () => api.get('/p2p/orders/suppliers', {
-      params: documentType ? { document_type: documentType } : undefined,
-    }), dataOf<SupplierOption[]>),
+    cachedLookup(`suppliers:${documentType ?? 'all'}`, () =>
+      call('PO suppliers', () => api.get('/p2p/orders/suppliers', {
+        params: documentType ? { document_type: documentType } : undefined,
+      }), dataOf<SupplierOption[]>)),
+
+  /** Call after creating a supplier or shipment so the next read is fresh. */
+  forgetLookups: () => lookupCache.clear(),
 
   supplier: (vendorId: number, refreshCurrencies = false, signal?: AbortSignal) =>
     call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {
@@ -471,25 +506,33 @@ export const poLookupApi = {
 type SpiPrime = {
   vendorId: number;
   poId: number | null;
+  shipmentId: number | null;
   ctrl: AbortController;
   supplier: Promise<SupplierDetail | null>;
   vault: Promise<Record<string, unknown> | null>;
   po: Promise<PoDetail | null> | null;
+  /** The shipment's PI lines — Stage 1 builds its grid from these. */
+  pi: Promise<PiLinesResult | null> | null;
 };
 let spiPrimed: SpiPrime | null = null;
 
 export const spiPrefetch = {
-  prime(vendorId?: number | null, poId?: number | null) {
+  prime(vendorId?: number | null, poId?: number | null, shipmentId?: number | null) {
     if (!vendorId) return;
     const pid = poId ?? null;
-    if (spiPrimed?.vendorId === vendorId && spiPrimed?.poId === pid) return;  // already primed
+    const sid = shipmentId ?? null;
+    // Already primed for this exact selection.
+    if (spiPrimed?.vendorId === vendorId && spiPrimed?.poId === pid && spiPrimed?.shipmentId === sid) return;
     spiPrimed?.ctrl.abort();                         // a different PO/vendor — drop the stale calls
     const ctrl = new AbortController();
     spiPrimed = {
-      vendorId, poId: pid, ctrl,
+      vendorId, poId: pid, shipmentId: sid, ctrl,
       supplier: poLookupApi.supplier(vendorId, false, ctrl.signal).catch(() => null),
       vault:    poLookupApi.supplierVault(vendorId, ctrl.signal).catch(() => null),
       po:       pid ? poApi.show(pid, ctrl.signal).catch(() => null) : null,
+      /* A Direct SPI picks its shipment in the same setup step, so its PI lines
+         are knowable before the form opens — Stage 1 waited for them instead. */
+      pi:       sid ? poApi.piLines(sid).catch(() => null) : null,
     };
   },
   /** By vendor — the Direct SPI flow, which has no PO. */
@@ -498,6 +541,10 @@ export const spiPrefetch = {
       return { supplier: spiPrimed.supplier, vault: spiPrimed.vault };
     }
     return null;
+  },
+  /** The primed PI lines for a shipment, or null when it was not the primed one. */
+  takePi(shipmentId?: number | null) {
+    return shipmentId && spiPrimed?.shipmentId === shipmentId ? spiPrimed.pi : null;
   },
   /** By PO — the With-PO flow, which knows the PO id before the vendor. */
   takePo(poId?: number | null) {

@@ -450,6 +450,15 @@ class VendorController extends Controller
         $user = $request->user();
         $vendor = Vendor::query()->forUser($user)->with(self::SHOW_WITH)->findOrFail($id);
 
+        /* ?lite=1 — the supplier's own facts, without the compliance apparatus.
+           Everything below the row itself exists for the Add/Edit Supplier form:
+           the uploads delegate, the PO/SPI lock sources, a docKeys() call PER
+           SEGMENT, and two more existence checks. The SPI form reads thirteen
+           plain columns off this response and none of that, so it paid for all
+           of it on every reopen. Same opt-out ProductController carries. */
+        $lite = $request->boolean('lite');
+        $segmentUploads = null;
+
         /* Segment-rule reference uploads embedded inline. AddVendorModal
          * previously fired GET /segment-uploads/supplier/{id} as a
          * second round-trip on edit-mode open; on `php artisan serve`
@@ -469,14 +478,22 @@ class VendorController extends Controller
          * vendor with zero uploads returning an empty list) cannot
          * break the whole show response.
          */
-        $segmentUploads = $this->safeDelegate(
-            fn() => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
-        );
+        if (!$lite) {
+            $segmentUploads = $this->safeDelegate(
+                fn() => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
+            );
+        }
 
         // Per-segment lock: the segments whose product appears on an issued
         // Purchase Order. The vendor form keys segments by ID, so resolve the
         // locked NAMES to IDS here so the UI can disable only those chips' ×.
         $data = $this->shape($vendor);
+        if ($lite) {
+            return response()->json([
+                'data'            => $data,
+                'segment_uploads' => ['data' => [], 'by_category' => [], 'count' => 0],
+            ]);
+        }
         /* Segments whose product is actually ON an issued Purchase Order, and
          * separately those on a committed Supplier Invoice. Kept apart so the
          * form can name the ONE document that is holding the segment — telling

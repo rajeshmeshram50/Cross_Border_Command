@@ -209,13 +209,20 @@ export default function InvoiceForm({
     setPoError(null);
     (async () => {
       try {
+        /* The GST approval needs only the invoice id, which we already have, so
+           it goes out ALONGSIDE the detail rather than after it. Started only
+           for a Direct SPI — a PO-backed one is approved on its order — and
+           `input.poId` tells us which this is before the detail arrives. */
+        if (input.spiId && !input.poId) latestSpiApproval(input.spiId);
+
         const existing = input.spiId ? (await spiApi.show(input.spiId)).invoice : null;
         const poId = input.poId ?? existing?.purchase_order_id ?? null;
         if (!live) return;
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
-          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
+          // Already in flight above whenever input.poId was absent.
+          if (!existing.purchase_order_id && input.poId) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
@@ -272,8 +279,11 @@ export default function InvoiceForm({
                 .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
             }
             if (existing.items.length) {
+              /* Primed when the shipment was chosen in the Direct setup, so this
+                 is usually already resolved rather than a cold call here. */
               const pi = existing.shipment_order_id
-                ? await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => [])
+                ? await (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
+                    .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; }).catch(() => [])
                 : [];
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
@@ -305,7 +315,8 @@ export default function InvoiceForm({
               const fromPi = rowsFromPi(pi);
               setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
             } else if (existing.shipment_order_id) {
-              const pi = await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => []);
+              const pi = await (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
+                .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; }).catch(() => []);
               if (!live) return;
               setLines(rowsFromPi(pi));
               setRemovedLines([]);
