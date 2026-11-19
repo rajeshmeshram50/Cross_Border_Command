@@ -514,7 +514,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     const agrSigRows         = signatureRequestsToVaultDocs(signatureRows.filter(r => r.document_type === 'agreement'));
     const sigRows            = tradeSigRows;
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
-    const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'supplier') as unknown as VaultDoc[];
+    const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'supplier', supplier.type) as unknown as VaultDoc[];
     const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
     const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
     const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
