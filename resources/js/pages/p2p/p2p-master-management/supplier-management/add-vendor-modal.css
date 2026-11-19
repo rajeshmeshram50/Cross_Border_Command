@@ -3207,3 +3207,16 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 
 /* Auto-code chips use the Figma mono face (Geist Mono is loaded in welcome.blade.php). */
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-auto-code { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700; padding: 3px 9px; color: #0e7490; background: #f0fbfd; }
+
+/* Dropdown menus (MasterSelect, portalled to <body>) on the Supplier page: teal, not the default
+   violet: the search box focus, the hovered row and the selected row (as the Sourcing Tracker). */
+body:has(.smc-root.sup-list) .master-select-wrap.show .master-select-chev { color: #0891b2; }
+body:has(.smc-root.sup-list) .master-select-search-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(34, 211, 238, .18); }
+body:has(.smc-root.sup-list) .master-select-item:hover,
+body:has(.smc-root.sup-list) .master-select-item:focus { background: rgba(8, 145, 178, .08) !important; }
+body:has(.smc-root.sup-list) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
+[data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-wrap.show .master-select-chev { color: #67e8f9; }
+[data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-search-input:focus { border-color: #22d3ee; }
+[data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item:hover,
+[data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
+[data-bs-theme="dark"] body:has(.smc-root.sup-list) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
