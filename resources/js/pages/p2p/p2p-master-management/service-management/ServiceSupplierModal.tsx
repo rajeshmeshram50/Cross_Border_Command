@@ -56,6 +56,10 @@ export const formatSupplierCode = (raw: string): string => {
   return m ? `S-${m[1].padStart(3, '0')}` : String(raw ?? '');
 };
 
+/* Same caps as the API (SupplierPricing::MAX_PRICE / MAX_RATE). */
+const MAX_PRICE = 9999999999.99;
+const MAX_RATE = 99999.9999;
+
 const money = (n: number) => `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /* Keyed by the service bucket: mapping a Trackable service must not reuse the
@@ -274,8 +278,10 @@ export function SupplierMapPanel({
   const saveDraft = () => {
     const errs: typeof errors = {};
     if (!selCode) errs.supplier = 'This field is required';
-    if (!(priceNum > 0)) errs.price = 'This field is required';
-    if (intl && !(fxNum > 0)) errs.fx = 'This field is required';
+    if (!(priceNum > 0)) errs.price = price.trim() === '' ? 'This field is required' : 'Price must be greater than 0';
+    else if (priceNum > MAX_PRICE) errs.price = 'Price is too large (max 9,99,99,99,999.99)';
+    if (intl && !(fxNum > 0)) errs.fx = fx.trim() === '' ? 'This field is required' : 'Exchange rate must be greater than 0';
+    else if (intl && fxNum > MAX_RATE) errs.fx = 'Exchange rate is too large (max 99,999.9999)';
     setErrors(errs);
     if (Object.keys(errs).length) return;
 
