@@ -209,20 +209,18 @@ export default function InvoiceForm({
     setPoError(null);
     (async () => {
       try {
-        /* The GST approval needs only the invoice id, which we already have, so
-           it goes out ALONGSIDE the detail rather than after it. Started only
-           for a Direct SPI — a PO-backed one is approved on its order — and
-           `input.poId` tells us which this is before the detail arrives. */
-        if (input.spiId && !input.poId) latestSpiApproval(input.spiId);
-
         const existing = input.spiId ? (await spiApi.show(input.spiId)).invoice : null;
         const poId = input.poId ?? existing?.purchase_order_id ?? null;
         if (!live) return;
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
-          // Already in flight above whenever input.poId was absent.
-          if (!existing.purchase_order_id && input.poId) latestSpiApproval(existing.id);
+          /* Waits for the detail on purpose. A PO-backed invoice is approved on
+             its ORDER, and reloadApproval reads it from there — firing this
+             early for one would overwrite that with the invoice's own (empty)
+             approvals. Nothing before the detail says which kind this is: the
+             list's Edit action passes neither poId nor direct. */
+          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });

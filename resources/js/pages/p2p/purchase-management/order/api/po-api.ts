@@ -473,9 +473,6 @@ export const poLookupApi = {
         params: documentType ? { document_type: documentType } : undefined,
       }), dataOf<SupplierOption[]>)),
 
-  /** Call after creating a supplier or shipment so the next read is fresh. */
-  forgetLookups: () => lookupCache.clear(),
-
   supplier: (vendorId: number, refreshCurrencies = false, signal?: AbortSignal) =>
     call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {
       params: refreshCurrencies ? { refresh_currencies: 1 } : undefined,

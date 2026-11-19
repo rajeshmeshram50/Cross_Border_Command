@@ -469,8 +469,12 @@ export type SpiZohoTracker = {
 export const putId = (code: string | null | undefined): string =>
   !code ? '' : /^B-\d+$/i.test(code) ? `PUT-${code}` : code;
 
-/** The warehouse master, fetched once per session (see spiApi.warehouses). */
+/* The warehouse master. Held for a minute rather than the whole session: a
+   warehouse added in another tab should appear without a reload, and the point
+   of this is to cover repeat form opens, not the working day. */
 let warehouseCache: Promise<StorageWarehouse[]> | null = null;
+let warehouseCachedAt = 0;
+const WAREHOUSE_TTL_MS = 60_000;
 
 export const spiApi = {
   boxes: (spiId: number) =>
@@ -533,8 +537,10 @@ export const spiApi = {
 
   /* The warehouse master, read on every SPI form open and unchanged between
      them. Cached per session; a warehouse added elsewhere needs a reload. */
-  warehouses: () =>
-    (warehouseCache ??= call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
+  warehouses: () => {
+    if (warehouseCache && Date.now() - warehouseCachedAt > WAREHOUSE_TTL_MS) warehouseCache = null;
+    warehouseCachedAt = warehouseCache ? warehouseCachedAt : Date.now();
+    return (warehouseCache ??= call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
       ((b as { data?: Array<{
         id: number; wh_code: string | null; wh_name: string | null; wh_type: string;
         location: string | null; address?: string | null; pincode?: string | null;
@@ -553,7 +559,8 @@ export const spiApi = {
           kind: w.wh_type,
           addedOn: w.created_at ?? undefined,
         })))
-      .catch((e) => { warehouseCache = null; throw e; })),
+      .catch((e) => { warehouseCache = null; throw e; }));
+  },
 
   /** Change the invoice's warehouse; null is a Third Party warehouse. Refused once Stage 03 is complete. */
   setWarehouse: (spiId: number, warehouseId: number | null) =>
