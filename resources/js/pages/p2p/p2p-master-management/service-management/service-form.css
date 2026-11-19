@@ -917,6 +917,10 @@
 .svf-modal .svf-step-active .svf-step-num { background: #fff; }
 .svf-drop {
   position: relative;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
   height: 74px;
   display: flex;
   align-items: center;

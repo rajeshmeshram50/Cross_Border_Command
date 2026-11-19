@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -22,6 +22,7 @@ import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import api from '../../../../api';
 import { SavingLock, ShimServiceForm } from './serviceLoading';
 import { Shimmer } from '../../../../components/ui/Shimmer';
+import AttachPicker from '../../procurement-management/sourcing-tracker/AttachPicker';
 import './service-form.css';
 
 export interface ServiceFormInput {
@@ -207,7 +208,7 @@ export default function ServiceFormModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop, .apm-gst-overlay, .clm-modal-bd, .master-modal.show, .svf-imgmodal-backdrop')) return;
+      if (document.querySelector('.apm-mv-backdrop, .supch-ov, .avm-backdrop, .apm-gst-overlay, .clm-modal-bd, .master-modal.show, .svf-imgmodal-backdrop, .cam-layer, .sta-att')) return;
       onClose();
     };
     window.addEventListener('keydown', onKey);
@@ -775,12 +776,13 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
   saved?: ShownImage[]; onRemoveSaved?: (id: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
+  const dropRef = useRef<HTMLButtonElement>(null);
   const fileUrls = useMemo(() => files.map(f => URL.createObjectURL(f)), [files]);
   useEffect(() => () => fileUrls.forEach(u => URL.revokeObjectURL(u)), [fileUrls]);
 
-  const add = (e: ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('image/'));
-    e.target.value = '';
+  const add = (list: File[]) => {
+    const picked = list.filter(f => f.type.startsWith('image/'));
     if (!picked.length) return;
     onChange(multiple ? [...files, ...picked] : [picked[0]]);
   };
@@ -808,14 +810,17 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
 
   return (
     <>
-      <label className={`svf-drop${invalid ? ' is-invalid' : ''}`}>
-        <input type="file" accept="image/png,image/jpeg,image/webp" multiple={multiple} onChange={add} className="svf-drop-input" />
+      <button type="button" ref={dropRef} className={`svf-drop${invalid ? ' is-invalid' : ''}`} aria-haspopup="menu" aria-expanded={pickOpen}
+        onClick={() => setPickOpen(o => !o)}>
         <span className="svf-file-ico">{SVC_ICONS.upload}</span>
         <span className="svf-drop-txt">
           <b>{!multiple && total ? 'Replace primary image' : hint}</b>
           <span>PNG, JPG or WEBP images{multiple && total ? ` · ${total} added` : ''}</span>
         </span>
-      </label>
+      </button>
+      <AttachPicker anchorRef={dropRef} open={pickOpen} onClose={() => setPickOpen(false)} accept="image/png,image/jpeg,image/webp"
+        multiple={multiple} onFiles={add}
+        camera={{ title: `Take ${label.toLowerCase()}`, subject: label, namePrefix: multiple ? 'secondary-image' : 'primary-image' }} />
 
       {total > 0 && (
         <div className="svf-thumbs">
@@ -855,12 +860,8 @@ function FilePick({ value, file, remote, onPick, hint, accept, invalid }: {
 }) {
   const toast = useToast();
   const [fetching, setFetching] = useState<'view' | 'download' | null>(null);
-  const ref = useRef<HTMLInputElement>(null);
-  const change = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) onPick(f);
-    e.target.value = '';
-  };
+  const [pickOpen, setPickOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const withUrl = (action: 'view' | 'download', fn: (url: string) => void) => {
     if (file) {
       const url = URL.createObjectURL(file);
@@ -888,7 +889,7 @@ function FilePick({ value, file, remote, onPick, hint, accept, invalid }: {
 
   return (
     <div className={`svf-file${invalid ? ' is-invalid' : ''}${value ? ' has-file' : ''}`}>
-      <button type="button" className="svf-file-btn" onClick={() => ref.current?.click()}
+      <button type="button" ref={btnRef} className="svf-file-btn" aria-haspopup="menu" aria-expanded={pickOpen} onClick={() => setPickOpen(o => !o)}
         title={value ? 'Click to replace the file' : undefined}>
         <span className="svf-file-ico">{SVC_ICONS.upload}</span>
         <span className="svf-file-txt">
@@ -913,7 +914,8 @@ function FilePick({ value, file, remote, onPick, hint, accept, invalid }: {
           </Tooltip>
         </span>
       )}
-      <input ref={ref} type="file" hidden accept={accept} onChange={change} />
+      <AttachPicker anchorRef={btnRef} open={pickOpen} onClose={() => setPickOpen(false)} accept={accept ?? ''} onFile={f => onPick(f)}
+        camera={{ title: 'Take attachment photo', subject: 'Attachment', namePrefix: 'attachment' }} />
     </div>
   );
 }

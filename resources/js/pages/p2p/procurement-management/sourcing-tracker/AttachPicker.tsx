@@ -24,12 +24,20 @@ type Props = {
   onClose: () => void;
   /** File types for Upload file (the input's accept list). */
   accept: string;
-  onFile: (file: File) => void;
+  onFile?: (file: File) => void;
+  /** Several files at once: Upload file picks many and the camera takes up to 10 shots. */
+  multiple?: boolean;
+  onFiles?: (files: File[]) => void;
   /** Camera dialog texts and the name prefix of a captured photo. */
   camera: { title: string; subject: string; namePrefix: string };
 };
 
-export default function AttachPicker({ anchorRef, open, onClose, accept, onFile, camera }: Props) {
+export default function AttachPicker({ anchorRef, open, onClose, accept, onFile, multiple = false, onFiles, camera }: Props) {
+  const give = (list: File[]) => {
+    if (!list.length) return;
+    if (onFiles) onFiles(multiple ? list : list.slice(0, 1));
+    else onFile?.(list[0]);
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ top: number; left: number; width: number; side: 'below' | 'above' } | null>(null);
@@ -84,8 +92,8 @@ export default function AttachPicker({ anchorRef, open, onClose, accept, onFile,
 
   return (
     <>
-      <input ref={fileRef} type="file" accept={accept} hidden
-        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onFile(f); }} />
+      <input ref={fileRef} type="file" accept={accept} hidden multiple={multiple}
+        onChange={e => { const list = Array.from(e.target.files ?? []); e.target.value = ''; give(list); }} />
       {at && createPortal(
         <div ref={menuRef} className={`sta-att sta-att--${at.side}`} role="menu" aria-label="Add attachment" style={{ top: at.top, left: at.left, width: at.width }}>
           <div className="sta-att__hd">Add attachment</div>
@@ -102,8 +110,8 @@ export default function AttachPicker({ anchorRef, open, onClose, accept, onFile,
       )}
       {camOpen && (
         <Suspense fallback={null}>
-          <CameraCaptureModal title={camera.title} subject={camera.subject} namePrefix={camera.namePrefix} max={1}
-            onAttach={shots => { if (shots[0]) onFile(shots[0]); }}
+          <CameraCaptureModal title={camera.title} subject={camera.subject} namePrefix={camera.namePrefix} max={multiple ? 10 : 1}
+            onAttach={shots => give(shots)}
             onClose={() => { setCamOpen(false); anchorRef.current?.focus(); }} />
         </Suspense>
       )}
