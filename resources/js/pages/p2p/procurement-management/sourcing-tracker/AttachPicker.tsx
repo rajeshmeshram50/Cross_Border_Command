@@ -32,16 +32,19 @@ type Props = {
 export default function AttachPicker({ anchorRef, open, onClose, accept, onFile, camera }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [at, setAt] = useState<{ top: number; left: number; width: number; side: 'below' | 'above' } | null>(null);
   const [camOpen, setCamOpen] = useState(false);
 
-  // Position under the upload area (above it when there is no room below).
+  // Position on the upload area: from its left edge (where its upload icon is), right under it, or
+  // right above it when there is no room below. Its arrow points at the area, so the menu reads as
+  // the area's own, not as a box floating over the fields around it.
   useLayoutEffect(() => {
     const r = open ? anchorRef.current?.getBoundingClientRect() : undefined;
     if (!r) { setAt(null); return; }
-    const below = r.bottom + 6 + MENU_H <= window.innerHeight - 12;
-    const width = Math.min(320, Math.max(268, r.width * .6));
-    setAt({ top: below ? r.bottom + 6 : Math.max(12, r.top - MENU_H - 6), left: r.left + (r.width - width) / 2, width });
+    const below = r.bottom + 8 + MENU_H <= window.innerHeight - 12;
+    const width = Math.min(300, Math.max(260, r.width - 24));
+    const left = Math.min(r.left + 12, window.innerWidth - width - 12);
+    setAt({ top: below ? r.bottom + 8 : Math.max(12, r.top - MENU_H - 8), left, width, side: below ? 'below' : 'above' });
   }, [open, anchorRef]);
 
   // The menu is portalled to <body> (outside the dialog's Tab trap), so it manages keyboard focus
@@ -84,7 +87,7 @@ export default function AttachPicker({ anchorRef, open, onClose, accept, onFile,
       <input ref={fileRef} type="file" accept={accept} hidden
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onFile(f); }} />
       {at && createPortal(
-        <div ref={menuRef} className="sta-att" role="menu" aria-label="Add attachment" style={{ top: at.top, left: at.left, width: at.width }}>
+        <div ref={menuRef} className={`sta-att sta-att--${at.side}`} role="menu" aria-label="Add attachment" style={{ top: at.top, left: at.left, width: at.width }}>
           <div className="sta-att__hd">Add attachment</div>
           <button type="button" className="sta-att__opt" role="menuitem" onClick={() => { onClose(); anchorRef.current?.focus(); fileRef.current?.click(); }}>
             <span className="sta-att__ico"><IcoUpload size={16} /></span>
