@@ -76,7 +76,7 @@ const COLUMNS: Record<ServiceTab, Col[]> = {
     { key: 'kind', header: 'Service Category', width: 116 }, C.hsn,
     { key: 'provider', header: 'Service Provider / Brand', width: 170 },
     { key: 'segment', header: 'Segment', width: 150 }, C.uom,
-    { key: 'condition', header: 'Condition', width: 130 }, { ...C.mapped, header: 'Mapped Suppliers' }, C.action,
+    { key: 'condition', header: 'Condition', width: 130 }, { ...C.mapped, header: 'Mapped Suppliers', width: 130 }, C.action,
   ],
   soft: [
     C.sr, C.code, C.name, C.desc, { key: 'category', header: 'Service Category', width: 170 }, C.hsn,
@@ -518,9 +518,8 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
     }
     case 'mapped': {
       const n = r.suppliersCount ?? r.suppliers.length;
-      const names = r.supplierNames ?? r.suppliers.map(s => s.name);
       return (
-        <Tooltip label={n ? names.join(', ') : 'No suppliers mapped'}>
+        <Tooltip label={`Mapped Suppliers: ${n}`}>
           <button type="button" className={`svm-cnt${n ? '' : ' is-zero'}`} disabled={!r.active} onClick={() => act.map(r)} aria-label={`${n} mapped suppliers`}>
             {n}
           </button>
