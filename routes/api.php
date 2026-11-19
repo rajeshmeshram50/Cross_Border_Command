@@ -398,6 +398,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryIndex']);
     // One row WITH its document body. The list omits `content` (92.9% of that
     // response); the editor asks for the single row it opens.
+    // Agreements applicable to one party — mirrors the trade-doc for-party route.
+    Route::get   ('/clm/agreement-library/for-party/{party}', [ClmAgreementController::class, 'libraryForParty']);
     Route::get   ('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryShow'])->whereNumber('id');
     Route::post  ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryStore']);
     // Live PDF preview for the Stage-2 draft editor. Declared ABOVE the

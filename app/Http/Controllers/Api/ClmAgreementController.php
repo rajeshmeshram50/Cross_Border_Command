@@ -17,6 +17,7 @@ use App\Models\Quotation;
 use App\Models\Product;
 use App\Models\SegmentDocUpload;
 use App\Support\MasterVisibility;
+use App\Support\SupplierPartyToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -211,6 +212,50 @@ class ClmAgreementController extends Controller
                opens from libraryShow() below. */
             $r->makeHidden('content');
         });
+
+        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+    }
+
+    /**
+     * Agreements applicable to one party — the mirror of
+     * ClmTradeDocumentController::libraryForParty, same parameters and fallbacks:
+     *   buyer / customer → "Buyer", consignee → "Consignee",
+     *   supplier         → any "Supplier-*", or only one supplier type's
+     *                       agreements when ?vendor_type_id= / ?vendor_type=
+     *                       names a recognised type.
+     * `content` is hidden: nothing here renders the document.
+     */
+    public function libraryForParty(Request $request, $party)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+
+        $q = ClmAgreementLibrary::query()->orderBy('id', 'desc');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $key = strtolower(trim((string) $party));
+
+        if ($key === 'buyer' || $key === 'customer') {
+            $q->where('party', 'like', '%Buyer%');
+        } elseif ($key === 'consignee') {
+            $q->where('party', 'like', '%Consignee%');
+        } elseif ($key === 'supplier') {
+            $token = SupplierPartyToken::forVendorTypeId(
+                $request->integer('vendor_type_id') ?: null,
+                (int) $user->client_id,
+            ) ?: SupplierPartyToken::forVendorTypeName($request->query('vendor_type'));
+
+            if ($token) {
+                SupplierPartyToken::applyToQuery($q, $token);
+            } else {
+                $q->where('party', 'like', '%Supplier-%');
+            }
+        } else {
+            $q->where('party', 'like', '%' . $party . '%');
+        }
+
+        $rows = $q->get()->each->makeHidden('content');
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
