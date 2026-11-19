@@ -498,7 +498,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
       </td>
 
       <td className="ord-doc ord-doc--grn">
-        {!line.grn ? <span className="ord-dash">—</span> : (
+        {!line.grn ? <span className="ord-dash">N/A</span> : (
         <div className="ord-doc__card">
           <DocTop label="GRN" index={index} count={count} id={line.grn} />
           <div className="ord-doc__meta">
@@ -515,7 +515,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
       </td>
 
       <td className="ord-doc ord-doc--qa">
-        {!line.qa ? <span className="ord-dash">—</span> : (
+        {!line.qa ? <span className="ord-dash">N/A</span> : (
         <div className="ord-doc__card">
           <DocTop label="QA" index={index} count={count} id={line.qa} />
           <div className="ord-doc__meta">
@@ -1077,9 +1077,9 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
               <InvoiceCells line={line} index={lineIndex} count={span} ccy={row.currency} />
             ) : (
               <>
-                <td className="ord-doc ord-doc--spi"><span className="ord-dash">—</span></td>
-                <td className="ord-doc ord-doc--grn"><span className="ord-dash">—</span></td>
-                <td className="ord-doc ord-doc--qa"><span className="ord-dash">—</span></td>
+                <td className="ord-doc ord-doc--spi"><span className="ord-dash">N/A</span></td>
+                <td className="ord-doc ord-doc--grn"><span className="ord-dash">N/A</span></td>
+                <td className="ord-doc ord-doc--qa"><span className="ord-dash">N/A</span></td>
               </>
             )}
 
@@ -1182,7 +1182,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, o
 
       <div className="ord-card__section">
         <span className="ord-card__label">Mapped SPI / GRN / QA ({count})</span>
-        {count === 0 && <span className="ord-dash">—</span>}
+        {count === 0 && <span className="ord-dash">N/A</span>}
         {row.invoices.map((line, i) => (
           <div className="ord-card__invoice" key={line.spi}>
             <DocTop label="SPI" index={i} count={count} id={line.spi} />
