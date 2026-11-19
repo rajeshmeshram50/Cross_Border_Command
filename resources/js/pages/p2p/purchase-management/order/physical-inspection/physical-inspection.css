@@ -549,7 +549,6 @@
 .pins-seg__b:hover {
   color: #0f2a38;
   background: #fff;
-  transform: translateY(-1px);
   box-shadow: 0 4px 10px rgba(8, 80, 110, .12);
 }
 
