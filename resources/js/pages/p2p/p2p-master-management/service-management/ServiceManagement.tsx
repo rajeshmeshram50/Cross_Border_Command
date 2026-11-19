@@ -496,8 +496,12 @@ function renderCell(key: ColKey, r: ServiceRecord, index: number, act: Actions):
       return v.category ? <span className="svm-badge">{v.category}</span> : <span className="ord-dash">—</span>;
     case 'hsn':
       return v.hsn ? <span className="ord-idpill svm-hsn">{v.hsn}</span> : <span className="ord-dash">—</span>;
-    case 'provider':
-      return <span className="svm-strong">{dash(tab === 'material' ? v.make : v.provider)}</span>;
+    case 'provider': {
+      const p = tab === 'material' ? v.make : v.provider;
+      return p && !/^select\b/i.test(p.trim())
+        ? <Tooltip label={p}><span className="svm-strong svm-clamp">{p}</span></Tooltip>
+        : <span className="svm-strong">{dash(p)}</span>;
+    }
     case 'segment':
       return tab === 'material'
         ? (v.segment ? <span className="svm-badge">{v.segment}</span> : <span className="ord-dash">—</span>)

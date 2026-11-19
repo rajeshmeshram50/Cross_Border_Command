@@ -67,6 +67,7 @@
 }
 
 .svm-strong { font-weight: 800; color: #0f3a4d; }
+.svm-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; overflow-wrap: anywhere; }
 .svm-plain { font-weight: 600; color: #335566; }
 
 .svm-badge {
