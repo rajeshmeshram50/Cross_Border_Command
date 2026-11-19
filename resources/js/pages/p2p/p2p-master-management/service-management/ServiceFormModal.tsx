@@ -44,6 +44,8 @@ const DESC_MAX = 10000;
 const NOTE_MAX = 2000;
 const NAME_MAX = 150;
 const BRAND_MAX = 255;
+/* A real name has at least one letter (any script): "@", "%", "2" or "@#!" are rejected. */
+const HAS_LETTER = /\p{L}/u;
 /* Same caps as the API: images 2 MB each and at most 10 secondary per save,
    attachment 10 MB of the listed types. */
 const IMG_MAX_MB = 2;
@@ -283,6 +285,8 @@ export default function ServiceFormModal({
     });
     const brandKey = kind === 'trackable' || kind === 'consumable' ? 'make' : 'provider';
     if (!next.name && vals.name.trim().length > NAME_MAX) next.name = `Service name must be at most ${NAME_MAX} characters`;
+    if (!next.name && !HAS_LETTER.test(vals.name)) next.name = 'Service name must contain letters, not only numbers or special characters';
+    else if (!next.name && vals.name.trim().length < 2) next.name = 'Service name must be at least 2 characters';
     if (!next[brandKey] && (vals[brandKey] ?? '').trim().length > BRAND_MAX) next[brandKey] = `Must be at most ${BRAND_MAX} characters`;
     if (REQUIRED[kind].includes('haz') && vals.haz === 'Hazardous' && !vals.hazClass) {
       next.hazClass = 'Haz Class is required when Hazardous';
