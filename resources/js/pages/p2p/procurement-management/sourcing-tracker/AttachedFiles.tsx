@@ -5,8 +5,7 @@ import { Svg } from './icons';
 import './attached-files.css';
 
 /* The files attached in an upload field (Product Clarity document, New Supplier business card):
-   one row each with its icon, name, View (opens it in a new tab) and Remove. A file picked in
-   this session (not saved yet) carries a NEW badge. */
+   one row each with its icon, name, View (opens it in a new tab) and Remove. */
 
 type AttachedItem = {
   key: string;
@@ -31,7 +30,6 @@ export default function AttachedFiles({ items, onRemove, disabled }: {
             <Svg size={15} sw={2.1}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></Svg>
           </span>
           <Tooltip label={it.name}><span className="stfile__name">{it.name}</span></Tooltip>
-          {typeof it.src !== 'string' && <span className="stfile__new">New</span>}
           <Tooltip label="View document">
             <button type="button" className="stfile__btn" aria-label={`View ${it.name}`} onClick={() => view(it.src)}>
               <Svg size={14} sw={2.2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></Svg>

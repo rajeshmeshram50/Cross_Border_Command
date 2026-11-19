@@ -59,7 +59,19 @@ type EditLoad = {
 const plainPrice = (v: unknown) => String(v ?? '').replace(/,/g, '');
 const toClarity = (c?: ApiClarity): Clarity | undefined => (c && c.val ? { type: c.type, value: c.val } : undefined);
 
-const IcoCheckBox = ({ size = 14 }: { size?: number }) => <Svg size={size} stroke="#fff"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Svg>;
+/** Product names longer than this are cut with "…"; the full name shows in the tooltip. */
+const NAME_MAX = 30;
+/** A product name, cut to NAME_MAX characters with its full text in a tooltip (no tooltip when it fits). */
+function ProductName({ name, className }: { name: string; className?: string }) {
+  if (name.length <= NAME_MAX) return <span className={className}>{name}</span>;
+  return (
+    <Tooltip label={name}>
+      <span className={className}>{name.slice(0, NAME_MAX).trimEnd()}…</span>
+    </Tooltip>
+  );
+}
+
+const IcoCheckBox =({ size = 14 }: { size?: number }) => <Svg size={size} stroke="#fff"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Svg>;
 const IcoLock = ({ size = 12 }: { size?: number }) => <Svg size={size} sw={2.5}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Svg>;
 /** A saved clarity's chip, by type: the note (hover shows it), the link (opens it) or the document
     (opens it in a new tab — a picked file straight away, a stored one through the API). */
@@ -224,7 +236,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
 
   // Scroll lock, Esc and focus. Esc is held back while saving, while the product picker is open
   // (the picker closes itself on Esc) and once the form has changes.
-  usePopup(dialogRef, { onClose, blocked: () => busy.current || picking || dirty });
+  usePopup(dialogRef, { onClose, blocked: () => busy.current || picking || moreOpenRef.current || dirty });
 
   /* The open list is pinned to the screen (position: fixed) at the search box, so it opens OVER the
      popup's footer instead of being cut off inside the scrolling body. Below the box when there is
@@ -265,6 +277,55 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
     };
   }, [picking]);
 
+  /* Chosen products: the "+N" list. Pinned to the screen at its button (like the picker), so the
+     scrolling body never cuts it off; it closes on Esc, a click outside, or when one product is left. */
+  const nameOf = (code: string) => products.find(p => p.code === code)?.name ?? code;
+  const unpick = (code: string) => setPending(p => p.filter(x => x !== code));
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const morePopRef = useRef<HTMLDivElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreAt, setMoreAt] = useState<CSSProperties | null>(null);
+  // Read by the popup's Esc guard above: Esc closes this list first, not the whole form.
+  const moreOpenRef = useRef(false);
+  moreOpenRef.current = moreOpen;
+  useEffect(() => { if (pending.length < 2) setMoreOpen(false); }, [pending.length]);
+  useLayoutEffect(() => {
+    if (!moreOpen) { setMoreAt(null); return; }
+    /* Follows the button every frame while open: the chips row can still move after opening
+       (the picker list closing, the body settling), and a scroll / resize alone missed that. */
+    let raf = 0;
+    let last = '';
+    const place = () => {
+      const r = moreRef.current?.getBoundingClientRect();
+      if (r) {
+        const w = 300;
+        const left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - w - 12)));
+        const below = window.innerHeight - r.bottom - 16;
+        const up = below < 180 && r.top > below;
+        const y = Math.round(up ? window.innerHeight - r.top + 6 : r.bottom + 6);
+        const key = `${left}|${y}|${up}`;
+        if (key !== last) {
+          last = key;
+          setMoreAt({ position: 'fixed', left, width: w, ...(up ? { bottom: y } : { top: y }) });
+        }
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return () => cancelAnimationFrame(raf);
+  }, [moreOpen]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!morePopRef.current?.contains(t) && !moreRef.current?.contains(t)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [moreOpen]);
+
   const added = useMemo(() => new Set(list.filter(p => p.source === 'Product Master').map(p => p.code)), [list]);
   const options = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -272,7 +333,8 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
   }, [q, products]);
 
   const locked = saving || viewOnly || loadingEdit;
-  const switchSource = (s: SourceType) => { if (isEdit) return; setSource(s); setListTab(s); setPicking(false); };
+  // Edit can switch the source too: each product keeps its own source (`from`), so the list may hold both.
+  const switchSource = (s: SourceType) => { if (s === source || locked) return; setSource(s); setListTab(s); setPicking(false); };
 
   const addMasters = () => {
     const rows = products.filter(p => pending.includes(p.code) && !added.has(p.code)).map<DraftProduct>(p => ({
@@ -321,6 +383,21 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
     return out;
   };
 
+  /** Assign / Update with something missing: bring the FIRST missing field (top to bottom) into
+      view and put the cursor in it, so the user does not have to hunt for the red text. Runs on
+      the next frame, once the error marks (and a list-tab switch) have rendered. */
+  const goToFirstError = () => {
+    const dialog = dialogRef.current;
+    const mark = dialog?.querySelector<HTMLElement>('.sta-tat-hint.is-err, .sta-empty.has-err, .sta-pl-price.has-err');
+    if (!mark) return;
+    const field = mark.matches('.sta-tat-hint') ? (mark.closest<HTMLElement>('.sta-field') ?? mark) : mark;
+    field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const control = mark.matches('input')
+      ? mark
+      : field.querySelector<HTMLElement>('input:not([disabled]):not([readonly]), button:not([disabled]), [tabindex="0"]');
+    control?.focus({ preventScroll: true });
+  };
+
   const submit = () => {
     setTried(true);
     if (viewOnly || loadingEdit) return;
@@ -328,6 +405,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
       // A product price that is missing may be on the other list tab: switch to it.
       const bad = list.find(r => !(Number(r.targetPrice) > 0) || (r.source === 'Manual Entry' && !r.name.trim()));
       if (!errDue && !errAssignee && bad && bad.source !== listTab) setListTab(bad.source);
+      if (!valid) requestAnimationFrame(goToFirstError);
       return;
     }
     void run(async () => {
@@ -495,15 +573,15 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
             </div>
             <div className="sta-srccard-body">
               <div className={`sta-field${viewOnly ? '' : ' sta-field--gap'}`}>
-                <div className="sta-lab">I want to source from <span className="sta-req">*</span>{isEdit && <span className="sta-locked"><IcoLock size={10} /> Locked</span>}</div>
+                <div className="sta-lab">I want to source from <span className="sta-req">*</span></div>
                 {loadingEdit ? (
                   // Edit: shimmer until the target's source is known, so no option shows selected and then switches.
                   <div className="sta-radios" aria-hidden><Shimmer height={58} radius={12} /><Shimmer height={58} radius={12} /></div>
                 ) : <div className="sta-radios" role="radiogroup">
-                  <button type="button" role="radio" aria-checked={source === 'Product Master'} className={`sta-radio${source === 'Product Master' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} aria-disabled={isEdit || undefined} onClick={() => switchSource('Product Master')}>
+                  <button type="button" role="radio" aria-checked={source === 'Product Master'} className={`sta-radio${source === 'Product Master' ? ' is-sel' : ''}`} onClick={() => switchSource('Product Master')}>
                     <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span>
                   </button>
-                  <button type="button" role="radio" aria-checked={source === 'Manual Entry'} className={`sta-radio${source === 'Manual Entry' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} aria-disabled={isEdit || undefined} onClick={() => switchSource('Manual Entry')}>
+                  <button type="button" role="radio" aria-checked={source === 'Manual Entry'} className={`sta-radio${source === 'Manual Entry' ? ' is-sel' : ''}`} onClick={() => switchSource('Manual Entry')}>
                     <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span>
                   </button>
                 </div>}
@@ -519,14 +597,33 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                   <div className="sta-lab">Select Products <span className="sta-hint">(choose one or more, then click Add)</span></div>
                   <div className="stsrc-picker">
                     <div className="stsrc-pick-chips">
+                      {/* One chip, then "+N": the rest open in a list (as the Segments "+1" on the Supplier list). */}
                       {pending.length === 0
                         ? <span className="stsrc-pick-ph">No products chosen yet</span>
-                        : pending.map(c => (
-                          <span key={c} className="stsrc-pick-chip">{products.find(p => p.code === c)?.name}
-                            <button type="button" aria-label="Remove" onClick={() => setPending(p => p.filter(x => x !== c))}><IcoX size={10} sw={3} /></button>
+                        : <>
+                          <span className="stsrc-pick-chip"><ProductName className="stsrc-pick-chip-txt" name={nameOf(pending[0])} />
+                            <button type="button" aria-label="Remove" onClick={() => unpick(pending[0])}><IcoX size={10} sw={3} /></button>
                           </span>
-                        ))}
+                          {pending.length > 1 && (
+                            <button type="button" ref={moreRef} className={`stsrc-pick-more${moreOpen ? ' is-open' : ''}`} aria-haspopup="dialog" aria-expanded={moreOpen}
+                              aria-label={`View ${pending.length - 1} more selected products`} onClick={() => setMoreOpen(o => !o)}>+{pending.length - 1}</button>
+                          )}
+                        </>}
                     </div>
+                    {moreOpen && pending.length > 1 && (
+                      <div ref={morePopRef} className="stsrc-more-pop" role="dialog" aria-label="Selected products" style={moreAt ?? { visibility: 'hidden' }}>
+                        <div className="stsrc-more-title">Selected products ({pending.length})</div>
+                        <div className="stsrc-more-list sct-scroller">
+                          {pending.map((c, i) => (
+                            <div key={c} className={`stsrc-more-row${i % 2 ? ' alt' : ''}`}>
+                              {/* Code and name in ONE pill: "P-003  Premium Travel Backpack". */}
+                              <span className="stsrc-more-name"><b className="stsrc-more-code">{c}</b><ProductName name={nameOf(c)} /></span>
+                              <button type="button" aria-label={`Remove ${nameOf(c)}`} onClick={() => unpick(c)}><IcoX size={10} sw={3} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="stsrc-pick-search" ref={pickRef}>
                       <IcoSearch size={13} />
                       <input type="text" placeholder="Search products..." value={q}
@@ -543,7 +640,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                                   className={`stsrc-pick-opt${on ? ' is-on' : ''}${isAdded ? ' is-added' : ''}`}
                                   onClick={() => { if (!isAdded) setPending(s => (on ? s.filter(x => x !== p.code) : [...s, p.code])); }}>
                                   <span className="stsrc-pick-check">{(on || isAdded) && <IcoCheck size={11} sw={3} />}</span>
-                                  <span className="stsrc-pick-txt"><b>{p.code}</b> — {p.name}{isAdded && <i> (added)</i>}</span>
+                                  <span className="stsrc-pick-txt"><b>{p.code}</b> — <ProductName name={p.name} />{isAdded && <i> (added)</i>}</span>
                                 </button>
                               );
                             })}
@@ -578,8 +675,8 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
               <span className="sta-srccard-ico sta-srccard-ico--teal"><Svg size={16} stroke="#fff"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></Svg></span>
               <div className="sta-srccard-htxt"><b>Product List</b><small>Mapped products for this sourcing</small></div>
               <div className="stsrc-listtabs" role="tablist" aria-label="Product list">
-                <button type="button" role="tab" aria-selected={!loadingEdit && isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="stsrc-ltab-c">{loadingEdit ? '·' : masters.length}</span></button>
-                <button type="button" role="tab" aria-selected={!loadingEdit && !isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && !isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="stsrc-ltab-c">{loadingEdit ? '·' : manuals.length}</span></button>
+                <button type="button" role="tab" aria-selected={!loadingEdit && isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="stsrc-ltab-c">{loadingEdit ? 0 : masters.length}</span></button>
+                <button type="button" role="tab" aria-selected={!loadingEdit && !isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && !isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="stsrc-ltab-c">{loadingEdit ? 0 : manuals.length}</span></button>
               </div>
             </div>
             <div className="sta-srccard-body sta-srccard-body--list">
@@ -609,7 +706,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                           <span><input type="text" maxLength={255} aria-label={`Product name for ${r.name || 'manual product'}`}
                             className={`sta-pl-price sta-pl-name${tried && !r.name.trim() ? ' has-err' : ''}`} placeholder="Product name"
                             value={r.name} onChange={e => patch(r.key, { name: e.target.value })} /></span>
-                        ) : <span className="stsrc-name">{r.name}</span>}
+                        ) : <ProductName className="stsrc-name" name={r.name} />}
                         {isM && <><span><ClipText text={r.segment} /></span><span className="stsrc-hsn">{r.hsn}</span></>}
                         <span><input type="text" inputMode="decimal" aria-label={`Target price for ${r.name}`} className={`sta-pl-price${tried && !(Number(r.targetPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
                           value={r.targetPrice} readOnly={viewOnly} onChange={e => patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') })} /></span>

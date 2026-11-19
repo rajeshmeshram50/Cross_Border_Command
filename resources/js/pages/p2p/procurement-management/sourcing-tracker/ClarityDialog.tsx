@@ -114,7 +114,11 @@ export default function ClarityDialog({ product, initial, onCancel, onSave }: {
           )}
           {type === 'link' && (
             <input type="url" className={`sta-inp${err ? ' has-err' : ''}`} autoFocus placeholder="https://..." value={link}
-              onChange={e => { setLink(e.target.value); setErr(''); }} onKeyDown={e => { if (e.key === 'Enter') save(); }} />
+              onChange={e => { setLink(e.target.value); setErr(''); }} onKeyDown={e => {
+                // Enter does nothing: only the Save Clarity button saves. (Saving on Enter closed the
+                // dialog and the same key press reached the Clarity button behind it: a blink.)
+                if (e.key === 'Enter') e.preventDefault();
+              }} />
           )}
           {type === 'pdf' && (
             <>
