@@ -6537,6 +6537,8 @@ function BankAddPopup(props: {
   };
   return (
     <PopupShell title={isEdit ? 'Edit Bank Details' : 'Add Bank Details'} icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
+      {/* Figma wraps the popup fields in one section card (as the Add Contact Person popup). */}
+      <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-bank-card-line" />} title="Bank Details" subtitle="Fields marked * are required">
       <div className="avm-grid-4">
         <Field label="Bank Name" required error={errors.bankName}>
           <input
@@ -6608,6 +6610,7 @@ function BankAddPopup(props: {
           />
         </Field>
       </div>
+      </SectionCard>
     </PopupShell>
   );
 }
@@ -6646,6 +6649,8 @@ function GstScrutinyAddPopup(props: {
   };
   return (
     <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
+      {/* Figma wraps the popup fields in one section card (as the Add Contact Person popup). */}
+      <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-file-search-line" />} title="GST Scrutiny Details" subtitle="Fields marked * are required">
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
           {/* Read-only — the supplier's GST number is captured once on Stage 1
@@ -6695,6 +6700,7 @@ function GstScrutinyAddPopup(props: {
           />
         </Field>
       </div>
+      </SectionCard>
     </PopupShell>
   );
 }
