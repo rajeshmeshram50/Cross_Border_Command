@@ -5584,6 +5584,8 @@ const svcApiError = (e: unknown, fallback: string) => {
 
 export function MappedServicesPopup(props: {
   vendorId: number;
+  /** Only the first-paint guess. The real service type and origin come from the server
+      (GET service-mappings meta, worked out from the supplier's id), not from names here. */
   bucket: ServiceBucket;
   /** International supplier: price in its own currency with an exchange rate, no GST. */
   international: boolean;
@@ -5593,7 +5595,15 @@ export function MappedServicesPopup(props: {
 }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const { vendorId, bucket, international } = props;
+  const { vendorId } = props;
+  /* What the SERVER says this supplier is (meta of GET /vendors/{id}/service-mappings): the
+     service type / classification it may serve and Domestic vs International. Until it arrives
+     the props' guess fills the labels; every API call below uses the server's values. */
+  const [serverKind, setServerKind] = useState<{ bucket: ServiceBucket | null; international: boolean } | null>(null);
+  const bucket: ServiceBucket = serverKind?.bucket ?? props.bucket;
+  const international = serverKind ? serverKind.international : props.international;
+  /** The server says this supplier's type serves no service at all. */
+  const servesNone = serverKind !== null && serverKind.bucket === null;
   const [services, setServices] = useState<ServiceListRow[] | null>(null);
   /** Mapping being edited (its mapId), or null while the form adds one. */
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -5617,13 +5627,25 @@ export function MappedServicesPopup(props: {
       Service Name dropdown and each row's HSN / SAC. Only ACTIVE mappings are listed. */
   const load = useCallback(async () => {
     try {
-      const [svcRes, mapRes] = await Promise.all([
-        api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
-          params: { service_type: bucket.serviceType, ...(bucket.classification ? { classification: bucket.classification } : {}), per_page: 200, sort: 'name' },
-        }),
-        api.get<{ data?: ServiceMappingApiRow[] }>(`/vendors/${vendorId}/service-mappings`),
-      ]);
-      const list = svcRes.data?.data ?? [];
+      // 1. The supplier's mappings + what it is (meta), by its id.
+      const mapRes = await api.get<{
+        data?: ServiceMappingApiRow[];
+        meta?: { supplier_service_type?: ServiceBucket['serviceType'] | null; supplier_classification?: string | null; origin?: string | null };
+      }>(`/vendors/${vendorId}/service-mappings`);
+      const meta = mapRes.data?.meta;
+      const kind = {
+        bucket: meta?.supplier_service_type
+          ? { serviceType: meta.supplier_service_type, classification: meta.supplier_classification ?? null }
+          : null,
+        international: meta?.origin === 'international',
+      };
+      setServerKind(kind);
+      // 2. The services of THAT type only (none when the supplier's type serves no service).
+      const list = kind.bucket
+        ? ((await api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
+            params: { service_type: kind.bucket.serviceType, ...(kind.bucket.classification ? { classification: kind.bucket.classification } : {}), per_page: 200, sort: 'name' },
+          })).data?.data ?? [])
+        : [];
       const byId = new Map(list.map(s => [Number(s.id), s]));
       const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       setServices(list);
@@ -5649,7 +5671,7 @@ export function MappedServicesPopup(props: {
       setRows([]);
       toast.error('Load failed', 'Could not load the services for this supplier.');
     }
-  }, [bucket.serviceType, bucket.classification, vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
 
   // Currencies (and their default ₹ rate) for an international supplier.
@@ -5801,7 +5823,8 @@ export function MappedServicesPopup(props: {
         <div className="avm-mapped-toolbar">
           <MappedProductsSearch value={search} onChange={setSearch}
             placeholder="Search service, code, category, HSN/SAC…" label="Search mapped services" />
-          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null}>
+          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
+            title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
             <i className="ri-add-line" /> Map Service
           </button>
         </div>
@@ -5809,7 +5832,9 @@ export function MappedServicesPopup(props: {
           <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={8} />
         ) : rows.length === 0 ? (
           <div className="avm-empty avm-empty-accent">
-            {failed ? 'Could not load the services. Close and open this popup to try again.' : 'No services mapped yet. Click “Map Service” to begin.'}
+            {failed ? 'Could not load the services. Close and open this popup to try again.'
+              : servesNone ? 'This supplier’s type does not supply services, so no service can be mapped.'
+              : 'No services mapped yet. Click “Map Service” to begin.'}
           </div>
         ) : filtered.length === 0 ? (
           <div className="avm-empty avm-empty-accent">No mapped services match "{search.trim()}".</div>
