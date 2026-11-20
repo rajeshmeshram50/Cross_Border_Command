@@ -4471,8 +4471,10 @@ function FileChooser(props: {
   readOnly?: boolean;
   imagesPdfOnly?: boolean;
   noDelete?: boolean;
+  /** Replace opens this (e.g. the Upload file / Take photo menu) instead of the browser's file dialog. */
+  onReplace?: () => void;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete, onReplace } = props;
   const toast = useToast();
 
   const ACCEPT   = imagesPdfOnly ? IMG_PDF_ACCEPT   : FILE_ACCEPT;
@@ -4565,7 +4567,20 @@ function FileChooser(props: {
         {/* View (eye) removed — the filename above is itself a link that opens
             the attachment. Replace swaps the file in place (re-upload without
             deleting first); Delete clears it. Both hidden when read-only. */}
-        {!readOnly && (
+        {!readOnly && onReplace && (
+          <Tooltip label="Replace file">
+            <button
+              type="button"
+              className="avm-fc-action avm-fc-replace"
+              aria-label="Replace file"
+              aria-haspopup="menu"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onReplace(); }}
+            >
+              <i className="ri-refresh-line" />
+            </button>
+          </Tooltip>
+        )}
+        {!readOnly && !onReplace && (
           <Tooltip label="Replace file">
             <label
               className="avm-fc-action avm-fc-replace"
@@ -4849,6 +4864,7 @@ export function SegmentRefUploadPopup(props: {
   // Upload: the tile opens the "Add attachment" menu; a file from either option gets the same
   // checks as the file chooser (no unsafe types, JPG / PNG / WEBP / PDF only, 2 MB at most).
   const tileRef = useRef<HTMLButtonElement>(null);
+  const docRef = useRef<HTMLDivElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
   const closeAttach = useCallback(() => setAttachOpen(false), []);
   const pickFile = (f: File) => {
@@ -4921,15 +4937,19 @@ export function SegmentRefUploadPopup(props: {
       <div className="avm-grid-1">
         <Field label="Upload Document" required>
           {hasDoc ? (
-            <FileChooser
-              file={file}
-              existingUrl={existing && !existing.file ? existing.url : undefined}
-              existingName={existing && !existing.file ? existing.name : undefined}
-              onPick={f => setFile(f)}
-              placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
-              imagesPdfOnly
-              noDelete
-            />
+            /* Replace opens the same Upload file / Take photo menu as the empty box, under the field. */
+            <div ref={docRef}>
+              <FileChooser
+                file={file}
+                existingUrl={existing && !existing.file ? existing.url : undefined}
+                existingName={existing && !existing.file ? existing.name : undefined}
+                onPick={f => setFile(f)}
+                placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
+                imagesPdfOnly
+                noDelete
+                onReplace={() => setAttachOpen(true)}
+              />
+            </div>
           ) : (
             <button type="button" ref={tileRef} className="avm-doc-upload" onClick={() => setAttachOpen(true)}
               aria-haspopup="menu" aria-expanded={attachOpen}>
@@ -4937,7 +4957,7 @@ export function SegmentRefUploadPopup(props: {
               <span className="avm-doc-upload-txt"><b>Click to upload</b><small>JPG, PNG, WEBP or PDF · max 2 MB</small></span>
             </button>
           )}
-          <AttachPicker anchorRef={tileRef} open={attachOpen} onClose={closeAttach} accept={IMG_PDF_ACCEPT} onFile={pickFile}
+          <AttachPicker anchorRef={hasDoc ? docRef : tileRef} open={attachOpen} onClose={closeAttach} accept={IMG_PDF_ACCEPT} onFile={pickFile}
             camera={{ title: `Take a photo of the ${row.name}`, subject: row.name, namePrefix: row.code.toLowerCase() || 'document' }} />
         </Field>
       </div>

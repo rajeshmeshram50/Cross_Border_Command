@@ -1134,6 +1134,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-kind__ico { color: #6b86a0; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); }
 [data-bs-theme="dark"] .sup-list .sup-kind__c { color: #94a8bb; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .12); }
 [data-bs-theme="dark"] .sup-list .sup-kind.is-on .sup-kind__c { color: #67e8f9; background: rgba(34, 211, 238, .14); border-color: rgba(34, 211, 238, .4); }
+/* Hover in dark: the light theme's pale tile (#e6f9fd) and dark-teal text read as a white block
+   on the dark bar — a translucent teal tile and bright teal text instead. */
+[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #67e8f9; }
+[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #67e8f9; background: rgba(34, 211, 238, .14); }
+[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__c { color: #a5f3fc; border-color: rgba(34, 211, 238, .3); }
 
 /* Supplier Type pills: the design's dot, colours and 10px corners (Material teal, FFD violet,
    Services amber); the type size of a badge (10.5 / 800). */
@@ -1414,3 +1419,13 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 .sup-fig .sup-table-wrap .table tbody td:nth-child(6) > * { width: min(140px, 100%); }
 .sup-fig .sup-table-wrap .table tbody td:nth-child(7) > * { width: min(190px, 100%); }
 .sup-fig .sup-table-wrap .table tbody td:is(:nth-child(5), :nth-child(6), :nth-child(7)) > * { text-align: left; }
+
+/* Apply Filters while the filtered list loads: a white spinner in place of the tick. */
+.supfm-spin {
+  width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff;
+  animation: supfm-spin .7s linear infinite;
+}
+@keyframes supfm-spin { to { transform: rotate(360deg); } }
+.supfm-apply:disabled { cursor: progress; filter: none; opacity: .92; }
+.supfm-cancel:disabled { opacity: .55; cursor: not-allowed; }

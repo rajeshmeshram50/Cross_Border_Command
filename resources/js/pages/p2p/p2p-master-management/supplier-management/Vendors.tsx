@@ -272,8 +272,8 @@ function RefineSuppliers(props: {
   scopeLabel: string;
   /** The filters the LIST uses now (applied). */
   applied: { cat: string[]; comp: string[] };
-  /** Apply Filters: hand the draft to the list. */
-  onApply: (cat: string[], comp: string[]) => void;
+  /** Apply Filters: hand the draft to the list. Resolves once the filtered list has loaded. */
+  onApply: (cat: string[], comp: string[]) => Promise<void> | void;
   /** How many suppliers a draft would return (count only; the list is not touched). */
   countFor: (cat: string[], comp: string[]) => Promise<number>;
 }) {
@@ -308,8 +308,16 @@ function RefineSuppliers(props: {
   const shownN = same ? props.shown : matchN;
 
   // Cancel / × / Esc / backdrop: close and drop the draft (the list never changed).
-  const cancel = useCallback(() => { onOpenChange(false); }, [onOpenChange]);
-  const apply = () => { onApply(catSel, compSel); onOpenChange(false); };
+  /* Apply Filters shows a loader until the filtered list has loaded, then closes (it used to close
+     at once while the list reloaded unseen behind it). Cancel / × / Esc wait while it applies. */
+  const [applying, setApplying] = useState(false);
+  const cancel = useCallback(() => { if (!applying) onOpenChange(false); }, [onOpenChange, applying]);
+  const apply = async () => {
+    if (applying) return;
+    setApplying(true);
+    try { await onApply(catSel, compSel); }
+    finally { setApplying(false); onOpenChange(false); }
+  };
 
   // Esc cancels; the page behind stays still (html too: a body-only lock still lets it scroll).
   useEffect(() => {
@@ -408,8 +416,12 @@ function RefineSuppliers(props: {
               </button>
               <span className="supfm-res"><b>{shownN ?? '…'}</b> of {grand} suppliers match</span>
               <span className="supfm-sp" />
-              <button type="button" className="supfm-cancel" onClick={cancel}>Cancel</button>
-              <button type="button" className="supfm-apply" onClick={apply}><IcoTick />Apply Filters{draftCount > 0 ? ` (${draftCount})` : ''}</button>
+              <button type="button" className="supfm-cancel" onClick={cancel} disabled={applying}>Cancel</button>
+              <button type="button" className="supfm-apply" onClick={() => { void apply(); }} disabled={applying} aria-busy={applying || undefined}>
+                {applying
+                  ? <><span className="supfm-spin" aria-hidden />Applying…</>
+                  : <><IcoTick />Apply Filters{draftCount > 0 ? ` (${draftCount})` : ''}</>}
+              </button>
             </div>
           </div>
         </div>,
@@ -621,6 +633,8 @@ export default function Vendors() {
 
   const [loading, setLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
+  /** Apply Filters waits on this: resolved when the list request for the new filters finishes. */
+  const applyWaitRef = useRef<{ resolve: () => void; token: number | null } | null>(null);
   const [swapping, setSwapping] = useState(false);
   const bootedRef = useRef(false);
   const [brefOpen, setBrefOpen] = useState(true);
@@ -732,6 +746,8 @@ export default function Vendors() {
       else                   setLoading(true);
     }
     const token = ++reqRef.current;
+    // An Apply Filters waiting for its list follows the newest request (a page reset can start a second).
+    if (applyWaitRef.current) applyWaitRef.current.token = token;
     const base = {
       ...(debouncedSearch ? { q: debouncedSearch } : {}),
       ...(catParam  ? { categories: catParam }  : {}),
@@ -787,6 +803,7 @@ export default function Vendors() {
         setRefetching(false);
         setSwapping(false);
       }
+      if (applyWaitRef.current?.token === token) { const done = applyWaitRef.current.resolve; applyWaitRef.current = null; done(); }
     }
   }, [page, rpp, debouncedSearch, scopeTab, kindTab, tab, catParam, compParam]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
@@ -1029,7 +1046,14 @@ useEffect(() => {
                 shown={total}
                 active={activeFilters}
                 applied={appliedFilters}
-                onApply={(cat, comp) => { setCatSel(cat); setCompSel(comp); }}
+                onApply={(cat, comp) => new Promise<void>(resolve => {
+                  // Nothing changed: nothing to load.
+                  if (cat.join() === catSel.join() && comp.join() === compSel.join()) { resolve(); return; }
+                  applyWaitRef.current = { resolve, token: null };
+                  setCatSel(cat); setCompSel(comp);
+                  // Never leave the modal stuck if the request does not come back.
+                  window.setTimeout(() => { if (applyWaitRef.current?.resolve === resolve) { applyWaitRef.current = null; resolve(); } }, 15000);
+                })}
                 countFor={countSuppliersFor}
                 scopeLabel={isIntlScope ? 'International Suppliers' : 'Domestic Suppliers'}
               />

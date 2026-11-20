@@ -686,6 +686,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const stdUp    = upOf(stdAll);
   const stdPend  = stdTotal - stdUp;
 
+  /* A category card's ring is its upload progress: uploaded / the category's documents, so it
+     fills as documents are uploaded and closes when the category is complete. */
   const catStat = (rows: VaultDoc[]) => {
     const up   = upOf(rows);
     const pend = rows.length - up;
@@ -871,17 +873,19 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
         <div className="sev-stats">
           {group === 'standard' ? (<>
-            <SevStat tone="slate" icon={VAULT_GLYPHS.file}  label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.file}  label="Total Standard Documents" value={stdTotal} part={stdUp} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
             <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Verified / Uploaded"   value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
             <SevStat tone="red"   icon={VAULT_GLYPHS.warning}   label="Pending"               value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
             <SevStat tone="teal"  icon={VAULT_GLYPHS.home}          label="Company Due Diligence" value={vault.company_dd.length}     {...catStat(vault.company_dd)} />
             <SevStat tone="teal"  icon={VAULT_GLYPHS.user}          label="Owner KYC"             value={vault.owner_kyc.length}      {...catStat(vault.owner_kyc)} />
             <SevStat tone="teal"  icon={VAULT_GLYPHS.monitor}        label="Trade License"         value={vault.trade_licenses.length} {...catStat(vault.trade_licenses)} />
           </>) : (<>
-            <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    part={withShipCount}    whole={withShipCount}    split={dealSplit(vault.vendor_with_shipment)} />
-            <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} part={withoutShipCount} whole={withoutShipCount} split={dealSplit(vault.vendor_without_shipment)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}        label="Total Trade Documents"         value={dealDocs.length} part={dealDocs.length} whole={caseAll.length} split={docSplit(dealDocs)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}   label="Total Agreements"              value={dealAgrs.length} part={dealAgrs.length} whole={caseAll.length} split={docSplit(dealAgrs)} />
+            {/* Rings are progress: complete transactions / all, signed documents / all, so they fill
+                as work is done (they were count / count and always full). */}
+            <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    part={dealSplit(vault.vendor_with_shipment).up}    whole={withShipCount}    split={dealSplit(vault.vendor_with_shipment)} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} part={dealSplit(vault.vendor_without_shipment).up} whole={withoutShipCount} split={dealSplit(vault.vendor_without_shipment)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}        label="Total Trade Documents"         value={dealDocs.length} part={docSplit(dealDocs).up} whole={dealDocs.length} split={docSplit(dealDocs)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}   label="Total Agreements"              value={dealAgrs.length} part={docSplit(dealAgrs).up} whole={dealAgrs.length} split={docSplit(dealAgrs)} />
             <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Total Signed"                  value={caseSigned}  part={caseSigned}  whole={caseAll.length} tag="Complete" />
             <SevStat tone="amber" icon={VAULT_GLYPHS.clock}            label="Pending for Sign"              value={caseWaiting} part={caseWaiting} whole={caseAll.length} tag="Awaiting" />
             <SevStat tone="red"   icon={VAULT_GLYPHS.send}       label="Not Sent for Signature"        value={caseUnsent}  part={caseUnsent}  whole={caseAll.length} tag="Action needed" />
@@ -1479,7 +1483,9 @@ function SevStat(props: {
   return (
     <div className={`sev-stat sev-stat--${props.tone}`}>
       <span className="sev-stat-ico"><Glyph d={props.icon} size={11} /></span>
-      {whole > 0 && (
+      {/* The ring always shows: a card with no documents yet gets an empty track (0/0), so the
+          six cards keep one layout. */}
+      {(
         <span className="sev-stat-dial">
           <svg className="sev-stat-ring" viewBox="0 0 40 40" aria-hidden>
             <circle className="rg-bg" cx="20" cy="20" r="16" pathLength={100} />

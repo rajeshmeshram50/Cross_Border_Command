@@ -4537,3 +4537,10 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 .spev-ov:not(.spev-ov-std) .cev-ov-body { overflow: hidden; }
 .spev-ov .cev-sdp > div:has(> table) { max-height: 340px; overflow-y: auto !important; overscroll-behavior: contain; }
 .spev-ov .cev-sdp thead { position: sticky; top: 0; z-index: 2; }
+
+/* Standard overview Action column: two fixed slots, Download on the left and Re-upload / Upload on
+   the right, so a pending row's Upload sits under the Re-upload buttons above it instead of alone
+   in the middle of the cell. Each button fills its slot, so all of them are one width. */
+.spev-ov.spev-ov-std .cev-ov-acts { display: grid; grid-template-columns: 120px 124px; gap: 8px; justify-content: center; }
+.spev-ov.spev-ov-std .cev-ov-acts > * { width: 100%; }
+.spev-ov.spev-ov-std .cev-ov-acts > .cev-ov-up { grid-column: 2; }
