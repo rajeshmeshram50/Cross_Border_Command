@@ -188,7 +188,7 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onEd
                       <button type="button" className="sta-btn sta-btn-primary str-map" onClick={() => onMapSupplier(row, p)}><IcoPin size={13} />Map Supplier Directory</button>
                     ) : (
                       // A disabled button gets no hover, so the tooltip sits on a wrapper.
-                      <Tooltip label="Only the assignee maps suppliers to this target">
+                      <Tooltip label="Only the creator or the assignee maps suppliers to this target">
                         <span className="str-map-wrap">
                           <button type="button" className="sta-btn sta-btn-primary str-map is-off" disabled><IcoPin size={13} />Map Supplier Directory</button>
                         </span>

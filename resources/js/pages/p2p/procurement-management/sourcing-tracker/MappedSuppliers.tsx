@@ -330,7 +330,7 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
             {canMap ? (
               <button type="button" className="stsv-footer-btn" onClick={onAddSupplier}><IcoUserPlus size={13} sw={2.3} />Add Supplier</button>
             ) : (
-              <Tooltip label="Only the assignee maps suppliers to this target">
+              <Tooltip label="Only the creator or the assignee maps suppliers to this target">
                 <span className="sct-frozen-wrap">
                   <button type="button" className="stsv-footer-btn" disabled style={{ opacity: .5, cursor: 'not-allowed' }}><IcoUserPlus size={13} sw={2.3} />Add Supplier</button>
                 </span>

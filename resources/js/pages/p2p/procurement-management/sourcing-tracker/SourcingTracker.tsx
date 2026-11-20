@@ -569,7 +569,8 @@ export default function SourcingTracker() {
             onEditSupplier={openEditSupplier}
             converted={converted}
             onConvert={startConvert}
-            canMap={!!myId && reportRow.assigneeId === myId}
+            /* The creator and the assignee both map suppliers; only the creator edits the target. */
+            canMap={!!myId && (reportRow.assigneeId === myId || reportRow.createdById === myId)}
             refreshKey={reportRefresh}
           />
         </Suspense>

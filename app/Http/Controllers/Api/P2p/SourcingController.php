@@ -774,20 +774,24 @@ class SourcingController extends Controller
         return $this->ok($grouped);
     }
 
+    /** Who maps suppliers to a target: its creator, its assignee, or a super admin. */
+    private function canMapSuppliers($t, $user): bool
+    {
+        return (int) $t->assignee_id === (int) $user->id
+            || (int) $t->created_by === (int) $user->id
+            || $user->user_type === 'super_admin';
+    }
+
     public function mapSupplier(Request $request, string $target, int $product)
     {
         $user = $request->user();
         $t = $this->target($request, $target);
 
-        if ((int) $t->assignee_id !== (int) $user->id
-            && $user->user_type !== 'super_admin') {
-            $mine = (int) $t->created_by === (int) $user->id;
-
+        // The creator and the assignee both map suppliers (the creator also edits the target).
+        if (! $this->canMapSuppliers($t, $user)) {
             return response()->json([
                 'status' => false,
-                'message' => $mine
-                    ? 'You created this sourcing target — vendor mapping is done by the assignee, not the creator.'
-                    : 'This sourcing target is assigned to someone else — only the assignee can map suppliers.',
+                'message' => 'Only the creator or the assignee of this sourcing target can map suppliers.',
             ], 403);
         }
 
@@ -939,15 +943,11 @@ class SourcingController extends Controller
         $user = $request->user();
         $t = $this->target($request, $target);
 
-        if ((int) $t->assignee_id !== (int) $user->id
-            && $user->user_type !== 'super_admin') {
-            $mine = (int) $t->created_by === (int) $user->id;
-
+        // The creator and the assignee both map suppliers (the creator also edits the target).
+        if (! $this->canMapSuppliers($t, $user)) {
             return response()->json([
                 'status' => false,
-                'message' => $mine
-                    ? 'You created this sourcing target — supplier editing is done by the assignee, not the creator.'
-                    : 'This sourcing target is assigned to someone else — only the assignee can edit suppliers.',
+                'message' => 'Only the creator or the assignee of this sourcing target can edit its suppliers.',
             ], 403);
         }
 
@@ -1101,13 +1101,13 @@ class SourcingController extends Controller
     // PATCH /p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}/price
     // Re-quote a mapped supplier (Supplier Master or New Supplier): unit price,
     // GST % / GST type (domestic), currency / exchange rate (international) and
-    // price valid till. The origin stays as mapped. Assignee only, like mapping.
+    // price valid till. The origin stays as mapped. Creator or assignee, like mapping.
     public function updateSupplierPrice(Request $request, string $target, int $product, int $supplier)
     {
         $user = $request->user();
         $t = $this->target($request, $target);
-        if ((int) $t->assignee_id !== (int) $user->id && $user->user_type !== 'super_admin') {
-            return response()->json(['status' => false, 'message' => 'Only the assignee can change a mapped supplier\'s price.'], 403);
+        if (! $this->canMapSuppliers($t, $user)) {
+            return response()->json(['status' => false, 'message' => 'Only the creator or the assignee of this sourcing target can change a mapped supplier\'s price.'], 403);
         }
         $p = $t->products()->where('id', $product)->first() ?? abort(404, 'Product not found in this sourcing target.');
         $row = $p->suppliers()->where('id', $supplier)->first() ?? abort(404, 'Mapped supplier not found for this product.');
