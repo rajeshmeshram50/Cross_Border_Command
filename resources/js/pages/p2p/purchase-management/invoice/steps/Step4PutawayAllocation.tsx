@@ -1211,9 +1211,11 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     document.body);
 }
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, direct = false, onProgress, onLoadBox }: {
+export default function Step4PutawayAllocation({ draft, boxes, board: boardFromForm = null, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, direct = false, onProgress, onLoadBox }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
+  /** Fetched by the form beside the boxes — this stage does not refetch it on open. */
+  board?: PutawayBoard | null;
   lines?: ProductLine[];
   flagMaster?: ProductFlagOption[];
   spiId?: number | null;
@@ -1291,17 +1293,25 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [flag, setFlag] = useState<'' | 'haz' | 'nonhaz' | 'cold'>('');
 
   const [boardTick, setBoardTick] = useState(0);
-  const [board, setBoard] = useState<PutawayBoard | null>(null);
+  const [board, setBoard] = useState<PutawayBoard | null>(boardFromForm);
   const [boardError, setBoardError] = useState<string | null>(null);
-  const boxKey = boxes.map(b => `${b.id}:${(b.items ?? []).map(i => i.quantity).join(',')}`).join('|');
+  /* The form fetches the board beside the boxes and refetches it on every box
+     change, so follow it rather than asking again — this stage used to render
+     with no boxes yet, fetch, then fetch a second time when they arrived. */
   useEffect(() => {
-    if (!spiId) return;
+    if (boardFromForm) { setBoard(boardFromForm); setBoardError(null); }
+  }, [boardFromForm]);
+  /* Only this stage's own events refetch: a placement, a scan, the Zebra
+     dialog. On open boardTick is 0 and the form's board is already here. */
+  useEffect(() => {
+    if (!spiId || (!boardTick && boardFromForm)) return;
     let live = true;
     spiApi.putawayBoard(spiId)
       .then(d => { if (live) { setBoard(d); setBoardError(null); } })
       .catch(e => { if (live) setBoardError(e instanceof Error ? e.message : 'Could not load the putaway status.'); });
     return () => { live = false; };
-  }, [spiId, boxKey, boardTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spiId, boardTick]);
 
   const markPlaced = (boxId: number, destination: string | null) => {
     setBoard(prev => {

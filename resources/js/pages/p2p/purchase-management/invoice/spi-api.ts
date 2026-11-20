@@ -475,9 +475,8 @@ export const putId = (code: string | null | undefined): string =>
 let warehouseCache: Promise<StorageWarehouse[]> | null = null;
 let warehouseCachedAt = 0;
 const WAREHOUSE_TTL_MS = 60_000;
-
-/** spiId -> the board request currently in flight, so same-tick callers share it. */
-const boardInFlight = new Map<number, Promise<PutawayBoard>>();
+/** Product flags, per branch. Same reasoning as the warehouse cache below. */
+const flagCache = new Map<string, { at: number; p: Promise<ProductFlagOption[]> }>();
 
 export const spiApi = {
   boxes: (spiId: number) =>
@@ -643,19 +642,9 @@ export const spiApi = {
     call('Putaway rows', () => api.get(`/p2p/spi/${spiId}/putaway`),
       (b) => ((b as { data?: { rows?: PutawayRow[] } } | null)?.data?.rows ?? [])),
 
-  /* Two owners ask for this board the moment Stage 04 opens: the form's
-     reloadBoxes (for placed ids + counts) and Step 4's own effect. Sharing the
-     in-flight promise makes that one request; once it settles the next caller
-     fetches fresh, so later refreshes still see new placements. */
-  putawayBoard: (spiId: number) => {
-    const live = boardInFlight.get(spiId);
-    if (live) return live;
-    const p = call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
-      (b) => ((b as { data?: PutawayBoard } | null)?.data ?? { counts: { total: 0, pending: 0, draft: 0, awaiting_scan: 0, placed: 0, remaining: 0 }, boxes: [] }))
-      .finally(() => { boardInFlight.delete(spiId); });
-    boardInFlight.set(spiId, p);
-    return p;
-  },
+  putawayBoard: (spiId: number) =>
+    call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
+      (b) => ((b as { data?: PutawayBoard } | null)?.data ?? { counts: { total: 0, pending: 0, draft: 0, awaiting_scan: 0, placed: 0, remaining: 0 }, boxes: [] })),
 
   putawayModes: (spiId: number, boxId: number) =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId } }),
@@ -664,10 +653,21 @@ export const spiApi = {
         return { rack: Number(m?.rack ?? 0), norack: Number(m?.norack ?? 0) };
       }),
 
-  productFlags: (branchId?: number | null) =>
-    call('Product flags', () => api.get('/inventory/product-flags/options',
+  /* Master data, read on every SPI form open at Stage 02 and beyond and
+     unchanged between them — and the slowest call on that open. Cached per
+     branch for a minute, like the warehouse list above. */
+  productFlags: (branchId?: number | null) => {
+    const key = String(branchId ?? 0);
+    const hit = flagCache.get(key);
+    if (hit && Date.now() - hit.at < WAREHOUSE_TTL_MS) return hit.p;
+    const p = call('Product flags', () => api.get('/inventory/product-flags/options',
       branchId ? { params: { branch_id: branchId } } : undefined),
-      (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? [])),
+      (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? []));
+    // A failed read must not be remembered as the answer for a minute.
+    p.catch(() => flagCache.delete(key));
+    flagCache.set(key, { at: Date.now(), p });
+    return p;
+  },
 
   product: (id: number) =>
     call('Product detail', () => api.get(`/products/${id}`), (b) => {

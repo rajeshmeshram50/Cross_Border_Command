@@ -26,7 +26,7 @@ import SupplierDocsNoticeModal, { type SupplierDocsNotice } from '../order/creat
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
+import { putId, spiApi, type ProductFlagOption, type PutawayBoard, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
@@ -801,6 +801,7 @@ export default function InvoiceForm({
   }, [spiId, fetchBoxCodes]);
 
   const [placedBoxIds, setPlacedBoxIds] = useState<number[]>([]);
+  const [putawayBoard, setPutawayBoard] = useState<PutawayBoard | null>(null);
   const reloadBoxes = useCallback(async (id: number) => {
     const [list, , board] = await Promise.all([
       spiApi.boxes(id),
@@ -808,6 +809,7 @@ export default function InvoiceForm({
       spiApi.putawayBoard(id).catch(() => null),
     ]);
     setBoxes(list);
+    setPutawayBoard(board);
     setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed' || r.status === 'awaiting_scan').map(r => r.box_id));
     if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
@@ -1257,7 +1259,10 @@ export default function InvoiceForm({
         </div>
 
         <div className="spi-dt-body" inert={saving}>
-          {poLoading || (stage === 2 && boxesLoading) ? (
+          {/* Stage 04 works on the boxes too, and poLoading clears before they
+              land — without this it rendered an empty allocation table, then
+              popped the boxes in. */}
+          {poLoading || (stage >= 2 && boxesLoading) ? (
             <StageSkeleton stage={stage} />
           ) : (
             <>
@@ -1318,7 +1323,7 @@ export default function InvoiceForm({
                 )}
                 {stage === 3 && (
                   <Suspense fallback={<StageSkeleton stage={3} />}>
-                  <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
+                  <Step4PutawayAllocation draft={draft} boxes={boxes} board={putawayBoard} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId} direct={isDirect}
                     warehouse={savedWarehouse ?? warehouseLabel(storage)}
                     spiCode={spiCode}
