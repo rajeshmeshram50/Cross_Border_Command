@@ -22,10 +22,22 @@ import './supplier-management.css';
 import './supplier-scope-gate-teal.css';
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-* - the Customer list's classes
 import { lazyPage } from '../../../../utils/lazyPage';
+import { SERVICE_MAPPING_ENABLED, serviceBucketOf } from './serviceMapping';
 
 const AddVendorModal = lazyPage(() => import('./AddVendorModal'));
 const MappedProductsViewPopup = lazyPage(() =>
   import('./AddVendorModal').then(m => ({ default: m.MappedProductsViewPopup })));
+/* Mapped Services (a service-provider supplier's Map Product / Service), loaded with the modal's
+   chunk; the bucket is resolved from the type name there (serviceBucketOf). */
+const MappedServicesViewPopup = lazyPage(() =>
+  import('./AddVendorModal').then(m => ({
+    default: (p: { vendorId: number; typeName: string; international: boolean; onClose: () => void; onChanged?: () => void }) => {
+      const bucket = m.serviceBucketOf(p.typeName);
+      return bucket ? <m.MappedServicesPopup {...p} bucket={bucket} /> : null;
+    },
+  })));
+/** Supplier Types mapped to SERVICES, not products (./serviceMapping, shared with the form). */
+const isServiceType = (t: string) => serviceBucketOf(t) !== null;
 const SupplierScopeGate = lazyPage(() => import('./SupplierScopeGate'));
 const SupplierEvidenceVaultModal = lazyPage(() => import('./SupplierEvidenceVaultModal'));
 
@@ -529,6 +541,24 @@ export default function Vendors() {
   /* When set, the read-only Mapped Products popup lists this supplier's product
      mappings — opened from the Mapped Products count badge. */
   const [mappedTarget, setMappedTarget] = useState<Vendor | null>(null);
+  /* A service-provider supplier's Mapped Services popup, and how many services each supplier
+     is mapped to. The vendor list has no service count, so it comes from ONE call: every
+     service with its active suppliers' names, counted per supplier name. */
+  const [servicesTarget, setServicesTarget] = useState<Vendor | null>(null);
+  const [serviceCounts, setServiceCounts] = useState<Map<string, number>>(new Map());
+  const loadServiceCounts = useCallback(() => {
+    api.get<{ data?: { supplier_names?: string[] }[] }>('/p2p/services', { params: { per_page: 200 } })
+      .then(r => {
+        const m = new Map<string, number>();
+        for (const s of r.data?.data ?? []) {
+          for (const n of s.supplier_names ?? []) { const k = n.trim().toLowerCase(); m.set(k, (m.get(k) ?? 0) + 1); }
+        }
+        setServiceCounts(m);
+      })
+      .catch(() => {});
+  }, []);
+  // Only while service mapping is switched on: off, the list makes no extra call.
+  useEffect(() => { if (SERVICE_MAPPING_ENABLED) loadServiceCounts(); }, [loadServiceCounts]);
   const [segPop, setSegPop] = useState<{ segments: { name: string; reg?: string | null }[]; x: number; y: number; top: number } | null>(null);
   const segPopRef = useRef<HTMLDivElement>(null);
   const [segPopPos, setSegPopPos] = useState<{ left: number; top: number } | null>(null);
@@ -1021,7 +1051,7 @@ useEffect(() => {
                         <th>Contact Person</th>
                         <th style={{ textAlign: 'center' }}>Supplier Category</th>
                         <th style={{ textAlign: 'center' }}>Compliant Status</th>
-                        <th style={{ textAlign: 'center' }}>Mapped Products</th>
+                        <th style={{ textAlign: 'center' }}>Mapped Products / Services</th>
                         <th style={{ textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
@@ -1123,7 +1153,28 @@ useEffect(() => {
                                 : <Tooltip label="No compliance behaviour set on this supplier yet"><span className="text-muted">—</span></Tooltip>}
                             </td>
                             <td style={{ textAlign: 'center' }}>
-                              {v.mappedProducts > 0 ? (
+                              {/* A service-provider supplier counts and opens its SERVICES; every
+                                  other type keeps its products. */}
+                              {isServiceType(v.type) ? (() => {
+                                // Switched off (./serviceMapping): a plain dash, like the form's disabled button.
+                                if (!SERVICE_MAPPING_ENABLED) {
+                                  return (
+                                    <Tooltip label="Service mapping is not available yet">
+                                      <span className="sl-prodcount sl-prodcount--zero">—</span>
+                                    </Tooltip>
+                                  );
+                                }
+                                const n = serviceCounts.get(v.companyName.trim().toLowerCase()) ?? 0;
+                                return n > 0 ? (
+                                  <Tooltip label="View mapped services">
+                                    <button type="button" className="sl-prodcount" onClick={() => setServicesTarget(v)}>{n}</button>
+                                  </Tooltip>
+                                ) : (
+                                  <Tooltip label="No services mapped to this supplier yet">
+                                    <span className="sl-prodcount sl-prodcount--zero">0</span>
+                                  </Tooltip>
+                                );
+                              })() : v.mappedProducts > 0 ? (
                                 <Tooltip label="View mapped products">
                                   <button type="button" className="sl-prodcount" onClick={() => setMappedTarget(v)}>
                                     {v.mappedProducts}
@@ -1288,6 +1339,17 @@ useEffect(() => {
           onClose={() => setMappedTarget(null)}
           onChanged={() => void refresh({ silent: true })}
         />
+        </Suspense>
+      )}
+      {servicesTarget && (
+        <Suspense fallback={null}>
+          <MappedServicesViewPopup
+            vendorId={servicesTarget.id}
+            typeName={servicesTarget.type}
+            international={!!servicesTarget.country && servicesTarget.country.trim().toLowerCase() !== 'india'}
+            onClose={() => setServicesTarget(null)}
+            onChanged={loadServiceCounts}
+          />
         </Suspense>
       )}
       {vaultTarget && (

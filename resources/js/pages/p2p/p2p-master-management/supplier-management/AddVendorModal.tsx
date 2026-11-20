@@ -33,6 +33,7 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
+import { SERVICE_MAPPING_ENABLED, serviceBucketOf, type ServiceBucket } from './serviceMapping';
 import { lazyPage } from '../../../../utils/lazyPage';
 
 /* Lazy: the product wizard is a big chunk and most mappings pick an existing
@@ -368,19 +369,9 @@ const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
 /** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
 const squashType = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
-/** Supplier Type → the Service Management bucket it serves, as [service_type, classification].
-    Mirrors ServiceController::VENDOR_TYPE_BY_NAME; keyed by squashType of the type name. */
-export type ServiceBucket = { serviceType: 'soft_digital' | 'self_consumable' | 'other_operational'; classification: string | null };
-const SERVICE_BUCKET_BY_TYPE: Record<string, ServiceBucket> = {
-  [squashType('Soft Service Provider')]: { serviceType: 'soft_digital',      classification: null },
-  [squashType('Trackable Services')]:    { serviceType: 'self_consumable',   classification: 'trackable' },
-  [squashType('Consumable Services')]:   { serviceType: 'self_consumable',   classification: 'consumable' },
-  [squashType('Professional Services')]: { serviceType: 'other_operational', classification: 'professional' },
-  [squashType('Utility Services')]:      { serviceType: 'other_operational', classification: 'utility' },
-  [squashType('Facility Services')]:     { serviceType: 'other_operational', classification: 'facility' },
-  [squashType('Maintenance Services')]:  { serviceType: 'other_operational', classification: 'maintenance' },
-  [squashType('Outsourcing Services')]:  { serviceType: 'other_operational', classification: 'outsourcing' },
-};
+/* Supplier Type → service bucket, and the on/off switch for service mapping, live in
+   ./serviceMapping (shared with the Supplier list). Re-exported for the list's lazy popup. */
+export { serviceBucketOf };
 /** A saved supplier's type name → the dropdown's value (older rows were saved as "Material / Goods"). */
 const canonicalSupplierType = (name: string) =>
   SUPPLIER_TYPE_OPTS.find(o => o.value === name || squashType(o.value) === squashType(name))?.value ?? name;
@@ -556,10 +547,9 @@ export default function AddVendorModal(props: {
   const isGoodsSupplier = squashType(vendorType) === squashType('Material/ Goods');
   /** The service bucket a service-provider type serves (null for Material/ Goods, FFD/ Transporter
       or no type yet). Same table as the server's ServiceController::VENDOR_TYPE_BY_NAME. */
-  const serviceBucket = SERVICE_BUCKET_BY_TYPE[squashType(vendorType)] ?? null;
-  /** Service mapping is built (Mapped Services / Map Service popups) but switched off for now:
-      flip this to true to open it for service-provider suppliers again. */
-  const SERVICE_MAPPING_ENABLED = false;
+  const serviceBucket = serviceBucketOf(vendorType);
+  /* SERVICE_MAPPING_ENABLED (./serviceMapping): built but switched off for now — one switch for
+     this form and the Supplier list. */
   /** Map Product / Service has something to open: products for goods, services for a provider. */
   const canMapAnything = isGoodsSupplier || (SERVICE_MAPPING_ENABLED && serviceBucket !== null);
   const [website,     setWebsite]     = useState('');
@@ -5523,12 +5513,14 @@ const svcApiError = (e: unknown, fallback: string) => {
   return first || d?.message || fallback;
 };
 
-function MappedServicesPopup(props: {
+export function MappedServicesPopup(props: {
   vendorId: number;
   bucket: ServiceBucket;
   /** International supplier: price in its own currency with an exchange rate, no GST. */
   international: boolean;
   onClose: () => void;
+  /** Fired after a service is mapped, so a list's count can catch up. */
+  onChanged?: () => void;
 }) {
   const toast = useToast();
   const { vendorId, bucket, international } = props;
@@ -5647,6 +5639,7 @@ function MappedServicesPopup(props: {
       setFormOpen(false);
       setSearchRaw('');
       await load();
+      props.onChanged?.();
     } catch (e) {
       toast.error('Could not map the service', svcApiError(e, 'Please try again.'));
     }
