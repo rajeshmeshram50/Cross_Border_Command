@@ -80,7 +80,7 @@ export type SupplierFacets = {
   scope?: { domestic: number; international: number };
   category: { star: number; general: number; high_risk: number; blacklisted: number };
   compliance: { compliant: number; non_compliant: number };
-  /** Rows per supplier-type tab (backend pending: the tabs show "—" until it is sent). */
+  /** Rows per supplier-type tab (backend pending: the tabs show 0 until counts arrive). */
   kind?: { all: number; material: number; logistics: number; services: number };
 };
 
@@ -979,11 +979,11 @@ useEffect(() => {
               <div className="sup-tabs" role="tablist">
                 <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`sup-tab${scopeTab === 'domestic' ? ' is-on' : ''}`} onClick={() => setScopeTab('domestic')}>
                   <span className="sup-tab__ico"><i className="ri-home-4-line" /></span>Domestic Supplier
-                  {facets?.scope && <span className="sup-tab__c">{facets.scope.domestic}</span>}
+                  <span className="sup-tab__c">{facets?.scope?.domestic ?? 0}</span>
                 </button>
                 <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`sup-tab${scopeTab === 'international' ? ' is-on' : ''}`} onClick={() => setScopeTab('international')}>
                   <span className="sup-tab__ico"><i className="ri-global-line" /></span>International Supplier
-                  {facets?.scope && <span className="sup-tab__c">{facets.scope.international}</span>}
+                  <span className="sup-tab__c">{facets?.scope?.international ?? 0}</span>
                 </button>
               </div>
               {/* Filter, then search, on the right — the design's order. */}
@@ -1028,7 +1028,8 @@ useEffect(() => {
                 return (
                   <button key={k.key} type="button" role="tab" aria-selected={on} className={`sup-kind${on ? ' is-on' : ''}`} onClick={() => setKindTab(k.key)}>
                     <span className="sup-kind__ico" aria-hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{KIND_ICON[k.key]}</svg></span>{k.label}
-                    <span className="sup-kind__c">{count ?? '—'}</span>
+                    {/* 0 until the counts arrive (never a dash), like the Domestic / International tabs. */}
+                    <span className="sup-kind__c">{count ?? 0}</span>
                   </button>
                 );
               })}
