@@ -78,7 +78,9 @@ const TYPE_COLORS: Record<string, { bg: string; color: string; border: string }>
   'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)' },
 };
 
-const ROWS_PER_PAGE = 10;
+/** 12 entries per page; the table card is sized to fit exactly 12 rows. */
+const TABLE_ROWS = 12;
+const ROWS_PER_PAGE = TABLE_ROWS;
 const titleCase = (s: string): string => {
   if (!s) return s;
   if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
@@ -182,6 +184,9 @@ export default function SalesCustomers() {
       const cardSpace = spaceH - offsetTop - bottomReserve();
 
       delete el.dataset.unpinned;
+      /* First pass only: the card is resized below to hold exactly TABLE_ROWS
+         rows; the page (not the card) scrolls when that is taller than the
+         space left under the header. */
       const h = Math.max(240, cardSpace);
 
       const next = `${h}px`;
@@ -191,7 +196,6 @@ export default function SalesCustomers() {
         el.style.maxHeight = next;
       }
 
-      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
 
       const filterbarH = (el.querySelector('.smc-filterbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -206,8 +210,15 @@ export default function SalesCustomers() {
         ? scrollBox.clientHeight - theadH
         : h - toolbarH - filterbarH - theadH - footerH - 8;
 
-      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
-      setPageSize(rowsFit);
+      /* The card always holds exactly TABLE_ROWS rows: grow or shrink it by the
+         difference between the room the rows have now and TABLE_ROWS rows. */
+      const target = `${Math.max(240, Math.round(h + TABLE_ROWS * rowH - avail))}px`;
+      if (el.style.height !== target) {
+        el.style.height = target;
+        el.style.maxHeight = target;
+      }
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
+      setPageSize(TABLE_ROWS);
     };
     const onResize = () => fit();
     fit();
@@ -614,7 +625,7 @@ export default function SalesCustomers() {
               divClass="table-responsive"
               SearchPlaceholder="Search customers..."
               worklistPagination
-              pageSizeOptions={[5, 10, 15, 25, 50]}
+              pageSizeOptions={[5, 10, 12, 15, 25, 50]}
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}

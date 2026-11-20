@@ -46,7 +46,9 @@ const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = 
   'High':   { bg:'rgba(239,68,68,0.12)',  color:'#dc2626', dot:'#ef4444' },
 };
 
-const ROWS_PER_PAGE = 10;
+/** 12 entries per page; the table card is sized to fit exactly 12 rows. */
+const TABLE_ROWS = 12;
+const ROWS_PER_PAGE = TABLE_ROWS;
 const titleCase = (s: string): string => {
   if (!s) return s;
   if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
@@ -311,6 +313,9 @@ export default function SalesConsignee() {
          never smaller than 240, and where that overruns the viewport the page
          scrolls -- by a predictable amount, without feeding back. */
       delete el.dataset.unpinned;
+      /* First pass only: the card is resized below to hold exactly TABLE_ROWS
+         rows; the page (not the card) scrolls when that is taller than the
+         space left under the header. */
       const h = Math.max(240, cardSpace);
       /* Only write when the value actually changes. fit() runs from a
          ResizeObserver, and writing styles inside an observer callback
@@ -323,7 +328,6 @@ export default function SalesConsignee() {
         el.style.maxHeight = next;
       }
 
-      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       // Filter-chips bar only exists when filters are active; leaving it out of
       // the subtraction pushed the last row under the pager (mirrors customer).
@@ -347,8 +351,15 @@ export default function SalesConsignee() {
          screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
          very short window. Mirrors SalesCustomers. */
       // +2: sub-pixel row heights must not cost a whole row.
-      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
-      setPageSize(rowsFit);
+      /* The card always holds exactly TABLE_ROWS rows: grow or shrink it by the
+         difference between the room the rows have now and TABLE_ROWS rows. */
+      const target = `${Math.max(240, Math.round(h + TABLE_ROWS * rowH - avail))}px`;
+      if (el.style.height !== target) {
+        el.style.height = target;
+        el.style.maxHeight = target;
+      }
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
+      setPageSize(TABLE_ROWS);
     };
     const onResize = () => fit();
     fit();
@@ -872,7 +883,7 @@ export default function SalesConsignee() {
               divClass="table-responsive"
               SearchPlaceholder="Search consignees..."
               worklistPagination
-              pageSizeOptions={[5, 10, 15, 25, 50]}
+              pageSizeOptions={[5, 10, 12, 15, 25, 50]}
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
