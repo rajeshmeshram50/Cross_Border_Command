@@ -35,6 +35,8 @@ export interface ServiceFormInput {
   images?: ExistingImage[];
   attachments?: SavedAttachment[];
   loading?: boolean;
+  /** Re-opened in place once its data arrived: no pop-in animation again. */
+  instant?: boolean;
 }
 
 /* The server's own caps (ServiceController: description max:10000, remark
@@ -409,7 +411,7 @@ export default function ServiceFormModal({
       : 'Identity, classification & general info';
 
   return createPortal((
-    <div className="svf-backdrop">
+    <div className={`svf-backdrop${input.instant ? ' is-instant' : ''}`}>
       <div className="svf-modal" role="dialog" aria-modal="true" aria-label={title}>
         {supBusy && !saving && <SavingLock label="Saving suppliers…" />}
         {saving && <SavingLock label={stage === 1 ? (serviceId != null ? 'Saving changes…' : 'Saving…') : (isEdit ? 'Updating service…' : 'Submitting service…')} />}

@@ -188,7 +188,7 @@ export default function ServiceManagement() {
       .catch(() => 'SVC-NEW')
       .then(code => {
         setFormKey(k => k + 1);
-        setFormFor(cur => (cur && cur.loading && !cur.record ? { kind, otype, code } : cur));
+        setFormFor(cur => (cur && cur.loading && !cur.record ? { kind, otype, code, instant: true } : cur));
       });
   }, []);
 
@@ -202,6 +202,7 @@ export default function ServiceManagement() {
       setFormFor(cur => (cur && cur.loading && cur.code === r.code ? {
         kind: d.record.kind, record: d.record, code: d.record.code,
         attachmentIds: d.attachmentIds, attachments: d.attachments, hasPrimaryImage: d.hasPrimaryImage, images: d.images,
+        instant: true,
       } : cur));
     } catch (e) {
       setFormFor(null);

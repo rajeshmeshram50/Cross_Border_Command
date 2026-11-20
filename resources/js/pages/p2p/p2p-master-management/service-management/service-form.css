@@ -1435,3 +1435,10 @@
 body:has(.svm-page) .cfm-popup .cfm-btn { font-size: 12.5px !important; }
 
 .svf-gst-master { position: relative; }
+
+/* Shimmer to fields without a blink: when the form re-opens in place with its
+   data, the popup does not pop in again; only the fields fade in. */
+.svf-backdrop.is-instant .svf-modal { animation: none; }
+.svf-body > .svf-section { animation: svfFieldsIn .22s ease-out; }
+@keyframes svfFieldsIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .svf-body > .svf-section { animation: none; } }
