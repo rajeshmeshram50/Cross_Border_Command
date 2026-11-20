@@ -810,6 +810,7 @@ function MasterPageInner({
       } else {
         const { data } = await api.post(base, body, headers ? { headers } : undefined);
         setRecords(prev => [data, ...prev]);
+        setTotalRows(t => t + 1);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
       bustAllMasterBundles();
@@ -857,6 +858,7 @@ function MasterPageInner({
     try {
       await api.delete(`${masterEndpoint(cfg)}/${deleteTarget.id}`);
       setRecords(prev => prev.filter(r => r.id !== deleteTarget.id));
+      setTotalRows(t => Math.max(0, t - 1));
       bustAllMasterBundles();
       toast.success('Deleted', `"${label}" removed successfully`);
       setDeleteOpen(false);
