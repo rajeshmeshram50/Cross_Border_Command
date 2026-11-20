@@ -116,8 +116,6 @@ function MasterPageInner({
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
-  const [dpStatusFilter, setDpStatusFilter] = useState<string>('all');
-  const [dpParentFilter, setDpParentFilter] = useState<string>('all');
   const [roleStatusFilter, setRoleStatusFilter] = useState<string>('all');
   const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
   const [roleDeptFilter, setRoleDeptFilter] = useState<string>('all');
@@ -280,7 +278,6 @@ function MasterPageInner({
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isDsn = cfg.slug === 'designations';
-    const isDp  = cfg.slug === 'departments';
     const isRole = cfg.slug === 'roles';
     const searchableKeys = [
       ...cfg.cols,
@@ -296,18 +293,6 @@ function MasterPageInner({
         }
         if (dsnDeptFilter !== 'all') {
           if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
-        }
-      }
-      if (isDp) {
-        if (dpStatusFilter !== 'all') {
-          if (String(row.status ?? '').toLowerCase() !== dpStatusFilter.toLowerCase()) return false;
-        }
-        if (dpParentFilter !== 'all') {
-          if (dpParentFilter === 'root') {
-            if (row.parent_id != null && row.parent_id !== '') return false;
-          } else if (String(row.parent_id ?? '') !== String(dpParentFilter)) {
-            return false;
-          }
         }
       }
       if (isRole) {
@@ -344,7 +329,7 @@ function MasterPageInner({
       }
       return false;
     });
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, dpStatusFilter, dpParentFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
 
   const roleTabs = useMemo(() => {
     const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
@@ -1744,15 +1729,6 @@ function MasterPageInner({
                 setDeptFilter={setDsnDeptFilter}
               />
             )}
-            {cfg.slug === 'departments' && (
-              <DepartmentInlineFilters
-                records={records}
-                statusFilter={dpStatusFilter}
-                setStatusFilter={setDpStatusFilter}
-                parentFilter={dpParentFilter}
-                setParentFilter={setDpParentFilter}
-              />
-            )}
             {cfg.slug === 'roles' && (
               <RolesInlineFilters
                 refData={refData}
@@ -1919,7 +1895,7 @@ function EmployeeTreeModal({
 
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const accentFor = (node: TreeNode) => {
-    if (node.id.startsWith('u')) return '#7c3aed';
+    if (node.id.startsWith('u')) return '#0e7490';
     const r = (node.role || '').toLowerCase();
     if (r.includes('head of department') || r === 'hod') return '#0891b2';
     if (r.includes('team leader')) return '#059669';
@@ -1945,18 +1921,15 @@ function EmployeeTreeModal({
   };
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered backdrop="static" contentClassName="et-modal" modalClassName="et-modal-wrap">
+    <Modal isOpen={open} toggle={onClose} centered backdrop="static" contentClassName="et-modal whm-addmdl" modalClassName="et-modal-wrap mp-tealf" backdropClassName="mp-tealf-backdrop">
       <style>{ET_TREE_CSS}</style>
-      <div className="et-modal-header">
-        <div className="d-flex align-items-center justify-content-between gap-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <span className="et-modal-icon"><i className="ri-organization-chart" /></span>
-            <div className="min-w-0">
-              <h5 className="mb-0 fw-bold et-modal-title">Employee Tree</h5>
-              <div className="et-modal-sub">{(department?.name ?? 'Department')}{/department/i.test(department?.name ?? '') ? '' : ' Department'}</div>
-            </div>
+      <div className="spi-mdl-head">
+        <div className="spi-mdl-head-left">
+          <div className="spi-mdl-head-ico"><i className="ri-organization-chart" style={{ fontSize: 20 }} /></div>
+          <div className="min-w-0">
+            <div className="spi-mdl-title">Employee Tree</div>
+            <div className="spi-mdl-sub">{(department?.name ?? 'Department')}{/department/i.test(department?.name ?? '') ? '' : ' Department'}</div>
           </div>
-          <button type="button" className="et-modal-close" onClick={onClose} aria-label="Close"><i className="ri-close-line" /></button>
         </div>
         <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><i className="ri-close-line" style={{ fontSize: 18 }} /></button>
       </div>
@@ -1973,6 +1946,12 @@ function EmployeeTreeModal({
           <div className="text-center text-muted py-4">No employees in this department yet.</div>
         )}
       </ModalBody>
+      <div className="spi-mdl-foot">
+        <span className="whm-footnote"><i className="ri-information-line" style={{ fontSize: 15, color: '#0891b2' }} /> Reporting lines in this department</span>
+        <div className="spi-mdl-foot-btns">
+          <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -1984,29 +1963,6 @@ const ET_TREE_CSS = `
   box-shadow: 0 50px 120px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.12);
   width: fit-content; min-width: 340px; max-width: 100%; margin: 0 auto;
 }
-.et-modal-header {
-  padding: 16px 18px;
-  background:
-    radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px) 0 0 / 13px 13px,
-    linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-}
-.et-modal-title { color: #ffffff !important; letter-spacing: 0.01em; font-size: 16px; }
-.et-modal-sub { color: rgba(255,255,255,0.85); font-size: 12px; }
-.et-modal-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-  background: rgba(255,255,255,0.20); color: #ffffff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-}
-.et-modal-icon i { font-size: 18px; line-height: 1; }
-.et-modal-close {
-  width: 30px; height: 30px; border-radius: 8px; border: 0; flex-shrink: 0;
-  background: rgba(255,255,255,0.18); color: #ffffff; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.15s ease;
-}
-.et-modal-close:hover { background: rgba(255,255,255,0.30); }
-.et-modal-close i { font-size: 16px; line-height: 1; }
 .et-modal-body {
   position: relative;
   max-height: 76vh; overflow-y: auto;
@@ -2024,11 +1980,11 @@ const ET_TREE_CSS = `
   content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 26px;
   border-top: 2px solid rgba(8,145,178,0.35);
 }
-.et-tree li::after { right: auto; left: 50%; border-left: 2px solid rgba(124,58,237,0.32); }
+.et-tree li::after { right: auto; left: 50%; border-left: 2px solid rgba(8,145,178,0.35); }
 .et-tree li:only-child::before, .et-tree li:only-child::after { display: none; }
 .et-tree li:only-child { padding-top: 26px; }
 .et-tree li:first-child::before, .et-tree li:last-child::after { border: 0 none; }
-.et-tree li:last-child::before { border-right: 2px solid rgba(124,58,237,0.32); border-radius: 0 7px 0 0; }
+.et-tree li:last-child::before { border-right: 2px solid rgba(8,145,178,0.35); border-radius: 0 7px 0 0; }
 .et-tree li:first-child::after { border-radius: 7px 0 0 0; }
 .et-tree ul ul::before {
   content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 26px;
@@ -2041,7 +1997,12 @@ const ET_TREE_CSS = `
   border: 1px solid rgba(139,92,246,0.12); background: var(--vz-card-bg);
   box-shadow: 0 8px 20px rgba(76,29,149,0.10); transition: transform .15s ease, box-shadow .15s ease;
 }
-.et-node:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(99,102,241,0.20); }
+.et-node:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(8,145,178,0.22); }
+.et-modal .spi-mdl-head { border-radius: 25px 25px 0 0; }
+.et-modal .spi-mdl-foot { padding: 12px 22px; border-top-color: #e3f1f5; background: rgba(255,255,255,.55); }
+.et-modal .spi-mdl-cancel { height: 42px; border-radius: 12px; }
+[data-bs-theme="dark"] .et-modal-body { background: #0b1626; }
+[data-bs-theme="dark"] .et-modal .spi-mdl-foot { background: rgba(255,255,255,.02); border-top-color: rgba(148,163,184,.16); }
 .et-avatar-ring {
   padding: 3px; border-radius: 50%; display: inline-flex;
 }
@@ -2758,60 +2719,6 @@ function DesignationInlineFilters({
               ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
             ]}
             placeholder="All Departments"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DepartmentInlineFilters({
-  records,
-  statusFilter, setStatusFilter,
-  parentFilter, setParentFilter,
-}: {
-  records: any[];
-  statusFilter: string;
-  setStatusFilter: (v: string) => void;
-  parentFilter: string;
-  setParentFilter: (v: string) => void;
-}) {
-  return (
-    <div className="dsn-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
-      <div className="dsn-il-group">
-        <span className="dsn-il-label">Status</span>
-        <div style={{ minWidth: 130 }}>
-          <MasterSelect
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'Active', label: 'Active' },
-              { value: 'Inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-          />
-        </div>
-      </div>
-      <div className="dsn-il-group">
-        <span className="dsn-il-label">Parent</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect
-            value={parentFilter}
-            onChange={(v) => setParentFilter(v || 'all')}
-            options={(() => {
-              const parentIds = new Set<string>();
-              for (const r of records) {
-                if (r?.parent_id != null && r.parent_id !== '') parentIds.add(String(r.parent_id));
-              }
-              const parentRows = records.filter((d: any) => parentIds.has(String(d.id)));
-              return [
-                { value: 'all',  label: 'All' },
-                { value: 'root', label: 'Root (no parent)' },
-                ...parentRows.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
-              ];
-            })()}
-            placeholder="All"
           />
         </div>
       </div>
