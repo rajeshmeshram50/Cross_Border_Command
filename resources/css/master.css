@@ -1,42 +1,3 @@
-.dsn-page-strip {
-  position: relative;
-  overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #c4b5fd;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-}
-
-.dsn-page-strip::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
-  border-radius: 16px 0 0 16px;
-}
-
-
-[data-bs-theme="dark"] .dsn-page-strip,
-[data-layout-mode="dark"] .dsn-page-strip {
-  position: relative;
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(102, 145, 231, 0.16) 0%, transparent 55%),
-    radial-gradient(120% 140% at 100% 100%, rgba(124, 92, 252, 0.14) 0%, transparent 55%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
-      color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
-  border: 1px solid color-mix(in srgb, #7c3aed 40%, var(--vz-border-color));
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.36),
-    0 2px 6px rgba(0, 0, 0, 0.20),
-    0 0 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.20);
-}
-
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi,
 [data-bs-theme="dark"] .role-extras .role-kpi,
@@ -100,7 +61,6 @@
     gap: 6px;
   }
 }
-
 
 .dsn-extras .dsn-kpi {
   position: relative;
@@ -205,7 +165,6 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
-
 .dsn-extras .dsn-hier-row {
   display: flex;
   align-items: center;
@@ -263,13 +222,6 @@
   font-size: 12px;
 }
 
-.dsn-extras .dsn-hier-tail {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--vz-secondary-color);
-  font-style: italic;
-}
-
 .dsn-inline-filters .dsn-il-group {
   display: flex;
   align-items: center;
@@ -283,11 +235,6 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
-
-.dsn-inline-filters .form-select-sm {
-  min-width: 120px;
-}
-
 
 @media (max-width: 1199.98px) {
   .mp-kpi-tile {
@@ -311,15 +258,6 @@
 }
 
 @media (max-width: 575.98px) {
-  .dsn-page-strip {
-    padding: 14px 16px !important;
-  }
-
-  .dsn-page-strip>.d-flex.flex-shrink-0 {
-    width: 100%;
-    justify-content: flex-start !important;
-    margin-top: 6px;
-  }
 
   .dsn-inline-filters {
     width: 100%;
@@ -334,7 +272,6 @@
     min-width: 0 !important;
   }
 }
-
 
 .role-extras .role-kpis {
   display: grid;
@@ -443,7 +380,6 @@
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
 
-
 .role-inline-filters .role-il-group {
   display: flex;
   align-items: center;
@@ -457,14 +393,6 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
-
-.role-inline-filters .role-il-tail {
-  font-size: 11.5px;
-  color: var(--vz-secondary-color);
-  font-weight: 600;
-  margin-left: 4px;
-}
-
 
 .kpi-extras .kpi-cards {
   display: grid;
@@ -576,12 +504,6 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-[data-bs-theme="dark"] .kpi-extras .kpi-card-sub,
-[data-layout-mode="dark"] .kpi-extras .kpi-card-sub {
-  color: rgba(255, 255, 255, 0.65);
-}
-
-
 .kpi-inline-filters .kpi-il-group {
   display: flex;
   align-items: center;
@@ -595,7 +517,6 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
-
 
 .master-file-input {
   display: flex;
@@ -633,7 +554,6 @@
   cursor: not-allowed;
   background: color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg));
 }
-
 
 .master-file-btn {
   display: inline-flex;
@@ -757,7 +677,6 @@
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
 
-
 [data-bs-theme="dark"] .master-file-btn,
 [data-layout-mode="dark"] .master-file-btn {
   background: linear-gradient(180deg,
@@ -799,8 +718,209 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
-
 [data-bs-theme="dark"] .mp-kpi-tile,
 [data-layout-mode="dark"] .mp-kpi-tile {
   background: var(--vz-card-bg) !important;
 }
+/* Master pages in the Inventory Management masters' look (Warehouse / Rack).
+
+   The header, Add button and row buttons use those pages' own classes
+   (.spi-head, .spi-head-btn, .whm-act). The list itself is still the shared
+   DataTable, which has its own markup, so this file carries the Warehouse
+   table's values (order.css .ord-table + warehouse-master.css .whm-page) and
+   the .spi-card frame onto it. Everything is scoped under .mp-inv, the master
+   page root, so no other DataTable changes. */
+
+/* ── Card: the .spi-card frame ─────────────────────────────────────────── */
+.mp-inv .dt-root {
+  --dt-head-fill: #e3f7fb;
+  background: #fff;
+  border: 1px solid #d6eef5;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(6, 182, 212, .06);
+}
+
+/* ── Header band: .whm-page .ord-table thead th ────────────────────────── */
+.mp-inv .dt-table thead tr { background: linear-gradient(180deg, #f0fdff, #e3f7fb); }
+.mp-inv .dt-table thead th {
+  padding: 11px 12px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  color: #0e7490;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f0fdff, #e3f7fb);
+  border-bottom: 1px solid #c9ebf2;
+}
+.mp-inv .dt-table thead th.dt-sortable:hover { background: #d9f3f8; }
+
+/* ── Rows: .whm-page .ord-table tbody td ───────────────────────────────── */
+.mp-inv .dt-table tbody td {
+  padding: 12px;
+  font-size: 11.5px;
+  color: #1e293b;
+  border-bottom: 1px solid #eef5f8;
+}
+.mp-inv .dt-table tbody tr { background: #fff; }
+.mp-inv .dt-table tbody tr:nth-child(even) { background: #fbfeff; }
+.mp-inv .dt-table tbody tr:hover,
+.mp-inv .dt-table tbody tr:nth-child(even):hover { background: #f0fbfd; }
+.mp-inv .dt-table tbody tr:last-child td { border-bottom: 0; }
+
+/* ── Sr. No: .whm-page .whm-sr ─────────────────────────────────────────── */
+.mp-inv .dt-serial {
+  min-width: 26px;
+  width: auto;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ecfeff;
+  border: 1px solid #cdeef4;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+}
+
+/* ── Row buttons: .whm-act, with the disabled state the masters need ───── */
+.mp-inv .whm-act.mp-act i { font-size: 15px; line-height: 1; }
+.mp-inv .whm-act.mp-act:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Dark: the Warehouse table's dark values ───────────────────────────── */
+[data-bs-theme="dark"] .mp-inv .dt-root,
+[data-layout-mode="dark"] .mp-inv .dt-root {
+  --dt-head-fill: #0f222c;
+  background: #0e1b24;
+  border-color: rgba(34, 211, 238, .18);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .4);
+}
+[data-bs-theme="dark"] .mp-inv .dt-table thead tr,
+[data-layout-mode="dark"] .mp-inv .dt-table thead tr { background: linear-gradient(180deg, #102a34, #0f222c); }
+[data-bs-theme="dark"] .mp-inv .dt-table thead th,
+[data-layout-mode="dark"] .mp-inv .dt-table thead th {
+  color: #67e8f9;
+  background: linear-gradient(180deg, #102a34, #0f222c);
+  border-bottom-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .mp-inv .dt-table thead th.dt-sortable:hover,
+[data-layout-mode="dark"] .mp-inv .dt-table thead th.dt-sortable:hover { background: #14343f; }
+[data-bs-theme="dark"] .mp-inv .dt-table tbody td,
+[data-layout-mode="dark"] .mp-inv .dt-table tbody td {
+  color: #cbd5e1;
+  border-bottom-color: rgba(148, 163, 184, .14);
+}
+[data-bs-theme="dark"] .mp-inv .dt-table tbody tr,
+[data-layout-mode="dark"] .mp-inv .dt-table tbody tr { background: transparent; }
+[data-bs-theme="dark"] .mp-inv .dt-table tbody tr:nth-child(even),
+[data-layout-mode="dark"] .mp-inv .dt-table tbody tr:nth-child(even) { background: rgba(148, 163, 184, .04); }
+[data-bs-theme="dark"] .mp-inv .dt-table tbody tr:hover,
+[data-layout-mode="dark"] .mp-inv .dt-table tbody tr:hover { background: rgba(34, 211, 238, .07); }
+[data-bs-theme="dark"] .mp-inv .dt-serial,
+[data-layout-mode="dark"] .mp-inv .dt-serial {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .10);
+  border-color: rgba(34, 211, 238, .24);
+}
+
+/* ── Tab row + search: the Rack / Warehouse Master .spi-segrow ─────────────
+   The row is handed to the DataTable as `leadingToolbar`, so it sits inside
+   .dt-toolbar > .dt-lead instead of directly under .ord-list. The toolbar
+   steps back (no band, no padding) and the row gets the spacing that
+   order.css gives `.ord-list > .spi-segrow`. Other toolbar items (the
+   Designation / Department / Role / KPI filters, the Role tabs) follow it. */
+.mp-inv .dt-toolbar {
+  padding: 0;
+  background: transparent;
+  border-bottom: 1px solid #eef5f8;
+}
+.mp-inv .dt-lead { flex: 1 1 auto; min-width: 0; }
+/* Right padding 20px = the header's (.spi-head padding: 0 20px), so the
+   search ends exactly where the Add button above it does. */
+.mp-inv .dt-lead > .spi-segrow {
+  flex-wrap: nowrap;
+  gap: 14px;
+  margin: 0;
+  padding: 14px 20px 14px 14px;
+}
+/* The masters without inline filters still pass an (empty) toolbarActions
+   fragment; its box would otherwise push the search in from the edge. */
+.mp-inv .dt-toolbar-actions:empty { display: none; }
+.mp-inv .dt-toolbar-actions:not(:empty) { padding-right: 20px; }
+.mp-inv .dt-lead:has(+ .dt-toolbar-actions:not(:empty)) > .spi-segrow { padding-right: 0; }
+.mp-inv .dt-lead > .spi-segrow .spi-seg { flex-shrink: 0; }
+[data-bs-theme="dark"] .mp-inv .dt-toolbar,
+[data-layout-mode="dark"] .mp-inv .dt-toolbar { border-bottom-color: rgba(148, 163, 184, .14); }
+@media (max-width: 768px) {
+  .mp-inv .dt-lead > .spi-segrow { flex-wrap: wrap; }
+}
+
+/* ── Stat tiles and head buttons, shared by the master pages and the Master
+   Control Center (moved out of MasterPage.tsx so both use one copy) ───── */
+.mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
+/* Teal throughout: the same palette as Warehouse / Rack Master
+   (p2p-common.css .spi-head, .spi-head-btn). */
+.mp-kpi-tile {
+  border-color: #c7eef5 !important;
+  box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 6px 18px rgba(6,182,212,.10), 0 1px 4px rgba(0,0,0,.04) !important;
+}
+.mp-kpi-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 28px rgba(8,145,178,0.16), 0 4px 10px rgba(15,23,42,0.05) !important;
+  border-color: rgba(8,145,178,0.40) !important;
+}
+.mp-kpi-tile__label { color: #0e7490 !important; }
+.mp-kpi-tile__value { color: #0c4a6e !important; }
+[data-bs-theme="dark"] .mp-kpi-tile,
+[data-layout-mode="dark"] .mp-kpi-tile {
+  background: linear-gradient(110deg, #0c2630 0%, #0e2e3a 60%, #103642 100%) !important;
+  border-color: rgba(34,211,238,.22) !important;
+  box-shadow: 0 6px 22px rgba(0,0,0,.35) !important;
+}
+[data-bs-theme="dark"] .mp-kpi-tile__label, [data-layout-mode="dark"] .mp-kpi-tile__label { color: #7dd3fc !important; }
+[data-bs-theme="dark"] .mp-kpi-tile__value, [data-layout-mode="dark"] .mp-kpi-tile__value { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .mp-kpi-tile:hover,
+[data-layout-mode="dark"] .mp-kpi-tile:hover {
+  box-shadow: 0 14px 32px rgba(8,145,178,0.35), 0 4px 10px rgba(0,0,0,0.35) !important;
+  border-color: rgba(34,211,238,0.45) !important;
+}
+
+/* Back sits beside Add in the head: same .spi-head-btn shape, outlined. */
+.mp-head-right { display: flex; align-items: center; gap: 8px; z-index: 1; flex-shrink: 0; }
+.ord-page .spi-head-btn.mp-head-back {
+  color: #0e7490; text-shadow: none;
+  background: rgba(255,255,255,.75);
+  border: 1px solid rgba(8,145,178,.35);
+  box-shadow: none;
+}
+.ord-page .spi-head-btn.mp-head-back::after { display: none; }
+.ord-page .spi-head-btn.mp-head-back:hover { background: #fff; border-color: #22d3ee; }
+.mp-inv .spi-head-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.mp-inv .spi-head-btn i { font-size: 15px; line-height: 1; }
+[data-bs-theme="dark"] .ord-page .spi-head-btn.mp-head-back,
+[data-layout-mode="dark"] .ord-page .spi-head-btn.mp-head-back { background: rgba(255,255,255,.08); color: #a5f3fc; border-color: rgba(34,211,238,.35); }
+@media (max-width: 640px) {
+  .mp-inv .spi-head { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
+}
+
+/* ── List height and cut-off cells ─────────────────────────────────────────
+   Like Service Management: 10 rows a page, the card exactly as tall as the
+   rows on it (no blank band under the last row) and the page scrolls. */
+.mp-inv .dt-root.ord-list { flex: none; min-height: 0; height: auto; }
+/* A cell value cut to the column's width; FitTip shows the whole value. */
+.mp-inv .mp-fit {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An empty list still reaches the bottom of the screen (fitToViewport is on
+   only while there are no rows); once rows come back the card drops the
+   pinned height that fit left inline and goes back to its rows' height. */
+.mp-inv .dt-root.ord-list:not(:has(.dt-empty-row)) { height: auto !important; max-height: none !important; }
+.mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-scroll { display: flex; flex-direction: column; }
+.mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-table { flex: 1 1 auto; }

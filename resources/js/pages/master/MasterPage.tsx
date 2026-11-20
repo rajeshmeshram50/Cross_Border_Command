@@ -1,9 +1,11 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {  Card, CardBody, CardHeader, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { FitTip } from '../p2p/purchase-management/order/create-po/form-fields';
+import SearchClear from '../../components/ui/SearchClear';
 import MasterPlaceholder from '../MasterPlaceholder';
 import DataTable from '../../components/ui/DataTable';
 import InlineSublist from '../../components/ui/InlineSublist';
@@ -16,6 +18,36 @@ import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles, Mast
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
 import '../../../css/master.css';
+import '../p2p/p2p-common.css';
+import '../p2p/purchase-management/order/po-list/order.css';
+import '../inventory-management/warehouse/warehouse-master.css';
+
+const MP_TEAL_BAR  = 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 50%, #0e7490 100%)';
+const MP_TEAL_ICON = 'linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%)';
+
+/* Every value badge in a master table (Target Type, Priority, Role Type,
+   Level) in the same teal; only its colours are replaced, icons and text stay. */
+const MP_TEAL_TONE = { bg: '#ecfeff', fg: '#0e7490', border: '#22d3ee', star: '#0891b2' };
+
+type MpStatusTab = 'all' | 'active' | 'inactive';
+/** A record's status as a tab key; anything that is not "inactive" counts as active. */
+const mpStatusOf = (row: any): 'active' | 'inactive' =>
+  String(row?.status ?? '').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
+/** "Department" -> "Departments", "Category" -> "Categories", "Status" -> "Statuses". */
+const mpPlural = (w: string) =>
+  /[^aeiou]y$/i.test(w) ? w.slice(0, -1) + 'ies'
+  : /(s|x|z|ch|sh)$/i.test(w) ? w + 'es'
+  : w + 's';
+/* The Rack Master tab icons (rack/RackMaster.tsx). */
+const mpSvg = (d: ReactNode) => (
+  <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+);
+const MP_STATUS_TABS: Array<{ key: MpStatusTab; label: string; icon: ReactNode }> = [
+  { key: 'all', label: 'All', icon: mpSvg(<><rect x="4" y="2" width="16" height="20" rx="1.5" /><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="14" x2="20" y2="14" /></>) },
+  { key: 'active', label: 'Active', icon: mpSvg(<><circle cx="12" cy="12" r="9" /><polyline points="8.5 12.5 11 15 15.5 9.5" /></>) },
+  { key: 'inactive', label: 'Inactive', icon: mpSvg(<><circle cx="12" cy="12" r="9" /><line x1="6" y1="18" x2="18" y2="6" /></>) },
+];
 
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -70,7 +102,7 @@ function MasterPageInner({
   const CLIENT_MASTERS = ['designations', 'roles', 'kpis', 'departments'];
   const serverPaged = !CLIENT_MASTERS.includes(cfg.slug);
   const [page, setPage] = useState(0);
-  const [perPage, setPerPage] = useState(24);
+  const [perPage, setPerPage] = useState(10);
   const [totalRows, setTotalRows] = useState(0);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -90,6 +122,23 @@ function MasterPageInner({
   const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
   const [roleDeptFilter, setRoleDeptFilter] = useState<string>('all');
   const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
+  /* All / Active / Inactive tabs (the Rack Master tab row), on every master with a status field. */
+  const [statusTab, setStatusTab] = useState<MpStatusTab>('all');
+  /* A tab switch filters rows already in memory, so it is instant — the table
+     shows its shimmer for a moment anyway (as My Vault and Service Management
+     do), so the switch reads as the list reloading rather than a flicker. */
+  const [tabShimmer, setTabShimmer] = useState(false);
+  const tabShimTimer = useRef<number | undefined>(undefined);
+  const switchStatusTab = (k: MpStatusTab) => {
+    if (k === statusTab) return;
+    setStatusTab(k);
+    setTabShimmer(true);
+    window.clearTimeout(tabShimTimer.current);
+    tabShimTimer.current = window.setTimeout(() => setTabShimmer(false), 350);
+  };
+  useEffect(() => () => window.clearTimeout(tabShimTimer.current), []);
+  const hasStatus = cfg.fields.some(ff => ff.n === 'status');
+  const matchesStatusTab = (row: any) => !hasStatus || statusTab === 'all' || mpStatusOf(row) === statusTab;
   const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
   const [kpiTargetFilter, setKpiTargetFilter] = useState<string>('all');
   const [kpiPriorityFilter, setKpiPriorityFilter] = useState<string>('all');
@@ -286,6 +335,7 @@ function MasterPageInner({
           if (String(row.priority ?? '') !== kpiPriorityFilter) return false;
         }
       }
+      if (!matchesStatusTab(row)) return false;
       if (!q) return true;
       for (const key of searchableKeys) {
         const f = cfg.fields.find(ff => ff.n === key);
@@ -452,80 +502,22 @@ function MasterPageInner({
     };
   }, [modalOpen, cfg.slug, editing?.id]);
 
+  /* The Warehouse / Rack Master row button (warehouse-master.css .whm-act, scoped
+     under the .whm-page root below): a solid teal 32px tile. `color` is kept in
+     the signature for the callers but no longer tints the button. */
   const ActionBtn = ({
-    title, icon, color, onClick, disabled,
+    title, icon, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
     <Tooltip label={title}>
     <button
       type="button"
       aria-label={title}
       disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all .15s ease',
-        position: 'relative',
-      }}
-      onMouseEnter={e => {
-        if (disabled) return;
-        const el = e.currentTarget as HTMLButtonElement;
-        const tint =
-          color === 'primary' ? '#40518918' :
-          color === 'danger'  ? '#f0654818' :
-          color === 'success' ? '#0ab39c18' :
-          color === 'info'    ? '#299cdb18' :
-          color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
-        el.style.background = tint;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        if (disabled) return;
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--vz-secondary-bg)';
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
+      className="whm-act mp-act"
       onClick={onClick}
     >
-      {disabled ? (
-        <span
-          aria-hidden="true"
-          style={{
-            position: 'relative',
-            width: 18, height: 18,
-            borderRadius: '50%',
-            border: '1.5px solid var(--vz-secondary-color)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--vz-secondary-color)',
-            opacity: 0.7,
-            overflow: 'hidden',
-          }}
-        >
-          <i className={icon} style={{ fontSize: 9, lineHeight: 1 }} />
-          <span
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: 0,
-              right: 0,
-              height: '1.5px',
-              background: 'currentColor',
-              transform: 'translateY(-50%) rotate(-45deg)',
-              transformOrigin: 'center',
-            }}
-          />
-        </span>
-      ) : (
-        <i className={`${icon} fs-14`} />
-      )}
+      <i className={icon} />
+
     </button>
     </Tooltip>
   );
@@ -913,9 +905,10 @@ function MasterPageInner({
       const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
       const inactive = raw === false || raw === 0
         || ['0', 'false'].includes(String(raw).toLowerCase());
+      /* Teal like every other badge; Inactive is the same teal, faded. */
       const tone = active
-        ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', text: 'Active' }
-        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: inactive || !raw ? 'Inactive' : titleCase(String(raw)) };
+        ? { bg: '#ecfeff', fg: '#0e7490', dot: '#06b6d4', text: 'Active' }
+        : { bg: '#f3f9fb', fg: '#7aa6b4', dot: '#9fc9d4', text: inactive || !raw ? 'Inactive' : titleCase(String(raw)) };
       void tone.dot;
       return (
         <span
@@ -926,6 +919,7 @@ function MasterPageInner({
             borderRadius: 999,
             background: tone.bg,
             color: tone.fg,
+            border: '1px solid #cdeef4',
             fontSize: 11.5,
             fontWeight: 700,
             lineHeight: 1.3,
@@ -964,9 +958,9 @@ function MasterPageInner({
         <span
           className="rounded-pill d-inline-block"
           style={{
-            background: 'linear-gradient(180deg, #fef3c7 0%, #fde68a 100%)',
-            color: '#92400e',
-            border: '1px solid #f59e0b99',
+            background: '#e4f9fa',
+            color: '#0e7490',
+            border: '1px solid #bfecef',
             padding: '2px 10px',
             fontSize: '10.5px',
             fontWeight: 600,
@@ -974,7 +968,7 @@ function MasterPageInner({
             letterSpacing: '0.02em',
             fontVariantNumeric: 'tabular-nums',
             whiteSpace: 'nowrap',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 rgba(245,158,11,0.22), 0 1px 3px rgba(245,158,11,0.26)',
+            boxShadow: 'none',
           }}
         >
           {display}
@@ -988,7 +982,7 @@ function MasterPageInner({
 
     if (fieldName === 'target_type') {
       const v = String(raw);
-      const tone =
+      const toneByValue =
         /numeric|number/i.test(v)    ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6' } :
         /percent/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e' } :
         /currency/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6' } :
@@ -996,6 +990,7 @@ function MasterPageInner({
         /date/i.test(v)              ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316' } :
         /rating/i.test(v)            ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b' } :
                                        { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
+      const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
           className="d-inline-block rounded-pill"
@@ -1018,12 +1013,13 @@ function MasterPageInner({
 
     if (fieldName === 'priority') {
       const v = String(raw);
-      const tone =
+      const toneByValue =
         /critical/i.test(v) ? { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444' } :
         /high/i.test(v)     ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316' } :
         /medium/i.test(v)   ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b' } :
         /low/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' } :
                               { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
+      const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
           className="d-inline-block rounded-pill"
@@ -1046,13 +1042,14 @@ function MasterPageInner({
 
     if (fieldName === 'role_type') {
       const v = String(raw);
-      const tone =
+      const toneByValue =
         /primary/i.test(v)              ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', icon: 'ri-star-fill' } :
         /ancillary|auxiliary/i.test(v)  ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-time-fill' } :
         /operational/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', icon: 'ri-settings-3-fill' } :
         /administrative/i.test(v)       ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', icon: 'ri-briefcase-fill' } :
         /functional/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', icon: 'ri-shield-check-fill' } :
                                           { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+      const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
           className="d-inline-flex align-items-center rounded-pill"
@@ -1078,7 +1075,7 @@ function MasterPageInner({
     if (fieldName === 'level') {
       const v = String(raw);
       const TOTAL_STARS = 5;
-      const tone =
+      const toneByValue =
         /director|ceo/i.test(v)        ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', star: '#f59e0b', icon: 'ri-vip-crown-fill',  rank: 5, short: 'Director / CEO' } :
         /head|hod/i.test(v)            ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', star: '#8b5cf6', icon: 'ri-medal-2-fill',    rank: 4, short: 'Head of Department' } :
         /lead|team/i.test(v)           ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', star: '#3b82f6', icon: 'ri-team-fill',       rank: 3, short: 'Team Leader' } :
@@ -1086,6 +1083,7 @@ function MasterPageInner({
         /employee|mid|junior/i.test(v) ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', star: '#22c55e', icon: 'ri-user-3-fill',     rank: 1, short: 'Employee' } :
         /intern|trainee/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', star: '#94a3b8', icon: 'ri-book-open-fill',  rank: 1, short: 'Intern / Trainee' } :
                                          { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', star: '#94a3b8', icon: 'ri-circle-line',     rank: 0, short: v };
+      const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <div
           className="text-center w-100 d-flex flex-column align-items-center justify-content-center"
@@ -1166,21 +1164,13 @@ function MasterPageInner({
 
     if (f?.t === 'select' && f.opts?.some(o => typeof o !== 'string')) {
       const opt = normalizeOpts(f.opts).find(o => o.value === String(raw));
-      if (opt) return <span className="text-body">{opt.label}</span>;
+      if (opt) return <FitTip label={opt.label}><span className="text-body mp-fit">{opt.label}</span></FitTip>;
     }
 
+    /* Cut by the column's width (CSS ellipsis), and the tooltip turns on only
+       when the text really is cut. */
     const txt = String(raw);
-    const MAX = 24;
-    if (txt.length <= MAX) {
-      return <span className="text-body">{txt}</span>;
-    }
-    return (
-      <Tooltip label={txt} maxWidth={320}>
-        <span className="text-body" style={{ display: 'inline-block', maxWidth: '100%' }}>
-          {txt.slice(0, MAX - 1)}…
-        </span>
-      </Tooltip>
-    );
+    return <FitTip label={txt}><span className="text-body mp-fit">{txt}</span></FitTip>;
   };
 
   const columns = useMemo(() => {
@@ -1206,15 +1196,7 @@ function MasterPageInner({
             const f = cfg.fields.find(ff => ff.n === colName);
             const raw = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
             const txt = String(raw);
-            const MAX = 20;
-            if (txt.length <= MAX || txt === '—') return <b>{txt}</b>;
-            return (
-              <Tooltip label={txt} maxWidth={320}>
-                <b style={{ display: 'inline-block', maxWidth: '100%' }}>
-                  {txt.slice(0, MAX - 1)}…
-                </b>
-              </Tooltip>
-            );
+            return <FitTip label={txt}><b className="mp-fit">{txt}</b></FitTip>;
           }
           return formatCell(colName, row);
         },
@@ -1398,10 +1380,10 @@ function MasterPageInner({
         : null;
       const userType = String(row.creator_user_type ?? '').toLowerCase();
       const tone =
-        userType === 'super_admin' ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'super' as const } :
-        userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', kind: 'client' as const } :
-        userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const } :
-        { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
+        userType === 'super_admin' ? { bg: '#ecfeff', fg: '#0e7490', kind: 'super' as const } :
+        userType === 'client_admin' || userType === 'client_user' ? { bg: '#ecfeff', fg: '#0e7490', kind: 'client' as const } :
+        userType === 'branch_user' ? { bg: '#ecfeff', fg: '#0e7490', kind: 'branch' as const } :
+        { bg: '#ecfeff', fg: '#0e7490', kind: 'other' as const };
       const shortName = String(name).length > CREATOR_NAME_MAX
         ? `${String(name).slice(0, CREATOR_NAME_MAX)}…`
         : String(name);
@@ -1428,13 +1410,14 @@ function MasterPageInner({
           {shortName === name ? pill : <Tooltip label={name} maxWidth={320}>{pill}</Tooltip>}
           {}
           {scope && (
-            <span
-              className="text-muted mp-creator-sub"
-              title={scope}
-              style={{ fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              {scope}
-            </span>
+            <FitTip label={scope}>
+              <span
+                className="text-muted mp-creator-sub"
+                style={{ fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {scope}
+              </span>
+            </FitTip>
           )}
         </div>
       );
@@ -1443,6 +1426,10 @@ function MasterPageInner({
   };
 
   const singular = cfg.titleSingular || cfg.title;
+  const statusCounts = useMemo(() => {
+    const active = records.filter(r => mpStatusOf(r) === 'active').length;
+    return { all: serverPaged ? totalRows : records.length, active, inactive: records.length - active };
+  }, [records, serverPaged, totalRows]);
 
   if (!caps.view) {
     return (
@@ -1472,79 +1459,9 @@ function MasterPageInner({
   }
 
   return (
-    <>
+    <div className="spi-root ord-page whm-page mp-inv">
       {}
       <style>{`
-        .mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
-        .mp-kpi-tile:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 14px 28px rgba(99,102,241,0.14), 0 4px 10px rgba(15,23,42,0.05) !important;
-          border-color: rgba(99,102,241,0.40) !important;
-        }
-        [data-bs-theme="dark"] .mp-kpi-tile:hover,
-        [data-layout-mode="dark"] .mp-kpi-tile:hover {
-          box-shadow: 0 14px 32px rgba(99,102,241,0.35), 0 4px 10px rgba(0,0,0,0.35) !important;
-          border-color: rgba(139,92,246,0.55) !important;
-        }
-
-        .mp-cstrip {
-          position: relative; overflow: hidden;
-          display: flex; align-items: center; justify-content: space-between;
-          min-height: 58px; padding: 0 20px;
-          border: 1px solid #c4b5fd; border-radius: 16px;
-          background: linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);
-          box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.2), 0 2px 8px rgba(0,0,0,.06);
-        }
-        .mp-cstrip__accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6); border-radius: 16px 0 0 16px; }
-        .mp-cstrip__glow { position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%), radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%); }
-        .mp-cstrip__sheen { position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.5),transparent); border-radius: 16px 16px 0 0; }
-        .mp-cstrip__left { display: flex; align-items: center; gap: 13px; z-index: 1; padding-left: 10px; min-width: 0; }
-        .mp-cstrip__avatar-wrap { position: relative; flex-shrink: 0; }
-        .mp-cstrip__avatar {
-          width: 38px; height: 38px; border-radius: 12px;
-          display: flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 18px;
-          background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);
-          box-shadow: 0 0 0 3px rgba(139,92,246,.25), 0 4px 14px rgba(124,58,237,.45);
-        }
-        .mp-cstrip__dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; box-shadow: 0 2px 4px rgba(34,197,94,.4); }
-        .mp-cstrip__title { font-size: 14.5px; font-weight: 700; color: #3b0764; letter-spacing: -.3px; line-height: 1.2; }
-        .mp-cstrip__sub { font-size: 10px; font-weight: 500; color: #6d28d9; opacity: .85; margin-top: 2px; line-height: 1.3; }
-        .mp-cstrip__right { display: flex; align-items: center; gap: 7px; z-index: 1; flex-shrink: 0; }
-        .mp-cstrip__back {
-          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-          height: 34px; padding: 0 14px; border-radius: 12px;
-          border: 1px solid rgba(124,58,237,.35); background: rgba(255,255,255,.75);
-          color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700;
-          white-space: nowrap; cursor: pointer;
-          transition: background .15s ease, border-color .15s ease, transform .15s ease;
-        }
-        .mp-cstrip__back:hover { background: #fff; border-color: #a78bfa; transform: translateY(-1px); }
-        .mp-cstrip__back i { font-size: 14px; }
-        @media (max-width: 640px) {
-          .mp-cstrip { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
-        }
-        [data-bs-theme="dark"] .mp-cstrip,
-        [data-layout-mode="dark"] .mp-cstrip { background: #34216b; border-color: rgba(167,139,250,.28); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
-        [data-bs-theme="dark"] .mp-cstrip__glow, [data-layout-mode="dark"] .mp-cstrip__glow,
-        [data-bs-theme="dark"] .mp-cstrip__sheen, [data-layout-mode="dark"] .mp-cstrip__sheen { display: none; }
-        [data-bs-theme="dark"] .mp-cstrip__title, [data-layout-mode="dark"] .mp-cstrip__title { color: #f3e8ff; }
-        [data-bs-theme="dark"] .mp-cstrip__sub, [data-layout-mode="dark"] .mp-cstrip__sub { color: #c4b5fd; }
-        [data-bs-theme="dark"] .mp-cstrip__back, [data-layout-mode="dark"] .mp-cstrip__back { background: rgba(255,255,255,.08); color: #ddd6fe; }
-        [data-bs-theme="dark"] .mp-cstrip__back:hover, [data-layout-mode="dark"] .mp-cstrip__back:hover { background: rgba(255,255,255,.16); }
-
-        .mp-add-btn {
-          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-          height: 34px; padding: 0 18px; border: 0; border-radius: 999px;
-          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
-          color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 600;
-          white-space: nowrap; cursor: pointer;
-          box-shadow: 0 5px 16px rgba(124,58,237,0.40), 0 2px 5px rgba(91,33,182,0.25);
-          transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
-        }
-        .mp-add-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
-        .mp-add-btn i { font-size: 15px; }
-
         .mp-kpi-tile + * .badge,
         .dt-table .badge {
           font-weight: 700;
@@ -1568,43 +1485,28 @@ function MasterPageInner({
           border-color: rgba(255,255,255,0.34);
         }
         .search-box .form-control:focus {
-          border-color: rgba(99,102,241,0.45);
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+          border-color: rgba(8,145,178,0.45);
+          box-shadow: 0 0 0 3px rgba(6,182,212,0.18);
         }
 
         .master-modal .modal-dialog:not(.modal-lg):not(.modal-xl) {
           max-width: 620px;
         }
 
+        /* Dark: every badge in the same teal (Inactive faded). */
         [data-bs-theme="dark"] .mp-status-active,
-        [data-layout-mode="dark"] .mp-status-active {
-          background: rgba(34, 197, 94, 0.18) !important;
-          color: #86efac !important;
+        [data-layout-mode="dark"] .mp-status-active,
+        [data-bs-theme="dark"] .mp-creator-pill,
+        [data-layout-mode="dark"] .mp-creator-pill {
+          background: rgba(34, 211, 238, 0.14) !important;
+          color: #67e8f9 !important;
+          border-color: rgba(34, 211, 238, 0.24) !important;
         }
         [data-bs-theme="dark"] .mp-status-inactive,
         [data-layout-mode="dark"] .mp-status-inactive {
-          background: rgba(239, 68, 68, 0.18) !important;
-          color: #fca5a5 !important;
-        }
-        [data-bs-theme="dark"] .mp-creator-super,
-        [data-layout-mode="dark"] .mp-creator-super {
-          background: rgba(139, 92, 246, 0.18) !important;
-          color: #c4b5fd !important;
-        }
-        [data-bs-theme="dark"] .mp-creator-client,
-        [data-layout-mode="dark"] .mp-creator-client {
-          background: rgba(59, 130, 246, 0.18) !important;
-          color: #93c5fd !important;
-        }
-        [data-bs-theme="dark"] .mp-creator-branch,
-        [data-layout-mode="dark"] .mp-creator-branch {
-          background: rgba(20, 184, 166, 0.18) !important;
-          color: #5eead4 !important;
-        }
-        [data-bs-theme="dark"] .mp-creator-other,
-        [data-layout-mode="dark"] .mp-creator-other {
-          background: rgba(148, 163, 184, 0.18) !important;
-          color: #cbd5e1 !important;
+          background: rgba(34, 211, 238, 0.05) !important;
+          color: #5f8ea1 !important;
+          border-color: rgba(34, 211, 238, 0.14) !important;
         }
         [data-bs-theme="dark"] .mp-creator-sub,
         [data-layout-mode="dark"] .mp-creator-sub { color: rgba(255,255,255,0.55) !important; }
@@ -1618,40 +1520,13 @@ function MasterPageInner({
       `}</style>
 
       {}
-      {cfg.parent ? (
-        <div className="frm-cstrip mb-3">
-          <span className="frm-cstrip-accent" />
-          <div className="frm-cstrip-left">
-            <div className="frm-cstrip-icon"><i className={cfg.icon} /></div>
-            <div className="min-w-0">
-              <div className="d-flex align-items-center gap-2 flex-wrap">
-                <span className="frm-cstrip-title">{cfg.title}</span>
-              </div>
-              <div className="frm-cstrip-sub">{cfg.desc}</div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="frm-cstrip-back flex-shrink-0"
-            onClick={() => navigate(backTo)}
-            title={backTitle}
-          >
-            <i className="ri-arrow-left-line" />
-            Back
-          </button>
-        </div>
-      ) : (
-      <div className="mp-cstrip mb-3">
-        <span className="mp-cstrip__accent" />
-        <span className="mp-cstrip__glow" />
-        <span className="mp-cstrip__sheen" />
-        <div className="mp-cstrip__left">
-          <div className="mp-cstrip__avatar-wrap">
-            <div className="mp-cstrip__avatar"><i className={cfg.icon} /></div>
-            <span className="mp-cstrip__dot" />
-          </div>
+      {/* The Warehouse / Rack Master header, using their own classes
+          (p2p-common.css .spi-head / .spi-head-btn), for every master. */}
+      <div className="spi-head">
+        <div className="spi-head-left">
+          <div className="spi-head-icon"><i className={cfg.icon} /></div>
           <div className="min-w-0">
-            <div className="mp-cstrip__title">
+            <div className="spi-head-title">
               {cfg.slug === 'roles' ? 'Role Master'
                 : cfg.slug === 'kpis' ? 'KPI Master'
                 : cfg.slug === 'assets' ? 'Asset Master'
@@ -1665,7 +1540,7 @@ function MasterPageInner({
                 : cfg.slug === 'departments' ? 'Department Master'
                 : cfg.title}
             </div>
-            <div className="mp-cstrip__sub">
+            <div className="spi-head-sub">
               {cfg.slug === 'roles'
                 ? 'Manage all employee roles, role types, and role structure for workforce assignment'
                 : cfg.slug === 'kpis'
@@ -1688,24 +1563,38 @@ function MasterPageInner({
                 ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
                 : cfg.slug === 'departments'
                 ? 'Manage department hierarchy, heads & configuration across the organisation'
+                : cfg.parent && cfg.desc
+                ? cfg.desc
                 : `Manage ${cfg.title.toLowerCase()} records`}
             </div>
           </div>
         </div>
-        <div className="mp-cstrip__right">
-          <button type="button" className="mp-cstrip__back" onClick={() => navigate(backTo)} title={backTitle}>
+        <div className="mp-head-right">
+          <button type="button" className="spi-head-btn mp-head-back" onClick={() => navigate(backTo)} title={backTitle}>
             <i className="ri-arrow-left-line" />
             {backLabel}
           </button>
+          {caps.add ? (
+            <button type="button" className="spi-head-btn" onClick={openAdd}>
+              <i className="ri-add-line" />
+              Add {singular}
+            </button>
+          ) : cfg.lockedFixed && permitsAdd ? (
+            <button
+              type="button"
+              className="spi-head-btn"
+              disabled
+              title={cfg.lockedReason || `${cfg.title} is a fixed master — no new records can be added.`}
+            >
+              <i className="ri-lock-line" />
+              Add {singular}
+            </button>
+          ) : null}
         </div>
       </div>
-      )}
 
-      {}
-
-      {}
       {cfg.kpis && cfg.kpis.length > 0 && (
-        <div className="d-flex flex-wrap align-items-stretch mb-2" style={{ gap: 8 }}>
+        <div className="d-flex flex-wrap align-items-stretch" style={{ gap: 8 }}>
           {cfg.kpis.map(k => {
             const value = k.compute(records);
             return (
@@ -1724,23 +1613,25 @@ function MasterPageInner({
                   overflow: 'hidden',
                 }}
               >
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                {/* Every tile in the Warehouse / Rack Master teal, not its own
+                    per-KPI colour (k.gradient), so the strip reads as one set. */}
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: MP_TEAL_BAR }} />
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
-                    <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                    <p className="mp-kpi-tile__label" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
                       {k.label}
                     </p>
-                    <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                    <h3 className="mp-kpi-tile__value" style={{ fontSize: 22, fontWeight: 800, margin: 0, lineHeight: 1 }}>
                       {value.toLocaleString()}
                     </h3>
                   </div>
                   <div
                     style={{
-                      width: 38, height: 38, borderRadius: 10,
-                      background: k.gradient,
+                      width: 38, height: 38, borderRadius: 12,
+                      background: MP_TEAL_ICON,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flexShrink: 0,
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.10)',
+                      boxShadow: '0 0 0 3px rgba(6,182,212,.18), 0 4px 12px rgba(8,145,178,.35)',
                     }}
                   >
                     <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
@@ -1770,8 +1661,10 @@ function MasterPageInner({
 
       {}
       <DataTable<any>
-        data={serverPaged ? records : filteredRecords}
+        data={serverPaged ? records.filter(matchesStatusTab) : filteredRecords}
+        fitToViewport={!loading && !tabShimmer && (serverPaged ? records.filter(matchesStatusTab) : filteredRecords).length === 0}
         columns={columns}
+        className="ord-list"
         {...(serverPaged ? {
           serverPagination: {
             total: totalRows,
@@ -1781,14 +1674,50 @@ function MasterPageInner({
           },
         } : {})}
         serial
-        accent="violet"
+        accent="teal"
         minWidth={1100}
-        fitToViewport
-        autoFitRows
-        loading={loading}
-        searchValue={searchInput}
-        onSearchChange={setSearchInput}
-        searchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
+        pageSize={perPage}
+        pageSizeOptions={[10, 25, 50]}
+        loading={loading || tabShimmer}
+        searchable={false}
+        leadingToolbar={
+          /* The Rack / Warehouse Master tab row and search, with their own classes
+             (p2p-common.css .spi-segrow / .spi-seg / .spi-search). */
+          <div className="spi-segrow">
+            {hasStatus && (
+              <div className="spi-seg" role="tablist" aria-label={`${singular} status`}>
+                {MP_STATUS_TABS.map(t => (
+                  <button
+                    key={t.key} type="button" role="tab"
+                    aria-selected={statusTab === t.key}
+                    className={`spi-seg-btn${statusTab === t.key ? ' is-active' : ''}`}
+                    onClick={() => switchStatusTab(t.key)}
+                  >
+                    <span className="spi-seg-ico">{t.icon}</span>
+                    {t.label} {mpPlural(singular)}
+                    <span className="spi-seg-c">{statusCounts[t.key]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="spi-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+                name={`${cfg.slug}-list-search`}
+                placeholder={`Search ${mpPlural(singular).toLowerCase()}...`}
+                aria-label={`Search ${mpPlural(singular).toLowerCase()}`}
+                autoComplete="off"
+              />
+              <SearchClear show={searchInput} onClear={() => setSearchInput('')} />
+            </div>
+          </div>
+        }
         {...(cfg.slug === 'roles' ? {
           tabs: roleTabs,
           activeTab: roleTab,
@@ -1846,23 +1775,6 @@ function MasterPageInner({
                 setPriorityFilter={setKpiPriorityFilter}
               />
             )}
-            {caps.add ? (
-              <button type="button" className="mp-add-btn" onClick={openAdd}>
-                <i className="ri-add-line" />
-                Add {singular}
-              </button>
-            ) : cfg.lockedFixed && permitsAdd ? (
-              <button
-                type="button"
-                className="mp-add-btn"
-                disabled
-                title={cfg.lockedReason || `${cfg.title} is a fixed master — no new records can be added.`}
-                style={{ opacity: 0.5, cursor: 'not-allowed' }}
-              >
-                <i className="ri-lock-line" />
-                Add {singular}
-              </button>
-            ) : null}
           </>
         }
       />
@@ -1943,9 +1855,8 @@ function MasterPageInner({
                 {viewOnly ? `Viewing details for this ${singular.toLowerCase()}` :
                  editingId != null ? `Update the details of this ${singular.toLowerCase()}` :
                  `Fill in the details to register a new ${singular.toLowerCase()}`}
-              </small>
+              </div>
             </div>
-            {}
           </div>
         </div>
         <Form onSubmit={handleSave} noValidate>
@@ -2056,7 +1967,7 @@ function MasterPageInner({
         department={treeTarget}
       />
 
-    </>
+    </div>
   );
 }
 
@@ -2147,8 +2058,8 @@ function EmployeeTreeModal({
 const ET_TREE_CSS = `
 .et-modal-wrap .modal-dialog { max-width: 94vw; }
 .et-modal {
-  border-radius: 16px !important; overflow: hidden; border: 0;
-  box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+  border-radius: 26px !important; overflow: hidden; border: 1px solid rgba(255,255,255,.7);
+  box-shadow: 0 50px 120px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.12);
   width: fit-content; min-width: 340px; max-width: 100%; margin: 0 auto;
 }
 .et-modal-header {
@@ -2178,12 +2089,9 @@ const ET_TREE_CSS = `
   position: relative;
   max-height: 76vh; overflow-y: auto;
   background:
-    radial-gradient(circle at 10% 8%,  rgba(139,92,246,0.22), transparent 24%),
-    radial-gradient(circle at 90% 12%, rgba(236,72,153,0.18), transparent 22%),
-    radial-gradient(circle at 88% 90%, rgba(6,182,212,0.18),  transparent 26%),
-    radial-gradient(circle at 12% 92%, rgba(16,185,129,0.16), transparent 24%),
-    linear-gradient(160deg, rgba(139,92,246,0.10) 0%, rgba(168,85,247,0.05) 45%, rgba(236,72,153,0.04) 100%),
-    var(--vz-card-bg);
+    radial-gradient(circle at 10% 8%,  rgba(34,211,238,0.14), transparent 26%),
+    radial-gradient(circle at 90% 90%, rgba(8,145,178,0.10),  transparent 28%),
+    linear-gradient(180deg, #f4fbfd 0%, #eef7fa 100%);
 }
 .et-scroll { position: relative; z-index: 1; overflow-x: auto; padding: 16px 6px 8px; }
 .et-tree { display: inline-block; text-align: center; }
@@ -2192,7 +2100,7 @@ const ET_TREE_CSS = `
 .et-tree li { position: relative; padding: 26px 8px 0; list-style: none; }
 .et-tree li::before, .et-tree li::after {
   content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 26px;
-  border-top: 2px solid rgba(124,58,237,0.32);
+  border-top: 2px solid rgba(8,145,178,0.35);
 }
 .et-tree li::after { right: auto; left: 50%; border-left: 2px solid rgba(124,58,237,0.32); }
 .et-tree li:only-child::before, .et-tree li:only-child::after { display: none; }
@@ -2202,7 +2110,7 @@ const ET_TREE_CSS = `
 .et-tree li:first-child::after { border-radius: 7px 0 0 0; }
 .et-tree ul ul::before {
   content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 26px;
-  border-left: 2px solid rgba(124,58,237,0.32);
+  border-left: 2px solid rgba(8,145,178,0.35);
 }
 .et-tree > ul { padding-top: 0; }
 .et-node {
