@@ -5270,8 +5270,15 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // Prices and GST are searchable too, in every way a user may type them:
+    // 1212 · 1212.00 · 1,212 · ₹1,212 · 18 / 18%.
+    const amounts = (n: number) => Number.isFinite(n)
+      ? [String(n), n.toFixed(2), n.toLocaleString('en-IN', { maximumFractionDigits: 2 }), inrAmt(n)]
+      : [];
     return (rows ?? []).filter(r => !q || [
       r.productName, r.productCode, formatProductCode(r.productCode), r.hsnSacCode, r.segment,
+      ...amounts(r.purchasePrice), ...amounts(r.gstAmount), ...amounts(r.totalAmount),
+      `${Number(r.gstPercentage)}%`,
     ].some(s => String(s ?? '').toLowerCase().includes(q)));
   }, [rows, search]);
 
@@ -5808,7 +5815,7 @@ function MappedProductsListCard(props: {
             autoComplete="new-password"
             data-lpignore="true"
             data-form-type="other"
-            placeholder="Search product, code, HSN/SAC, segment…"
+            placeholder="Search product, code, HSN/SAC, segment, price…"
             value={paging.search}
             disabled={props.total === 0}
             onChange={e => paging.setSearch(e.target.value)}
@@ -5831,12 +5838,13 @@ function MappedProductsListCard(props: {
                     <th style={{ textAlign: 'center' }}>SR. NO</th>
                     <th>PRODUCT</th>
                     <th style={{ textAlign: 'center' }}>PRODUCT CODE</th>
-                    <th>HSN / SAC</th>
+                    {/* Every column but Product is centred — header and value on one axis. */}
+                    <th style={{ textAlign: 'center' }}>HSN / SAC</th>
                     <th style={{ textAlign: 'center' }}>SEGMENT</th>
-                    <th style={{ textAlign: 'right' }}>PRICE (₹)</th>
+                    <th style={{ textAlign: 'center' }}>PRICE (₹)</th>
                     <th style={{ textAlign: 'center' }}>GST %</th>
-                    <th style={{ textAlign: 'right' }}>GST (₹)</th>
-                    <th style={{ textAlign: 'right' }}>TOTAL (₹)</th>
+                    <th style={{ textAlign: 'center' }}>GST (₹)</th>
+                    <th style={{ textAlign: 'center' }}>TOTAL (₹)</th>
                     <th style={{ textAlign: 'center' }}>ACTIONS</th>
                   </tr>
                 </thead>
@@ -5853,7 +5861,7 @@ function MappedProductsListCard(props: {
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
-                        <td><span className="smp-hsn">{r.hsnSacCode || '—'}</span></td>
+                        <td style={{ textAlign: 'center' }}><span className="smp-hsn">{r.hsnSacCode || '—'}</span></td>
                         <td style={{ textAlign: 'center' }}>
                           {segName ? (
                             <span className="smc-seg smc-seg--withbadge">
@@ -5862,11 +5870,11 @@ function MappedProductsListCard(props: {
                             </span>
                           ) : '—'}
                         </td>
-                        <td style={{ textAlign: 'right' }}><span className="smp-price">{inrAmt(r.purchasePrice)}</span></td>
+                        <td style={{ textAlign: 'center' }}><span className="smp-price">{inrAmt(r.purchasePrice)}</span></td>
                         {/* 0% is a value, not a blank (CS-168) — only a bad parse reads as a dash. */}
                         <td style={{ textAlign: 'center' }}>{Number.isFinite(r.gstPercentage) ? <span className="smp-gst">{`${Number(r.gstPercentage.toFixed(2))}%`}</span> : '—'}</td>
-                        <td style={{ textAlign: 'right' }}><span className="smp-gst-amt">{inrAmt(r.gstAmount)}</span></td>
-                        <td style={{ textAlign: 'right' }}><span className="smp-total">{inrAmt(r.totalAmount)}</span></td>
+                        <td style={{ textAlign: 'center' }}><span className="smp-gst-amt">{inrAmt(r.gstAmount)}</span></td>
+                        <td style={{ textAlign: 'center' }}><span className="smp-total">{inrAmt(r.totalAmount)}</span></td>
                         <td style={{ textAlign: 'center' }}>
                           {/* Edit only (CS-168): unmapping stays in the supplier form. */}
                           <Tooltip label="Edit product">

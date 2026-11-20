@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import SegmentBadge, { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -238,9 +238,9 @@ function complianceTone(status?: string): { label: string; cls: string } | null 
 }
 
 /* ── Filter Suppliers (the design's centred modal) ──────────────────────────
- * Ticks still apply as you go, so "N of M suppliers match" is the real answer
- * from the server, not a guess. Apply keeps them; Cancel, ×, Esc and the
- * backdrop put back what was set when the modal opened. */
+ * Ticks are a DRAFT inside the modal: the list changes only on Apply Filters.
+ * Cancel, ×, Esc and the backdrop drop the draft. "N of M suppliers match" is
+ * still the real answer from the server — a count-only request for the draft. */
 const CAT_OPTS: Array<{ key: string; label: string; hint: string; icon: CatIcon }> = [
   { key: 'star',        label: 'Star Supplier',        hint: 'Top-rated, high-volume',      icon: 'star'  },
   { key: 'general',     label: 'General Supplier',     hint: 'Standard approved suppliers', icon: 'medal' },
@@ -270,27 +270,46 @@ function RefineSuppliers(props: {
   shown: number;
   active: number;
   scopeLabel: string;
-  catSel: string[];
-  compSel: string[];
-  onToggleCat: (k: string) => void;
-  onToggleComp: (k: string) => void;
-  /** Set both selections at once (Clear All, and Cancel restoring the opening state). */
-  onSet: (cat: string[], comp: string[]) => void;
+  /** The filters the LIST uses now (applied). */
+  applied: { cat: string[]; comp: string[] };
+  /** Apply Filters: hand the draft to the list. */
+  onApply: (cat: string[], comp: string[]) => void;
+  /** How many suppliers a draft would return (count only; the list is not touched). */
+  countFor: (cat: string[], comp: string[]) => Promise<number>;
 }) {
-  const { open, onOpenChange, facets, catSel, compSel, onSet } = props;
-  const opened = useRef<{ cat: string[]; comp: string[] } | null>(null);
+  const { open, onOpenChange, facets, applied, onApply, countFor } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Remember the selection the modal opened with, so Cancel can put it back.
+  // The draft starts from what is applied each time the modal opens.
+  const [catSel, setCatSel] = useState<string[]>(applied.cat);
+  const [compSel, setCompSel] = useState<string[]>(applied.comp);
   useEffect(() => {
-    if (open) { opened.current = { cat: catSel, comp: compSel }; dialogRef.current?.focus(); }
+    if (open) { setCatSel(applied.cat); setCompSel(applied.comp); dialogRef.current?.focus(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  const toggle = (list: string[], set: (v: string[]) => void, k: string) =>
+    set(list.includes(k) ? list.filter(x => x !== k) : [...list, k]);
+  const draftCount = catSel.length + compSel.length;
 
-  const cancel = useCallback(() => {
-    if (opened.current) onSet(opened.current.cat, opened.current.comp);
-    onOpenChange(false);
-  }, [onSet, onOpenChange]);
+  // "N of M suppliers match" for the draft: the list's own total while the draft equals what is
+  // applied, otherwise a count-only request (debounced; a newer one wins).
+  const same = catSel.join() === applied.cat.join() && compSel.join() === applied.comp.join();
+  const [matchN, setMatchN] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || same) { setMatchN(null); return; }
+    let live = true;
+    setMatchN(null);
+    const t = window.setTimeout(() => {
+      countFor(catSel, compSel).then(n => { if (live) setMatchN(n); }).catch(() => {});
+    }, 250);
+    return () => { live = false; window.clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, same, catSel.join(), compSel.join()]);
+  const shownN = same ? props.shown : matchN;
+
+  // Cancel / × / Esc / backdrop: close and drop the draft (the list never changed).
+  const cancel = useCallback(() => { onOpenChange(false); }, [onOpenChange]);
+  const apply = () => { onApply(catSel, compSel); onOpenChange(false); };
 
   // Esc cancels; the page behind stays still (html too: a body-only lock still lets it scroll).
   useEffect(() => {
@@ -354,12 +373,13 @@ function RefineSuppliers(props: {
                 <div className="supfm-sec__hd">
                   <span className="supfm-sec__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
                   <div className="supfm-sec__t"><b>Supplier Category</b><small>Filter by supplier rating</small></div>
+                  {catSel.length > 0 && <span className="supfm-sel">{catSel.length} selected</span>}
                 </div>
                 <div className="supfm-grid">
                   {CAT_OPTS.map(t => option(
                     t.key, t.label, t.hint, <CatIconSvg kind={t.icon} />,
                     facets ? facets.category[t.key as keyof SupplierFacets['category']] : null,
-                    catSel.includes(t.key), () => props.onToggleCat(t.key),
+                    catSel.includes(t.key), () => toggle(catSel, setCatSel, t.key),
                   ))}
                 </div>
               </section>
@@ -368,26 +388,28 @@ function RefineSuppliers(props: {
                 <div className="supfm-sec__hd">
                   <span className="supfm-sec__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /><path d="M9 12l2 2 4-4" /></svg></span>
                   <div className="supfm-sec__t"><b>Compliant Status</b><small>Filter by KYC / compliance result</small></div>
+                  {compSel.length > 0 && <span className="supfm-sel">{compSel.length} selected</span>}
                 </div>
                 <div className="supfm-grid">
                   {COMP_OPTS.map(t => option(
                     t.key, t.label, t.hint, t.glyph,
                     facets ? facets.compliance[t.key as keyof SupplierFacets['compliance']] : null,
-                    compSel.includes(t.key), () => props.onToggleComp(t.key),
+                    compSel.includes(t.key), () => toggle(compSel, setCompSel, t.key),
                   ))}
                 </div>
               </section>
             </div>
 
             <div className="supfm-ft">
-              <button type="button" className="supfm-clear" onClick={() => onSet([], [])} disabled={!props.active}>
+              {/* Clears the draft; the list follows only on Apply. */}
+              <button type="button" className="supfm-clear" onClick={() => { setCatSel([]); setCompSel([]); }} disabled={!draftCount}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /></svg>
                 Clear All
               </button>
-              <span className="supfm-res"><b>{props.shown}</b> of {grand} suppliers match</span>
+              <span className="supfm-res"><b>{shownN ?? '…'}</b> of {grand} suppliers match</span>
               <span className="supfm-sp" />
               <button type="button" className="supfm-cancel" onClick={cancel}>Cancel</button>
-              <button type="button" className="supfm-apply" onClick={() => onOpenChange(false)}><IcoTick />Apply Filters</button>
+              <button type="button" className="supfm-apply" onClick={apply}><IcoTick />Apply Filters{draftCount > 0 ? ` (${draftCount})` : ''}</button>
             </div>
           </div>
         </div>,
@@ -451,8 +473,6 @@ export default function Vendors() {
   const catParam  = catSel.join(',');
   const compParam = compSel.join(',');
   const activeFilters = catSel.length + compSel.length;
-  const toggleIn = (list: string[], set: (v: string[]) => void, key: string) =>
-    set(list.includes(key) ? list.filter(k => k !== key) : [...list, key]);
   /* Scope tabs on the "What We Are Doing Here" strip. Same split the Add
      Supplier gate asks about, applied to the list: a supplier is domestic
      when its country is India and international otherwise — the same rule the
@@ -683,6 +703,20 @@ export default function Vendors() {
     const t = window.setTimeout(() => setDebouncedSearch(next), 500);
     return () => window.clearTimeout(t);
   }, [search]);
+
+  /* Filter Suppliers works on a draft: these are the filters the list uses (applied), and the
+     count a draft would return — same search / scope / tab as the list, one row, total only. */
+  const appliedFilters = useMemo(() => ({ cat: catSel, comp: compSel }), [catSel, compSel]);
+  const countSuppliersFor = useCallback(async (cat: string[], comp: string[]) => {
+    const r = await api.get<any>('/vendors', { params: {
+      ...(debouncedSearch ? { q: debouncedSearch } : {}),
+      ...(cat.length ? { categories: cat.join(',') } : {}),
+      ...(comp.length ? { compliance: comp.join(',') } : {}),
+      scope: scopeTab, tab, page: 1, per_page: 1,
+    } });
+    const b: any = r.data ?? {};
+    return Number(b.total ?? b.meta?.total ?? (Array.isArray(b) ? b.length : 0)) || 0;
+  }, [debouncedSearch, scopeTab, tab]);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     const filterKey = JSON.stringify([debouncedSearch, catParam, compParam, scopeTab, tab]);
@@ -994,11 +1028,9 @@ useEffect(() => {
                 facets={facets}
                 shown={total}
                 active={activeFilters}
-                catSel={catSel}
-                compSel={compSel}
-                onToggleCat={k => toggleIn(catSel, setCatSel, k)}
-                onToggleComp={k => toggleIn(compSel, setCompSel, k)}
-                onSet={(cat, comp) => { setCatSel(cat); setCompSel(comp); }}
+                applied={appliedFilters}
+                onApply={(cat, comp) => { setCatSel(cat); setCompSel(comp); }}
+                countFor={countSuppliersFor}
                 scopeLabel={isIntlScope ? 'International Suppliers' : 'Domestic Suppliers'}
               />
               <div className="dt-search">

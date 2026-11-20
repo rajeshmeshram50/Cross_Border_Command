@@ -3342,3 +3342,12 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table .avm-req-pill.off { color: #94a3b8; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table tbody tr:hover td,
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background-color: rgba(34, 211, 238, .07) !important; }
+/* Dark mode: the section card header's bottom rule was the light #eef7fa (a white line under
+   every card title); the card's own faint teal instead. Popups (.avm-cp-popup) use the same card. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-modal, .avm-cp-popup) .avm-section-head { border-bottom-color: rgba(103, 232, 249, .16); }
+/* Dark mode step tables sit on the card: rows had their own darker fill (#0c1a22) so each looked
+   like a separate block, the head line was a grey rgb(50,56,62) and the wrapper Bootstrap's
+   #212529. Transparent rows on the card colour, a faint teal head band, teal rules. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap { background: transparent !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { background: linear-gradient(rgba(34, 211, 238, .06), rgba(34, 211, 238, .06)), #10222b !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody td { background: transparent; border-bottom-color: rgba(103, 232, 249, .1); }

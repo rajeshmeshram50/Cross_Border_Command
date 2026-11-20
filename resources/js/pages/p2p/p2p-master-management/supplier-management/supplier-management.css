@@ -1310,9 +1310,26 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 }
 .supfm-opt.is-on { border-color: #22d3ee; background: #f0fdff; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
 .supfm-opt.is-on .supfm-chk { color: #fff; border-color: transparent; background: linear-gradient(135deg, #22d3ee, #0891b2); }
+/* Figma: a ticked option's count turns solid teal; each section says how many it has ticked. */
+.supfm-opt.is-on .supfm-n { color: #fff; border-color: transparent; background: linear-gradient(135deg, #0891b2, #0e7490); }
+.supfm-sel {
+  margin-left: auto; flex-shrink: 0; padding: 4px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; color: #0e7490; background: #ecfeff; border: 1px solid #bfe9f1;
+}
+[data-bs-theme="dark"] .supfm-sel { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+/* Compact, to the Figma's measurements: option rows 40px (two tight text lines), section header
+   54px, header 76px, footer 65px — the modal is ~475px, not ~520px. */
+.supfm-hd { padding: 15px 18px; }
+.supfm-body { gap: 14px; padding: 14px 20px 15px; }
+.supfm-sec__hd { padding: 9px 16px 9px 20px; }
+.supfm-opt { min-height: 40px; padding: 4px 12px; }
+.supfm-txt { gap: 0; }
+.supfm-txt b { line-height: 1.25; }
+.supfm-txt small { line-height: 1.25; }
+[data-bs-theme="dark"] .supfm-opt.is-on .supfm-n { color: #fff; background: #0891b2; border-color: transparent; }
 .supfm-opt:focus-visible, .supfm-x:focus-visible, .supfm-ft button:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
 
-.supfm-ft { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #fff; border-top: 1px solid #e6f3f7; }
+.supfm-ft { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #fff; border-top: 1px solid #e6f3f7; }
 .supfm-clear {
   display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 11px;
   font-family: inherit; font-size: 13px; font-weight: 600; color: #475569; background: #fff; border: 1px solid #e2e8f0; cursor: pointer;
@@ -1384,3 +1401,16 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 [data-bs-theme="dark"] .sup-list .sup-kind.is-on .sup-kind__c {
   color: #a5f3fc; background: linear-gradient(135deg, rgba(34, 211, 238, .22), rgba(8, 145, 178, .3)); border-color: rgba(103, 232, 249, .55); box-shadow: none;
 }
+
+/* Supplier list: every header centred over its column. Supplier, Segment, Location and Contact
+   Person were the only left-aligned columns; their content is centred too (each block keeps its own
+   lines left-aligned inside), so header and content share one centre line in every column. */
+.sup-fig .sup-table-wrap .table thead th { text-align: center !important; }
+.sup-fig .sup-table-wrap .table tbody td:is(:nth-child(3), :nth-child(5), :nth-child(6), :nth-child(7)) { text-align: center !important; }
+/* A block centred by its own width zigzags (every name is a different length), so the multi-line
+   cells get one FIXED-width box, centred in the column, with its contents left-aligned inside:
+   the supplier icons, names and the location / contact lines start at one x on every row. */
+.sup-fig .sup-table-wrap .table tbody td:nth-child(3) > * { width: min(230px, 100%); margin-inline: auto; justify-content: flex-start; text-align: left; }
+.sup-fig .sup-table-wrap .table tbody td:nth-child(6) > * { width: min(140px, 100%); }
+.sup-fig .sup-table-wrap .table tbody td:nth-child(7) > * { width: min(190px, 100%); }
+.sup-fig .sup-table-wrap .table tbody td:is(:nth-child(5), :nth-child(6), :nth-child(7)) > * { text-align: left; }

@@ -4518,3 +4518,22 @@
 /* Vault Re-upload popup footer: 40px / 12.5px like every Supplier button. */
 .spev .cev-reup-ft :is(.cev-reup-cancel, .cev-reup-save),
 body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+
+/* ===== Supplier vault, Case to Case overview (shipment picker and a deal's documents) ===== */
+/* Back to shipments: a 40px button like the close beside it (it was ~30px / 11px). */
+.spev-ov .sev-ov-back { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 12.5px; gap: 6px; }
+/* A long supplier name ends in "..." on one line instead of wrapping the header. */
+.spev-ov .cev-ov-head-text { min-width: 0; flex: 1 1 auto; }
+.spev-ov .cev-ov-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Five document rows fit, then the list scrolls (40px buttons made a row ~60px, so the old
+   266px box cut the fourth row in half). Head 37 + 5 x 60 + the panel's padding. */
+.spev-ov:not(.spev-ov-std) .cev-ov-body { height: 380px; max-height: 380px; }
+.spev-ov:not(.spev-ov-std) .cev-sdp tbody tr { height: 60px; }
+/* Row actions: one width for every button, 8px apart, so Send / Resend / Track / View line up. */
+.spev-ov .cev-sdp td .cev-sdp-act { min-width: 104px; margin: 0 4px; justify-content: center; }
+/* The popup stays one size and only the TABLE scrolls: the body no longer scrolls (that took the
+   teal head row away with it); the framed table box holds the head + 5 rows (36 + 5 x 60 + 2) and
+   scrolls under its pinned head. The box's own inline overflow:hidden is why !important is needed. */
+.spev-ov:not(.spev-ov-std) .cev-ov-body { overflow: hidden; }
+.spev-ov .cev-sdp > div:has(> table) { max-height: 340px; overflow-y: auto !important; overscroll-behavior: contain; }
+.spev-ov .cev-sdp thead { position: sticky; top: 0; z-index: 2; }
