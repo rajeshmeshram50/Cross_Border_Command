@@ -2047,11 +2047,12 @@ button.avm-kyc-act { padding: 0; font: inherit; }
  * Scoped with body:has(.smc-root.sup-list): the modal is portalled to
  * body, so it has no page ancestor to hang a class on. Only the
  * Supplier Management list page carries .sup-list, so the same wizard
- * opened from Bulk Sourcing keeps its violet look untouched.
+ * opened from Bulk Sourcing keeps its violet look untouched. The Sourcing
+ * Tracker (.sct-page) and Service Management (.svm-page) share the teal look.
  * ═════════════════════════════════════════════════════════════════════ */
 
 /* Sheet: soft teal wash behind the white section cards */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal {
   background:
     radial-gradient(ellipse at 12% 0%, rgba(179,252,255,.25), transparent 45%),
     radial-gradient(ellipse at 100% 8%, rgba(37,233,251,.22), transparent 50%),
@@ -2062,233 +2063,233 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 }
 
 /* Header */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head {
   padding: 16px 24px;
   background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 72%, #22d3ee 100%);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head::before {
   background-image:
     radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
     radial-gradient(circle at 88% -30%, rgba(165,243,252,.45), transparent 45%);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head-icon {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head-icon {
   width: 44px; height: 44px; border-radius: 12px;
   background: #fff; color: #0e7490; border: 0;
   box-shadow: 0 6px 16px rgba(8,47,73,.25);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-title { font-size: 19px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sub { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.92); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-title { font-size: 19px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-sub { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.92); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn {
   height: 44px; padding: 0 16px; gap: 8px; border-radius: 12px;
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
   font-size: 13px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.24); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.24); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close {
   width: 44px; height: 44px; border-radius: 12px;
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close:hover { background: rgba(255,255,255,.24); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close:hover { background: rgba(255,255,255,.24); }
 
 /* Stage cards */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper-wrap { padding: 10px 24px 4px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper-wrap { padding: 10px 24px 4px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step {
   padding: 14px 18px; border-radius: 16px;
   background: #fff; border: 1px solid #e2eef2;
   box-shadow: 0 1px 3px rgba(8,47,73,.04);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-ico {
   width: 42px; height: 42px; border-radius: 12px;
   background: #f0fdff; color: #0e7490;
   border: 1px solid #a5e9f5;
   box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-ico-num {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-ico-num {
   color: #0e7490;
   box-shadow: 0 0 0 1px rgba(14,116,144,.35), 0 1px 3px rgba(8,47,73,.25);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-title { font-size: 14.5px; font-weight: 700; color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-sub { font-size: 11.5px; color: #475569; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-active {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-title { font-size: 14.5px; font-weight: 700; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-sub { font-size: 11.5px; color: #475569; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-active {
   border: 1.5px solid #67e8f9;
   background: linear-gradient(135deg, #ffffff, #f2fdff);
   box-shadow: 0 10px 26px rgba(8,145,178,.16), 0 0 0 3px rgba(103,232,249,.18);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-active .avm-step-ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-active .avm-step-ico {
   color: #fff; border: 0;
   background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
   box-shadow: 0 6px 16px rgba(8,145,178,.45), 0 1px 0 rgba(255,255,255,.4) inset;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-badge-active {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-badge-active {
   padding: 5px 12px;
   background: linear-gradient(135deg, #0e7490, #0b4f63);
   box-shadow: 0 3px 8px rgba(14,116,144,.4);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-arrow { flex-basis: 40px; background: #cfeff6; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-arrow { flex-basis: 40px; background: #cfeff6; }
 
 /* Body + scrollbar */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body { padding: 12px 24px 14px; scrollbar-color: #bfe3ec transparent; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #cfe9f0, #a9d9e6); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body { padding: 12px 24px 14px; scrollbar-color: #bfe3ec transparent; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #cfe9f0, #a9d9e6); }
 
 /* Sub-tabs: icon tile + label, thick teal underline on the active one */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tabs { gap: 22px; border-bottom: 1px solid #dceef3; margin-bottom: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tabs { gap: 22px; border-bottom: 1px solid #dceef3; margin-bottom: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab {
   display: inline-flex; align-items: center; gap: 10px;
   padding: 10px 2px 11px; font-size: 14px; font-weight: 600; color: #64748b;
   border-bottom: 3px solid transparent; margin-bottom: -1px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab::before {
   content: ''; width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px;
   background-color: #f1f5f9; border: 1px solid #e2e8f0;
   background-repeat: no-repeat; background-position: center; background-size: 13px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='2' width='16' height='20' rx='2'/%3E%3Cline x1='9' y1='6' x2='15' y2='6'/%3E%3Cline x1='9' y1='10' x2='15' y2='10'/%3E%3Cpath d='M10 22v-4h4v4'/%3E%3C/svg%3E");
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab + .avm-tab::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab + .avm-tab::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E");
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:hover:not(:disabled) { color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:hover:not(:disabled) { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on {
   color: #0e7490; font-weight: 700;
   border-bottom: 3px solid #0891b2;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::before {
   border-color: transparent;
   background-color: #0891b2;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='2' width='16' height='20' rx='2'/%3E%3Cline x1='9' y1='6' x2='15' y2='6'/%3E%3Cline x1='9' y1='10' x2='15' y2='10'/%3E%3Cpath d='M10 22v-4h4v4'/%3E%3C/svg%3E");
   box-shadow: 0 3px 8px rgba(8,145,178,.35);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab + .avm-tab.on::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab + .avm-tab.on::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
 
 /* Section cards: white, teal hairline, teal left bar, teal heading */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section {
   border: 1px solid #d5f1f7; border-radius: 16px; margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(8,47,73,.04);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section::before {
   opacity: 1; background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-head { padding: 12px 18px 11px 20px; border-bottom: 1px solid #e6f5f8; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-head-left { gap: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-icon {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-head { padding: 12px 18px 11px 20px; border-bottom: 1px solid #e6f5f8; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-head-left { gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-icon {
   width: 30px; height: 30px; border-radius: 9px; font-size: 15px;
   background: #f0fdff; color: #0891b2; border-color: #a5e9f5;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-title { font-size: 12px; font-weight: 700; color: #0e7490; letter-spacing: .06em; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-sub { font-size: 11px; color: #64748b; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-sub::before { color: #94a3b8; font-weight: 500; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-body { padding: 14px 18px 16px 20px; gap: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-add-btn {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-title { font-size: 12px; font-weight: 700; color: #0e7490; letter-spacing: .06em; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-sub { font-size: 11px; color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-sub::before { color: #94a3b8; font-weight: 500; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-body { padding: 14px 18px 16px 20px; gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-add-btn {
   background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
   box-shadow: 0 3px 9px rgba(8,145,178,.4);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-add-btn:hover { box-shadow: 0 6px 16px rgba(8,145,178,.5); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-add-btn:hover { box-shadow: 0 6px 16px rgba(8,145,178,.5); }
 
 /* Fields: dark labels, taller white inputs, teal focus */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-2,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-3,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-4 { gap: 12px 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field { gap: 7px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label { font-size: 12.5px; font-weight: 600; color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-plus {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-2,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-3,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-4 { gap: 12px 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field { gap: 7px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label { font-size: 12.5px; font-weight: 600; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-plus {
   background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
   box-shadow: 0 2px 5px rgba(8,145,178,.35), 0 1px 0 rgba(255,255,255,.28) inset;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input {
   height: 44px; padding: 5px 14px;
   background: #fff; border: 1px solid #dbe6ec; border-radius: 10px;
   font-size: 13.5px; color: #0f172a;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input:hover:not(:disabled):not([readonly]) {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input:hover:not(:disabled):not([readonly]) {
   border-color: rgba(8,145,178,.55); box-shadow: 0 2px 6px rgba(8,145,178,.08);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input:focus {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input:focus {
   border-color: #0891b2;
   box-shadow: 0 0 0 3px rgba(34,211,238,.18), 0 4px 12px rgba(8,145,178,.1);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-phone-cc {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-cc {
   height: 44px; background: #f0fdff; border-color: #dbe6ec; color: #0e7490;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input-ro { background: #f4f8fa; color: #475569; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal input::placeholder,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .master-select-placeholder { opacity: .8 !important; font-size: 13.5px !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input-ro { background: #f4f8fa; color: #475569; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal input::placeholder,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .master-select-placeholder { opacity: .8 !important; font-size: 13.5px !important; }
 
 /* Dropdowns: same box as the inputs, chevron in a small teal tile */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-wrap .master-select-toggle {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-wrap .master-select-toggle {
   height: 44px; min-height: 44px !important;
   padding: 0 10px 0 14px !important; font-size: 13.5px !important;
   background: #fff !important; border: 1px solid #dbe6ec !important;
   color: #0f172a !important; font-weight: 500;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-toggle:hover:not(:disabled) {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-toggle:hover:not(:disabled) {
   border-color: rgba(8,145,178,.55) !important;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-wrap.show .master-select-toggle {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-wrap.show .master-select-toggle {
   border-color: #0891b2 !important;
   box-shadow: 0 0 0 3px rgba(34,211,238,.18) !important;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-chev {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-chev {
   width: 22px; height: 22px; border-radius: 6px; font-size: 16px;
   display: inline-flex; align-items: center; justify-content: center;
   background: #effcff; border: 1px solid #a5e9f5; color: #0891b2;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-wrap.show .master-select-chev { color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-radio input { accent-color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-wrap.show .master-select-chev { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-radio input { accent-color: #0891b2; }
 
 /* Footer */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot { padding: 14px 24px; background: #fff; border-top: 1px solid #e3f1f5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot-note { font-size: 12.5px; font-weight: 600; color: #475569; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot-dot {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot { padding: 14px 24px; background: #fff; border-top: 1px solid #e3f1f5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot-note { font-size: 12.5px; font-weight: 600; color: #475569; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot-dot {
   width: 9px; height: 9px; background: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.2);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-primary {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-primary {
   height: 44px; padding: 0 22px; border-radius: 12px; font-size: 13.5px; font-weight: 700;
   background: linear-gradient(120deg, #0b4f63 0%, #0e7490 45%, #0891b2 75%, #22d3ee 100%);
   box-shadow: 0 8px 20px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-primary:hover { box-shadow: 0 10px 24px rgba(8,145,178,.5), 0 1px 0 rgba(255,255,255,.2) inset; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-primary:disabled { box-shadow: 0 6px 16px rgba(8,145,178,.28); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-outline {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-primary:hover { box-shadow: 0 10px 24px rgba(8,145,178,.5), 0 1px 0 rgba(255,255,255,.2) inset; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-primary:disabled { box-shadow: 0 6px 16px rgba(8,145,178,.28); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-outline {
   height: 44px; border-radius: 12px; background: #fff; border: 1.5px solid #a5e9f5; color: #0e7490;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-outline:hover { background: #f0fdff; border-color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-outline:hover { background: #f0fdff; border-color: #0891b2; }
 
 /* Dark mode for the teal theme */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal {
   background:
     radial-gradient(ellipse at 12% 0%, rgba(34,211,238,.10), transparent 45%),
     linear-gradient(180deg, #0c1a22 0%, #0a161d 100%);
   border-color: rgba(103,232,249,.18); color: #e2f3f7;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-head,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-head,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot {
   background: #10222b; border-color: rgba(103,232,249,.16);
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-active {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-active {
   background: linear-gradient(135deg, #10222b, rgba(8,145,178,.16)); border-color: rgba(103,232,249,.55);
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-ico,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-icon,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-chev {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-ico,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-icon,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-chev {
   background: rgba(34,211,238,.12); border-color: rgba(103,232,249,.3); color: #67e8f9;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-title,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label { color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-sub,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-sub,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot-note { color: #94b4bf; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-title,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on { color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tabs { border-bottom-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab::before { background-color: rgba(148,163,184,.12); border-color: rgba(148,163,184,.2); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::before { background-color: #0891b2; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-wrap .master-select-toggle {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-title,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-sub,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-sub,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot-note { color: #94b4bf; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-title,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tabs { border-bottom-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab::before { background-color: rgba(148,163,184,.12); border-color: rgba(148,163,184,.2); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::before { background-color: #0891b2; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-wrap .master-select-toggle {
   background: #0c1a22 !important; border-color: rgba(103,232,249,.2) !important; color: #e2f3f7 !important;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-phone-cc { background: rgba(34,211,238,.12); border-color: rgba(103,232,249,.2); color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-outline { background: #10222b; border-color: rgba(103,232,249,.35); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-cc { background: rgba(34,211,238,.12); border-color: rgba(103,232,249,.2); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-outline { background: #10222b; border-color: rgba(103,232,249,.35); color: #67e8f9; }
 
 /* Grouped Supplier Type picker (Figma .slmdd). Colours are variables:
    violet by default, teal on the Supplier Management page (below). */
@@ -2297,8 +2298,8 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   --tsel-ring: rgba(124,58,237,.15); --tsel-h: 38px; --tsel-bg: color-mix(in srgb, #a78bfa 5%, #fff);
   --tsel-bd: color-mix(in srgb, #a78bfa 20%, #e9ebec);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel-panel {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel-panel {
   --tsel-acc: #0891b2; --tsel-acc-dk: #0e7490; --tsel-soft: #effcff; --tsel-line: #a5e9f5;
   --tsel-ring: rgba(34,211,238,.18); --tsel-h: 44px; --tsel-bg: #fff; --tsel-bd: #dbe6ec;
 }
@@ -2384,61 +2385,61 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 
 /* Compact rhythm (Figma at 1200px): head 63, stage cards 62, tab row 38,
    section heads 37, inputs 40, row pitch 75, footer 62. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head { padding: 11px 22px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head-icon { width: 40px; height: 40px; border-radius: 11px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-title { font-size: 18px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sub { font-size: 11.5px; margin-top: 2px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn { height: 40px; padding: 0 14px; border-radius: 11px; font-size: 12.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close { width: 40px; height: 40px; border-radius: 11px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper-wrap { padding: 9px 22px 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step { padding: 10px 16px; gap: 12px; border-radius: 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-ico { width: 38px; height: 38px; border-radius: 11px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-title { font-size: 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-sub { font-size: 11px; margin-top: 1px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body { padding: 6px 22px 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tabs { gap: 20px; margin-bottom: 9px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab { padding: 7px 2px 8px; gap: 9px; font-size: 13.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab::before { width: 22px; height: 22px; border-radius: 6px; background-size: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section { border-radius: 14px; margin-bottom: 9px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-head { padding: 7px 16px 7px 18px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-head-left { gap: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-icon { width: 26px; height: 26px; border-radius: 8px; font-size: 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-title { font-size: 11.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-sub { font-size: 10.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-body { padding: 10px 16px 13px 18px; gap: 9px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-2,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-3,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-4 { gap: 9px 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field { gap: 5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label { font-size: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input { height: 40px; font-size: 13px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-phone-cc { height: 40px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal input::placeholder,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .master-select-placeholder { font-size: 13px !important; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-master-select .master-select-wrap .master-select-toggle {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head { padding: 11px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head-icon { width: 40px; height: 40px; border-radius: 11px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-title { font-size: 18px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-sub { font-size: 11.5px; margin-top: 2px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn { height: 40px; padding: 0 14px; border-radius: 11px; font-size: 12.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close { width: 40px; height: 40px; border-radius: 11px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper-wrap { padding: 9px 22px 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step { padding: 10px 16px; gap: 12px; border-radius: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-ico { width: 38px; height: 38px; border-radius: 11px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-title { font-size: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-sub { font-size: 11px; margin-top: 1px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body { padding: 6px 22px 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tabs { gap: 20px; margin-bottom: 9px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab { padding: 7px 2px 8px; gap: 9px; font-size: 13.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab::before { width: 22px; height: 22px; border-radius: 6px; background-size: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section { border-radius: 14px; margin-bottom: 9px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-head { padding: 7px 16px 7px 18px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-head-left { gap: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-icon { width: 26px; height: 26px; border-radius: 8px; font-size: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-title { font-size: 11.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-sub { font-size: 10.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-body { padding: 10px 16px 13px 18px; gap: 9px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-2,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-3,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-4 { gap: 9px 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field { gap: 5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label { font-size: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input { height: 40px; font-size: 13px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-cc { height: 40px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal input::placeholder,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .master-select-placeholder { font-size: 13px !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-master-select .master-select-wrap .master-select-toggle {
   height: 40px; min-height: 40px !important; font-size: 13px !important;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel-panel { --tsel-h: 40px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel-btn { font-size: 13px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tsel-opt { min-height: 40px; font-size: 13px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot { padding: 11px 22px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot-note { font-size: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-primary,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-btn-outline { height: 40px; border-radius: 11px; font-size: 13px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label .avm-req { margin-left: -3px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel-panel { --tsel-h: 40px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel-btn { font-size: 13px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tsel-opt { min-height: 40px; font-size: 13px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot { padding: 11px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot-note { font-size: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-primary,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-btn-outline { height: 40px; border-radius: 11px; font-size: 13px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label .avm-req { margin-left: -3px; }
 
 /* Selected sub-tab (Figma): dark label, teal gradient icon tile, and a thick
    rounded gradient underline (deep teal to cyan) drawn as ::after so it can
    carry a gradient and round ends, which a border cannot. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab { position: relative; border-bottom: 0; margin-bottom: 0; padding-bottom: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on { color: #0b3142; font-weight: 600; border-bottom: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::after {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab { position: relative; border-bottom: 0; margin-bottom: 0; padding-bottom: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on { color: #0b3142; font-weight: 600; border-bottom: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 4px;
   border-radius: 4px 4px 0 0;
   background: linear-gradient(90deg, #0e7490 0%, #0891b2 50%, #22d3ee 100%);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::before {
   background-color: transparent;
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='2' width='16' height='20' rx='2'/%3E%3Cline x1='9' y1='6' x2='15' y2='6'/%3E%3Cline x1='9' y1='10' x2='15' y2='10'/%3E%3Cpath d='M10 22v-4h4v4'/%3E%3C/svg%3E"),
@@ -2446,36 +2447,36 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   background-size: 12px, 100%;
   box-shadow: 0 3px 8px rgba(8,145,178,.35);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab + .avm-tab.on::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab + .avm-tab.on::before {
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"),
     linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:not(.on) { color: #64748b; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:not(.on)::before { background-color: #f1f3f9; border-color: #e6e9f2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:not(.on):hover:not(:disabled) { color: #0e7490; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on { color: #e2f3f7; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:not(.on) { color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:not(.on)::before { background-color: #f1f3f9; border-color: #e6e9f2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:not(.on):hover:not(:disabled) { color: #0e7490; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on { color: #e2f3f7; }
 
 /* Stage cards, exact Figma values (.slm-teal .sf-stage-card / .is-current) */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step {
   position: relative; overflow: hidden;
   padding: 12px 16px; gap: 13px;
   background: #fff; border: 1.5px solid #e2eef2; border-radius: 14px;
   box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step::after {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-active {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-active {
   border: 1.5px solid #22d3ee;
   background: linear-gradient(135deg, #ecfeff, #fff);
   box-shadow: 0 0 0 3px rgba(34,211,238,.14), 0 10px 22px -14px rgba(8,145,178,.55);
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step { background: #10222b; border-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step::after { display: none; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-active {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step { background: #10222b; border-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step::after { display: none; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-active {
   background: linear-gradient(135deg, rgba(8,145,178,.18), #10222b); border-color: #22d3ee;
 }
 
@@ -2483,46 +2484,46 @@ button.avm-kyc-act { padding: 0; font: inherit; }
    form body gives up height and scrolls. Below ~540px of screen the dialog
    stops shrinking and the backdrop scrolls instead, so the header is never
    crushed (it was clipping the title on short windows / DevTools open). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper-wrap,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot { flex: 0 0 auto; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body { flex: 1 1 auto; min-height: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { min-height: 500px; flex-shrink: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper-wrap,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot { flex: 0 0 auto; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body { flex: 1 1 auto; min-height: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { min-height: 500px; flex-shrink: 0; }
 @media (max-height: 640px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-backdrop { padding-top: 12px; padding-bottom: 12px; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { height: max(500px, calc(100dvh - 24px)); }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sub { display: none; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-backdrop { padding-top: 12px; padding-bottom: 12px; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { height: max(500px, calc(100dvh - 24px)); }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-sub { display: none; }
 }
 /* Narrow screens: stage cards stack, IN PROGRESS stays on the card */
 @media (max-width: 820px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper { gap: 8px; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-arrow { display: none; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-4 { grid-template-columns: 1fr 1fr; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper { gap: 8px; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-arrow { display: none; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-4 { grid-template-columns: 1fr 1fr; }
 }
 /* Header buttons never wrap; below 900px Map Product drops its words (icon stays) */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn { white-space: nowrap; flex-shrink: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head-left { flex: 1 1 auto; min-width: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn { white-space: nowrap; flex-shrink: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head-left { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 900px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn-label { display: none; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn { width: 40px; padding: 0; justify-content: center; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn-label { display: none; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn { width: 40px; padding: 0; justify-content: center; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 /* Three-up rows stay three-up until a phone, so no field is left alone in a row */
 @media (max-width: 640px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-3 { grid-template-columns: 1fr; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-3 { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-2,
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-3,
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-grid-4 { grid-template-columns: 1fr !important; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head { padding: 10px 12px; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head-icon { width: 34px; height: 34px; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn,
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close { width: 36px; height: 36px; padding: 0; justify-content: center; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body { padding: 6px 12px 12px; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper-wrap { padding: 8px 12px 0; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step { min-width: 0; }
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-sub { display: none; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-2,
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-3,
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-grid-4 { grid-template-columns: 1fr !important; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head { padding: 10px 12px; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head-icon { width: 34px; height: 34px; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn,
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body { padding: 6px 12px 12px; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper-wrap { padding: 8px 12px 0; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step { min-width: 0; }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-sub { display: none; }
 }
 
 /* WhatsApp Enabled switch (replaces the Yes / No radios). Violet by default,
@@ -2554,492 +2555,492 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 [data-bs-theme="dark"] .avm-wa-switch { background: #110c25; border-color: #3b2a6b; color: #a89fc7; }
 
 /* ── Contact Person Details tab, teal (Figma) ── */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch { --wa-acc: #0e7490; --wa-soft: #ecfeff; --wa-line: #a5e9f5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on .avm-wa-switch__track { background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on .avm-wa-switch__knob { box-shadow: 0 0 0 3px rgba(255,255,255,.25), 0 1px 3px rgba(8,47,73,.35); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch { --wa-acc: #0e7490; --wa-soft: #ecfeff; --wa-line: #a5e9f5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on .avm-wa-switch__track { background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on .avm-wa-switch__knob { box-shadow: 0 0 0 3px rgba(255,255,255,.25), 0 1px 3px rgba(8,47,73,.35); }
 
 /* Attachment: dashed teal upload strip, 40px like the inputs */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser {
   height: 40px; padding: 0 8px 0 14px; gap: 10px; border-radius: 10px;
   border: 1px dashed #a5e9f5; background: #f7feff; color: #0e7490;
   font-size: 13px; font-weight: 500;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser:hover { border-color: #0891b2; background: #f0fdff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-icon { color: #0891b2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-text { color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser.avm-filechooser-has-file { border: 1px solid #a5e9f5; background: #f0fdff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser.avm-filechooser-has-file:hover { border-color: #22d3ee; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link { color: #0e7490; text-decoration-color: rgba(14,116,144,.35); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link:hover { color: #0b4f63; text-decoration-color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser:hover { border-color: #0891b2; background: #f0fdff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-icon { color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-text { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser.avm-filechooser-has-file { border: 1px solid #a5e9f5; background: #f0fdff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser.avm-filechooser-has-file:hover { border-color: #22d3ee; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-link { color: #0e7490; text-decoration-color: rgba(14,116,144,.35); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-link:hover { color: #0b4f63; text-decoration-color: #0e7490; }
 
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-fc-replace:hover { background: #ecfeff; border-color: #0891b2; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-fc-replace:hover { background: #ecfeff; border-color: #0891b2; color: #0e7490; }
 
 /* "Saved — locked" chip and header action buttons */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-doc-count { gap: 5px; background: #ecfeff; color: #0e7490; border-color: #a5e9f5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-add-btn {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-doc-count { gap: 5px; background: #ecfeff; color: #0e7490; border-color: #a5e9f5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-add-btn {
   height: 40px; padding: 0 16px; gap: 7px; border-radius: 11px; font-size: 12.5px;
 }
 
 /* Additional contacts: card sized to its rows, no empty well under the table */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-grow .avm-section-body { min-height: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table thead th {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-grow .avm-section-body { min-height: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table thead th {
   background: #fff !important; color: #0e7490; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   padding: 12px 12px; border-bottom: 1px solid #e3f1f5; box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody td {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table tbody td {
   padding: 13px 12px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #eef6f8;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: #f7feff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-primary-tag { background: #ecfeff; color: #0e7490; border-color: #a5e9f5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-contact-name { font-weight: 600; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn { width: 30px; height: 30px; border-radius: 8px; border-color: #a5e9f5; color: #0891b2; background: #fff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn:hover { background: #ecfeff; border-color: #0891b2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn-del { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table a { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: #f7feff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-primary-tag { background: #ecfeff; color: #0e7490; border-color: #a5e9f5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-contact-name { font-weight: 600; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn { width: 30px; height: 30px; border-radius: 8px; border-color: #a5e9f5; color: #0891b2; background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn:hover { background: #ecfeff; border-color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn-del { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table a { color: #0e7490; }
 
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch { background: #0c1a22; border-color: rgba(103,232,249,.2); color: #94b4bf; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on { background: rgba(34,211,238,.12); color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser { background: rgba(34,211,238,.06); border-color: rgba(103,232,249,.3); color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-text,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link { color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table thead th { background: #10222b !important; color: #67e8f9; border-bottom-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody td { color: #e2f3f7; border-bottom-color: rgba(103,232,249,.1); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-primary-tag,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-doc-count { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(103,232,249,.3); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn { background: #10222b; border-color: rgba(103,232,249,.3); color: #67e8f9; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table a { color: #0e7490 !important; text-decoration-color: rgba(14,116,144,.4) !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table a { color: #67e8f9 !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch { background: #0c1a22; border-color: rgba(103,232,249,.2); color: #94b4bf; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on { background: rgba(34,211,238,.12); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser { background: rgba(34,211,238,.06); border-color: rgba(103,232,249,.3); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-text,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-link { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table thead th { background: #10222b !important; color: #67e8f9; border-bottom-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table tbody td { color: #e2f3f7; border-bottom-color: rgba(103,232,249,.1); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-primary-tag,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-doc-count { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(103,232,249,.3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn { background: #10222b; border-color: rgba(103,232,249,.3); color: #67e8f9; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table a { color: #0e7490 !important; text-decoration-color: rgba(14,116,144,.4) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table a { color: #67e8f9 !important; }
 
 /* Sub-tab icon tile, exact Figma (.slm-teal .sf-subtab .slm-stab__ico):
    22px, radius 7, no border; idle #f1f5f9 / #94a3b8, active teal gradient. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab::before,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:not(.on)::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab::before,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:not(.on)::before {
   width: 22px; height: 22px; border-radius: 7px; border: 0;
   background-color: #f1f5f9; background-size: 12px;
   box-shadow: none; transition: all .15s;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::before {
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='2' width='16' height='20' rx='2'/%3E%3Cline x1='9' y1='6' x2='15' y2='6'/%3E%3Cline x1='9' y1='10' x2='15' y2='10'/%3E%3Cpath d='M10 22v-4h4v4'/%3E%3C/svg%3E"),
     linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
   background-size: 12px, 100%;
   box-shadow: 0 3px 8px -3px rgba(8,145,178,.6);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab + .avm-tab.on::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab + .avm-tab.on::before {
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"),
     linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on { color: #0c4a6e; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on::after { height: 3px; border-radius: 3px; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab:not(.on)::before { background-color: rgba(148,163,184,.14); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on { color: #0c4a6e; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on::after { height: 3px; border-radius: 3px; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab:not(.on)::before { background-color: rgba(148,163,184,.14); }
 
 /* 1) No empty well under short tabs: the dialog is sized to its content
    (Figma), capped at the viewport; the body scrolls inside when taller.
    The backdrop keeps it pinned to the top, so the header never moves when
    a tab or stage changes height, only the bottom edge does. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal {
   height: auto; min-height: 0;
   max-height: max(500px, min(880px, calc(100dvh - 48px)));
 }
 @media (max-height: 640px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { height: auto; max-height: max(500px, calc(100dvh - 24px)); }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { height: auto; max-height: max(500px, calc(100dvh - 24px)); }
 }
 
 /* 2) Header: a touch more air (Figma ~69px), crisper buttons */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head { padding: 14px 24px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-head-icon { width: 44px; height: 44px; border-radius: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-title { font-size: 19px; letter-spacing: -.3px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sub { font-size: 12px; margin-top: 3px; color: rgba(255,255,255,.9); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head { padding: 14px 24px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-head-icon { width: 44px; height: 44px; border-radius: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-title { font-size: 19px; letter-spacing: -.3px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-sub { font-size: 12px; margin-top: 3px; color: rgba(255,255,255,.9); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close {
   height: 42px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.5);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn { padding: 0 16px; font-size: 13px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-close { width: 42px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-map-btn:disabled { opacity: .55; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn { padding: 0 16px; font-size: 13px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-close { width: 42px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-map-btn:disabled { opacity: .55; }
 
 /* "Saved — locked" chip: readable teal pill, not a faint outline */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-doc-count {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-doc-count {
   height: 30px; padding: 0 13px; gap: 6px;
   background: linear-gradient(135deg, #ecfeff, #cff7fd);
   border: 1px solid #67e8f9; color: #0b4f63;
   font-size: 12px; font-weight: 700;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-doc-count i { font-size: 13px; color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-doc-count i { font-size: 13px; color: #0891b2; }
 
 /* 3) WhatsApp switch, Figma: light teal box, gradient track, knob with a dot */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch {
   gap: 12px; padding: 0 14px;
   background: #fff; border: 1px solid #dbe6ec; color: #64748b; font-weight: 700;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on {
   background: linear-gradient(135deg, #ecfeff 0%, #f6feff 100%);
   border-color: #a5e9f5; color: #0e7490;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch__track { width: 44px; height: 24px; background: #cbd5e1; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on .avm-wa-switch__track {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch__track { width: 44px; height: 24px; background: #cbd5e1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on .avm-wa-switch__track {
   background: linear-gradient(135deg, #0e7490, #0891b2 55%, #22d3ee);
   box-shadow: inset 0 1px 2px rgba(8,47,73,.25);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch__knob {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch__knob {
   top: 3px; left: 3px; width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch__knob::after {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch__knob::after {
   content: ''; width: 6px; height: 6px; border-radius: 50%;
   background: #cbd5e1; transition: background .2s;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on .avm-wa-switch__knob { transform: translateX(20px); box-shadow: 0 1px 3px rgba(8,47,73,.35); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch.is-on .avm-wa-switch__knob::after { background: #0891b2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch:hover:not(:disabled) { border-color: #67e8f9; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-wa-switch:disabled { opacity: 1; cursor: default; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-doc-count { background: rgba(34,211,238,.14); color: #a5f3fc; border-color: rgba(103,232,249,.4); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on .avm-wa-switch__knob { transform: translateX(20px); box-shadow: 0 1px 3px rgba(8,47,73,.35); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on .avm-wa-switch__knob::after { background: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch:hover:not(:disabled) { border-color: #67e8f9; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch:disabled { opacity: 1; cursor: default; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-doc-count { background: rgba(34,211,238,.14); color: #a5f3fc; border-color: rgba(103,232,249,.4); }
 
 /* One fixed height for every tab and stage (no jump when switching).
    Supersedes the content-sized rule above. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal {
   height: max(500px, min(880px, calc(100dvh - 48px)));
   max-height: none;
 }
 @media (max-height: 640px) {
-  :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { height: max(500px, calc(100dvh - 24px)); }
+  :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { height: max(500px, calc(100dvh - 24px)); }
 }
 /* Contact Person tab: Additional Contact Persons stretches to fill the rest
    of the form, and its table scrolls inside it as contacts are added, with
    the header row pinned. No empty well below the cards. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body:has(> .avm-section-grow) { display: flex; flex-direction: column; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body > .avm-section-grow {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body:has(> .avm-section-grow) { display: flex; flex-direction: column; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body > .avm-section-grow {
   flex: 1 1 0; min-height: 230px; margin-bottom: 0;
   display: flex; flex-direction: column;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-grow .avm-section-head { flex: 0 0 auto; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-grow .avm-section-body { flex: 1 1 auto; min-height: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-grow .avm-contacts-scroll { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-grow .avm-section-head { flex: 0 0 auto; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-grow .avm-section-body { flex: 1 1 auto; min-height: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-grow .avm-contacts-scroll { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
 
 /* Type scale, exact Figma: field labels .sf-label 11px #0F172A,
    sub-tab labels .slm-stab__lbl 12.5px (active #0C4A6E). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { font-family: 'DM Sans', system-ui, sans-serif; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label { font-family: 'DM Sans', system-ui, sans-serif; font-size: 11px; font-weight: 600; color: #0f172a; line-height: 1.5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab { font-family: 'DM Sans', system-ui, sans-serif; font-size: 12.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-tab.on { color: #0c4a6e; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-field-label { color: #e2f3f7; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { font-family: 'DM Sans', system-ui, sans-serif; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label { font-family: 'DM Sans', system-ui, sans-serif; font-size: 11px; font-weight: 600; color: #0f172a; line-height: 1.5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab { font-family: 'DM Sans', system-ui, sans-serif; font-size: 12.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-tab.on { color: #0c4a6e; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-field-label { color: #e2f3f7; }
 
 /* ═════ Add Contact Person popup (and other .avm-cp-* popups), teal per Figma ═════ */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-backdrop { background: rgba(8,47,73,.45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup:not(.avm-cp-popup-wide) { max-width: 1200px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-backdrop { background: rgba(8,47,73,.45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup:not(.avm-cp-popup-wide) { max-width: 1200px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup {
   border-radius: 22px; background: #f7fdfe;
   box-shadow: 0 40px 90px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.14);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup:not(.avm-cp-amber) .avm-cp-head {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup:not(.avm-cp-amber) .avm-cp-head {
   background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 72%, #22d3ee 100%);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-head { padding: 18px 24px; box-shadow: none; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-head::before {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-head { padding: 18px 24px; box-shadow: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-head::before {
   background-image:
     radial-gradient(circle at 14% 110%, rgba(255,255,255,.18), transparent 48%),
     radial-gradient(circle at 90% -20%, rgba(165,243,252,.45), transparent 52%);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-title { gap: 14px; font-size: 17px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-title i {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-title { gap: 14px; font-size: 17px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-title i {
   width: 38px; height: 38px; border-radius: 11px; font-size: 18px;
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-htitle { font-size: 17px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-close {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-htitle { font-size: 17px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-close {
   width: 36px; height: 36px; border-radius: 10px;
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.5);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body { padding: 18px 22px; gap: 12px; background: #f7fdfe; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-input,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-phone-cc,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-filechooser,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-wa-switch,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-master-select .master-select-wrap .master-select-toggle { height: 42px; min-height: 42px !important; border-radius: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-phone-cc { border-radius: 10px 0 0 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-phone-field { border-radius: 0 10px 10px 0 !important; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-section { margin-bottom: 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-sec .avm-section-body { padding: 14px 18px 18px 20px; gap: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body { padding: 18px 22px; gap: 12px; background: #f7fdfe; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-input,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-cc,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-filechooser,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-wa-switch,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-master-select .master-select-wrap .master-select-toggle { height: 42px; min-height: 42px !important; border-radius: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-cc { border-radius: 10px 0 0 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-field { border-radius: 0 10px 10px 0 !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-section { margin-bottom: 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-sec .avm-section-body { padding: 14px 18px 18px 20px; gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot {
   padding: 16px 24px 20px; gap: 12px;
   background: #fff; border-top: 1px solid #e3f1f5;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-ghost {
   height: 44px; padding: 0 26px; border-radius: 12px;
   background: #fff; border: 1px solid #e2e8f0; color: #334155; font-size: 14px; font-weight: 700;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-primary:not(.avm-btn-amber) {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-primary:not(.avm-btn-amber) {
   height: 44px; padding: 0 26px; border-radius: 12px; font-size: 14px; font-weight: 700;
   background: linear-gradient(120deg, #0b4f63 0%, #0e7490 45%, #0891b2 75%, #22d3ee 100%);
   box-shadow: 0 8px 20px -6px rgba(8,145,178,.55);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-saving-veil { background: rgba(247,253,254,.5); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body { background: #0c1a22; color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot { background: #10222b; border-top-color: rgba(103,232,249,.14); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost { background: transparent; color: #cfe3ea; border-color: rgba(103,232,249,.25); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-saving-veil { background: rgba(247,253,254,.5); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body { background: #0c1a22; color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot { background: #10222b; border-top-color: rgba(103,232,249,.14); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-ghost { background: transparent; color: #cfe3ea; border-color: rgba(103,232,249,.25); }
 
 /* Add Contact Person popup, Figma edge: a crisp white border round the card
    instead of the soft 6px halo; Save is text only; inputs carry a slightly
    firmer border; compact header tiles. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup {
   border: 1.5px solid rgba(255,255,255,.85);
   box-shadow: 0 40px 90px -30px rgba(8,47,73,.7), 0 0 0 1px rgba(14,116,144,.08);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-primary > i.ri-save-line { display: none; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-primary,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost { padding: 0 24px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-input,
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-body .avm-phone-cc { border-color: #d3e4ea; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-title i { width: 36px; height: 36px; font-size: 17px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-close { width: 34px; height: 34px; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup { border-color: rgba(103,232,249,.22); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-primary > i.ri-save-line { display: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-primary,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-ghost { padding: 0 24px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-input,
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-cc { border-color: #d3e4ea; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-title i { width: 36px; height: 36px; font-size: 17px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-close { width: 34px; height: 34px; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup { border-color: rgba(103,232,249,.22); }
 
 /* ═════ Stage 2 · KYC / Due Diligence, values from the Figma export ═════ */
 /* Sub-tab icons are only shown where the wizard is themed. */
 .avm-pill__ico { display: none; }
 
 /* Completed stage card: white card, pale teal check tile, teal COMPLETED pill */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-done { background: #fff; border: 1.5px solid #e2eef2; box-shadow: none; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-done .avm-step-ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-done { background: #fff; border: 1.5px solid #e2eef2; box-shadow: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-done .avm-step-ico {
   background: #e0f7fb; border: 1px solid #c4ecf4; color: #0891b2; border-radius: 12px; box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-ico-check {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-ico-check {
   background: #fff; color: #0891b2; border: 1.5px solid #fff;
   box-shadow: 0 0 0 1px rgba(14,116,144,.35), 0 1px 3px rgba(8,47,73,.25);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-done .avm-step-title { color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-done .avm-step-sub { color: #475569; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-badge { padding: 4px 10px; font-size: 8.5px; letter-spacing: .05em; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-step-badge-done { background: linear-gradient(135deg, #0e7490, #0891b2); box-shadow: none; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-done .avm-step-title { color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-done .avm-step-sub { color: #475569; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-badge { padding: 4px 10px; font-size: 8.5px; letter-spacing: .05em; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-step-badge-done { background: linear-gradient(135deg, #0e7490, #0891b2); box-shadow: none; }
 
 /* "What you did in previous stages" bar */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev {
   background: #fff; border: 1px solid #d7eef4; border-radius: 16px; margin-bottom: 10px;
   box-shadow: 0 6px 18px -14px rgba(8,145,178,.35);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev::before { background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-head { padding: 11px 14px 11px 18px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev::before { background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-head { padding: 11px 14px 11px 18px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-ico {
   width: 30px; height: 30px; border-radius: 10px; font-size: 15px;
   background: #e0f7fb; border: 1px solid #c4ecf4; color: #0891b2; box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-title { font-size: 13px; font-weight: 800; color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-subtitle { font-size: 10.5px; color: #64748b; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-toggle-pill {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-title { font-size: 13px; font-weight: 800; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-subtitle { font-size: 10.5px; color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-toggle-pill {
   padding: 5px 12px; border-radius: 20px; font-size: 10px; font-weight: 800;
   letter-spacing: normal; text-transform: none;
   background: #ecfeff; border: 1px solid #bfe9f1; color: #0e7490; box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-toggle:hover .avm-prev-toggle-pill { filter: none; box-shadow: none; border-color: #67e8f9; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-toggle-chev {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-toggle:hover .avm-prev-toggle-pill { filter: none; box-shadow: none; border-color: #67e8f9; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-toggle-chev {
   width: 28px; height: 28px; border-radius: 9px; font-size: 16px;
   display: inline-flex; align-items: center; justify-content: center;
   background: #ecfeff; border: 1px solid #bfe9f1; color: #0891b2;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-body { border-top-color: #eef7fa; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-glabel, .avm-prev-stage-label) { color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-check { background: #e0f7fb; color: #0891b2; border-color: #c4ecf4; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-k { color: #64748b; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-body { border-top-color: #eef7fa; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-prev-glabel, .avm-prev-stage-label) { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-check { background: #e0f7fb; color: #0891b2; border-color: #c4ecf4; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-k { color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-v { color: #0f172a; }
 
 /* Summary body, Figma pass: every value in its own light teal card, group labels with a rule
    running after them, a solid teal tick on the stage title, and teal (not lilac) address /
    contact boxes. Same markup; only the surfaces change. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-body { gap: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-stage { gap: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-stage-label { font-size: 12px; gap: 10px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-check {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-body { gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-stage { gap: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-stage-label { font-size: 12px; gap: 10px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-check {
   width: 22px; height: 22px; border: 0;
   background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
   box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .55);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-glabel {
   display: flex; align-items: center; gap: 10px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel::after {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-glabel::after {
   content: ''; flex: 1; height: 1px; background: #d7eef4;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-grid { gap: 8px 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-cell {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-grid { gap: 8px 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-cell {
   gap: 4px; padding: 11px 14px;
   background: #f4fbfd; border: 1px solid #d7eef4; border-radius: 10px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-k { font-size: 9.5px; font-weight: 800; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { font-size: 13px; font-weight: 800; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-line {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-k { font-size: 9.5px; font-weight: 800; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-v { font-size: 13px; font-weight: 800; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-line {
   font-size: 13px; font-weight: 700; color: #0f172a;
   background: #f4fbfd; border-color: #d7eef4; border-radius: 10px; padding: 12px 14px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-dot { color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-cell, .avm-prev-line) {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-dot { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-prev-cell, .avm-prev-line) {
   background: rgba(34, 211, 238, .05); border-color: rgba(103, 232, 249, .16); color: #e2f3f7;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-glabel::after { background: rgba(103, 232, 249, .16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-glabel, .avm-prev-stage-label) { color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-prev-v { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-glabel::after { background: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-prev-glabel, .avm-prev-stage-label) { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-prev-v { color: #e2f3f7; }
 
 /* Mapped Products popup opened from inside the form (.avm-mapped-paged): teal like the one
    opened from the Supplier list (.avm-cp-popup-mapped), not the old violet — header band, the
    Sr No and code pills, the card edge, the search, and the pager (Showing pill, 1 / 1). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-wrap { border-color: #d7eef4 !important; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead tr { background: #f0fbfd; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead th { color: #0e7490; border-bottom-color: #d7eef4; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table tbody td { border-bottom-color: #eef7fa; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-sr-pill { color: #0e7490; background: #ecfeff; border-color: #bfe9f1; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table .avm-auto-code { color: #0e7490; border-color: #bfe9f1; background: #f0fbfd; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input { color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty-accent { color: #0e7490; border-color: #bfe9f1; background: #f4fbfd; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-wrap { border-color: #d7eef4 !important; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table thead tr { background: #f0fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table thead th { color: #0e7490; border-bottom-color: #d7eef4; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table tbody td { border-bottom-color: #eef7fa; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-sr-pill { color: #0e7490; background: #ecfeff; border-color: #bfe9f1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table .avm-auto-code { color: #0e7490; border-color: #bfe9f1; background: #f0fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search input { color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-empty-accent { color: #0e7490; border-color: #bfe9f1; background: #f4fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager {
   border-color: #d7eef4; border-top: 1px solid #d7eef4; background: #fbfeff;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #0e7490; border-color: #bfe9f1; background: #fff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #0891b2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-range {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #0e7490; border-color: #bfe9f1; background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager .tc-wl-range {
   color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
   box-shadow: 0 4px 10px -4px rgba(8, 145, 178, .6);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-btn:hover:not(:disabled) { background: #ecfeff; border-color: #22d3ee; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-wrap { border-color: rgba(103, 232, 249, .16) !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead tr { background: rgba(34, 211, 238, .08); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table thead th { color: #67e8f9; border-bottom-color: rgba(103, 232, 249, .16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table :is(td, th) { border-color: rgba(103, 232, 249, .1); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-table tbody td strong { color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-sr-pill, .avm-mapped-table .avm-auto-code, .avm-empty-accent) { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input { color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager { background: #10222b; border-color: rgba(103, 232, 249, .16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #67e8f9; background: rgba(255, 255, 255, .04); border-color: rgba(103, 232, 249, .3); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #a5f3fc; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager .tc-wl-btn:hover:not(:disabled) { background: #ecfeff; border-color: #22d3ee; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-wrap { border-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table thead tr { background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table thead th { color: #67e8f9; border-bottom-color: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table :is(td, th) { border-color: rgba(103, 232, 249, .1); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-table tbody td strong { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-sr-pill, .avm-mapped-table .avm-auto-code, .avm-empty-accent) { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search input { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager { background: #10222b; border-color: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager :is(.tc-wl-info, .tc-wl-btn) { color: #67e8f9; background: rgba(255, 255, 255, .04); border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-pager.wl-pager .tc-wl-hl { color: #a5f3fc; }
 
 /* Sub-tabs: underline row with icon tiles, like Stage 1 */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs {
   gap: 26px; padding: 0; margin-bottom: 10px;
   background: transparent; border: 0; border-bottom: 1px solid #e2eef3; border-radius: 0; box-shadow: none;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs .avm-pill {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs .avm-pill {
   position: relative; gap: 8px; height: 42px; padding: 0 2px;
   background: transparent; border: 0; border-radius: 0; box-shadow: none;
   font-size: 12.5px; font-weight: 700; color: #64748b;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs .avm-pill:hover { background: transparent; color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs .avm-pill.on { background: transparent; box-shadow: none; color: #0c4a6e; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs .avm-pill.on::after {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs .avm-pill:hover { background: transparent; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs .avm-pill.on { background: transparent; box-shadow: none; color: #0c4a6e; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs .avm-pill.on::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 3px;
   background: linear-gradient(90deg, #0e7490, #0891b2 50%, #22d3ee);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill__ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill__ico {
   width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: #f1f5f9; color: #94a3b8; transition: all .15s;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill.on .avm-pill__ico {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill.on .avm-pill__ico {
   background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); color: #fff;
   box-shadow: 0 3px 8px -3px rgba(8,145,178,.6);
 }
 
 /* Document card */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple {
   border: 1px solid #d7eef4; border-radius: 16px; box-shadow: 0 6px 18px -14px rgba(8,145,178,.35);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-section-head { padding: 8px 16px 8px 18px; border-bottom-color: #eef7fa; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-section-icon {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-section-head { padding: 8px 16px 8px 18px; border-bottom-color: #eef7fa; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-section-icon {
   background: #e0f7fb; border-color: #c4ecf4; color: #0891b2; box-shadow: 0 2px 5px rgba(14,166,205,.1);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-section-title { font-size: 11px; font-weight: 900; letter-spacing: .05em; color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-section-sub { font-size: 10.5px; color: #64748b; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-doc-count {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-section-title { font-size: 11px; font-weight: 900; letter-spacing: .05em; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-section-sub { font-size: 10.5px; color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-doc-count {
   height: auto; padding: 4px 12px; border-radius: 20px;
   font-size: 11px; font-weight: 800; letter-spacing: .05em;
   background: #ecfeff; border: 1px solid #bfe9f1; color: #0e7490;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-section-purple .avm-section-body { padding: 10px 16px 12px 18px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-purple .avm-section-body { padding: 10px 16px 12px 18px; }
 
 /* Search */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search {
   height: 42px; padding: 0 14px; border-radius: 12px;
   background: #fff; border: 1px solid #cdeef5; color: #94a3b8;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search input { font-size: 12.5px; color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search input::placeholder { color: #94a3b8; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search input { font-size: 12.5px; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search input::placeholder { color: #94a3b8; }
 
 /* Document table */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table-wrap {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table-wrap {
   border: 0 !important; border-top: 1px solid #d7eef4 !important; border-bottom: 1px solid #d7eef4 !important;
   border-radius: 0 !important;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead tr { background: transparent; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table thead tr { background: transparent; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table thead th {
   padding: 11px 10px; font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
   color: #0e7490; background: linear-gradient(#f4fcfe, #eaf7fb) !important; border-bottom: 1px solid #d5eef4;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody td {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody td {
   padding: 11px 10px; font-size: 12px; color: #1e293b; background: #fff; border-top: 0; border-bottom: 1px solid #eef5f8;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background: #f7feff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-sr-badge {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background: #f7feff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-sr-badge {
   min-width: 26px; height: 24px; font-size: 10.5px; font-weight: 800;
   color: #0e7490; background: #fff; border: 1px solid #cdeef5; border-radius: 7px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-auto-code {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-auto-code {
   padding: 3px 9px; font-size: 10px; font-weight: 700; letter-spacing: 0;
   color: #0e7490; background: #f0fbfd; border: 1px solid #bfe9f1; border-radius: 7px;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table td strong { font-size: 12px; font-weight: 700; color: #0f172a; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-exp-pill { padding: 3px 10px; font-size: 10px; font-weight: 800; border-radius: 7px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table td strong { font-size: 12px; font-weight: 700; color: #0f172a; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-exp-pill { padding: 3px 10px; font-size: 10px; font-weight: 800; border-radius: 7px; }
 
 /* Status: two-option toggle, the document's own option lit */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-req-pair {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-req-pair {
   gap: 0; padding: 3px; border-radius: 999px; background: #f6fbfc; border: 1px solid #d7eef4;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-req-pill { padding: 4px 10px; font-size: 10px; font-weight: 800; border-radius: 999px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-req-pill:is(.on-m, .on-o) {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-req-pill { padding: 4px 10px; font-size: 10px; font-weight: 800; border-radius: 999px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-req-pill:is(.on-m, .on-o) {
   color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
   box-shadow: 0 3px 8px -3px rgba(8,145,178,.6);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-req-pill.off { background: transparent; border: 0; color: #64748b; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-req-pill.off { background: transparent; border: 0; color: #64748b; }
 
 /* Row actions: 40px teal tiles */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-actions { gap: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-act {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-actions { gap: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-act {
   width: 40px; height: 40px; border-radius: 10px; font-size: 15px;
   background: #f0fbfd; border: 1px solid #bfe9f1; color: #0891b2;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-act:hover { background: #e0f7fb; border-color: #67e8f9; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-act:hover { background: #e0f7fb; border-color: #67e8f9; color: #0e7490; }
 
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-step-done, .avm-prev, .avm-section-purple) { background: #10222b; border-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-prev-title, .avm-step-done .avm-step-title, .avm-kyc-table td strong) { color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs { border-bottom-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-pill-tabs .avm-pill.on { color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search { background: #0c1a22; border-color: rgba(103,232,249,.2); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { background: #10222b !important; color: #67e8f9; border-bottom-color: rgba(103,232,249,.16); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody td { background: #0c1a22; color: #e2f3f7; border-bottom-color: rgba(103,232,249,.1); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-kyc-act, .avm-auto-code, .avm-sr-badge, .avm-prev-toggle-pill, .avm-prev-toggle-chev) { background: rgba(34,211,238,.1); border-color: rgba(103,232,249,.3); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-step-done, .avm-prev, .avm-section-purple) { background: #10222b; border-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-prev-title, .avm-step-done .avm-step-title, .avm-kyc-table td strong) { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs { border-bottom-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-pill-tabs .avm-pill.on { color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search { background: #0c1a22; border-color: rgba(103,232,249,.2); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table thead th { background: #10222b !important; color: #67e8f9; border-bottom-color: rgba(103,232,249,.16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody td { background: #0c1a22; color: #e2f3f7; border-bottom-color: rgba(103,232,249,.1); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-kyc-act, .avm-auto-code, .avm-sr-badge, .avm-prev-toggle-pill, .avm-prev-toggle-chev) { background: rgba(34,211,238,.1); border-color: rgba(103,232,249,.3); color: #67e8f9; }
 
 /* Stage 2 fit: uploaded rows carry three actions, so the tiles step down to 34px
    to stay inside the column; search icon grey as in the Figma. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-actions { gap: 6px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-act { width: 34px; height: 34px; border-radius: 9px; font-size: 14px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-table .avm-req-pill { padding: 4px 9px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-kyc-search > i { color: #94a3b8; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-actions { gap: 6px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-act { width: 34px; height: 34px; border-radius: 9px; font-size: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-table .avm-req-pill { padding: 4px 9px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-kyc-search > i { color: #94a3b8; }
 
 /* Figma surfaces: plain white sheet; stage strip and body fade from a faint
    tint to white (no cyan wash); footer near-white with a hairline. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { background: #fff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-stepper-wrap { background: linear-gradient(#f6fdfe, #fff); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-body { background: linear-gradient(#f6fdfe 0%, #fff 18%); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-foot { background: #fbfeff; border-top: 1px solid #e2f1f5; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-modal, .avm-stepper-wrap, .avm-body) { background: #0c1a22; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-stepper-wrap { background: linear-gradient(#f6fdfe, #fff); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-body { background: linear-gradient(#f6fdfe 0%, #fff 18%); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-foot { background: #fbfeff; border-top: 1px solid #e2f1f5; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-modal, .avm-stepper-wrap, .avm-body) { background: #0c1a22; }
 
 /* Auto-code chips use the Figma mono face (Geist Mono is loaded in welcome.blade.php). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-auto-code { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700; padding: 3px 9px; color: #0e7490; background: #f0fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-auto-code { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700; padding: 3px 9px; color: #0e7490; background: #f0fbfd; }
 
 /* Dropdown menus (MasterSelect, portalled to <body>) on the Supplier page: teal, not the default
    violet: the search box focus, the hovered row and the selected row (as the Sourcing Tracker). */
@@ -3058,21 +3059,21 @@ body:has(.smc-root.sup-list) .master-select-item.active { background: rgba(8, 14
 .avm-input.avm-input-ro { border-style: dashed; caret-color: transparent; user-select: none; cursor: not-allowed; }
 .avm-input.avm-input-ro:focus { box-shadow: none; outline: 0; }
 .avm-input.avm-input-code { color: #d97706; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: .03em; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-input.avm-input-ro:focus { border-color: #cfe3ea; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-input.avm-input-ro:focus { border-color: #cfe3ea; }
 
 /* Yes / No toggle (document Expiry): teal on the Supplier page, not the default violet. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno { border-color: #cfe3ea; background: #f4fbfd; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn { border-right-color: #cfe3ea; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn:hover { background: #ecfeff; color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on:hover { background: #0e7490; color: #fff; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno { border-color: rgba(103,232,249,.25); background: rgba(34,211,238,.05); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno { border-color: #cfe3ea; background: #f4fbfd; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno-btn { border-right-color: #cfe3ea; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno-btn:hover { background: #ecfeff; color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno-btn.on:hover { background: #0e7490; color: #fff; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno { border-color: rgba(103,232,249,.25); background: rgba(34,211,238,.05); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-yesno-btn.on { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
 
 /* The document upload popup (Owner KYC / Due Diligence / Trade Licence) holds five fields:
    a narrower panel (920px) than the 1200px the Supplier page gives its table popups. */
 .avm-cp-popup.avm-cp-popup-doc { max-width: 920px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-doc { max-width: 920px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-doc { max-width: 920px; }
 
 /* Upload Document popup, compact: the three library fields in one row; the upload as a short
    tile that opens the "Add attachment" menu (Upload file / Take photo). */
@@ -3106,65 +3107,65 @@ body:has(.avm-cp-popup-doc) .sta-att { z-index: 13200; }
 body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 /* ═════ Stepper + sub-tabs: exact Figma values (.slm-teal .sf-modal: .sf-stages / .sf-stage-* /
    .sf-subtabs / .sf-subtab). Measured against the build; only what differed is set here. ═════ */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-stepper-wrap { padding: 8px 22px 0; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step { border-width: 1.5px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-ico { border-radius: 12px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-title { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-sub { font-size: 10px; font-weight: 500; color: #64748b; margin-top: 1px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-arrow { flex: 0 0 36px; width: 36px; height: 3px; border-radius: 3px; background: #cdeef5; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-body { padding: 8px 22px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tabs { gap: 22px; height: 42px; margin-bottom: 8px; border-bottom: 1px solid #e2eef3; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-stepper-wrap { padding: 8px 22px 0; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step { border-width: 1.5px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-ico { border-radius: 12px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-title { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-sub { font-size: 10px; font-weight: 500; color: #64748b; margin-top: 1px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-arrow { flex: 0 0 36px; width: 36px; height: 3px; border-radius: 3px; background: #cdeef5; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-body { padding: 8px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tabs { gap: 22px; height: 42px; margin-bottom: 8px; border-bottom: 1px solid #e2eef3; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tab {
   display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 2px;
   font-size: 12.5px; font-weight: 700; color: #64748b;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab:hover { color: #0e7490; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab.on { color: #0c4a6e; font-weight: 700; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-sub { color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-arrow { background: rgba(103,232,249,.25); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tabs { border-bottom-color: rgba(103,232,249,.18); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab { color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-tab.on { color: #67e8f9; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tab:hover { color: #0e7490; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tab.on { color: #0c4a6e; font-weight: 700; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-sub { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-arrow { background: rgba(103,232,249,.25); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tabs { border-bottom-color: rgba(103,232,249,.18); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tab { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-tab.on { color: #67e8f9; }
 /* Supplier Type list: its scroll stays its own (reaching the end never scrolls the form behind),
    and it can shrink inside the fixed-height panel so the list itself scrolls. */
 .avm-tsel-list { overscroll-behavior: contain; min-height: 0; }
 /* The other dropdowns on the Supplier page (MasterSelect lists, portalled to <body>): the same rule,
    scrolling a list to its end never scrolls the form behind it. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-list { overscroll-behavior: contain; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .master-select-list { overscroll-behavior: contain; }
 /* ═════ Modal frame, header and footer: exact Figma values (.slm-teal .sf-modal / .sf-head /
    .sf-footer / .sf-btn). Measured against the build; only what differed is set here. ═════ */
 /* Height stays FIXED (QA #133: no jump between stages), capped like the Figma's 93vh. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { height: min(880px, 93vh); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head { padding: 14px 22px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head-icon {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { height: min(880px, 93vh); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-head { padding: 14px 22px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-head-icon {
   width: 40px; height: 40px; border-radius: 13px;
   background: linear-gradient(145deg, #fff, #e0f7fb); box-shadow: 0 8px 20px -8px rgba(0,0,0,.35);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-title { font-size: 18px; font-weight: 800; letter-spacing: -.4px; line-height: 1.1; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-map-btn {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-title { font-size: 18px; font-weight: 800; letter-spacing: -.4px; line-height: 1.1; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-map-btn {
   height: 40px; border-radius: 12px; gap: 7px; padding: 0 15px; font-size: 12px; font-weight: 700;
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-head .avm-close {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-head .avm-close {
   width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-note { font-size: 11.5px; font-weight: 600; color: #64748b; gap: 7px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-dot { width: 6px; height: 6px; background: #22d3ee; box-shadow: 0 0 0 3px rgba(14,166,205,.18); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot .avm-btn-primary {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-foot-note { font-size: 11.5px; font-weight: 600; color: #64748b; gap: 7px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-foot-dot { width: 6px; height: 6px; background: #22d3ee; box-shadow: 0 0 0 3px rgba(14,166,205,.18); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-foot .avm-btn-primary {
   height: 40px; border-radius: 12px; gap: 7px; padding: 0 17px; font-size: 12.5px; font-weight: 700;
   background: linear-gradient(135deg, #0b4f63, #0e7490 35%, #0891b2 70%, #22d3ee);
   box-shadow: 0 10px 24px -8px rgba(8,145,178,.65), inset 0 1px 0 rgba(255,255,255,.25);
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-foot-note { color: #94a3b8; }/* The current stage card's ring + soft shadow were cut flat along the bottom: the form body below
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-foot-note { color: #94a3b8; }/* The current stage card's ring + soft shadow were cut flat along the bottom: the form body below
    (positioned, with its own background) painted over them. The stepper band sits above it. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-stepper-wrap { position: relative; z-index: 2; }/* Stage flag ("In Progress"): the Figma's teal pill, no border, no shadow (.slm-teal .sf-stage-flag). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-step-badge {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-stepper-wrap { position: relative; z-index: 2; }/* Stage flag ("In Progress"): the Figma's teal pill, no border, no shadow (.slm-teal .sf-stage-flag). */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-badge {
   background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; border: 0; box-shadow: none;
 }
 /* ═════ Map Product popup (Figma): 800px, two section cards, locked AUTO fields, footer note ═════ */
 .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
 /* A fetched / computed value: grey, locked (lock icon), mono text, AUTO pill on the right. */
 .avm-auto { position: relative; }
 .avm-auto .avm-input.avm-auto-input {
@@ -3194,25 +3195,25 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 [data-bs-theme="dark"] .avm-cp-footnote b { color: #e2e8f0; }
 
 /* Mapped Products empty state: teal (it was the violet accent). */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty.avm-empty-accent {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-empty.avm-empty-accent {
   color: #22b8d6; font-size: 14px; font-weight: 600; padding: 28px; border: 1.5px dashed #bfe3ec; background: #fff;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-empty.avm-empty-accent { color: #67e8f9; border-color: rgba(103,232,249,.3); background: rgba(34,211,238,.04); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-empty.avm-empty-accent { color: #67e8f9; border-color: rgba(103,232,249,.3); background: rgba(34,211,238,.04); }
 
 /* Map Product fixes: the lock / ₹ sat on the text (the Supplier page's input padding won); the
    rupee section icon; the Mapped Products search box in teal. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup .avm-auto .avm-input.avm-auto-input { padding-left: 32px; padding-right: 62px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup .avm-rs .avm-input { padding-left: 30px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup .avm-auto .avm-input.avm-auto-input { padding-left: 32px; padding-right: 62px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup .avm-rs .avm-input { padding-left: 30px; }
 .avm-sec-rs { font-size: 14px; font-weight: 800; line-height: 1; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search { --ui-search-clear: #0891b2; border-color: #cfe3ea; color: #0891b2; background: #fff; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-mapped-search { border-color: rgba(103,232,249,.25); color: #67e8f9; background: rgba(255,255,255,.04); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search { --ui-search-clear: #0891b2; border-color: #cfe3ea; color: #0891b2; background: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search input::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-search { border-color: rgba(103,232,249,.25); color: #67e8f9; background: rgba(255,255,255,.04); }
 
 /* ═════ Mapped Products popup (Supplier list), Figma: teal table, Map New Product in the header,
    Close in the footer. Scoped to this popup (.avm-cp-popup-mapped): Bulk Sourcing also uses .smp-*. ═════ */
 .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
 .avm-cp-popup.avm-cp-popup-mapped .avm-cp-hact { display: flex; align-items: center; gap: 10px; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-head-add {
   display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 16px; border-radius: 12px;
@@ -3266,18 +3267,18 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
    [data-bs-theme="dark"] hovers further up — so in dark mode these hovers kept their LIGHT
    backgrounds (#ecfeff / #f0fdff / #f7feff) and dark-teal text. Same scope + the dark attribute
    here, translucent teal fills and light teal text. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-row-btn, .avm-kyc-act, .avm-yesno-btn, .avm-fc-replace, .avm-btn-outline):hover:not(:disabled) {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-row-btn, .avm-kyc-act, .avm-yesno-btn, .avm-fc-replace, .avm-btn-outline):hover:not(:disabled) {
   background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn-del:hover:not(:disabled) {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-row-btn-del:hover:not(:disabled) {
   background: rgba(239, 68, 68, .16); border-color: rgba(252, 165, 165, .45); color: #fca5a5;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser:hover { background: rgba(34, 211, 238, .08); border-color: rgba(103, 232, 249, .45); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link:hover { color: #a5f3fc; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-kyc-table, .table.avm-mini-table) tbody tr:hover td { background: rgba(34, 211, 238, .05); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-tab, .avm-pill-tabs .avm-pill):not(.on):hover:not(:disabled) { color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .06); color: #e2f3f7; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .wl-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser:hover { background: rgba(34, 211, 238, .08); border-color: rgba(103, 232, 249, .45); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-link:hover { color: #a5f3fc; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal :is(.avm-kyc-table, .table.avm-mini-table) tbody tr:hover td { background: rgba(34, 211, 238, .05); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-tab, .avm-pill-tabs .avm-pill):not(.on):hover:not(:disabled) { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot .avm-btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .06); color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .wl-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager { background: #10222b; border-top-color: rgba(103,232,249,.16); }
 
@@ -3314,12 +3315,12 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 /* ===== Supplier module: every text button is 40px tall with 12.5px text (popup footers, header
    buttons). Supplier page only (body:has(.smc-root.sup-list)); the same form opened from the Sourcing Tracker is unchanged.
    Listed last so it wins over the earlier, equally specific footer rules. ===== */
-body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline),
-body:has(.smc-root.sup-list) .avm-modal :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-outline, .avm-map-btn, .avm-section-add-btn) {
+:is(body:has(.smc-root.sup-list), body:has(.svm-page)) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline),
+:is(body:has(.smc-root.sup-list), body:has(.svm-page)) .avm-modal :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-outline, .avm-map-btn, .avm-section-add-btn) {
   height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; box-sizing: border-box;
 }
-body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline) { padding-left: 20px; padding-right: 20px; border-radius: 11px; }
-body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 40px; border-radius: 11px; }
+:is(body:has(.smc-root.sup-list), body:has(.svm-page)) .avm-cp-popup .avm-cp-foot :is(.avm-btn-ghost, .avm-btn-primary, .avm-btn-amber, .avm-btn-outline) { padding-left: 20px; padding-right: 20px; border-radius: 11px; }
+:is(body:has(.smc-root.sup-list), body:has(.svm-page)) .avm-cp-popup .avm-cp-close { width: 40px; height: 40px; border-radius: 11px; }
 
 /* Contact Person tab skeleton table: the real table's eight columns, header line and row height. */
 .avm-skel-tbl-row {
@@ -3333,43 +3334,43 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
    five rows, then the rest scroll inside the table under a pinned header. Every row is 57px
    (the tallest, with its buttons), so "5 rows" is the same height on every tab:
    37 head + 5 x 57 + 2 border = 324. ===== */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap {
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table-wrap {
   max-height: 324px; overflow: auto; overscroll-behavior: contain;
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { position: sticky; top: 0; z-index: 2; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr { height: 57px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table thead th { position: sticky; top: 0; z-index: 2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody tr { height: 57px; }
 
 /* ===== Supplier form, dark mode: the icon tiles, the document-count pill and the empty box kept
    their light-mode fills (#e0f7fb / #f1f5f9 / #ecfeff, and a purple empty box). They take the
    active step icon's translucent teal instead (CLM Segment Master dark recipe). ===== */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) {
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) {
   background: rgba(34, 211, 238, .12); border-color: rgba(103, 232, 249, .3); color: #67e8f9; box-shadow: none;
 }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) i { color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-pill:not(.on) .avm-pill__ico { background: rgba(255, 255, 255, .06); border-color: rgba(148, 163, 184, .2); color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-pill:not(.on):hover .avm-pill__ico { background: rgba(34, 211, 238, .12); color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-doc-count { background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); color: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-empty { background: rgba(34, 211, 238, .04); border-color: rgba(103, 232, 249, .25); color: #8fb2c2; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) i { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-pill:not(.on) .avm-pill__ico { background: rgba(255, 255, 255, .06); border-color: rgba(148, 163, 184, .2); color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-pill:not(.on):hover .avm-pill__ico { background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-doc-count { background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-empty { background: rgba(34, 211, 238, .04); border-color: rgba(103, 232, 249, .25); color: #8fb2c2; }
 
 /* Supplier form tables, dark mode: the top / bottom rules were the light #d7eef4 (white lines),
    the Mandatory / Optional toggle a near-white pill, and the row hover the old violet
    (rgba(124,92,252,.16) !important). All in translucent teal now. File links (bank proof, contact
    card) read --avm-link: teal in light mode, light cyan in dark. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { --avm-link: #67e8f9; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap { border-top-color: rgba(103, 232, 249, .16) !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table .avm-req-pair { background: rgba(255, 255, 255, .05); border-color: rgba(103, 232, 249, .22); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table .avm-req-pill.off { color: #94a3b8; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table tbody tr:hover td,
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background-color: rgba(34, 211, 238, .07) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal { --avm-link: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table-wrap { border-top-color: rgba(103, 232, 249, .16) !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table .avm-req-pair { background: rgba(255, 255, 255, .05); border-color: rgba(103, 232, 249, .22); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table .avm-req-pill.off { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table tbody tr:hover td,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background-color: rgba(34, 211, 238, .07) !important; }
 /* Dark mode: the section card header's bottom rule was the light #eef7fa (a white line under
    every card title); the card's own faint teal instead. Popups (.avm-cp-popup) use the same card. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-modal, .avm-cp-popup) .avm-section-head { border-bottom-color: rgba(103, 232, 249, .16); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) :is(.avm-modal, .avm-cp-popup) .avm-section-head { border-bottom-color: rgba(103, 232, 249, .16); }
 /* Dark mode step tables sit on the card: rows had their own darker fill (#0c1a22) so each looked
    like a separate block, the head line was a grey rgb(50,56,62) and the wrapper Bootstrap's
    #212529. Transparent rows on the card colour, a faint teal head band, teal rules. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap { background: transparent !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { background: linear-gradient(rgba(34, 211, 238, .06), rgba(34, 211, 238, .06)), #10222b !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody td { background: transparent; border-bottom-color: rgba(103, 232, 249, .1); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table-wrap { background: transparent !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table thead th { background: linear-gradient(rgba(34, 211, 238, .06), rgba(34, 211, 238, .06)), #10222b !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-kyc-table tbody td { background: transparent; border-bottom-color: rgba(103, 232, 249, .1); }
 
 /* Dark mode, Mapped Products / Services popup: the SR badge (#fff) and the code chip, segment
    pill, GST pill and Edit button (#f0fbfd) kept their light fills; the pager buttons were white.
@@ -3405,12 +3406,12 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
 
 /* Supplier pages: the Supplier Segment multi-select (masterFormKit) ticks its checkbox in violet.
    Teal here, both themes; the shared component itself is untouched. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-check.is-on { background: #0891b2; border-color: #0891b2; color: #fff; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-check.is-on { background: #0891b2; border-color: #22d3ee; color: #fff; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .master-select-check.is-on { background: #0891b2; border-color: #0891b2; color: #fff; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .master-select-check.is-on { background: #0891b2; border-color: #22d3ee; color: #fff; }
 /* Dark mode, Additional Contact Persons table: the row hover was the light #f7feff (a white row
    with faded text). Translucent teal like every other table in the form. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: rgba(34, 211, 238, .07) !important; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr td { background: transparent; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: rgba(34, 211, 238, .07) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table tbody tr td { background: transparent; }
 
 /* Dark mode, contacts table WhatsApp pill: "Yes" was a light green gradient, "No" a light red one.
    Translucent fills with light text instead. */
@@ -3430,8 +3431,8 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
 
 /* Mapped Products popup: a slimmer footer (it was 16 + 40 + 20px for a single Close) and less
    empty space under the table card. */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-foot { padding: 8px; }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-body { padding-bottom: 14px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-foot { padding: 8px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-body { padding-bottom: 14px; }
 
 /* Mapped Products popup footer: Showing + pager on the left, Close on the right, one row.
    The pager drops its own bar look (border, fill, padding) since the footer is the bar now. */
