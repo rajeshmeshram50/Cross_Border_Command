@@ -498,8 +498,16 @@ export function MasterSelect({
           ] as any}
           /* The trigger's width is the MINIMUM, not the width: in a narrow field a
              long option plus its badge used to be cut off at the menu's edge. The
-             menu grows to fit its widest row and stops before the viewport edge. */
-          style={menuWidth ? { minWidth: menuWidth, width: 'max-content', maxWidth: `min(${Math.round(menuWidth) + 260}px, calc(100vw - 24px))` } : undefined}
+             menu grows to fit its widest row and stops before the viewport edge.
+             With no rows to show, the empty / "No results" sentence must not drive
+             that growth: it stays at the trigger's width and wraps, so a long
+             message (e.g. Assign Lead's "No Sales-department employees…") no
+             longer pushes the panel past the popup's edge. */
+          style={menuWidth ? (
+            filtered.length === 0 && !loadingMore
+              ? { width: menuWidth, maxWidth: 'calc(100vw - 24px)' }
+              : { minWidth: menuWidth, width: 'max-content', maxWidth: `min(${Math.round(menuWidth) + 260}px, calc(100vw - 24px))` }
+          ) : undefined}
         >
           {showSearch && (
             <div
