@@ -4577,3 +4577,11 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 /* Supplier vault shipment / PO picker: one badge width (codes run from SHP-007 to PO/2026-27/020),
    text centred in it, so every name starts at the same x. */
 .spev-ov .sev-ov-pick-code { width: 136px; flex: 0 0 136px; display: inline-flex; justify-content: center; box-sizing: border-box; }
+
+/* Supplier vault overview, dark mode: Download kept its light #f0fdff fill (a white button on
+   the dark table). Translucent teal like Re-upload, a shade stronger so the two stay apart. */
+[data-bs-theme="dark"] .spev-ov .cev-ov-dl {
+  background: rgba(34, 211, 238, .16); color: #a5f3fc; border-color: rgba(103, 232, 249, .38); box-shadow: none;
+}
+[data-bs-theme="dark"] .spev-ov .cev-ov-dl:hover:not(:disabled) { background: rgba(34, 211, 238, .26); color: #cffafe; }
+[data-bs-theme="dark"] .spev-ov .cev-ov-up.cev-ov-reup:hover { background: rgba(34, 211, 238, .18); }

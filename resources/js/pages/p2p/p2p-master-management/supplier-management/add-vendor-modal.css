@@ -3416,3 +3416,27 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
    Translucent fills with light text instead. */
 [data-bs-theme="dark"] .avm-modal .avm-wa-yes { background: rgba(34, 197, 94, .14) !important; color: #86efac !important; border-color: rgba(134, 239, 172, .35) !important; box-shadow: none; }
 [data-bs-theme="dark"] .avm-modal .avm-wa-no { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }
+
+/* Mapped Products popup from the list count: 10 per page, the table shows 5 rows
+   (36px head + 5 x 52px) and scrolls inside, so the popup never grows past the screen.
+   The head stays pinned while the rows scroll, so it needs a solid background. */
+.avm-cp-popup.avm-cp-popup-mapped .smp-table-wrap.dt-root { max-height: 298px; overflow-y: auto; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table thead th { position: sticky; top: 0; z-index: 2; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table tbody tr { height: 52px; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table thead th {
+  background: linear-gradient(rgba(34,211,238,.08), rgba(34,211,238,.08)), #10222b !important;
+  box-shadow: inset 0 -1px 0 rgba(103,232,249,.22) !important; /* was the violet table accent line */
+}
+
+/* Mapped Products popup: a slimmer footer (it was 16 + 40 + 20px for a single Close) and less
+   empty space under the table card. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-foot { padding: 8px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-mapped .avm-cp-body { padding-bottom: 14px; }
+
+/* Mapped Products popup footer: Showing + pager on the left, Close on the right, one row.
+   The pager drops its own bar look (border, fill, padding) since the footer is the bar now. */
+.avm-cp-popup.avm-cp-popup-mapped .avm-cp-foot { align-items: center; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-foot-pager { flex: 1 1 auto; min-width: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-foot-pager .wl-pager {
+  border: 0 !important; background: transparent !important; padding: 0 12px 0 0 !important; margin: 0; box-shadow: none;
+}

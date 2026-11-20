@@ -5282,8 +5282,12 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
  * rows-per-page picker. `rows` is null while the list popup is still loading;
  * that first arrival is not a "row added", so only a later growth jumps. */
 const MAPPED_PAGE_SIZE = 3;
+/* The read-only popup opened from the Supplier list's count badge pages by 10
+   (Figma); its table shows 5 rows and scrolls inside for the rest, so the popup
+   keeps one height. */
+const LIST_MAPPED_PAGE_SIZE = 10;
 
-function useMappedProductsPaging(rows: ProductMappingRow[] | null) {
+function useMappedProductsPaging(rows: ProductMappingRow[] | null, pageSize: number = MAPPED_PAGE_SIZE) {
   const [search, setSearchRaw] = useState('');
   const [page, setPage] = useState(1);
   const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
@@ -5310,18 +5314,18 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null) {
     const len = rows ? rows.length : null;
     if (len !== null && prevLen.current !== null && len > prevLen.current) {
       setSearchRaw('');
-      setPage(Math.ceil(len / MAPPED_PAGE_SIZE));
+      setPage(Math.ceil(len / pageSize));
     }
     prevLen.current = len;
   }, [rows]);
 
-  const pages = Math.max(1, Math.ceil(filtered.length / MAPPED_PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pages);
-  const start = (safePage - 1) * MAPPED_PAGE_SIZE;
+  const start = (safePage - 1) * pageSize;
   return {
-    search, setSearch, filtered, start, setPage,
+    search, setSearch, filtered, start, setPage, pageSize,
     page: safePage,
-    pageRows: filtered.slice(start, start + MAPPED_PAGE_SIZE),
+    pageRows: filtered.slice(start, start + pageSize),
   };
 }
 
@@ -5822,6 +5826,8 @@ function MappedProductsListCard(props: {
   onEdit: (id: string) => void;
   busy?: boolean;
   empty?: ReactNode;
+  /** The popup shows Showing + the pager in its own footer, so the card leaves them out. */
+  pagerInFooter?: boolean;
 }) {
   const { paging } = props;
   return (
@@ -5915,14 +5921,16 @@ function MappedProductsListCard(props: {
                 </tbody>
               </table>
             </div>
-            <div className="smp-pag">
-              <WorklistPager
-                total={paging.filtered.length}
-                page={paging.page}
-                pageSize={MAPPED_PAGE_SIZE}
-                onPage={paging.setPage}
-              />
-            </div>
+            {!props.pagerInFooter && (
+              <div className="smp-pag">
+                <WorklistPager
+                  total={paging.filtered.length}
+                  page={paging.page}
+                  pageSize={paging.pageSize}
+                  onPage={paging.setPage}
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -5945,7 +5953,7 @@ export function MappedProductsViewPopup(props: {
   const toast = useToast();
   const [rows, setRows] = useState<ProductMappingRow[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const paging = useMappedProductsPaging(rows);
+  const paging = useMappedProductsPaging(rows, LIST_MAPPED_PAGE_SIZE);
 
   /* Map Product, opened from this popup's header. The wizard is not involved:
      the form writes straight to /vendors/{id}/step/products and this popup
@@ -6191,10 +6199,23 @@ export function MappedProductsViewPopup(props: {
           <i className="ri-add-line" aria-hidden /> Map New Product
         </button>
       }
-      footer={<button type="button" className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
+      /* Showing + the pager sit in the popup's footer beside Close, not in a footer of the table. */
+      footer={<>
+        {rows && rows.length > 0 && paging.filtered.length > 0 && (
+          <div className="smp-pag smp-foot-pager">
+            <WorklistPager
+              total={paging.filtered.length}
+              page={paging.page}
+              pageSize={paging.pageSize}
+              onPage={paging.setPage}
+            />
+          </div>
+        )}
+        <button type="button" className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>
+      </>}
     >
       {rows === null ? (
-        <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={9} />
+        <ShimmerTable rows={5} cols={9} />
       ) : (
         /* Edit is offered here (CS-168); unmapping is not.
            They are not the same risk: correcting a price or a GST rate is a
@@ -6206,6 +6227,7 @@ export function MappedProductsViewPopup(props: {
           total={rows.length}
           onEdit={openEditForm}
           busy={saving}
+          pagerInFooter
           empty={failed
             ? 'Could not load the mapped products. Close and try again.'
             : rows.length === 0 ? 'No products mapped yet. Click "Map New Product" to begin.' : null}

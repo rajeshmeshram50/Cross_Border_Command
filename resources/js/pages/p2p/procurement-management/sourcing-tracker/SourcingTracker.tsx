@@ -25,7 +25,25 @@ const AssignTargetModal = lazy(() => import('./AssignTargetModal'));
 const SourcingTargetReport = lazy(() => import('./SourcingTargetReport'));
 const ProductList = lazy(() => import('./ProductList'));
 const MapSupplierModal = lazy(() => import('./MapSupplierModal'));
-const AddVendorModal = lazy(() => import('../../p2p-master-management/supplier-management/AddVendorModal'));
+const loadAddVendorModal = () => import('../../p2p-master-management/supplier-management/AddVendorModal');
+const AddVendorModal = lazy(loadAddVendorModal);
+
+/* Convert to Supplier, between the click and the form (CS-2222): the report has closed, the
+   prefill is loading and the form's code may still be downloading. Without this the bare list
+   sat there with nothing happening. */
+function ConvertOpening({ name }: { name?: string }) {
+  return (
+    <div className="stcv-overlay" role="status" aria-live="polite">
+      <div className="stcv-card">
+        <span className="stcv-spin" aria-hidden />
+        <div className="stcv-text">
+          <div className="stcv-title">Opening Add Supplier…</div>
+          <div className="stcv-sub">{name ? `Loading ${name}'s details` : 'Loading the supplier details'}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sourcing Management Tracker — Procure to Pay (P2P) · Procurement Management.
@@ -251,6 +269,8 @@ export default function SourcingTracker() {
     scope: 'domestic' | 'international'; prefill: SupplierPrefill;
   } | null>(null);
   const [converted, setConverted] = useState<ReadonlySet<string>>(() => new Set());
+  /** Convert to Supplier clicked, form not up yet: the name shown on the loader. */
+  const [convertOpening, setConvertOpening] = useState<string | null>(null);
   const [mapTarget, setMapTarget] = useState<{ row: SourcingTarget; product: ReportProduct; edit?: MapEdit } | null>(null);
 
   // Search goes to the server (q) once typing pauses.
@@ -409,10 +429,15 @@ export default function SourcingTracker() {
   // FR-2222-02: the Mapped Suppliers popup and the report close, then the Add Supplier form opens.
   const startConvert = useCallback(async (supplierId: number, name: string) => {
     const row = reportRow;
+    setConvertOpening(name);
     setReportRow(null);
     try {
       // The response is the shared Add Supplier prefill (the same one Bulk Sourcing uses), plus `converted`.
-      const r = await api.get<{ data: Partial<SupplierPrefill> & { converted?: boolean } }>(`/p2p/new-suppliers/${supplierId}/convert`);
+      // The form's code downloads at the same time, so it opens the moment the prefill is in.
+      const [r] = await Promise.all([
+        api.get<{ data: Partial<SupplierPrefill> & { converted?: boolean } }>(`/p2p/new-suppliers/${supplierId}/convert`),
+        loadAddVendorModal(),
+      ]);
       const d = r.data?.data ?? {};
       if (d.converted) {
         toast.info(`${name} is already in the Supplier Master`, 'Its mappings show it as Master.');
@@ -428,6 +453,8 @@ export default function SourcingTracker() {
     } catch (e) {
       toast.error('Couldn’t open Convert to Supplier', apiErrorMessage(e, 'Please try again.'));
       if (row) setReportRow(row);
+    } finally {
+      setConvertOpening(null);
     }
   }, [reportRow, toast]);
 
@@ -575,8 +602,9 @@ export default function SourcingTracker() {
           />
         </Suspense>
       )}
+      {convertOpening && <ConvertOpening name={convertOpening} />}
       {converting && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ConvertOpening name={converting.name} />}>
           <AddVendorModal
             scope={converting.scope}
             prefill={converting.prefill}
