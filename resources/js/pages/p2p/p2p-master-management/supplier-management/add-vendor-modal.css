@@ -3319,3 +3319,26 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { position: sticky; top: 0; z-index: 2; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr { height: 57px; }
+
+/* ===== Supplier form, dark mode: the icon tiles, the document-count pill and the empty box kept
+   their light-mode fills (#e0f7fb / #f1f5f9 / #ecfeff, and a purple empty box). They take the
+   active step icon's translucent teal instead (CLM Segment Master dark recipe). ===== */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) {
+  background: rgba(34, 211, 238, .12); border-color: rgba(103, 232, 249, .3); color: #67e8f9; box-shadow: none;
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-step-ico, .avm-prev-ico, .avm-section-icon) i { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-pill:not(.on) .avm-pill__ico { background: rgba(255, 255, 255, .06); border-color: rgba(148, 163, 184, .2); color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-pill:not(.on):hover .avm-pill__ico { background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-doc-count { background: rgba(34, 211, 238, .1); border-color: rgba(103, 232, 249, .3); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-empty { background: rgba(34, 211, 238, .04); border-color: rgba(103, 232, 249, .25); color: #8fb2c2; }
+
+/* Supplier form tables, dark mode: the top / bottom rules were the light #d7eef4 (white lines),
+   the Mandatory / Optional toggle a near-white pill, and the row hover the old violet
+   (rgba(124,92,252,.16) !important). All in translucent teal now. File links (bank proof, contact
+   card) read --avm-link: teal in light mode, light cyan in dark. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal { --avm-link: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap { border-top-color: rgba(103, 232, 249, .16) !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table .avm-req-pair { background: rgba(255, 255, 255, .05); border-color: rgba(103, 232, 249, .22); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table .avm-req-pill.off { color: #94a3b8; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table tbody tr:hover td,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody tr:hover td { background-color: rgba(34, 211, 238, .07) !important; }

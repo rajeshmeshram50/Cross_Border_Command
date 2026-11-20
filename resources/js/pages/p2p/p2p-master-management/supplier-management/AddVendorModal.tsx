@@ -3459,7 +3459,7 @@ export default function AddVendorModal(props: {
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="fs-13 d-inline-flex align-items-center"
-                                            style={{ color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                            style={{ color: 'var(--avm-link, #0891b2)', textDecoration: 'underline', textUnderlineOffset: 2 }}
                                           >
                                             <i className="ri-attachment-line me-1" />
                                             {r.attachmentName.length > 20 ? r.attachmentName.slice(0, 20) + '…' : r.attachmentName}
@@ -4966,7 +4966,7 @@ function AttachmentCell(props: {
         target="_blank"
         rel="noopener noreferrer"
         className="fs-13 text-truncate d-inline-flex align-items-center"
-        style={{ maxWidth: 260, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+        style={{ maxWidth: 260, color: 'var(--avm-link, #0891b2)', textDecoration: 'underline', textUnderlineOffset: 2 }}
       >
         {fileName || 'Attachment'}
       </a>
