@@ -3,9 +3,9 @@
 
    A small module on purpose: the list imports it without pulling in the form's chunk. */
 
-/** Service mapping (Mapped Services / Map Service popups) is built but switched off for now.
-    Flip to true to open it for service-provider suppliers in the form AND the list. */
-export const SERVICE_MAPPING_ENABLED = false;
+/** Service mapping (Mapped Services / Map Service popups) for service-provider suppliers, in the
+    form AND the list. On since the supplier-side API (/vendors/{id}/service-mappings) landed. */
+export const SERVICE_MAPPING_ENABLED = true;
 
 /** The Service Management bucket a supplier serves, as [service_type, classification]. */
 export type ServiceBucket = {

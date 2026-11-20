@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import SegmentBadge, { SEG_TAG_DARK, segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -4686,6 +4686,28 @@ function segExpiryTone(iso?: string): string {
 
 type SegRefRow = { code: string; name: string; authority?: string | null; authority_list?: string[] | null; expiry?: string | null; requirement: 'M' | 'O' };
 
+/** A one-line name that ends in "…" when it does not fit, with the full name on hover.
+    The tooltip follows what is actually cut off (measured), not a character count: a
+    36-character name can still be clipped by a narrow column. */
+function ClippedName({ text, maxWidth }: { text: string; maxWidth: number }) {
+  const ref = useRef<HTMLElement | null>(null);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setCut(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
+  return (
+    <Tooltip label={text} disabled={!cut}>
+      <strong ref={ref} style={{ display: 'block', maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</strong>
+    </Tooltip>
+  );
+}
+
 function SupplierSegmentRefTable(props: {
   title: string;
   tabKey: string;
@@ -4773,9 +4795,7 @@ function SupplierSegmentRefTable(props: {
                   {/* Truncate a long document name to one line with an ellipsis;
                       the full name is available on hover (QA #91). */}
                   <td>
-                    <Tooltip label={r.name} disabled={(r.name || '').length <= 40}>
-                      <strong style={{ display: 'block', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</strong>
-                    </Tooltip>
+                    <ClippedName text={r.name || ''} maxWidth={300} />
                   </td>
                   <td><AuthorityBadges value={r.authority_list && r.authority_list.length ? r.authority_list : r.authority} /></td>
                   {/* Neutral pill: an issue date is a fact, not a deadline, so it
@@ -5513,22 +5533,40 @@ function MappedProductsPopup(props: {
 /* ═════ Mapped Services — Map Product / Service for a service-provider supplier ═════
    The service twin of Mapped Products. A supplier whose type serves a Service Management bucket
    (Soft Service Provider → Soft / Digital, Trackable / Consumable → Self-Consumable, Professional …
-   Outsourcing → Other Operational) is mapped to services of THAT bucket only. No new API: the list
-   reads GET /p2p/services (bucket) + each service's /suppliers, and Map Service posts to the
-   existing POST /p2p/services/{id}/suppliers — the same call the Service Management form uses. */
+   Outsourcing → Other Operational) is mapped to services of THAT bucket only.
+   API (supplier side of p2p_service_suppliers — the same rows the Service screen shows):
+     GET    /vendors/{id}/service-mappings        this supplier's mappings (inactive included)
+     POST   /vendors/{id}/step/services           REPLACE-ALL: the full active list + the new one
+     PATCH  /vendors/{id}/service-mappings/{map}  price / currency / exchange_rate / remarks
+     DELETE /vendors/{id}/service-mappings/{map}  soft unmap (row kept as inactive)
+   GET /p2p/services (the bucket) only feeds the Service Name dropdown. */
 type ServiceListRow = {
   id: number; code: string; name: string; category?: string | null; hsn_code?: string | null;
   gst_percentage?: number | null; status?: string; suppliers_count?: number;
 };
-type ServiceSupplierApiRow = {
-  id: number; vendor_id: number; status?: string; currency?: string; price: number;
-  exchange_rate?: number | null; gst_percentage: number; gst_amount: number; total_amount: number;
-  inr_amount?: number;
+type ServiceMappingApiRow = {
+  id: number; service_id: number; service_code?: string | null; service_name?: string | null;
+  category?: string | null; origin?: 'domestic' | 'international' | null; currency?: string | null;
+  price: number | string; exchange_rate?: number | string | null; gst_percentage?: number | string | null;
+  gst_amount?: number | string | null; total_amount?: number | string | null; inr_amount?: number | string | null;
+  remarks?: string | null; status?: string | null;
 };
 type MappedServiceRow = {
+  /** p2p_service_suppliers.id — what PATCH / DELETE address. */
+  mapId: number;
   serviceId: number; code: string; name: string; category: string; hsn: string;
-  currency: string; price: number; gstPercentage: number; gstAmount: number; total: number; inr: number;
+  origin: 'domestic' | 'international';
+  currency: string; price: number; exchangeRate: number | null;
+  gstPercentage: number; gstAmount: number; total: number; inr: number; remarks: string;
 };
+/** One row as POST step/services takes it. Re-sent for every kept mapping: the save replaces the set. */
+const servicePayload = (r: Pick<MappedServiceRow, 'serviceId' | 'origin' | 'price' | 'currency' | 'exchangeRate' | 'remarks'>) => ({
+  service_id: r.serviceId,
+  origin: r.origin,
+  price: r.price,
+  ...(r.origin === 'international' ? { currency: r.currency, exchange_rate: r.exchangeRate } : {}),
+  remarks: r.remarks.trim() || null,
+});
 type CurrencyOpt = { code: string; name?: string; exchange_rate?: string | number | null };
 
 const SERVICE_BUCKET_LABEL: Record<ServiceBucket['serviceType'], string> = {
@@ -5554,13 +5592,16 @@ export function MappedServicesPopup(props: {
   onChanged?: () => void;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { vendorId, bucket, international } = props;
   const [services, setServices] = useState<ServiceListRow[] | null>(null);
+  /** Mapping being edited (its mapId), or null while the form adds one. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  /** A row whose unmap is in flight — the row buttons stay disabled. */
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [rows, setRows] = useState<MappedServiceRow[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [search, setSearchRaw] = useState('');
-  const [page, setPage] = useState(1);
-  const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
+  const [search, setSearch] = useState('');
 
   // Map Service form.
   const [formOpen, setFormOpen] = useState(false);
@@ -5572,26 +5613,35 @@ export function MappedServicesPopup(props: {
   const [tried, setTried] = useState(false);
   const [currencies, setCurrencies] = useState<CurrencyOpt[]>([]);
 
-  /** Every service of this bucket, then — for the ones that have suppliers — who they are, to
-      find this supplier's own mappings and their prices. */
+  /** This supplier's mappings (one call) and, beside them, the bucket's services for the
+      Service Name dropdown and each row's HSN / SAC. Only ACTIVE mappings are listed. */
   const load = useCallback(async () => {
     try {
-      const res = await api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
-        params: { service_type: bucket.serviceType, ...(bucket.classification ? { classification: bucket.classification } : {}), per_page: 200, sort: 'name' },
-      });
-      const list = res.data?.data ?? [];
-      const withSuppliers = list.filter(s => (s.suppliers_count ?? 0) > 0);
-      const maps = await Promise.all(withSuppliers.map(async s => {
-        const r = await api.get<{ data?: ServiceSupplierApiRow[] }>(`/p2p/services/${s.id}/suppliers`);
-        const m = (r.data?.data ?? []).find(x => Number(x.vendor_id) === vendorId && (x.status ?? 'active') === 'active');
-        return m ? { s, m } : null;
-      }));
+      const [svcRes, mapRes] = await Promise.all([
+        api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
+          params: { service_type: bucket.serviceType, ...(bucket.classification ? { classification: bucket.classification } : {}), per_page: 200, sort: 'name' },
+        }),
+        api.get<{ data?: ServiceMappingApiRow[] }>(`/vendors/${vendorId}/service-mappings`),
+      ]);
+      const list = svcRes.data?.data ?? [];
+      const byId = new Map(list.map(s => [Number(s.id), s]));
+      const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       setServices(list);
-      setRows(maps.filter((x): x is { s: ServiceListRow; m: ServiceSupplierApiRow } => !!x).map(({ s, m }) => ({
-        serviceId: s.id, code: s.code, name: s.name, category: s.category || '—', hsn: s.hsn_code || '—',
-        currency: m.currency || 'INR', price: Number(m.price), gstPercentage: Number(m.gst_percentage ?? 0),
-        gstAmount: Number(m.gst_amount ?? 0), total: Number(m.total_amount ?? 0), inr: Number(m.inr_amount ?? m.total_amount ?? 0),
-      })));
+      setRows((mapRes.data?.data ?? [])
+        .filter(m => (m.status ?? 'active') === 'active')
+        .map((m): MappedServiceRow => {
+          const svc = byId.get(Number(m.service_id));
+          return {
+            mapId: Number(m.id), serviceId: Number(m.service_id),
+            code: m.service_code || svc?.code || '—', name: m.service_name || svc?.name || '—',
+            category: m.category || svc?.category || '—', hsn: svc?.hsn_code || '—',
+            origin: m.origin === 'international' ? 'international' : 'domestic',
+            currency: m.currency || 'INR', price: num(m.price),
+            exchangeRate: m.exchange_rate != null ? num(m.exchange_rate) : null,
+            gstPercentage: num(m.gst_percentage), gstAmount: num(m.gst_amount),
+            total: num(m.total_amount), inr: num(m.inr_amount ?? m.total_amount), remarks: m.remarks ?? '',
+          };
+        }));
       setFailed(false);
     } catch {
       setFailed(true);
@@ -5614,20 +5664,25 @@ export function MappedServicesPopup(props: {
     const q = search.trim().toLowerCase();
     return (rows ?? []).filter(r => !q || [r.name, r.code, r.category, r.hsn].some(s => s.toLowerCase().includes(q)));
   }, [rows, search]);
-  const pages = Math.max(1, Math.ceil(filtered.length / MAPPED_PAGE_SIZE));
-  const safePage = Math.min(page, pages);
-  const start = (safePage - 1) * MAPPED_PAGE_SIZE;
 
   // Services this supplier can still be mapped to: not already mapped, not inactive.
   const mapped = useMemo(() => new Set((rows ?? []).map(r => r.serviceId)), [rows]);
-  const options = useMemo(() => (services ?? [])
-    .filter(s => !mapped.has(s.id) && s.status !== 'inactive')
-    .map(s => ({ value: String(s.id), label: `${s.code} — ${s.name}` })), [services, mapped]);
+  const editRow = editingId != null ? (rows ?? []).find(r => r.mapId === editingId) ?? null : null;
+  const options = useMemo(() => {
+    const opts = (services ?? [])
+      .filter(s => (!mapped.has(s.id) && s.status !== 'inactive') || (editRow != null && s.id === editRow.serviceId))
+      .map(s => ({ value: String(s.id), label: `${s.code} — ${s.name}` }));
+    // Editing a service that is not in this bucket's list any more: still show its name.
+    if (editRow && !opts.some(o => o.value === String(editRow.serviceId))) {
+      opts.unshift({ value: String(editRow.serviceId), label: `${editRow.code} — ${editRow.name}` });
+    }
+    return opts;
+  }, [services, mapped, editRow]);
   const picked = (services ?? []).find(s => String(s.id) === serviceId) ?? null;
 
   // Live totals, as the server will compute them.
   const p = Number(price) || 0;
-  const gstPct = Number(picked?.gst_percentage ?? 0);
+  const gstPct = Number(picked?.gst_percentage ?? editRow?.gstPercentage ?? 0);
   const gstAmt = international ? 0 : Math.round(p * gstPct) / 100;
   const total = Math.round((p + gstAmt) * 100) / 100;
   const fx = Number(rate) || 0;
@@ -5637,14 +5692,46 @@ export function MappedServicesPopup(props: {
     price: !(p > 0) ? 'Enter a price greater than 0' : '',
     currency: international && !currency ? 'Select the supplier’s currency' : '',
     rate: international && !(fx > 0) ? 'Enter the exchange rate (₹ per unit)' : '',
-    gst: !international && picked && picked.gst_percentage == null ? 'This service has no GST % yet — set it in Service Management first' : '',
+    gst: !international && !editRow && picked && picked.gst_percentage == null ? 'This service has no GST % yet — set it in Service Management first' : '',
   };
   const err = (k: keyof typeof errs) => (tried ? errs[k] || undefined : undefined);
 
   const openForm = () => {
+    setEditingId(null);
     setServiceId(''); setPrice(''); setRemarks(''); setTried(false);
     setCurrency(''); setRate('');
     setFormOpen(true);
+  };
+  /** Edit a mapping: the same form, the service fixed, its saved price / rate / remarks in. */
+  const openEdit = (r: MappedServiceRow) => {
+    setEditingId(r.mapId);
+    setServiceId(String(r.serviceId)); setPrice(String(r.price)); setRemarks(r.remarks); setTried(false);
+    setCurrency(r.origin === 'international' ? r.currency.toUpperCase() : '');
+    setRate(r.exchangeRate != null ? String(r.exchangeRate) : '');
+    setFormOpen(true);
+  };
+  const closeForm = () => { setFormOpen(false); setEditingId(null); };
+
+  /** Soft unmap: the row turns inactive on the server (kept; mapping it again revives it). */
+  const unmap = async (r: MappedServiceRow) => {
+    const ok = await confirm({
+      title: 'Unmap this service?',
+      message: `${r.name} will no longer be mapped to this supplier. You can map it again later.`,
+      confirmLabel: 'Unmap',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    setBusyId(r.mapId);
+    try {
+      await api.delete(`/vendors/${vendorId}/service-mappings/${r.mapId}`);
+      toast.success('Service unmapped', `${r.name} is no longer mapped to this supplier.`);
+      await load();
+      props.onChanged?.();
+    } catch (e) {
+      toast.error('Could not unmap the service', svcApiError(e, 'Please try again.'));
+    } finally { setBusyId(null); }
   };
   const pickCurrency = (c: string) => {
     setCurrency(c);
@@ -5659,20 +5746,34 @@ export function MappedServicesPopup(props: {
       return;
     }
     try {
-      await api.post(`/p2p/services/${serviceId}/suppliers`, {
-        vendor_id: vendorId,
-        origin: international ? 'international' : 'domestic',
-        price: p,
-        ...(international ? { currency, exchange_rate: fx } : {}),
-        remarks: remarks.trim() || null,
-      });
-      toast.success('Service mapped', `${picked?.name ?? 'The service'} is now mapped to this supplier.`);
-      setFormOpen(false);
-      setSearchRaw('');
+      if (editRow) {
+        await api.patch(`/vendors/${vendorId}/service-mappings/${editRow.mapId}`, {
+          price: p,
+          ...(international ? { currency, exchange_rate: fx } : {}),
+          remarks: remarks.trim() || null,
+        });
+        toast.success('Service updated', `${editRow.name} has been updated for this supplier.`);
+      } else {
+        /* REPLACE-ALL: every mapping the supplier keeps goes in with the new one. Sending the new
+           one alone would turn all the others off. rows is loaded by now (the button waits for it). */
+        if (rows === null) return;
+        await api.post(`/vendors/${vendorId}/step/services`, {
+          mappings: [
+            ...rows.map(servicePayload),
+            servicePayload({
+              serviceId: Number(serviceId), origin: international ? 'international' : 'domestic',
+              price: p, currency, exchangeRate: international ? fx : null, remarks,
+            }),
+          ],
+        });
+        toast.success('Service mapped', `${picked?.name ?? 'The service'} is now mapped to this supplier.`);
+      }
+      closeForm();
+      setSearch('');
       await load();
       props.onChanged?.();
     } catch (e) {
-      toast.error('Could not map the service', svcApiError(e, 'Please try again.'));
+      toast.error(editRow ? 'Could not update the service' : 'Could not map the service', svcApiError(e, 'Please try again.'));
     }
   };
 
@@ -5691,14 +5792,16 @@ export function MappedServicesPopup(props: {
         title="Mapped Services"
         subtitle={`${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
         icon="ri-customer-service-2-line"
-        panelClassName="avm-cp-popup-wide"
+        /* Laid out as the form's Mapped Products popup: search + Map Service in the body,
+           the pager under the table, only Close in the footer. */
+        panelClassName="avm-cp-popup-wide avm-cp-popup-svc"
         onClose={props.onClose}
         footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
       >
         <div className="avm-mapped-toolbar">
           <MappedProductsSearch value={search} onChange={setSearch}
             placeholder="Search service, code, category, HSN/SAC…" label="Search mapped services" />
-          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null}>
+          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null}>
             <i className="ri-add-line" /> Map Service
           </button>
         </div>
@@ -5716,49 +5819,73 @@ export function MappedServicesPopup(props: {
               isEmpty={false}
               empty=""
               wrapClassName="avm-mapped-wrap"
-              tableClassName="avm-mapped-table"
-              headers={['SR NO', 'SERVICE', 'CODE', 'CATEGORY', 'HSN/SAC',
-                { label: international ? 'PRICE' : 'PRICE (₹)', className: 'text-end' },
-                ...(international ? [] : [{ label: 'GST %', className: 'text-end' }, { label: 'GST (₹)', className: 'text-end' }]),
-                { label: international ? 'TOTAL (₹ VALUE)' : 'TOTAL (₹)', className: 'text-end' }]}
+              tableClassName="avm-mapped-table avm-svc-table"
+              /* Fixed column widths (table-layout: fixed, .avm-svc-table), every column centred
+                 but Service, so each header sits over its own values. */
+              headers={[
+                { label: 'SR NO', className: 'svc-c-sr' },
+                { label: 'SERVICE', className: 'svc-c-name' },
+                { label: 'CODE', className: 'svc-c-code' },
+                { label: 'CATEGORY', className: 'svc-c-cat' },
+                { label: 'HSN/SAC', className: 'svc-c-hsn' },
+                { label: international ? 'PRICE' : 'PRICE (₹)', className: 'svc-c-price' },
+                ...(international ? [] : [{ label: 'GST %', className: 'svc-c-gstp' }, { label: 'GST (₹)', className: 'svc-c-gst' }]),
+                { label: international ? 'TOTAL (₹ VALUE)' : 'TOTAL (₹)', className: 'svc-c-total' },
+                { label: 'ACTIONS', className: 'svc-c-act' }]}
             >
-              {filtered.slice(start, start + MAPPED_PAGE_SIZE).map((r, i) => (
-                <tr key={r.serviceId}>
-                  <td><span className="avm-sr-pill">{String(start + i + 1).padStart(2, '0')}</span></td>
-                  <td><strong>{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30).trimEnd()}…</span></Tooltip> : r.name}</strong></td>
+              {/* Every service in one list: 5 rows show, the rest scroll inside the table (no pager). */}
+              {filtered.map((r, i) => (
+                <tr key={r.mapId}>
+                  <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
+                  <td><ClippedName text={r.name} maxWidth={9999} /></td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
                   <td>{r.category}</td>
                   <td><span className="font-monospace fs-13">{r.hsn}</span></td>
-                  <td className="text-end avm-num fs-13">{money(r.price, r.currency)}</td>
-                  {!international && <td className="text-end avm-num fs-13">{r.gstPercentage.toFixed(2)}%</td>}
-                  {!international && <td className="text-end avm-num fs-13">{inrAmt(r.gstAmount)}</td>}
-                  <td className="text-end avm-num fs-13"><strong>{inrAmt(r.inr)}</strong></td>
+                  <td className="avm-num fs-13">{money(r.price, r.currency)}</td>
+                  {!international && <td className="avm-num fs-13">{Number(r.gstPercentage.toFixed(2))}%</td>}
+                  {!international && <td className="avm-num fs-13">{inrAmt(r.gstAmount)}</td>}
+                  <td className="avm-num fs-13"><strong>{inrAmt(r.inr)}</strong></td>
+                  <td>
+                    <div className="avm-row-actions justify-content-center">
+                      <Tooltip label="Edit service">
+                        <button type="button" className="avm-row-btn" onClick={() => openEdit(r)} aria-label="Edit service" disabled={busyId !== null}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Unmap service">
+                        <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => void unmap(r)} aria-label="Unmap service" disabled={busyId !== null}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </KycTable>
-            <WorklistPager className="avm-mapped-pager" total={filtered.length} page={safePage} pageSize={MAPPED_PAGE_SIZE} onPage={setPage} />
           </div>
         )}
       </PopupChrome>
 
       {formOpen && (
-        <PopupShell title="Map Service" icon="ri-customer-service-2-line"
-          subtitle={`Link a ${bucketLabel.replace(/s$/, '').toLowerCase()} with its price for this supplier`}
+        <PopupShell title={editRow ? 'Edit Mapped Service' : 'Map Service'} icon="ri-customer-service-2-line"
+          subtitle={editRow
+            ? `Change the price${international ? ', exchange rate' : ''} or remarks of ${editRow.name}`
+            : `Link a ${bucketLabel.replace(/s$/, '').toLowerCase()} with its price for this supplier`}
           panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>}
-          onClose={() => setFormOpen(false)} onSave={save}>
+          onClose={closeForm} onSave={save}>
           <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-customer-service-2-line" />} title="Service Details" subtitle={`Pick a service from ${bucketLabel} — code, category and HSN / SAC fill in automatically`}>
             <div className="avm-grid-1">
               <Field label="Service Name" required error={err('service')}>
                 <SelectInput value={serviceId} onChange={setServiceId}
                   placeholder={services === null ? 'Loading services…' : 'Select Service'}
-                  options={options} disabled={services === null}
+                  options={options} disabled={services === null || editRow !== null}
                   emptyText={`No unmapped service in ${bucketLabel}${bucket.classification ? ` (${bucket.classification})` : ''} — add one in Service Management.`} />
               </Field>
             </div>
             <div className="avm-grid-3">
-              <Field label="Service Code">{auto(picked?.code ?? '', 'Auto-fills from service')}</Field>
-              <Field label="Category">{auto(picked?.category ?? '', '—')}</Field>
-              <Field label="HSN / SAC Code">{auto(picked?.hsn_code ?? '', '—')}</Field>
+              <Field label="Service Code">{auto(picked?.code ?? editRow?.code ?? '', 'Auto-fills from service')}</Field>
+              <Field label="Category">{auto(picked?.category ?? (editRow && editRow.category !== '—' ? editRow.category : ''), '—')}</Field>
+              <Field label="HSN / SAC Code">{auto(picked?.hsn_code ?? (editRow && editRow.hsn !== '—' ? editRow.hsn : ''), '—')}</Field>
             </div>
           </SectionCard>
           <SectionCard tone="violet" className="avm-cp-sec" icon={<b className="avm-sec-rs" aria-hidden>{international ? '¤' : '₹'}</b>}
@@ -5792,11 +5919,11 @@ export function MappedServicesPopup(props: {
                       <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter price" value={price} onChange={e => setPrice(e.target.value)} />
                     </div>
                   </Field>
-                  <Field label="GST %" error={err('gst')}>{auto(picked && picked.gst_percentage != null ? `${gstPct}%` : '', 'Auto-fills from service')}</Field>
+                  <Field label="GST %" error={err('gst')}>{auto((picked && picked.gst_percentage != null) || editRow ? `${gstPct}%` : '', 'Auto-fills from service')}</Field>
                 </div>
                 <div className="avm-grid-2">
-                  <Field label="GST Amount (₹)">{auto(picked && p ? gstAmt.toFixed(2) : '', 'Auto-computed')}</Field>
-                  <Field label="Total Amount (₹)">{auto(picked && p ? total.toFixed(2) : '', 'Auto-computed')}</Field>
+                  <Field label="GST Amount (₹)">{auto((picked || editRow) && p ? gstAmt.toFixed(2) : '', 'Auto-computed')}</Field>
+                  <Field label="Total Amount (₹)">{auto((picked || editRow) && p ? total.toFixed(2) : '', 'Auto-computed')}</Field>
                 </div>
               </>
             )}

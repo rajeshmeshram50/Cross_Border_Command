@@ -3441,3 +3441,31 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-foot-pager .wl-pager {
   border: 0 !important; background: transparent !important; padding: 0 12px 0 0 !important; margin: 0; box-shadow: none;
 }
+
+/* Mapped Services table: fixed column widths and one alignment per column, so every header
+   sits over its values (the money headers were right-aligned over left-aligned values).
+   Service takes what is left and ends in "..." (full name on hover). */
+.avm-kyc-table.avm-svc-table { table-layout: fixed; width: 100%; }
+.avm-kyc-table.avm-svc-table > :is(thead, tbody) > tr > :is(th, td) { text-align: center !important; vertical-align: middle; }
+.avm-kyc-table.avm-svc-table > :is(thead, tbody) > tr > :is(th, td):nth-child(2) { text-align: left !important; }
+.avm-kyc-table.avm-svc-table th.svc-c-sr    { width: 64px; }
+.avm-kyc-table.avm-svc-table th.svc-c-code  { width: 110px; }
+.avm-kyc-table.avm-svc-table th.svc-c-cat   { width: 120px; }
+.avm-kyc-table.avm-svc-table th.svc-c-hsn   { width: 95px; }
+.avm-kyc-table.avm-svc-table th.svc-c-price { width: 115px; }
+.avm-kyc-table.avm-svc-table th.svc-c-gstp  { width: 72px; }
+.avm-kyc-table.avm-svc-table th.svc-c-gst   { width: 95px; }
+.avm-kyc-table.avm-svc-table th.svc-c-total { width: 120px; }
+.avm-kyc-table.avm-svc-table th.svc-c-act   { width: 96px; }
+/* Same width as Mapped Products, so Service keeps room beside the fixed columns. */
+.avm-cp-popup.avm-cp-popup-svc { max-width: 1160px; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-svc { max-width: 1160px; }
+.avm-kyc-table.avm-svc-table td .avm-row-actions { justify-content: center; }
+.avm-kyc-table.avm-svc-table td:nth-child(4) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Mapped Services: no pager. The table shows 5 rows (40px head + 5 x 54px) and scrolls inside
+   for the rest; the head stays pinned, so it needs a solid background. */
+.avm-cp-popup.avm-cp-popup-svc .avm-mapped-wrap { max-height: 312px; overflow-y: auto !important; }
+.avm-cp-popup.avm-cp-popup-svc .avm-svc-table tbody tr { height: 54px; }
+.avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { position: sticky; top: 0; z-index: 2; background: #f0fbfd !important; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { background: #13303a !important; }
