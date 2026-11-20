@@ -3351,3 +3351,44 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table-wrap { background: transparent !important; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table thead th { background: linear-gradient(rgba(34, 211, 238, .06), rgba(34, 211, 238, .06)), #10222b !important; border-bottom-color: rgba(103, 232, 249, .16) !important; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .avm-kyc-table tbody td { background: transparent; border-bottom-color: rgba(103, 232, 249, .1); }
+
+/* Dark mode, Mapped Products / Services popup: the SR badge (#fff) and the code chip, segment
+   pill, GST pill and Edit button (#f0fbfd) kept their light fills; the pager buttons were white.
+   Translucent teal on the dark card instead; secondary text in slate. */
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .dt-serial.dt-serial { background: rgba(255, 255, 255, .04); color: #67e8f9; border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td :is(.dt-id-chip.dt-id-chip, .smp-gst, .smc-act-edit) { background: rgba(34, 211, 238, .1); color: #67e8f9; border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smc-seg { background: rgba(34, 211, 238, .08); border-color: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smc-seg-name { color: #67e8f9; background: transparent; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smp-hsn { color: #cbd5e1; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smp-gst-amt { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-btn { background: rgba(255, 255, 255, .04); color: #67e8f9; border-color: rgba(103, 232, 249, .25); }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-info { color: #94a3b8; }
+
+/* Mapped Products popup: the row behind the cells kept the old violet hover
+   (rgba(124,58,237,.12), from the table's violet accent), which showed through the cells'
+   translucent dark-mode hover as a purple band. Only the cells' teal hover now. */
+.avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody tr:hover { background: transparent !important; }
+/* "Showing 1-3 of 3": a proper pill in both themes (the text sat flush against an outline in dark). */
+.avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-info {
+  padding: 5px 14px; border: 1px solid #cfe3ea; border-radius: 999px; background: #fff; box-shadow: none; outline: 0;
+}
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-info {
+  border-color: rgba(103, 232, 249, .25); background: rgba(255, 255, 255, .04); color: #94a3b8;
+}
+/* Dark mode rows sat on a neutral grey (#212529, the generic dark table fill) instead of the card's
+   dark teal: transparent on the card, a faint teal zebra, the teal hover on top. */
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td { background-color: transparent !important; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody tr:nth-child(even) td { background-color: rgba(34, 211, 238, .03) !important; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody tr:hover td { background-color: rgba(34, 211, 238, .07) !important; }
+/* ...the grey was on the ROW (tr = #212529) under the cells; and the card's shadow was the old violet. */
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody tr { background-color: transparent !important; }
+[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-card { box-shadow: 0 2px 12px rgba(0, 0, 0, .25); }
+
+/* Supplier pages: the Supplier Segment multi-select (masterFormKit) ticks its checkbox in violet.
+   Teal here, both themes; the shared component itself is untouched. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-check.is-on { background: #0891b2; border-color: #0891b2; color: #fff; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .master-select-check.is-on { background: #0891b2; border-color: #22d3ee; color: #fff; }
+/* Dark mode, Additional Contact Persons table: the row hover was the light #f7feff (a white row
+   with faded text). Translucent teal like every other table in the form. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: rgba(34, 211, 238, .07) !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr td { background: transparent; }

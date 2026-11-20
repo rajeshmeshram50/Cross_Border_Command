@@ -417,7 +417,10 @@ function RefineSuppliers(props: {
               <span className="supfm-res"><b>{shownN ?? '…'}</b> of {grand} suppliers match</span>
               <span className="supfm-sp" />
               <button type="button" className="supfm-cancel" onClick={cancel} disabled={applying}>Cancel</button>
-              <button type="button" className="supfm-apply" onClick={() => { void apply(); }} disabled={applying} aria-busy={applying || undefined}>
+              {/* Nothing to apply until the ticks differ from what the list already uses (CS-2324):
+                  disabled with no selection, and after a change that was put back. */}
+              <button type="button" className="supfm-apply" onClick={() => { void apply(); }} disabled={applying || same} aria-busy={applying || undefined}
+                title={same && !applying ? 'Select a category or compliance status to filter by' : undefined}>
                 {applying
                   ? <><span className="supfm-spin" aria-hidden />Applying…</>
                   : <><IcoTick />Apply Filters{draftCount > 0 ? ` (${draftCount})` : ''}</>}
@@ -1414,7 +1417,9 @@ useEffect(() => {
           <SupplierEvidenceVaultModal
             open
             supplier={vaultTarget}
-            onClose={() => setVaultTarget(null)}
+            /* Re-read the list on close: uploads in the vault change the supplier's Compliant
+               status, which otherwise showed only after a page refresh (CS-2326). */
+            onClose={() => { setVaultTarget(null); void refresh({ silent: true }); }}
           />
         </Suspense>
       )}
