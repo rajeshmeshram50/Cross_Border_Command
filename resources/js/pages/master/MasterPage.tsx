@@ -31,12 +31,12 @@ const MP_TEAL_TONE = { bg: '#ecfeff', fg: '#0e7490', border: '#22d3ee', star: '#
    gradient top bar, a soft glow top-right, a gradient icon tile beside the
    number, and the label under it. The tones cycle in the Recycle Bin order. */
 const MP_KC_TONES = ['teal', 'sky', 'amber', 'rose', 'green', 'violet'] as const;
-type MpKpi = { key: string; label: string; icon: string; value: ReactNode; sub?: string };
+type MpKpi = { key: string; label: string; icon: string; value: ReactNode; sub?: string; tone?: typeof MP_KC_TONES[number] | "slate" };
 function MpKpiCards({ items }: { items: MpKpi[] }) {
   return (
     <div className="mp-kc-row">
       {items.map((k, i) => (
-        <div key={k.key} className={`mp-kc mp-kc--${MP_KC_TONES[i % MP_KC_TONES.length]}`}>
+        <div key={k.key} className={`mp-kc mp-kc--${k.tone ?? MP_KC_TONES[i % MP_KC_TONES.length]}`}>
           <span className="mp-kc__glow" />
           <div className="mp-kc__top">
             <span className="mp-kc__ico"><i className={k.icon} /></span>
@@ -133,9 +133,6 @@ function MasterPageInner({
   }, [searchInput, serverPaged]);
 
   useEffect(() => { setPage(0); setTotalRows(0); }, [cfg.slug]);
-  const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
-  const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
-  const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
   const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
   /* All / Active / Inactive tabs (the Rack Master tab row), on every master with a status field. */
   const [statusTab, setStatusTab] = useState<MpStatusTab>('all');
@@ -299,24 +296,12 @@ function MasterPageInner({
 
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
-    const isDsn = cfg.slug === 'designations';
     const isRole = cfg.slug === 'roles';
     const searchableKeys = [
       ...cfg.cols,
       'client_name', 'branch_name', 'creator_name',
     ];
     return records.filter(row => {
-      if (isDsn) {
-        if (dsnStatusFilter !== 'all') {
-          if (String(row.status ?? '').toLowerCase() !== dsnStatusFilter.toLowerCase()) return false;
-        }
-        if (dsnLevelFilter !== 'all') {
-          if (String(row.level ?? '') !== dsnLevelFilter) return false;
-        }
-        if (dsnDeptFilter !== 'all') {
-          if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
-        }
-      }
       if (isRole) {
         const rt = String(row.role_type ?? '').toLowerCase();
         if (roleTab === 'primary' && !/primary/.test(rt)) return false;
@@ -342,7 +327,7 @@ function MasterPageInner({
       }
       return false;
     });
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
+  }, [records, searchInput, cfg, refData, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
 
   const roleTabs = useMemo(() => {
     const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
@@ -1694,17 +1679,6 @@ function MasterPageInner({
         }
         toolbarActions={
           <>
-            {cfg.slug === 'designations' && (
-              <DesignationInlineFilters
-                refData={refData}
-                statusFilter={dsnStatusFilter}
-                setStatusFilter={setDsnStatusFilter}
-                levelFilter={dsnLevelFilter}
-                setLevelFilter={setDsnLevelFilter}
-                deptFilter={dsnDeptFilter}
-                setDeptFilter={setDsnDeptFilter}
-              />
-            )}
             {cfg.slug === 'kpis' && (
               <KpiInlineFilters
                 refData={refData}
@@ -2486,16 +2460,16 @@ function DesignationExtras({
   filteredCount: number;
 }) {
   const TIERS: {
-    label: string; short: string; icon: string;
+    label: string; tone: MpKpi['tone']; short: string; icon: string;
     bg: string; fg: string; border: string;
     deep: string; bright: string; accent: string;
   }[] = [
-    { label: 'Director / CEO',           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', deep: '#b45309', bright: '#f59e0b', accent: 'linear-gradient(135deg,#b45309 0%,#f59e0b 100%)' },
-    { label: 'Head of Department (HOD)', short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', deep: '#6d28d9', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)' },
-    { label: 'Team Leader',              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', deep: '#1d4ed8', bright: '#60a5fa', accent: 'linear-gradient(135deg,#1d4ed8 0%,#60a5fa 100%)' },
-    { label: 'Executive',                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', deep: '#0f766e', bright: '#2dd4bf', accent: 'linear-gradient(135deg,#0f766e 0%,#2dd4bf 100%)' },
-    { label: 'Employee',                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dcfce7', fg: '#15803d', border: '#22c55e', deep: '#15803d', bright: '#4ade80', accent: 'linear-gradient(135deg,#15803d 0%,#4ade80 100%)' },
-    { label: 'Intern / Trainee',         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', deep: '#475569', bright: '#94a3b8', accent: 'linear-gradient(135deg,#475569 0%,#94a3b8 100%)' },
+    { label: 'Director / CEO', tone: 'amber' as const,           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', deep: '#b45309', bright: '#f59e0b', accent: 'linear-gradient(135deg,#b45309 0%,#f59e0b 100%)' },
+    { label: 'Head of Department (HOD)', tone: 'violet' as const, short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', deep: '#6d28d9', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)' },
+    { label: 'Team Leader', tone: 'sky' as const,              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', deep: '#1d4ed8', bright: '#60a5fa', accent: 'linear-gradient(135deg,#1d4ed8 0%,#60a5fa 100%)' },
+    { label: 'Executive', tone: 'teal' as const,                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', deep: '#0f766e', bright: '#2dd4bf', accent: 'linear-gradient(135deg,#0f766e 0%,#2dd4bf 100%)' },
+    { label: 'Employee', tone: 'green' as const,                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dcfce7', fg: '#15803d', border: '#22c55e', deep: '#15803d', bright: '#4ade80', accent: 'linear-gradient(135deg,#15803d 0%,#4ade80 100%)' },
+    { label: 'Intern / Trainee', tone: 'slate' as const,         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', deep: '#475569', bright: '#94a3b8', accent: 'linear-gradient(135deg,#475569 0%,#94a3b8 100%)' },
   ];
 
   const total = records.length;
@@ -2505,7 +2479,7 @@ function DesignationExtras({
   }));
 
   return (
-    <div className="dsn-extras mb-3">
+    <div className="dsn-extras">
 
       {}
       <div className="dsn-hier-row">
@@ -2524,125 +2498,12 @@ function DesignationExtras({
         ))}
       </div>
 
-      {}
-      <div className="dsn-kpis">
-        <div
-          className="dsn-kpi"
-          title="Total designations"
-          style={{
-            ['--kpi-bright' as any]: '#6691e7',
-            ['--kpi-deep' as any]: '#3d4eb1',
-            ['--kpi-accent' as any]: 'linear-gradient(135deg,#3d4eb1 0%,#6691e7 100%)',
-          }}
-        >
-          <div className="dsn-kpi-text">
-            <span className="dsn-kpi-label">Total</span>
-            <span className="dsn-kpi-num">{total}</span>
-          </div>
-          <span
-            className="dsn-kpi-icon"
-            style={{
-              background: 'linear-gradient(135deg, #3d4eb1 0%, #6691e7 100%)',
-              color: '#ffffff',
-              boxShadow: '0 4px 10px rgba(102,145,231,0.40), inset 0 1px 0 rgba(255,255,255,0.25)',
-            }}
-          >
-            <i className="ri-database-2-fill" />
-          </span>
-        </div>
-        {tierCounts.map(t => (
-          <div
-            className="dsn-kpi"
-            key={t.label}
-            title={`${t.label} designations`}
-            style={{
-              ['--kpi-bright' as any]: t.bright,
-              ['--kpi-deep' as any]: t.deep,
-              ['--kpi-accent' as any]: t.accent,
-            }}
-          >
-            <div className="dsn-kpi-text">
-              <span className="dsn-kpi-label">{t.short}</span>
-              <span className="dsn-kpi-num">{t.count}</span>
-            </div>
-            <span
-              className="dsn-kpi-icon"
-              style={{
-                background: t.accent,
-                color: '#ffffff',
-                boxShadow: `0 4px 10px ${t.bright}55, inset 0 1px 0 rgba(255,255,255,0.25)`,
-              }}
-            >
-              <i className={t.icon} />
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DesignationInlineFilters({
-  refData,
-  statusFilter, setStatusFilter,
-  levelFilter,  setLevelFilter,
-  deptFilter,   setDeptFilter,
-}: {
-  refData: Record<string, any[]>;
-  statusFilter: string;
-  setStatusFilter: (v: string) => void;
-  levelFilter: string;
-  setLevelFilter: (v: string) => void;
-  deptFilter: string;
-  setDeptFilter: (v: string) => void;
-}) {
-  const LEVELS = ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee'];
-  const departments = refData['departments'] || [];
-  return (
-    <div className="dsn-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
-      <div className="dsn-il-group">
-        <span className="dsn-il-label">Status</span>
-        <div style={{ minWidth: 130 }}>
-          <MasterSelect
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'Active', label: 'Active' },
-              { value: 'Inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-          />
-        </div>
-      </div>
-      <div className="dsn-il-group">
-        <span className="dsn-il-label">Level</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect
-            value={levelFilter}
-            onChange={(v) => setLevelFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All Levels' },
-              ...LEVELS.map(l => ({ value: l, label: l })),
-            ]}
-            placeholder="All Levels"
-          />
-        </div>
-      </div>
-      <div className="dsn-il-group">
-        <span className="dsn-il-label">Department</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect
-            value={deptFilter}
-            onChange={(v) => setDeptFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All Departments' },
-              ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
-            ]}
-            placeholder="All Departments"
-          />
-        </div>
-      </div>
+      <MpKpiCards
+        items={[
+          { key: 'total', label: 'Total', icon: 'ri-database-2-fill', value: total, tone: 'teal' },
+          ...tierCounts.map(t => ({ key: t.label, label: t.short, icon: t.icon, value: t.count, tone: t.tone })),
+        ]}
+      />
     </div>
   );
 }

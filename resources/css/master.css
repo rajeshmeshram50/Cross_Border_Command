@@ -1133,6 +1133,7 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 .mp-kc--rose   { --c1: #e11d48; --c2: #fb7185; --bg: #ffe4e6; }
 .mp-kc--green  { --c1: #059669; --c2: #34d399; --bg: #d1fae5; }
 .mp-kc--violet { --c1: #7c3aed; --c2: #a78bfa; --bg: #ede9fe; }
+.mp-kc--slate  { --c1: #475569; --c2: #94a3b8; --bg: #f1f5f9; }
 .mp-kc__top { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
 .mp-kc__ico {
   width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
