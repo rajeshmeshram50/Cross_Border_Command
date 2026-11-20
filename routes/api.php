@@ -239,6 +239,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::delete('/vendors/{id}/gst-scrutiny/{gst}',      [\App\Http\Controllers\Api\VendorController::class, 'destroyGstScrutiny'])->whereNumber('id')->whereNumber('gst');
     Route::post  ('/vendors/{id}/step/kyc',            [\App\Http\Controllers\Api\VendorController::class, 'storeKyc'])->whereNumber('id');
     Route::post  ('/vendors/{id}/step/products',       [\App\Http\Controllers\Api\VendorController::class, 'storeProducts'])->whereNumber('id');
+    // Map Services — the supplier side of p2p_service_suppliers (same rows the Service screen maps).
+    Route::get   ('/vendors/{id}/service-mappings',        [\App\Http\Controllers\Api\VendorController::class, 'serviceMappings'])->whereNumber('id');
+    Route::post  ('/vendors/{id}/step/services',           [\App\Http\Controllers\Api\VendorController::class, 'storeServices'])->whereNumber('id');
+    Route::patch ('/vendors/{id}/service-mappings/{map}',  [\App\Http\Controllers\Api\VendorController::class, 'updateServiceMapping'])->whereNumber('id')->whereNumber('map');
+    Route::delete('/vendors/{id}/service-mappings/{map}',  [\App\Http\Controllers\Api\VendorController::class, 'destroyServiceMapping'])->whereNumber('id')->whereNumber('map');
     Route::delete('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'destroy'])->whereNumber('id');
 
     Route::apiResource('plans', PlanController::class);

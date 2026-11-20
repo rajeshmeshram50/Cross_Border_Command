@@ -22,9 +22,12 @@ use App\Models\VendorDocument;
 use App\Models\VendorGstScrutiny;
 use App\Models\VendorOwner;
 use App\Models\VendorProductMapping;
+use App\Models\P2p\ServiceSupplier;
+use App\Services\P2p\ServiceSupplierMapping;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use App\Support\SupplierCompliance;
+use App\Support\SupplierPricing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -32,6 +35,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class VendorController extends Controller
 {
@@ -1896,6 +1900,275 @@ class VendorController extends Controller
 
         $vendor->load(self::SHOW_WITH);
         return response()->json(['data' => $this->shape($vendor)]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * Map Services — the supplier side of p2p_service_suppliers.
+     *
+     * Service Management maps suppliers to a service; these endpoints map
+     * services to a supplier. Same table, same row: a mapping made here is
+     * the one the Service screen lists, and vice versa. Every rule lives in
+     * ServiceSupplierMapping so both ends enforce the same thing.
+     * ────────────────────────────────────────────────────────────── */
+
+    private function serviceMapping(): ServiceSupplierMapping
+    {
+        return app(ServiceSupplierMapping::class);
+    }
+
+    /** The vendor the user may see AND edit, or a 403 response. */
+    private function editableVendor(Request $request, int $id): Vendor|JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->with(ServiceSupplierMapping::VENDOR_WITH)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        return $vendor;
+    }
+
+    /** This vendor's mappings whose service the user can see. */
+    private function vendorServiceMaps(Request $request, Vendor $vendor)
+    {
+        $visible = $this->serviceMapping()->services($request->user())->select('id');
+
+        return ServiceSupplier::query()
+            ->where('vendor_id', $vendor->id)
+            ->whereIn('service_id', $visible);
+    }
+
+    private function findServiceMap(Request $request, Vendor $vendor, int $mapId): ServiceSupplier
+    {
+        return $this->vendorServiceMaps($request, $vendor)->with('service')->find($mapId)
+            ?? abort(404, 'Service mapping not found for this supplier.');
+    }
+
+    /** One mapping as the supplier's Map Services list shows it. */
+    private function serviceMapRow(ServiceSupplier $m, Vendor $vendor, ?array $card, $user): array
+    {
+        $s = $m->service;
+
+        return [
+            'id'                   => $m->id,
+            'service_id'           => $m->service_id,
+            'service_code'         => $s?->code,
+            'service_name'         => $s?->name,
+            'service_type'         => $s?->service_type,
+            'service_type_label'   => $s?->service_type_label,
+            'classification'       => $s?->classification,
+            'classification_label' => $s?->classification_label,
+            'category'             => $s?->category?->name,
+            'service_status'       => $s?->status,
+            'vendor_id'            => $vendor->id,
+            'origin'               => $m->origin ?: SupplierPricing::DOMESTIC,
+            'currency'             => $m->currency_code ?: 'INR',
+            'price'                => (float) $m->price,
+            'exchange_rate'        => $m->exchange_rate !== null ? (float) $m->exchange_rate : null,
+            'gst_id'               => $m->gst_id,
+            'gst_percentage'       => (float) $m->gst_percentage,
+            'gst_amount'           => (float) $m->gst_amount,
+            'total_amount'         => (float) $m->total_amount,
+            'inr_amount'           => (float) ($m->inr_amount ?? $m->total_amount),
+            'remarks'              => $m->remarks,
+            'status'               => $m->status ?? 'active',
+            'mapped_at'            => $m->created_at,
+        ] + $this->serviceMapping()->gstSplit($m, $card, $user);
+    }
+
+    private function serviceMapsPayload(Request $request, Vendor $vendor): array
+    {
+        $vendor->loadMissing(ServiceSupplierMapping::VENDOR_WITH);
+        $card = $this->serviceMapping()->vendorCard($vendor);
+        $maps = $this->vendorServiceMaps($request, $vendor)
+            ->with(['service', 'service.category:id,name'])
+            ->orderBy('id')
+            ->get();
+        $active = $maps->where('status', 'active');
+
+        return [
+            'data'    => $maps->map(fn (ServiceSupplier $m) => $this->serviceMapRow($m, $vendor, $card, $request->user()))->values(),
+            'summary' => [
+                'count'               => $active->count(),
+                'domestic_count'      => $active->where('origin', '!=', SupplierPricing::INTERNATIONAL)->count(),
+                'international_count' => $active->where('origin', SupplierPricing::INTERNATIONAL)->count(),
+                'inactive_count'      => $maps->count() - $active->count(),
+                'total_amount'        => round((float) $active->sum(fn ($m) => (float) ($m->inr_amount ?? $m->total_amount)), 2),
+            ],
+            'meta'    => [
+                'vendor_id'               => $vendor->id,
+                'vendor_code'             => $vendor->vendor_code,
+                'vendor_name'             => $vendor->company_name,
+                'supplier_type'           => $card['supplier_type'],
+                'supplier_service_type'   => $card['supplier_service_type'],
+                'supplier_classification' => $card['supplier_classification'],
+                'origin'                  => $card['origin'],
+                'country'                 => $card['country'],
+                'currency'                => $card['currency'],
+            ],
+        ];
+    }
+
+    private function servicePriceRules(string $p = ''): array
+    {
+        return [
+            "{$p}origin"        => ['nullable', Rule::in(SupplierPricing::ORIGINS)],
+            "{$p}price"         => 'required|numeric|gt:0|max:' . SupplierPricing::MAX_PRICE,
+            "{$p}gst_id"        => 'nullable|integer',
+            "{$p}currency"      => 'nullable|string|size:3|alpha',
+            "{$p}exchange_rate" => 'nullable|numeric|gt:0|max:' . SupplierPricing::MAX_RATE,
+            "{$p}remarks"       => 'nullable|string|max:1000',
+        ];
+    }
+
+    private function servicePriceMessages(string $p = ''): array
+    {
+        return [
+            "{$p}price.required"    => "Enter the supplier's price.",
+            "{$p}price.gt"          => 'The price must be more than 0.',
+            "{$p}price.max"         => 'The price cannot be more than ' . number_format(SupplierPricing::MAX_PRICE, 2) . '.',
+            "{$p}exchange_rate.gt"  => 'The exchange rate must be more than 0.',
+            "{$p}exchange_rate.max" => 'The exchange rate cannot be more than ' . SupplierPricing::MAX_RATE . '.',
+            "{$p}currency.size"     => 'Pick a currency (3-letter code, e.g. USD).',
+        ];
+    }
+
+    /** GET /vendors/{id}/service-mappings — every mapping of this supplier, inactive included. */
+    public function serviceMappings(Request $request, int $id): JsonResponse
+    {
+        $vendor = Vendor::query()->forUser($request->user())->findOrFail($id);
+
+        return response()->json($this->serviceMapsPayload($request, $vendor));
+    }
+
+    /**
+     * POST /vendors/{id}/step/services — save the Map Services step.
+     *
+     * Replace-all, like the service side's Stage 2: each listed service is
+     * mapped (an unmapped row is revived), and any other active mapping of this
+     * supplier is set inactive — never deleted. Each mapped service finishes
+     * Stage 2, so a draft service becomes active.
+     */
+    public function storeServices(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = $this->editableVendor($request, $id);
+        if ($vendor instanceof JsonResponse) return $vendor;
+
+        $data = $request->validate([
+            'mappings'              => 'present|array',
+            'mappings.*.service_id' => 'required|integer|distinct',
+        ] + $this->servicePriceRules('mappings.*.'), $this->servicePriceMessages('mappings.*.') + [
+            'mappings.*.service_id.distinct' => 'A service can only be mapped once per supplier.',
+        ]);
+
+        $mapping = $this->serviceMapping();
+        $ids = array_map('intval', array_column($data['mappings'], 'service_id'));
+        $services = $ids ? $mapping->services($user)->whereIn('id', $ids)->get()->keyBy('id') : collect();
+
+        $priced = [];
+        foreach ($data['mappings'] as $i => $row) {
+            $service = $services->get((int) $row['service_id']);
+            if (!$service) {
+                throw ValidationException::withMessages(["mappings.$i.service_id" => ['Unknown service id: ' . $row['service_id'] . '.']]);
+            }
+            if ($denial = $mapping->serviceEditDenial($user, $service, 'edit')) {
+                return response()->json(['message' => $service->code . ': ' . $denial], 403);
+            }
+            $mapping->assertServes($vendor, $service, "mappings.$i.service_id");
+            $priced[$i] = $mapping->priceFields($user, ['vendor_id' => $vendor->id] + $row, $service, "mappings.$i.");
+        }
+
+        // Mappings this save turns off — the user must be allowed to edit those services too.
+        $dropped = $this->vendorServiceMaps($request, $vendor)
+            ->where('status', 'active')
+            ->whereNotIn('service_id', $ids ?: [0])
+            ->with('service')
+            ->get();
+        foreach ($dropped as $m) {
+            if ($m->service && ($denial = $mapping->serviceEditDenial($user, $m->service, 'edit'))) {
+                return response()->json(['message' => $m->service->code . ': ' . $denial], 403);
+            }
+        }
+
+        DB::transaction(function () use ($data, $services, $priced, $dropped, $vendor, $mapping, $user) {
+            $userId = $user?->id;
+            foreach ($data['mappings'] as $i => $row) {
+                $service = $services->get((int) $row['service_id']);
+                $mapping->upsert($service, $vendor->id, $priced[$i] + ['remarks' => $row['remarks'] ?? null], $userId);
+                $mapping->completeStageTwo($service, $userId);
+            }
+            if ($dropped->isNotEmpty()) {
+                ServiceSupplier::whereIn('id', $dropped->pluck('id'))
+                    ->update(['status' => 'inactive', 'updated_by' => $userId, 'updated_at' => now()]);
+            }
+        });
+
+        return response()->json($this->serviceMapsPayload($request, $vendor));
+    }
+
+    /** PATCH /vendors/{id}/service-mappings/{map} — change one mapping's price / rate / remarks. */
+    public function updateServiceMapping(Request $request, int $id, int $mapId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = $this->editableVendor($request, $id);
+        if ($vendor instanceof JsonResponse) return $vendor;
+
+        $map = $this->findServiceMap($request, $vendor, $mapId);
+        $mapping = $this->serviceMapping();
+        if ($denial = $mapping->serviceEditDenial($user, $map->service, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $data = $request->validate([
+            'price'         => 'sometimes|required|numeric|gt:0|max:' . SupplierPricing::MAX_PRICE,
+            'gst_id'        => 'sometimes|nullable|integer',
+            'currency'      => 'sometimes|required|string|size:3|alpha',
+            'exchange_rate' => 'sometimes|required|numeric|gt:0|max:' . SupplierPricing::MAX_RATE,
+            'remarks'       => 'sometimes|nullable|string|max:1000',
+        ], $this->servicePriceMessages());
+
+        $amounts = $mapping->priceFields($user, [
+            'vendor_id'     => $vendor->id,
+            'origin'        => $map->origin ?: SupplierPricing::DOMESTIC,
+            'price'         => $data['price'] ?? $map->price,
+            'gst_id'        => $data['gst_id'] ?? null,
+            'currency'      => $data['currency'] ?? $map->currency_code,
+            'exchange_rate' => $data['exchange_rate'] ?? $map->exchange_rate,
+        ], $map->service);
+
+        $map->fill($amounts + ['updated_by' => $user?->id]);
+        if (array_key_exists('remarks', $data)) {
+            $map->remarks = $data['remarks'];
+        }
+        $map->save();
+
+        $map->load('service.category:id,name');
+
+        return response()->json($this->serviceMapRow($map, $vendor, $mapping->vendorCard($vendor), $user));
+    }
+
+    /** DELETE /vendors/{id}/service-mappings/{map} — soft unmap: status = inactive, row kept. */
+    public function destroyServiceMapping(Request $request, int $id, int $mapId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = $this->editableVendor($request, $id);
+        if ($vendor instanceof JsonResponse) return $vendor;
+
+        $map = $this->findServiceMap($request, $vendor, $mapId);
+        $mapping = $this->serviceMapping();
+        if ($denial = $mapping->serviceEditDenial($user, $map->service, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        if ($map->status !== 'inactive') {
+            $map->fill(['status' => 'inactive', 'updated_by' => $user?->id])->save();
+        }
+        $map->load('service.category:id,name');
+
+        return response()->json($this->serviceMapRow($map, $vendor, $mapping->vendorCard($vendor), $user) + [
+            'service_suppliers_count' => $map->service->activeSuppliers()->count(),
+        ]);
     }
 
     /* ──────────────────────────────────────────────────────────────────
