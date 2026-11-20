@@ -116,7 +116,7 @@ const C: Record<string, MasterConfig> = {
     key: 'company', slug: 'company', title: 'Company Details', titleSingular: 'Company Detail',
     icon: 'ri-building-4-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Legal identity, GSTIN, PAN, IEC — used on every export document',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     fields: [
       { n: 'company_name', l: 'Company Name', t: 'text', r: true, p: 'e.g. Inorbvict Healthcare India Pvt Ltd', full: true },
       { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. IGC' },
@@ -147,7 +147,7 @@ const C: Record<string, MasterConfig> = {
     key: 'organization_types', slug: 'organization_types', title: 'Organization Types', titleSingular: 'Organization Type',
     icon: 'ri-building-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Industry categories used in the client registration dropdown',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     endpoint: '/organization-types',
     fields: [
       { n: 'name', l: 'Name', t: 'text', r: true, p: 'e.g. Manufacturing, Logistics', full: true },
@@ -172,7 +172,7 @@ const C: Record<string, MasterConfig> = {
     key: 'bank_accounts', slug: 'bank_accounts', title: 'Bank Accounts', titleSingular: 'Bank Account',
     icon: 'ri-bank-line', iconColor: 'info', iconBg: 'info',
     desc: 'Bank registry — Swift Code + AD Code mandatory for export',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     fields: [
       { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'State Bank of India', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'account_holder', l: 'Account Holder', t: 'text', r: true, p: 'As per bank records', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
@@ -202,7 +202,7 @@ const C: Record<string, MasterConfig> = {
     key: 'departments', slug: 'departments', title: 'Department Master', titleSingular: 'Department',
     icon: 'ri-building-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Manage all departments, structure, ownership, and readiness for HR operations',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     fields: [
       { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'code', l: 'Department Code', t: 'text', r: true, p: 'e.g. DEPT-001',
@@ -270,7 +270,7 @@ const C: Record<string, MasterConfig> = {
     key: 'roles', slug: 'roles', title: 'Roles', titleSingular: 'Role',
     icon: 'ri-user-settings-line', iconColor: 'danger', iconBg: 'danger',
     desc: 'User roles controlling module access permissions',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     fields: [
       { n: 'name', l: 'Role Name', t: 'text', r: true, p: 'e.g., Software Engineer', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'code', l: 'Role Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'ROL-XXX' },
@@ -305,7 +305,7 @@ const C: Record<string, MasterConfig> = {
     key: 'designations', slug: 'designations', title: 'Designations', titleSingular: 'Designation',
     icon: 'ri-verified-badge-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Job titles shown on letters, profiles & HR records',
-    cat: 'Identity & Entity',
+    cat: 'Organization Master',
     lockedFixed: true,
     lockedReason: 'Designations is a fixed master. The six seeded titles (Director / CEO, '
       + 'Head of Department, Team Leader, Executive, Employee, Intern / Trainee) are the whole '
@@ -385,7 +385,7 @@ const C: Record<string, MasterConfig> = {
     key: 'countries', slug: 'countries', title: 'Countries', titleSingular: 'Country',
     icon: 'ri-earth-line', iconColor: 'info', iconBg: 'info',
     desc: 'Country master — referenced on all trade documents',
-    cat: 'Geography & Location',
+    cat: 'Geography & Locations',
     fields: [
       { n: 'name', l: 'Country Name', t: 'text', r: true, p: 'e.g. India', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'iso_code', l: 'ISO Code', t: 'text', p: 'e.g. IN' },
@@ -420,7 +420,7 @@ const C: Record<string, MasterConfig> = {
     key: 'states', slug: 'states', title: 'States', titleSingular: 'State',
     icon: 'ri-map-2-line', iconColor: 'success', iconBg: 'success',
     desc: 'State list for addresses & GST place-of-supply',
-    cat: 'Geography & Location',
+    cat: 'Geography & Locations',
     fields: [
       { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
       { n: 'name', l: 'State Name', t: 'text', r: true, p: 'e.g. Maharashtra', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
@@ -450,7 +450,7 @@ const C: Record<string, MasterConfig> = {
     key: 'state_codes', slug: 'state_codes', title: 'State Codes', titleSingular: 'State Code',
     icon: 'ri-hashtag', iconColor: 'primary', iconBg: 'primary',
     desc: '2-digit GST state codes for tax filings',
-    cat: 'Geography & Location',
+    cat: 'Geography & Locations',
     fields: [
       { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name' },
       { n: 'state_code', l: 'State Code', t: 'text', r: true, p: 'e.g. 27 for Maharashtra', maxLen: 2, pattern: P_STATE_CODE, patternMessage: M_STATE_CODE },
@@ -478,7 +478,7 @@ const C: Record<string, MasterConfig> = {
     key: 'address_types', slug: 'address_types', title: 'Address Types', titleSingular: 'Address Type',
     icon: 'ri-home-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Fixed vocabulary: Warehouse, Registered Office, Billing Address. No additions allowed.',
-    cat: 'Geography & Location',
+    cat: 'Geography & Locations',
     lockedFixed: true,
     lockedReason: 'Address Types is a fixed master. Only Registered Office, Warehouse and '
       + 'Branch are allowed — the address forms across Sales, P2P and CLM are built around '
@@ -514,7 +514,7 @@ const C: Record<string, MasterConfig> = {
     key: 'port_of_loading', slug: 'port_of_loading', title: 'Ports of Loading', titleSingular: 'Port of Loading',
     icon: 'ri-anchor-line', iconColor: 'info', iconBg: 'info',
     desc: 'Origin ports on shipping bills & export invoices',
-    cat: 'Geography & Location',
+    cat: 'Shipment & Export Masters',
     fields: [
       { n: 'name', l: 'Port Name', t: 'text', r: true, p: 'e.g. Chennai Port' },
       { n: 'code', l: 'Port Code', t: 'text', r: true, p: 'e.g. INMAA' },
@@ -540,7 +540,7 @@ const C: Record<string, MasterConfig> = {
     key: 'port_of_discharge', slug: 'port_of_discharge', title: 'Ports of Discharge', titleSingular: 'Port of Discharge',
     icon: 'ri-ship-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Destination ports on packing lists & shipping docs',
-    cat: 'Geography & Location',
+    cat: 'Shipment & Export Masters',
     fields: [
       { n: 'name', l: 'Port Name', t: 'text', r: true, p: 'e.g. Port Jebel Ali' },
       { n: 'code', l: 'Port Code', t: 'text', r: true, p: 'e.g. AEJEA' },
@@ -564,7 +564,7 @@ const C: Record<string, MasterConfig> = {
     key: 'segments', slug: 'segments', title: 'Segments', titleSingular: 'Segment',
     icon: 'ri-focus-3-line', iconColor: 'success', iconBg: 'success',
     desc: 'Business lines classifying orders & products',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'title', l: 'Segment Name', t: 'text', r: true, p: 'e.g. Dry Fruits, Pharma' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -593,7 +593,7 @@ const C: Record<string, MasterConfig> = {
     key: 'hsn_codes', slug: 'hsn_codes', title: 'HSN Codes', titleSingular: 'HSN Code',
     icon: 'ri-file-code-line', iconColor: 'danger', iconBg: 'danger',
     desc: '4–8 digit numeric commodity codes for GST & customs filings',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200', maxLen: 8 } as any,
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
@@ -618,7 +618,7 @@ const C: Record<string, MasterConfig> = {
     key: 'gst_percentage', slug: 'gst_percentage', title: 'GST Percentages', titleSingular: 'GST Percentage',
     icon: 'ri-percent-line', iconColor: 'success', iconBg: 'success',
     desc: 'GST tax slabs applied on product invoices',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'percentage', l: 'GST %', t: 'number', r: true, p: 'e.g. 18', min: 0, max: 100 } as any,
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -643,7 +643,7 @@ const C: Record<string, MasterConfig> = {
     key: 'currencies', slug: 'currencies', title: 'Currencies', titleSingular: 'Currency',
     icon: 'ri-money-dollar-circle-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Active currencies with exchange rates for export invoicing',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'name', l: 'Currency Name', t: 'text', r: true, p: 'e.g. US Dollar' },
       { n: 'code', l: 'Code', t: 'text', r: true, p: 'e.g. USD' },
@@ -672,7 +672,7 @@ const C: Record<string, MasterConfig> = {
     key: 'uom', slug: 'uom', title: 'Units of Measurement', titleSingular: 'Unit of Measurement',
     icon: 'ri-ruler-line', iconColor: 'info', iconBg: 'info',
     desc: 'Units (Kg, Box, Pcs) on product & shipment records',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'title', l: 'Unit Title', t: 'text', r: true, p: 'e.g. Kilogram', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. KG', autoDeriveFrom: 'title', hint: 'auto-suggested from title, editable' },
@@ -704,7 +704,7 @@ const C: Record<string, MasterConfig> = {
     key: 'packaging_material', slug: 'packaging_material', title: 'Packaging Materials', titleSingular: 'Packaging Material',
     icon: 'ri-box-3-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Box, carton & wrapping types linked to packaging module',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'title', l: 'Packaging Material', t: 'text', r: true, p: 'e.g. PP Bag, Gunny Bag' },
       { n: 'material_type', l: 'Material Type', t: 'select', opts: ['Bag', 'Box', 'Crate', 'Drum', 'Pallet', 'Wrap', 'Other'] },
@@ -735,7 +735,7 @@ const C: Record<string, MasterConfig> = {
     key: 'conditions', slug: 'conditions', title: 'Product Conditions', titleSingular: 'Product Condition',
     icon: 'ri-leaf-line', iconColor: 'success', iconBg: 'success',
     desc: 'Storage & handling states (Organic, Fresh, Frozen)',
-    cat: 'Trade & Commercial',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'title', l: 'Condition Title', t: 'text', r: true, p: 'e.g. Organic, Fresh, Processed', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -763,7 +763,7 @@ const C: Record<string, MasterConfig> = {
     key: 'incoterms', slug: 'incoterms', title: 'Incoterms', titleSingular: 'Incoterm',
     icon: 'ri-shake-hands-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Trade terms (FOB, CIF) defining delivery & risk',
-    cat: 'Trade & Commercial',
+    cat: 'Shipment & Export Masters',
     fields: [
       { n: 'code', l: 'Incoterm Code', t: 'text', r: true, p: 'e.g. FOB' },
       { n: 'full_name', l: 'Full Name', t: 'text', r: true, p: 'e.g. Free On Board', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
@@ -788,20 +788,20 @@ const C: Record<string, MasterConfig> = {
   },
 
   customer_types: {
-    key: 'customer_types', slug: 'customer_types', title: 'Customer Consignee Type', titleSingular: 'Customer Consignee Type',
+    key: 'customer_types', slug: 'customer_types', title: 'Customer Category', titleSingular: 'Customer Category',
     icon: 'ri-user-3-line', iconColor: 'danger', iconBg: 'danger',
     desc: 'Customer / consignee classification — drives pricing & GST rules',
-    cat: 'Party & Classification',
+    cat: 'Sales Masters',
     fields: [
-      { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
+      { n: 'name', l: 'Customer Category', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'gst_applicable', l: 'GST Applicable', t: 'select', r: true, opts: ['No', 'Yes'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'gst_applicable', 'status'],
-    colL: ['Customer Consignee Type', 'GST Applicable', 'Status'],
+    colL: ['Customer Category', 'GST Applicable', 'Status'],
     uFields: ['name'],
     kpis: [
-      { label: 'Total Types',  icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.length },
+      { label: 'Total Categories', icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.length },
       { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
       { label: 'GST Yes',      icon: 'ri-money-rupee-circle-line', gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => r.filter((x:any) => String(x.gst_applicable).toLowerCase() === 'yes').length },
       { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
@@ -811,10 +811,10 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Wholesaler', gst_applicable: 'Yes', status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-user-3-line', title: 'Pick Consignee Type', desc: 'Retailer or Wholesaler — system pinned' },
+      { icon: 'ri-user-3-line', title: 'Pick Customer Category', desc: 'Retailer or Wholesaler — system pinned' },
       { icon: 'ri-money-rupee-circle-line', title: 'Set GST Applicable', desc: 'Drives invoice GST handling' },
-      { icon: 'ri-price-tag-3-line', title: 'Drives Pricing Rules', desc: 'Different price per consignee type' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Type appears in customer profiles' },
+      { icon: 'ri-price-tag-3-line', title: 'Drives Pricing Rules', desc: 'Different price per customer category' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Category appears in customer profiles' },
     ],
   },
 
@@ -822,7 +822,7 @@ const C: Record<string, MasterConfig> = {
     key: 'customer_classifications', slug: 'customer_classifications', title: 'Customer Classifications', titleSingular: 'Customer Classification',
     icon: 'ri-award-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Tier labels (A/B/C, Key Account) for credit & discount',
-    cat: 'Party & Classification',
+    cat: 'Sales Masters',
     fields: [
       { n: 'name', l: 'Classification Name', t: 'text', r: true, p: 'e.g. Tier A, Key Account' },
       { n: 'credit_limit', l: 'Credit Limit (₹)', t: 'number', p: 'e.g. 500000', min: 0, max: 999999999 },
@@ -857,7 +857,7 @@ const C: Record<string, MasterConfig> = {
     key: 'vendor_types', slug: 'vendor_types', title: 'Supplier Types', titleSingular: 'Supplier Type',
     icon: 'ri-store-2-line', iconColor: 'info', iconBg: 'info',
     desc: 'Supplier categories for procurement rules',
-    cat: 'Party & Classification',
+    cat: 'P2P Masters',
     fields: [
       { n: 'name', l: 'Supplier Type', t: 'text', r: true, p: 'e.g. Farmer, Trader' },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Type description', full: true },
@@ -883,7 +883,7 @@ const C: Record<string, MasterConfig> = {
     key: 'vendor_behaviour', slug: 'vendor_behaviour', title: 'Supplier Behaviour', titleSingular: 'Supplier Behaviour',
     icon: 'ri-pulse-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Performance tags used in purchase order workflows',
-    cat: 'Party & Classification',
+    cat: 'P2P Masters',
     fields: [
       { n: 'name', l: 'Behaviour Type', t: 'text', r: true, p: 'e.g. Excellent, Good' },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Behaviour definition', full: true },
@@ -937,7 +937,7 @@ const C: Record<string, MasterConfig> = {
     key: 'service_categories', slug: 'service_categories', title: 'Service Category', titleSingular: 'Service Category',
     icon: 'ri-price-tag-3-line', iconColor: 'success', iconBg: 'success',
     desc: 'Service categories for Soft / Digital and Other Operational services',
-    cat: 'Trade & Commercial',
+    cat: 'P2P Masters',
     noDelete: true,
     inUseStatusOnly: true,
     fields: [
@@ -981,7 +981,7 @@ const C: Record<string, MasterConfig> = {
     key: 'license_name', slug: 'license_name', title: 'License Types', titleSingular: 'License Type',
     icon: 'ri-file-shield-2-line', iconColor: 'danger', iconBg: 'danger',
     desc: 'Import/export license categories per product or market',
-    cat: 'Legal & Compliance',
+    cat: 'P2P Masters',
     fields: [
       { n: 'name', l: 'License Name', t: 'text', r: true, p: 'e.g. Drug Wholesale License' },
       { n: 'license_code', l: 'License Code', t: 'text', p: 'e.g. DWL' },
@@ -1009,7 +1009,7 @@ const C: Record<string, MasterConfig> = {
     key: 'risk_levels', slug: 'risk_levels', title: 'Risk Levels', titleSingular: 'Risk Level',
     icon: 'ri-flashlight-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Risk severity tags for vendor & shipment screening',
-    cat: 'Legal & Compliance',
+    cat: 'P2P Masters',
     fields: [
       { n: 'name', l: 'Risk Level', t: 'select', r: true, noneLabel: '— Select Risk Level —', opts: ['Low', 'Medium', 'High', 'Critical'] },
       { n: 'description', l: 'Description', t: 'text', p: 'Risk criteria' },
@@ -1043,7 +1043,7 @@ const C: Record<string, MasterConfig> = {
     key: 'document_type', slug: 'document_type', title: 'Document Types', titleSingular: 'Document Type',
     icon: 'ri-file-text-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Document categories for upload & linking (Invoice, COA, SDS)',
-    cat: 'Legal & Compliance',
+    cat: 'Sales Masters',
     fields: [
       { n: 'title', l: 'Document Type Name', t: 'text', r: true, p: 'e.g. GST Registration Certificate' },
       { n: 'applicable_to', l: 'Applicable To', t: 'select', opts: ['Customer', 'Supplier', 'Both', 'Internal'] },
@@ -1072,7 +1072,7 @@ const C: Record<string, MasterConfig> = {
     key: 'haz_class', slug: 'haz_class', title: 'Hazard Classifications', titleSingular: 'Hazard Classification',
     icon: 'ri-alert-line', iconColor: 'danger', iconBg: 'danger',
     desc: 'GHS/UN hazard classes for products requiring special handling',
-    cat: 'Legal & Compliance',
+    cat: 'Product & Tax Masters',
     fields: [
       { n: 'name', l: 'Hazard Class', t: 'text', r: true, p: 'e.g. Flammable Liquid' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -1095,7 +1095,7 @@ const C: Record<string, MasterConfig> = {
     key: 'compliance_behaviours', slug: 'compliance_behaviours', title: 'Compliance Behaviours', titleSingular: 'Compliance Behaviour',
     icon: 'ri-scales-3-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Rules for regulated, cold-chain & controlled substance handling',
-    cat: 'Legal & Compliance',
+    cat: 'P2P Masters',
     fields: [
       { n: 'name', l: 'Behaviour Name', t: 'text', r: true, p: 'e.g. Compliant, Under Review' },
       { n: 'action_required', l: 'Action Required', t: 'text', p: 'Next steps' },
@@ -1122,7 +1122,7 @@ const C: Record<string, MasterConfig> = {
     key: 'assets', slug: 'assets', title: 'Assets', titleSingular: 'Asset',
     icon: 'ri-briefcase-4-line', iconColor: 'info', iconBg: 'info',
     desc: 'Company equipment & assets for ops & depreciation tracking',
-    cat: 'Operations & Support',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'asset_name', l: 'Asset Name', t: 'text', r: true, p: 'e.g. HP Laptop 15s' },
       { n: 'code', l: 'Asset ID', t: 'text', auto: true, hint: '(auto-generated)', p: 'AST-XXXX',
@@ -1168,7 +1168,7 @@ const C: Record<string, MasterConfig> = {
     key: 'asset_categories', slug: 'asset_categories', title: 'Asset Categories', titleSingular: 'Asset Category',
     icon: 'ri-price-tag-3-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Group assets by type (Machinery, IT, Furniture)',
-    cat: 'Operations & Support',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'name', l: 'Category Name', t: 'text', r: true, p: 'e.g. Laptop, Machinery' },
       { n: 'depreciation_rate', l: 'Depreciation Rate (% pa)', t: 'number', p: 'e.g. 33' },
@@ -1195,7 +1195,7 @@ const C: Record<string, MasterConfig> = {
     key: 'expense_category', slug: 'expense_category', title: 'Expense Categories', titleSingular: 'Expense Category',
     icon: 'ri-money-rupee-circle-line', iconColor: 'success', iconBg: 'success',
     desc: 'Classify expenses for claims and advance requests',
-    cat: 'Operations & Support',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'code', l: 'Category Code', t: 'text', r: true, p: 'e.g. EXC-01',
         autogenApi: true,
@@ -1539,7 +1539,7 @@ const C: Record<string, MasterConfig> = {
     key: 'warehouse_master', slug: 'warehouse_master', title: 'Warehouse Master', titleSingular: 'Warehouse',
     icon: 'ri-building-2-line', iconColor: 'success', iconBg: 'success',
     desc: 'Define all warehouse locations — Own & Third Party',
-    cat: 'Warehouse Masters',
+    cat: 'Inventory Masters',
     fields: [
       { n: 'wh_id', l: 'Warehouse ID', t: 'text', r: true, p: 'e.g. WH-001' },
       { n: 'wh_name', l: 'Warehouse Name', t: 'text', r: true, p: 'e.g. Pune Main' },
@@ -1575,7 +1575,7 @@ const C: Record<string, MasterConfig> = {
     key: 'zone_master', slug: 'zone_master', title: 'Zone Master', titleSingular: 'Zone',
     icon: 'ri-map-2-line', iconColor: 'success', iconBg: 'success',
     desc: 'Storage zones inside warehouses — Storage, Cold Chain, Hazmat',
-    cat: 'Warehouse Masters',
+    cat: 'Inventory Masters',
     fields: [
       { n: 'zone_id', l: 'Zone ID', t: 'text', r: true, p: 'e.g. ZN-001' },
       { n: 'zone_name', l: 'Zone Name', t: 'text', r: true, p: 'e.g. Zone A — Storage' },
@@ -1673,7 +1673,7 @@ const C: Record<string, MasterConfig> = {
     key: 'racks', slug: 'racks', title: 'Rack & Location Master', titleSingular: 'Rack',
     icon: 'ri-layout-row-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Warehouse structure — Warehouse → Zone → Rack → Shelf',
-    cat: 'Warehouse Masters',
+    cat: 'Inventory Masters',
     fields: [
       { n: 'whType', l: 'Warehouse Type', t: 'select', r: true, opts: ['Own Warehouse', 'Third Party Warehouse'] },
       { n: 'warehouse', l: 'Warehouse', t: 'select', r: true, ref: 'warehouse_master', refL: 'wh_name' },
@@ -1753,7 +1753,7 @@ const C: Record<string, MasterConfig> = {
     key: 'leave_type', slug: 'leave_type', title: 'Leave Type Master', titleSingular: 'Leave Type',
     icon: 'ri-calendar-close-line', iconColor: 'success', iconBg: 'success',
     desc: 'Define leave categories (Regular, Incident Based, Unpaid) with short codes',
-    cat: 'Attendance Master Management',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'name', l: 'Leave Name', t: 'text', r: true, p: 'e.g. Annual Leave' },
       { n: 'type', l: 'Type', t: 'select', r: true, opts: ['Regular', 'Incident Based Leave', 'Unpaid Leave'] },
@@ -1776,7 +1776,7 @@ const C: Record<string, MasterConfig> = {
     key: 'leave_plan', slug: 'leave_plan', title: 'Leave Plan Master', titleSingular: 'Leave Plan',
     icon: 'ri-calendar-2-line', iconColor: 'info', iconBg: 'info',
     desc: 'Configure leave plans with calendar year and start-month rules',
-    cat: 'Attendance Master Management',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'plan_name', l: 'Leave Plan Name', t: 'text', r: true, p: 'e.g. Default Plan 2026', full: true },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Optional — short note describing this plan', full: true },
@@ -1817,7 +1817,7 @@ const C: Record<string, MasterConfig> = {
     key: 'overtime_rates', slug: 'overtime_rates', title: 'Overtime (OT) Master', titleSingular: 'Overtime Rate',
     icon: 'ri-timer-flash-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Define overtime rate names & multipliers used in employee setup',
-    cat: 'Attendance Master Management',
+    cat: 'HRMS Masters',
     fields: [
       { n: 'rate_name', l: 'Rate Name', t: 'text', r: true, p: 'e.g. Time and a Half' },
       { n: 'multiplier', l: 'Multiplier', t: 'number', r: true, min: 0, max: 100, p: 'e.g. 1.5', hint: 'Factor on base hourly rate (1 = normal, 1.5 = 150%)' },

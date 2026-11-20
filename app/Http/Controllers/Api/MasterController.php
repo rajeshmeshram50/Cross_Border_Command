@@ -17,6 +17,41 @@ class MasterController extends Controller
     /**
      * slug -> Eloquent model class map
      */
+    /**
+     * Master Control Center cards that open an Inventory Management page and so
+     * are counted from its table, not the old generic master table. The slug
+     * stays in MODELS for permissions and the generic endpoints.
+     */
+    private const INVENTORY_COUNT_MODELS = [
+        'warehouse_master' => \App\Models\Inventory\Warehouse::class,
+        'zone_master'      => \App\Models\Inventory\Zone::class,
+        'racks'            => \App\Models\Inventory\Rack::class,
+        // Not a generic master (no MODELS entry): counted on its own below.
+        'product_flags'    => \App\Models\Inventory\ProductFlag::class,
+    ];
+
+    /**
+     * CLM Masters cards in the Master Control Center. Keyed by the CLM
+     * permission module (clm.*), which is also the card id; counted with the
+     * same read scope the CLM list pages use (MasterVisibility::applyReadScope).
+     */
+    private const CLM_COUNT_MODELS = [
+        'clm.authority'        => \App\Models\ClmAuthority::class,
+        'clm.kyc'              => \App\Models\ClmKycDocument::class,
+        'clm.due_diligence'    => \App\Models\ClmDdDocument::class,
+        'clm.trade_licenses'   => \App\Models\ClmTradeLicense::class,
+        'clm.quality_docs'     => \App\Models\ClmQcDocument::class,
+        'clm.trade_documents'  => \App\Models\ClmTradeDocLibrary::class,
+        'clm.agreements'       => \App\Models\ClmAgreementLibrary::class,
+        'clm.terms_conditions' => \App\Models\ClmTncLibrary::class,
+        'clm.clause_library'   => \App\Models\ClmClauseLibrary::class,
+    ];
+
+    /** Inventory-only cards without a permission module of their own. */
+    private const INVENTORY_COUNT_PERM_ALIAS = [
+        'product_flags' => 'warehouse_master',
+    ];
+
     private const MODELS = [
         // Super-admin-only platform master — lives under App\Models (not
         // App\Models\Masters) because it pre-dates the masters namespace.
@@ -291,15 +326,24 @@ class MasterController extends Controller
                 continue;
             }
             try {
-                $q = $modelClass::query();
-                $this->applyScope($q, $user, $branchFilter);
+                // Warehouse / Zone / Rack cards open the Inventory Management
+                // pages, so they count those tables. The Inventory models scope
+                // themselves to the tenant (BelongsToTenant), the same rows the
+                // Inventory pages list, so the master read scope is not applied.
+                $inventoryModel = self::INVENTORY_COUNT_MODELS[$slug] ?? null;
+                $q = ($inventoryModel ?? $modelClass)::query();
+                if ($inventoryModel === null) {
+                    $this->applyScope($q, $user, $branchFilter);
+                }
                 // Count in SQL with a single aggregate instead of pulling every
                 // row into PHP — the old get(['status']) loaded whole tables
                 // (e.g. `states` has tens of thousands of rows) on every counts
                 // call, which is what made the master pages crawl (bug #16/#21).
                 $stat = $q->selectRaw(
                     "COUNT(*) AS total, "
-                        . "SUM(CASE WHEN LOWER(TRIM(status)) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
+                        // CAST: the Inventory tables keep status as an integer (1/0),
+                    // and PostgreSQL has no TRIM() for integers.
+                    . "SUM(CASE WHEN LOWER(TRIM(CAST(status AS TEXT))) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
                 )->first();
                 $total  = (int) ($stat->total ?? 0);
                 $active = (int) ($stat->active ?? 0);
@@ -311,6 +355,55 @@ class MasterController extends Controller
             } catch (\Throwable $e) {
                 // Don't fail the whole batch for one bad model — just record
                 // a zero entry so the dashboard's card unstucks gracefully.
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+            }
+        }
+
+        // Inventory cards that are not generic masters (Product Flags): the
+        // Inventory model's own tenant scope, behind the permission it borrows.
+        foreach (self::INVENTORY_COUNT_MODELS as $slug => $modelClass) {
+            if (isset($out[$slug])) continue;
+            $permSlug = self::INVENTORY_COUNT_PERM_ALIAS[$slug] ?? $slug;
+            if ($allowedSlugs !== null && !isset($allowedSlugs[$permSlug])) {
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+                continue;
+            }
+            try {
+                $total  = (int) $modelClass::query()->count();
+                $active = (int) $modelClass::query()->where('status', 1)->count();
+                $out[$slug] = ['active' => $active, 'inactive' => max(0, $total - $active), 'total' => $total];
+            } catch (\Throwable $e) {
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+            }
+        }
+
+        // CLM Masters: each behind its own clm.* view permission.
+        $allowedClm = null;
+        if (!$user->isSuperAdmin()) {
+            $allowedClm = array_flip(\DB::table('permissions')
+                ->join('modules', 'permissions.module_id', '=', 'modules.id')
+                ->where('permissions.user_id', $user->id)
+                ->where('permissions.can_view', true)
+                ->whereIn('modules.slug', array_keys(self::CLM_COUNT_MODELS))
+                ->pluck('modules.slug')
+                ->all());
+        }
+        foreach (self::CLM_COUNT_MODELS as $slug => $modelClass) {
+            if ($allowedClm !== null && !isset($allowedClm[$slug])) {
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+                continue;
+            }
+            try {
+                $q = $modelClass::query();
+                $this->applyScope($q, $user, $branchFilter);
+                $stat = $q->selectRaw(
+                    "COUNT(*) AS total, "
+                        . "SUM(CASE WHEN LOWER(TRIM(CAST(status AS TEXT))) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
+                )->first();
+                $total  = (int) ($stat->total ?? 0);
+                $active = (int) ($stat->active ?? 0);
+                $out[$slug] = ['active' => $active, 'inactive' => max(0, $total - $active), 'total' => $total];
+            } catch (\Throwable $e) {
                 $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
             }
         }
