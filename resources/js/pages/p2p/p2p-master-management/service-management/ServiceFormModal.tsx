@@ -52,7 +52,7 @@ const IMG_MAX_MB = 2;
 const ATT_MAX_MB = 10;
 const SECONDARY_MAX = 10;
 const IMG_EXT = ['jpg', 'jpeg', 'png', 'webp'];
-const ATT_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'webp'];
+const ATT_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'webp'];
 const extOf = (f: File) => (f.name.split('.').pop() ?? '').toLowerCase();
 const overMb = (f: File, mb: number) => f.size > mb * 1024 * 1024;
 
@@ -212,7 +212,7 @@ export default function ServiceFormModal({
 
   const pick = (k: FileKey, f: File | null) => {
     if (k === 'att' && f) {
-      const bad = !ATT_EXT.includes(extOf(f)) ? 'Use a PDF, DOC, DOCX, XLS, XLSX, CSV or image file'
+      const bad = !ATT_EXT.includes(extOf(f)) ? 'Use a PDF, DOC, DOCX, XLS, XLSX or image file'
         : overMb(f, ATT_MAX_MB) ? `Attachment must be at most ${ATT_MAX_MB} MB` : '';
       if (bad) {
         setErrors(e => ({ ...e, att: bad }));
@@ -564,7 +564,7 @@ function AttachmentRemarks({ vals, set, errors, files, pick, savedAtt, noteKey, 
       <div className="svf-grid svf-grid-4">
         <Field label="Attachment" optional error={errors.att}>
           <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images · 10 MB max" invalid={!!errors.att}
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.webp" onPick={f => pick('att', f)} />
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" onPick={f => pick('att', f)} />
         </Field>
         <Field label={noteLabel} span="3" count={{ len: (vals[noteKey] ?? '').length, max: NOTE_MAX }}>
           <textarea className="svf-input svf-textarea" rows={3} maxLength={NOTE_MAX} placeholder={notePh}
