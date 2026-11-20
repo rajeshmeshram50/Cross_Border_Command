@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect } from './ui/MasterSelect';
+import FullPageLoader from './ui/FullPageLoader';
 
 /**
  * "Proceed to Pay" disbursement flow:
@@ -251,7 +252,9 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         <div className="d-flex gap-3 flex-wrap">
           <ModeCard icon="ri-mail-send-line" tint="#ece6ff" fg="#5a3fd1" title="Cheque / Letter" sub="Print payment advice" disabled={busy} onClick={choose} />
         </div>
-        {busy && <div className="text-center mt-3 text-muted" style={{ fontSize: 12.5 }}><i className="ri-loader-4-line" /> Preparing…</div>}
+        {/* The house veil, over the popup rather than a line inside it: the
+            prepare blocks the whole flow, so the popup should not look usable. */}
+        {busy && <FullPageLoader label="Preparing payment advice…" />}
       </div>
     </>, 560);
   }

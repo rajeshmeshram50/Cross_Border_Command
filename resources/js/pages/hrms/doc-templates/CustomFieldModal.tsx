@@ -140,6 +140,8 @@ export default function CustomFieldModal(props: {
           font-family: var(--font-sans);
           width: 100%; max-width: 640px; background: #fff; border-radius: 22px;
           overflow: hidden;
+          /* Anchors .cfm-saving, which covers this popup and nothing else. */
+          position: relative;
           box-shadow: 0 24px 60px rgba(139,92,246,.18), 0 8px 24px rgba(15,23,42,.20);
           animation: cfm-pop .22s cubic-bezier(.22,1,.36,1) both;
         }
@@ -180,6 +182,34 @@ export default function CustomFieldModal(props: {
         [data-bs-theme="dark"] .cfm-overlay,
         [data-layout-mode="dark"] .cfm-overlay { background: rgba(2, 6, 23, 0.55); }
         [data-bs-theme="dark"] .cfm-popup,
+        /* Saving veil. Over THIS popup only: the save is a blocking step for
+           the form, not for the page behind it, so the page keeps its own
+           scroll and the backdrop stays as it was. */
+        .cfm-saving {
+          position: absolute; inset: 0; z-index: 5;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+          background: rgba(255,255,255,.72);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+          border-radius: 22px;
+          animation: cfm-fade .14s ease both;
+        }
+        .cfm-saving-ring {
+          width: 34px; height: 34px; border-radius: 50%;
+          border: 3px solid rgba(139,92,246,.22);
+          border-top-color: #8b5cf6;
+          animation: cfm-spin .7s linear infinite;
+        }
+        .cfm-saving-text {
+          font-size: 12.5px; font-weight: 700; color: #6d28d9; letter-spacing: .01em;
+        }
+        [data-bs-theme="dark"] .cfm-saving,
+        [data-layout-mode="dark"] .cfm-saving {
+          background: rgba(17,24,39,.72);
+        }
+        [data-bs-theme="dark"] .cfm-saving-text,
+        [data-layout-mode="dark"] .cfm-saving-text { color: #c4b5fd; }
+
         [data-layout-mode="dark"] .cfm-popup {
           background: color-mix(in srgb, #000 24%, var(--vz-card-bg)) !important;
           box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
@@ -260,6 +290,14 @@ export default function CustomFieldModal(props: {
           easy to lose on a stray click. Close only via the × / Cancel button. */}
       <div className="cfm-overlay">
         <div className="cfm-popup" onClick={e => e.stopPropagation()}>
+          {/* Covers the form while the field saves (QA 174). Scoped to the
+              popup rather than the page: this blocks the form, not the app. */}
+          {saving && (
+            <div className="cfm-saving" role="status" aria-live="polite">
+              <span className="cfm-saving-ring" aria-hidden="true" />
+              <span className="cfm-saving-text">{initial?.id ? 'Updating field…' : 'Saving field…'}</span>
+            </div>
+          )}
           {/* Gradient header */}
           <div className="cfm-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#6d28d9 0%,#8b5cf6 60%,#a78bfa 100%)', display: 'flex', alignItems: 'center', gap: 14, userSelect: 'none', cursor: 'default' }}>
             <span style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
