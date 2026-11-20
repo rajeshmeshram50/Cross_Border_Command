@@ -178,9 +178,13 @@ class SegmentGuard
 
     /**
      * Purchase-Order statuses that count as an issued/committed reference for a
-     * supplier's segment (a Draft/Pending PO is not yet committed).
+     * supplier's segment and Supplier Type (a draft or cancelled PO commits nothing).
+     * Lower case, compared against LOWER(status): the PO model's statuses are
+     * draft / submitted / cancelled, so the old 'Sent for Sign' / 'Signed' /
+     * 'Approved' list never matched and nothing was ever locked (CS-2332).
+     * The old names stay listed in case a row still carries one.
      */
-    public const PO_COMMITTED = ['Sent for Sign', 'Signed', 'Approved'];
+    public const PO_COMMITTED = ['submitted', 'sent for sign', 'signed', 'approved'];
 
     /**
      * Supplier-Purchase-Invoice statuses that count as committed (QA #94).
@@ -241,7 +245,7 @@ class SegmentGuard
             ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
             ->where('po.client_id', $clientId)
             ->where('po.vendor_id', $vendorId)
-            ->whereIn('po.status', self::PO_COMMITTED)
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(po.status)'), self::PO_COMMITTED)
             ->whereNull('po.deleted_at')
             ->distinct()
             ->pluck('cs.name')
@@ -285,7 +289,7 @@ class SegmentGuard
         $po = \Illuminate\Support\Facades\DB::table('p2p_purchase_orders')
             ->where('client_id', $clientId)
             ->where('vendor_id', $vendorId)
-            ->whereIn('status', self::PO_COMMITTED)
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(status)'), self::PO_COMMITTED)
             ->whereNull('deleted_at')
             ->exists();
         if ($po) return 'po';

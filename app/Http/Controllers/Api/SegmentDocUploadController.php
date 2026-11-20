@@ -933,6 +933,8 @@ class SegmentDocUploadController extends Controller
                 'agreements'             => $agreements,
                 'shipment_agreements'    => $ctcRows,
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d-M-Y'),
+                // The same moment with its time (ISO 8601), for a vault that shows date and time.
+                'last_updated_at'        => optional($uploads->max('updated_at'))->toIso8601String(),
             ],
         ]);
     }
