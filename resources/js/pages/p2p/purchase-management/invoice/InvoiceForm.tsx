@@ -215,12 +215,6 @@ export default function InvoiceForm({
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
-          /* Waits for the detail on purpose. A PO-backed invoice is approved on
-             its ORDER, and reloadApproval reads it from there — firing this
-             early for one would overwrite that with the invoice's own (empty)
-             approvals. Nothing before the detail says which kind this is: the
-             list's Edit action passes neither poId nor direct. */
-          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
@@ -253,14 +247,33 @@ export default function InvoiceForm({
               ewayBillFile: existing.eway_file_name ?? '',
             });
             setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
-            if (!input.direct && existing.vendor_id) {
-              const vid = existing.vendor_id;
-              const [sup, scrutiny] = await spiApi.vendorDetail(vid)
-                .then(r => [r.detail, r.scrutiny] as const)
-                .catch(e => {
-                  toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
-                  return [null, null] as const;
-                });
+
+            /* Supplier, vault and PI lines each need only an id that `existing`
+               already carries, and none reads another's result — awaited one by
+               one they were three round trips deep. Started here they are one. */
+            const vid = !input.direct && existing.vendor_id ? existing.vendor_id : null;
+            const supP = vid
+              ? spiApi.vendorDetail(vid)
+                  .then(r => [r.detail, r.scrutiny] as const)
+                  .catch(e => {
+                    toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
+                    return [null, null] as const;
+                  })
+              : null;
+            const vaultP = vid
+              ? poLookupApi.supplierVault(vid).catch(() => null)
+              : null;
+            const piP = existing.shipment_order_id
+              /* Primed when the shipment was chosen in the Direct setup, so this
+                 is usually already resolved rather than a cold call here. */
+              ? (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
+                  .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; })
+                  .catch(() => [])
+              : null;
+            vaultP?.then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); });
+
+            if (vid && supP) {
+              const [sup, scrutiny] = await supP;
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);
@@ -272,17 +285,9 @@ export default function InvoiceForm({
                 });
                 mappedSupplier.current = sup.code;
               }
-              poLookupApi.supplierVault(vid)
-                .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
-                .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
             }
             if (existing.items.length) {
-              /* Primed when the shipment was chosen in the Direct setup, so this
-                 is usually already resolved rather than a cold call here. */
-              const pi = existing.shipment_order_id
-                ? await (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
-                    .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; }).catch(() => [])
-                : [];
+              const pi = piP ? await piP : [];
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
@@ -312,9 +317,8 @@ export default function InvoiceForm({
                 ((it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id))?.pi_item_id));
               const fromPi = rowsFromPi(pi);
               setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
-            } else if (existing.shipment_order_id) {
-              const pi = await (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
-                .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; }).catch(() => []);
+            } else if (piP) {
+              const pi = await piP;
               if (!live) return;
               setLines(rowsFromPi(pi));
               setRemovedLines([]);
@@ -1044,6 +1048,19 @@ export default function InvoiceForm({
       setSaving(false);
     }
   };
+
+  /* Only Stage 01 reads this: the chip, the gate that holds Next, and the poll
+     below. Fetched on open it cost a round trip at Stage 04, where none of them
+     render. isDirect settles after the SPI detail, which is also what tells a
+     direct invoice from a PO-backed one — the latter is approved on its ORDER
+     and reloadApproval reads it from there. Missing data blocks Next rather
+     than passing it, so arriving late is safe. */
+  const approvalAsked = useRef(false);
+  useEffect(() => {
+    if (stage !== 0 || !isDirect || !spiId || approvalAsked.current) return;
+    approvalAsked.current = true;
+    latestSpiApproval(spiId);
+  }, [stage, isDirect, spiId, latestSpiApproval]);
 
   const approvalPending = isDirect && !!spiId && gstApproval?.status === 'pending';
   const savingRef = useRef(saving);

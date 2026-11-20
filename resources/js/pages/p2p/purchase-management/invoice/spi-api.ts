@@ -476,6 +476,9 @@ let warehouseCache: Promise<StorageWarehouse[]> | null = null;
 let warehouseCachedAt = 0;
 const WAREHOUSE_TTL_MS = 60_000;
 
+/** spiId -> the board request currently in flight, so same-tick callers share it. */
+const boardInFlight = new Map<number, Promise<PutawayBoard>>();
+
 export const spiApi = {
   boxes: (spiId: number) =>
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`), (b) => {
@@ -640,9 +643,19 @@ export const spiApi = {
     call('Putaway rows', () => api.get(`/p2p/spi/${spiId}/putaway`),
       (b) => ((b as { data?: { rows?: PutawayRow[] } } | null)?.data?.rows ?? [])),
 
-  putawayBoard: (spiId: number) =>
-    call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
-      (b) => ((b as { data?: PutawayBoard } | null)?.data ?? { counts: { total: 0, pending: 0, draft: 0, awaiting_scan: 0, placed: 0, remaining: 0 }, boxes: [] })),
+  /* Two owners ask for this board the moment Stage 04 opens: the form's
+     reloadBoxes (for placed ids + counts) and Step 4's own effect. Sharing the
+     in-flight promise makes that one request; once it settles the next caller
+     fetches fresh, so later refreshes still see new placements. */
+  putawayBoard: (spiId: number) => {
+    const live = boardInFlight.get(spiId);
+    if (live) return live;
+    const p = call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
+      (b) => ((b as { data?: PutawayBoard } | null)?.data ?? { counts: { total: 0, pending: 0, draft: 0, awaiting_scan: 0, placed: 0, remaining: 0 }, boxes: [] }))
+      .finally(() => { boardInFlight.delete(spiId); });
+    boardInFlight.set(spiId, p);
+    return p;
+  },
 
   putawayModes: (spiId: number, boxId: number) =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId } }),
