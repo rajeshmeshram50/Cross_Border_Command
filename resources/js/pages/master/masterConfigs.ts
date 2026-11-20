@@ -490,12 +490,6 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'status'],
     colL: ['Address Type', 'Status'],
     uFields: ['name'],
-    kpis: [
-      { label: 'Total Types',  icon: 'ri-home-line',            gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
-      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'Inactive',     icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
-      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
-    ],
     data: [
       { id: 1, name: 'Registered Office Address', status: 'Active' },
       { id: 2, name: 'Warehouse', status: 'Active' },
