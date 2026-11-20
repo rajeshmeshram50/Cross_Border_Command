@@ -587,6 +587,9 @@
 [data-bs-theme="dark"] .svms-auto { background: rgba(255, 255, 255, .06); border-color: rgba(148, 163, 184, .3); color: #94a3b8; }
 [data-bs-theme="dark"] .svms-i { background: #0b171d; border-color: rgba(34, 211, 238, .25); color: #e2f6fa; }
 [data-bs-theme="dark"] .svms-i.is-key { border-color: rgba(34, 211, 238, .5); }
+/* An input with an error keeps the dark field; only the border and ring turn red. */
+[data-bs-theme="dark"] .svms-f.is-err .svms-i { background-color: #0b171d; border-color: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, .18); color: #e2f6fa; }
+[data-bs-theme="dark"] .svms-f.is-err .svms-i::placeholder { color: #7f9aa6; }
 [data-bs-theme="dark"] .svms-i.is-ro,
 [data-bs-theme="dark"] .svms-i.is-calc { background-color: rgba(148, 163, 184, .08); border-color: rgba(148, 163, 184, .3); color: #cbd5e1; }
 [data-bs-theme="dark"] .svms-select .master-select-wrap .master-select-toggle {

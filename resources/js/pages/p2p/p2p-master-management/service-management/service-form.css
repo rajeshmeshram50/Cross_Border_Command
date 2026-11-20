@@ -1045,6 +1045,7 @@
 }
 
 [data-bs-theme="dark"] .svf-drop { background: rgba(34, 211, 238, .06); border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .svf-drop.is-invalid { background: rgba(248, 113, 113, .08); border-color: #f87171; }
 [data-bs-theme="dark"] .svf-drop-txt b { color: #67e8f9; }
 [data-bs-theme="dark"] .svf-drop-txt span { color: #7f9aa6; }
 [data-bs-theme="dark"] .svf-thumb { border-color: rgba(34, 211, 238, .3); background: #0b171d; }
