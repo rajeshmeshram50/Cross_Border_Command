@@ -3022,6 +3022,16 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(8, 51, 68, .28), inset 0 1px 0 rgba(255, 255, 255, .9);
 }
+/* Dark: the open card's white pill read as a bright block on the dark vault — translucent
+   teal with light teal type instead (still stands apart from the card behind it). */
+[data-bs-theme="dark"] .sev .cev-group.is-active .cev-group-overview,
+[data-bs-theme="dark"] .sev .cev-group.is-active .cev-group-overview:hover {
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .18);
+  border-color: rgba(103, 232, 249, .35);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .sev .cev-group.is-active .cev-group-overview:hover { background: rgba(34, 211, 238, .26); }
 
 [data-bs-theme="dark"] .sev .cev-group {
   background: #132b36;
@@ -3479,6 +3489,16 @@
   background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%);
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(6, 182, 212, .28), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+/* Dark: the two rules above out-rank the generic dark .cev-btn-light, so the button (and its
+   hover) stayed a light cyan gradient on the dark vault. Same weight here, translucent teal. */
+[data-bs-theme="dark"] .cev-card.sev .cev-btn-light {
+  background: rgba(8, 145, 178, .14); border-color: rgba(34, 211, 238, .32); color: #67e8f9;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .cev-card.sev .cev-btn-light:hover {
+  background: rgba(34, 211, 238, .22); border-color: rgba(103, 232, 249, .5); color: #a5f3fc;
+  box-shadow: 0 5px 14px rgba(6, 182, 212, .22);
 }
 
 /* Close Vault */
@@ -4544,3 +4564,16 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 .spev-ov.spev-ov-std .cev-ov-acts { display: grid; grid-template-columns: 120px 124px; gap: 8px; justify-content: center; }
 .spev-ov.spev-ov-std .cev-ov-acts > * { width: 100%; }
 .spev-ov.spev-ov-std .cev-ov-acts > .cev-ov-up { grid-column: 2; }
+
+/* ===== Supplier vault, dark mode: the tab tables' status pill and the section icon kept their
+   light fills (#dcfce7 green, a #ecfeff -> #a5f3fc gradient). Translucent tones, light text. ===== */
+[data-bs-theme="dark"] .spev .spev-status { background: rgba(255, 255, 255, .05) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Verified"] { background: rgba(34, 197, 94, .14) !important; color: #86efac !important; border-color: rgba(134, 239, 172, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Signed"]   { background: rgba(34, 211, 238, .14) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Expiring"] { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status:is([data-status="Pending"], [data-status="Expired"]) { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }
+[data-bs-theme="dark"] .spev .cev-section-icon { background: rgba(34, 211, 238, .12) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .3) !important; box-shadow: none !important; }
+
+/* Supplier vault shipment / PO picker: one badge width (codes run from SHP-007 to PO/2026-27/020),
+   text centred in it, so every name starts at the same x. */
+.spev-ov .sev-ov-pick-code { width: 136px; flex: 0 0 136px; display: inline-flex; justify-content: center; box-sizing: border-box; }

@@ -3260,6 +3260,25 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-prod-name,
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-price { color: #e2e8f0; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-table tbody td .smp-total { color: #67e8f9; }
+
+/* ═════ Dark-mode hovers for the teal-scoped controls ═════
+   The teal rules above are scoped with :is(body:has(...)), which out-ranks the plain
+   [data-bs-theme="dark"] hovers further up — so in dark mode these hovers kept their LIGHT
+   backgrounds (#ecfeff / #f0fdff / #f7feff) and dark-teal text. Same scope + the dark attribute
+   here, translucent teal fills and light teal text. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-row-btn, .avm-kyc-act, .avm-yesno-btn, .avm-fc-replace, .avm-btn-outline):hover:not(:disabled) {
+  background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc;
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-row-btn-del:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .16); border-color: rgba(252, 165, 165, .45); color: #fca5a5;
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser:hover { background: rgba(34, 211, 238, .08); border-color: rgba(103, 232, 249, .45); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-filechooser-link:hover { color: #a5f3fc; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal :is(.avm-kyc-table, .table.avm-mini-table) tbody tr:hover td { background: rgba(34, 211, 238, .05); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) :is(.avm-tab, .avm-pill-tabs .avm-pill):not(.on):hover:not(:disabled) { color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-foot .avm-btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .06); color: #e2f3f7; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .wl-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(34, 211, 238, .16); border-color: rgba(103, 232, 249, .45); color: #a5f3fc; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-mapped .smp-pag .wl-pager { background: #10222b; border-top-color: rgba(103,232,249,.16); }
 
 /* Mapped Products popup: the last violet bits in teal (search box, segment frame, pager). */
@@ -3392,3 +3411,8 @@ body:has(.smc-root.sup-list) .avm-cp-popup .avm-cp-close { width: 40px; height: 
    with faded text). Translucent teal like every other table in the form. */
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr:hover td { background: rgba(34, 211, 238, .07) !important; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-modal .table.avm-mini-table tbody tr td { background: transparent; }
+
+/* Dark mode, contacts table WhatsApp pill: "Yes" was a light green gradient, "No" a light red one.
+   Translucent fills with light text instead. */
+[data-bs-theme="dark"] .avm-modal .avm-wa-yes { background: rgba(34, 197, 94, .14) !important; color: #86efac !important; border-color: rgba(134, 239, 172, .35) !important; box-shadow: none; }
+[data-bs-theme="dark"] .avm-modal .avm-wa-no { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }

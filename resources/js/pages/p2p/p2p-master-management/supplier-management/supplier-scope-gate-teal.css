@@ -28,6 +28,8 @@
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4); color: #fff;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-close:hover { background: #fff; color: #0e7490; }
+/* Dark: the hover kept the light theme's teal × on a barely lighter tile — white × instead. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-close:hover { background: rgba(255,255,255,.26); color: #fff; }
 
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-body { padding: 22px 24px 6px; background: linear-gradient(#f6fdfe, #fff 40%); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .supch-grid { gap: 14px; }

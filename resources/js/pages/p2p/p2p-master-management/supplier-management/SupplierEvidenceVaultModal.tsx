@@ -110,6 +110,8 @@ export interface VaultData {
   vendor_without_shipment?: VendorDealRow[];
   vendor_deal_ratios?:      DealRatios | null;
   last_updated:           string;
+  /** The latest upload with its time (ISO 8601); null when nothing is uploaded. */
+  last_updated_at?:       string | null;
 }
 
 type DealCount = { d: number; t: number };
@@ -983,7 +985,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
         <div className="cev-footer">
           <div className="cev-footer-meta">
-            <span className="sev-foot-upd">Last updated:&nbsp;<strong>{vault.last_updated || '—'}</strong></span>
+            {/* Date and time of the latest upload; a vault with no uploads says so instead of a bare dash. */}
+            <span className="sev-foot-upd">Last updated:&nbsp;<strong>{vaultUpdatedLabel(vault)}</strong></span>
             <span className="sev-foot-div" aria-hidden />
             <span className="sev-foot-managed"><i className="ri-shield-check-line" aria-hidden /> Vault managed by Compliance Team</span>
           </div>
@@ -1192,7 +1195,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                             <span className="sev-ov-pick-code">{d.label}</span>
                             <span className="sev-ov-pick-text">
                               <span className="sev-ov-pick-title">{d.title}</span>
-                              <span className="sev-ov-pick-sub">{d.sub || '—'}</span>
+                              {/* No empty "—" line: a deal without a subtitle shows only its name, centred on the badge. */}
+                              {d.sub && <span className="sev-ov-pick-sub">{d.sub}</span>}
                             </span>
                             <span className="sev-ov-pick-go" aria-hidden><i className="ri-arrow-right-s-line" /></span>
                           </button>
@@ -1690,6 +1694,20 @@ function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
   return d.status;
 }
 
+/** "20-Nov-2026, 11:42 AM" from last_updated_at; the date-only last_updated as a fallback. */
+function vaultUpdatedLabel(v: { last_updated?: string; last_updated_at?: string | null }): string {
+  if (v.last_updated_at) {
+    const d = new Date(v.last_updated_at);
+    if (!Number.isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const mon = d.toLocaleString('en-US', { month: 'short' });
+      const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      return `${day}-${mon}-${d.getFullYear()}, ${time}`;
+    }
+  }
+  return v.last_updated && v.last_updated !== '—' ? v.last_updated : 'No documents uploaded yet';
+}
+
 function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
   const map: Record<VaultStatus | 'Expired', { bg: string; color: string; border: string; dot: string }> = {
     Verified: { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0', dot: '#22c55e' },
@@ -1700,7 +1718,9 @@ function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
   };
   const s = map[status] ?? map.Pending;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>
+    /* The class + data-status let dark mode give each status a translucent fill (the inline light
+       fills glared on the dark card); light mode keeps these inline colours. */
+    <span className="spev-status" data-status={status} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /> {status}
     </span>
   );
