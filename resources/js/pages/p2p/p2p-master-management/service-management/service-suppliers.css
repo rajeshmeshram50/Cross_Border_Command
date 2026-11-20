@@ -691,7 +691,7 @@
 .svs-pager.wl-pager .tc-wl-range { padding: 5px 18px; }
 .svs-pager.wl-pager .tc-wl-rows { padding: 4px 12px; }
 .svs-pager.wl-pager .tc-wl-rows-btn { height: auto; }
-[data-bs-theme="dark"] .svs-pager.wl-pager { border-top-color: rgba(6, 182, 212, .30); background: linear-gradient(90deg, #0b1220 0%, #0e1726 45%, #0b1220 100%); }
+[data-bs-theme="dark"] .svs-pager.wl-pager { border-top-color: rgba(34, 211, 238, .16); background: #0f1d25 !important; }
 [data-bs-theme="dark"] .svs-pager :is(.tc-wl-info, .tc-wl-rows, .tc-wl-btn) { color: #67e8f9; border-color: rgba(6, 182, 212, .30); background: rgba(255, 255, 255, .05); }
 [data-bs-theme="dark"] .svs-pager .tc-wl-info .tc-wl-hl { color: #a5f3fc; }
 [data-bs-theme="dark"] .svs-pager .tc-wl-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .10); border-color: #22d3ee; }
