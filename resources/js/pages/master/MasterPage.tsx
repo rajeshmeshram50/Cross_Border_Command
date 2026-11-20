@@ -22,12 +22,33 @@ import '../p2p/p2p-common.css';
 import '../p2p/purchase-management/order/po-list/order.css';
 import '../inventory-management/warehouse/warehouse-master.css';
 
-const MP_TEAL_BAR  = 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 50%, #0e7490 100%)';
-const MP_TEAL_ICON = 'linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%)';
 
 /* Every value badge in a master table (Target Type, Priority, Role Type,
    Level) in the same teal; only its colours are replaced, icons and text stay. */
 const MP_TEAL_TONE = { bg: '#ecfeff', fg: '#0e7490', border: '#22d3ee', star: '#0891b2' };
+
+/* The CredVault Recycle Bin KPI card (phx-card): a white card with a 3px
+   gradient top bar, a soft glow top-right, a gradient icon tile beside the
+   number, and the label under it. The tones cycle in the Recycle Bin order. */
+const MP_KC_TONES = ['teal', 'sky', 'amber', 'rose', 'green', 'violet'] as const;
+type MpKpi = { key: string; label: string; icon: string; value: ReactNode; sub?: string };
+function MpKpiCards({ items }: { items: MpKpi[] }) {
+  return (
+    <div className="mp-kc-row">
+      {items.map((k, i) => (
+        <div key={k.key} className={`mp-kc mp-kc--${MP_KC_TONES[i % MP_KC_TONES.length]}`}>
+          <span className="mp-kc__glow" />
+          <div className="mp-kc__top">
+            <span className="mp-kc__ico"><i className={k.icon} /></span>
+            <b className="mp-kc__n">{typeof k.value === 'number' ? k.value.toLocaleString() : k.value}</b>
+          </div>
+          <span className="mp-kc__l">{k.label}</span>
+          {k.sub && <small className="mp-kc__s">{k.sub}</small>}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 type MpStatusTab = 'all' | 'active' | 'inactive';
 /** A record's status as a tab key; anything that is not "inactive" counts as active. */
@@ -69,7 +90,6 @@ function MasterPageInner({
   const { user, refresh } = useAuth();
   const backTo    = cfg.parent?.path ?? '/master';
   const backLabel = cfg.parent ? 'Back' : 'Back to Master list';
-  const backTitle = cfg.parent ? `Back to ${cfg.parent.label}` : 'Back to Master list';
   useEffect(() => {
     refresh();
   }, [cfg.slug]);
@@ -116,9 +136,6 @@ function MasterPageInner({
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
-  const [roleStatusFilter, setRoleStatusFilter] = useState<string>('all');
-  const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
-  const [roleDeptFilter, setRoleDeptFilter] = useState<string>('all');
   const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
   /* All / Active / Inactive tabs (the Rack Master tab row), on every master with a status field. */
   const [statusTab, setStatusTab] = useState<MpStatusTab>('all');
@@ -127,15 +144,20 @@ function MasterPageInner({
      do), so the switch reads as the list reloading rather than a flicker. */
   const [tabShimmer, setTabShimmer] = useState(false);
   const tabShimTimer = useRef<number | undefined>(undefined);
-  const switchStatusTab = (k: MpStatusTab) => {
-    if (k === statusTab) return;
-    setStatusTab(k);
+  const flashTabShimmer = () => {
     setTabShimmer(true);
     window.clearTimeout(tabShimTimer.current);
     tabShimTimer.current = window.setTimeout(() => setTabShimmer(false), 350);
   };
+  const switchStatusTab = (k: MpStatusTab) => {
+    if (k === statusTab) return;
+    setStatusTab(k);
+    flashTabShimmer();
+  };
   useEffect(() => () => window.clearTimeout(tabShimTimer.current), []);
-  const hasStatus = cfg.fields.some(ff => ff.n === 'status');
+  /* Role Master puts its All / Primary / Ancillary tabs where the other
+     masters have All / Active / Inactive, so status does not filter there. */
+  const hasStatus = cfg.slug !== 'roles' && cfg.fields.some(ff => ff.n === 'status');
   const matchesStatusTab = (row: any) => !hasStatus || statusTab === 'all' || mpStatusOf(row) === statusTab;
   const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
   const [kpiTargetFilter, setKpiTargetFilter] = useState<string>('all');
@@ -299,15 +321,6 @@ function MasterPageInner({
         const rt = String(row.role_type ?? '').toLowerCase();
         if (roleTab === 'primary' && !/primary/.test(rt)) return false;
         if (roleTab === 'ancillary' && !/ancillary|auxiliary|operational|administrative|functional/.test(rt)) return false;
-        if (roleStatusFilter !== 'all') {
-          if (String(row.status ?? '').toLowerCase() !== roleStatusFilter.toLowerCase()) return false;
-        }
-        if (roleTypeFilter !== 'all') {
-          if (String(row.role_type ?? '') !== roleTypeFilter) return false;
-        }
-        if (roleDeptFilter !== 'all') {
-          if (String(row.department_id ?? '') !== String(roleDeptFilter)) return false;
-        }
       }
       if (cfg.slug === 'kpis') {
         if (kpiRoleFilter !== 'all') {
@@ -329,7 +342,7 @@ function MasterPageInner({
       }
       return false;
     });
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
 
   const roleTabs = useMemo(() => {
     const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
@@ -920,15 +933,16 @@ function MasterPageInner({
       const label = resolveRefLabel(f.ref, f.refL, raw);
       if (!label) return <span className="text-muted">—</span>;
       return (
-        <span className="d-inline-flex align-items-center gap-1">
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6691e7', display: 'inline-block' }} />
-          <span className="text-body">{label}</span>
+        <span className="d-flex align-items-center gap-1" style={{ minWidth: 0 }}>
+          <span style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: '#6691e7', display: 'inline-block' }} />
+          <FitTip label={label}><span className="text-body mp-fit" style={{ minWidth: 0 }}>{label}</span></FitTip>
         </span>
       );
     }
 
     if (f?.ref) {
-      return <span className="text-body">{resolveRefLabel(f.ref, f.refL, raw) || '—'}</span>;
+      const refTxt = resolveRefLabel(f.ref, f.refL, raw) || '—';
+      return <FitTip label={refTxt}><span className="text-body mp-fit">{refTxt}</span></FitTip>;
     }
 
     if (raw === undefined || raw === null || raw === '') {
@@ -941,7 +955,7 @@ function MasterPageInner({
       const display = codeTxt.length > CODE_MAX ? `${codeTxt.slice(0, CODE_MAX - 1)}…` : codeTxt;
       const chip = (
         <span
-          className="rounded-pill d-inline-block"
+          className="rounded-pill d-inline-block mp-code-chip"
           style={{
             background: '#e4f9fa',
             color: '#0e7490',
@@ -978,7 +992,7 @@ function MasterPageInner({
       const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
-          className="d-inline-block rounded-pill"
+          className="d-inline-block rounded-pill mp-badge"
           style={{
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
@@ -1007,7 +1021,7 @@ function MasterPageInner({
       const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
-          className="d-inline-block rounded-pill"
+          className="d-inline-block rounded-pill mp-badge"
           style={{
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
@@ -1037,7 +1051,7 @@ function MasterPageInner({
       const tone = { ...toneByValue, ...MP_TEAL_TONE };
       return (
         <span
-          className="d-inline-flex align-items-center rounded-pill"
+          className="d-inline-flex align-items-center rounded-pill mp-badge"
           style={{
             gap: 5,
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
@@ -1076,7 +1090,7 @@ function MasterPageInner({
           title={`${tone.rank} of ${TOTAL_STARS} hierarchy rank`}
         >
           <span
-            className="d-inline-block rounded-pill"
+            className="d-inline-block rounded-pill mp-badge"
             style={{
               background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
               color: tone.fg,
@@ -1259,7 +1273,7 @@ function MasterPageInner({
     cols.push({
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
-      meta: { align: 'center' },
+      meta: { align: 'center', width: 200 },
       enableGlobalFilter: false,
       cell: (info: any) => {
         const showAny = caps.view || caps.edit || caps.delete;
@@ -1555,10 +1569,6 @@ function MasterPageInner({
           </div>
         </div>
         <div className="mp-head-right">
-          <button type="button" className="spi-head-btn mp-head-back" onClick={() => navigate(backTo)} title={backTitle}>
-            <i className="ri-arrow-left-line" />
-            {backLabel}
-          </button>
           {caps.add ? (
             <button type="button" className="spi-head-btn" onClick={openAdd}>
               <i className="ri-add-line" />
@@ -1579,53 +1589,7 @@ function MasterPageInner({
       </div>
 
       {cfg.kpis && cfg.kpis.length > 0 && (
-        <div className="d-flex flex-wrap align-items-stretch" style={{ gap: 8 }}>
-          {cfg.kpis.map(k => {
-            const value = k.compute(records);
-            return (
-              <div
-                key={k.label}
-                className="mp-kpi-tile"
-                style={{
-                  flex: '1 1 0',
-                  minWidth: 180,
-                  borderRadius: 12,
-                  border: '1px solid var(--vz-border-color)',
-                  background: '#ffffff',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                  padding: '14px 16px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Every tile in the Warehouse / Rack Master teal, not its own
-                    per-KPI colour (k.gradient), so the strip reads as one set. */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: MP_TEAL_BAR }} />
-                <div className="d-flex align-items-center justify-content-between">
-                  <div>
-                    <p className="mp-kpi-tile__label" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-                      {k.label}
-                    </p>
-                    <h3 className="mp-kpi-tile__value" style={{ fontSize: 22, fontWeight: 800, margin: 0, lineHeight: 1 }}>
-                      {value.toLocaleString()}
-                    </h3>
-                  </div>
-                  <div
-                    style={{
-                      width: 38, height: 38, borderRadius: 12,
-                      background: MP_TEAL_ICON,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0,
-                      boxShadow: '0 0 0 3px rgba(6,182,212,.18), 0 4px 12px rgba(8,145,178,.35)',
-                    }}
-                  >
-                    <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <MpKpiCards items={cfg.kpis.map(k => ({ key: k.label, label: k.label, icon: k.icon, value: k.compute(records) }))} />
       )}
 
       {}
@@ -1647,7 +1611,8 @@ function MasterPageInner({
       {}
       <DataTable<any>
         data={serverPaged ? records.filter(matchesStatusTab) : filteredRecords}
-        fitToViewport={!loading && !tabShimmer && (serverPaged ? records.filter(matchesStatusTab) : filteredRecords).length === 0}
+        fitToViewport
+        fillToFooter
         columns={columns}
         className="ord-list"
         {...(serverPaged ? {
@@ -1685,6 +1650,22 @@ function MasterPageInner({
                 ))}
               </div>
             )}
+            {cfg.slug === 'roles' && (
+              <div className="spi-seg" role="tablist" aria-label="Role type">
+                {roleTabs.map(t => (
+                  <button
+                    key={t.key} type="button" role="tab"
+                    aria-selected={roleTab === t.key}
+                    className={`spi-seg-btn${roleTab === t.key ? ' is-active' : ''}`}
+                    onClick={() => { if (t.key !== roleTab) { setRoleTab(t.key as typeof roleTab); flashTabShimmer(); } }}
+                  >
+                    <span className="spi-seg-ico"><i className={t.icon} /></span>
+                    {t.label}
+                    <span className="spi-seg-c">{t.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="spi-search">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1703,11 +1684,6 @@ function MasterPageInner({
             </div>
           </div>
         }
-        {...(cfg.slug === 'roles' ? {
-          tabs: roleTabs,
-          activeTab: roleTab,
-          onTabChange: (k: string) => setRoleTab(k as typeof roleTab),
-        } : {})}
         emptyMessage={
           <>
             <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -1727,17 +1703,6 @@ function MasterPageInner({
                 setLevelFilter={setDsnLevelFilter}
                 deptFilter={dsnDeptFilter}
                 setDeptFilter={setDsnDeptFilter}
-              />
-            )}
-            {cfg.slug === 'roles' && (
-              <RolesInlineFilters
-                refData={refData}
-                typeFilter={roleTypeFilter}
-                setTypeFilter={setRoleTypeFilter}
-                statusFilter={roleStatusFilter}
-                setStatusFilter={setRoleStatusFilter}
-                deptFilter={roleDeptFilter}
-                setDeptFilter={setRoleDeptFilter}
               />
             )}
             {cfg.slug === 'kpis' && (
@@ -1994,7 +1959,7 @@ const ET_TREE_CSS = `
 .et-node {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 9px;
   width: 184px; min-height: 184px; padding: 18px 14px 15px; border-radius: 16px;
-  border: 1px solid rgba(139,92,246,0.12); background: var(--vz-card-bg);
+  border: 1px solid rgba(34,211,238,0.12); background: var(--vz-card-bg);
   box-shadow: 0 8px 20px rgba(76,29,149,0.10); transition: transform .15s ease, box-shadow .15s ease;
 }
 .et-node:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(8,145,178,0.22); }
@@ -2056,7 +2021,7 @@ function AuditHistoryModal({
     list.push({
       kind: 'created',
       icon: 'ri-add-line',
-      color: '#10b981',
+      color: '#0891b2',
       title: 'Created',
       user: userLabel,
       at: fmt(record.created_at),
@@ -2066,7 +2031,7 @@ function AuditHistoryModal({
       list.push({
         kind: 'updated',
         icon: 'ri-edit-2-line',
-        color: '#6366f1',
+        color: '#0e7490',
         title: 'Updated',
         user: userLabel,
         at: fmt(record.updated_at),
@@ -2077,31 +2042,16 @@ function AuditHistoryModal({
   }, [record]);
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="audit-modal">
-      <div className="audit-modal-header">
-        <div className="d-flex align-items-start justify-content-between gap-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <span className="audit-modal-icon">
-              <i className="ri-history-line" />
-            </span>
-            <div className="min-w-0">
-              <h5 className="mb-0 fw-bold audit-modal-title">
-                Audit History — {masterTitle}
-              </h5>
-              <small className="audit-modal-sub">
-                {record ? `Record #${record.id}${primaryLabel ? ` · ${primaryLabel}` : ''}` : ''}
-              </small>
-            </div>
+    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="audit-modal whm-addmdl" modalClassName="mp-tealf" backdropClassName="mp-tealf-backdrop">
+      <div className="spi-mdl-head">
+        <div className="spi-mdl-head-left">
+          <div className="spi-mdl-head-ico"><i className="ri-history-line" style={{ fontSize: 20 }} /></div>
+          <div className="min-w-0">
+            <div className="spi-mdl-title">Audit History — {masterTitle}</div>
+            <div className="spi-mdl-sub">{record ? `Record #${record.id}${primaryLabel ? ` · ${primaryLabel}` : ''}` : ''}</div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="audit-modal-close"
-          >
-            <i className="ri-close-line" />
-          </button>
         </div>
+        <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><i className="ri-close-line" style={{ fontSize: 18 }} /></button>
       </div>
       <ModalBody className="audit-modal-body" style={{ padding: '20px 22px 22px' }}>
         {events.length === 0 ? (
@@ -2140,57 +2090,25 @@ function AuditHistoryModal({
           </div>
         )}
       </ModalBody>
+      <div className="spi-mdl-foot">
+        <span />
+        <div className="spi-mdl-foot-btns">
+          <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
+        </div>
+      </div>
       <style>{`
         .audit-modal {
-          border-radius: 16px !important;
+          border-radius: 26px !important;
           overflow: hidden;
-          border: 0;
-          box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+          border: 1px solid rgba(255,255,255,.7);
+          box-shadow: 0 50px 120px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.12);
         }
-        .audit-modal-header {
-          padding: 18px 22px;
-          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
-          border-bottom: 0;
-        }
-        .audit-modal-title {
-          color: #ffffff !important;
-          letter-spacing: 0.01em;
-          font-size: 16px;
-        }
-        .audit-modal-sub {
-          color: rgba(255,255,255,0.85) !important;
-          font-size: 12px;
-        }
-        .audit-modal-icon {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 40px; height: 40px;
-          border-radius: 10px;
-          flex-shrink: 0;
-          background: rgba(255,255,255,0.20);
-          color: #ffffff;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-        }
-        .audit-modal-icon i { font-size: 18px; line-height: 1; }
-        .audit-modal-close {
-          width: 30px; height: 30px;
-          border-radius: 8px;
-          border: 0;
-          background: rgba(255,255,255,0.18);
-          color: #ffffff;
-          cursor: pointer;
-          flex-shrink: 0;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          transition: background 0.15s ease;
-        }
-        .audit-modal-close:hover {
-          background: rgba(255,255,255,0.30);
-        }
-        .audit-modal-close i { font-size: 16px; line-height: 1; }
-        .audit-modal-body { background: var(--vz-card-bg); }
+        .audit-modal .spi-mdl-head { border-radius: 25px 25px 0 0; }
+        .audit-modal .spi-mdl-foot { padding: 12px 22px; border-top-color: #e3f1f5; background: rgba(255,255,255,.55); }
+        .audit-modal .spi-mdl-cancel { height: 42px; border-radius: 12px; }
+        [data-bs-theme="dark"] .audit-modal { border-color: rgba(148,163,184,.22); }
+        [data-bs-theme="dark"] .audit-modal .spi-mdl-foot { background: rgba(255,255,255,.02); border-top-color: rgba(148,163,184,.16); }
+        .audit-modal-body { background: transparent; }
         .audit-timeline {
           position: relative;
           display: flex;
@@ -2200,12 +2118,15 @@ function AuditHistoryModal({
         .audit-timeline::before {
           content: '';
           position: absolute;
-          top: 22px; bottom: 22px;
-          left: 19px;
+          /* From the first dot's centre to the last one's: the event pads 10px
+             and the dot is 36px, so the centre is 28px in from the top / left. */
+          top: 28px; bottom: 28px;
+          left: 27px;
           width: 2px;
+          z-index: 0;
           background: linear-gradient(180deg,
-            rgba(99,102,241,0.30) 0%,
-            rgba(99,102,241,0.06) 100%);
+            rgba(8,145,178,0.30) 0%,
+            rgba(8,145,178,0.06) 100%);
         }
         .audit-event {
           display: flex;
@@ -2214,13 +2135,13 @@ function AuditHistoryModal({
           position: relative;
           padding: 10px 12px 10px 10px;
           border-radius: 10px;
-          background: rgba(99,102,241,0.04);
-          border: 1px solid rgba(99,102,241,0.10);
+          background: rgba(8,145,178,0.04);
+          border: 1px solid rgba(8,145,178,0.10);
           transition: background 140ms ease, border-color 140ms ease;
         }
         .audit-event:hover {
-          background: rgba(99,102,241,0.08);
-          border-color: rgba(99,102,241,0.20);
+          background: rgba(8,145,178,0.08);
+          border-color: rgba(8,145,178,0.20);
         }
         .audit-event-dot {
           display: inline-flex;
@@ -2271,19 +2192,19 @@ function AuditHistoryModal({
 
         [data-bs-theme="dark"] .audit-event,
         [data-layout-mode="dark"] .audit-event {
-          background: rgba(99,102,241,0.10);
-          border-color: rgba(99,102,241,0.22);
+          background: rgba(8,145,178,0.10);
+          border-color: rgba(8,145,178,0.22);
         }
         [data-bs-theme="dark"] .audit-event:hover,
         [data-layout-mode="dark"] .audit-event:hover {
-          background: rgba(99,102,241,0.18);
-          border-color: rgba(99,102,241,0.40);
+          background: rgba(8,145,178,0.18);
+          border-color: rgba(8,145,178,0.40);
         }
         [data-bs-theme="dark"] .audit-timeline::before,
         [data-layout-mode="dark"] .audit-timeline::before {
           background: linear-gradient(180deg,
-            rgba(139,92,246,0.50) 0%,
-            rgba(139,92,246,0.10) 100%);
+            rgba(34,211,238,0.50) 0%,
+            rgba(34,211,238,0.10) 100%);
         }
       `}</style>
     </Modal>
@@ -2743,105 +2664,7 @@ function RolesExtras({ records }: { records: any[] }) {
     { key: 'inactive',  label: 'Inactive',        icon: 'ri-forbid-fill',          deep: '#d63a5e', bright: '#ff8b9b', accent: 'linear-gradient(135deg,#d63a5e 0%,#ff8b9b 100%)', tint: 'rgba(255,139,155,0.12)', value: inactiveCount },
   ];
 
-  return (
-    <div className="role-extras mb-3">
-
-      {}
-      <div className="role-kpis">
-        {KPIS.map(k => (
-          <div
-            className="role-kpi"
-            key={k.key}
-            title={k.label}
-            style={{
-              ['--kpi-deep' as any]: k.deep,
-              ['--kpi-bright' as any]: k.bright,
-              ['--kpi-accent' as any]: k.accent,
-              ['--kpi-tint' as any]: k.tint,
-            }}
-          >
-            <div className="role-kpi-text">
-              <span className="role-kpi-label">{k.label}</span>
-              <span className="role-kpi-num">{k.value}</span>
-            </div>
-            <span
-              className="role-kpi-icon"
-              style={{
-                background: k.accent,
-                color: '#ffffff',
-                boxShadow: `0 4px 10px ${k.bright}55, inset 0 1px 0 rgba(255,255,255,0.25)`,
-              }}
-            >
-              <i className={k.icon} />
-            </span>
-          </div>
-        ))}
-      </div>
-
-    </div>
-  );
-}
-
-function RolesInlineFilters({
-  refData,
-  typeFilter,   setTypeFilter,
-  statusFilter, setStatusFilter,
-  deptFilter,   setDeptFilter,
-}: {
-  refData: Record<string, any[]>;
-  typeFilter: string;
-  setTypeFilter: (v: string) => void;
-  statusFilter: string;
-  setStatusFilter: (v: string) => void;
-  deptFilter: string;
-  setDeptFilter: (v: string) => void;
-}) {
-  const TYPES = ['Primary', 'Ancillary'];
-  const departments = refData['departments'] || [];
-  return (
-    <div className="role-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
-      <div className="role-il-group">
-        <span className="role-il-label">Type</span>
-        <div style={{ minWidth: 140 }}>
-          <MasterSelect
-            value={typeFilter}
-            onChange={(v) => setTypeFilter(v || 'all')}
-            options={[{ value: 'all', label: 'All Types' }, ...TYPES.map(t => ({ value: t, label: t }))]}
-            placeholder="All Types"
-          />
-        </div>
-      </div>
-      <div className="role-il-group">
-        <span className="role-il-label">Status</span>
-        <div style={{ minWidth: 130 }}>
-          <MasterSelect
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'Active', label: 'Active' },
-              { value: 'Inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-          />
-        </div>
-      </div>
-      <div className="role-il-group">
-        <span className="role-il-label">Department</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect
-            value={deptFilter}
-            onChange={(v) => setDeptFilter(v || 'all')}
-            options={[
-              { value: 'all', label: 'All Departments' },
-              ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
-            ]}
-            placeholder="All Departments"
-          />
-        </div>
-      </div>
-    </div>
-  );
+  return <MpKpiCards items={KPIS.map(k => ({ key: k.key, label: k.label, icon: k.icon, value: k.value }))} />;
 }
 
 function KpiExtras({ records }: { records: any[] }) {

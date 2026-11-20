@@ -1032,9 +1032,9 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
 
 /* ── List height and cut-off cells ─────────────────────────────────────────
-   Like Service Management: 10 rows a page, the card exactly as tall as the
-   rows on it (no blank band under the last row) and the page scrolls. */
-.mp-inv .dt-root.ord-list { flex: none; min-height: 0; height: auto; }
+   Like Service Management: a fixed card that always reaches the bottom of
+   the screen (fitToViewport + fillToFooter), 10 rows a page, rows that do
+   not fit scroll inside it. */
 /* A cell value cut to the column's width; FitTip shows the whole value. */
 .mp-inv .mp-fit {
   display: block;
@@ -1043,9 +1043,115 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* An empty list still reaches the bottom of the screen (fitToViewport is on
-   only while there are no rows); once rows come back the card drops the
-   pinned height that fit left inline and goes back to its rows' height. */
-.mp-inv .dt-root.ord-list:not(:has(.dt-empty-row)) { height: auto !important; max-height: none !important; }
+/* The empty message is centred in the whole card. */
 .mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-scroll { display: flex; flex-direction: column; }
 .mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-table { flex: 1 1 auto; }
+/* The row buttons sit clear of the card's right edge. */
+.mp-inv .dt-table thead th:last-child,
+.mp-inv .dt-table tbody td:last-child { padding-right: 18px; }
+/* Badges in dark mode: the light teal fills are inline, so these win with
+   !important — a deep teal fill with light cyan text instead of a white pill. */
+[data-bs-theme="dark"] .mp-inv .mp-badge,
+[data-layout-mode="dark"] .mp-inv .mp-badge,
+[data-bs-theme="dark"] .mp-inv .mp-code-chip,
+[data-layout-mode="dark"] .mp-inv .mp-code-chip {
+  background: rgba(34, 211, 238, .12) !important;
+  color: #67e8f9 !important;
+  border-color: rgba(34, 211, 238, .32) !important;
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] .mp-inv .mp-badge i,
+[data-layout-mode="dark"] .mp-inv .mp-badge i { color: #67e8f9 !important; }
+
+/* ── Master form, dark mode: the light rules above are more specific than
+   the first dark pass, so the dropdown toggles kept a light border, went
+   white on hover, and a locked field stayed white. Same selectors here. */
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled),
+[data-layout-mode="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled),
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-field .form-control,
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-datepicker-toggle { border-color: #1e3a52 !important; }
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-control:hover:not(:disabled):not([readonly]):not(.is-invalid),
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-select:hover:not(:disabled):not(.is-invalid),
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:hover:not(:disabled),
+[data-layout-mode="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:hover:not(:disabled) {
+  background: #0f1b2d !important;
+  border-color: #2b5673 !important;
+}
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-select-toggle:disabled,
+[data-layout-mode="dark"] .master-modal.mp-tealf .master-select-toggle:disabled {
+  background: rgba(148, 163, 184, .08) !important;
+  border-color: #1e3a52 !important;
+  color: #94a3b8;
+}
+[data-bs-theme="dark"] .master-modal.mp-tealf label > i { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-field-icon { color: #7c93a8; }
+
+/* The open list (portalled to the body) on the form's dark navy, teal rows. */
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-menu,
+[data-layout-mode="dark"] body:has(.mp-tealf) .master-select-menu {
+  background: #0f1b2d !important;
+  border-color: #1e3a52 !important;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, .7) !important;
+}
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-search-input,
+[data-layout-mode="dark"] body:has(.mp-tealf) .master-select-search-input {
+  background: #0b1626 !important;
+  border-color: #1e3a52 !important;
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item,
+[data-layout-mode="dark"] body:has(.mp-tealf) .master-select-item { color: #cbd5e1; }
+
+/* ── KPI cards: the CredVault Recycle Bin card (credvault.css .phx-card) ── */
+.mp-kc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.mp-kc {
+  --c1: #0e7490; --c2: #22d3ee; --bg: #ecfeff;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #d7eef4;
+  box-shadow: 0 10px 24px -20px rgba(8, 79, 99, .7);
+  transition: transform .2s, box-shadow .2s;
+}
+.mp-kc:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -20px rgba(8, 79, 99, .8); }
+.mp-kc::before {
+  content: "";
+  position: absolute; left: 0; top: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+}
+.mp-kc__glow {
+  position: absolute; right: -30px; top: -30px;
+  width: 90px; height: 90px; border-radius: 50%;
+  background: radial-gradient(circle, var(--bg), transparent 70%);
+}
+.mp-kc--sky    { --c1: #0284c7; --c2: #38bdf8; --bg: #e0f2fe; }
+.mp-kc--amber  { --c1: #d97706; --c2: #fbbf24; --bg: #fef3c7; }
+.mp-kc--rose   { --c1: #e11d48; --c2: #fb7185; --bg: #ffe4e6; }
+.mp-kc--green  { --c1: #059669; --c2: #34d399; --bg: #d1fae5; }
+.mp-kc--violet { --c1: #7c3aed; --c2: #a78bfa; --bg: #ede9fe; }
+.mp-kc__top { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
+.mp-kc__ico {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--c1), var(--c2));
+  box-shadow: 0 6px 14px -6px var(--c1);
+}
+.mp-kc__ico i { font-size: 16px; line-height: 1; }
+.mp-kc__n { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.5px; color: #0c2c3a; line-height: 1; white-space: nowrap; }
+.mp-kc__l { position: relative; margin-top: 8px; font-size: 12px; font-weight: 700; color: #0c2c3a; }
+.mp-kc__s { position: relative; margin-top: 2px; font-size: 10.5px; color: #6a869c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-bs-theme="dark"] .mp-kc,
+[data-layout-mode="dark"] .mp-kc { background: #0f1b2d; border-color: #1e3a52; box-shadow: 0 10px 24px -20px rgba(0, 0, 0, .9); }
+[data-bs-theme="dark"] .mp-kc__glow,
+[data-layout-mode="dark"] .mp-kc__glow { opacity: .14; }
+[data-bs-theme="dark"] .mp-kc__n,
+[data-bs-theme="dark"] .mp-kc__l,
+[data-layout-mode="dark"] .mp-kc__n,
+[data-layout-mode="dark"] .mp-kc__l { color: #e2e8f0; }
+[data-bs-theme="dark"] .mp-kc__s,
+[data-layout-mode="dark"] .mp-kc__s { color: #94a3b8; }
