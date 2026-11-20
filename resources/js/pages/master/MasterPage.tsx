@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {  Card, CardBody, CardHeader, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
+import {  Card, CardBody, CardHeader, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, ModalHeader, Spinner,
 } from 'reactstrap';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -1786,108 +1786,41 @@ function MasterPageInner({
         toggle={() => {  }}
         size={modalSize}
         centered
-        modalClassName="master-modal"
+        modalClassName="master-modal mp-tealf"
+        contentClassName="whm-addmdl mp-tealf-content"
+        backdropClassName="mp-tealf-backdrop"
         backdrop="static"
         keyboard={false}
       >
-        {}
-        <div
-          className="position-relative overflow-hidden"
-          style={{
-            background:
-              'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)',
-            padding: '22px 24px',
-          }}
-        >
-          {}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute', top: -50, right: -30, width: 200, height: 200, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(255,255,255,0.28) 0%, rgba(167,139,250,0.18) 35%, transparent 70%)',
-              pointerEvents: 'none',
-            }}
-          />
-          {}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute', bottom: -60, right: 80, width: 180, height: 180, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(102,145,231,0.45) 0%, transparent 70%)',
-              pointerEvents: 'none',
-            }}
-          />
-          {}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute', bottom: -50, left: -30, width: 160, height: 160, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(139,111,232,0.32) 0%, transparent 70%)',
-              pointerEvents: 'none',
-            }}
-          />
-          {}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute', inset: 0,
-              background: 'linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%)',
-              pointerEvents: 'none',
-            }}
-          />
-          <div className="d-flex align-items-center gap-3 position-relative">
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-              style={{
-                width: 44, height: 44,
-                background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.25)',
-                backdropFilter: 'blur(6px)',
-              }}
-            >
-              <i className={`${cfg.icon}`} style={{ color: '#fff', fontSize: 20 }}></i>
-            </span>
-            <div className="flex-grow-1 min-w-0">
-              <h4 className="mb-0 fw-bold" style={{ color: '#fff', fontWeight: 800, letterSpacing: '0.01em' }}>
+        <div className="spi-mdl-head">
+          <div className="spi-mdl-head-left">
+            <div className="spi-mdl-head-ico"><i className={cfg.icon} style={{ fontSize: 20 }} /></div>
+            <div className="min-w-0">
+              <div className="spi-mdl-title">
                 {viewOnly ? `View ${singular}` : editingId != null ? `Edit ${singular}` : `Add ${singular}`}
-              </h4>
-              <small style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>
+              </div>
+              <div className="spi-mdl-sub">
                 {viewOnly ? `Viewing details for this ${singular.toLowerCase()}` :
                  editingId != null ? `Update the details of this ${singular.toLowerCase()}` :
                  `Fill in the details to register a new ${singular.toLowerCase()}`}
               </div>
             </div>
           </div>
+          <button type="button" className="spi-mdl-x" onClick={() => setModalOpen(false)} disabled={saving} aria-label="Close">
+            <i className="ri-close-line" style={{ fontSize: 18 }} />
+          </button>
         </div>
         <Form onSubmit={handleSave} noValidate>
-          <ModalBody className="px-4 py-3">
+          <ModalBody className="mp-tealf-body">
             {}
             <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, pointerEvents: saving ? 'none' : undefined }}>
             {sectionedFields.map((group, gIdx) => {
-              const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
               return (
-                <div key={gIdx} className={gIdx > 0 ? 'mt-3' : ''}>
+                <div key={gIdx} className="whm-card">
                   {group.sec && (
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <span
-                        className="flex-shrink-0"
-                        style={{ width: 4, height: 20, background: p.grad, borderRadius: 2 }}
-                      />
-                      <h6
-                        className="mb-0 fw-bold"
-                        style={{
-                          color: p.color,
-                          fontSize: 12,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.1em',
-                        }}
-                      >
-                        {group.sec}
-                      </h6>
-                      <div
-                        className="flex-grow-1"
-                        style={{ height: 1, background: 'var(--vz-border-color)' }}
-                      />
+                    <div className="whm-sec">
+                      <span className="whm-sec__ico"><i className={cfg.icon} /></span>
+                      <b>{group.sec}</b>
                     </div>
                   )}
                   <Row className="g-2">
@@ -1909,36 +1842,24 @@ function MasterPageInner({
             })}
             </fieldset>
           </ModalBody>
-          <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-            <span />
-            {}
-            <div className="d-flex align-items-center gap-2">
-              <button type="button" className="master-modal-cancel" disabled={saving} onClick={() => setModalOpen(false)}>
-                <i className="ri-close-line align-middle me-1"></i>
+          <div className="spi-mdl-foot">
+            {viewOnly
+              ? <span />
+              : <span className="whm-footnote"><i className="ri-information-line" style={{ fontSize: 15, color: '#0891b2' }} /> Fields marked * are required</span>}
+            <div className="spi-mdl-foot-btns">
+              <button type="button" className="spi-mdl-cancel" disabled={saving} onClick={() => setModalOpen(false)}>
                 {viewOnly ? 'Close' : 'Cancel'}
               </button>
               {!viewOnly && (
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="master-modal-save waves-effect waves-light"
-                  style={{ fontSize: 14 }}
-                >
-                  {saving ? (
-                    <>
-                      <Spinner size="sm" />
-                      <span>{editingId != null ? 'Updating...' : 'Saving...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <i className="ri-save-line" style={{ fontSize: 16 }}></i>
-                      {editingId != null ? `Update ${singular}` : `Save ${singular}`}
-                    </>
-                  )}
-                </Button>
+                <button type="submit" className="spi-mdl-confirm" disabled={saving} aria-busy={saving || undefined}>
+                  {saving ? <span className="spi-mdl-spin" aria-hidden /> : <i className="ri-check-line" style={{ fontSize: 16 }} />}
+                  {saving
+                    ? (editingId != null ? 'Updating...' : 'Saving...')
+                    : (editingId != null ? `Update ${singular}` : `Save ${singular}`)}
+                </button>
               )}
             </div>
-          </ModalFooter>
+          </div>
         </Form>
         {saving && <MasterSavingLock label={editingId != null ? `Updating ${singular.toLowerCase()}…` : `Saving ${singular.toLowerCase()}…`} />}
       </Modal>
@@ -2037,6 +1958,7 @@ function EmployeeTreeModal({
           </div>
           <button type="button" className="et-modal-close" onClick={onClose} aria-label="Close"><i className="ri-close-line" /></button>
         </div>
+        <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><i className="ri-close-line" style={{ fontSize: 18 }} /></button>
       </div>
       <ModalBody className="et-modal-body" style={{ padding: '22px 12px 26px' }}>
         {loading ? (
@@ -2406,15 +2328,6 @@ function AuditHistoryModal({
     </Modal>
   );
 }
-
-const SECTION_PALETTES: { color: string; grad: string; tint: string; border: string; shadow: string }[] = [
-  { color: '#6366f1', grad: 'linear-gradient(135deg, #6366f1, #8b5cf6)', tint: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.03))', border: 'rgba(99,102,241,0.22)', shadow: 'rgba(99,102,241,0.35)' },
-  { color: '#0ea5e9', grad: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', tint: 'linear-gradient(135deg, rgba(14,165,233,0.08), rgba(56,189,248,0.03))', border: 'rgba(14,165,233,0.22)', shadow: 'rgba(14,165,233,0.35)' },
-  { color: '#d97a08', grad: 'linear-gradient(135deg, #f59e0b, #f7b84b)', tint: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(247,184,75,0.03))', border: 'rgba(245,158,11,0.24)', shadow: 'rgba(245,158,11,0.35)' },
-  { color: '#10b981', grad: 'linear-gradient(135deg, #10b981, #14c9b1)', tint: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(20,201,177,0.03))', border: 'rgba(16,185,129,0.22)', shadow: 'rgba(16,185,129,0.35)' },
-  { color: '#8b5cf6', grad: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', tint: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(167,139,250,0.03))', border: 'rgba(139,92,246,0.22)', shadow: 'rgba(139,92,246,0.35)' },
-  { color: '#db2777', grad: 'linear-gradient(135deg, #ec4899, #f9a8d4)', tint: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgba(249,168,212,0.03))', border: 'rgba(236,72,153,0.22)', shadow: 'rgba(236,72,153,0.35)' },
-];
 
 const UOM_SHORT_CODE_DICT: Record<string, string> = {
   'kilogram': 'Kg', 'kilo': 'Kg', 'kg': 'Kg',
@@ -3590,7 +3503,7 @@ export function renderField(
       <Label className="d-flex align-items-center gap-2">
         {f.icon && <i className={f.icon} style={{ fontSize: 13, color: 'var(--vz-secondary-color)' }} />}
         <span>{f.l}{f.r && <span className="req-star">*</span>}</span>
-        {textCap !== null && f.n && <CharCount name={f.n} max={textCap} />}
+        {isTextarea && textCap !== null && f.n && <CharCount name={f.n} max={textCap} />}
         {optTag && (
           <span
             className="text-uppercase fw-semibold"
@@ -3610,9 +3523,9 @@ export function renderField(
               fontSize: 9.5,
               letterSpacing: '0.06em',
               padding: '3px 8px',
-              background: 'linear-gradient(135deg,#7c5cfc,#a993fd)',
+              background: 'linear-gradient(135deg,#22d3ee,#0891b2)',
               color: '#fff',
-              boxShadow: '0 2px 6px rgba(124,92,252,0.30)',
+              boxShadow: '0 2px 6px rgba(8,145,178,0.30)',
             }}
             title={editing == null
               ? 'Auto-generated — increments from the highest existing code'

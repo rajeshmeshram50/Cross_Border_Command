@@ -906,6 +906,131 @@
   .mp-inv .spi-head { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
 }
 
+
+/* ── Master add / edit form: the Rack / Warehouse form's teal look ─────────
+   The header, footer and buttons are the shared .spi-mdl-* pieces and the
+   sections are .whm-card; this restyles what is still the master form's
+   own: the reactstrap shell, the fields and the dropdowns. */
+.mp-tealf-backdrop.modal-backdrop.show {
+  opacity: 1;
+  background: radial-gradient(1200px 600px at 50% 0%, rgba(8, 145, 178, .35), rgba(8, 47, 73, .55));
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+}
+.master-modal.mp-tealf .modal-content {
+  border-radius: 26px !important;
+  border: 1px solid rgba(255, 255, 255, .7);
+  background: linear-gradient(180deg, #f4fbfd 0%, #eef7fa 100%);
+  box-shadow: 0 50px 120px -30px rgba(8, 47, 73, .7), 0 0 0 6px rgba(255, 255, 255, .12);
+}
+.mp-tealf .spi-mdl-head { border-radius: 25px 25px 0 0; }
+.mp-tealf .spi-mdl-x:disabled { opacity: .5; cursor: not-allowed; }
+.master-modal.mp-tealf .modal-body.mp-tealf-body {
+  padding: 16px 22px;
+  background: transparent;
+}
+.mp-tealf-body > fieldset { display: flex; flex-direction: column; gap: 12px; }
+.mp-tealf .whm-sec__ico i { font-size: 14px; line-height: 1; }
+.mp-tealf .spi-mdl-foot { padding: 12px 22px; border-top-color: #e3f1f5; background: rgba(255, 255, 255, .55); }
+.mp-tealf .spi-mdl-cancel,
+.mp-tealf .spi-mdl-confirm { height: 42px; border-radius: 12px; }
+
+/* Labels: the Rack form's small uppercase slate-teal. */
+.master-modal.mp-tealf label { font-size: 9.5px; letter-spacing: .06em; color: #5b7585; }
+.master-modal.mp-tealf label > i { color: #0891b2 !important; }
+
+/* Inputs and dropdown toggles: 42px, soft tint until focused, teal ring. */
+.master-modal.mp-tealf .form-control,
+.master-modal.mp-tealf .form-select,
+.master-modal.mp-tealf .master-field .form-control,
+.master-modal.mp-tealf .master-field .form-select,
+.master-modal.mp-tealf .master-select-toggle:not(:disabled),
+.master-modal.mp-tealf .master-datepicker-toggle {
+  border-radius: 12px !important;
+  background: #fbfdfe !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .04) !important;
+}
+.master-modal.mp-tealf .form-control:not(textarea),
+.master-modal.mp-tealf .form-select,
+.master-modal.mp-tealf .master-select-toggle,
+.master-modal.mp-tealf .master-datepicker-toggle { height: 42px; }
+.master-modal.mp-tealf .form-control,
+.master-modal.mp-tealf .form-select,
+.master-modal.mp-tealf .master-field .form-control,
+.master-modal.mp-tealf .master-field .form-select,
+.master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled),
+.master-modal.mp-tealf .master-datepicker-toggle { border: 1.5px solid #dfeaf0 !important; }
+.master-modal.mp-tealf .form-control:hover:not(:disabled):not([readonly]):not(.is-invalid),
+.master-modal.mp-tealf .form-select:hover:not(:disabled):not(.is-invalid),
+.master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:hover:not(:disabled) {
+  border-color: #c4e3ec !important;
+  background: #fff !important;
+}
+.master-modal.mp-tealf .master-field .form-control:focus:not(.is-invalid),
+.master-modal.mp-tealf .master-field .form-select:focus:not(.is-invalid),
+.master-modal.mp-tealf .form-control:focus:not(.is-invalid),
+.master-modal.mp-tealf .master-select-wrap.show .master-select-toggle {
+  border-color: #22d3ee !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, .14), 0 6px 16px -10px rgba(8, 145, 178, .6) !important;
+}
+.master-modal.mp-tealf .form-control.is-invalid,
+.master-modal.mp-tealf .master-select-wrap.invalid .master-select-toggle { border-color: #f06548 !important; }
+.master-modal.mp-tealf .form-control:disabled,
+.master-modal.mp-tealf .form-control[readonly],
+.master-modal.mp-tealf .master-select-toggle:disabled { background: #f3f9fb !important; color: #64748b; }
+.master-modal.mp-tealf .master-field:has(.form-control:focus) .master-field-icon,
+.master-modal.mp-tealf .master-field:has(.form-select:focus) .master-field-icon,
+.master-modal.mp-tealf .master-select-wrap.show .master-select-chev { color: #0891b2; }
+/* Auto-generated codes read like the Rack ID: teal, monospace. */
+.master-modal.mp-tealf .master-field .form-control.master-field-auto {
+  background: #f3fbfd !important;
+  color: #0e7490 !important;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 800;
+}
+/* Radio segments and switches / checkboxes in teal. */
+.master-modal.mp-tealf .mp-seg { border-color: #dfeaf0; background: #f3fbfd; }
+.master-modal.mp-tealf .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { background: rgba(8, 145, 178, .07); color: #0e7490; }
+.master-modal.mp-tealf .mp-seg__opt.is-on { background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490); box-shadow: 0 4px 12px -4px rgba(8, 145, 178, .55); }
+.master-modal.mp-tealf .mp-seg__opt.is-on .mp-seg__dot { box-shadow: inset 0 0 0 3px #0891b2, inset 0 0 0 7px #fff; }
+.master-modal.mp-tealf .form-check-input:checked { background-color: #0891b2; border-color: #0891b2; }
+.master-modal.mp-tealf .form-check-input:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .2); }
+
+/* The open dropdown list is portalled to the body. */
+body:has(.mp-tealf) .master-select-item:hover,
+body:has(.mp-tealf) .master-select-item:focus { background: rgba(8, 145, 178, .08) !important; }
+body:has(.mp-tealf) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
+body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14) !important; }
+
+[data-bs-theme="dark"] .mp-tealf-backdrop.modal-backdrop.show { background: radial-gradient(1200px 600px at 50% 0%, rgba(8, 145, 178, .22), rgba(2, 6, 23, .75)); }
+[data-bs-theme="dark"] .master-modal.mp-tealf .modal-content {
+  background: #0b1626;
+  border-color: rgba(148, 163, 184, .22);
+  box-shadow: 0 50px 120px -30px rgba(0, 0, 0, .85), 0 0 0 6px rgba(148, 163, 184, .08);
+}
+[data-bs-theme="dark"] .mp-tealf .spi-mdl-foot { background: rgba(255, 255, 255, .02); border-top-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .master-modal.mp-tealf label { color: #7c93a8; }
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-control,
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-select,
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-field .form-control,
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-field .form-select,
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-select-toggle:not(:disabled),
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-datepicker-toggle {
+  background: #0b1626 !important;
+  border-color: #1e3a52 !important;
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-control:focus:not(.is-invalid),
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-select-wrap.show .master-select-toggle { background: #0f1b2d !important; border-color: #22d3ee !important; }
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-control:disabled,
+[data-bs-theme="dark"] .master-modal.mp-tealf .form-control[readonly],
+[data-bs-theme="dark"] .master-modal.mp-tealf .master-field .form-control.master-field-auto { background: rgba(34, 211, 238, .08) !important; color: #67e8f9 !important; }
+[data-bs-theme="dark"] .master-modal.mp-tealf .mp-seg { background: rgba(255, 255, 255, .04); border-color: #1e3a52; }
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item:hover,
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
+[data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
+
 /* ── List height and cut-off cells ─────────────────────────────────────────
    Like Service Management: 10 rows a page, the card exactly as tall as the
    rows on it (no blank band under the last row) and the page scrolls. */
