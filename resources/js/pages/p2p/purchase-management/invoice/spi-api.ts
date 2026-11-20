@@ -715,8 +715,10 @@ export const spiApi = {
       return { detail, scrutiny };
     }),
 
+  /* lite too: this reads one array off the response, and the PO-backed path
+     fires it beside poLookupApi.supplier() on every Step 1 open. */
   vendorScrutiny: (vendorId: number) =>
-    call('Supplier GST scrutiny', () => api.get(`/vendors/${vendorId}`),
+    call('Supplier GST scrutiny', () => api.get(`/vendors/${vendorId}`, { params: { lite: 1 } }),
       (b) => ((b as { data?: { gst_scrutiny?: GstScrutinyRow[] } } | null)?.data?.gst_scrutiny ?? [])),
 
   show: (id: number) =>

@@ -94,6 +94,20 @@ class VendorController extends Controller
         'creator:id,name,user_type',
     ];
 
+    /** Relations ?lite=1 needs. shape() reads nearly every relation above, so
+     *  trimming SHOW_WITH alone would just make them lazy N+1 — lite gets its
+     *  own shape (shapeLite) to go with this list. */
+    private const SHOW_WITH_LITE = [
+        'primaryAddress.country:id,name',
+        'primaryAddress.state:id,name',
+        'gstScrutiny',
+        'productMappings',
+        'vendorType:id,name',
+        'riskLevel:id,name',
+        'segments:id,name',
+        'segment',
+    ];
+
     /* ──────────────────────────────────────────────────────────────────
      * Read endpoints
      * ────────────────────────────────────────────────────────────── */
@@ -448,16 +462,20 @@ class VendorController extends Controller
     public function show(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $vendor = Vendor::query()->forUser($user)->with(self::SHOW_WITH)->findOrFail($id);
-
-        /* ?lite=1 — the supplier's own facts, without the compliance apparatus.
-           Everything below the row itself exists for the Add/Edit Supplier form:
-           the uploads delegate, the PO/SPI lock sources, a docKeys() call PER
-           SEGMENT, and two more existence checks. The SPI form reads thirteen
-           plain columns off this response and none of that, so it paid for all
-           of it on every reopen. Same opt-out ProductController carries. */
         $lite = $request->boolean('lite');
-        $segmentUploads = null;
+        $vendor = Vendor::query()->forUser($user)
+            ->with($lite ? self::SHOW_WITH_LITE : self::SHOW_WITH)
+            ->findOrFail($id);
+
+        /* ?lite=1 — the supplier's own facts only. Everything past this point
+           (uploads delegate, PO/SPI locks, docKeys per segment) exists for the
+           Add/Edit Supplier form; the SPI step reads thirteen fields. */
+        if ($lite) {
+            return response()->json([
+                'data'            => $this->shapeLite($vendor),
+                'segment_uploads' => ['data' => [], 'by_category' => [], 'count' => 0],
+            ]);
+        }
 
         /* Segment-rule reference uploads embedded inline. AddVendorModal
          * previously fired GET /segment-uploads/supplier/{id} as a
@@ -478,22 +496,14 @@ class VendorController extends Controller
          * vendor with zero uploads returning an empty list) cannot
          * break the whole show response.
          */
-        if (!$lite) {
-            $segmentUploads = $this->safeDelegate(
-                fn() => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
-            );
-        }
+        $segmentUploads = $this->safeDelegate(
+            fn() => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
+        );
 
         // Per-segment lock: the segments whose product appears on an issued
         // Purchase Order. The vendor form keys segments by ID, so resolve the
         // locked NAMES to IDS here so the UI can disable only those chips' ×.
         $data = $this->shape($vendor);
-        if ($lite) {
-            return response()->json([
-                'data'            => $data,
-                'segment_uploads' => ['data' => [], 'by_category' => [], 'count' => 0],
-            ]);
-        }
         /* Segments whose product is actually ON an issued Purchase Order, and
          * separately those on a committed Supplier Invoice. Kept apart so the
          * form can name the ONE document that is holding the segment — telling
@@ -1976,6 +1986,58 @@ class VendorController extends Controller
 
     /** Shape a fully-loaded vendor for the SPA. Mirrors what
      *  AddVendorModal expects on edit. */
+    /** The thirteen fields the SPI Supplier Details step reads. Deliberately
+     *  NOT a subset call into shape(): that one touches twelve relations. */
+    private function shapeLite(Vendor $v): array
+    {
+        $p = $v->primaryAddress;
+        return [
+            'id'                => $v->id,
+            'vendor_code'       => $v->vendor_code,
+            'company_name'      => $v->company_name,
+            'legal_name'        => $v->legal_name,
+            'primary_email'     => $v->primary_email,
+            'gst_number'        => $v->gst_number,
+            'supplier_category' => $v->supplier_category,
+            'vendor_type_name'  => optional($v->vendorType)->name,
+            'risk_level_name'   => optional($v->riskLevel)->name,
+
+            // Same pivot-then-scalar fallback as shape(): suppliers created
+            // before multi-segment have an empty pivot and a segment_id only.
+            'segments' => $v->segments->isNotEmpty()
+                ? $v->segments->map(fn($s) => ['id' => $s->id, 'name' => $s->name])->all()
+                : ($v->segment_id ? [['id' => $v->segment_id, 'name' => optional($v->segment)->title]] : []),
+
+            'primary_address' => $p ? [
+                'address_line' => $p->address_line,
+                'country_name' => optional($p->country)->name,
+                'state_name'   => optional($p->state)->name,
+                'state_code'   => $p->state_code,
+                'city'         => $p->city,
+                'contact_name' => $p->contact_name,
+                'designation'  => $p->designation,
+                'contact_no'   => $p->contact_no,
+                'email'        => $p->email,
+            ] : null,
+
+            'gst_scrutiny' => $v->gstScrutiny->map(fn($g) => [
+                'id'                      => $g->id,
+                'gst_number'              => $g->gst_number,
+                'status'                  => $g->status,
+                'scrutiny_date'           => optional($g->created_at)->toDateString(),
+                'last_filing_date'        => optional($g->last_filing_date)->toDateString(),
+                'prev_non_gst_2a_invoice' => $g->prev_non_gst_2a_invoice,
+                'red_flags'               => $g->red_flags,
+            ])->all(),
+
+            // product/* is NOT loaded here: the form keys off ids and rates.
+            'product_mappings' => $v->productMappings->map(fn($m) => [
+                'product_id'     => $m->product_id,
+                'purchase_price' => (float) $m->purchase_price,
+            ])->all(),
+        ];
+    }
+
     private function shape(Vendor $v): array
     {
         $primary = $v->primaryAddress;
