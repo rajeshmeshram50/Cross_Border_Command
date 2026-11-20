@@ -6760,19 +6760,21 @@ body.apm-map-gate-open .supch-ov {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 40px 24px;
+  padding: 32px 24px;
   overflow-y: auto;
   font-family: var(--font-sans);
 }
 
 .apm-sup-modal {
   width: 100%;
-  max-width: 1080px;
+  /* 1320 — same as Map Service Suppliers (.svs-modal). At 1080 the row ran
+     past the edge and Price/GST/Total sat behind a horizontal scrollbar. */
+  max-width: 1320px;
   margin: auto;
   background: #fff;
-  border: 1px solid rgba(196, 181, 253, .6);
+  border: 0;
   /* 22px — same as .avm-modal and .apm-mv-popup, so every popup in this
      flow has the same corner. */
   border-radius: 22px;
@@ -6835,8 +6837,8 @@ body.apm-map-gate-open .supch-ov {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 17px 22px;
+  gap: 14px;
+  padding: 18px 22px;
   font-size: 16px;
   font-weight: 800;
   color: #fff;
@@ -6856,18 +6858,18 @@ body.apm-map-gate-open .supch-ov {
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
 
-/* Top-half sheen — the second Figma layer, matching .avm-head::after in
-   AddVendorModal and .apm-mv-popup-head::after above. This header had the
-   corner bloom but not this, so it sat flatter than the two beside it. */
+/* Ring bloom in the top-right — the same header mark as .svs-head::after on
+   Map Service Suppliers, so both popups read as one component. */
 .apm-sup-head::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
+  right: -60px;
+  top: -80px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  border: 36px solid rgba(255, 255, 255, .08);
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
 }
 
 .apm-sup-head-ico,
@@ -6877,16 +6879,26 @@ body.apm-map-gate-open .supch-ov {
   z-index: 1;
 }
 
+/* Raised light tile, as .svs-head-ico — same 48px box and 22px glyph, purple
+   instead of teal. The svg rule overrides the icon's inline width/height. */
 .apm-sup-head-ico {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, .18);
-  border: 1px solid rgba(255, 255, 255, .25);
+  color: #7c3aed;
+  background: linear-gradient(145deg, #fff, #ede9fe);
+  border: 0;
+  box-shadow: 0 12px 26px -10px rgba(0, 0, 0, .4), inset 0 -2px 0 rgba(124, 58, 237, .15), inset 0 1px 0 rgba(255, 255, 255, .7);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.apm-sup-head-ico svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
 }
 
 .apm-sup-head-txt {
@@ -6895,33 +6907,43 @@ body.apm-map-gate-open .supch-ov {
 }
 
 .apm-sup-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -.2px;
+  letter-spacing: -.3px;
 }
 
-.apm-sup-sub {
+/* Scoped to the header: .apm-sup-sub is reused for the table's second lines
+   (city, exchange rate), whose later grey rule was winning on the heading. */
+.apm-sup-head .apm-sup-sub {
   font-size: 11.5px;
-  color: rgba(255, 255, 255, .82);
-  margin-top: 1px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, .88);
+  margin-top: 3px;
+  white-space: normal;
 }
 
 .apm-sup-close {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, .25);
-  background: rgba(255, 255, 255, .14);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .16);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .15s, transform .12s;
+}
+
+.apm-sup-close svg {
+  width: 14px;
+  height: 14px;
 }
 
 .apm-sup-close:hover:not(:disabled) {
   background: rgba(255, 255, 255, .26);
+  transform: rotate(90deg);
 }
 
 .apm-sup-close:disabled {
@@ -6930,7 +6952,7 @@ body.apm-map-gate-open .supch-ov {
 }
 
 .apm-sup-body {
-  padding: 16px 20px;
+  padding: 12px 18px;
   background: #fff;
   max-height: calc(100vh - 220px);
   overflow-y: auto;
@@ -6938,19 +6960,86 @@ body.apm-map-gate-open .supch-ov {
 
 .apm-sup-foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 20px;
-  background: #faf8ff;
+  gap: 12px;
+  padding: 12px 22px 14px;
+  background: linear-gradient(180deg, #fff, #faf8ff);
   border-top: 1px solid #efe9fb;
 }
 
+/* Accent card around the grid — .svs-card in purple. */
+.apm-sup-card {
+  position: relative;
+  overflow: hidden;
+  padding: 0 18px 16px 22px;
+  border: 1px solid #e9e1fb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, .06);
+}
+
+.apm-sup-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed 55%, #5b21b6);
+}
+
+.apm-sup-card-ico {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c3aed;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+}
+
+.apm-sup-card-ico svg {
+  width: 14px;
+  height: 14px;
+}
+
+.apm-sup-card-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #6d28d9;
+}
+
+.apm-sup-card-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 3px 8px -2px rgba(124, 58, 237, .5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The card's head row: icon, title, count, then search and the action. */
 .apm-sup-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  padding: 12px 0;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #f1ecfd;
 }
 
 /* Search over the mapped rows — sits where the "N suppliers mapped" pill was
@@ -6959,14 +7048,15 @@ body.apm-map-gate-open .supch-ov {
   --ui-search-clear: #7c3aed;
   flex: 1;
   max-width: 340px;
-  height: 34px;
+  /* 40px, so the bar lines up with the Map Supplier button beside it. */
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 6px 0 11px;
+  padding: 0 6px 0 13px;
   background: #fff;
   border: 1.5px solid #e2d4fa;
-  border-radius: 9px;
+  border-radius: 11px;
   color: #a78bfa;
   transition: border-color .16s, box-shadow .16s;
 }
@@ -6998,27 +7088,38 @@ body.apm-map-gate-open .supch-ov {
   font-weight: 500;
 }
 
+/* Same metrics as .svs-btn--primary on Map Service Suppliers. */
 .apm-sup-map {
   margin-left: auto;
+  height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 7px;
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  white-space: nowrap;
   color: #fff;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 40%, #7c3aed 72%, #a78bfa 100%);
   border: none;
-  border-radius: 9px;
-  padding: 7px 12px;
+  border-radius: 11px;
+  padding: 0 18px;
   cursor: pointer;
-  box-shadow: 0 3px 9px rgba(124, 58, 237, .42);
-  transition: transform .14s, box-shadow .14s;
+  box-shadow: 0 8px 18px -8px rgba(124, 58, 237, .7), inset 0 1px 0 rgba(255, 255, 255, .22);
+  transition: transform .12s, box-shadow .15s, background .15s;
+}
+
+.apm-sup-map svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .apm-sup-map:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(124, 58, 237, .52);
+  box-shadow: 0 10px 22px -8px rgba(124, 58, 237, .8), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 
 .apm-sup-map:disabled {
@@ -7068,7 +7169,9 @@ body.apm-map-gate-open .supch-ov {
 .apm-sup-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  /* Same density as .svs-table: the rows are nowrap, so the tighter type and
+     padding are what keep a long contact name inside the modal. */
+  font-size: 11.5px;
   white-space: nowrap;
 }
 
@@ -7078,23 +7181,26 @@ body.apm-map-gate-open .supch-ov {
   background: linear-gradient(135deg, #faf8ff, #f3eefe);
 }
 
+/* Centred head and cells, as .svs-table — the two mapped-supplier grids are
+   the same component in two colours. */
 .apm-sup-table thead th {
-  text-align: left;
+  text-align: center;
   background: transparent;
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: .06em;
+  letter-spacing: .07em;
   text-transform: uppercase;
   color: #8b7bb8;
-  padding: 10px 14px;
+  padding: 11px 12px;
   border-bottom: 1px solid #efe9fb;
 }
 
 .apm-sup-table tbody td {
-  padding: 11px 14px;
+  padding: 12px;
+  text-align: center;
   border-bottom: 1px solid #f4f0fc;
   color: #334155;
-  font-weight: 600;
+  font-weight: 500;
   vertical-align: middle;
 }
 
@@ -7182,6 +7288,8 @@ body.apm-map-gate-open .supch-ov {
 [data-bs-theme="dark"] .apm-sup-origin--intl { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); }
 [data-bs-theme="dark"] .apm-sup-nogst { color: #cbd5e1; background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
 [data-bs-theme="dark"] .apm-sup-sub { color: #94a3b8; }
+/* The heading sits on the purple gradient in both themes, so it keeps white. */
+[data-bs-theme="dark"] .apm-sup-head .apm-sup-sub { color: rgba(255, 255, 255, .88); }
 
 .apm-sup-ctotal {
   font-weight: 800;
@@ -7825,4 +7933,240 @@ body.apm-map-gate-open .supch-ov {
   opacity: .45 !important;
   font-size: 13px !important;
   font-weight: 400 !important;
+}
+
+/* ── Map Supplier popup: sectioned form, as the service side's version ────── */
+
+/* Section rule above each group of fields. */
+.apm-mv-sec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 0 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #6d28d9;
+}
+
+.apm-mv-sec::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, #e9e1fb, transparent);
+}
+
+.apm-grid-3 + .apm-mv-sec {
+  margin-top: 16px;
+}
+
+/* "Auto" chip beside the label of a field the form fills in itself. */
+.apm-auto-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #e2d4fa;
+  background: #f5f3ff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #7c3aed;
+  text-transform: none;
+}
+
+/* Padlock inside the box, so a locked field reads as locked without a tooltip. */
+.apm-field.is-auto .apm-input.apm-readonly {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 13px 13px;
+}
+
+/* Origin pill beside the popup title. */
+.apm-mv-origin {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 9px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  background: rgba(255, 255, 255, .18);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: #fff;
+  vertical-align: middle;
+}
+
+[data-bs-theme="dark"] .apm-auto-chip {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .35);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec {
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec::after {
+  background: linear-gradient(90deg, rgba(255, 255, 255, .12), transparent);
+}
+
+/* The origin mark is an inline svg now, so it needs an explicit box. */
+.apm-sup-origin svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+/* Price row: a 12-column track, each field spanning 3, so the four price
+   fields sit on one line instead of leaving Total alone underneath. */
+.apm-grid-12 {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+}
+
+.apm-grid-12 > .apm-field {
+  grid-column: span 3;
+  min-width: 0;
+}
+
+.apm-grid-12 + .apm-mv-sec {
+  margin-top: 16px;
+}
+
+/* Section mark, and the rule-side note ("No GST — overseas supplier"). */
+.apm-mv-sec svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.apm-mv-sec-note {
+  order: 3;
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid #e2d4fa;
+  border-radius: 999px;
+  background: #f5f3ff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #6d28d9;
+}
+
+/* The note takes the right end, so the rule sits between title and note. */
+.apm-mv-sec::after {
+  order: 2;
+}
+
+.apm-mv-origin svg {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* Back sits at the left end, Cancel and Save stay together on the right. */
+.apm-mv-popup-foot {
+  justify-content: space-between;
+}
+
+.apm-mv-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.apm-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1.5px solid #e2d4fa;
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6d28d9;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.apm-btn-back:hover:not(:disabled) {
+  background: #f5f3ff;
+  border-color: #c4b5fd;
+}
+
+.apm-btn-back:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.apm-btn-back svg {
+  width: 13px;
+  height: 13px;
+}
+
+.apm-btn-tick {
+  width: 13px;
+  height: 13px;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec-note {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .35);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-btn-back {
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .14);
+  color: #c4b5fd;
+}
+
+/* Map Supplier: a box you can type in is white with a violet edge, a box the
+   form fills is grey and padlocked — the two must not read alike. */
+.apm-mv-popup .apm-input {
+  background: #fff;
+  border-color: #ddd6fe;
+}
+
+.apm-mv-popup .apm-input:focus,
+.apm-mv-popup .apm-input:focus-visible {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, .15);
+}
+
+.apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly {
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+  font-weight: 600;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+
+.apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+[data-bs-theme="dark"] .apm-mv-popup .apm-input {
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .14);
+}
+
+[data-bs-theme="dark"] .apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly {
+  background-color: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+  color: #94a3b8;
 }

@@ -9,7 +9,6 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
-import SearchClear from '../../../../components/ui/SearchClear';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SegmentModal, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -137,10 +136,21 @@ const isIntlEntry = (v: VendorEntry) => v.origin === 'international';
 
 const money = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/* Inline marks, not emoji: Chrome on Windows cannot draw the flag glyph. */
+const IcoFlag = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
+  </svg>
+);
+const IcoGlobe = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" /><line x1="3" y1="12" x2="21" y2="12" /><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" />
+  </svg>
+);
 const OriginCell = ({ v }: { v: VendorEntry }) => (
   isIntlEntry(v)
-    ? <span className="apm-sup-origin apm-sup-origin--intl">🌐 International</span>
-    : <span className="apm-sup-origin apm-sup-origin--dom">🏳 Domestic</span>
+    ? <span className="apm-sup-origin apm-sup-origin--intl"><IcoGlobe /> International</span>
+    : <span className="apm-sup-origin apm-sup-origin--dom"><IcoFlag /> Domestic</span>
 );
 
 /** State for a domestic supplier, country (and city) for an overseas one. */
@@ -433,22 +443,15 @@ export default function AddProductModal(props: {
   const [vendorCurrency, setVendorCurrency] = useState('USD');
   const [vendorFxRate, setVendorFxRate] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
-  const [supSearch, setSupSearch] = useState('');
   const [supPage, setSupPage] = useState(1);
   useEffect(() => {
-    if (!supplierPopupOpen) { setSupSearch(''); setSupPage(1); }
+    if (!supplierPopupOpen) { setSupPage(1); }
   }, [supplierPopupOpen]);
-  const supRows = useMemo(() => {
-    const q = supSearch.trim().toLowerCase();
-    return vendors
-      .map(v => ({
-        v,
-        opt: vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode)),
-      }))
-      .filter(({ v, opt }) => !q || [
-        v.vendorName, v.vendorCode, formatSupplierCode(v.vendorCode), v.contactPerson, opt?.type, opt?.state,
-      ].some(s => String(s ?? '').toLowerCase().includes(q)));
-  }, [vendors, vendorOpts, supSearch]);
+  const supRows = useMemo(() => vendors
+    .map(v => ({
+      v,
+      opt: vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode)),
+    })), [vendors, vendorOpts]);
   const supPages = Math.max(1, Math.ceil(supRows.length / SUP_PAGE_SIZE));
 
   const mappedVendorKeys = useMemo(() => {
@@ -781,7 +784,6 @@ export default function AddProductModal(props: {
     const newList = [...vendors, entry];
     if (await commitVendorList(newList, 'Supplier mapped', `${entry.vendorName} added to this product`)) {
       closeVendorDraft();
-      setSupSearch('');
       setSupPage(Math.ceil(newList.length / SUP_PAGE_SIZE));
     }
   };
@@ -1846,18 +1848,15 @@ export default function AddProductModal(props: {
                   </button>
                 </div>
                 <div className="apm-sup-body">
+              {/* Accent card around the grid, as .svs-card on Map Service
+                  Suppliers — the head carries the count, search and action. */}
+              <div className="apm-sup-card">
               <div className="apm-sup-bar">
-                <div className="apm-sup-search">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                  <input
-                    type="text"
-                    placeholder="Search supplier, code, type, state, contact…"
-                    value={supSearch}
-                    onChange={(e) => { setSupSearch(e.target.value); setSupPage(1); }}
-                    aria-label="Search mapped suppliers"
-                  />
-                  <SearchClear show={supSearch} onClear={() => { setSupSearch(''); setSupPage(1); }} />
-                </div>
+                <span className="apm-sup-card-ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
+                </span>
+                <span className="apm-sup-card-title">Mapped Suppliers</span>
+                <span className="apm-sup-card-count">{supRows.length}</span>
                 <Tooltip
                   label="Select a GST rate for this product (Sales Config) before mapping a supplier."
                   disabled={canMapSupplier}
@@ -1886,7 +1885,13 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
-                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Supplier' : 'Map Supplier'}</div>
+                          <div className="apm-mv-popup-title-main">
+                            {vendorEditingId ? 'Edit Mapped Supplier' : 'Map Supplier'}
+                            <span className={`apm-mv-origin ${vendorIsIntl ? 'is-intl' : 'is-dom'}`}>
+                              {vendorIsIntl ? <IcoGlobe /> : <IcoFlag />}
+                              {vendorIsIntl ? 'International' : 'Domestic'}
+                            </span>
+                          </div>
                           <div className="apm-mv-popup-title-sub">{vendorIsIntl
                             ? 'Link an overseas supplier with its price in foreign currency for this product'
                             : 'Link a supplier with purchase price & GST for this product'}</div>
@@ -1898,6 +1903,10 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-body">
+                      <div className="apm-mv-sec">
+                        {vendorIsIntl ? <IcoGlobe /> : <IcoFlag />}
+                        Supplier Details
+                      </div>
                       <div className="apm-grid-3">
                         <Field
                           label="Supplier Name"
@@ -1932,10 +1941,10 @@ export default function AddProductModal(props: {
                             })}
                           />
                         </Field>
-                        <Field label="Supplier Code">
+                        <Field label="Supplier Code" auto>
                           <input className="apm-input apm-readonly" value={vendorSelected ? formatSupplierCode(vendorSelected.code) : ''} readOnly placeholder="Auto-fills from supplier" />
                         </Field>
-                        <Field label="Supplier Type">
+                        <Field label="Supplier Type" auto>
                           <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.type || '—') : ''} readOnly placeholder="—" />
                         </Field>
 
@@ -1944,22 +1953,29 @@ export default function AddProductModal(props: {
                             overseas one by country and city. */}
                         {vendorIsIntl ? (
                           <>
-                            <Field label="Country">
+                            <Field label="Country" auto>
                               <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.country || '—') : ''} readOnly placeholder="—" />
                             </Field>
-                            <Field label="City / Region">
+                            <Field label="City / Region" auto>
                               <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.city || '—') : ''} readOnly placeholder="—" />
                             </Field>
                           </>
                         ) : (
-                          <Field label="State">
+                          <Field label="State" auto>
                             <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.state || '—') : ''} readOnly placeholder="—" />
                           </Field>
                         )}
-                        <Field label="Contact Person">
+                        <Field label="Contact Person" auto>
                           <input className="apm-input apm-readonly" value={vendorSelected?.contact ?? ''} readOnly placeholder="—" />
                         </Field>
+                      </div>
 
+                      <div className="apm-mv-sec">
+                        {vendorIsIntl ? <IcoGlobe /> : <IcoFlag />}
+                        {vendorIsIntl ? 'Price & Currency' : 'Price & GST'}
+                        {vendorIsIntl && <span className="apm-mv-sec-note">No GST — overseas supplier</span>}
+                      </div>
+                      <div className="apm-grid-12">
                         {vendorIsIntl ? (
                           <>
                             {/* No GST: an overseas supplier does not charge it. The
@@ -1981,7 +1997,7 @@ export default function AddProductModal(props: {
                               <input className="apm-input" type="number" placeholder="e.g. 83.50"
                                 value={vendorFxRate} onChange={e => setVendorFxRate(e.target.value)} disabled={saving} />
                             </Field>
-                            <Field label="INR Equivalent (₹)">
+                            <Field label="INR Equivalent (₹)" auto>
                               <div className="apm-input-icon">
                                 <span className="apm-input-icon-prefix">₹</span>
                                 <input className="apm-input has-prefix apm-readonly apm-total"
@@ -1999,18 +2015,18 @@ export default function AddProductModal(props: {
                               </div>
                             </Field>
 
-                            <Field label="GST %">
+                            <Field label="GST %" auto>
                               <Tooltip label="GST % comes from the product's Sales Config (Step 2)">
                                 <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly />
                               </Tooltip>
                             </Field>
-                            <Field label="GST Amount (₹)">
+                            <Field label="GST Amount (₹)" auto>
                               <div className="apm-input-icon">
                                 <span className="apm-input-icon-prefix">₹</span>
                                 <input className="apm-input has-prefix apm-readonly" value={vendorPurchasePrice.trim() === '' ? '' : vendorGsta.toFixed(2)} readOnly placeholder="Auto-computed" />
                               </div>
                             </Field>
-                            <Field label="Total Amount (₹)">
+                            <Field label="Total Amount (₹)" auto>
                               <div className="apm-input-icon">
                                 <span className="apm-input-icon-prefix">₹</span>
                                 <input className="apm-input has-prefix apm-readonly apm-total" value={vendorPurchasePrice.trim() === '' ? '' : vendorTota.toFixed(2)} readOnly placeholder="Auto-computed" />
@@ -2022,11 +2038,23 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-foot">
-                      <button className="apm-btn-ghost" onClick={closeVendorDraft} disabled={saving}>Cancel</button>
-                      <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={saving}>
-                        {saving ? <span className="apm-spinner" /> : null}
-                        {saving ? 'Saving…' : (vendorEditingId ? 'Save Changes' : 'Save')}
-                      </button>
+                      {/* Back re-opens the origin chooser; on an edit the origin is
+                          already fixed, so there is nothing to go back to. */}
+                      {!vendorEditingId && (
+                        <button className="apm-btn-back" onClick={() => { closeVendorDraft(); setVendorMapGateOpen(true); }} disabled={saving}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 6 9 12 15 18" /></svg>
+                          Back
+                        </button>
+                      )}
+                      <div className="apm-mv-foot-right">
+                        <button className="apm-btn-ghost" onClick={closeVendorDraft} disabled={saving}>Cancel</button>
+                        <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={saving}>
+                          {saving ? <span className="apm-spinner" /> : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="apm-btn-tick"><polyline points="20 6 9 17 4 12" /></svg>
+                          )}
+                          {saving ? 'Saving…' : (vendorEditingId ? 'Save Changes' : 'Save')}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2081,8 +2109,6 @@ export default function AddProductModal(props: {
 
               {vendors.length === 0 ? (
                 <div className="apm-sup-empty">No suppliers mapped yet. Click &quot;Map Supplier&quot; to begin.</div>
-              ) : supRows.length === 0 ? (
-                <div className="apm-sup-empty">No mapped suppliers match &quot;{supSearch.trim()}&quot;.</div>
               ) : (
                 <>
                 <div className="apm-sup-tablewrap has-pager">
@@ -2136,6 +2162,7 @@ export default function AddProductModal(props: {
                 />
                 </>
               )}
+              </div>
                 </div>
                 <div className="apm-sup-foot">
                   <button className="apm-btn-ghost" onClick={closeSupplierPopup} disabled={saving}>Close</button>
@@ -2559,12 +2586,15 @@ function Field(props: {
   disabled?: boolean;
   /** Extra content pushed to the right end of the label row (e.g. preset chips). */
   labelExtra?: ReactNode;
+  /** Marks a field the form fills in itself — chip on the label, lock in the box. */
+  auto?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}`}>
+    <div className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}${props.auto ? ' is-auto' : ''}`}>
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
+        {props.auto && <span className="apm-auto-chip">Auto</span>}
         {props.addNew && !props.disabled && (
           <Tooltip label={props.addTitle ?? `Add new ${props.label}`}>
             <button
