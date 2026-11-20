@@ -517,7 +517,11 @@ export const spiPrefetch = {
   prime(vendorId?: number | null, poId?: number | null, shipmentId?: number | null) {
     if (!vendorId) return;
     const pid = poId ?? null;
-    const sid = shipmentId ?? null;
+    /* A caller that omits the shipment is not CHANGING it — the map modal knows
+       it, the list does not. Keeping the primed one means a second prime for
+       the same selection is a no-op instead of aborting the first and starting
+       over, which is what made these requests run twice. */
+    const sid = shipmentId ?? (spiPrimed?.vendorId === vendorId ? spiPrimed.shipmentId : null);
     // Already primed for this exact selection.
     if (spiPrimed?.vendorId === vendorId && spiPrimed?.poId === pid && spiPrimed?.shipmentId === sid) return;
     spiPrimed?.ctrl.abort();                         // a different PO/vendor — drop the stale calls

@@ -84,9 +84,12 @@ export default function InvoiceList() {
   const confirmMap = useCallback((choice: InvoiceMapChoice) => {
     setMapOpen(false);
     setStorageFor(choice);
-    // Prefetch PO + supplier + vault in the background while the user does
-    // Storage Selection, so Stage 1 opens with the data already in flight.
-    spiPrefetch.prime(choice.vendorId, choice.poId);
+    /* Prefetch PO + supplier + vault + PI lines in the background while the
+       user does Storage Selection, so Stage 1 opens with the data already in
+       flight. The shipment MUST be passed: priming the same vendor without it
+       counts as a different selection, which aborts the map modal's own prime
+       and makes every one of these run twice. */
+    spiPrefetch.prime(choice.vendorId, choice.poId, choice.shipmentOrderId);
   }, []);
 
   const [formFor, setFormFor] = useState<InvoiceFormInput | null>(null);
