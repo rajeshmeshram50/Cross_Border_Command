@@ -543,11 +543,15 @@ export default function AddVendorModal(props: {
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
+  /** The Supplier Type as SAVED (loaded on edit, then each successful Stage 1 save). Map Product /
+      Service goes by this one: a type changed in the dropdown maps nothing until Stage 1 is updated. */
+  const [savedVendorType, setSavedVendorType] = useState('');
+  const typeUnsaved = squashType(vendorType) !== squashType(savedVendorType);
   /** Only a Material/ Goods supplier carries products (spacing / case ignored, as saved rows vary). */
-  const isGoodsSupplier = squashType(vendorType) === squashType('Material/ Goods');
+  const isGoodsSupplier = squashType(savedVendorType) === squashType('Material/ Goods');
   /** The service bucket a service-provider type serves (null for Material/ Goods, FFD/ Transporter
       or no type yet). Same table as the server's ServiceController::VENDOR_TYPE_BY_NAME. */
-  const serviceBucket = serviceBucketOf(vendorType);
+  const serviceBucket = serviceBucketOf(savedVendorType);
   /** Map Product / Service has something to open: products for goods, services for a provider. */
   const canMapAnything = isGoodsSupplier || serviceBucket !== null;
   const [website,     setWebsite]     = useState('');
@@ -1330,6 +1334,7 @@ export default function AddVendorModal(props: {
         setGstApplicable(v.gst_applicable === 'Yes' ? 'Yes' : 'No');
         setGstNumber(v.gst_number ?? '');
         setVendorType(canonicalSupplierType(v.vendor_type_name ?? ''));
+        setSavedVendorType(canonicalSupplierType(v.vendor_type_name ?? ''));
         setRiskLevel(numStr(v.risk_level_id));
         // Keep the saved category on edit; older rows hold the label ("Blacklisted Supplier"), so match on the word.
         {
@@ -1618,6 +1623,7 @@ export default function AddVendorModal(props: {
         if (typeof returnedCode === 'string' && returnedCode) setVendorCode(returnedCode);
         setFieldErrors({});
         savedSegmentRef.current = segment;
+        setSavedVendorType(vendorType);
         toast.success('Identity saved', 'Supplier identity details captured');
         return true;
       };
@@ -2662,8 +2668,9 @@ export default function AddVendorModal(props: {
               <button
                 className="avm-map-btn"
                 onClick={() => { if (isGoodsSupplier) setMappedListOpen(true); else if (serviceBucket) setMappedServicesOpen(true); }}
-                disabled={!vendorId || !canMapAnything}
+                disabled={!vendorId || typeUnsaved || !canMapAnything}
                 title={!vendorId ? 'Save the Supplier Legal Identity step first to map products or services'
+                  : typeUnsaved ? 'Supplier Type changed — click Update & Next to save it, then map products or services'
                   : isGoodsSupplier ? 'Map products to this supplier'
                   : serviceBucket ? 'Map services to this supplier'
                   : 'Products or services can’t be mapped to this Supplier Type'}
