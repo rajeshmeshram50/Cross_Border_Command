@@ -4585,3 +4585,14 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 }
 [data-bs-theme="dark"] .spev-ov .cev-ov-dl:hover:not(:disabled) { background: rgba(34, 211, 238, .26); color: #cffafe; }
 [data-bs-theme="dark"] .spev-ov .cev-ov-up.cev-ov-reup:hover { background: rgba(34, 211, 238, .18); }
+
+/* QA #28: Standard overview, a row that only has Upload: centred under ACTION, not pushed into the
+   Re-upload slot. */
+.spev-ov.spev-ov-std .cev-ov-acts > .cev-ov-up:only-child { grid-column: 1 / -1; justify-self: center; width: 124px; }
+
+/* Case to Case picker (Select a Shipment / Procurement): the body is a fixed 380px with
+   overflow hidden (so only the deal's table scrolls), which left the picker list cut off with
+   no scrollbar. The body is a column: the caption stays, the list takes the rest and scrolls. */
+.spev-ov:not(.spev-ov-std) .cev-ov-body:has(> .sev-ov-picks) { display: flex; flex-direction: column; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-pick-cap { flex: 0 0 auto; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-picks { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; }

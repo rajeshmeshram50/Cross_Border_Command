@@ -34,6 +34,8 @@ import {
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
 import { SERVICE_MAPPING_ENABLED, serviceBucketOf, type ServiceBucket } from './serviceMapping';
+/* The Service Management wrench, so service popups here carry that module's own icon. */
+import { SVC_ICONS } from '../service-management/serviceIcons';
 import { lazyPage } from '../../../../utils/lazyPage';
 
 /* Lazy: the product wizard is a big chunk and most mappings pick an existing
@@ -5813,7 +5815,7 @@ export function MappedServicesPopup(props: {
       <PopupChrome
         title="Mapped Services"
         subtitle={`${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
-        icon="ri-customer-service-2-line"
+        icon={SVC_ICONS.wrench}
         /* Laid out as the form's Mapped Products popup: search + Map Service in the body,
            the pager under the table, only Close in the footer. */
         panelClassName="avm-cp-popup-wide avm-cp-popup-svc"
@@ -5892,13 +5894,13 @@ export function MappedServicesPopup(props: {
       </PopupChrome>
 
       {formOpen && (
-        <PopupShell title={editRow ? 'Edit Mapped Service' : 'Map Service'} icon="ri-customer-service-2-line"
+        <PopupShell title={editRow ? 'Edit Mapped Service' : 'Map Service'} icon={SVC_ICONS.wrench}
           subtitle={editRow
             ? `Change the price${international ? ', exchange rate' : ''} or remarks of ${editRow.name}`
             : `Link a ${bucketLabel.replace(/s$/, '').toLowerCase()} with its price for this supplier`}
           panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>}
           onClose={closeForm} onSave={save}>
-          <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-customer-service-2-line" />} title="Service Details" subtitle={`Pick a service from ${bucketLabel} — code, category and HSN / SAC fill in automatically`}>
+          <SectionCard tone="violet" className="avm-cp-sec avm-svc-sec" icon={SVC_ICONS.wrench} title="Service Details" subtitle={`Pick a service from ${bucketLabel} — code and HSN / SAC fill in automatically`}>
             <div className="avm-grid-1">
               <Field label="Service Name" required error={err('service')}>
                 <SelectInput value={serviceId} onChange={setServiceId}
@@ -5907,9 +5909,9 @@ export function MappedServicesPopup(props: {
                   emptyText={`No unmapped service in ${bucketLabel}${bucket.classification ? ` (${bucket.classification})` : ''} — add one in Service Management.`} />
               </Field>
             </div>
-            <div className="avm-grid-3">
+            {/* No Category here: Code and HSN / SAC are what identify the service on a mapping. */}
+            <div className="avm-grid-2">
               <Field label="Service Code">{auto(picked?.code ?? editRow?.code ?? '', 'Auto-fills from service')}</Field>
-              <Field label="Category">{auto(picked?.category ?? (editRow && editRow.category !== '—' ? editRow.category : ''), '—')}</Field>
               <Field label="HSN / SAC Code">{auto(picked?.hsn_code ?? (editRow && editRow.hsn !== '—' ? editRow.hsn : ''), '—')}</Field>
             </div>
           </SectionCard>
@@ -6041,10 +6043,14 @@ function MappedProductsListCard(props: {
                         <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
                         <td style={{ textAlign: 'center' }}><span className="smp-hsn">{r.hsnSacCode || '—'}</span></td>
                         <td style={{ textAlign: 'center' }}>
+                          {/* A fixed box centred under SEGMENT, chips starting at its left edge, so the
+                              column reads as one straight line (QA #26) as on the Supplier list. */}
                           {segName ? (
-                            <span className="smc-seg smc-seg--withbadge">
-                              <span className="smc-seg-name">{segName}</span>
-                              {r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ marginLeft: 0, flexShrink: 0 }} /> : <SegmentNameBadge name={segName} style={{ marginLeft: 0, flexShrink: 0 }} />}
+                            <span className="smp-seg-box">
+                              <span className="smc-seg smc-seg--withbadge">
+                                <span className="smc-seg-name">{segName}</span>
+                                {r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ marginLeft: 0, flexShrink: 0 }} /> : <SegmentNameBadge name={segName} style={{ marginLeft: 0, flexShrink: 0 }} />}
+                              </span>
                             </span>
                           ) : '—'}
                         </td>
@@ -6445,7 +6451,8 @@ export function MappedProductsViewPopup(props: {
  * Everything except the FOOTER is shared, so the footer is the slot. */
 function PopupChrome(props: {
   title: string;
-  icon: string;
+  /** A Remix icon class, or an SVG (e.g. the Service Management wrench). */
+  icon: string | ReactNode;
   subtitle?: ReactNode;
   tone?: 'purple' | 'amber';
   /** Extra class on the panel — e.g. avm-cp-popup-wide for the wide tables. */
@@ -6472,7 +6479,9 @@ function PopupChrome(props: {
       <div className={`avm-cp-popup${amber ? ' avm-cp-amber' : ''}${props.panelClassName ? ` ${props.panelClassName}` : ''}`}>
         <div className="avm-cp-head">
           <div className="avm-cp-title">
-            <i className={props.icon} />
+            {typeof props.icon === 'string'
+              ? <i className={props.icon} />
+              : <i className="avm-cp-ico-svg">{props.icon}</i>}
             <div className="avm-cp-htext">
               <div className="avm-cp-htitle">{props.title}</div>
               {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
@@ -6501,7 +6510,7 @@ function PopupChrome(props: {
  * in-flight state, so the popup's OWN button spins rather than the wizard's. */
 function PopupShell(props: {
   title: string;
-  icon: string;
+  icon: string | ReactNode;
   subtitle?: string;
   tone?: 'purple' | 'amber';
   /** Extra class on the panel, e.g. avm-cp-popup-doc for the narrow document upload. */

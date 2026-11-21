@@ -338,7 +338,10 @@ function RefineSuppliers(props: {
   const grand = facets?.grand_total ?? 0;
 
   const option = (key: string, label: string, hint: string, ico: ReactNode, n: number | null, on: boolean, toggle: () => void) => (
-    <button key={key} type="button" role="checkbox" aria-checked={on} className={`supfm-opt${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`} onClick={toggle}>
+    /* No supplier with this value (n = 0): disabled, not just faded (QA #29). One already ticked
+       stays clickable so it can be unticked. */
+    <button key={key} type="button" role="checkbox" aria-checked={on} className={`supfm-opt${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
+      onClick={toggle} disabled={n === 0 && !on} title={n === 0 && !on ? 'No supplier has this yet' : undefined}>
       <span className="supfm-chk"><IcoTick /></span>
       <span className="supfm-ico">{ico}</span>
       <span className="supfm-txt"><b>{label}</b><small>{hint}</small></span>
@@ -811,6 +814,15 @@ export default function Vendors() {
   }, [page, rpp, debouncedSearch, scopeTab, kindTab, tab, catParam, compParam]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
+  /* Domestic <-> International (CS-2321): the type-tab counts belong to the scope they were
+     taken in, so they read 0 until the new scope's counts arrive, never the old scope's numbers.
+     Set before the refresh below runs, so the new counts land on top of the 0s. */
+  const prevScopeRef = useRef(scopeTab);
+  if (prevScopeRef.current !== scopeTab) {
+    prevScopeRef.current = scopeTab;
+    setKindCounts(null);
+    setTotal(0);
+  }
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, kindTab, catParam, compParam]);
 

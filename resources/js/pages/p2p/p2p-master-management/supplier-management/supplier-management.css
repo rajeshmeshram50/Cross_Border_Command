@@ -1435,3 +1435,14 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
    hover, out-ranked the dark base rule). A translucent teal tile instead. */
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #67e8f9; background: rgba(34, 211, 238, .14); }
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #a5f3fc; }
+
+/* QA #27: in dark mode the selected Domestic / International tab kept the unselected grey text
+   (#94a8bb, a stronger rule) on its teal fill. White, as in light mode. */
+[data-bs-theme="dark"] .sup-list .sup-tab.is-on,
+[data-bs-theme="dark"] .sup-list .sup-tab.is-on:hover { color: #fff; }
+[data-bs-theme="dark"] .sup-list .sup-tab.is-on .sup-tab__c { color: #fff; background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .4); }
+/* QA #29: Refine Suppliers option with no supplier: disabled look AND behaviour. */
+.supfm-opt:disabled { cursor: not-allowed; }
+/* No hover lift on a disabled option (the base .supfm-opt:hover tint would read as clickable). */
+.supfm-opt:disabled:hover { border-color: #e5eef2; background: #fff; }
+[data-bs-theme="dark"] .supfm-opt:disabled:hover { background: #0f1c24; border-color: rgba(148, 163, 184, .18); }

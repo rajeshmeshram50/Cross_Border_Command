@@ -3469,3 +3469,45 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-svc .avm-svc-table tbody tr { height: 54px; }
 .avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { position: sticky; top: 0; z-index: 2; background: #f0fbfd !important; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { background: #13303a !important; }
+
+/* ===== Dark mode (QA CS-2327 / CS-2328 / CS-2330 retest) =====
+   1. While a popup or the form saves, its veil was a light wash (rgba(247,253,254,.5) from the
+      page rule above): the whole Map Product popup / Edit Supplier form went grey-white. Dark tint. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-saving-veil { background: rgba(6, 18, 24, .35); }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-busy-veil { background: rgba(6, 18, 24, .3); }
+/* 2. WhatsApp switch turned OFF: a light #cbd5e1 track on the dark form. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch:not(.is-on) .avm-wa-switch__track { background: rgba(148, 163, 184, .28); }
+
+/* QA #26: Mapped Products Segment column. Centred chips of different widths left a zig-zag edge;
+   a 180px box sits centred under the header and every chip starts at its left edge. */
+.avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box { display: flex; justify-content: flex-start; width: 180px; max-width: 100%; margin: 0 auto; min-width: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box .smc-seg { justify-content: flex-start; max-width: 100%; min-width: 0; }
+.avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box .smc-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Dark mode: the AUTO pill on locked (auto-filled) fields was a flat grey #7b8794 slab with white
+   text. A translucent teal chip with light teal text, like the other dark-mode badges. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-auto-pill {
+  background: rgba(34, 211, 238, .14); color: #67e8f9; box-shadow: inset 0 0 0 1px rgba(103, 232, 249, .3);
+}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-auto-lock { color: #5b7d90; }
+
+/* Contact No (+91 | number) reads as ONE field.
+   - Dark mode: the +91 box kept the light popup border (#d3e4ea) on the dark form; now the same
+     border as the number input.
+   - Focus: the teal border and the glow wrap BOTH parts (it was a ring round the number only,
+     with +91 left outside it). */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-cc,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-cc { border-color: rgba(103, 232, 249, .2); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in { border-radius: 10px; transition: box-shadow .15s; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in:focus-within { box-shadow: 0 0 0 3px rgba(34, 211, 238, .18); }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in:focus-within .avm-phone-cc { border-color: #0891b2; }
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in .avm-phone-field:focus { box-shadow: none !important; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in:focus-within .avm-phone-cc,
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body .avm-phone-in:focus-within .avm-phone-cc { border-color: #22d3ee; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-phone-in:focus-within .avm-phone-field { border-color: #22d3ee !important; }
+
+/* Popup header icon given as an SVG (the Service Management wrench on the service popups):
+   centred in the same tile the Remix icons sit in. */
+.avm-cp-title > i.avm-cp-ico-svg { display: inline-flex; align-items: center; justify-content: center; }
+.avm-cp-title > i.avm-cp-ico-svg svg { width: 18px; height: 18px; }
+.avm-svc-sec .avm-section-icon svg { width: 15px; height: 15px; }
