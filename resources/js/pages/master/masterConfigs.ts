@@ -1849,11 +1849,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Module Name', 'Description', 'Status'],
     uFields: ['module_name'],
     data: [],
-    kpis: [
-      { label: 'Total Triggers', icon: 'ri-flashlight-line',       gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
-      { label: 'Active',         icon: 'ri-checkbox-circle-line',  gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'Inactive',       icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
-    ],
     wtd: [
       { icon: 'ri-flashlight-line',      title: 'Name the Trigger',  desc: 'e.g. Onboarding, Offboarding, Event Based' },
       { icon: 'ri-edit-line',            title: 'Add a Description', desc: 'When does it activate, which docs are generated?' },
