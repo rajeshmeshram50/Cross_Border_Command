@@ -53,8 +53,8 @@ const HAS_LETTER = /\p{L}/u;
 const IMG_MAX_MB = 2;
 const ATT_MAX_MB = 10;
 const SECONDARY_MAX = 10;
-const IMG_EXT = ['jpg', 'jpeg', 'png', 'webp'];
-const ATT_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'webp'];
+const IMG_EXT = ['jpg', 'jpeg', 'png'];
+const ATT_EXT = ['pdf', 'jpg', 'jpeg', 'png'];
 const extOf = (f: File) => (f.name.split('.').pop() ?? '').toLowerCase();
 const overMb = (f: File, mb: number) => f.size > mb * 1024 * 1024;
 
@@ -214,7 +214,7 @@ export default function ServiceFormModal({
 
   const pick = (k: FileKey, f: File | null) => {
     if (k === 'att' && f) {
-      const bad = !ATT_EXT.includes(extOf(f)) ? 'Use a PDF, DOC, DOCX, XLS, XLSX or image file'
+      const bad = !ATT_EXT.includes(extOf(f)) ? 'Only PDF, PNG or JPG files are allowed'
         : overMb(f, ATT_MAX_MB) ? `Attachment must be at most ${ATT_MAX_MB} MB` : '';
       if (bad) {
         setErrors(e => ({ ...e, att: bad }));
@@ -232,7 +232,7 @@ export default function ServiceFormModal({
   const setImages = (k: ImageKey, picked: File[]) => {
     const rejected: string[] = [];
     let list = picked.filter(f => {
-      if (!IMG_EXT.includes(extOf(f))) { rejected.push(`${f.name} is not a PNG, JPG or WEBP image`); return false; }
+      if (!IMG_EXT.includes(extOf(f))) { rejected.push(`${f.name} is not a PNG or JPG image`); return false; }
       if (overMb(f, IMG_MAX_MB)) { rejected.push(`${f.name} is over ${IMG_MAX_MB} MB`); return false; }
       return true;
     });
@@ -242,7 +242,7 @@ export default function ServiceFormModal({
     }
     if (rejected.length) {
       const msg = rejected.length === 1 ? rejected[0] : `${rejected.length} images skipped`;
-      setErrors(e => ({ ...e, [k]: `Images must be PNG, JPG or WEBP, ${IMG_MAX_MB} MB max` }));
+      setErrors(e => ({ ...e, [k]: `Images must be PNG or JPG, ${IMG_MAX_MB} MB max` }));
       toast.warning('Some images were not added', rejected.length === 1 ? `${msg}.` : rejected.join(' · '));
       if (list.length === (files[k]?.length ?? 0)) return;
     }
@@ -565,8 +565,8 @@ function AttachmentRemarks({ vals, set, errors, files, pick, savedAtt, noteKey, 
     <Section icon={SVC_ICONS.clip} title={title} sub={sub}>
       <div className="svf-grid svf-grid-4">
         <Field label="Attachment" optional error={errors.att}>
-          <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, DOC, XLS or images · 10 MB max" invalid={!!errors.att}
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" onPick={f => pick('att', f)} />
+          <FilePick value={vals.att} file={files.att} remote={!files.att && vals.att ? savedAtt : undefined} hint="PDF, PNG or JPG · 10 MB max" invalid={!!errors.att}
+            accept=".pdf,.png,.jpg,.jpeg" onPick={f => pick('att', f)} />
         </Field>
         <Field label={noteLabel} span="3" count={{ len: (vals[noteKey] ?? '').length, max: NOTE_MAX }}>
           <textarea className="svf-input svf-textarea" rows={3} maxLength={NOTE_MAX} placeholder={notePh}
@@ -888,10 +888,10 @@ function ImageUpload({ label, files, multiple, hint, invalid, onChange, saved = 
         <span className="svf-file-ico">{SVC_ICONS.upload}</span>
         <span className="svf-drop-txt">
           <b>{!multiple && total ? 'Replace primary image' : hint}</b>
-          <span>PNG, JPG or WEBP · {IMG_MAX_MB} MB max{multiple && total ? ` · ${total} added` : ''}</span>
+          <span>PNG or JPG · {IMG_MAX_MB} MB max{multiple && total ? ` · ${total} added` : ''}</span>
         </span>
       </button>
-      <AttachPicker anchorRef={dropRef} open={pickOpen} onClose={() => setPickOpen(false)} accept="image/png,image/jpeg,image/webp"
+      <AttachPicker anchorRef={dropRef} open={pickOpen} onClose={() => setPickOpen(false)} accept="image/png,image/jpeg"
         multiple={multiple} onFiles={add}
         camera={{ title: `Take ${label.toLowerCase()}`, subject: label, namePrefix: multiple ? 'secondary-image' : 'primary-image' }} />
 
