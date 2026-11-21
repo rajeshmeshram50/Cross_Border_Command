@@ -263,8 +263,11 @@
   background: rgba(54, 192, 227, 0.12);
   border: 1px solid rgba(100, 187, 206, 0.3);
 }
+/* The shine needs a brighter middle stop and the 200% size: the old shorthand reset the size and
+   all three stops were the same tint, so the dark shimmer stood still. */
 [data-bs-theme="dark"] .cvx.al-page .cva-shim__row i {
-  background: linear-gradient(90deg,rgba(69, 183, 211, 0.12) 25%,rgba(61, 189, 219, 0.12) 50%,rgba(69, 183, 211, 0.12) 75%);
+  background: linear-gradient(90deg, rgba(69, 183, 211, .12) 25%, rgba(125, 217, 242, .28) 50%, rgba(69, 183, 211, .12) 75%);
+  background-size: 200% 100%;
 }
 
 /* Dark mode · polish (hand-tuned, wins over the generated rules above). Same crisp recipe as the

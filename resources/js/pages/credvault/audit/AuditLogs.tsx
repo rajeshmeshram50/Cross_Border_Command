@@ -156,6 +156,10 @@ export default function AuditLogs() {
     groups.push({ id, k: ag ? ag.label : dayLbl(e.at), sub: ag ? ag.date_display : fallbackDay, n: ag ? ag.events : 1, L: [e] });
   });
   const filtered = !!(dq || action || credId);
+  /* The list shimmers whenever it is being fetched (first load, tab, period, page, search) and
+     while a typed search waits out its debounce, so the results on screen are never mistaken for
+     the answer to what was just typed (CS-1484: the old rows only dimmed, so search looked stuck). */
+  const busy = loading || q.trim() !== dq;
 
   const list = () => {
     if (err) {
@@ -166,8 +170,8 @@ export default function AuditLogs() {
         </div>
       );
     }
-    if (loading && !rows.length) {
-      return <div className="alh cva-shim">{Array.from({ length: 6 }, (_, i) => <div key={i} className="cva-shim__row"><i /><i /><i /></div>)}</div>;
+    if (busy) {
+      return <div className="alh cva-shim" role="status" aria-label="Loading audit events">{Array.from({ length: 6 }, (_, i) => <div key={i} className="cva-shim__row"><i /><i /><i /></div>)}</div>;
     }
     if (!rows.length) {
       return (
@@ -179,7 +183,7 @@ export default function AuditLogs() {
       );
     }
     return (
-      <div className={`alh${loading ? ' cva-busy' : ''}`}>
+      <div className="alh">
         {groups.map(g => (
           <div className="alh-day" key={g.id}>
             <div className="alh-day__hd">
