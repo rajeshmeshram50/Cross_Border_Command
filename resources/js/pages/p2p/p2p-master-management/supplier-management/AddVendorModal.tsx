@@ -5594,6 +5594,12 @@ export function MappedServicesPopup(props: {
   onClose: () => void;
   /** Fired after a service is mapped, so a list's count can catch up. */
   onChanged?: () => void;
+  /** Opened from the Supplier list: "Map New Service" in the header (as the list's Mapped Products
+      popup has "Map New Product"). Opened from the Add / Edit form it stays in the body. */
+  addInHeader?: boolean;
+  /** Supplier code / name for the header, as Mapped Products shows them ("— S-019", "name · …"). */
+  code?: string;
+  name?: string;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -5813,82 +5819,130 @@ export function MappedServicesPopup(props: {
   return (
     <>
       <PopupChrome
-        title="Mapped Services"
-        subtitle={`${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
+        title={props.code ? `Mapped Services — ${props.code}` : 'Mapped Services'}
+        subtitle={props.name ? <>
+          {/* As Mapped Products: a long supplier name ends in "…" (full name on hover). */}
+          <Tooltip label={props.name}><span className="smp-sub-name">{props.name}</span></Tooltip>
+          <span className="smp-sub-rest"> · {bucketLabel} linked to this supplier with price{international ? '' : ' & GST'}</span>
+        </> : `${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
         icon={SVC_ICONS.wrench}
-        /* Laid out as the form's Mapped Products popup: search + Map Service in the body,
-           the pager under the table, only Close in the footer. */
-        panelClassName="avm-cp-popup-wide avm-cp-popup-svc"
+        /* Search + Map Service in the body, only Close in the footer. The table is the Mapped
+           Products one (avm-cp-popup-mapped gives it the same teal table, 5-row scroll and footer). */
+        panelClassName={`avm-cp-popup-wide avm-cp-popup-mapped avm-cp-popup-svc${props.addInHeader ? ' avm-cp-popup-svc-list' : ''}`}
         onClose={props.onClose}
+        headerAction={props.addInHeader ? (
+          <button type="button" className="smp-head-add" onClick={openForm} disabled={services === null || rows === null || servesNone}
+            title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
+            <i className="ri-add-line" aria-hidden /> Map New Service
+          </button>
+        ) : undefined}
         footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
       >
+        {props.addInHeader ? (
+          /* From the list: the Mapped Products popup's own full-width search bar. */
+          <div className="smp-toolbar">
+            <div className="ui-search-abs smp-search">
+              <i className="ri-search-line" />
+              <input
+                type="search"
+                name="mapped-services-search"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-form-type="other"
+                placeholder="Search service, code, category, HSN/SAC, price…"
+                value={search}
+                disabled={!rows || rows.length === 0}
+                onChange={e => setSearch(e.target.value)}
+                aria-label="Search mapped services"
+              />
+              <SearchClear show={search} onClear={() => setSearch('')} />
+            </div>
+          </div>
+        ) : (
         <div className="avm-mapped-toolbar">
           <MappedProductsSearch value={search} onChange={setSearch}
             placeholder="Search service, code, category, HSN/SAC…" label="Search mapped services" />
-          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
-            title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
-            <i className="ri-add-line" /> Map Service
-          </button>
+          {!props.addInHeader && (
+            <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
+              title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
+              <i className="ri-add-line" /> Map Service
+            </button>
+          )}
         </div>
+        )}
         {rows === null ? (
           <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={8} />
         ) : rows.length === 0 ? (
           <div className="avm-empty avm-empty-accent">
             {failed ? 'Could not load the services. Close and open this popup to try again.'
               : servesNone ? 'This supplier’s type does not supply services, so no service can be mapped.'
-              : 'No services mapped yet. Click “Map Service” to begin.'}
+              : `No services mapped yet. Click “${props.addInHeader ? 'Map New Service' : 'Map Service'}” to begin.`}
           </div>
         ) : filtered.length === 0 ? (
           <div className="avm-empty avm-empty-accent">No mapped services match "{search.trim()}".</div>
         ) : (
-          <div className="avm-mapped-paged">
-            <KycTable
-              isEmpty={false}
-              empty=""
-              wrapClassName="avm-mapped-wrap"
-              tableClassName="avm-mapped-table avm-svc-table"
-              /* Fixed column widths (table-layout: fixed, .avm-svc-table), every column centred
-                 but Service, so each header sits over its own values. */
-              headers={[
-                { label: 'SR NO', className: 'svc-c-sr' },
-                { label: 'SERVICE', className: 'svc-c-name' },
-                { label: 'CODE', className: 'svc-c-code' },
-                { label: 'CATEGORY', className: 'svc-c-cat' },
-                { label: 'HSN/SAC', className: 'svc-c-hsn' },
-                { label: international ? 'PRICE' : 'PRICE (₹)', className: 'svc-c-price' },
-                ...(international ? [] : [{ label: 'GST %', className: 'svc-c-gstp' }, { label: 'GST (₹)', className: 'svc-c-gst' }]),
-                { label: international ? 'TOTAL (₹ VALUE)' : 'TOTAL (₹)', className: 'svc-c-total' },
-                { label: 'ACTIONS', className: 'svc-c-act' }]}
-            >
-              {/* Every service in one list: 5 rows show, the rest scroll inside the table (no pager). */}
-              {filtered.map((r, i) => (
-                <tr key={r.mapId}>
-                  <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
-                  <td><ClippedName text={r.name} maxWidth={9999} /></td>
-                  <td><span className="avm-auto-code">{r.code}</span></td>
-                  <td>{r.category}</td>
-                  <td><span className="font-monospace fs-13">{r.hsn}</span></td>
-                  <td className="avm-num fs-13">{money(r.price, r.currency)}</td>
-                  {!international && <td className="avm-num fs-13">{Number(r.gstPercentage.toFixed(2))}%</td>}
-                  {!international && <td className="avm-num fs-13">{inrAmt(r.gstAmount)}</td>}
-                  <td className="avm-num fs-13"><strong>{inrAmt(r.inr)}</strong></td>
-                  <td>
-                    <div className="avm-row-actions justify-content-center">
-                      <Tooltip label="Edit service">
-                        <button type="button" className="avm-row-btn" onClick={() => openEdit(r)} aria-label="Edit service" disabled={busyId !== null}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                        </button>
-                      </Tooltip>
-                      <Tooltip label="Unmap service">
-                        <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => void unmap(r)} aria-label="Unmap service" disabled={busyId !== null}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                        </button>
-                      </Tooltip>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </KycTable>
+          /* The Mapped Products table, column for column: Sr No box, icon + name, code chip,
+             category chip (where Products has Segment), HSN, price, GST % chip, GST, bold total.
+             Every service in one list: 5 rows show, the rest scroll inside (no pager). */
+          <div className="smp-card">
+            <div className="smp-table-wrap dt-root hr-dt" data-accent="violet">
+              <table className="smp-table dt-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'center' }}>SR. NO</th>
+                    <th>SERVICE</th>
+                    <th style={{ textAlign: 'center' }}>SERVICE CODE</th>
+                    <th style={{ textAlign: 'center' }}>CATEGORY</th>
+                    <th style={{ textAlign: 'center' }}>HSN / SAC</th>
+                    <th style={{ textAlign: 'center' }}>{international ? 'PRICE' : 'PRICE (₹)'}</th>
+                    {!international && <th style={{ textAlign: 'center' }}>GST %</th>}
+                    {!international && <th style={{ textAlign: 'center' }}>GST (₹)</th>}
+                    <th style={{ textAlign: 'center' }}>{international ? 'TOTAL (₹ VALUE)' : 'TOTAL (₹)'}</th>
+                    <th style={{ textAlign: 'center' }}>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r, i) => (
+                    <tr key={r.mapId}>
+                      <td style={{ textAlign: 'center' }}><span className="dt-serial">{i + 1}</span></td>
+                      <td>
+                        <span className="smp-prod">
+                          <span className="smp-prod-ico" aria-hidden>{SVC_ICONS.wrench}</span>
+                          <Tooltip label={r.name}><span className="smp-prod-name">{r.name}</span></Tooltip>
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{r.code}</span></td>
+                      <td style={{ textAlign: 'center' }}>
+                        {r.category && r.category !== '—' ? (
+                          <span className="smp-seg-box"><span className="smc-seg"><span className="smc-seg-name">{r.category}</span></span></span>
+                        ) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'center' }}><span className="smp-hsn">{r.hsn}</span></td>
+                      <td style={{ textAlign: 'center' }}><span className="smp-price">{money(r.price, r.currency)}</span></td>
+                      {!international && <td style={{ textAlign: 'center' }}><span className="smp-gst">{`${Number(r.gstPercentage.toFixed(2))}%`}</span></td>}
+                      {!international && <td style={{ textAlign: 'center' }}><span className="smp-gst-amt">{inrAmt(r.gstAmount)}</span></td>}
+                      <td style={{ textAlign: 'center' }}><span className="smp-total">{inrAmt(r.inr)}</span></td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className="d-inline-flex align-items-center gap-2">
+                          <Tooltip label="Edit service">
+                            <button type="button" aria-label="Edit service" disabled={busyId !== null}
+                              className="smc-act smc-act-edit d-inline-flex align-items-center justify-content-center" onClick={() => openEdit(r)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Unmap service">
+                            <button type="button" aria-label="Unmap service" disabled={busyId !== null}
+                              className="smc-act smp-act-del d-inline-flex align-items-center justify-content-center" onClick={() => void unmap(r)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                            </button>
+                          </Tooltip>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </PopupChrome>

@@ -31,9 +31,10 @@ const MappedProductsViewPopup = lazyPage(() =>
    chunk; the bucket is resolved from the type name there (serviceBucketOf). */
 const MappedServicesViewPopup = lazyPage(() =>
   import('./AddVendorModal').then(m => ({
-    default: (p: { vendorId: number; typeName: string; international: boolean; onClose: () => void; onChanged?: () => void }) => {
+    default: (p: { vendorId: number; typeName: string; international: boolean; code?: string; name?: string; onClose: () => void; onChanged?: () => void }) => {
       const bucket = m.serviceBucketOf(p.typeName);
-      return bucket ? <m.MappedServicesPopup {...p} bucket={bucket} /> : null;
+      // From the list: "Map New Service" in the header, like the list's Mapped Products popup.
+      return bucket ? <m.MappedServicesPopup {...p} bucket={bucket} addInHeader /> : null;
     },
   })));
 /** Supplier Types mapped to SERVICES, not products (./serviceMapping, shared with the form). */
@@ -1417,6 +1418,8 @@ useEffect(() => {
         <Suspense fallback={null}>
           <MappedServicesViewPopup
             vendorId={servicesTarget.id}
+            code={servicesTarget.code}
+            name={servicesTarget.companyName}
             typeName={servicesTarget.type}
             international={!!servicesTarget.country && servicesTarget.country.trim().toLowerCase() !== 'india'}
             onClose={() => setServicesTarget(null)}

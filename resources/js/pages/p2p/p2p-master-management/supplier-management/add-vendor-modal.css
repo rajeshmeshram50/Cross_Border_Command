@@ -3511,3 +3511,18 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-title > i.avm-cp-ico-svg { display: inline-flex; align-items: center; justify-content: center; }
 .avm-cp-title > i.avm-cp-ico-svg svg { width: 18px; height: 18px; }
 .avm-svc-sec .avm-section-icon svg { width: 15px; height: 15px; }
+
+/* Mapped Services table = the Mapped Products table (smp-table). Only what differs: the wrench
+   in the icon tile, the red Unmap button beside Edit, and the Category chip box width. */
+.avm-cp-popup.avm-cp-popup-svc .smp-prod-ico svg { width: 15px; height: 15px; }
+.avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
+.avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del:hover:not(:disabled) { color: #fff; background: linear-gradient(135deg, #f87171, #dc2626); border-color: transparent; }
+[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del { color: #fca5a5; background: rgba(239, 68, 68, .12); border-color: rgba(252, 165, 165, .35); }
+.avm-cp-popup.avm-cp-popup-svc .smp-table td .smp-seg-box { width: 160px; }
+.avm-cp-popup.avm-cp-popup-svc .avm-mapped-toolbar { margin-bottom: 12px; }
+/* Category has no regulatory badge, so no outer pill around its chip (it drew a double border). */
+.avm-cp-popup.avm-cp-popup-svc .smp-table td .smp-seg-box .smc-seg { border: 0 !important; background: transparent !important; padding: 0 !important; box-shadow: none !important; }
+
+/* Mapped Services opened from the Supplier list: the add button is in the header, so the search
+   takes the full row, as in the list's Mapped Products popup. */
+.avm-cp-popup.avm-cp-popup-svc-list .avm-mapped-toolbar > :first-child { flex: 1 1 auto; max-width: none; width: 100%; }
