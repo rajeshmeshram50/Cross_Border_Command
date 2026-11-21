@@ -22,14 +22,8 @@ import '../p2p/p2p-common.css';
 import '../p2p/purchase-management/order/po-list/order.css';
 import '../inventory-management/warehouse/warehouse-master.css';
 
-
-/* Every value badge in a master table (Target Type, Priority, Role Type,
-   Level) in the same teal; only its colours are replaced, icons and text stay. */
 const MP_TEAL_TONE = { bg: '#ecfeff', fg: '#0e7490', border: '#22d3ee', star: '#0891b2' };
 
-/* The CredVault Recycle Bin KPI card (phx-card): a white card with a 3px
-   gradient top bar, a soft glow top-right, a gradient icon tile beside the
-   number, and the label under it. The tones cycle in the Recycle Bin order. */
 const MP_KC_TONES = ['teal', 'sky', 'amber', 'rose', 'green', 'violet'] as const;
 type MpKpi = { key: string; label: string; icon: string; value: ReactNode; sub?: string; tone?: typeof MP_KC_TONES[number] | "slate" };
 function MpKpiCards({ items }: { items: MpKpi[] }) {
@@ -51,15 +45,12 @@ function MpKpiCards({ items }: { items: MpKpi[] }) {
 }
 
 type MpStatusTab = 'all' | 'active' | 'inactive';
-/** A record's status as a tab key; anything that is not "inactive" counts as active. */
 const mpStatusOf = (row: any): 'active' | 'inactive' =>
   String(row?.status ?? '').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
-/** "Department" -> "Departments", "Category" -> "Categories", "Status" -> "Statuses". */
 const mpPlural = (w: string) =>
   /[^aeiou]y$/i.test(w) ? w.slice(0, -1) + 'ies'
   : /(s|x|z|ch|sh)$/i.test(w) ? w + 'es'
   : w + 's';
-/* The Rack Master tab icons (rack/RackMaster.tsx). */
 const mpSvg = (d: ReactNode) => (
   <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -134,11 +125,7 @@ function MasterPageInner({
 
   useEffect(() => { setPage(0); setTotalRows(0); }, [cfg.slug]);
   const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
-  /* All / Active / Inactive tabs (the Rack Master tab row), on every master with a status field. */
   const [statusTab, setStatusTab] = useState<MpStatusTab>('all');
-  /* A tab switch filters rows already in memory, so it is instant — the table
-     shows its shimmer for a moment anyway (as My Vault and Service Management
-     do), so the switch reads as the list reloading rather than a flicker. */
   const [tabShimmer, setTabShimmer] = useState(false);
   const tabShimTimer = useRef<number | undefined>(undefined);
   const flashTabShimmer = () => {
@@ -152,8 +139,6 @@ function MasterPageInner({
     flashTabShimmer();
   };
   useEffect(() => () => window.clearTimeout(tabShimTimer.current), []);
-  /* Role Master puts its All / Primary / Ancillary tabs where the other
-     masters have All / Active / Inactive, so status does not filter there. */
   const hasStatus = cfg.slug !== 'roles' && cfg.fields.some(ff => ff.n === 'status');
   const matchesStatusTab = (row: any) => !hasStatus || statusTab === 'all' || mpStatusOf(row) === statusTab;
   const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
@@ -388,7 +373,7 @@ function MasterPageInner({
           for (const f of apiFields) next[f.n] = String(code);
           setApiAutogen(next);
         })
-        .catch(() => {  });
+        .catch(() => {});
     }
   };
   const openEdit = (row: any, readonly = false) => {
@@ -485,9 +470,6 @@ function MasterPageInner({
     };
   }, [modalOpen, cfg.slug, editing?.id]);
 
-  /* The Warehouse / Rack Master row button (warehouse-master.css .whm-act, scoped
-     under the .whm-page root below): a solid teal 32px tile. `color` is kept in
-     the signature for the callers but no longer tints the button. */
   const ActionBtn = ({
     title, icon, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
@@ -890,7 +872,6 @@ function MasterPageInner({
       const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
       const inactive = raw === false || raw === 0
         || ['0', 'false'].includes(String(raw).toLowerCase());
-      /* Teal like every other badge; Inactive is the same teal, faded. */
       const tone = active
         ? { bg: '#ecfeff', fg: '#0e7490', dot: '#06b6d4', text: 'Active' }
         : { bg: '#f3f9fb', fg: '#7aa6b4', dot: '#9fc9d4', text: inactive || !raw ? 'Inactive' : titleCase(String(raw)) };
@@ -1153,8 +1134,6 @@ function MasterPageInner({
       if (opt) return <FitTip label={opt.label}><span className="text-body mp-fit">{opt.label}</span></FitTip>;
     }
 
-    /* Cut by the column's width (CSS ellipsis), and the tooltip turns on only
-       when the text really is cut. */
     const txt = String(raw);
     return <FitTip label={txt}><span className="text-body mp-fit">{txt}</span></FitTip>;
   };
@@ -1394,7 +1373,6 @@ function MasterPageInner({
       return (
         <div className="d-flex flex-column align-items-start" style={{ gap: 3, maxWidth: '100%' }}>
           {shortName === name ? pill : <Tooltip label={name} maxWidth={320}>{pill}</Tooltip>}
-          {}
           {scope && (
             <FitTip label={scope}>
               <span
@@ -1446,7 +1424,6 @@ function MasterPageInner({
 
   return (
     <div className="spi-root ord-page whm-page mp-inv">
-      {}
       <style>{`
         .mp-kpi-tile + * .badge,
         .dt-table .badge {
@@ -1479,7 +1456,6 @@ function MasterPageInner({
           max-width: 620px;
         }
 
-        /* Dark: every badge in the same teal (Inactive faded). */
         [data-bs-theme="dark"] .mp-status-active,
         [data-layout-mode="dark"] .mp-status-active,
         [data-bs-theme="dark"] .mp-creator-pill,
@@ -1505,9 +1481,6 @@ function MasterPageInner({
         }
       `}</style>
 
-      {}
-      {/* The Warehouse / Rack Master header, using their own classes
-          (p2p-common.css .spi-head / .spi-head-btn), for every master. */}
       <div className="spi-head">
         <div className="spi-head-left">
           <div className="spi-head-icon"><i className={cfg.icon} /></div>
@@ -1579,23 +1552,19 @@ function MasterPageInner({
         <MpKpiCards items={cfg.kpis.map(k => ({ key: k.label, label: k.label, icon: k.icon, value: k.compute(records) }))} />
       )}
 
-      {}
       {cfg.slug === 'designations' && (
         <DesignationExtras
           records={records}
           filteredCount={filteredRecords.length}
         />
       )}
-      {}
       {cfg.slug === 'roles' && (
         <RolesExtras records={records} />
       )}
-      {}
       {cfg.slug === 'kpis' && (
         <KpiExtras records={records} />
       )}
 
-      {}
       <DataTable<any>
         data={serverPaged ? records.filter(matchesStatusTab) : filteredRecords}
         fitToViewport
@@ -1618,8 +1587,6 @@ function MasterPageInner({
         loading={loading || tabShimmer}
         searchable={false}
         leadingToolbar={
-          /* The Rack / Warehouse Master tab row and search, with their own classes
-             (p2p-common.css .spi-segrow / .spi-seg / .spi-search). */
           <div className="spi-segrow">
             {hasStatus && (
               <div className="spi-seg" role="tablist" aria-label={`${singular} status`}>
@@ -1696,11 +1663,10 @@ function MasterPageInner({
         }
       />
 
-      {}
       <MasterFormStyles />
       <Modal
         isOpen={modalOpen}
-        toggle={() => {  }}
+        toggle={() => {}}
         size={modalSize}
         centered
         modalClassName="master-modal mp-tealf"
@@ -1729,7 +1695,6 @@ function MasterPageInner({
         </div>
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="mp-tealf-body">
-            {}
             <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, pointerEvents: saving ? 'none' : undefined }}>
             {sectionedFields.map((group, gIdx) => {
               return (
@@ -2094,8 +2059,6 @@ function AuditHistoryModal({
         .audit-timeline::before {
           content: '';
           position: absolute;
-          /* From the first dot's centre to the last one's: the event pads 10px
-             and the dot is 36px, so the centre is 28px in from the top / left. */
           top: 28px; bottom: 28px;
           left: 27px;
           width: 2px;
@@ -2280,7 +2243,6 @@ function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAd
         >
           {heading}
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {}
             {onBack && (
               <button
                 type="button"
@@ -2483,7 +2445,6 @@ function DesignationExtras({
   return (
     <div className="dsn-extras">
 
-      {}
       <div className="dsn-hier-row">
         <span className="dsn-hier-label">Hierarchy</span>
         {TIERS.map((t, i) => (
@@ -2670,14 +2631,6 @@ function iconForField(f: FieldDef): string {
   return 'ri-edit-box-line';
 }
 
-/**
- * Live "12/50" beside a text field's label.
- *
- * The cap is enforced (maxLength + validate()) but was invisible, so a long
- * name simply stopped accepting keys with no explanation. The input is
- * uncontrolled, so this reads it from the DOM on each input event rather than
- * lifting every master field into state.
- */
 function CharCount({ name, max }: { name: string; max: number }) {
   const ref = useRef<HTMLSpanElement | null>(null);
   const [len, setLen] = useState(0);
@@ -3035,7 +2988,7 @@ export function renderField(
         if (target.value !== cleaned) {
           const cursor = Math.max(0, (target.selectionStart ?? cleaned.length) - (target.value.length - cleaned.length));
           target.value = cleaned;
-          try { target.setSelectionRange(cursor, cursor); } catch {  }
+          try { target.setSelectionRange(cursor, cursor); } catch {}
         }
       }
       onFieldChange();
@@ -3084,8 +3037,6 @@ export function renderField(
   const optTag = f.optionalLabel;
   const isMandatoryTag = !!optTag && /mandator/i.test(optTag);
 
-  /* The cap renderField already applies to every text input — shown so the
-     field stops silently refusing keystrokes at the limit. */
   const textCap = (f.t === 'text' || (f.t === 'textarea' && typeof (f as any).maxLen === 'number'))
     && !isAutogen && !f.auto && !viewOnly
       ? (typeof (f as any).maxLen === 'number' ? (f as any).maxLen : 50)

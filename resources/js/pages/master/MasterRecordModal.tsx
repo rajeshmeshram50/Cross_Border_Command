@@ -6,18 +6,6 @@ import { getMasterConfig, masterEndpoint, type FieldDef } from './masterConfigs'
 import { MasterFormStyles, MasterSavingLock } from './masterFormKit';
 import { renderField } from './MasterPage';
 
-/**
- * Reusable "Add <master>" modal — renders the EXACT same form the dedicated
- * /master/{slug} page uses (same header, same `renderField` field rendering,
- * same master-modal CSS), so a quick-add from another screen (e.g. the Supplier
- * wizard's "+" buttons) is literally the master's own form, not a re-creation.
- *
- * Scoped to the simple lookup masters surfaced as quick-adds (text / select /
- * textarea / number fields). It does not handle file uploads, sublists, or
- * auto-gen codes — those masters aren't offered as inline quick-adds.
- */
-
-// Identifier-style fields keep their exact casing (mirrors MasterPage.handleSave).
 const SKIP_CAPITALIZE = new Set([
   'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
   'gstin', 'pan', 'tan', 'cin', 'iec', 'ifsc_code', 'swift_code', 'ad_code',
@@ -68,7 +56,6 @@ export function MasterRecordModal({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
 
-    // Client-side required check (server still validates).
     const errs: Record<string, string> = {};
     for (const f of shownFields) {
       if (f.sec || !f.n || f.t === 'sublist' || f.t === 'file' || f.auto) continue;
@@ -119,14 +106,13 @@ export function MasterRecordModal({
       <MasterFormStyles />
       <Modal
         isOpen
-        toggle={() => { /* explicit Cancel only */ }}
+        toggle={() => {}}
         centered
         modalClassName="master-modal"
         backdrop="static"
         keyboard={false}
         zIndex={1200}
       >
-        {/* Header — same layered gradient + frosted icon badge as the master page. */}
         <div
           className="position-relative overflow-hidden"
           style={{ background: 'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)', padding: '22px 24px' }}

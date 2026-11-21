@@ -244,7 +244,6 @@ export function MasterMultiSelect({
               <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
           )}
-          {}
           <div className="master-select-list" style={{ maxHeight: 203 }}>
             {filtered.length === 0 ? (
               <div className="master-select-empty">
@@ -269,11 +268,9 @@ export function MasterMultiSelect({
                       : opt.label}
                   style={unusable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                 >
-                  {}
                   <span className={`master-select-check${checked ? ' is-on' : ''}`}>
                     {checked && <i className="ri-check-line" />}
                   </span>
-                  {}
                   <span
                     style={{
                       flex: 1,
@@ -696,8 +693,6 @@ export const MASTER_MODAL_CSS = `
     background: rgba(167,139,250,0.45);
   }
 
-  /* Saving overlay: covers the whole form while a save is in flight, so nothing
-     can be edited or submitted twice. */
   .master-lock { position: absolute; inset: 0; z-index: 20; border-radius: inherit; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.6); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); cursor: progress; }
   .master-lock__box { display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; letter-spacing: .2px; color: #405189; }
   .master-lock__spin { width: 40px; height: 40px; border-radius: 50%; border: 3.5px solid rgba(64,81,137,.2); border-top-color: #5562c4; animation: masterLockSpin .7s linear infinite; }

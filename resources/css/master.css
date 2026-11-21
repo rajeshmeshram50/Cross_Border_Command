@@ -416,7 +416,6 @@
 
 .kpi-extras .kpi-card {
   position: relative;
-  /* White in light mode, matching .role-kpi / .dsn-kpi. */
   background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 10px;
@@ -602,7 +601,6 @@
   color: var(--vz-secondary-color);
 }
 
-/* Filename + size text */
 .master-file-name {
   flex: 1;
   min-width: 0;
@@ -634,7 +632,6 @@
   flex-shrink: 0;
 }
 
-/* Clear (×) button — neutral, only visible when a file is selected */
 .master-file-clear {
   display: inline-flex;
   align-items: center;
@@ -661,7 +658,6 @@
   line-height: 1;
 }
 
-/* Hint text below the input (.pdf,.jpg,.jpeg,.png · Max 10MB) */
 .master-file-hint {
   display: block;
   margin-top: 6px;
@@ -670,7 +666,6 @@
   letter-spacing: 0.02em;
 }
 
-/* Dark-mode polish — keeps the neutral tone */
 [data-bs-theme="dark"] .master-file-input,
 [data-layout-mode="dark"] .master-file-input {
   background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
@@ -722,16 +717,7 @@
 [data-layout-mode="dark"] .mp-kpi-tile {
   background: var(--vz-card-bg) !important;
 }
-/* Master pages in the Inventory Management masters' look (Warehouse / Rack).
 
-   The header, Add button and row buttons use those pages' own classes
-   (.spi-head, .spi-head-btn, .whm-act). The list itself is still the shared
-   DataTable, which has its own markup, so this file carries the Warehouse
-   table's values (order.css .ord-table + warehouse-master.css .whm-page) and
-   the .spi-card frame onto it. Everything is scoped under .mp-inv, the master
-   page root, so no other DataTable changes. */
-
-/* ── Card: the .spi-card frame ─────────────────────────────────────────── */
 .mp-inv .dt-root {
   --dt-head-fill: #e3f7fb;
   background: #fff;
@@ -740,7 +726,6 @@
   box-shadow: 0 4px 16px rgba(6, 182, 212, .06);
 }
 
-/* ── Header band: .whm-page .ord-table thead th ────────────────────────── */
 .mp-inv .dt-table thead tr { background: linear-gradient(180deg, #f0fdff, #e3f7fb); }
 .mp-inv .dt-table thead th {
   padding: 11px 12px;
@@ -754,7 +739,6 @@
 }
 .mp-inv .dt-table thead th.dt-sortable:hover { background: #d9f3f8; }
 
-/* ── Rows: .whm-page .ord-table tbody td ───────────────────────────────── */
 .mp-inv .dt-table tbody td {
   padding: 12px;
   font-size: 11.5px;
@@ -767,7 +751,6 @@
 .mp-inv .dt-table tbody tr:nth-child(even):hover { background: #f0fbfd; }
 .mp-inv .dt-table tbody tr:last-child td { border-bottom: 0; }
 
-/* ── Sr. No: .whm-page .whm-sr ─────────────────────────────────────────── */
 .mp-inv .dt-serial {
   min-width: 26px;
   width: auto;
@@ -782,7 +765,6 @@
   color: #0e7490;
 }
 
-/* ── Row buttons: .whm-act, with the disabled state the masters need ───── */
 .mp-inv .whm-act.mp-act i { font-size: 15px; line-height: 1; }
 .mp-inv .whm-act.mp-act:disabled {
   opacity: .45;
@@ -790,7 +772,6 @@
   transform: none;
 }
 
-/* ── Dark: the Warehouse table's dark values ───────────────────────────── */
 [data-bs-theme="dark"] .mp-inv .dt-root,
 [data-layout-mode="dark"] .mp-inv .dt-root {
   --dt-head-fill: #0f222c;
@@ -826,28 +807,18 @@
   border-color: rgba(34, 211, 238, .24);
 }
 
-/* ── Tab row + search: the Rack / Warehouse Master .spi-segrow ─────────────
-   The row is handed to the DataTable as `leadingToolbar`, so it sits inside
-   .dt-toolbar > .dt-lead instead of directly under .ord-list. The toolbar
-   steps back (no band, no padding) and the row gets the spacing that
-   order.css gives `.ord-list > .spi-segrow`. Other toolbar items (the
-   Designation / Department / Role / KPI filters, the Role tabs) follow it. */
 .mp-inv .dt-toolbar {
   padding: 0;
   background: transparent;
   border-bottom: 1px solid #eef5f8;
 }
 .mp-inv .dt-lead { flex: 1 1 auto; min-width: 0; }
-/* Right padding 20px = the header's (.spi-head padding: 0 20px), so the
-   search ends exactly where the Add button above it does. */
 .mp-inv .dt-lead > .spi-segrow {
   flex-wrap: nowrap;
   gap: 14px;
   margin: 0;
   padding: 14px 20px 14px 14px;
 }
-/* The masters without inline filters still pass an (empty) toolbarActions
-   fragment; its box would otherwise push the search in from the edge. */
 .mp-inv .dt-toolbar-actions:empty { display: none; }
 .mp-inv .dt-toolbar-actions:not(:empty) { padding-right: 20px; }
 .mp-inv .dt-lead:has(+ .dt-toolbar-actions:not(:empty)) > .spi-segrow { padding-right: 0; }
@@ -858,11 +829,7 @@
   .mp-inv .dt-lead > .spi-segrow { flex-wrap: wrap; }
 }
 
-/* ── Stat tiles and head buttons, shared by the master pages and the Master
-   Control Center (moved out of MasterPage.tsx so both use one copy) ───── */
 .mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
-/* Teal throughout: the same palette as Warehouse / Rack Master
-   (p2p-common.css .spi-head, .spi-head-btn). */
 .mp-kpi-tile {
   border-color: #c7eef5 !important;
   box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 6px 18px rgba(6,182,212,.10), 0 1px 4px rgba(0,0,0,.04) !important;
@@ -888,7 +855,6 @@
   border-color: rgba(34,211,238,0.45) !important;
 }
 
-/* Back sits beside Add in the head: same .spi-head-btn shape, outlined. */
 .mp-head-right { display: flex; align-items: center; gap: 8px; z-index: 1; flex-shrink: 0; }
 .ord-page .spi-head-btn.mp-head-back {
   color: #0e7490; text-shadow: none;
@@ -906,11 +872,6 @@
   .mp-inv .spi-head { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
 }
 
-
-/* ── Master add / edit form: the Rack / Warehouse form's teal look ─────────
-   The header, footer and buttons are the shared .spi-mdl-* pieces and the
-   sections are .whm-card; this restyles what is still the master form's
-   own: the reactstrap shell, the fields and the dropdowns. */
 .mp-tealf-backdrop.modal-backdrop.show {
   opacity: 1;
   background: radial-gradient(1200px 600px at 50% 0%, rgba(8, 145, 178, .35), rgba(8, 47, 73, .55));
@@ -935,11 +896,9 @@
 .mp-tealf .spi-mdl-cancel,
 .mp-tealf .spi-mdl-confirm { height: 42px; border-radius: 12px; }
 
-/* Labels: the Rack form's small uppercase slate-teal. */
 .master-modal.mp-tealf label { font-size: 9.5px; letter-spacing: .06em; color: #5b7585; }
 .master-modal.mp-tealf label > i { color: #0891b2 !important; }
 
-/* Inputs and dropdown toggles: 42px, soft tint until focused, teal ring. */
 .master-modal.mp-tealf .form-control,
 .master-modal.mp-tealf .form-select,
 .master-modal.mp-tealf .master-field .form-control,
@@ -982,16 +941,12 @@
 .master-modal.mp-tealf .master-field:has(.form-control:focus) .master-field-icon,
 .master-modal.mp-tealf .master-field:has(.form-select:focus) .master-field-icon,
 .master-modal.mp-tealf .master-select-wrap.show .master-select-chev { color: #0891b2; }
-/* Auto-generated codes read like the Rack ID: teal, monospace. */
 .master-modal.mp-tealf .master-field .form-control.master-field-auto {
   background: #f3fbfd !important;
   color: #0e7490 !important;
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-weight: 800;
 }
-/* Radio segments and switches / checkboxes in teal. */
-/* Radio segments read like the list tabs (order.css .ord-list .spi-seg): the
-   options are <label>s, so they undo the small uppercase field-label look. */
 .master-modal.mp-tealf .mp-seg {
   padding: 5px;
   border: 1px solid #d4f3f9;
@@ -1022,7 +977,6 @@
 .master-modal.mp-tealf .form-check-input:checked { background-color: #0891b2; border-color: #0891b2; }
 .master-modal.mp-tealf .form-check-input:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .2); }
 
-/* The open dropdown list is portalled to the body. */
 body:has(.mp-tealf) .master-select-item:hover,
 body:has(.mp-tealf) .master-select-item:focus { background: rgba(8, 145, 178, .08) !important; }
 body:has(.mp-tealf) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
@@ -1059,11 +1013,6 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
 [data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
 
-/* ── List height and cut-off cells ─────────────────────────────────────────
-   Like Service Management: a fixed card that always reaches the bottom of
-   the screen (fitToViewport + fillToFooter), 10 rows a page, rows that do
-   not fit scroll inside it. */
-/* A cell value cut to the column's width; FitTip shows the whole value. */
 .mp-inv .mp-fit {
   display: block;
   max-width: 100%;
@@ -1071,14 +1020,10 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The empty message is centred in the whole card. */
 .mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-scroll { display: flex; flex-direction: column; }
 .mp-inv .dt-root.ord-list:has(.dt-empty-row) .dt-table { flex: 1 1 auto; }
-/* The row buttons sit clear of the card's right edge. */
 .mp-inv .dt-table thead th:last-child,
 .mp-inv .dt-table tbody td:last-child { padding-right: 18px; }
-/* Badges in dark mode: the light teal fills are inline, so these win with
-   !important — a deep teal fill with light cyan text instead of a white pill. */
 [data-bs-theme="dark"] .mp-inv .mp-badge,
 [data-layout-mode="dark"] .mp-inv .mp-badge,
 [data-bs-theme="dark"] .mp-inv .mp-code-chip,
@@ -1091,9 +1036,6 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] .mp-inv .mp-badge i,
 [data-layout-mode="dark"] .mp-inv .mp-badge i { color: #67e8f9 !important; }
 
-/* ── Master form, dark mode: the light rules above are more specific than
-   the first dark pass, so the dropdown toggles kept a light border, went
-   white on hover, and a locked field stayed white. Same selectors here. */
 [data-bs-theme="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled),
 [data-layout-mode="dark"] .master-modal.mp-tealf .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled),
 [data-bs-theme="dark"] .master-modal.mp-tealf .master-field .form-control,
@@ -1114,7 +1056,6 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] .master-modal.mp-tealf label > i { color: #67e8f9 !important; }
 [data-bs-theme="dark"] .master-modal.mp-tealf .master-field-icon { color: #7c93a8; }
 
-/* The open list (portalled to the body) on the form's dark navy, teal rows. */
 [data-bs-theme="dark"] body:has(.mp-tealf) .master-select-menu,
 [data-layout-mode="dark"] body:has(.mp-tealf) .master-select-menu {
   background: #0f1b2d !important;
@@ -1130,7 +1071,6 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] body:has(.mp-tealf) .master-select-item,
 [data-layout-mode="dark"] body:has(.mp-tealf) .master-select-item { color: #cbd5e1; }
 
-/* ── KPI cards: the CredVault Recycle Bin card (credvault.css .phx-card) ── */
 .mp-kc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
 .mp-kc {
   --c1: #0e7490; --c2: #22d3ee; --bg: #ecfeff;
@@ -1185,7 +1125,6 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-bs-theme="dark"] .mp-kc__s,
 [data-layout-mode="dark"] .mp-kc__s { color: #94a3b8; }
 
-/* Saving overlay (masterFormKit .master-lock) in the teal forms. */
 .mp-tealf .master-lock { background: rgba(244, 251, 253, .62); }
 .mp-tealf .master-lock__box { color: #0e7490; }
 .mp-tealf .master-lock__spin { border-color: rgba(8, 145, 178, .18); border-top-color: #0891b2; }

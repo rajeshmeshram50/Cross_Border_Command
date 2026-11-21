@@ -12,18 +12,13 @@ import './p2p/p2p-common.css';
 import './p2p/purchase-management/order/po-list/order.css';
 import SearchClear from '../components/ui/SearchClear';
 
-/* Warehouse, Zone and Rack live in Inventory Management. Their cards here open
-   those pages (not the old generic /master/:slug lists, which nothing reads)
-   and, when /master-counts is unavailable, count from the same Inventory APIs. */
 const INVENTORY_MASTER_PAGES: Record<string, string> = {
   'master.warehouse_master': '/inventory-management/warehouse-master',
   'master.zone_master':      '/inventory-management/zone-master',
   'master.racks':            '/inventory-management/rack-master',
   'master.product_flags':    '/inventory-management/product-flags',
-  /* Module masters open their module pages. */
   'sales.lead_ack_master': '/sales/lead-ack-master',
   'hr.holiday':            '/hr/holiday',
-  /* CLM masters open their CLM pages. */
   'clm.authority':         '/clm/authority',
   'clm.kyc':               '/clm/kyc',
   'clm.due_diligence':     '/clm/due-diligence',
@@ -40,7 +35,6 @@ const INVENTORY_MASTER_LISTS: Record<string, string> = {
   'master.racks':            '/inventory/racks',
   'master.product_flags':    '/inventory/product-flags',
 };
-/* One-line summary under each group heading. */
 const GROUP_SUMMARIES: Record<string, string> = {
   'master.organisation': 'Company identity, bank accounts, departments, roles and designations.',
   'master.geography':    'Countries, states, GST state codes and address types.',
@@ -53,7 +47,6 @@ const GROUP_SUMMARIES: Record<string, string> = {
   'master.clm':          'Authorities, KYC, due diligence, licences, trade documents and contract libraries from CLM.',
 };
 
-/* Module masters whose counts come from their own list API (see the counts effect). */
 const OWN_LIST_COUNTS: Record<string, { url: string; rows: (data: any) => any[] }> = {
   'hr.holiday': { url: '/holiday-groups', rows: d => (Array.isArray(d) ? d : []) },
   'sales.lead_ack_master': {
@@ -62,8 +55,6 @@ const OWN_LIST_COUNTS: Record<string, { url: string; rows: (data: any) => any[] 
   },
 };
 
-/* Product Flags has no permission of its own: like the Inventory menu
-   (IdimsHeader PERM_ALIAS), it follows Warehouse Master's. */
 const MASTER_PERM_ALIAS: Record<string, string> = {
   'master.product_flags': 'master.warehouse_master',
 };
@@ -74,8 +65,6 @@ const SUPER_ADMIN_ONLY_MASTERS = new Set<string>(['master.organization_types']);
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }
 
-/* Every group in the Warehouse / Rack Master teal (the master list pages'
-   colour); each keeps its own icon. */
 const MD_TEAL_BAR  = 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 50%, #0e7490 100%)';
 const MD_TEAL_ICON = 'linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%)';
 
@@ -118,7 +107,6 @@ const LEAF_ICONS: Record<string, string> = {
 };
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
-/* One short line per card (the card shows a single line). */
 const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.organization_types':       'Organisation types for client setup',
   'master.company':                  'Legal identity — GSTIN, PAN, IEC',
@@ -227,8 +215,6 @@ export default function MasterDashboard() {
     setCounts({});
     setPending(new Set(allLeaves.map(l => l.id)));
 
-    /* Holiday and Lead Acknowledgement are counted from their own list APIs,
-       so the numbers use exactly the tenant / branch filter their pages use. */
     const ownLeaves = allLeaves.filter(l => OWN_LIST_COUNTS[l.id]);
     const runOwnLists = () => Promise.all(ownLeaves.map(async leaf => {
       const src = OWN_LIST_COUNTS[leaf.id];
@@ -237,7 +223,7 @@ export default function MasterDashboard() {
         const rows = src.rows((await api.get(src.url)).data);
         const active = rows.filter(r => String(r?.status ?? '').toLowerCase().trim() === 'active').length;
         entry = { active, inactive: rows.length - active, total: rows.length };
-      } catch { /* the card shows 0 rather than staying on loading */ }
+      } catch {}
       if (cancelled) return;
       setCounts(prev => ({ ...prev, [leaf.id]: entry }));
       setPending(prev => { const next = new Set(prev); next.delete(leaf.id); return next; });
@@ -359,15 +345,12 @@ export default function MasterDashboard() {
       [data-bs-theme="dark"] .master-surface { background: #1c2531; }
       @keyframes mc-spin { to { transform: rotate(360deg); } }
 
-      /* Header: the master list pages' teal .spi-head (p2p-common.css), with the
-         search and Back on the right. */
       .md-page .spi-head { gap: 14px; padding: 10px 14px 10px 20px; }
       .md-head-right { display: flex; align-items: center; gap: 10px; z-index: 1; flex: 0 1 560px; min-width: 0; justify-content: flex-end; }
       .md-page .md-head-right .spi-search { flex: 1 1 380px; max-width: 420px; height: 40px; margin: 0; background: rgba(255, 255, 255, .35); border-color: rgba(8, 145, 178, .28); backdrop-filter: blur(4px); }
       .md-page .md-head-right .spi-search:focus-within { background: rgba(255, 255, 255, .55); }
       [data-bs-theme="dark"] .md-page .md-head-right .spi-search { background: rgba(255, 255, 255, .04); border-color: rgba(34, 211, 238, .24); }
       .md-page .spi-head-btn { height: 40px; }
-      /* Analytics View panel (values from the CLM Customer Profile's Analytics Overview). */
       .md-ana { position: relative; overflow: hidden; flex-shrink: 0; background: #fff; border: 1px solid #d6eef5; border-radius: 14px; box-shadow: 0 4px 16px rgba(6, 182, 212, .06); }
       .md-ana__strip { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; z-index: 2; background: linear-gradient(180deg, #67e8f9, #0891b2, #0e7490); }
       .md-ana__head {
@@ -396,7 +379,6 @@ export default function MasterDashboard() {
         transition: background .15s, border-color .15s;
       }
       .md-ana__toggle:hover { background: #fff; border-color: #22d3ee; }
-      /* Group heading: the What We Are Doing Here bar (CLM Customer Profile). */
       .md-grp {
         position: relative; overflow: hidden; cursor: pointer; user-select: none;
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -429,13 +411,11 @@ export default function MasterDashboard() {
       [data-bs-theme="dark"] .md-ana__lbl, [data-bs-theme="dark"] .md-ana__sub { color: #7dd3fc; }
       [data-bs-theme="dark"] .md-ana__toggle { background: rgba(255, 255, 255, .06); color: #67e8f9; border-color: rgba(34, 211, 238, .28); }
       [data-bs-theme="dark"] .md-ana__body { background: rgba(34, 211, 238, .03); }
-      /* Master cards: 5 per row on a wide screen, stepping down as it narrows. */
       .md-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
       @media (max-width: 1399.98px) { .md-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
       @media (max-width: 1199.98px) { .md-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
       @media (max-width: 991.98px)  { .md-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
       @media (max-width: 575.98px)  { .md-cards { grid-template-columns: minmax(0, 1fr); } }
-      /* No search match: one card filling the rest of the screen, message centred. */
       .md-empty {
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
         min-height: calc(100vh - 330px);
@@ -457,7 +437,6 @@ export default function MasterDashboard() {
       [data-bs-theme="dark"] .md-empty__t { color: #e2e8f0; }
       [data-bs-theme="dark"] .md-empty__t strong { color: #67e8f9; }
       [data-bs-theme="dark"] .md-empty__s { color: #94a3b8; }
-      /* Rows keep the app's 8px rhythm (app.css gives it to pages with .ms-cstrip). */
       .md-page .row { --vz-gutter-x: 8px; --vz-gutter-y: 8px; --bs-gutter-x: 8px; --bs-gutter-y: 8px; }
       @media (max-width: 768px) {
         .md-page .spi-head { flex-direction: column; align-items: stretch; }
@@ -492,8 +471,6 @@ export default function MasterDashboard() {
         </div>
       </div>
 
-      {/* Analytics View: the stat tiles in one panel, like the CLM Customer
-          Profile's Analytics Overview. Collapsible. */}
       <div className="md-ana">
         <div className="md-ana__strip" />
         <div className="md-ana__head">
@@ -614,7 +591,6 @@ export default function MasterDashboard() {
         )}
       </div>
 
-      {}
       {hasSearch && filteredGroups.length === 0 && (
         <div className="md-empty">
           <span className="md-empty__ico"><i className="ri-search-eye-line" /></span>
@@ -623,7 +599,6 @@ export default function MasterDashboard() {
         </div>
       )}
 
-      {}
       {filteredGroups.map(group => {
         const s = CATEGORY_STYLES[group.id] || { color: '#405189', icon: 'ri-folder-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)' };
         const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
@@ -631,9 +606,6 @@ export default function MasterDashboard() {
         return (
           <div key={group.id}>
 
-            {}
-            {/* Group heading in the "What We Are Doing Here" bar style (CLM Customer
-                Profile): teal band, icon tile, label | title, one-line summary. */}
             <div
               className="md-grp"
               role="button"
@@ -660,8 +632,6 @@ export default function MasterDashboard() {
               </span>
             </div>
 
-            {}
-            {}
             {!isCollapsed && (
               <div className="md-cards">
                 {group.children.map(leaf => (
@@ -712,13 +682,10 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
         el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
-      {}
       <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: s.gradient }} />
 
-      {}
       <div style={{ position: 'absolute', top: -36, right: -36, width: 110, height: 110, borderRadius: '50%', background: `radial-gradient(circle,${s.color}10 0%,transparent 70%)`, pointerEvents: 'none' }} />
 
-      {}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 0, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: s.gradient, boxShadow: `0 3px 10px ${s.color}33`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -728,7 +695,6 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
             {leaf.label}
           </h6>
         </div>
-        {}
         {(() => {
           const cfg = headerStatus === 'active'
             ? { bg: '#0ab39c18', fg: '#0ab39c', dot: '#0ab39c', text: 'Active' }
@@ -746,12 +712,10 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
         })()}
       </div>
 
-      {}
       <p style={{ margin: '-3px 0 12px 0', paddingLeft: 46, position: 'relative', fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.55, flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {leafDescription(leaf)}
       </p>
 
-      {}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 9, borderTop: '1px solid var(--vz-border-color)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
