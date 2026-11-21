@@ -181,7 +181,7 @@ export default function CustomFieldModal(props: {
 
         [data-bs-theme="dark"] .cfm-overlay,
         [data-layout-mode="dark"] .cfm-overlay { background: rgba(2, 6, 23, 0.55); }
-        [data-bs-theme="dark"] .cfm-popup,
+
         /* Saving veil. Over THIS popup only: the save is a blocking step for
            the form, not for the page behind it, so the page keeps its own
            scroll and the backdrop stays as it was. */
@@ -210,6 +210,7 @@ export default function CustomFieldModal(props: {
         [data-bs-theme="dark"] .cfm-saving-text,
         [data-layout-mode="dark"] .cfm-saving-text { color: #c4b5fd; }
 
+        [data-bs-theme="dark"] .cfm-popup,
         [data-layout-mode="dark"] .cfm-popup {
           background: color-mix(in srgb, #000 24%, var(--vz-card-bg)) !important;
           box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
