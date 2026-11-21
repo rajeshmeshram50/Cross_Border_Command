@@ -750,7 +750,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           </button>
         </div>
 
-        {loading ? null : (
+        {/* Rendered while loading too. The fields are already seeded from the
+            employee row, and the veil covers the swap when the fetch lands. */}
           <div className="ssm-body">
             <div className="ssm-section">
               <div className="ssm-section-head">
@@ -1001,10 +1002,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
               />
             </div>
           </div>
-        )}
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
-        {!loading && (
           <div className="ssm-footer">
             <span className="ssm-footer-note">
               <i className="ri-history-line" />
@@ -1019,7 +1018,6 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
               </button>
             </div>
           </div>
-        )}
       </ModalBody>
     </Modal>
     </>

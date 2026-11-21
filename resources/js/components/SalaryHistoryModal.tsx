@@ -406,6 +406,9 @@ function HistoryStyles() {
         /* Two cards' worth. vh keeps it honest on short laptop screens, where a
            fixed 460px would have pushed the dialog past the viewport. */
         max-height: min(58vh, 460px);
+        /* …and a floor, so the shell behind the loading veil is a popup
+           rather than a bare header strip. */
+        min-height: 280px;
         padding-bottom: 6px;
       }
       .shm-body::-webkit-scrollbar { width: 8px; }
