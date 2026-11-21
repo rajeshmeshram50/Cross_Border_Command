@@ -708,6 +708,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   return (
     <>
     {saving && <FullPageLoader label="Saving…" />}
+    {/* Sits ABOVE the popup (z-index 20000 clears the modal layer), so the
+        shell is on screen behind the veil and fills in as it lifts. */}
+    {open && loading && <FullPageLoader label="Loading the current structure…" />}
     <Modal
       isOpen={open}
       toggle={onClose}
@@ -747,12 +750,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           </button>
         </div>
 
-        {loading ? (
-          <div className="ssm-loading">
-            <i className="ri-loader-4-line ri-spin" style={{ fontSize: 26, color: '#5a3fd1' }} />
-            <span>Loading the current structure…</span>
-          </div>
-        ) : (
+        {loading ? null : (
           <div className="ssm-body">
             <div className="ssm-section">
               <div className="ssm-section-head">
@@ -1111,11 +1109,6 @@ export function SalaryModalStyles() {
         flex: 1 1 auto; min-height: 0; overflow-y: auto;
         overscroll-behavior: contain;
         padding: 18px 22px 20px;
-        background: var(--vz-secondary-bg);
-      }
-      .ssm-loading {
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        gap: 10px; padding: 56px 0; color: var(--vz-secondary-color); font-size: 12.5px;
         background: var(--vz-secondary-bg);
       }
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Spinner } from 'reactstrap';
+import { Modal } from 'reactstrap';
 import api from '../api';
 import { SalaryModalStyles, type SalaryEmployeeLite } from './SalaryStructureModal';
+import FullPageLoader from './ui/FullPageLoader';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Salary revision history — every version an employee has had, with the
@@ -161,6 +162,10 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
     .map(w => w.charAt(0).toUpperCase()).join('') || '?';
 
   return (
+    <>
+    {/* Sits ABOVE the popup (z-index 20000 clears the modal layer), so the
+        shell is on screen behind the veil and fills in as it lifts. */}
+    {open && loading && <FullPageLoader label="Loading history…" />}
     <Modal isOpen={open} toggle={onClose} centered className="shm-modal" contentClassName="ssm-card">
       <SalaryModalStyles />
       <HistoryStyles />
@@ -196,12 +201,6 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
             open current version plus the next card, so the list reads as "there
             is more below" instead of running off the bottom of the screen. */}
         <div className="ssm-body shm-body">
-        {loading && (
-          <div className="text-center py-5">
-            <Spinner size="sm" /> <span className="ms-2 text-muted" style={{ fontSize: 12.5 }}>Loading history…</span>
-          </div>
-        )}
-
         {!loading && error && (
           <div className="text-center py-5 text-danger" style={{ fontSize: 12.5 }}>{error}</div>
         )}
@@ -391,6 +390,7 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
         </div>
       </div>
     </Modal>
+    </>
   );
 }
 
