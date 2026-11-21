@@ -12,6 +12,7 @@ import { useServerList } from '../../../../../hooks/useServerList';
 import { useFitPageSize } from '../../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { ccyCode, ccySymbol } from '../../../../../utils/currency';
+import Amount from '../../../../../components/ui/Amount';
 const RecoverPaymentModal = lazy(() => import('../../../payment-management/advance-refund/RecoverPaymentModal'));
 import type { PoLink } from '../create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
@@ -161,10 +162,10 @@ export const ORDER_COLUMNS: Column[] = [
   { label: 'Supplier',                   width: 164 },
   { label: 'Risk Alert',                 width: 100 },
   { label: 'Expected Delivery Date',     width: 104 },
-  { label: 'Total PO Amount',            width: 106 },
-  { label: 'Net Payable Amount',         width: 112 },
-  { label: 'Total Paid Amount',          width: 110 },
-  { label: 'Balance Amount',             width: 106, groupEnd: true },
+  { label: 'Total PO Amount',            width: 126 },
+  { label: 'Net Payable Amount',         width: 130 },
+  { label: 'Total Paid Amount',          width: 122 },
+  { label: 'Balance Amount',             width: 126, groupEnd: true },
   { label: "Mapped SPI's",               width: 188 },
   { label: "GRN ID's",                   width: 158 },
   { label: "QA ID's",                    width: 158 },
@@ -980,11 +981,11 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
                 <PoCell span={span}><span className="ord-edd">{row.expectedDelivery ? formatDate(row.expectedDelivery) : '—'}</span></PoCell>
 
-                <PoCell span={span}><span className="ord-amt">{formatMoney(row.total, row.currency)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net, row.currency)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid, row.currency)}</span></PoCell>
+                <PoCell span={span}><Amount className="ord-amt" text={formatMoney(row.total, row.currency)} /></PoCell>
+                <PoCell span={span}><Amount className="ord-amt ord-amt--net" text={formatMoney(row.net, row.currency)} /></PoCell>
+                <PoCell span={span}><Amount className="ord-amt ord-amt--paid" text={formatMoney(row.paid, row.currency)} /></PoCell>
                 <PoCell span={span} groupEnd>
-                  <span className="ord-amt ord-amt--bal">{formatMoney(row.balance, row.currency)}</span>
+                  <Amount className="ord-amt ord-amt--bal" text={formatMoney(row.balance, row.currency)} />
                 </PoCell>
               </>
             )}

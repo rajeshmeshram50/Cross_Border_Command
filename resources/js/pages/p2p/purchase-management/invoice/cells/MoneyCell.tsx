@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import Amount from '../../../../../components/ui/Amount';
 
 /**
  * Which money this is. The names are the Order module's own suffixes, so the
@@ -34,9 +35,10 @@ export function formatINR(value: number): string {
  */
 function MoneyCellBase({ value, tone }: { value: number; tone?: MoneyTone }) {
   return (
-    <span className={tone ? `ord-amt ord-amt--${tone}` : 'ord-amt'}>
-      {formatINR(value)}
-    </span>
+    <Amount
+      className={tone ? `ord-amt ord-amt--${tone}` : 'ord-amt'}
+      text={formatINR(value)}
+    />
   );
 }
 
