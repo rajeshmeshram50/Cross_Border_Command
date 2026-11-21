@@ -42,7 +42,6 @@ export type FieldDef = {
   cascadeFrom?: string;
 };
 
-export type WtdStep = { icon: string; title: string; desc: string };
 
 export type KpiDef = {
   label: string;
@@ -73,7 +72,6 @@ export type MasterConfig = {
   lockedReason?: string;
   parent?: { path: string; label: string };
   data: any[];
-  wtd: WtdStep[];
   kpis?: KpiDef[];
 };
 
@@ -103,14 +101,6 @@ const P_STATE_CODE      = "^[0-9]{2}$";
 const M_STATE_CODE      = "State Code must be exactly 2 digits, e.g. 07 or 27 (numbers only).";
 const P_SWIFT_CODE      = "^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$";
 const M_SWIFT_CODE      = "Swift Code must be 8 or 11 letters/numbers, e.g. HDFCINBB or SBININBB104 (no spaces or special characters).";
-export const shouldShowField = (field: FieldDef, formData: Record<string, any>): boolean => {
-  if (!field.showWhen) return true;
-  const current = formData[field.showWhen.field];
-  const expected = field.showWhen.equals;
-  return Array.isArray(expected)
-    ? expected.includes(current)
-    : current === expected;
-};
 const C: Record<string, MasterConfig> = {
   company: {
     key: 'company', slug: 'company', title: 'Company Details', titleSingular: 'Company Detail',
@@ -135,12 +125,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Company Name', 'Short Code', 'GSTIN', 'City', 'Status'],
     uFields: ['company_name', 'gstin', 'pan'],
     data: [{ id: 1, company_name: 'Inorbvict Healthcare India Pvt Ltd', short_code: 'IGC', gstin: '27AADCI6120M1ZH', pan: 'AADCI6120M', cin: 'U85100PN2014PTC152252', iec: '3114017398', email: 'info@inhpl.com', mobile: '+91 98500 00000', city: 'Pune', state: 'Maharashtra', address: 'Solitaire Hub, Outer Ring Road, Balewadi, Pune - 411045', status: 'Active' }],
-    wtd: [
-      { icon: 'ri-building-4-line', title: 'Set Company Identity', desc: 'Legal name, short code' },
-      { icon: 'ri-file-list-3-line', title: 'Add Tax Info', desc: 'GSTIN, PAN, CIN, IEC for exports' },
-      { icon: 'ri-global-line', title: 'Add Contact Details', desc: 'Email, mobile, website, address' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Enables use across all modules' },
-    ],
   },
 
   organization_types: {
@@ -160,12 +144,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Name', 'Description', 'Order', 'Status'],
     uFields: ['name'],
     data: [],
-    wtd: [
-      { icon: 'ri-building-line',        title: 'Define Organization Types', desc: 'Create industry categories for client onboarding' },
-      { icon: 'ri-image-line',           title: 'Assign Icon',               desc: 'Pick a Remix Icon to visualize each type' },
-      { icon: 'ri-file-text-line',       title: 'Add Description',           desc: 'Short hint shown in admin lists' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active',         desc: 'Enables the type in client registration' },
-    ],
   },
 
   bank_accounts: {
@@ -190,12 +168,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Bank Name', 'Account Holder', 'Account No.', 'IFSC', 'Swift Code', 'Status'],
     uFields: ['account_number', 'ifsc_code'],
     data: [{ id: 1, bank_name: 'State Bank of India', account_holder: 'Inorbvict Healthcare Pvt Ltd', account_number: '••••1122', ifsc_code: 'SBIN0000691', branch_name: 'New Delhi Main Branch', city: 'New Delhi', swift_code: 'SBININBB104', ad_code: '0510573', is_primary: 'Yes', status: 'Active' }],
-    wtd: [
-      { icon: 'ri-bank-line', title: 'Add Bank Details', desc: 'Account number, IFSC, branch' },
-      { icon: 'ri-global-line', title: 'Export Fields', desc: 'Swift Code + AD Code for FIRC/eBRC' },
-      { icon: 'ri-star-line', title: 'Mark Primary Account', desc: 'Used on all export documents' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Account ready for use' },
-    ],
   },
 
   departments: {
@@ -238,12 +210,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Code', 'Department Name', 'Parent Dept', 'Head', 'Status'],
     uFields: ['code'],
     data: [],
-    wtd: [
-      { icon: 'ri-building-line', title: 'Name Your Department', desc: 'e.g. Sales, HR, Accounts' },
-      { icon: 'ri-hashtag', title: 'Assign Code', desc: 'Unique code like DEPT-001' },
-      { icon: 'ri-user-star-line', title: 'Pick a Head', desc: 'The person owning the department' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Department available for assignment' },
-    ],
     kpis: [
       { label: 'Total Depts', icon: 'ri-building-line',
         gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)',
@@ -294,11 +260,6 @@ const C: Record<string, MasterConfig> = {
       { id: 7, name: 'Operator',      code: 'ROL-07', role_type: 'Operational',    role_category: 'Operational', status: 'Active' },
       { id: 8, name: 'Director',      code: 'ROL-08', role_type: 'Primary',        role_category: 'Management',  status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-team-line', title: 'Define Role Name', desc: 'e.g. Admin, Manager, Viewer' },
-      { icon: 'ri-shield-keyhole-line', title: 'Controls Module Access', desc: 'Role decides what user can see' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Role available for assignment' },
-    ],
   },
 
   designations: {
@@ -343,11 +304,6 @@ const C: Record<string, MasterConfig> = {
       { id: 18, name: 'Software Intern',           code: 'DGN-018', level: 'Intern / Trainee',         status: 'Active' },
       { id: 19, name: 'HR Intern',                 code: 'DGN-019', level: 'Intern / Trainee',         status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-briefcase-4-line', title: 'Add Designation Title', desc: 'e.g. Operations Manager' },
-      { icon: 'ri-stack-line', title: 'Pick Level & Reporting', desc: 'Hierarchy + manager link' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Designation available for staff' },
-    ],
   },
 
   kpis: {
@@ -372,12 +328,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, name: 'Task Completion Rate',  target_type: 'Percentage', priority: 'Medium',   status: 'Active' },
       { id: 4, name: 'Customer Satisfaction', target_type: 'Rating',     priority: 'High',     status: 'Active' },
       { id: 5, name: 'On-time Delivery',      target_type: 'Boolean',    priority: 'Medium',   status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-bar-chart-2-line', title: 'Define KPI Target', desc: 'Numeric / Percentage / Currency / etc.' },
-      { icon: 'ri-team-line', title: 'Assign To Role', desc: 'Map the KPI to a Role from Role Master' },
-      { icon: 'ri-flag-line', title: 'Set Priority', desc: 'Critical / High / Medium / Low' },
-      { icon: 'ri-checkbox-circle-line', title: 'Activate Tracking', desc: 'Set status Active to start tracking' },
     ],
   },
 
@@ -408,12 +358,6 @@ const C: Record<string, MasterConfig> = {
       { id: 11, name: 'France', iso_code: 'FR', status: 'Active' },
       { id: 12, name: 'South Africa', iso_code: 'ZA', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-global-line', title: 'Add Country Name', desc: 'e.g. India, UAE, Germany' },
-      { icon: 'ri-hashtag', title: 'Add ISO Code', desc: '2-letter — IN, AE, DE' },
-      { icon: 'ri-ship-line', title: 'Used On Trade Docs', desc: 'Invoices, shipping, ports' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for address & ports' },
-    ],
   },
 
   states: {
@@ -438,12 +382,6 @@ const C: Record<string, MasterConfig> = {
       { id: 6, country_id: 2, name: 'California', status: 'Active' },
       { id: 7, country_id: 2, name: 'New York', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-global-line', title: 'Select Parent Country', desc: 'Country required first' },
-      { icon: 'ri-map-2-line', title: 'Add State Name', desc: 'e.g. Maharashtra, Gujarat' },
-      { icon: 'ri-money-rupee-circle-line', title: 'GST Place-of-Supply', desc: 'State drives IGST vs CGST/SGST' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for addresses' },
-    ],
   },
 
   state_codes: {
@@ -465,12 +403,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, state_id: 3, state_code: '07', status: 'Active' },
       { id: 4, state_id: 4, state_code: '29', status: 'Active' },
       { id: 5, state_id: 5, state_code: '33', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-map-2-line', title: 'Select State', desc: 'Link the 2-digit code to a state' },
-      { icon: 'ri-hashtag', title: 'Enter GST State Code', desc: 'e.g. 27 Maharashtra, 24 Gujarat' },
-      { icon: 'ri-file-list-3-line', title: 'Printed On GST Invoices', desc: 'Mandatory for GST compliance' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Code used in invoice generation' },
     ],
   },
 
@@ -497,11 +429,6 @@ const C: Record<string, MasterConfig> = {
       { id: 4, name: 'Billing Address', status: 'Active' },
       { id: 5, name: 'Shipping Address', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-home-line', title: 'Define Address Label', desc: 'e.g. Registered Office, Warehouse' },
-      { icon: 'ri-price-tag-3-line', title: 'Tags Any Address', desc: 'Classifies customer & vendor addresses' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for address tagging' },
-    ],
   },
 
   port_of_loading: {
@@ -523,11 +450,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Jawaharlal Nehru Port', code: 'INNSA', address: 'JNPT, Nhava Sheva, Mumbai', status: 'Active' },
       { id: 3, name: 'Mundra Port', code: 'INMUN', address: 'Mundra, Kutch, Gujarat', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-anchor-line', title: 'Add Port Name & Code', desc: 'e.g. Chennai Port — INMAA' },
-      { icon: 'ri-ship-line', title: 'Used On Shipping Bills', desc: 'Origin port on export documents' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for shipment creation' },
-    ],
   },
 
   port_of_discharge: {
@@ -546,12 +468,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Port Name', 'Code', 'Country', 'City', 'Status'],
     uFields: ['code'],
     data: [{ id: 1, name: 'Port Jebel Ali', code: 'AEJEA', country_id: 7, city: 'Dubai', status: 'Active' }],
-    wtd: [
-      { icon: 'ri-ship-line', title: 'Add Destination Port', desc: 'e.g. Port Jebel Ali — AEJEA' },
-      { icon: 'ri-global-line', title: 'Link to Country', desc: 'Port belongs to destination country' },
-      { icon: 'ri-file-list-3-line', title: 'On Packing Lists', desc: 'Discharge port printed on export docs' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for shipment assignment' },
-    ],
   },
 
   segments: {
@@ -576,11 +492,6 @@ const C: Record<string, MasterConfig> = {
       { id: 7, title: 'Fruits', status: 'Active' },
       { id: 8, title: 'Food Grains', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-focus-3-line', title: 'Define Segment Name', desc: 'e.g. Dry Fruits, Pharma' },
-      { icon: 'ri-file-chart-line', title: 'Groups Orders & Products', desc: 'Used in reporting & filtering' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Segment available for tagging' },
-    ],
   },
 
   hsn_codes: {
@@ -600,11 +511,6 @@ const C: Record<string, MasterConfig> = {
       { id: 1, hsn_code: '08021200', description: 'Almonds — Shelled', status: 'Active' },
       { id: 2, hsn_code: '08062000', description: 'Raisins — Dried Grapes', status: 'Active' },
       { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-file-code-line', title: 'Enter HSN / SAC Code', desc: '4–8 digit numeric code (e.g. 08021200)' },
-      { icon: 'ri-file-list-3-line', title: 'Mandatory On B2B Invoices', desc: 'HSN needed for GST filing & customs' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Code available for products' },
     ],
   },
 
@@ -626,10 +532,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, percentage: 12, status: 'Active' },
       { id: 4, percentage: 18, status: 'Active' },
       { id: 5, percentage: 28, status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-percent-line', title: 'Enter GST %', desc: 'e.g. 0, 5, 12, 18, 28' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Rate available for products' },
     ],
   },
 
@@ -653,12 +555,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Euro', code: 'EUR', symbol: '€', exchange_rate: 90.20, status: 'Active' },
       { id: 3, name: 'British Pound', code: 'GBP', symbol: '£', exchange_rate: 105.00, status: 'Inactive' },
       { id: 4, name: 'Indian Rupee', code: 'INR', symbol: '₹', exchange_rate: 1, status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-money-dollar-circle-line', title: 'Add Currency & Code', desc: 'e.g. US Dollar / USD' },
-      { icon: 'ri-currency-line', title: 'Add Symbol', desc: 'e.g. $ € £ ₹ — shown on invoices' },
-      { icon: 'ri-line-chart-line', title: 'Set Exchange Rate vs INR', desc: 'Updated manually per RBI rate' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Currency for export invoicing' },
     ],
   },
 
@@ -686,12 +582,6 @@ const C: Record<string, MasterConfig> = {
       { id: 7, title: 'Bag', short_code: 'BAG', unit_type: 'Count', status: 'Active' },
       { id: 8, title: 'Cubic Meter', short_code: 'CBM', unit_type: 'Volume', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-ruler-line', title: 'Name the Unit', desc: 'e.g. Kilogram, Liter, Piece' },
-      { icon: 'ri-hashtag', title: 'Add Short Code', desc: 'e.g. KG, LTR, PCS' },
-      { icon: 'ri-price-tag-3-line', title: 'Set Unit Type', desc: 'Weight / Volume / Count / Length' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Unit for products & shipments' },
-    ],
   },
 
   packaging_material: {
@@ -717,12 +607,6 @@ const C: Record<string, MasterConfig> = {
       { id: 7, title: 'Pallet', material_type: 'Pallet', status: 'Active' },
       { id: 8, title: 'Jute Bag', material_type: 'Bag', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-box-3-line', title: 'Name the Packaging', desc: 'e.g. PP Bag, Pallet, Drum' },
-      { icon: 'ri-price-tag-3-line', title: 'Set Material Type', desc: 'Bag / Box / Crate / Drum / Pallet' },
-      { icon: 'ri-file-list-3-line', title: 'On Packing Lists', desc: 'Type printed on export documents' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available in packing module' },
-    ],
   },
 
   conditions: {
@@ -746,11 +630,6 @@ const C: Record<string, MasterConfig> = {
       { id: 6, title: 'Cold Chain', status: 'Active' },
       { id: 7, title: 'Frozen', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-leaf-line', title: 'Add Condition Name', desc: 'e.g. Organic, Cold Chain, Frozen' },
-      { icon: 'ri-temp-cold-line', title: 'Controls Storage Routing', desc: 'Cold Chain → Freezer or Cold Zone' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Condition tagged on products' },
-    ],
   },
 
   incoterms: {
@@ -773,12 +652,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, code: 'EXW', full_name: 'Ex Works', transport_mode: 'Any Mode', status: 'Active' },
       { id: 4, code: 'DDP', full_name: 'Delivered Duty Paid', transport_mode: 'Any Mode', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-shake-hands-line', title: 'Add Incoterm Code', desc: 'e.g. FOB, CIF, EXW, DDP' },
-      { icon: 'ri-ship-line', title: 'Define Transport Mode', desc: 'Sea / Air / Road / Any Mode' },
-      { icon: 'ri-file-list-3-line', title: 'Printed On Invoices', desc: 'Defines delivery & risk transfer' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for invoice creation' },
-    ],
   },
 
   customer_types: {
@@ -797,12 +670,6 @@ const C: Record<string, MasterConfig> = {
     data: [
       { id: 1, name: 'Retailer',   gst_applicable: 'Yes', status: 'Active' },
       { id: 2, name: 'Wholesaler', gst_applicable: 'Yes', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-user-3-line', title: 'Pick Customer Category', desc: 'Retailer or Wholesaler — system pinned' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set GST Applicable', desc: 'Drives invoice GST handling' },
-      { icon: 'ri-price-tag-3-line', title: 'Drives Pricing Rules', desc: 'Different price per customer category' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Category appears in customer profiles' },
     ],
   },
 
@@ -833,12 +700,6 @@ const C: Record<string, MasterConfig> = {
       { id: 1, name: 'Standard', credit_limit: 500000, payment_terms: 30, status: 'Active' },
       { id: 2, name: 'VIP',      credit_limit: 10000000, payment_terms: 60, status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-award-line', title: 'Define Tier Name', desc: 'e.g. Tier A Key Account, Tier C New' },
-      { icon: 'ri-bank-card-line', title: 'Set Credit Limit (₹)', desc: 'Max credit extended to this tier' },
-      { icon: 'ri-calendar-line', title: 'Set Payment Terms', desc: 'e.g. 30, 45, 60 days' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Classification for customers' },
-    ],
   },
 
   vendor_types: {
@@ -859,11 +720,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Trader', description: 'Commodity trader', status: 'Active' },
       { id: 3, name: 'Manufacturer', description: 'Processed goods manufacturer', status: 'Active' },
       { id: 4, name: 'Supplier', description: 'General goods supplier', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-store-2-line', title: 'Define Supplier Type', desc: 'e.g. Farmer, Trader, Manufacturer' },
-      { icon: 'ri-file-list-3-line', title: 'Used On Purchase Orders', desc: 'Supplier type shown on PO & reports' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Type for supplier profiles' },
     ],
   },
 
@@ -886,12 +742,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, name: 'Average', description: 'Meets basic requirements', status: 'Active' },
       { id: 4, name: 'Poor', description: 'Below acceptable standards', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-star-line', title: 'Define Performance Tag', desc: 'e.g. Excellent, Good, Poor' },
-      { icon: 'ri-file-text-line', title: 'Set Behaviour Criteria', desc: 'What qualifies for this rating' },
-      { icon: 'ri-price-tag-3-line', title: 'Used In PO Review', desc: 'Rating assigned on vendor evaluation' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Behaviour for PO workflow' },
-    ],
   },
 
   applicable_types: {
@@ -912,12 +762,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Consignee', party_type: 'Customer', status: 'Active' },
       { id: 3, name: 'Notify Party', party_type: 'Third Party', status: 'Active' },
       { id: 4, name: 'Supplier', party_type: 'Supplier', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-team-fill', title: 'Define Party Role', desc: 'e.g. Customer, Consignee, Notify Party' },
-      { icon: 'ri-price-tag-3-line', title: 'Set Party Type', desc: 'Customer / Supplier / Third Party' },
-      { icon: 'ri-file-list-3-line', title: 'Printed On Documents', desc: 'Party role on export invoices & docs' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for document creation' },
     ],
   },
 
@@ -957,12 +801,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Service Category Name', 'Select Service', 'Select Type', 'Status'],
     uFields: ['name', 'service_type', 'classification'],
     data: [],
-    wtd: [
-      { icon: 'ri-price-tag-3-line', title: 'Name the Category', desc: 'Give the service category a clear name' },
-      { icon: 'ri-list-check-2', title: 'Select Service', desc: 'Choose Soft / Digital or Other Operational' },
-      { icon: 'ri-list-check-2', title: 'Select Service Type', desc: 'For Other Operational, choose the applicable type' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Inactive categories stop appearing in the service form' },
-    ],
   },
 
   license_name: {
@@ -985,12 +823,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'FSSAI License', license_code: 'FSSAI', issuing_authority: 'FSSAI', validity_months: 12, status: 'Active' },
       { id: 3, name: 'IEC Code', license_code: 'IEC', issuing_authority: 'DGFT', validity_months: 0, status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-file-shield-2-line', title: 'Name the License', desc: 'e.g. Drug Wholesale License, FSSAI' },
-      { icon: 'ri-government-line', title: 'Set Issuing Authority', desc: 'e.g. CDSCO, FSSAI, DGFT' },
-      { icon: 'ri-calendar-line', title: 'Set Validity Period', desc: 'Months until renewal — 0 = lifetime' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'License tracked for compliance' },
-    ],
   },
 
   risk_levels: {
@@ -1012,12 +844,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Medium', description: 'Moderate risk', action_required: 'Verify', status: 'Active' },
       { id: 3, name: 'High', description: 'Significant risk', action_required: 'Escalate to manager', status: 'Active' },
       { id: 4, name: 'Critical', description: 'Severe risk', action_required: 'Block immediately', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-flashlight-line', title: 'Define Risk Level', desc: 'e.g. Low, Medium, High, Critical' },
-      { icon: 'ri-file-text-line', title: 'Set Risk Criteria', desc: 'What qualifies a vendor for this level' },
-      { icon: 'ri-alarm-warning-line', title: 'Define Action Required', desc: 'e.g. Escalate / Block / Verify' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Level used in vendor screening' },
     ],
   },
 
@@ -1042,12 +868,6 @@ const C: Record<string, MasterConfig> = {
       { id: 4, title: 'Aadhaar Card', applicable_to: 'Both', is_mandatory: 'No', status: 'Active' },
       { id: 5, title: 'Certificate of Analysis', applicable_to: 'Supplier', is_mandatory: 'Yes', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-file-text-line', title: 'Name the Document Type', desc: 'e.g. GST Certificate, COA, PAN' },
-      { icon: 'ri-price-tag-3-line', title: 'Set Applicable To', desc: 'Customer / Supplier / Both / Internal' },
-      { icon: 'ri-star-line', title: 'Mark If Mandatory', desc: 'Mandatory = compliance alert if missing' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Type used for document uploads' },
-    ],
   },
 
   haz_class: {
@@ -1066,10 +886,6 @@ const C: Record<string, MasterConfig> = {
       { id: 1, name: 'Flammable Liquid', status: 'Active' },
       { id: 2, name: 'Toxic Substance', status: 'Active' },
       { id: 3, name: 'Non-Hazardous', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-alert-line', title: 'Name the Hazard Class', desc: 'e.g. Flammable Liquid, Toxic' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Class available for product tagging' },
     ],
   },
 
@@ -1091,12 +907,6 @@ const C: Record<string, MasterConfig> = {
       { id: 2, name: 'Non-Compliant', action_required: 'Issue correction notice', status: 'Active' },
       { id: 3, name: 'Under Review', action_required: 'Await audit', status: 'Active' },
       { id: 4, name: 'Exempt', action_required: 'Maintain records', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-scales-3-line', title: 'Define Compliance Status', desc: 'e.g. Compliant, Non-Compliant' },
-      { icon: 'ri-file-list-3-line', title: 'Set Action Required', desc: 'Steps needed for this status' },
-      { icon: 'ri-history-line', title: 'Tracked Per Supplier', desc: 'Compliance status in audit trail' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for compliance workflow' },
     ],
   },
 
@@ -1138,12 +948,6 @@ const C: Record<string, MasterConfig> = {
       { label: 'With Warranty',    icon: 'ri-shield-check-line',  gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a993fd 100%)', compute: r => r.filter((x:any) => !!x.warranty_expiry_date).length },
       { label: 'Categories Used',  icon: 'ri-price-tag-3-line',   gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => new Set(r.map((x:any) => x.asset_type_id).filter(Boolean)).size },
     ],
-    wtd: [
-      { icon: 'ri-briefcase-4-line', title: 'Name the Asset', desc: 'e.g. HP Laptop 15s, Office Chair' },
-      { icon: 'ri-price-tag-3-line', title: 'Select Asset Category', desc: 'Links to depreciation & useful life' },
-      { icon: 'ri-store-2-line', title: 'Supplier & Purchase Date', desc: 'Where and when it was bought' },
-      { icon: 'ri-file-shield-2-line', title: 'Attach Invoice & Warranty', desc: 'PDF/JPG/PNG — Max 10MB each' },
-    ],
   },
 
   asset_categories: {
@@ -1164,12 +968,6 @@ const C: Record<string, MasterConfig> = {
       { id: 1, name: 'Laptop', depreciation_rate: 33, useful_life_years: 3, status: 'Active' },
       { id: 2, name: 'Desktop Computer', depreciation_rate: 33, useful_life_years: 3, status: 'Active' },
       { id: 3, name: 'Office Furniture', depreciation_rate: 10, useful_life_years: 10, status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-price-tag-3-line', title: 'Name the Category', desc: 'e.g. Laptop, Machinery, Furniture' },
-      { icon: 'ri-line-chart-line', title: 'Set Depreciation Rate', desc: '% per year — e.g. 33% for IT assets' },
-      { icon: 'ri-calendar-line', title: 'Set Useful Life (Years)', desc: 'e.g. 3 years for computers' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Category for asset tagging' },
     ],
   },
 
@@ -1197,12 +995,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Code', 'Expense Name', 'Status'],
     uFields: ['code'],
     data: [],
-    wtd: [
-      { icon: 'ri-hashtag', title: 'Auto-Generate Code', desc: 'EXC-01, EXC-02 — sequenced per tenant' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Name the Category', desc: 'e.g. Travel, Meals, Internet' },
-      { icon: 'ri-file-text-line', title: 'Add Policy Notes', desc: 'What is reimbursable, exclusions, etc.' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for expense claims' },
-    ],
   },
 
   payment_terms: {
@@ -1228,12 +1020,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, term_code: 'NET45', term_name: 'Net 45 Days', credit_days: 45, advance_pct: 0, payment_type: 'Credit', milestone_desc: '', status: 'Active' },
       { id: 4, term_code: 'ADV50', term_name: '50% Advance + 50% on Delivery', credit_days: 0, advance_pct: 50, payment_type: 'Milestone-Based', milestone_desc: '50% advance, 50% on GRN confirmation', status: 'Active' },
       { id: 5, term_code: 'COD', term_name: 'Cash on Delivery', credit_days: 0, advance_pct: 0, payment_type: 'COD', milestone_desc: '', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-calendar-line', title: 'Name the Term', desc: 'e.g. Net 30, Advance 100%' },
-      { icon: 'ri-hashtag', title: 'Set Credit Days', desc: 'Days allowed before payment is due' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set Advance %', desc: 'Advance % required before dispatch' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Term appears in PO creation form' },
     ],
   },
 
@@ -1261,12 +1047,6 @@ const C: Record<string, MasterConfig> = {
       { id: 4, role_name: 'Finance Executive', module_scope: 'Payment', min_value: 0, max_value: 100000, currency: 'INR', escalate_to: 'Finance Manager', status: 'Active' },
       { id: 5, role_name: 'Finance Manager', module_scope: 'Payment', min_value: 100001, max_value: 1000000, currency: 'INR', escalate_to: 'Director', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-user-settings-line', title: 'Set Designation', desc: 'Who is the approver' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set Value Threshold', desc: 'Max amount this role can approve' },
-      { icon: 'ri-stack-line', title: 'Link Procurement Category', desc: 'Goods / Services / AMC scope' },
-      { icon: 'ri-shield-check-line', title: 'Set Module Scope', desc: 'PO / Payment / VTI / GRN' },
-    ],
   },
 
   procurement_category: {
@@ -1292,12 +1072,6 @@ const C: Record<string, MasterConfig> = {
       { id: 4, cat_code: 'JOB', cat_name: 'Job Work', match_logic: '3-Way Match (PO+VTI+GRN)', grn_required: 'Yes — Physical Receipt', gst_applicable: 'Yes', status: 'Active' },
       { id: 5, cat_code: 'IMP', cat_name: 'Import', match_logic: '4-Way Match (PO+VTI+GRN+QC)', grn_required: 'Yes — Physical Receipt', gst_applicable: 'No', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-stack-line', title: 'Define Category Code', desc: 'e.g. GDS, SVC, AMC, JOB' },
-      { icon: 'ri-file-list-3-line', title: 'Name the Category', desc: 'e.g. Goods, Services, Job Work' },
-      { icon: 'ri-git-commit-line', title: 'Set Match Logic', desc: '3-Way Match or 2-Way Match' },
-      { icon: 'ri-checkbox-circle-line', title: 'GRN Required?', desc: 'Physical receipt or service proof' },
-    ],
   },
 
   sourcing_type: {
@@ -1322,12 +1096,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, type_code: 'SPOT', type_name: 'Spot Purchase', quotation_required: 'Optional', approval_required: 'Yes', urgency_flag: 'Urgent', status: 'Active' },
       { id: 4, type_code: 'RC', type_name: 'Rate Contract', quotation_required: 'Not Required', approval_required: 'No', urgency_flag: 'Normal', status: 'Active' },
       { id: 5, type_code: 'EMG', type_name: 'Emergency Purchase', quotation_required: 'Not Required', approval_required: 'Yes', urgency_flag: 'Emergency', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-price-tag-line', title: 'Define Type Code', desc: 'e.g. DIR, OMK, SPOT, RC' },
-      { icon: 'ri-file-list-3-line', title: 'Name the Sourcing Type', desc: 'e.g. Direct Purchase, Open Market' },
-      { icon: 'ri-checkbox-circle-line', title: 'Quotation Required?', desc: 'Is comparative quotation mandatory' },
-      { icon: 'ri-flashlight-line', title: 'Set Urgency Flag', desc: 'Spot / Emergency overrides normal flow' },
     ],
   },
 
@@ -1355,12 +1123,6 @@ const C: Record<string, MasterConfig> = {
       { id: 5, reason_code: 'DATE-EXT', reason_name: 'Delivery Date Extended by Supplier', module: 'Purchase Order', attachment_required: 'No', requires_approval: 'Yes', status: 'Active' },
       { id: 6, reason_code: 'TAX-CORR', reason_name: 'Tax Rate Correction on VTI', module: 'VTI', attachment_required: 'Yes', requires_approval: 'Yes', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-hashtag', title: 'Define Reason Code', desc: 'Short code — e.g. VND-CHG, RATE-REV' },
-      { icon: 'ri-file-text-line', title: 'Name the Reason', desc: 'Clear description of deviation' },
-      { icon: 'ri-stack-line', title: 'Set Applicable Module', desc: 'PO / VTI / GRN / Comparison' },
-      { icon: 'ri-attachment-line', title: 'Attachment Required?', desc: 'Force evidence upload for this reason' },
-    ],
   },
 
   match_exception: {
@@ -1387,12 +1149,6 @@ const C: Record<string, MasterConfig> = {
       { id: 5, exc_code: 'DUP-INV', exc_name: 'Duplicate Invoice Number', tolerance_pct: 0, blocks_payment: 'Yes — Hard Block', resolver_role: 'Finance Executive', status: 'Active' },
       { id: 6, exc_code: 'PO-EXP', exc_name: 'PO Validity Expired', tolerance_pct: 0, blocks_payment: 'Yes — Hard Block', resolver_role: 'Purchase Manager', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-hashtag', title: 'Define Exception Code', desc: 'Short code — e.g. QTY-TOL, RATE-VAR' },
-      { icon: 'ri-file-text-line', title: 'Name the Exception', desc: 'Clear label shown on match screen' },
-      { icon: 'ri-percent-line', title: 'Set Tolerance %', desc: 'Allowed variance % before exception fires' },
-      { icon: 'ri-user-settings-line', title: 'Set Resolver Role', desc: 'Who must resolve before payment releases' },
-    ],
   },
 
   advance_payment_rules: {
@@ -1418,12 +1174,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, vendor_type: 'Manufacturer', procurement_cat: 'Goods', max_advance_pct: 25, approval_above: 500000, approver_role: 'Director', attachment_required: 'Yes', status: 'Active' },
       { id: 4, vendor_type: 'Supplier', procurement_cat: 'Services', max_advance_pct: 20, approval_above: 50000, approver_role: 'Purchase Manager', attachment_required: 'Yes', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-price-tag-3-line', title: 'Select Supplier Type', desc: 'Rule applies to which supplier category' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set Max Advance %', desc: 'Maximum % allowed as advance' },
-      { icon: 'ri-shield-check-line', title: 'Set Approval Threshold', desc: 'Amount above which extra approval needed' },
-      { icon: 'ri-attachment-line', title: 'Attachment Required?', desc: 'Force PO copy / quotation for advance' },
-    ],
   },
 
   exchange_rate_log: {
@@ -1448,12 +1198,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, currency_code: 'GBP', currency_name: 'British Pound', rate_vs_inr: 105.30, effective_date: '2026-04-01', rate_source: 'RBI Reference Rate', status: 'Active' },
       { id: 4, currency_code: 'AED', currency_name: 'UAE Dirham', rate_vs_inr: 22.70, effective_date: '2026-04-01', rate_source: 'RBI Reference Rate', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-money-dollar-circle-line', title: 'Select Currency', desc: 'e.g. USD, EUR, GBP' },
-      { icon: 'ri-calendar-line', title: 'Set Effective Date', desc: 'Date from which rate is valid' },
-      { icon: 'ri-line-chart-line', title: 'Enter Exchange Rate', desc: 'Rate vs INR — e.g. 1 USD = 83.45 INR' },
-      { icon: 'ri-bank-line', title: 'Set Rate Source', desc: 'RBI / Bank / Custom' },
-    ],
   },
 
   goods_service_flag: {
@@ -1475,12 +1219,6 @@ const C: Record<string, MasterConfig> = {
       { id: 1, flag_code: 'GDS', flag_name: 'Goods', grn_screen: 'Physical Receipt — Qty + Batch + Warehouse', evidence_type: 'Delivery Challan / Gate Entry Slip', status: 'Active' },
       { id: 2, flag_code: 'SVC', flag_name: 'Services', grn_screen: 'Service Completion — Date + Proof Doc', evidence_type: 'Service Completion Certificate / Work Order Closure', status: 'Active' },
       { id: 3, flag_code: 'MIX', flag_name: 'Mixed (Goods + Service)', grn_screen: 'Mixed — Partial Goods + Service', evidence_type: 'Delivery Challan + Completion Certificate', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-price-tag-3-line', title: 'Define Flag Code', desc: 'e.g. GDS, SVC' },
-      { icon: 'ri-file-text-line', title: 'Name the Flag', desc: 'Goods or Service — clear label' },
-      { icon: 'ri-file-list-3-line', title: 'GRN Logic', desc: 'Physical receipt or service completion proof' },
-      { icon: 'ri-attachment-line', title: 'Evidence Required', desc: 'What attachment proves completion' },
     ],
   },
 
@@ -1508,12 +1246,6 @@ const C: Record<string, MasterConfig> = {
     data: [
       { id: 1, vendor_company_name: 'TechParts India Pvt Ltd', contact_person: 'Ramesh Joshi', mobile_number: '9876543210', email_id: 'ramesh@techparts.in', segment_id: 1, address: '101, Business Park, MG Road', country: 'India', state: 1, city: 'Pune', mapping_mode: 'Map from Supplier Master', status: 'Active' },
       { id: 2, vendor_company_name: 'Agro Supplies Co.', contact_person: 'Suresh Patil', mobile_number: '9823456780', email_id: 'suresh@agrosupplies.in', segment_id: 2, address: 'Plot 5, MIDC, Satara Road', country: 'India', state: 1, city: 'Satara', mapping_mode: 'Map New Supplier', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-building-line', title: 'Supplier Company Name', desc: 'Legal company name — mandatory' },
-      { icon: 'ri-user-line', title: 'Contact Person + Mobile', desc: 'Primary contact with 10-digit mobile' },
-      { icon: 'ri-map-pin-line', title: 'Full Address', desc: 'Address, Country, State, City' },
-      { icon: 'ri-focus-3-line', title: 'Select Segment', desc: 'Supplier category / business segment' },
     ],
   },
 
@@ -1545,12 +1277,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, wh_id: 'WH-003', wh_name: 'Nashik', wh_type: 'Third Party Warehouse', city: 'Nashik', state: 'Maharashtra', pincode: '422001', contact_person: 'Suresh Patil', contact_phone: '+91 98100 00003', area_sqft: 18000, address: 'MIDC Ambad, Nashik', status: 'Active' },
       { id: 4, wh_id: 'WH-004', wh_name: 'Nagpur', wh_type: 'Third Party Warehouse', city: 'Nagpur', state: 'Maharashtra', pincode: '440001', contact_person: 'Amit Shah', contact_phone: '+91 98100 00004', area_sqft: 15000, address: 'Butibori MIDC, Nagpur', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-building-2-line', title: 'Assign Warehouse ID', desc: 'Unique code — e.g. WH-001' },
-      { icon: 'ri-price-tag-3-line', title: 'Set Warehouse Type', desc: 'Own Warehouse or Third Party' },
-      { icon: 'ri-map-pin-line', title: 'Add Location', desc: 'City, state, pincode, address' },
-      { icon: 'ri-user-line', title: 'Add Contact Person', desc: 'Name & phone of warehouse in-charge' },
-    ],
   },
 
   zone_master: {
@@ -1577,12 +1303,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, zone_id: 'ZN-003', zone_name: 'Zone C — Dispatch', zone_type: 'Dispatch Zone', warehouse: 2, purpose: 'Outward dispatch staging area', cold_chain: 'No', hazardous: 'No', status: 'Active' },
       { id: 4, zone_id: 'ZN-004', zone_name: 'Zone D — Hazmat', zone_type: 'Hazardous Zone', warehouse: 3, purpose: 'Hazardous material storage', cold_chain: 'No', hazardous: 'Yes', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-hashtag', title: 'Assign Zone ID & Name', desc: 'e.g. ZN-001, Zone A — Storage' },
-      { icon: 'ri-price-tag-3-line', title: 'Select Zone Type', desc: 'Storage / Cold Chain / Hazardous / Dispatch' },
-      { icon: 'ri-building-2-line', title: 'Link to Warehouse', desc: 'Which warehouse this zone belongs to' },
-      { icon: 'ri-shield-check-line', title: 'Set Zone Permissions', desc: 'Putaway / Pickup / Dispatch / Cold Chain' },
-    ],
   },
 
   rack_type_master: {
@@ -1608,12 +1328,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, type_code: 'CLD', type_name: 'Cool Rack', description: 'Temperature-resistant rack for cold chain storage', suitable_for: 'Cold Chain', max_load_per_shelf: 800, typical_shelves: 3, status: 'Active' },
       { id: 4, type_code: 'HAZ', type_name: 'Hazardous Rack', description: 'Isolated rack with safety features for hazmat goods', suitable_for: 'Hazardous', max_load_per_shelf: 500, typical_shelves: 2, status: 'Active' },
       { id: 5, type_code: 'CNT', type_name: 'Cantilever Rack', description: 'Open-arm rack for long or irregularly shaped items', suitable_for: 'General Inventory', max_load_per_shelf: 1500, typical_shelves: 5, status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-price-tag-3-line', title: 'Define Type Code', desc: 'Short code — e.g. PLT, CLD, HAZ' },
-      { icon: 'ri-file-text-line', title: 'Name the Rack Type', desc: 'e.g. Pallet Rack, Cool Rack' },
-      { icon: 'ri-box-3-line', title: 'Set Suitable Products', desc: 'What goods this rack type holds' },
-      { icon: 'ri-scales-line', title: 'Set Max Load Per Shelf', desc: 'Load capacity in kilograms' },
     ],
   },
 
@@ -1643,12 +1357,6 @@ const C: Record<string, MasterConfig> = {
       { id: 4, class_code: 'FRZ', class_name: 'Frozen', temp_range_min: -25, temp_range_max: -18, description: 'Deep freeze storage for frozen goods and long-term preservation', requires_monitoring: 'Yes', alert_threshold: -15, suitable_products: 'Frozen Foods, Ice Cream, Meat', status: 'Active' },
       { id: 5, class_code: 'HAZ', class_name: 'Hazardous', temp_range_min: 15, temp_range_max: 30, description: 'Controlled environment for hazardous, flammable or regulated materials', requires_monitoring: 'Yes', alert_threshold: 35, suitable_products: 'Chemicals, SCOMET, Flammables', status: 'Active' },
     ],
-    wtd: [
-      { icon: 'ri-temp-cold-line', title: 'Define Class Code', desc: 'Short code — e.g. AMB, CLD, FRZ' },
-      { icon: 'ri-hashtag', title: 'Set Temperature Range', desc: 'Min and max °C for this class' },
-      { icon: 'ri-alarm-warning-line', title: 'Set Alert Threshold', desc: 'Alert if temperature is exceeded' },
-      { icon: 'ri-box-3-line', title: 'List Suitable Products', desc: 'What products belong in this class' },
-    ],
   },
 
   racks: {
@@ -1677,12 +1385,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, whType: 'Own Warehouse', warehouse: 2, zone: 3, rackName: 'RC-002', rackType: 2, rackStatus: 'Full', shelves: 2, maxWeight: 3000, maxVolume: 18, tempClass: 1 },
       { id: 4, whType: 'Third Party Warehouse', warehouse: 3, zone: 4, rackName: 'RH-001', rackType: 4, rackStatus: 'Reserved', shelves: 2, maxWeight: 800, maxVolume: 5, tempClass: 5 },
     ],
-    wtd: [
-      { icon: 'ri-building-2-line', title: 'Select Warehouse & Zone', desc: 'Warehouse → Zone → then Rack' },
-      { icon: 'ri-stack-line', title: 'Name & Type the Rack', desc: 'Rack Name + Type (Pallet, Cool…)' },
-      { icon: 'ri-temp-cold-line', title: 'Set Temperature Class', desc: 'Ambient / Cold Chain / Hazardous' },
-      { icon: 'ri-ruler-line', title: 'Enter Dimensions', desc: 'Shelves, Weight, Volume limits' },
-    ],
   },
 
   shelf_master: {
@@ -1702,12 +1404,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Shelf Name', 'Rack', 'Level', 'Type', 'Max Weight (kg)', 'Status'],
     uFields: ['shelf_name'],
     data: [],
-    wtd: [
-      { icon: 'ri-stack-line', title: 'Select Rack', desc: 'Pick warehouse → rack to add shelves' },
-      { icon: 'ri-hashtag', title: 'Set Level Number', desc: 'Level 1 = bottom, Level N = top' },
-      { icon: 'ri-ruler-line', title: 'Set Dimensions', desc: 'Height, Width, Depth per shelf' },
-      { icon: 'ri-scales-line', title: 'Set Max Weight', desc: 'Max load this shelf can carry (kg)' },
-    ],
   },
 
   digital_twin: {
@@ -1723,12 +1419,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['View Name', 'Status'],
     uFields: ['name'],
     data: [],
-    wtd: [
-      { icon: 'ri-computer-line', title: 'Visual Warehouse Map', desc: 'See Warehouse → Zone → Rack → Shelf hierarchy' },
-      { icon: 'ri-pie-chart-line', title: 'Live Occupancy', desc: 'Color-coded fill bars per rack' },
-      { icon: 'ri-cursor-line', title: 'Click Any Rack', desc: 'Sidebar shows full rack + shelf detail' },
-      { icon: 'ri-filter-line', title: 'Filter by Warehouse', desc: 'Scope view to one or all warehouses' },
-    ],
   },
 
   leave_type: {
@@ -1746,12 +1436,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Leave Name', 'Type', 'Short Code', 'Status'],
     uFields: ['short_code'],
     data: [],
-    wtd: [
-      { icon: 'ri-bookmark-line', title: 'Name the Leave Type', desc: 'e.g. Annual Leave, Sick Leave, Maternity' },
-      { icon: 'ri-list-check', title: 'Pick a Type', desc: 'Regular, Incident Based or Unpaid' },
-      { icon: 'ri-text', title: 'Set a Short Code', desc: 'e.g. AL — shown on payslip & roster' },
-      { icon: 'ri-checkbox-circle-line', title: 'Activate', desc: 'Visible across leave plans once Active' },
-    ],
   },
 
   leave_plan: {
@@ -1787,12 +1471,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Leave Plan Name', 'Calendar Mode', 'Start Month', 'Status'],
     uFields: ['plan_name'],
     data: [],
-    wtd: [
-      { icon: 'ri-calendar-2-line', title: 'Name the Plan', desc: 'e.g. Default Plan 2026' },
-      { icon: 'ri-edit-line',       title: 'Add a Description', desc: 'Optional — a short note for clarity' },
-      { icon: 'ri-time-line',       title: 'Choose Start Mode', desc: 'Calendar month or each employee’s joining date' },
-      { icon: 'ri-checkbox-circle-line', title: 'Activate', desc: 'Active plans are selectable in employee setup' },
-    ],
   },
 
   overtime_rates: {
@@ -1810,12 +1488,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Rate Name', 'Multiplier', 'Description', 'Status'],
     uFields: ['rate_name'],
     data: [],
-    wtd: [
-      { icon: 'ri-price-tag-3-line',     title: 'Name the Rate',    desc: 'e.g. Regular Time, Time and a Half, Double Time' },
-      { icon: 'ri-numbers-line',         title: 'Set the Multiplier', desc: 'Factor on base hourly rate (1, 1.5, 2, 2.5, 3…)' },
-      { icon: 'ri-edit-line',            title: 'Add a Description', desc: 'Optional — e.g. "150% of hourly rate"' },
-      { icon: 'ri-checkbox-circle-line', title: 'Activate',          desc: 'Active rates appear in the Employee Overtime picker' },
-    ],
   },
 
   trigger_point: {
@@ -1837,11 +1509,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Module Name', 'Description', 'Status'],
     uFields: ['module_name'],
     data: [],
-    wtd: [
-      { icon: 'ri-flashlight-line',      title: 'Name the Trigger',  desc: 'e.g. Onboarding, Offboarding, Event Based' },
-      { icon: 'ri-edit-line',            title: 'Add a Description', desc: 'When does it activate, which docs are generated?' },
-      { icon: 'ri-checkbox-circle-line', title: 'Activate',          desc: 'Active triggers can be wired into doc generation rules' },
-    ],
   },
 
   freezers: {
@@ -1864,12 +1531,6 @@ const C: Record<string, MasterConfig> = {
       { id: 3, name: 'Cold Zone A', warehouse: 2, capacity: 300, occupancy: 60, status: 'Active' },
       { id: 4, name: 'Cold Zone B', warehouse: 2, capacity: 300, occupancy: 0, status: 'Inactive' },
       { id: 5, name: 'Freezer Gamma', warehouse: 3, capacity: 100, occupancy: 90, status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-snowy-line', title: 'Name the Freezer Unit', desc: 'e.g. Freezer Alpha, Cold Zone A' },
-      { icon: 'ri-building-2-line', title: 'Link to Warehouse', desc: 'Which warehouse it belongs to' },
-      { icon: 'ri-box-3-line', title: 'Set Capacity (Boxes)', desc: 'Total boxes this freezer can hold' },
-      { icon: 'ri-pie-chart-line', title: 'Track Occupancy', desc: 'Used vs Free vs Total capacity shown' },
     ],
   },
 };

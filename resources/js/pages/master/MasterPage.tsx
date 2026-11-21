@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {  Card, CardBody, CardHeader, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, ModalHeader, Spinner,
+import { Card, CardBody, Row, Col, Button, Input, Label, Form, FormFeedback, Modal, ModalBody, Spinner,
 } from 'reactstrap';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -10,10 +10,9 @@ import MasterPlaceholder from '../MasterPlaceholder';
 import DataTable from '../../components/ui/DataTable';
 import InlineSublist from '../../components/ui/InlineSublist';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { ShimmerStatCards } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import {  getMasterConfig, masterEndpoint, normalizeOpts, type FieldDef, type MasterConfig, shouldShowField } from './masterConfigs';
+import { getMasterConfig, masterEndpoint, normalizeOpts, type FieldDef, type MasterConfig } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles, MasterSavingLock } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
@@ -323,18 +322,6 @@ function MasterPageInner({
     ];
   }, [records]);
 
-  const effectiveRefData = useMemo(() => {
-    const next: Record<string, any[]> = { ...refData };
-    const selfList = records.length > 0 ? records : (cfg.data || []);
-    if (selfList.length > 0) next[cfg.slug] = selfList;
-    for (const f of cfg.fields) {
-      if (f.ref && (!next[f.ref] || next[f.ref].length === 0)) {
-        const refCfg = getMasterConfig(f.ref);
-        if (refCfg?.data?.length) next[f.ref] = refCfg.data;
-      }
-    }
-    return next;
-  }, [refData, records, cfg]);
 
   const seedRadioValues = (row?: any) => {
     const next: Record<string, string> = {};
@@ -1553,10 +1540,7 @@ function MasterPageInner({
       )}
 
       {cfg.slug === 'designations' && (
-        <DesignationExtras
-          records={records}
-          filteredCount={filteredRecords.length}
-        />
+        <DesignationExtras records={records} />
       )}
       {cfg.slug === 'roles' && (
         <RolesExtras records={records} />
@@ -2191,238 +2175,9 @@ function deriveValue(slug: string, fieldName: string, sourceValue: string): stri
   return raw.toUpperCase().slice(0, 4);
 }
 
-const STEP_PALETTES: { grad: string; tint: string; border: string; accent: string }[] = [
-  { grad: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)', tint: 'linear-gradient(135deg, rgba(64,81,137,0.08), rgba(102,145,231,0.04))', border: 'rgba(64,81,137,0.20)', accent: '#405189' },
-  { grad: 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)', tint: 'linear-gradient(135deg, rgba(10,179,156,0.08), rgba(48,213,181,0.04))', border: 'rgba(10,179,156,0.22)', accent: '#0ab39c' },
-  { grad: 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)', tint: 'linear-gradient(135deg, rgba(247,184,75,0.10), rgba(255,212,122,0.05))', border: 'rgba(247,184,75,0.25)', accent: '#d97a08' },
-  { grad: 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)', tint: 'linear-gradient(135deg, rgba(106,90,205,0.08), rgba(167,139,250,0.04))', border: 'rgba(106,90,205,0.20)', accent: '#6a5acd' },
-  { grad: 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)', tint: 'linear-gradient(135deg, rgba(41,156,219,0.08), rgba(95,200,255,0.04))', border: 'rgba(41,156,219,0.20)', accent: '#299cdb' },
-  { grad: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)', tint: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))', border: 'rgba(240,101,72,0.22)', accent: '#f06548' },
-];
 
-function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAdd?: () => void; canAdd?: boolean; onBack?: () => void }) {
-  const steps = cfg.wtd || [];
-  const singular = cfg.titleSingular || cfg.title;
-  const [open, setOpen] = useState(false);
-  const isDepartments = cfg.slug === 'departments';
 
-  const heading = (
-    <div className="d-flex align-items-center gap-3">
-      <span
-        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-        style={{
-          width: 40, height: 40,
-          background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-          boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-        }}
-      >
-        <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
-      </span>
-      <div>
-        <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
-          {cfg.title} — What you are doing here
-        </div>
-        <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
-      </div>
-    </div>
-  );
-
-  if (isDepartments) {
-    return (
-      <Card
-        className="border shadow-sm mb-3 overflow-hidden"
-        style={{
-          background: 'var(--vz-card-bg)',
-          borderColor: 'var(--vz-border-color)',
-          borderRadius: 16,
-        }}
-      >
-        <div
-          className="d-flex align-items-center justify-content-between flex-wrap gap-2 px-3 py-3"
-          style={{ background: 'transparent' }}
-        >
-          {heading}
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            {onBack && (
-              <button
-                type="button"
-                onClick={onBack}
-                title="Back to Master list"
-                className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
-                style={{
-                  height: 38,
-                  padding: '0 18px',
-                  background: 'color-mix(in srgb, #405189 8%, #ffffff)',
-                  color: '#405189',
-                  border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'background 0.18s ease',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
-              >
-                <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
-                Back to Master list
-              </button>
-            )}
-            {canAdd && onAdd && (
-              <Button
-                className="btn-label waves-effect waves-light rounded-pill border-0"
-                onClick={onAdd}
-                style={{
-                  background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                  color: '#fff',
-                  boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-                }}
-              >
-                <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                Add {singular}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card
-      className="border shadow-sm mb-3 overflow-hidden"
-      style={{
-        background: 'var(--vz-card-bg)',
-        borderColor: 'var(--vz-border-color)',
-        borderRadius: 16,
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="d-flex align-items-center justify-content-between flex-wrap gap-2 px-3 py-3 border-0 w-100 text-start"
-        style={{
-          cursor: 'pointer',
-          background: open ? 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.03))' : 'transparent',
-          borderBottom: open ? '1px solid var(--vz-border-color)' : 'none',
-          transition: 'background .2s ease',
-          userSelect: 'none',
-        }}
-      >
-        {heading}
-        <span
-          className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary flex-shrink-0"
-          style={{
-            width: 32, height: 32,
-            transition: 'transform .25s ease',
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          }}
-        >
-          <i className="ri-arrow-down-s-line fs-18"></i>
-        </span>
-      </button>
-
-      <div
-        style={{
-          maxHeight: open ? 1200 : 0,
-          overflow: 'hidden',
-          transition: 'max-height .35s ease',
-        }}
-      >
-        <CardBody className="pt-3">
-          <div className="d-flex flex-wrap align-items-stretch" style={{ gap: 8 }}>
-            {steps.map((s, i) => {
-              const p = STEP_PALETTES[i % STEP_PALETTES.length];
-              const isLast = i === steps.length - 1;
-              return (
-                <Fragment key={i}>
-                  <div
-                    className="position-relative"
-                    style={{
-                      flex: '1 1 0',
-                      minWidth: 200,
-                      padding: '14px 16px 14px 16px',
-                      borderRadius: 14,
-                      background: p.tint,
-                      border: `1px solid ${p.border}`,
-                      borderTop: `3px solid ${p.accent}`,
-                      boxShadow: '0 2px 8px rgba(18,38,63,0.04)',
-                    }}
-                  >
-                    <div className="d-flex align-items-center gap-2 mb-1">
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0 fw-bold"
-                        style={{
-                          width: 24, height: 24,
-                          background: p.grad,
-                          color: '#fff',
-                          fontSize: 12,
-                          boxShadow: `0 3px 8px ${p.border}`,
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <div
-                        className="fw-bold text-truncate"
-                        style={{ color: p.accent, fontSize: 14 }}
-                        title={s.title}
-                      >
-                        {s.title}
-                      </div>
-                    </div>
-                    <div className="text-muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-                      {s.desc}
-                    </div>
-                  </div>
-                  {!isLast && (
-                    <div
-                      className="d-none d-md-flex align-items-center justify-content-center flex-shrink-0"
-                      style={{ width: 26 }}
-                      aria-hidden="true"
-                    >
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle"
-                        style={{
-                          width: 22, height: 22,
-                          background: 'var(--vz-card-bg)',
-                          border: '1px solid var(--vz-border-color)',
-                          boxShadow: '0 1px 3px rgba(18,38,63,0.06)',
-                        }}
-                      >
-                        <i
-                          className="ri-arrow-right-s-line"
-                          style={{
-                            fontSize: 16,
-                            color: 'var(--vz-secondary-color)',
-                            lineHeight: 1,
-                          }}
-                        />
-                      </span>
-                    </div>
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-
-          {steps.length === 0 && (
-            <div className="text-muted text-center py-3">
-              Define the workflow for {singular} records in the master config.
-            </div>
-          )}
-        </CardBody>
-      </div>
-    </Card>
-  );
-}
-
-function DesignationExtras({
-  records,
-  filteredCount,
-}: {
-  records: any[];
-  filteredCount: number;
-}) {
+function DesignationExtras({ records }: { records: any[] }) {
   const TIERS: {
     label: string; tone: MpKpi['tone']; short: string; icon: string;
     bg: string; fg: string; border: string;
