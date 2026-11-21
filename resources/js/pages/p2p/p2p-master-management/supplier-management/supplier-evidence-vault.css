@@ -4613,3 +4613,9 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 [data-bs-theme="dark"] :is(.spev, .spev-ov) :is(.cev-sdp-act-send, .cev-sdp-act-track) { color: #a5f3fc; background: rgba(34, 211, 238, .14); border-color: rgba(103, 232, 249, .38); }
 [data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act-remind { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(252, 211, 77, .35); }
 [data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act:hover:not(:disabled) { filter: brightness(1.2); }
+/* Supplier vault, dark mode: the icon actions in a document row (Send / Remind / Signing tracker)
+   carry pale inline fills (#cffafe, #fef3c7, #ede9fe), a white tile on the dark row for the
+   tracker. Translucent versions of each hue; !important only because the fills are inline. */
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-send   { background: rgba(34, 211, 238, .14) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .38) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-remind { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .38) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-track  { background: rgba(139, 92, 246, .16) !important; color: #c4b5fd !important; border-color: rgba(196, 181, 253, .38) !important; }

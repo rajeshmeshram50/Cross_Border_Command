@@ -1440,3 +1440,64 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 /* No hover lift on a disabled option (the base .supfm-opt:hover tint would read as clickable). */
 .supfm-opt:disabled:hover { border-color: #e5eef2; background: #fff; }
 [data-bs-theme="dark"] .supfm-opt:disabled:hover { background: #0f1c24; border-color: rgba(148, 163, 184, .18); }
+
+/* Supplier list: the mouse is ignored while scrolling (class set by Vendors.tsx for 150ms), so rows
+   gliding under the pointer fire no hovers. Child combinator: only this one element restyles. */
+.sup-table-wrap.is-scrolling > .table-responsive { pointer-events: none; }
+/* Supplier list: the rows scroll inside the table (its height is set to the screen by Vendors.tsx).
+   The header row is already sticky; its cells were see-through, so they get the header's own
+   solid tint and the rows pass under it. */
+.sup-fig .sup-table-wrap > .table-responsive { overflow-y: auto; }
+/* The list lays its table out as blocks (table display:block, thead display:table), so the cells'
+   own sticky does not hold: the whole header block is pinned instead. */
+.sup-fig .sup-table-wrap .table > thead { position: sticky; top: 0; z-index: 3; }
+.sup-fig .sup-table-wrap .table thead.table-light th { background: #e6f7fb !important; }
+[data-bs-theme="dark"] .sup-fig .sup-table-wrap .table thead.table-light th { background: #10303b !important; }
+
+/* Supplier list on screens narrower than the table (below ~1745px it scrolls sideways): the ACTION
+   column (Edit / Evidence Vault) stays pinned to the right edge, so it is never scrolled out of
+   sight. Solid row colour behind it (light #fff / dark #212529, plus the row's hover tint) and a
+   soft edge shadow where the scrolling columns pass under it. */
+@media (min-width: 821px) {
+  /* The body was its own scroll box (overflow hidden auto), so a pinned cell stuck to the body,
+     which is as wide as the table. Rows scroll in .table-responsive now; the body needs none. */
+  .sup-fig .sup-table-wrap .table > :is(thead, tbody) { overflow: visible !important; }
+  .sup-fig .sup-table-wrap .table :is(thead th, tbody td):last-child {
+    position: sticky; right: 0; z-index: 2;
+    box-shadow: -8px 0 12px -10px rgba(15, 58, 77, .28);
+  }
+  /* !important: the shared table CSS makes cells transparent (the row carries the colour), which
+     let the scrolling columns (the Mapped count) show through the pinned cell. */
+  .sup-fig .sup-table-wrap .table tbody td:last-child { background: #fff !important; }
+  .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: #f5feff !important; }
+  /* A shared Customers rule sets the header cells to position: static !important. */
+  .sup-fig .sup-table-wrap .table thead th:last-child { position: sticky !important; right: 0; z-index: 4; }
+  [data-bs-theme="dark"] .sup-fig .sup-table-wrap .table tbody td:last-child { background: #212529 !important; box-shadow: -8px 0 12px -10px rgba(0, 0, 0, .7); }
+  [data-bs-theme="dark"] .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: linear-gradient(rgba(34, 211, 238, .1), rgba(34, 211, 238, .1)), #212529 !important; }
+}
+
+/* Supplier list table scrollbars (sideways and up-down): thin and quiet, a soft teal thumb on
+   a clear track, darker on hover. */
+/* Chrome ignores the ::-webkit-scrollbar size once scrollbar-width / scrollbar-color is set (and
+   its "thin" is still wide on Windows), so those stay auto here and the 6px rules below apply.
+   Firefox (no ::-webkit-scrollbar) gets the standard thin bar instead. */
+.sup-fig .sup-table-wrap > .table-responsive { scrollbar-width: auto; scrollbar-color: auto; }
+@supports not selector(::-webkit-scrollbar) {
+  .sup-fig .sup-table-wrap > .table-responsive { scrollbar-width: thin; scrollbar-color: rgba(8, 145, 178, .35) transparent; }
+  [data-bs-theme="dark"] .sup-fig .sup-table-wrap > .table-responsive { scrollbar-color: rgba(103, 232, 249, .3) transparent; }
+}
+.sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar { width: 6px; height: 6px; }
+.sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-corner { background: transparent; }
+.sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-track { background: transparent; }
+.sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb { background: rgba(8, 145, 178, .35); border-radius: 999px; }
+.sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(8, 145, 178, .6); }
+[data-bs-theme="dark"] .sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb { background: rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] .sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(103, 232, 249, .5); }
+
+/* Header row height: "MAPPED PRODUCTS / SERVICES" wrapped to three lines in its 5.5% column and
+   set a 63px header. Two points of width move from Supplier (which had room to spare) so it
+   wraps to two lines. */
+.sup-fig .sup-table-wrap .table :is(th, td):nth-child(3)  { width: 12.5%; }
+.sup-fig .sup-table-wrap .table :is(th, td):nth-child(5)  { width: 9.5%; }
+/* 8% = 132px at the table's 1640px minimum, enough for two lines (cells ignore min-width here). */
+.sup-fig .sup-table-wrap .table :is(th, td):nth-child(10) { width: 8%; }

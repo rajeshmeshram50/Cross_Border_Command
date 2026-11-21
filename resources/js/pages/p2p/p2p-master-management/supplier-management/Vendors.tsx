@@ -646,7 +646,8 @@ export default function Vendors() {
   const applyWaitRef = useRef<{ resolve: () => void; token: number | null } | null>(null);
   const [swapping, setSwapping] = useState(false);
   const bootedRef = useRef(false);
-  const [brefOpen, setBrefOpen] = useState(true);
+  /** "What We Are Doing Here": closed by default (the table gets the room); a click opens it. */
+  const [brefOpen, setBrefOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const reqRef = useRef(0);
@@ -667,6 +668,22 @@ export default function Vendors() {
   pageRef.current = page;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  /* While the page (or the table) scrolls, rows sliding under a still mouse must not fire their
+     hovers (button lift / scale, row tint, tooltips): each one restyles the page, which is what
+     made scrolling stutter. The table ignores the mouse until 150ms after the last scroll, as on
+     the Sourcing Tracker. A class on one element and refs, no re-render. */
+  useEffect(() => {
+    let timer: number | undefined;
+    const onScroll = () => {
+      const wrap = scrollRef.current?.parentElement;
+      if (!wrap) return;
+      if (!wrap.classList.contains('is-scrolling')) wrap.classList.add('is-scrolling');
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => wrap.classList.remove('is-scrolling'), 150);
+    };
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => { window.removeEventListener('scroll', onScroll, { capture: true }); window.clearTimeout(timer); };
+  }, []);
 
   const apiToVendor = (row: ApiVendor): Vendor => {
     const addrs = Array.isArray(row.addresses) ? row.addresses : [];
@@ -837,7 +854,7 @@ export default function Vendors() {
       const el = scrollRef.current;
       if (!el) return;
 
-      if (window.innerWidth <= 820) { el.style.minHeight = ''; return; }
+      if (window.innerWidth <= 820) { el.style.minHeight = ''; el.style.height = ''; el.style.maxHeight = ''; return; }
 
       const top = el.getBoundingClientRect().top;
       /* Measured, not assumed: the rows are the Customer list's (.smc-table-wrap)
@@ -851,7 +868,8 @@ export default function Vendors() {
 
       const scrollbarH = Math.min(20, Math.max(0, el.offsetHeight - el.clientHeight));
 
-      const cardH = Math.max(240, window.innerHeight - top - bottomReserve);
+      // -2: the card's borders round up, which left the page 2px of scroll (and a scrollbar).
+      const cardH = Math.max(240, window.innerHeight - top - bottomReserve - 2);
       const avail = cardH - THEAD - PAGER - scrollbarH;
       const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current && fit !== rppRef.current) {
@@ -862,9 +880,13 @@ export default function Vendors() {
       }
 
       // cardH covers the whole card; the pager is now its sibling, so the
-      // scroller gets what is left after that band.
+      // scroller gets what is left after that band. FIXED to that height (not only a minimum):
+      // rows that do not fit scroll inside the table, so the page itself never scrolls.
       const h = `${cardH - PAGER}px`;
       if (el.style.minHeight !== h) el.style.minHeight = h;
+      if (el.style.height !== h) el.style.height = h;
+      // A max as well: the scroller is a flex item that would otherwise grow to its rows' height.
+      if (el.style.maxHeight !== h) el.style.maxHeight = h;
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
