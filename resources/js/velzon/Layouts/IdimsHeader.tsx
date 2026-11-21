@@ -1364,9 +1364,9 @@ const IDIMS_CSS = `
 
 .p2pj-qa-wrap { margin: 0 0 14px 0; padding: 0 18px; }
 .p2pj-qa-label { padding-bottom: 8px !important; margin-bottom: 10px !important; }
-.p2pj-qa-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 2px 4px 14px; margin: 0; border-bottom: 1px solid #F1F4FB; overflow-x: auto; scrollbar-width: none; }
-.p2pj-qa-row::-webkit-scrollbar { display: none; }
-.p2pj-qa-row .c2c-paybtn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
+.p2pj-qa-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 2px 4px 14px; margin: 0; border-bottom: 1px solid #F1F4FB; }
+.p2pj-qa-row .c2c-paybtn { flex: 1 1 auto; min-width: 0; justify-content: center; }
+.p2pj-qa-row .c2c-paybtn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .c2c-paybtn { display: inline-flex; align-items: center; gap: 9px; height: 40px; box-sizing: border-box; font-family: inherit; font-size: 11px; font-weight: 800; letter-spacing: -.1px; color: #fff; background: linear-gradient(135deg,#22d3ee,#0891b2 60%,#0e7490); border: none; border-radius: 10px; padding: 0 16px 0 8px; cursor: pointer; white-space: nowrap; position: relative; overflow: hidden; flex-shrink: 0; box-shadow: 0 6px 16px -4px rgba(8,145,178,.55),0 0 0 3px rgba(34,211,238,.16),0 1px 0 rgba(255,255,255,.3) inset; transition: transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s; }
 .c2c-paybtn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.28),transparent); border-radius: 10px 10px 0 0; }
 .c2c-paybtn-ico { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0; position: relative; z-index: 1; background: linear-gradient(145deg,rgba(255,255,255,.3),rgba(255,255,255,.1)); box-shadow: 0 0 0 1px rgba(255,255,255,.32) inset,0 2px 5px rgba(4,55,68,.22); }
@@ -1375,15 +1375,11 @@ const IDIMS_CSS = `
 .c2c-paybtn:hover { transform: translateY(-1.5px); box-shadow: 0 9px 20px -4px rgba(8,145,178,.65),0 0 0 3px rgba(34,211,238,.24),0 1px 0 rgba(255,255,255,.3) inset; }
 .c2c-paybtn:active { transform: translateY(0) scale(.97); }
 .c2c-paybtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-.p2pj-actbtn { font-size: 10.5px !important; padding: 8px 11px 8px 6px !important; }
-.p2pj-actbtn .c2c-paybtn-ico { width: 20px !important; height: 20px !important; }
-@media (max-width: 1680px) {
+.p2pj-actbtn { height: 40px !important; gap: 7px !important; padding: 0 12px 0 8px !important; font-size: 11.5px !important; letter-spacing: 0 !important; }
+.p2pj-actbtn .c2c-paybtn-ico { width: 22px !important; height: 22px !important; }
+@media (max-width: 1280px) {
   .p2pj-qa-row { gap: 6px; }
-  .p2pj-actbtn { font-size: 10px !important; padding: 7px 9px 7px 5px !important; gap: 6px !important; }
-  .p2pj-actbtn .c2c-paybtn-ico { width: 18px !important; height: 18px !important; }
-}
-@media (max-width: 1440px) {
-  .p2pj-actbtn { font-size: 9.5px !important; padding: 7px 7px 7px 5px !important; letter-spacing: -.1px; }
+  .p2pj-actbtn { gap: 6px !important; padding: 0 10px 0 7px !important; font-size: 11px !important; }
 }
 .idims-clm-grid { display: grid; grid-template-columns: 290px 1.1fr 1.35fr; align-items: stretch; }
 .idims-clm-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 2px; }
