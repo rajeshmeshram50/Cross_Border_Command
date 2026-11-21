@@ -1007,12 +1007,6 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'description', 'action_required', 'status'],
     colL: ['Risk Level', 'Description', 'Action', 'Status'],
     uFields: ['name'],
-    kpis: [
-      { label: 'Total Levels', icon: 'ri-flashlight-line',      gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
-      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'Inactive',     icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99 0%,#b9bbc6 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
-      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
-    ],
     data: [
       { id: 1, name: 'Low', description: 'Minimal risk', action_required: 'None', status: 'Active' },
       { id: 2, name: 'Medium', description: 'Moderate risk', action_required: 'Verify', status: 'Active' },
