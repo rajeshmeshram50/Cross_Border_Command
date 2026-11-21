@@ -1822,11 +1822,6 @@ const C: Record<string, MasterConfig> = {
     colL: ['Rate Name', 'Multiplier', 'Description', 'Status'],
     uFields: ['rate_name'],
     data: [],
-    kpis: [
-      { label: 'Total Rates', icon: 'ri-timer-flash-line',    gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
-      { label: 'Active',      icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'Inactive',    icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
-    ],
     wtd: [
       { icon: 'ri-price-tag-3-line',     title: 'Name the Rate',    desc: 'e.g. Regular Time, Time and a Half, Double Time' },
       { icon: 'ri-numbers-line',         title: 'Set the Multiplier', desc: 'Factor on base hourly rate (1, 1.5, 2, 2.5, 3…)' },
