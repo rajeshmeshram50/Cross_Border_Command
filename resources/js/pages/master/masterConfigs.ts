@@ -794,12 +794,6 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'gst_applicable', 'status'],
     colL: ['Customer Category', 'GST Applicable', 'Status'],
     uFields: ['name'],
-    kpis: [
-      { label: 'Total Categories', icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.length },
-      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'GST Yes',      icon: 'ri-money-rupee-circle-line', gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => r.filter((x:any) => String(x.gst_applicable).toLowerCase() === 'yes').length },
-      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
-    ],
     data: [
       { id: 1, name: 'Retailer',   gst_applicable: 'Yes', status: 'Active' },
       { id: 2, name: 'Wholesaler', gst_applicable: 'Yes', status: 'Active' },
