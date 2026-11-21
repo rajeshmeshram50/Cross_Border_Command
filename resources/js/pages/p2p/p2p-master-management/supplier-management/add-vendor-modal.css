@@ -2601,7 +2601,9 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .table.avm-mini-table a { color: #0e7490; }
 
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch { background: #0c1a22; border-color: rgba(103,232,249,.2); color: #94b4bf; }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on { background: rgba(34,211,238,.12); color: #67e8f9; }
+/* Dark, switched on: the box stays the same as when off (no teal fill, no bright border); only the
+   toggle and the "Enabled" label turn teal. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch.is-on { background: #0c1a22; border-color: rgba(103,232,249,.2); color: #67e8f9; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser { background: rgba(34,211,238,.06); border-color: rgba(103,232,249,.3); color: #67e8f9; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-text,
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-filechooser-link { color: #67e8f9; }
@@ -3166,6 +3168,14 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 /* ═════ Map Product popup (Figma): 800px, two section cards, locked AUTO fields, footer note ═════ */
 .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
+/* Map / Edit Service Remarks: dragged taller, the box grew the popup past the screen and its
+   header and footer were cut off. It stretches downward only, up to ~5 lines, then scrolls inside.
+   (Out-ranks the popup's 42px input rule, which also pinned min-height with !important.) */
+.avm-cp-backdrop .avm-cp-popup.avm-cp-popup-map .avm-cp-body textarea.avm-input {
+  height: 64px; min-height: 64px !important; max-height: 120px;
+  padding-top: 10px; padding-bottom: 10px; line-height: 1.5;
+  resize: vertical; overflow-y: auto;
+}
 /* A fetched / computed value: grey, locked (lock icon), mono text, AUTO pill on the right. */
 .avm-auto { position: relative; }
 .avm-auto .avm-input.avm-auto-input {

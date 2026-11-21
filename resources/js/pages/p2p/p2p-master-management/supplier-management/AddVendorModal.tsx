@@ -5735,10 +5735,20 @@ export function MappedServicesPopup(props: {
       .catch(() => setCurrencies([]));
   }, [international]);
 
+  /* Each row's search text, built once per row list (as Mapped Products): name, code, HSN and every
+     amount the table shows, typed any way: 1212 · 1212.00 · 1,212 · ₹1,212 · USD 1,212 · 18 / 18%. */
+  const haystacks = useMemo(() => {
+    const amounts = (n: number) => Number.isFinite(n) ? [String(n), n.toFixed(2), INR_FMT.format(n), inrAmt(n)] : [];
+    return (rows ?? []).map(r => [
+      r.name, r.code, r.hsn, money(r.price, r.currency),
+      ...amounts(r.price), ...amounts(r.gstAmount), ...amounts(r.total), ...amounts(r.inr),
+      `${Number(r.gstPercentage.toFixed(2))}%`,
+    ].map(v => String(v ?? '').toLowerCase()).join('\u0001'));
+  }, [rows]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows ?? []).filter(r => !q || [r.name, r.code, r.hsn].some(s => s.toLowerCase().includes(q)));
-  }, [rows, search]);
+    return (rows ?? []).filter((_, i) => !q || haystacks[i].includes(q));
+  }, [rows, haystacks, search]);
 
   // Services this supplier can still be mapped to: not already mapped, not inactive.
   const mapped = useMemo(() => new Set((rows ?? []).map(r => r.serviceId)), [rows]);
@@ -5884,7 +5894,7 @@ export function MappedServicesPopup(props: {
         ) : (
         <div className="avm-mapped-toolbar">
           <MappedProductsSearch value={search} onChange={setSearch}
-            placeholder="Search service, code, HSN/SAC…" label="Search mapped services" />
+            placeholder="Search service, code, HSN/SAC, price…" label="Search mapped services" />
           <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
             title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
             <i className="ri-add-line" /> Map Service

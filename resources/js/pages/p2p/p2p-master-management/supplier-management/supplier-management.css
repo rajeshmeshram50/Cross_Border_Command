@@ -1028,8 +1028,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .smc-root.sup-list .smc-table-card .smc-toolbar .sup-tools .dt-search.dt-search { flex: 0 1 665px; width: auto; max-width: 665px; min-width: 220px; margin: 0; }
 
 [data-bs-theme="dark"] .sup-list .sup-tabs { background: rgba(255, 255, 255, .04); border-color: rgba(34, 211, 238, .18); box-shadow: none; }
-[data-bs-theme="dark"] .sup-list .sup-tab { color: #94a8bb; }
-[data-bs-theme="dark"] .sup-list .sup-tab:hover { color: #e2e8f0; background: rgba(255, 255, 255, .06); }
+/* Dark: the tab not selected reads light teal (it was a dull grey), and hovering lifts it with a
+   teal tint. The hover is limited to that tab, so the selected tab keeps its teal gradient (the
+   hover used to out-rank it and turn the selected tab into a grey block). */
+[data-bs-theme="dark"] .sup-list .sup-tab { color: #cfe3ea; }
+[data-bs-theme="dark"] .sup-list .sup-tab:not(.is-on):hover { color: #fff; background: rgba(34, 211, 238, .12); }
 [data-bs-theme="dark"] .sup-list .sup-tab__c { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
 
 /* Narrow screens: tabs on their own row (scrolling sideways if needed), Filter + search below. */
