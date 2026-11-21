@@ -598,15 +598,17 @@ class LeaveRequestController extends Controller
            tab strip counts across, so status has to be the last clause added or
            the counts would each be filtered by the tab that is already open. */
 
-        /* Super admin sees everything, and a branch_user sees their branch —
-           the approval hierarchy STARTS at the branch, so that is the HR desk.
-           The client tier used to sit in the same blanket and so received every
-           branch's pending leave in its Inbox. It now takes the normal path and
-           sees only what it is actually named on, which still covers a Client
-           admin set as someone's reporting manager (matched by user id below).
+        /* A branch_user sees their branch — the approval hierarchy STARTS at
+           the branch, so that is the HR desk. The client tier used to sit in
+           the same blanket and so received every branch's pending leave in its
+           Inbox. It now takes the normal path and sees only what it is actually
+           named on, which still covers a Client admin set as someone's
+           reporting manager (matched by user id below). super_admin left the
+           blanket for the same reason, and harder: it carries no client_id, so
+           the filter below never bound and it saw every TENANT's leave.
            Everyone else: reporting manager of the requestor, or named on the
            approval chain. */
-        $isAdminScope = in_array($user->user_type, ['super_admin', 'branch_user'], true);
+        $isAdminScope = $user->user_type === 'branch_user';
         $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = $user->employee_id;
@@ -665,7 +667,7 @@ class LeaveRequestController extends Controller
             if ($user->client_id) {
                 $q->where('client_id', $user->client_id);
             }
-        } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
+        } elseif ($user->client_id) {
             $q->where('client_id', $user->client_id);
         }
 
@@ -886,10 +888,10 @@ class LeaveRequestController extends Controller
             // HR (branch admin / client admin) can decide any pending leave in
             // their tenant, alongside the reporting manager — matches the Inbox
             // copy "reporting manager or a branch admin can decide".
+            /* No super_admin override. It is nobody's reporting manager, so
+               flagging it meant 20 strangers' leave in its personal Inbox. */
             $row->can_act_now = $row->status === 'Pending'
-                && ($user->user_type === 'super_admin'
-                    || $this->canActOnLevel($user, $chain, $idx, $row)
-                    || $isHrScope);
+                && ($this->canActOnLevel($user, $chain, $idx, $row) || $isHrScope);
         });
 
         /* `total` is always sent, paged or not, so a caller can show "1–25 of
