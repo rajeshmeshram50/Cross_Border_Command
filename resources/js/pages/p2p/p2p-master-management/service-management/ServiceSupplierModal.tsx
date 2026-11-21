@@ -79,20 +79,6 @@ async function loadVendors(bucket?: SupplierBucket | null, force = false): Promi
   return list;
 }
 
-/** The supplier-type pill shown on every option in the dropdown. */
-const CLASS_LABEL: Record<string, string> = {
-  trackable: 'Trackable', consumable: 'Consumable', professional: 'Professional',
-  utility: 'Utility', facility: 'Facility', maintenance: 'Maintenance', outsourcing: 'Outsourcing',
-};
-const SERVICE_LABEL: Record<string, string> = {
-  self_consumable: 'Self-Consumable', soft_digital: 'Soft / Digital', other_operational: 'Other Operational',
-};
-const typeBadge = (v: VendorOpt): string =>
-  (v.classification && CLASS_LABEL[v.classification])
-  || (v.serviceType && SERVICE_LABEL[v.serviceType])
-  || v.type
-  || 'Unclassified';
-
 const FLAG = (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21V4" /><path d="M3 4h13l-2 4 2 4H3" /></svg>
 );
@@ -223,13 +209,9 @@ export function SupplierMapPanel({
     [vendors, mappedIntl],
   );
 
-  /* The supplier-type pill: which service bucket this supplier serves. The list
-     is already narrowed to the service, so the pill confirms the match rather
-     than offering a choice. */
   const toOpt = (v: VendorOpt, withCountry: boolean) => ({
     value: v.code,
     label: `${formatSupplierCode(v.code)}: ${v.name}${withCountry ? ` · ${v.country}` : ''}`,
-    badges: [{ text: typeBadge(v), tone: 'violet' as const, title: v.type || typeBadge(v) }],
   });
   const pickOpts = intl ? intlPool.map(v => toOpt(v, true)) : domPool.map(v => toOpt(v, false));
 
