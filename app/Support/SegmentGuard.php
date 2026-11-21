@@ -187,18 +187,20 @@ class SegmentGuard
     public const PO_COMMITTED = ['submitted', 'sent for sign', 'signed', 'approved'];
 
     /**
-     * Supplier-Purchase-Invoice statuses that count as committed (QA #94).
+     * Supplier-Invoice statuses that count as committed (QA #94, CS-2786).
      *
      * The SPI branch of lockedSegmentNames() had NO status filter while the PO
      * branch beside it excluded drafts — so a supplier with nothing but a Draft
      * SPI had its segment locked and was told the segment was "used in a PO /
      * Invoice". Nothing had been issued; someone had merely started typing one.
      *
-     * Vocabulary is Draft / Approved / Paid (see the `status` column comment in
-     * 2026_07_09_000010_create_supplier_purchase_invoices_tables). Draft is the
-     * default on insert, and is the one state that commits nothing.
+     * These were Approved / Paid, read off the July table's column comment.
+     * That module was replaced in October (p2p_supplier_invoices) and the
+     * vocabulary with it, so the list matched nothing. Of the five states only
+     * draft commits nothing and cancelled un-commits; the rest hold the
+     * supplier. Compared lower-cased, as the PO branch does.
      */
-    public const SPI_COMMITTED = ['Approved', 'Paid'];
+    public const SPI_COMMITTED = ['mapped', 'grn_pending', 'closed'];
 
     /**
      * The segment NAMES present before the edit but not after (case-insensitive).
@@ -251,24 +253,23 @@ class SegmentGuard
             ->pluck('cs.name')
             ->all();
 
-        // The SPI tables are still being designed, so the vendor form must not
-        // 500 on a table that does not exist yet. The lock starts applying the
-        // day they land, with no further change here.
-        $spi = \Illuminate\Support\Facades\Schema::hasTable('supplier_purchase_invoices')
-            ? \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
-                ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
-                ->join('products as p', 'p.id', '=', 'si.product_id')
-                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
-                ->where('spi.client_id', $clientId)
-                ->where('spi.vendor_id', $vendorId)
-                // Mirrors the PO_COMMITTED filter above — a Draft SPI commits
-                // nothing and must not lock the segment (QA #94).
-                ->whereIn('spi.status', self::SPI_COMMITTED)
-                ->whereNull('spi.deleted_at')
-                ->distinct()
-                ->pluck('cs.name')
-                ->all()
-            : [];
+        /* p2p_supplier_invoices, not the July supplier_purchase_invoices this
+           used to read: that module was replaced in October and its table is
+           gone, so hasTable() was false and the whole branch silently returned
+           nothing (CS-2786). */
+        $spi = \Illuminate\Support\Facades\DB::table('p2p_supplier_invoices as spi')
+            ->join('p2p_supplier_invoice_items as si', 'si.supplier_invoice_id', '=', 'spi.id')
+            ->join('products as p', 'p.id', '=', 'si.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('spi.client_id', $clientId)
+            ->where('spi.vendor_id', $vendorId)
+            // Mirrors the PO_COMMITTED filter above — a Draft SPI commits
+            // nothing and must not lock the segment (QA #94).
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(spi.status)'), self::SPI_COMMITTED)
+            ->whereNull('spi.deleted_at')
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
 
         return ['po' => array_values(array_unique($po)), 'spi' => array_values(array_unique($spi))];
     }
@@ -294,16 +295,13 @@ class SegmentGuard
             ->exists();
         if ($po) return 'po';
 
-        // Same guard as above: the SPI tables may not exist yet.
-        if (\Illuminate\Support\Facades\Schema::hasTable('supplier_purchase_invoices')) {
-            $spi = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices')
-                ->where('client_id', $clientId)
-                ->where('vendor_id', $vendorId)
-                ->whereIn('status', self::SPI_COMMITTED)
-                ->whereNull('deleted_at')
-                ->exists();
-            if ($spi) return 'spi';
-        }
+        $spi = \Illuminate\Support\Facades\DB::table('p2p_supplier_invoices')
+            ->where('client_id', $clientId)
+            ->where('vendor_id', $vendorId)
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(status)'), self::SPI_COMMITTED)
+            ->whereNull('deleted_at')
+            ->exists();
+        if ($spi) return 'spi';
 
         return null;
     }
