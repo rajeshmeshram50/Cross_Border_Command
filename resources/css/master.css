@@ -1184,3 +1184,11 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
 [data-layout-mode="dark"] .mp-kc__l { color: #e2e8f0; }
 [data-bs-theme="dark"] .mp-kc__s,
 [data-layout-mode="dark"] .mp-kc__s { color: #94a3b8; }
+
+/* Saving overlay (masterFormKit .master-lock) in the teal forms. */
+.mp-tealf .master-lock { background: rgba(244, 251, 253, .62); }
+.mp-tealf .master-lock__box { color: #0e7490; }
+.mp-tealf .master-lock__spin { border-color: rgba(8, 145, 178, .18); border-top-color: #0891b2; }
+[data-bs-theme="dark"] .mp-tealf .master-lock { background: rgba(11, 22, 38, .66); }
+[data-bs-theme="dark"] .mp-tealf .master-lock__box { color: #67e8f9; }
+[data-bs-theme="dark"] .mp-tealf .master-lock__spin { border-color: rgba(34, 211, 238, .2); border-top-color: #22d3ee; }
