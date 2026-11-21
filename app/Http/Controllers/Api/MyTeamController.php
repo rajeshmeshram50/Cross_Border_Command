@@ -241,12 +241,10 @@ class MyTeamController extends Controller
      * Resolve pending leave-request approvals for the current user, shaped the
      * same way the other modules are so the unified inbox can stream them.
      *
-     * Scoping mirrors LeaveRequestController::approvals:
-     *   - Admin tiers (super_admin / client_admin / branch_user) see every
-     *     pending request in their tenant (HR can act on anyone's behalf).
-     *   - Everyone else only sees requests where they can act on the CURRENT
-     *     approval level — resolved with the controller's own canActOnLevel so
-     *     the manager/HR/role gating stays in lockstep (no logic drift).
+     * A request surfaces only to whoever can act on its CURRENT approval level
+     * — resolved with the controller's own canActOnLevel so the manager/HR/role
+     * gating stays in lockstep (no logic drift). No tier is exempt: the
+     * dedicated Leave Approvals page is where an admin sees everything.
      */
     private function pendingLeaveRequests($user): array
     {
@@ -263,7 +261,10 @@ class MyTeamController extends Controller
             ->where('status', 'Pending')
             ->orderByDesc('created_at');
 
-        if ($user->user_type !== 'super_admin' && $user->client_id) {
+        /* A root user carries no client_id, so skipping this left every
+           tenant's leave in one list. It gets nothing here instead. */
+        if ($user->user_type === 'super_admin') return [];
+        if ($user->client_id) {
             $q->where('client_id', $user->client_id);
         }
 
@@ -273,32 +274,27 @@ class MyTeamController extends Controller
         // admin blanket here. A request surfaces only to whoever can act on its
         // current chain level: the reporting manager (an Employee RM, or a
         // login-User RM such as a Client/Branch admin who is set as the RM), or
-        // anyone explicitly named on the chain. super_admin keeps its global
-        // override below.
-        if ($user->user_type !== 'super_admin') {
-            $uid = (int) $user->id;
-            $eid = (int) ($myEmployeeId ?: 0);
-            $q->where(function ($w) use ($myEmployeeId, $uid, $eid) {
-                $w->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '%')
-                  ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '%');
-                if ($myEmployeeId) {
-                    $w->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                        $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                    });
-                }
-            });
-        }
+        // anyone explicitly named on the chain.
+        $uid = (int) $user->id;
+        $eid = (int) ($myEmployeeId ?: 0);
+        $q->where(function ($w) use ($myEmployeeId, $uid, $eid) {
+            $w->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '%')
+              ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '%');
+            if ($myEmployeeId) {
+                $w->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                });
+            }
+        });
 
         $leaveCtrl = app(LeaveRequestController::class);
         $items = [];
         foreach ($q->get() as $row) {
-            // Per-level precision for everyone except super_admin — only the
-            // current-level approver (the reporting manager) sees it.
-            if ($user->user_type !== 'super_admin') {
-                $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
-                $idx   = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
-                if (!$leaveCtrl->canActOnLevel($user, $chain, $idx, $row)) continue;
-            }
+            // Per-level precision, no exceptions — only the current-level
+            // approver (the reporting manager) sees it.
+            $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+            $idx   = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+            if (!$leaveCtrl->canActOnLevel($user, $chain, $idx, $row)) continue;
             $emp  = $row->employee;
             $name = $emp?->display_name
                 ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''));
@@ -894,8 +890,8 @@ class MyTeamController extends Controller
      */
     private function applyExpenseTenantScope($q, $user, ?int $myEmployeeId): void
     {
-        if ($user->user_type === 'super_admin') return;
-
+        /* No unscoped branch. super_admin used to return here, which put every
+           tenant's claims in one inbox list. It is no longer an approver. */
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
@@ -936,13 +932,14 @@ class MyTeamController extends Controller
     private function userCanHrApproveExpense($user): bool
     {
         if (!$user) return false;
-        if ($user->user_type === 'super_admin') return true;
 
         /* The approval hierarchy starts at the branch, so the pending queue
            belongs to the branch user — not the client above them, who was
            seeing every branch's claims in their inbox. The client tier keeps
-           its authority on Expense Management; this is the inbox only. */
-        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+           its authority on Expense Management; this is the inbox only.
+           super_admin is the tier above that and belongs to no tenant at all,
+           so it is excluded on the same grounds. */
+        if (in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true)) {
             return false;
         }
 
