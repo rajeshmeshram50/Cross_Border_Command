@@ -6,6 +6,7 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { todayIso, type DraftProduct, type SourcingTarget, type SourceType } from './data';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
+import TruncText from '../../../../components/ui/TruncText';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useSaveGuard } from './useSaveGuard';
 import { dmy } from './format';
@@ -60,16 +61,9 @@ const plainPrice = (v: unknown) => String(v ?? '').replace(/,/g, '');
 const toClarity = (c?: ApiClarity): Clarity | undefined => (c && c.val ? { type: c.type, value: c.val } : undefined);
 
 /** Product names longer than this are cut with "…"; the full name shows in the tooltip. */
-const NAME_MAX = 30;
-/** A product name, cut to NAME_MAX characters with its full text in a tooltip (no tooltip when it fits). */
-function ProductName({ name, className }: { name: string; className?: string }) {
-  if (name.length <= NAME_MAX) return <span className={className}>{name}</span>;
-  return (
-    <Tooltip label={name}>
-      <span className={className}>{name.slice(0, NAME_MAX).trimEnd()}…</span>
-    </Tooltip>
-  );
-}
+/** A product name, cut to 30 characters with its full text in a tooltip (no tooltip when it fits):
+    the shared TruncText. */
+const ProductName = ({ name, className }: { name: string; className?: string }) => <TruncText text={name} max={30} className={className} />;
 
 const IcoCheckBox =({ size = 14 }: { size?: number }) => <Svg size={size} stroke="#fff"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Svg>;
 const IcoLock = ({ size = 12 }: { size?: number }) => <Svg size={size} sw={2.5}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Svg>;

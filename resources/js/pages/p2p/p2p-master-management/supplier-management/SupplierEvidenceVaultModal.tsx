@@ -722,6 +722,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     const signed = rows.filter(isSigned).length;
     return { up: signed, pend: rows.length - signed, upLabel: 'signed', pendLabel: 'pending' };
   };
+  /** A card's ring and its up / pending line from one split. */
+  const progress = (split: { up: number; pend: number; upLabel: string; pendLabel: string }, whole: number) => ({ part: split.up, whole, split });
 
   const statusTally = {
     Verified: docsForTab.filter(d => evEffectiveStatus(d) === 'Verified').length,
@@ -806,7 +808,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         const extra = segItems.length - 1;
                         const short = first.length > 20 ? first.slice(0, 20) + '…' : first;
                         if (extra === 0) {
-                          return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentItemBadge item={segItems[0]} /></span></Tooltip>;
+                          return <Tooltip label={first} disabled={first.length <= 20}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentItemBadge item={segItems[0]} /></span></Tooltip>;
                         }
                         return (
                           <Tooltip label={`${segItems.length} segments — click to see all`}>
@@ -884,10 +886,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </>) : (<>
             {/* Rings are progress: complete transactions / all, signed documents / all, so they fill
                 as work is done (they were count / count and always full). */}
-            <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    part={dealSplit(vault.vendor_with_shipment).up}    whole={withShipCount}    split={dealSplit(vault.vendor_with_shipment)} />
-            <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} part={dealSplit(vault.vendor_without_shipment).up} whole={withoutShipCount} split={dealSplit(vault.vendor_without_shipment)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}        label="Total Trade Documents"         value={dealDocs.length} part={docSplit(dealDocs).up} whole={dealDocs.length} split={docSplit(dealDocs)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}   label="Total Agreements"              value={dealAgrs.length} part={docSplit(dealAgrs).up} whole={dealAgrs.length} split={docSplit(dealAgrs)} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    {...progress(dealSplit(vault.vendor_with_shipment), withShipCount)} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} {...progress(dealSplit(vault.vendor_without_shipment), withoutShipCount)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}        label="Total Trade Documents"         value={dealDocs.length} {...progress(docSplit(dealDocs), dealDocs.length)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}   label="Total Agreements"              value={dealAgrs.length} {...progress(docSplit(dealAgrs), dealAgrs.length)} />
             <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Total Signed"                  value={caseSigned}  part={caseSigned}  whole={caseAll.length} tag="Complete" />
             <SevStat tone="amber" icon={VAULT_GLYPHS.clock}            label="Pending for Sign"              value={caseWaiting} part={caseWaiting} whole={caseAll.length} tag="Awaiting" />
             <SevStat tone="red"   icon={VAULT_GLYPHS.send}       label="Not Sent for Signature"        value={caseUnsent}  part={caseUnsent}  whole={caseAll.length} tag="Action needed" />
@@ -941,13 +943,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 const cmpl = dr.filter(r => all(r) > 0 && done(r) === all(r)).length;
                 const part = dr.filter(r => done(r) > 0 && done(r) < all(r)).length;
                 const pend = dr.filter(r => done(r) === 0).length;
-                const spill = (txt: string, bg: string, fg: string, bd: string, dot: string) => (
-                  <span className="cev-deal-spill" style={{ background: bg, color: fg, border: `1px solid ${bd}` }}><span className="cev-deal-dot" style={{ background: dot }} />{txt}</span>
+                const spill = (txt: string, bg: string, fg: string, bd: string, dot: string, tone: 'ok' | 'warn' | 'bad') => (
+                  <span className="cev-deal-spill spev-tone" data-tone={tone} style={{ background: bg, color: fg, border: `1px solid ${bd}` }}><span className="cev-deal-dot" style={{ background: dot }} />{txt}</span>
                 );
                 return (<>
-                  {cmpl > 0 && spill(`Complete ${cmpl}`, 'linear-gradient(135deg,#ecfdf5,#d1fae5)', '#059669', '#6ee7b7', '#10b981')}
-                  {part > 0 && spill(`Partial ${part}`, 'linear-gradient(135deg,#fffbeb,#fef3c7)', '#d97706', '#fcd34d', '#f59e0b')}
-                  {pend > 0 && spill(`Pending ${pend}`, 'linear-gradient(135deg,#fef2f2,#fee2e2)', '#dc2626', '#fca5a5', '#ef4444')}
+                  {cmpl > 0 && spill(`Complete ${cmpl}`, 'linear-gradient(135deg,#ecfdf5,#d1fae5)', '#059669', '#6ee7b7', '#10b981', 'ok')}
+                  {part > 0 && spill(`Partial ${part}`, 'linear-gradient(135deg,#fffbeb,#fef3c7)', '#d97706', '#fcd34d', '#f59e0b', 'warn')}
+                  {pend > 0 && spill(`Pending ${pend}`, 'linear-gradient(135deg,#fef2f2,#fee2e2)', '#dc2626', '#fca5a5', '#ef4444', 'bad')}
                   <span className="cev-sec-pill cev-sec-pill-docs">{dr.length} purchase order{dr.length === 1 ? '' : 's'}</span>
                 </>);
               })() : group === 'case-to-case' && tab === 'shipment-agreements' ? (
@@ -1279,8 +1281,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                   </Tooltip>
                                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                     {d.requirement === 'O'
-                                      ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
-                                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                                      ? <span className="spev-tone" data-tone="muted" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                                      : <span className="spev-tone" data-tone="ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
                                   </td>
                                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><DealStatusPill s={evEffectiveStatus(d)} /></td>
                                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -1583,9 +1585,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td><AuthorityBadges value={d.authority} /></td>
               <td>
                 {d.requirement === 'M' ? (
-                  <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                  <span className="cev-req cev-req-m spev-tone" data-tone="ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
                 ) : (
-                  <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  <span className="cev-req cev-req-o spev-tone" data-tone="muted" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
               <td><VaultDateBadge value={d.issue_date} /></td>
@@ -1940,14 +1942,6 @@ function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
   const tone = (s === 'Verified' || s === 'Signed') ? 'ok' : s === 'Expiring' ? 'warn' : 'bad';
   return <span className={`spev-ov-pill is-${tone}`}><i aria-hidden />{s}</span>;
 }
-function StdStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
-  const tone =
-    s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669' }
-    : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af' }
-    : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e' }
-    :                    { bg: '#fef2f2', fg: '#dc2626' };
-  return <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>{s}</span>;
-}
 function DealStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
   const tone = (s === 'Signed' || s === 'Verified')
     ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
@@ -1955,7 +1949,8 @@ function DealStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
       ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
       : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
+    <span className="spev-tone" data-tone={(s === 'Signed' || s === 'Verified') ? 'ok' : (String(s) === 'Declined' || s === 'Expired') ? 'bad' : 'warn'}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
       ● {s}
     </span>
   );
@@ -2392,7 +2387,8 @@ function DealPoStatus({ status }: { status?: string }) {
       : { bg: '#fef3c7', fg: '#b45309', bd: '#fcd34d' };
   const text = s ? s.replace(/^./, c => c.toUpperCase()) : '—';
   return (
-    <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 9.5, fontWeight: 800,
+    <span className="spev-tone" data-tone={s === 'cancelled' ? 'bad' : s === 'submitted' ? 'ok' : 'warn'}
+      style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 9.5, fontWeight: 800,
       letterSpacing: '.03em', background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}>{text}</span>
   );
 }
@@ -2514,8 +2510,8 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
               </Tooltip>
               <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
                 {d.requirement === 'O'
-                  ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
-                  : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                  ? <span className="spev-tone" data-tone="muted" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  : <span className="spev-tone" data-tone="ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
               </td>
               <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}><VaultDateBadge value={d.issue_date} /></td>
               <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}><VaultDateBadge value={d.expiry} kind="expiry" /></td>
@@ -2527,7 +2523,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
                     : st.label === 'Declined'
                       ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
                       : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
-                  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>● {st.label}</span>;
+                  return <span className="spev-tone" data-tone={(st.label === 'Signed' || st.label === 'Verified') ? 'ok' : st.label === 'Declined' ? 'bad' : 'warn'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>● {st.label}</span>;
                 })()}
               </td>
               <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>

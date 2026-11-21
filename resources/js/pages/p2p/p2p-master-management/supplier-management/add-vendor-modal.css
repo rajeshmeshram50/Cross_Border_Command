@@ -1698,10 +1698,10 @@
 /* Interaction-blocking veil shown over the popup body while a save is in flight
  * so no field can be edited and no attachment opened until it resolves. */
 .avm-cp-saving-veil { position: absolute; inset: 0; z-index: 20; background: rgba(255,255,255,.45); cursor: progress; border-radius: inherit; }
-[data-bs-theme="dark"] .avm-cp-saving-veil { background: rgba(10,6,24,.45); }
+[data-bs-theme="dark"] .avm-cp-saving-veil { background: rgba(6, 18, 24, .35); }
 /* Whole-modal veil during a step save — blocks Map Product / tabs / everything. */
 .avm-busy-veil { position: absolute; inset: 0; z-index: 60; background: rgba(245,243,255,.35); cursor: progress; border-radius: inherit; }
-[data-bs-theme="dark"] .avm-busy-veil { background: rgba(10,6,24,.4); }
+[data-bs-theme="dark"] .avm-busy-veil { background: rgba(6, 18, 24, .3); }
 .avm-cp-foot {
   display: flex; justify-content: flex-end; gap: 11px;
   padding: 14px 22px 20px;
@@ -2780,7 +2780,7 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   background: linear-gradient(120deg, #0b4f63 0%, #0e7490 45%, #0891b2 75%, #22d3ee 100%);
   box-shadow: 0 8px 20px -6px rgba(8,145,178,.55);
 }
-:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-saving-veil { background: rgba(247,253,254,.5); }
+:root:not([data-bs-theme="dark"]) :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-saving-veil { background: rgba(247,253,254,.5); }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-popup,
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-body { background: #0c1a22; color: #e2f3f7; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-foot { background: #10222b; border-top-color: rgba(103,232,249,.14); }
@@ -3191,6 +3191,8 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-footnote b { color: #334155; font-weight: 700; }
 .avm-cp-foot:has(.avm-cp-footnote) { align-items: center; }
 [data-bs-theme="dark"] .avm-auto .avm-input.avm-auto-input { background: rgba(255,255,255,.04); border-color: rgba(103,232,249,.16); color: #9db3c1; }
+[data-bs-theme="dark"] .avm-auto-pill { background: rgba(34, 211, 238, .14); color: #67e8f9; box-shadow: inset 0 0 0 1px rgba(103, 232, 249, .3); }
+[data-bs-theme="dark"] .avm-auto-lock { color: #5b7d90; }
 [data-bs-theme="dark"] .avm-cp-footnote { color: #94a3b8; }
 [data-bs-theme="dark"] .avm-cp-footnote b { color: #e2e8f0; }
 
@@ -3226,7 +3228,6 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-search > i { color: #0891b2; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-search input:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
 .avm-cp-popup.avm-cp-popup-mapped .smp-card { border: 1px solid #dceef3; border-radius: 14px; overflow: hidden; background: #fff; }
-.avm-cp-popup.avm-cp-popup-mapped .smp-table-wrap.dt-root { max-height: 520px; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-table thead th {
   background: #f0fbfd !important; color: #0e7490 !important; font-size: 10px !important; font-weight: 800 !important;
   letter-spacing: .08em; border-bottom: 1px solid #dceef3 !important; padding-top: 12px; padding-bottom: 12px;
@@ -3382,7 +3383,6 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 [data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smp-hsn { color: #cbd5e1; }
 [data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-table tbody td .smp-gst-amt { color: #94a3b8; }
 [data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-btn { background: rgba(255, 255, 255, .04); color: #67e8f9; border-color: rgba(103, 232, 249, .25); }
-[data-bs-theme="dark"] .avm-cp-popup:is(.avm-cp-popup-mapped, .avm-cp-popup-wide) .smp-pag .wl-pager .tc-wl-info { color: #94a3b8; }
 
 /* Mapped Products popup: the row behind the cells kept the old violet hover
    (rgba(124,58,237,.12), from the table's violet accent), which showed through the cells'
@@ -3442,40 +3442,11 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
   border: 0 !important; background: transparent !important; padding: 0 12px 0 0 !important; margin: 0; box-shadow: none;
 }
 
-/* Mapped Services table: fixed column widths and one alignment per column, so every header
-   sits over its values (the money headers were right-aligned over left-aligned values).
-   Service takes what is left and ends in "..." (full name on hover). */
-.avm-kyc-table.avm-svc-table { table-layout: fixed; width: 100%; }
-.avm-kyc-table.avm-svc-table > :is(thead, tbody) > tr > :is(th, td) { text-align: center !important; vertical-align: middle; }
-.avm-kyc-table.avm-svc-table > :is(thead, tbody) > tr > :is(th, td):nth-child(2) { text-align: left !important; }
-.avm-kyc-table.avm-svc-table th.svc-c-sr    { width: 64px; }
-.avm-kyc-table.avm-svc-table th.svc-c-code  { width: 110px; }
-.avm-kyc-table.avm-svc-table th.svc-c-cat   { width: 120px; }
-.avm-kyc-table.avm-svc-table th.svc-c-hsn   { width: 95px; }
-.avm-kyc-table.avm-svc-table th.svc-c-price { width: 115px; }
-.avm-kyc-table.avm-svc-table th.svc-c-gstp  { width: 72px; }
-.avm-kyc-table.avm-svc-table th.svc-c-gst   { width: 95px; }
-.avm-kyc-table.avm-svc-table th.svc-c-total { width: 120px; }
-.avm-kyc-table.avm-svc-table th.svc-c-act   { width: 96px; }
 /* Same width as Mapped Products, so Service keeps room beside the fixed columns. */
 .avm-cp-popup.avm-cp-popup-svc { max-width: 1160px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page)) .avm-cp-popup.avm-cp-popup-svc { max-width: 1160px; }
-.avm-kyc-table.avm-svc-table td .avm-row-actions { justify-content: center; }
-.avm-kyc-table.avm-svc-table td:nth-child(4) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Mapped Services: no pager. The table shows 5 rows (40px head + 5 x 54px) and scrolls inside
-   for the rest; the head stays pinned, so it needs a solid background. */
-.avm-cp-popup.avm-cp-popup-svc .avm-mapped-wrap { max-height: 312px; overflow-y: auto !important; }
-.avm-cp-popup.avm-cp-popup-svc .avm-svc-table tbody tr { height: 54px; }
-.avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { position: sticky; top: 0; z-index: 2; background: #f0fbfd !important; }
-[data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-svc .avm-svc-table thead th { background: #13303a !important; }
-
-/* ===== Dark mode (QA CS-2327 / CS-2328 / CS-2330 retest) =====
-   1. While a popup or the form saves, its veil was a light wash (rgba(247,253,254,.5) from the
-      page rule above): the whole Map Product popup / Edit Supplier form went grey-white. Dark tint. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-cp-saving-veil { background: rgba(6, 18, 24, .35); }
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-busy-veil { background: rgba(6, 18, 24, .3); }
-/* 2. WhatsApp switch turned OFF: a light #cbd5e1 track on the dark form. */
+/* Dark mode: WhatsApp switch turned OFF: a light #cbd5e1 track on the dark form. */
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-wa-switch:not(.is-on) .avm-wa-switch__track { background: rgba(148, 163, 184, .28); }
 
 /* QA #26: Mapped Products Segment column. Centred chips of different widths left a zig-zag edge;
@@ -3483,13 +3454,6 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box { display: flex; justify-content: flex-start; width: 180px; max-width: 100%; margin: 0 auto; min-width: 0; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box .smc-seg { justify-content: flex-start; max-width: 100%; min-width: 0; }
 .avm-cp-popup.avm-cp-popup-mapped .smp-table td .smp-seg-box .smc-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Dark mode: the AUTO pill on locked (auto-filled) fields was a flat grey #7b8794 slab with white
-   text. A translucent teal chip with light teal text, like the other dark-mode badges. */
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-auto-pill {
-  background: rgba(34, 211, 238, .14); color: #67e8f9; box-shadow: inset 0 0 0 1px rgba(103, 232, 249, .3);
-}
-[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-auto-lock { color: #5b7d90; }
 
 /* Contact No (+91 | number) reads as ONE field.
    - Dark mode: the +91 box kept the light popup border (#d3e4ea) on the dark form; now the same
@@ -3518,11 +3482,5 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 .avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
 .avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del:hover:not(:disabled) { color: #fff; background: linear-gradient(135deg, #f87171, #dc2626); border-color: transparent; }
 [data-bs-theme="dark"] .avm-cp-popup.avm-cp-popup-svc .smp-table tbody td .smc-act.smp-act-del { color: #fca5a5; background: rgba(239, 68, 68, .12); border-color: rgba(252, 165, 165, .35); }
-.avm-cp-popup.avm-cp-popup-svc .smp-table td .smp-seg-box { width: 160px; }
 .avm-cp-popup.avm-cp-popup-svc .avm-mapped-toolbar { margin-bottom: 12px; }
-/* Category has no regulatory badge, so no outer pill around its chip (it drew a double border). */
-.avm-cp-popup.avm-cp-popup-svc .smp-table td .smp-seg-box .smc-seg { border: 0 !important; background: transparent !important; padding: 0 !important; box-shadow: none !important; }
 
-/* Mapped Services opened from the Supplier list: the add button is in the header, so the search
-   takes the full row, as in the list's Mapped Products popup. */
-.avm-cp-popup.avm-cp-popup-svc-list .avm-mapped-toolbar > :first-child { flex: 1 1 auto; max-width: none; width: 100%; }

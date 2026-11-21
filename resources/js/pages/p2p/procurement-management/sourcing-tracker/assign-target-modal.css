@@ -499,16 +499,6 @@
     box-shadow: none;
 }
 
-.sta-locked {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 9.5px;
-    font-weight: 800;
-    letter-spacing: .06em;
-    color: var(--c-brand);
-}
-
 
 /* ── Master picker ────────────────────────────────────────────────────── */
 /* Product picker — Figma .stsrc-picker / .stsrc-pick-* values; colours through the --c-* vars so

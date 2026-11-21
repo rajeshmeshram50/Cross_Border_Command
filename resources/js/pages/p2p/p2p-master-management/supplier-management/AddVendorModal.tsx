@@ -1,4 +1,5 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useIsClipped } from '../../../../components/ui/DataTable';
 import SegmentBadge, { SEG_TAG_DARK, segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -33,7 +34,7 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
-import { SERVICE_MAPPING_ENABLED, serviceBucketOf, type ServiceBucket } from './serviceMapping';
+import { serviceBucketOf, type ServiceBucket } from './serviceMapping';
 /* The Service Management wrench, so service popups here carry that module's own icon. */
 import { SVC_ICONS } from '../service-management/serviceIcons';
 import { lazyPage } from '../../../../utils/lazyPage';
@@ -371,9 +372,6 @@ const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
 /** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
 const squashType = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
-/* Supplier Type → service bucket, and the on/off switch for service mapping, live in
-   ./serviceMapping (shared with the Supplier list). Re-exported for the list's lazy popup. */
-export { serviceBucketOf };
 /** A saved supplier's type name → the dropdown's value (older rows were saved as "Material / Goods"). */
 const canonicalSupplierType = (name: string) =>
   SUPPLIER_TYPE_OPTS.find(o => o.value === name || squashType(o.value) === squashType(name))?.value ?? name;
@@ -550,10 +548,8 @@ export default function AddVendorModal(props: {
   /** The service bucket a service-provider type serves (null for Material/ Goods, FFD/ Transporter
       or no type yet). Same table as the server's ServiceController::VENDOR_TYPE_BY_NAME. */
   const serviceBucket = serviceBucketOf(vendorType);
-  /* SERVICE_MAPPING_ENABLED (./serviceMapping): built but switched off for now — one switch for
-     this form and the Supplier list. */
   /** Map Product / Service has something to open: products for goods, services for a provider. */
-  const canMapAnything = isGoodsSupplier || (SERVICE_MAPPING_ENABLED && serviceBucket !== null);
+  const canMapAnything = isGoodsSupplier || serviceBucket !== null;
   const [website,     setWebsite]     = useState('');
   /* Supplier Category — COMMERCIAL STANDING, not risk. Four fixed values, so
      no master lookup: they are product vocabulary and the list's Refine filter
@@ -2659,21 +2655,17 @@ export default function AddVendorModal(props: {
             </div>
           </div>
           <div className="avm-head-right">
-            {/* Map Product — opens the Mapped Products list popup (Figma).
-                Disabled until the supplier exists (Stage 1 saved → vendorId set);
-                you can't map products to a supplier that hasn't been created. */}
             {/* Map Product / Service, by Supplier Type (read from the dropdown as it is now):
                 Material/ Goods → the Mapped Products popup; a service-provider type → Map Service
                 for its own bucket; FFD/ Transporter (or no type yet) → disabled. */}
             {canMapProducts && (
               <button
                 className="avm-map-btn"
-                onClick={() => { if (isGoodsSupplier) setMappedListOpen(true); else if (SERVICE_MAPPING_ENABLED && serviceBucket) setMappedServicesOpen(true); }}
+                onClick={() => { if (isGoodsSupplier) setMappedListOpen(true); else if (serviceBucket) setMappedServicesOpen(true); }}
                 disabled={!vendorId || !canMapAnything}
-                title={serviceBucket && !SERVICE_MAPPING_ENABLED ? 'Service mapping is not available yet'
-                  : !vendorId ? 'Save the Supplier Legal Identity step first to map products or services'
+                title={!vendorId ? 'Save the Supplier Legal Identity step first to map products or services'
                   : isGoodsSupplier ? 'Map products to this supplier'
-                  : serviceBucket ? (SERVICE_MAPPING_ENABLED ? 'Map services to this supplier' : 'Service mapping is not available yet')
+                  : serviceBucket ? 'Map services to this supplier'
                   : 'Products or services can’t be mapped to this Supplier Type'}
               >
                 <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product / Service</span>
@@ -4693,16 +4685,7 @@ type SegRefRow = { code: string; name: string; authority?: string | null; author
     36-character name can still be clipped by a narrow column. */
 function ClippedName({ text, maxWidth }: { text: string; maxWidth: number }) {
   const ref = useRef<HTMLElement | null>(null);
-  const [cut, setCut] = useState(false);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setCut(el.scrollWidth > el.clientWidth + 1);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [text]);
+  const cut = useIsClipped(ref, text);
   return (
     <Tooltip label={text} disabled={!cut}>
       <strong ref={ref} style={{ display: 'block', maxWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</strong>
@@ -5314,19 +5297,20 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null, pageSize: num
   const [page, setPage] = useState(1);
   const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    // Prices and GST are searchable too, in every way a user may type them:
-    // 1212 · 1212.00 · 1,212 · ₹1,212 · 18 / 18%.
-    const amounts = (n: number) => Number.isFinite(n)
-      ? [String(n), n.toFixed(2), n.toLocaleString('en-IN', { maximumFractionDigits: 2 }), inrAmt(n)]
-      : [];
-    return (rows ?? []).filter(r => !q || [
+  /* Each row's search text, built once per row list. Prices and GST are searchable in every way a
+     user may type them: 1212 · 1212.00 · 1,212 · ₹1,212 · 18 / 18%. */
+  const haystacks = useMemo(() => {
+    const amounts = (n: number) => Number.isFinite(n) ? [String(n), n.toFixed(2), INR_FMT.format(n), inrAmt(n)] : [];
+    return (rows ?? []).map(r => [
       r.productName, r.productCode, formatProductCode(r.productCode), r.hsnSacCode, r.segment,
       ...amounts(r.purchasePrice), ...amounts(r.gstAmount), ...amounts(r.totalAmount),
       `${Number(r.gstPercentage)}%`,
-    ].some(s => String(s ?? '').toLowerCase().includes(q)));
-  }, [rows, search]);
+    ].map(v => String(v ?? '').toLowerCase()).join('\u0001'));
+  }, [rows]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows ?? []).filter((_, i) => !q || haystacks[i].includes(q));
+  }, [rows, haystacks, search]);
 
   /* Mappings append (the endpoint lists them by id), so after one is added
      land on the last page with the search cleared — otherwise the product
@@ -5393,7 +5377,7 @@ function PagedMappingTable(props: {
         className="avm-mapped-pager"
         total={paging.filtered.length}
         page={paging.page}
-        pageSize={MAPPED_PAGE_SIZE}
+        pageSize={paging.pageSize}
         onPage={paging.setPage}
       />
     </div>
@@ -5532,6 +5516,44 @@ function MappedProductsPopup(props: {
 }
 
 
+/* ═════ Shared by the mapping popups (Mapped Products / Mapped Services) ═════ */
+
+/** A value fetched (or computed) for a mapping: locked, with a lock and an AUTO pill (Figma). */
+const auto = (value: string, placeholder: string, title?: string) => (
+  <div className="avm-auto" title={title}>
+    <i className="ri-lock-line avm-auto-lock" aria-hidden />
+    <input className="avm-input avm-auto-input" value={value} readOnly tabIndex={-1} placeholder={placeholder} />
+    <span className="avm-auto-pill">Auto</span>
+  </div>
+);
+
+const ICON_EDIT = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
+const ICON_TRASH = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>;
+
+/** The list popups' full-width search bar (no browser autofill, a clear button once typed in). */
+function SmpSearch(props: { name: string; label: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  return (
+    <div className="smp-toolbar">
+      <div className="ui-search-abs smp-search">
+        <i className="ri-search-line" />
+        <input
+          type="search"
+          name={props.name}
+          autoComplete="new-password"
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder={props.placeholder}
+          value={props.value}
+          disabled={props.disabled}
+          onChange={e => props.onChange(e.target.value)}
+          aria-label={props.label}
+        />
+        <SearchClear show={props.value} onClear={() => props.onChange('')} />
+      </div>
+    </div>
+  );
+}
+
 /* ═════ Mapped Services — Map Product / Service for a service-provider supplier ═════
    The service twin of Mapped Products. A supplier whose type serves a Service Management bucket
    (Soft Service Provider → Soft / Digital, Trackable / Consumable → Self-Consumable, Professional …
@@ -5544,7 +5566,7 @@ function MappedProductsPopup(props: {
    GET /p2p/services (the bucket) only feeds the Service Name dropdown. */
 type ServiceListRow = {
   id: number; code: string; name: string; category?: string | null; hsn_code?: string | null;
-  gst_percentage?: number | null; status?: string; suppliers_count?: number;
+  gst_percentage?: number | null; status?: string;
 };
 type ServiceMappingApiRow = {
   id: number; service_id: number; service_code?: string | null; service_name?: string | null;
@@ -5556,7 +5578,7 @@ type ServiceMappingApiRow = {
 type MappedServiceRow = {
   /** p2p_service_suppliers.id — what PATCH / DELETE address. */
   mapId: number;
-  serviceId: number; code: string; name: string; category: string; hsn: string;
+  serviceId: number; code: string; name: string; hsn: string;
   origin: 'domestic' | 'international';
   currency: string; price: number; exchangeRate: number | null;
   gstPercentage: number; gstAmount: number; total: number; inr: number; remarks: string;
@@ -5577,7 +5599,7 @@ const SERVICE_BUCKET_LABEL: Record<ServiceBucket['serviceType'], string> = {
   other_operational: 'Other Operational Services',
 };
 const money = (n: number, cur = 'INR') =>
-  cur === 'INR' ? inrAmt(n) : `${cur} ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  cur === 'INR' ? inrAmt(n) : `${cur} ${INR_FMT.format(Number.isFinite(n) ? n : 0)}`;
 const svcApiError = (e: unknown, fallback: string) => {
   const d = (e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
   const first = d?.errors ? Object.values(d.errors).flat()[0] : undefined;
@@ -5631,11 +5653,29 @@ export function MappedServicesPopup(props: {
   const [tried, setTried] = useState(false);
   const [currencies, setCurrencies] = useState<CurrencyOpt[]>([]);
 
-  /** This supplier's mappings (one call) and, beside them, the bucket's services for the
-      Service Name dropdown and each row's HSN / SAC. Only ACTIVE mappings are listed. */
+  /** A type's service catalog (Service Name dropdown, each row's HSN / SAC), fetched once per type:
+      it does not change when a mapping is saved, so a save only re-reads the mappings. */
+  const catalogs = useRef(new Map<string, Promise<ServiceListRow[]>>());
+  const catalogOf = (b: ServiceBucket) => {
+    const key = `${b.serviceType}|${b.classification ?? ''}`;
+    let p = catalogs.current.get(key);
+    if (!p) {
+      p = api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
+        params: { service_type: b.serviceType, ...(b.classification ? { classification: b.classification } : {}), per_page: 200, sort: 'name' },
+      }).then(r => r.data?.data ?? []);
+      p.catch(() => catalogs.current.delete(key));   // a failed fetch is tried again next time
+      catalogs.current.set(key, p);
+    }
+    return p;
+  };
+
+  /** This supplier's mappings and, beside them, its type's services. Only ACTIVE mappings are listed. */
   const load = useCallback(async () => {
     try {
-      // 1. The supplier's mappings + what it is (meta), by its id.
+      // The catalog for the type the props expect starts at the same time as the mappings; the
+      // server's own answer (meta, by the supplier's id) decides, and only a different type
+      // costs a second catalog request.
+      const guess = catalogOf(props.bucket);
       const mapRes = await api.get<{
         data?: ServiceMappingApiRow[];
         meta?: { supplier_service_type?: ServiceBucket['serviceType'] | null; supplier_classification?: string | null; origin?: string | null };
@@ -5648,12 +5688,10 @@ export function MappedServicesPopup(props: {
         international: meta?.origin === 'international',
       };
       setServerKind(kind);
-      // 2. The services of THAT type only (none when the supplier's type serves no service).
-      const list = kind.bucket
-        ? ((await api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
-            params: { service_type: kind.bucket.serviceType, ...(kind.bucket.classification ? { classification: kind.bucket.classification } : {}), per_page: 200, sort: 'name' },
-          })).data?.data ?? [])
-        : [];
+      const sameType = !!kind.bucket && kind.bucket.serviceType === props.bucket.serviceType
+        && (kind.bucket.classification ?? null) === (props.bucket.classification ?? null);
+      if (!sameType) guess.catch(() => {});   // the unused guess must not surface as an unhandled rejection
+      const list = !kind.bucket ? [] : await (sameType ? guess : catalogOf(kind.bucket));
       const byId = new Map(list.map(s => [Number(s.id), s]));
       const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       setServices(list);
@@ -5664,7 +5702,7 @@ export function MappedServicesPopup(props: {
           return {
             mapId: Number(m.id), serviceId: Number(m.service_id),
             code: m.service_code || svc?.code || '—', name: m.service_name || svc?.name || '—',
-            category: m.category || svc?.category || '—', hsn: svc?.hsn_code || '—',
+            hsn: svc?.hsn_code || '—',
             origin: m.origin === 'international' ? 'international' : 'domestic',
             currency: m.currency || 'INR', price: num(m.price),
             exchangeRate: m.exchange_rate != null ? num(m.exchange_rate) : null,
@@ -5692,7 +5730,7 @@ export function MappedServicesPopup(props: {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows ?? []).filter(r => !q || [r.name, r.code, r.category, r.hsn].some(s => s.toLowerCase().includes(q)));
+    return (rows ?? []).filter(r => !q || [r.name, r.code, r.hsn].some(s => s.toLowerCase().includes(q)));
   }, [rows, search]);
 
   // Services this supplier can still be mapped to: not already mapped, not inactive.
@@ -5807,13 +5845,6 @@ export function MappedServicesPopup(props: {
     }
   };
 
-  const auto = (value: string, placeholder: string) => (
-    <div className="avm-auto">
-      <i className="ri-lock-line avm-auto-lock" aria-hidden />
-      <input className="avm-input avm-auto-input" value={value} readOnly tabIndex={-1} placeholder={placeholder} />
-      <span className="avm-auto-pill">Auto</span>
-    </div>
-  );
   const bucketLabel = SERVICE_BUCKET_LABEL[bucket.serviceType];
 
   return (
@@ -5840,38 +5871,21 @@ export function MappedServicesPopup(props: {
       >
         {props.addInHeader ? (
           /* From the list: the Mapped Products popup's own full-width search bar. */
-          <div className="smp-toolbar">
-            <div className="ui-search-abs smp-search">
-              <i className="ri-search-line" />
-              <input
-                type="search"
-                name="mapped-services-search"
-                autoComplete="new-password"
-                data-lpignore="true"
-                data-form-type="other"
-                placeholder="Search service, code, category, HSN/SAC, price…"
-                value={search}
-                disabled={!rows || rows.length === 0}
-                onChange={e => setSearch(e.target.value)}
-                aria-label="Search mapped services"
-              />
-              <SearchClear show={search} onClear={() => setSearch('')} />
-            </div>
-          </div>
+          <SmpSearch name="mapped-services-search" label="Search mapped services"
+            placeholder="Search service, code, HSN/SAC, price…"
+            value={search} onChange={setSearch} disabled={!rows || rows.length === 0} />
         ) : (
         <div className="avm-mapped-toolbar">
           <MappedProductsSearch value={search} onChange={setSearch}
-            placeholder="Search service, code, category, HSN/SAC…" label="Search mapped services" />
-          {!props.addInHeader && (
-            <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
-              title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
-              <i className="ri-add-line" /> Map Service
-            </button>
-          )}
+            placeholder="Search service, code, HSN/SAC…" label="Search mapped services" />
+          <button className="avm-section-add-btn" onClick={openForm} disabled={services === null || rows === null || servesNone}
+            title={servesNone ? 'This supplier’s type does not supply services' : undefined}>
+            <i className="ri-add-line" /> Map Service
+          </button>
         </div>
         )}
         {rows === null ? (
-          <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={8} />
+          <ShimmerTable rows={5} cols={10} />
         ) : rows.length === 0 ? (
           <div className="avm-empty avm-empty-accent">
             {failed ? 'Could not load the services. Close and open this popup to try again.'
@@ -5881,8 +5895,8 @@ export function MappedServicesPopup(props: {
         ) : filtered.length === 0 ? (
           <div className="avm-empty avm-empty-accent">No mapped services match "{search.trim()}".</div>
         ) : (
-          /* The Mapped Products table, column for column: Sr No box, icon + name, code chip,
-             category chip (where Products has Segment), HSN, price, GST % chip, GST, bold total.
+          /* The Mapped Products table, column for column (no Segment / Category): Sr No box,
+             icon + name, code chip, HSN, price, GST % chip, GST, bold total.
              Every service in one list: 5 rows show, the rest scroll inside (no pager). */
           <div className="smp-card">
             <div className="smp-table-wrap dt-root hr-dt" data-accent="violet">
@@ -5892,7 +5906,6 @@ export function MappedServicesPopup(props: {
                     <th style={{ textAlign: 'center' }}>SR. NO</th>
                     <th>SERVICE</th>
                     <th style={{ textAlign: 'center' }}>SERVICE CODE</th>
-                    <th style={{ textAlign: 'center' }}>CATEGORY</th>
                     <th style={{ textAlign: 'center' }}>HSN / SAC</th>
                     <th style={{ textAlign: 'center' }}>{international ? 'PRICE' : 'PRICE (₹)'}</th>
                     {!international && <th style={{ textAlign: 'center' }}>GST %</th>}
@@ -5912,11 +5925,6 @@ export function MappedServicesPopup(props: {
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{r.code}</span></td>
-                      <td style={{ textAlign: 'center' }}>
-                        {r.category && r.category !== '—' ? (
-                          <span className="smp-seg-box"><span className="smc-seg"><span className="smc-seg-name">{r.category}</span></span></span>
-                        ) : '—'}
-                      </td>
                       <td style={{ textAlign: 'center' }}><span className="smp-hsn">{r.hsn}</span></td>
                       <td style={{ textAlign: 'center' }}><span className="smp-price">{money(r.price, r.currency)}</span></td>
                       {!international && <td style={{ textAlign: 'center' }}><span className="smp-gst">{`${Number(r.gstPercentage.toFixed(2))}%`}</span></td>}
@@ -5927,13 +5935,13 @@ export function MappedServicesPopup(props: {
                           <Tooltip label="Edit service">
                             <button type="button" aria-label="Edit service" disabled={busyId !== null}
                               className="smc-act smc-act-edit d-inline-flex align-items-center justify-content-center" onClick={() => openEdit(r)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                              {ICON_EDIT}
                             </button>
                           </Tooltip>
                           <Tooltip label="Unmap service">
                             <button type="button" aria-label="Unmap service" disabled={busyId !== null}
                               className="smc-act smp-act-del d-inline-flex align-items-center justify-content-center" onClick={() => void unmap(r)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                              {ICON_TRASH}
                             </button>
                           </Tooltip>
                         </span>
@@ -6026,7 +6034,8 @@ export function MappedServicesPopup(props: {
    the Supplier list's (.dt-root.hr-dt + .dt-table, serial badge, id chip,
    segment chip, 28px edit icon). */
 /** ₹ in Indian grouping, up to 2 decimals (Figma: ₹22,260 · ₹4,006.8). */
-const inrAmt = (n: number) => `₹${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const INR_FMT = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
+const inrAmt = (n: number) => `₹${INR_FMT.format(Number.isFinite(n) ? n : 0)}`;
 
 function MappedProductsListCard(props: {
   paging: ReturnType<typeof useMappedProductsPaging>;
@@ -6034,30 +6043,13 @@ function MappedProductsListCard(props: {
   onEdit: (id: string) => void;
   busy?: boolean;
   empty?: ReactNode;
-  /** The popup shows Showing + the pager in its own footer, so the card leaves them out. */
-  pagerInFooter?: boolean;
 }) {
   const { paging } = props;
   return (
     <div className="smp-wrap">
-      <div className="smp-toolbar">
-        <div className="ui-search-abs smp-search">
-          <i className="ri-search-line" />
-          <input
-            type="search"
-            name="mapped-products-search"
-            autoComplete="new-password"
-            data-lpignore="true"
-            data-form-type="other"
-            placeholder="Search product, code, HSN/SAC, segment, price…"
-            value={paging.search}
-            disabled={props.total === 0}
-            onChange={e => paging.setSearch(e.target.value)}
-            aria-label="Search mapped products"
-          />
-          <SearchClear show={paging.search} onClear={() => paging.setSearch('')} />
-        </div>
-      </div>
+      <SmpSearch name="mapped-products-search" label="Search mapped products"
+        placeholder="Search product, code, HSN/SAC, segment, price…"
+        value={paging.search} onChange={paging.setSearch} disabled={props.total === 0} />
       <div className="smp-card">
         {props.empty ? (
           <div className="smp-empty">{props.empty}</div>
@@ -6123,7 +6115,7 @@ function MappedProductsListCard(props: {
                               onClick={() => props.onEdit(r.id)}
                               disabled={props.busy}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                              {ICON_EDIT}
                             </button>
                           </Tooltip>
                         </td>
@@ -6133,16 +6125,6 @@ function MappedProductsListCard(props: {
                 </tbody>
               </table>
             </div>
-            {!props.pagerInFooter && (
-              <div className="smp-pag">
-                <WorklistPager
-                  total={paging.filtered.length}
-                  page={paging.page}
-                  pageSize={paging.pageSize}
-                  onPage={paging.setPage}
-                />
-              </div>
-            )}
           </>
         )}
       </div>
@@ -6439,7 +6421,6 @@ export function MappedProductsViewPopup(props: {
           total={rows.length}
           onEdit={openEditForm}
           busy={saving}
-          pagerInFooter
           empty={failed
             ? 'Could not load the mapped products. Close and try again.'
             : rows.length === 0 ? 'No products mapped yet. Click "Map New Product" to begin.' : null}
@@ -7214,14 +7195,6 @@ function AddProductMappingPopup(props: {
   /* The `set(key, value)` helper that used to live here is gone with the
      free-text product fallback that was its only caller. Every remaining input
      goes through setDraft(recompute(...)) because each one feeds the totals. */
-  /* A value fetched from the product (or computed): locked, with a lock and an AUTO pill (Figma). */
-  const auto = (value: string, placeholder: string, title?: string) => (
-    <div className="avm-auto" title={title}>
-      <i className="ri-lock-line avm-auto-lock" aria-hidden />
-      <input className="avm-input avm-auto-input" value={value} readOnly tabIndex={-1} placeholder={placeholder} />
-      <span className="avm-auto-pill">Auto</span>
-    </div>
-  );
   return (
     <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier"
       panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>} onClose={onClose} onSave={onSave}>

@@ -1133,10 +1133,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-kind.is-on { color: #e0f7fb; }
 [data-bs-theme="dark"] .sup-list .sup-kind__ico { color: #6b86a0; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); }
 [data-bs-theme="dark"] .sup-list .sup-kind__c { color: #94a8bb; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .12); }
-[data-bs-theme="dark"] .sup-list .sup-kind.is-on .sup-kind__c { color: #67e8f9; background: rgba(34, 211, 238, .14); border-color: rgba(34, 211, 238, .4); }
 /* Hover in dark: the light theme's pale tile (#e6f9fd) and dark-teal text read as a white block
    on the dark bar — a translucent teal tile and bright teal text instead. */
-[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #67e8f9; }
+[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #a5f3fc; }
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #67e8f9; background: rgba(34, 211, 238, .14); }
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__c { color: #a5f3fc; border-color: rgba(34, 211, 238, .3); }
 
@@ -1430,11 +1429,6 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 .supfm-apply:disabled { cursor: not-allowed; filter: grayscale(.35); opacity: .5; box-shadow: none; }
 .supfm-apply[aria-busy="true"]:disabled { cursor: progress; filter: none; opacity: .92; }
 .supfm-cancel:disabled { opacity: .55; cursor: not-allowed; }
-
-/* Dark mode: hovering a supplier-type tab turned its icon tile white (#e6f9fd, the light-mode
-   hover, out-ranked the dark base rule). A translucent teal tile instead. */
-[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #67e8f9; background: rgba(34, 211, 238, .14); }
-[data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #a5f3fc; }
 
 /* QA #27: in dark mode the selected Domestic / International tab kept the unselected grey text
    (#94a8bb, a stronger rule) on its teal fill. White, as in light mode. */

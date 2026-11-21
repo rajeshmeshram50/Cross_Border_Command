@@ -22,7 +22,7 @@ import './supplier-management.css';
 import './supplier-scope-gate-teal.css';
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-* - the Customer list's classes
 import { lazyPage } from '../../../../utils/lazyPage';
-import { SERVICE_MAPPING_ENABLED, serviceBucketOf } from './serviceMapping';
+import { serviceBucketOf } from './serviceMapping';
 
 const AddVendorModal = lazyPage(() => import('./AddVendorModal'));
 const MappedProductsViewPopup = lazyPage(() =>
@@ -32,7 +32,7 @@ const MappedProductsViewPopup = lazyPage(() =>
 const MappedServicesViewPopup = lazyPage(() =>
   import('./AddVendorModal').then(m => ({
     default: (p: { vendorId: number; typeName: string; international: boolean; code?: string; name?: string; onClose: () => void; onChanged?: () => void }) => {
-      const bucket = m.serviceBucketOf(p.typeName);
+      const bucket = serviceBucketOf(p.typeName);
       // From the list: "Map New Service" in the header, like the list's Mapped Products popup.
       return bucket ? <m.MappedServicesPopup {...p} bucket={bucket} addInHeader /> : null;
     },
@@ -597,7 +597,9 @@ export default function Vendors() {
       .catch(() => {});
   }, []);
   // Only while service mapping is switched on: off, the list makes no extra call.
-  useEffect(() => { if (SERVICE_MAPPING_ENABLED) loadServiceCounts(); }, [loadServiceCounts]);
+  /* Only when a service-provider supplier is on screen (the Material tab never needs the catalog). */
+  const hasServiceRows = vendors.some(v => isServiceType(v.type));
+  useEffect(() => { if (hasServiceRows) loadServiceCounts(); }, [hasServiceRows, loadServiceCounts]);
   const [segPop, setSegPop] = useState<{ segments: { name: string; reg?: string | null }[]; x: number; y: number; top: number } | null>(null);
   const segPopRef = useRef<HTMLDivElement>(null);
   const [segPopPos, setSegPopPos] = useState<{ left: number; top: number } | null>(null);
@@ -739,7 +741,7 @@ export default function Vendors() {
     return Number(b.total ?? b.meta?.total ?? (Array.isArray(b) ? b.length : 0)) || 0;
   }, [debouncedSearch, scopeTab, tab]);
 
-  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+  const refresh = useCallback(async (opts?: { silent?: boolean; keepKindCounts?: boolean }) => {
     const filterKey = JSON.stringify([debouncedSearch, catParam, compParam, scopeTab, tab]);
     const kindMode = kindTab !== 'all';
     // A type tab holds the whole filtered list and pages it here, so a page change needs no fetch.
@@ -790,7 +792,7 @@ export default function Vendors() {
       } else if (kindMode) {
         setKindCounts(countKinds(rows));
         countsKeyRef.current = filterKey;
-      } else if (opts?.silent || countsKeyRef.current !== filterKey) {
+      } else if ((opts?.silent && !opts.keepKindCounts) || countsKeyRef.current !== filterKey) {
         countsKeyRef.current = filterKey;
         fetchAll()
           .then(r => {
@@ -816,14 +818,13 @@ export default function Vendors() {
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   /* Domestic <-> International (CS-2321): the type-tab counts belong to the scope they were
-     taken in, so they read 0 until the new scope's counts arrive, never the old scope's numbers.
-     Set before the refresh below runs, so the new counts land on top of the 0s. */
-  const prevScopeRef = useRef(scopeTab);
-  if (prevScopeRef.current !== scopeTab) {
-    prevScopeRef.current = scopeTab;
+     taken in, so they read 0 until the new scope's counts arrive, never the old scope's numbers. */
+  const switchScope = (next: 'domestic' | 'international') => {
+    if (next === scopeTab) return;
     setKindCounts(null);
     setTotal(0);
-  }
+    setScopeTab(next);
+  };
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, kindTab, catParam, compParam]);
 
@@ -1044,11 +1045,11 @@ useEffect(() => {
             <div className="smc-toolbar">
               {/* Domestic / International: the design's main tabs (icon tile, label, count). */}
               <div className="sup-tabs" role="tablist">
-                <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`sup-tab${scopeTab === 'domestic' ? ' is-on' : ''}`} onClick={() => setScopeTab('domestic')}>
+                <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`sup-tab${scopeTab === 'domestic' ? ' is-on' : ''}`} onClick={() => switchScope('domestic')}>
                   <span className="sup-tab__ico"><i className="ri-home-4-line" /></span>Domestic Supplier
                   <span className="sup-tab__c">{facets?.scope?.domestic ?? 0}</span>
                 </button>
-                <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`sup-tab${scopeTab === 'international' ? ' is-on' : ''}`} onClick={() => setScopeTab('international')}>
+                <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`sup-tab${scopeTab === 'international' ? ' is-on' : ''}`} onClick={() => switchScope('international')}>
                   <span className="sup-tab__ico"><i className="ri-global-line" /></span>International Supplier
                   <span className="sup-tab__c">{facets?.scope?.international ?? 0}</span>
                 </button>
@@ -1229,14 +1230,6 @@ useEffect(() => {
                               {/* A service-provider supplier counts and opens its SERVICES; every
                                   other type keeps its products. */}
                               {isServiceType(v.type) ? (() => {
-                                // Switched off (./serviceMapping): a plain dash, like the form's disabled button.
-                                if (!SERVICE_MAPPING_ENABLED) {
-                                  return (
-                                    <Tooltip label="Service mapping is not available yet">
-                                      <span className="sl-prodcount sl-prodcount--zero">—</span>
-                                    </Tooltip>
-                                  );
-                                }
                                 const n = serviceCounts.get(v.companyName.trim().toLowerCase()) ?? 0;
                                 return n > 0 ? (
                                   <Tooltip label="View mapped services">
@@ -1434,7 +1427,7 @@ useEffect(() => {
             supplier={vaultTarget}
             /* Re-read the list on close: uploads in the vault change the supplier's Compliant
                status, which otherwise showed only after a page refresh (CS-2326). */
-            onClose={() => { setVaultTarget(null); void refresh({ silent: true }); }}
+            onClose={() => { setVaultTarget(null); void refresh({ silent: true, keepKindCounts: true }); }}
           />
         </Suspense>
       )}

@@ -1,6 +1,7 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { Shimmer } from '../../../../components/ui/Shimmer';
+import FullPageLoader from '../../../../components/ui/FullPageLoader';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -30,20 +31,10 @@ const AddVendorModal = lazy(loadAddVendorModal);
 
 /* Convert to Supplier, between the click and the form (CS-2222): the report has closed, the
    prefill is loading and the form's code may still be downloading. Without this the bare list
-   sat there with nothing happening. */
-function ConvertOpening({ name }: { name?: string }) {
-  return (
-    <div className="stcv-overlay" role="status" aria-live="polite">
-      <div className="stcv-card">
-        <span className="stcv-spin" aria-hidden />
-        <div className="stcv-text">
-          <div className="stcv-title">Opening Add Supplier…</div>
-          <div className="stcv-sub">{name ? `Loading ${name}'s details` : 'Loading the supplier details'}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
+   sat there with nothing happening. No delay: the report is already gone. */
+const ConvertOpening = ({ name }: { name?: string }) => (
+  <FullPageLoader delayMs={0} label={name ? `Opening Add Supplier — loading ${name}'s details…` : 'Opening Add Supplier…'} />
+);
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sourcing Management Tracker — Procure to Pay (P2P) · Procurement Management.

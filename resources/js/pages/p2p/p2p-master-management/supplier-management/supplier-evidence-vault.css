@@ -4596,3 +4596,20 @@ body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40p
 .spev-ov:not(.spev-ov-std) .cev-ov-body:has(> .sev-ov-picks) { display: flex; flex-direction: column; }
 .spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-pick-cap { flex: 0 0 auto; }
 .spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-picks { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; }
+
+/* ===== Supplier vault, dark mode: the pills that carry their light colours inline (Mandatory /
+   Optional, Complete / Partial / Pending, PO status, deal document status) are tagged
+   .spev-tone[data-tone]. One translucent version per tone here; !important only because the
+   light colours are inline styles. The regulatory badge (High / Less) gets a dark surface too. ===== */
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="ok"]    { background: rgba(16, 185, 129, .14) !important; color: #6ee7b7 !important; border-color: rgba(110, 231, 183, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="warn"]  { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="bad"]   { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="muted"] { background: rgba(148, 163, 184, .12) !important; color: #cbd5e1 !important; border-color: rgba(148, 163, 184, .3) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .seg-reg-badge { background: rgba(255, 255, 255, .08) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+/* Supplier vault only (.spev / .spev-ov), dark mode: the row actions (View / Send / Remind / Track)
+   keep the shared vault's pale SOLID fills, which read as bright blocks on the dark tables. The
+   translucent version of each hue, as Download / Re-upload; Customer / Consignee vaults unchanged. */
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act-view   { color: #93c5fd; background: rgba(59, 130, 246, .14); border-color: rgba(147, 197, 253, .35); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) :is(.cev-sdp-act-send, .cev-sdp-act-track) { color: #a5f3fc; background: rgba(34, 211, 238, .14); border-color: rgba(103, 232, 249, .38); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act-remind { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(252, 211, 77, .35); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act:hover:not(:disabled) { filter: brightness(1.2); }
