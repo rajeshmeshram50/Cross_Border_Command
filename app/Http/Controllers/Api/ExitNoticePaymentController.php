@@ -12,30 +12,11 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 
-/**
- * Notice-period recovery — the money an employee owes when they resign WITHOUT
- * serving their notice period.
- *
- *   GET  /api/employees/{employee}/notice-payment            summary + history
- *   POST /api/employees/{employee}/notice-payment            employee submits
- *   POST /api/notice-payments/{id}/approve                   HR verifies
- *   POST /api/notice-payments/{id}/reject                    HR refuses
- *
- * The employee raises the payment from their own Payroll Details tab (amount,
- * mode, reference, date + a screenshot of the transfer); HR approves it on the
- * exit wizard's Notice Period Payment stage. Approval is the ONLY thing that
- * settles the recovery, and Final Closure stays blocked until it happens.
- */
 class ExitNoticePaymentController extends Controller
 {
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
-    /**
-     * What the employee owes, where to pay it, and everything submitted so far.
-     * Read-only — safe to call whether or not an exit exists.
-     */
     public function summary(Request $request, $employee)
     {
         $employee = $this->scopedEmployee($request, $employee);
@@ -53,13 +34,11 @@ class ExitNoticePaymentController extends Controller
                 'notice_date'      => $exit->notice_date?->toDateString(),
                 'last_working_day' => $exit->last_working_day?->toDateString(),
             ] : null,
-            // Where to send the money — the company's own bank accounts.
             'company_accounts' => $this->companyAccounts($employee),
             'payments'     => $this->history($employee),
         ]]);
     }
 
-    /** The employee submits a payment they have already made. */
     public function store(Request $request, $employee)
     {
         $employee = $this->scopedEmployee($request, $employee);
@@ -72,11 +51,6 @@ class ExitNoticePaymentController extends Controller
         $data = $request->validate([
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
-            /* Shapes, not just presence. The form filters both as they are
-               typed, but a request can arrive from anywhere, and these two end
-               up on a payment record Finance reconciles against a bank
-               statement: a bank name of "%#%^&*(" or a reference of "#$%&*()"
-               is unusable there (CBC #183 / #184). */
             'bank_name'         => ['required', 'string', 'max:120', 'regex:/^[A-Za-z ]+$/'],
             'utr_cheque_number' => ['required', 'string', 'regex:/^[0-9]{1,12}$/'],
             'payment_date'      => ['required', 'date', 'before_or_equal:' . Carbon::now(self::DISPLAY_TZ)->toDateString()],
@@ -89,8 +63,6 @@ class ExitNoticePaymentController extends Controller
             'utr_cheque_number.regex' => 'UTR / Cheque Number must be digits only, up to 12.',
         ]);
 
-        // A reference can only be claimed once per employee — the same transfer
-        // must not be submitted twice to cover two different shortfalls.
         $dupe = ExitNoticePayment::where('employee_id', $employee->id)
             ->whereRaw('LOWER(utr_cheque_number) = ?', [mb_strtolower(trim($data['utr_cheque_number']))])
             ->where('status', '!=', 'Rejected')
@@ -105,9 +77,6 @@ class ExitNoticePaymentController extends Controller
             'branch_id'         => $employee->branch_id,
             'employee_id'       => $employee->id,
             'employee_exit_id'  => $exit?->id,
-            // Snapshot: the live figure moves with the last working day and the
-            // salary basis, so approval must be judged against what was owed
-            // when the employee paid — not against a number that changed later.
             'amount_due'        => $due['amount'],
             'amount'            => (float) $data['amount'],
             'payment_mode'      => $data['payment_mode'],
@@ -127,15 +96,6 @@ class ExitNoticePaymentController extends Controller
         ], 201);
     }
 
-    /**
-     * HR records a payment that arrived some other way (bank advice, cash desk,
-     * an adjustment against F&F) AND rules on it in one go.
-     *
-     * It writes the SAME row shape as an employee submission — that's the point:
-     * a manually-recorded payment has to show up in the employee's own Payment
-     * Details tab too, otherwise they'd see "no payment submitted" against an
-     * exit HR had already settled.
-     */
     public function record(Request $request, $employee)
     {
         $user = $request->user();
@@ -150,17 +110,8 @@ class ExitNoticePaymentController extends Controller
         $data = $request->validate([
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
-            /* Shapes, not just presence. The form filters both as they are
-               typed, but a request can arrive from anywhere, and these two end
-               up on a payment record Finance reconciles against a bank
-               statement: a bank name of "%#%^&*(" or a reference of "#$%&*()"
-               is unusable there (CBC #183 / #184). */
             'bank_name'         => ['required', 'string', 'max:120', 'regex:/^[A-Za-z ]+$/'],
             'utr_cheque_number' => ['required', 'string', 'regex:/^[0-9]{1,12}$/'],
-            /* Same ceiling as store() above. A payment is a record of money that
-               has already moved, so it cannot be dated in the future — this path
-               (HR recording on the employee's behalf) was the one place the rule
-               was missing, and it accepted any date the caller sent. */
             'payment_date'      => ['required', 'date', 'before_or_equal:' . Carbon::now(self::DISPLAY_TZ)->toDateString()],
             'remarks'           => ['nullable', 'string', 'max:500'],
             'verdict'           => ['required', 'in:Approved,Rejected'],
@@ -217,12 +168,6 @@ class ExitNoticePaymentController extends Controller
         return $this->decide($request, $id, 'Rejected');
     }
 
-    /**
-     * HR's verdict. Approving settles the notice recovery on the exit row so
-     * Final Closure unblocks; rejecting leaves it outstanding for a fresh
-     * submission. Approving BELOW the amount that was due is refused — a part
-     * payment doesn't settle the exit.
-     */
     private function decide(Request $request, int $id, string $verdict)
     {
         $user = $request->user();
@@ -261,13 +206,6 @@ class ExitNoticePaymentController extends Controller
         ]);
     }
 
-    /* ── Helpers ───────────────────────────────────────────────────────── */
-
-    /**
-     * Mirror a verdict onto the exit case — that's what the wizard's completion
-     * gate reads, and what keeps the Notice Period Payment stage in step with
-     * the payment rows.
-     */
     private function syncExit(ExitNoticePayment $row, string $verdict): void
     {
         $exit = $row->employee_exit_id
@@ -291,45 +229,24 @@ class ExitNoticePaymentController extends Controller
         $exit->save();
     }
 
-    /**
-     * What the employee owes. Prefers the figure HR saved on the exit case;
-     * falls back to computing it so the employee still sees a number before HR
-     * has touched Stage 1.
-     */
     private function amountDue(Employee $employee, ?EmployeeExit $exit): array
     {
         $blank = ['applicable' => false, 'amount' => 0.0, 'breakdown' => null];
         if (!$exit || (string) $exit->exit_type !== 'Resignation without notice period') {
             return $blank;
         }
-        /* No notice period to serve → nothing is owed. Two cases: still on
-           probation, or resigned within 15 days of joining (an early exit is
-           exempt even when there was no probation policy at all). */
         if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $exit->notice_date)) {
             return $blank;
         }
 
         $stored   = (float) ($exit->notice_settlement_amount ?? 0);
 
-        /* A CLOSED settlement keeps every figure it was closed on — that is the
-           record of what was actually charged or paid. An OPEN one is re-read
-           from the employee each time, because the exit columns are a snapshot
-           taken on save and go stale the moment HR edits the notice period on
-           the employee record: a record showing "15 Days" kept quoting the 30
-           it was saved with. Same rule as ExitController::liveNoticeDaysRequired,
-           so the two endpoints cannot disagree. */
         $settled  = in_array((string) ($exit->notice_settlement_status ?? 'NA'), ['Settled', 'Rejected'], true);
         $required = $settled
             ? (int) ($exit->notice_days_required ?? $this->noticeDays($employee))
             : $this->noticeDays($employee);
         $served   = $settled ? (int) ($exit->notice_days_served ?? 0) : 0;
         if (!$served && $exit->notice_date && $exit->last_working_day) {
-            // Inclusive of the notice start day — working the notice date
-            // itself is one day served, so a last working day equal to the
-            // notice date counts 1, not 0. Without the +1 a notice served in
-            // full (last working day == notice date + N − 1, which is what the
-            // wizard's ceiling enforces) came out one day short and billed the
-            // employee a day's recovery they didn't owe.
             $diff = Carbon::parse($exit->notice_date)
                 ->diffInDays(Carbon::parse($exit->last_working_day), false);
             $served = $diff < 0 ? 0 : max(0, min($required, $diff + 1));
@@ -338,10 +255,6 @@ class ExitNoticePaymentController extends Controller
             ? (int) ($exit->notice_days_unserved ?? max(0, $required - $served))
             : max(0, $required - $served);
 
-        /* Priced on monthly BASIC divided by the days the EXIT MONTH actually
-           has — not a flat 30, which overpriced every 31-day month and did not
-           match the salary engine (PayrollService::computeFnf divides by the
-           period's real length). Same correction the wizard carries. */
         $perDay = $settled ? (float) ($exit->notice_per_day_rate ?? 0) : 0.0;
         if ($perDay <= 0) {
             $basic = self::monthlyBasic($employee);
@@ -369,14 +282,6 @@ class ExitNoticePaymentController extends Controller
         ];
     }
 
-    /**
-     * The employee's notice period in days.
-     *
-     * `notice_period_days` is frequently NULL while the human-readable
-     * `notice_period` holds "15 Days" — the wizard has always parsed the label
-     * as a fallback, and skipping that here made the recovery read as ₹0 and
-     * hid the employee's "Do Payment" button entirely. Same rule as the SPA.
-     */
     private function noticeDays(Employee $employee): int
     {
         $n = $employee->notice_period_days;
@@ -386,11 +291,6 @@ class ExitNoticePaymentController extends Controller
         return preg_match('/(\d+)/', (string) $employee->notice_period, $m) ? (int) $m[1] : 0;
     }
 
-    /**
-     * Monthly BASIC — the basis the notice recovery is priced on. Mirrors
-     * PayrollService::resolveCompensation(): the salary structure's basic when
-     * one exists, otherwise the standard 50% of monthly gross.
-     */
     public static function monthlyBasic(Employee $employee): float
     {
         $annual = (float) ($employee->annual_salary ?? 0);
@@ -400,7 +300,6 @@ class ExitNoticePaymentController extends Controller
         return round(($annual / 12) * 0.5, 2);
     }
 
-    /** Amount still to collect after approved payments. */
     private function outstanding(Employee $employee, float $due): float
     {
         $paid = (float) ExitNoticePayment::where('employee_id', $employee->id)
@@ -408,7 +307,6 @@ class ExitNoticePaymentController extends Controller
         return round(max(0, $due - $paid), 2);
     }
 
-    /** The company's bank accounts, so the employee knows where to send it. */
     private function companyAccounts(Employee $employee): array
     {
         if (!Schema::hasTable('master_bank_accounts')) {
@@ -416,7 +314,6 @@ class ExitNoticePaymentController extends Controller
         }
         return DB::table('master_bank_accounts')
             ->whereRaw("LOWER(COALESCE(status,'active')) = ?", ['active'])
-            // Tenant scope: the client's own rows plus super-admin globals.
             ->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
             ->orderByRaw("CASE WHEN LOWER(COALESCE(is_primary,'no')) = 'yes' THEN 0 ELSE 1 END")
             ->limit(5)
@@ -444,9 +341,6 @@ class ExitNoticePaymentController extends Controller
             'bank_name'         => $r->bank_name,
             'utr_cheque_number' => $r->utr_cheque_number,
             'payment_date'      => $r->payment_date?->toDateString(),
-            // file_url(), not Storage::url() — see ExitController::uploadFnfAttachment.
-            // The raw call throws (→ 500) when the public disk is Azure and
-            // AZURE_STORAGE_URL is unset/stale, taking this whole payload with it.
             'attachment_url'    => file_url($r->attachment_path),
             'attachment_name'   => $r->attachment_name,
             'employee_note'     => $r->employee_note,
@@ -458,7 +352,6 @@ class ExitNoticePaymentController extends Controller
         ];
     }
 
-    /** The most recent exit case that hasn't been rehired away. */
     private function activeExit(Employee $employee): ?EmployeeExit
     {
         return EmployeeExit::where('employee_id', $employee->id)
@@ -467,10 +360,6 @@ class ExitNoticePaymentController extends Controller
             ->first();
     }
 
-    /**
-     * Tenant + self-service guard. An employee may act on their OWN record;
-     * HR/admin tiers may act on anyone inside their client.
-     */
     private function scopedEmployee(Request $request, $employeeId): Employee
     {
         $user = $request->user();
@@ -487,24 +376,6 @@ class ExitNoticePaymentController extends Controller
         return $employee;
     }
 
-    /**
-     * Whoever runs Exit Management can act on the notice-period payment.
-     *
-     * This used to be a USER TYPE test — super_admin / client_admin /
-     * branch_user only — which had nothing to do with who actually holds the
-     * module. An HR executive on an `employee` account, granted Exit
-     * Management and working the exit wizard, was refused at the one stage
-     * that takes money ("Only HR can record a payment on an employee's
-     * behalf") after filling the whole form, while a branch_user with no exit
-     * rights at all sailed through. The permission the admin ticks on the
-     * Exit Management row is the thing that should govern it, and it is the
-     * same check ExitController::authorizeExit() applies to every other stage
-     * of the same wizard — so the payment stage no longer disagrees with the
-     * five around it.
-     *
-     * Admin tiers are still accepted outright, so nobody who can do this today
-     * loses the ability: this widens the gate, it does not move it.
-     */
     private function hasExitAccess($user, string $flag): bool
     {
         if (!$user) return false;
@@ -512,8 +383,6 @@ class ExitNoticePaymentController extends Controller
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
 
         $moduleId = Module::where('slug', 'hr.exit')->value('id');
-        // Module row not seeded yet — fall back to the admin tiers above,
-        // which have already been allowed through.
         if (!$moduleId) return false;
 
         return Permission::where('user_id', $user->id)
