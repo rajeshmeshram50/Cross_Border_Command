@@ -6,10 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Disbursement record for a payroll run (cheque advice / NEFT batch) with a
- * 3-level sign-off. See the create_payroll_payments migration.
- */
 class PayrollPayment extends Model
 {
     use SoftDeletes;
@@ -19,8 +15,6 @@ class PayrollPayment extends Model
         'mode', 'status', 'employee_count', 'total_amount',
         'company_name', 'bank_name',
         'prepared_by_name', 'verified_by_name', 'approved_by_name', 'approved_at',
-        // The employee the operator named in "Payroll Run By" — parked here
-        // at approve() so initiate() can write it into the execution log.
         'run_by_employee_id',
         'batch_ref', 'paid_at', 'created_by',
     ];
