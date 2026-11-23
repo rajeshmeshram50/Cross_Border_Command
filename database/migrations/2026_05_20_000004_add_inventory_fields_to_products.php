@@ -4,14 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Inventory tracking fields for a product. These four columns surface on
- * the Product Detail view under "Inventory Details" and are captured on
- * the Add Product wizard's Quality tab.
- *
- * All nullable — older rows + draft products in progress shouldn't be
- * forced to populate them.
- */
 return new class extends Migration
 {
     public function up(): void
