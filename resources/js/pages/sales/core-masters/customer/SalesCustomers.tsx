@@ -112,12 +112,16 @@ function useDebouncedValue<T>(value: T, ms = 300): T {
 }
 
 
-const bottomReserve = (): number => {
+/* Room to leave under the card. The app footer usually sits OUTSIDE the
+   scroller (its own slot below .main-content), so the scroller's height already
+   leaves it out and only .page-content's 8px bottom padding is left to keep.
+   Counting the footer again here left an empty ~40px band above it. Only a
+   footer inside the scroller takes room here (same rule as CredVault's fill). */
+const bottomReserve = (scroller: HTMLElement | null): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  // Reserve the footer height + 8px so the card ends above it (see DataTable).
-  const fh = f?.offsetHeight ?? 0;
-  return fh > 0 ? fh + 8 : 15;
+  const fh = f && (!scroller || scroller.contains(f)) ? f.offsetHeight : 0;
+  return fh > 0 ? fh + 8 : scroller ? 8 : 15;
 };
 
 export default function SalesCustomers() {
@@ -181,12 +185,9 @@ export default function SalesCustomers() {
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
-      const cardSpace = spaceH - offsetTop - bottomReserve();
+      const cardSpace = spaceH - offsetTop - bottomReserve(scroller);
 
       delete el.dataset.unpinned;
-      /* First pass only: the card is resized below to hold exactly TABLE_ROWS
-         rows; the page (not the card) scrolls when that is taller than the
-         space left under the header. */
       const h = Math.max(240, cardSpace);
 
       const next = `${h}px`;
@@ -210,13 +211,8 @@ export default function SalesCustomers() {
         ? scrollBox.clientHeight - theadH
         : h - toolbarH - filterbarH - theadH - footerH - 8;
 
-      /* The card always holds exactly TABLE_ROWS rows: grow or shrink it by the
-         difference between the room the rows have now and TABLE_ROWS rows. */
-      const target = `${Math.max(240, Math.round(h + TABLE_ROWS * rowH - avail))}px`;
-      if (el.style.height !== target) {
-        el.style.height = target;
-        el.style.maxHeight = target;
-      }
+      /* The card keeps the height of the space under the header: the table scrolls
+         inside it, not the page. */
       if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       setPageSize(TABLE_ROWS);
     };

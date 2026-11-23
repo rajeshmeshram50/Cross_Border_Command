@@ -99,12 +99,16 @@ const truncTip = (value?: string | null, max = 15) => {
  * auto-hiding footer is position: fixed, owns no height in the flow, and
  * comes back over the table -- reserving its 40px would leave exactly the
  * white band it exists to remove. */
-const bottomReserve = (): number => {
+/* Room to leave under the card. The app footer usually sits OUTSIDE the
+   scroller (its own slot below .main-content), so the scroller's height already
+   leaves it out and only .page-content's 8px bottom padding is left to keep.
+   Counting the footer again here left an empty ~40px band above it. Only a
+   footer inside the scroller takes room here (same rule as CredVault's fill). */
+const bottomReserve = (scroller: HTMLElement | null): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  // Reserve the footer height + 8px so the card ends above it (see DataTable).
-  const fh = f?.offsetHeight ?? 0;
-  return fh > 0 ? fh + 8 : 15;
+  const fh = f && (!scroller || scroller.contains(f)) ? f.offsetHeight : 0;
+  return fh > 0 ? fh + 8 : scroller ? 8 : 15;
 };
 
 /**
@@ -300,7 +304,7 @@ export default function SalesConsignee() {
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
-      const cardSpace = spaceH - offsetTop - bottomReserve();
+      const cardSpace = spaceH - offsetTop - bottomReserve(scroller);
       /* A floor, not an escape hatch.
          This briefly released the pin whenever cardSpace fell under 240 -- added
          while chasing the bounce, before the cause was known. It makes things
@@ -313,9 +317,6 @@ export default function SalesConsignee() {
          never smaller than 240, and where that overruns the viewport the page
          scrolls -- by a predictable amount, without feeding back. */
       delete el.dataset.unpinned;
-      /* First pass only: the card is resized below to hold exactly TABLE_ROWS
-         rows; the page (not the card) scrolls when that is taller than the
-         space left under the header. */
       const h = Math.max(240, cardSpace);
       /* Only write when the value actually changes. fit() runs from a
          ResizeObserver, and writing styles inside an observer callback
@@ -351,13 +352,8 @@ export default function SalesConsignee() {
          screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
          very short window. Mirrors SalesCustomers. */
       // +2: sub-pixel row heights must not cost a whole row.
-      /* The card always holds exactly TABLE_ROWS rows: grow or shrink it by the
-         difference between the room the rows have now and TABLE_ROWS rows. */
-      const target = `${Math.max(240, Math.round(h + TABLE_ROWS * rowH - avail))}px`;
-      if (el.style.height !== target) {
-        el.style.height = target;
-        el.style.maxHeight = target;
-      }
+      /* The card keeps the height of the space under the header: the table scrolls
+         inside it, not the page. */
       if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       setPageSize(TABLE_ROWS);
     };

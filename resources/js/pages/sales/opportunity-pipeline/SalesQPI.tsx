@@ -620,15 +620,26 @@ export default function SalesQPI() {
     if (!host) return;
     const fit = () => {
       const cardEl = cardRef.current;
+      /* Where the card may end: the bottom of the scrolling area, less
+         .page-content's 8px padding. The app footer has its own slot below
+         that area, so it is already left out -- measuring against the window
+         instead ran the card 40px past it and gave the page a scrollbar. Only
+         a footer inside the scroller is subtracted here. */
+      const scrollEl = (cardEl?.closest('.main-content') as HTMLElement | null) ?? null;
+      const footEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footIn = footEl && scrollEl?.contains(footEl) ? footEl.offsetHeight : 0;
+      const limit = scrollEl
+        ? scrollEl.getBoundingClientRect().bottom - footIn - 8
+        : window.innerHeight - 16;
       if (cardEl) {
         const cardTop = cardEl.getBoundingClientRect().top;
-        const cardH = Math.max(0, window.innerHeight - cardTop - 16);
+        const cardH = Math.max(0, Math.floor(limit - cardTop));
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
       if (rppManualRef.current) return;
       /* Measured, not estimated (same fix as the Customers / Consignee lists): the
          rows get the space from the bottom of the header row to the card's bottom
-         edge (window − 16px, see fillH), less the real pager, the real horizontal
+         edge (see limit / fillH), less the real pager, the real horizontal
          scrollbar, and the card border + host's 1px bottom padding. The old fixed
          allowances (56 + 15 + 16) could round a fitting last row away. */
       const top      = host.getBoundingClientRect().top;
@@ -638,7 +649,7 @@ export default function SalesQPI() {
       const pagerH   = (cardEl?.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight ?? 56;
       const scroller = host.querySelector('.table-responsive') as HTMLElement | null;
       const sbH      = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
-      const avail    = (window.innerHeight - 16) - theadBot - pagerH - sbH - 2;
+      const avail    = limit - theadBot - pagerH - sbH - 2;
       // +2: sub-pixel row heights must not cost a whole row.
       const rowsFit  = Math.max(4, Math.floor((avail + 2) / rowH));
       setRpp(prev => (prev === rowsFit ? prev : rowsFit));
