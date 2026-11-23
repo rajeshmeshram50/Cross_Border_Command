@@ -18,9 +18,6 @@ class ClmTradeDocLibrary extends Model
         'status', 'created_by', 'updated_by',
     ];
 
-    /** Page-shell header/footer config — same JSON shape used by
-     *  hr_document_templates so [[HeaderFooterPanel.tsx]] reads them back
-     *  as plain objects with no extra coercion on the frontend. */
     protected $casts = [
         'header_config' => 'array',
         'footer_config' => 'array',
