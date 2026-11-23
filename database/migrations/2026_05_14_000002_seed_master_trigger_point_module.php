@@ -3,18 +3,10 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Registers the "Trigger Point Master" leaf under HR > Document & Evidence
- * and back-fills permission rows for every user who already has full master
- * access (donor: master.leave_type, another branch-scoped HR master).
- * Mirrors 2026_05_13_000003_seed_master_attendance_modules.php.
- */
 return new class extends Migration
 {
     public function up(): void
     {
-        // Parent — HR > Document & Evidence category. Created by ModuleSeeder
-        // already; if missing on a fresh install we silently bail.
         $parentId = DB::table('modules')->where('slug', 'hr.documents')->value('id');
         if (!$parentId) return;
 
@@ -36,10 +28,6 @@ return new class extends Migration
             'updated_at'   => now(),
         ]);
 
-        // Copy permission rows from a peer master so existing users who
-        // already had blanket "all masters" access don't lose visibility on
-        // the new leaf. leave_type is a recent, tenant-scoped HR master so
-        // its permission set is the closest analogue.
         $donorId = DB::table('modules')->where('slug', 'master.leave_type')->value('id');
         if (!$donorId) return;
 
