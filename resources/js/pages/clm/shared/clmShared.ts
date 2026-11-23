@@ -1359,6 +1359,8 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-input-err { border-color: #ef4444 !important; }
 .clm-err { font-size: 10.5px; color: #ef4444; overflow-wrap: anywhere; word-break: break-word; }
+.clm-dup-alert { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+[data-bs-theme="dark"] .clm-dup-alert { background: rgba(239, 68, 68, .12); border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
 .clm-field-hint { font-size: 10px; color: #0891b2; opacity: .7; margin-top: 3px; }
 
 /* Inline + button (next to selects) */

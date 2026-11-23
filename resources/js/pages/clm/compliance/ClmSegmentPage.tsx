@@ -532,16 +532,13 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             {inUse && <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>}
             {errors.name && (
               /already exists/i.test(errors.name) ? (
-                <div role="alert" style={{
+                <div role="alert" className="clm-dup-alert" style={{
                   marginTop: 6,
                   display: 'flex',
                   alignItems: 'flex-start',
                   gap: 8,
                   padding: '8px 10px',
                   borderRadius: 8,
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  color: '#b91c1c',
                   fontSize: 12,
                   lineHeight: 1.4,
                   minWidth: 0,
