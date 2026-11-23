@@ -239,13 +239,19 @@ const IC = {
 /** "Bulk Data Import/Export" popup (variant="bulk"): three cards -- Download Sample Sheet,
  *  Import Records, Export Records -- each opening its panel underneath.
  *  The work itself is the toolbar's own sample / import / export. */
-function ClmBulkModal(props: {
+export function ClmBulkModal(props: {
   nameLabel: string; validityLabel: string;
+  /** Columns listed in the Sample / Import panels: [header, required]. Defaults to
+      name, Authority, validity (the authority-backed document masters). */
+  cols?: [string, boolean][];
+  /** The Sample panel's line about the sheet. */
+  sampleNote?: string;
   importing: boolean; exporting: boolean;
   onSample: () => void; onBrowse: () => void; onDropFile: (f: File) => void; onExport: () => void;
   onClose: () => void;
 }) {
   const { nameLabel, validityLabel, importing, exporting, onSample, onBrowse, onDropFile, onExport, onClose } = props;
+  const sampleNote = props.sampleNote ?? 'Fill in one record per row and keep the first row (the column names) as it is. A second sheet lists the valid authorities.';
   const [over, setOver] = useState(false);
   /* Which panel shows under the three cards; none until a card is picked. */
   const [mode, setMode] = useState<'sample' | 'import' | 'export' | null>(null);
@@ -259,7 +265,7 @@ function ClmBulkModal(props: {
     const f = e.dataTransfer.files?.[0];
     if (f && !importing) onDropFile(f);
   };
-  const cols: [string, boolean][] = [[nameLabel, true], ['Authority', true], [validityLabel, false]];
+  const cols: [string, boolean][] = props.cols ?? [[nameLabel, true], ['Authority', true], [validityLabel, false]];
 
   return createPortal((
     <div className="clm-modal-bd">
@@ -282,7 +288,7 @@ function ClmBulkModal(props: {
               <span className="cie-card__ico">{IC.sheet}</span>
               <span className="cie-card__t">
                 <b>Download Sample Sheet</b>
-                <small>The right columns, two example rows and the valid authorities.</small>
+                <small>The right columns and two example rows to fill in.</small>
               </span>
               <span className="cie-card__go">{IC.chev}</span>
             </button>
@@ -309,7 +315,7 @@ function ClmBulkModal(props: {
               <span className="cie-export__ico">{IC.sheet}</span>
               <div className="cie-export__t">
                 <b>Sample sheet</b>
-                <small>Fill in one record per row and keep the first row (the column names) as it is. A second sheet lists the valid authorities.</small>
+                <small>{sampleNote}</small>
                 <div className="cie-cols">{cols.map(([c, req]) => <code key={c} className={req ? 'is-req' : ''}>{c}</code>)}</div>
               </div>
               <button type="button" className="cie-export-btn" onClick={onSample}>
@@ -374,7 +380,7 @@ function ClmBulkModal(props: {
   ), document.body);
 }
 
-const CLM_IE_CSS = `
+export const CLM_IE_CSS = `
 /* 40px — a tab's height, not the rail's 48. These are buttons, the same kind
    of control as a tab, so they take the tab's number; 48 belongs to the boxes
    that CONTAIN something, the rail and the search field. They sat at 36. */
