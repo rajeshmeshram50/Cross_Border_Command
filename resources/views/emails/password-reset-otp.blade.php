@@ -1,7 +1,4 @@
 @php
-  // Branding — currently fixed to the platform (super-admin → client admin flow).
-  // To support client-org branding (client → branch / employee), pass these
-  // through the PasswordResetOtpMail constructor and remove the defaults below.
   $brandName = $brandName ?? 'Inorbvict Group Of Companies';
   $brandShort = $brandShort ?? 'INORBVICT';
   $brandTagline = $brandTagline ?? 'GROUP OF COMPANIES';
@@ -40,7 +37,6 @@
         <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0"
           style="max-width:480px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(30,58,138,0.10);">
 
-          <!-- BRAND HEADER: wordmark only, centered -->
           <tr>
             <td style="padding:24px 28px 22px;background-color:#ffffff;text-align:center;border-bottom:2px solid #3b82f6;">
               <p style="margin:0;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-size:22px;font-weight:800;color:#0b1530;letter-spacing:3px;line-height:1.1;">
@@ -56,18 +52,9 @@
             </td>
           </tr>
 
-          <!-- HERO BANNER: pre-rendered PNG, embedded inline via $message->embed()
-               so it renders inside Gmail / Outlook even when APP_URL is local.
-               Source SVG lives at storage/app/email-hero.html — re-rasterize via
-               `msedge --headless --window-size=960,300 --screenshot=...` if the
-               artwork changes. -->
           <tr>
             <td style="padding:0;background-color:#ffffff;text-align:center;">
               @php
-                // SVG hero — inline embed when sending so Apple Mail / iOS /
-                // Thunderbird render it crisp; fall back to asset URL for
-                // standalone preview. (Gmail / Outlook desktop may strip SVG
-                // content — those recipients will see no banner.)
                 $heroPath = public_path('images/email-icons/password-otp-banner.svg');
                 $heroSrc  = (isset($message) && file_exists($heroPath))
                     ? $message->embed($heroPath)
@@ -78,7 +65,6 @@
             </td>
           </tr>
 
-          <!-- Title -->
           <tr>
             <td style="padding:30px 32px 4px;text-align:center;">
               <h1 style="margin:0;font-size:28px;font-weight:800;color:#0b1530;letter-spacing:-0.3px;line-height:1.15;">
@@ -86,7 +72,6 @@
             </td>
           </tr>
 
-          <!-- Subtitle (centered, no side rules) -->
           <tr>
             <td style="padding:8px 32px 0;text-align:center;">
               <p style="margin:0;font-size:10px;font-weight:800;color:#3b82f6;letter-spacing:2.5px;line-height:1.4;">
@@ -95,7 +80,6 @@
             </td>
           </tr>
 
-          <!-- Small clock icon centered -->
           <tr>
             <td style="padding:14px 32px 0;text-align:center;">
               <span
@@ -103,7 +87,6 @@
             </td>
           </tr>
 
-          <!-- Greeting + intro -->
           <tr>
             <td style="padding:18px 32px 18px;">
               <p style="margin:0 0 12px;font-size:14px;color:#2563eb;font-weight:700;">Hello,</p>
@@ -117,7 +100,6 @@
             </td>
           </tr>
 
-          <!-- OTP card with individual digit boxes -->
           <tr>
             <td style="padding:0 32px 18px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -144,7 +126,6 @@
             </td>
           </tr>
 
-          <!-- Validity Notice -->
           <tr>
             <td style="padding:0 32px 16px;text-align:center;">
               <p style="margin:0;font-size:12px;color:#6b7280;">
@@ -154,7 +135,6 @@
             </td>
           </tr>
 
-          <!-- "Didn't request this?" info card (with ? icon) -->
           <tr>
             <td style="padding:0 32px 12px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -184,7 +164,6 @@
             </td>
           </tr>
 
-          <!-- "Protect your account" warning card (with ⚠ icon) -->
           <tr>
             <td style="padding:0 32px 24px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -213,7 +192,6 @@
             </td>
           </tr>
 
-          <!-- Sign-off -->
           <tr>
             <td style="padding:0 32px 18px;text-align:center;">
               <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.7;">
@@ -223,7 +201,6 @@
             </td>
           </tr>
 
-          <!-- Social icons (brand colors) -->
           <tr>
             <td style="padding:0 32px 14px;text-align:center;">
               <a href="{{ $facebookUrl }}" style="display:inline-block;margin:0 3px;text-decoration:none;">
@@ -245,7 +222,6 @@
             </td>
           </tr>
 
-          <!-- Copyright -->
           <tr>
             <td style="padding:0 32px 22px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#9ca3af;">
