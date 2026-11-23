@@ -36,7 +36,6 @@
             </td>
           </tr>
 
-          {{-- The credential --}}
           <tr>
             <td style="padding:14px 26px 4px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #bfe6ee;border-radius:12px;background:#f0fbfd;">
@@ -56,7 +55,6 @@
             </td>
           </tr>
 
-          {{-- Permission & duration --}}
           <tr>
             <td style="padding:16px 26px 4px;">
               <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64808c;">Permission &amp; duration</div>
@@ -93,7 +91,6 @@
             </td>
           </tr>
 
-          {{-- Reason --}}
           @if ($d['reason'])
             <tr>
               <td style="padding:14px 26px 4px;">
