@@ -5,10 +5,6 @@ namespace App\Models\Concerns;
 use App\Support\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 
-/**
- * Automatic tenant filter for branch-owned masters: globals + the client's shared rows
- * + the context branch. Controllers keep their own filters as a backup.
- */
 trait BelongsToTenant
 {
     public static function bootBelongsToTenant(): void
@@ -29,7 +25,6 @@ trait BelongsToTenant
             });
         });
 
-        // Fill only what the controller left empty — an explicit value always wins.
         static::creating(function ($row) {
             if (!TenantContext::active()) return;
             if (empty($row->client_id)) $row->client_id = TenantContext::clientId();
