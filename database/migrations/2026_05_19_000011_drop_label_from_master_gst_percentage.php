@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * GST Percentage master was simplified — the `label` column is no longer
- * shown in the add form or the list and is no longer accepted by the
- * MasterController validation config / model fillable. Drop the column
- * so the schema matches.
- */
 return new class extends Migration
 {
     public function up(): void
