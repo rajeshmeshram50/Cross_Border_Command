@@ -51,8 +51,6 @@ class Payment extends Model
         ];
     }
 
-    // ── Relationships ──
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -67,8 +65,6 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class, 'processed_by');
     }
-
-    // ── Helpers ──
 
     public function isSuccess(): bool
     {
