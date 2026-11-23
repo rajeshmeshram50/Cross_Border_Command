@@ -10,27 +10,10 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Seeds the Sales Matrix → Productivity Tracker with realistic Meeting +
- * Reminder rows for QA. The dataset is shaped to exercise the known bugs:
- *
- *   - Completed physical meetings (status = Done)          → edit-lock bug
- *   - A double-booked pair (same date + venue + start_time) → conflict bug
- *   - Many meetings on ONE date                            → calendar overflow
- *   - opp_id + customer + email populated from real leads  → opportunity auto-fill
- *   - Every lifecycle status present                        → status search filter
- *
- * Tenant / owner ids resolve from the first tenant-scoped user, so it works
- * on any seeded database without hard-coded ids. Idempotent: skips if the
- * tenant already has productivity-tracker rows.
- */
 class SalesProductivitySeeder extends Seeder
 {
     public function run(): void
     {
-        // Seed the MOST ACTIVE sales tenant (the client with the most leads) so
-        // the Productivity Tracker has data where the QA actually works, not
-        // whichever tenant happens to have the lowest user id.
         $topClientId = DB::table('leads')
             ->whereNotNull('client_id')
             ->select('client_id', DB::raw('count(*) as c'))
@@ -51,13 +34,6 @@ class SalesProductivitySeeder extends Seeder
         $this->seedForUser($user);
     }
 
-    /**
-     * Seed meetings + reminders owned by (and scoped to) a specific user's
-     * client + branch. Branch users only see their own branch's rows, so the
-     * skip-check is per (client_id, branch_id) — call this with the exact user
-     * whose branch needs data. Public so it can be invoked directly:
-     *   (new SalesProductivitySeeder)->seedForUser(User::find(19));
-     */
     public function seedForUser(User $user): void
     {
         $clientId = $user->client_id;
@@ -75,9 +51,6 @@ class SalesProductivitySeeder extends Seeder
             return;
         }
 
-        // Real leads give lifelike customer / email / opportunity values (and
-        // make the "auto-fill from Opportunity ID" bug testable). Fallback list
-        // used when the tenant has too few leads.
         $leads = DB::table('leads')
             ->where('client_id', $clientId)
             ->whereNotNull('opp_code')
@@ -114,22 +87,16 @@ class SalesProductivitySeeder extends Seeder
                 : sprintf('P-%03d', ++$pSeq);
         };
 
-        // ── Meetings ──────────────────────────────────────────────────────
-        // date offsets are relative to today so the calendar always has
-        // "today" populated (overflow test) plus spread across the month.
         $meetingSpecs = [
-            // ── 7 meetings on TODAY → calendar-cell overflow (bugs 15-17) ──
             ['type' => 'virtual',  'off' => 0, 'start' => '09:00', 'end' => '09:30', 'status' => 'In Progress', 'platform' => 'Zoom',        'place' => 'https://zoom.us/j/1001',        'agenda' => 'Kick-off call'],
             ['type' => 'virtual',  'off' => 0, 'start' => '10:00', 'end' => '10:30', 'status' => 'Done',        'platform' => 'Google Meet',  'place' => 'https://meet.google.com/abc',   'agenda' => 'Price negotiation'],
             ['type' => 'physical', 'off' => 0, 'start' => '11:00', 'end' => '12:00', 'status' => 'In Progress', 'platform' => 'Office Visit', 'place' => 'IGC HQ, Andheri East, Mumbai',  'agenda' => 'Sample review'],
-            ['type' => 'physical', 'off' => 0, 'start' => '12:00', 'end' => '13:00', 'status' => 'Done',        'platform' => 'Client Site',  'place' => 'Client Warehouse, Bhiwandi',    'agenda' => 'Quality inspection'],  // Done physical → bug 13
-            // ── Double-booked pair: same date + venue + start_time (bug 14) ──
+            ['type' => 'physical', 'off' => 0, 'start' => '12:00', 'end' => '13:00', 'status' => 'Done',        'platform' => 'Client Site',  'place' => 'Client Warehouse, Bhiwandi',    'agenda' => 'Quality inspection'],
             ['type' => 'physical', 'off' => 0, 'start' => '14:00', 'end' => '15:00', 'status' => 'In Progress', 'platform' => 'Trade Fair',   'place' => 'Trade Fair Hall A, BKC',        'agenda' => 'Booth walkthrough'],
             ['type' => 'physical', 'off' => 0, 'start' => '14:00', 'end' => '15:00', 'status' => 'In Progress', 'platform' => 'Trade Fair',   'place' => 'Trade Fair Hall A, BKC',        'agenda' => 'Conflicting booking (same venue/time)'],
             ['type' => 'virtual',  'off' => 0, 'start' => '16:00', 'end' => '16:30', 'status' => 'Postponed',   'platform' => 'Microsoft Teams','place' => 'https://teams.microsoft.com/x','agenda' => 'Contract terms'],
 
-            // ── Spread across the month, all statuses (bugs 13 & 19) ──
-            ['type' => 'physical', 'off' => -2, 'start' => '10:30', 'end' => '11:30', 'status' => 'Done',        'platform' => 'Office Visit', 'place' => 'Regional Office, Pune',         'agenda' => 'Onboarding'],           // Done physical → bug 13
+            ['type' => 'physical', 'off' => -2, 'start' => '10:30', 'end' => '11:30', 'status' => 'Done',        'platform' => 'Office Visit', 'place' => 'Regional Office, Pune',         'agenda' => 'Onboarding'],
             ['type' => 'virtual',  'off' => -1, 'start' => '15:00', 'end' => '15:45', 'status' => 'Cancelled',   'platform' => 'Zoom',         'place' => 'https://zoom.us/j/1002',        'agenda' => 'Follow-up (cancelled)'],
             ['type' => 'physical', 'off' => 1,  'start' => '09:30', 'end' => '10:30', 'status' => 'In Progress', 'platform' => 'Client Site',  'place' => 'Buyer Office, Ahmedabad',       'agenda' => 'Deal closure'],
             ['type' => 'virtual',  'off' => 2,  'start' => '11:00', 'end' => '11:30', 'status' => 'Done',        'platform' => 'Google Meet',  'place' => 'https://meet.google.com/def',   'agenda' => 'Documentation'],
@@ -162,7 +129,6 @@ class SalesProductivitySeeder extends Seeder
             ]);
         }
 
-        // ── Reminders ─────────────────────────────────────────────────────
         $reminderSpecs = [
             ['off' => 0,  'subject' => 'Send updated quotation',        'tat' => '24 Hours', 'status' => 'In Progress', 'remark' => 'Awaiting buyer confirmation'],
             ['off' => 0,  'subject' => 'Chase signed PI',               'tat' => '48 Hours', 'status' => 'In Progress', 'remark' => 'PI shared last week'],
