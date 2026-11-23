@@ -521,7 +521,7 @@ export default function DataTable<T extends object>({
     /** Exactly as tall as what is on the page: the fixed chrome, the column
      *  header, and the rows of the current page. Returns null when there is
      *  nothing to measure yet (no rows, first paint), so callers fall back. */
-    const contentHeight = (): number | null => {
+    const contentHeight = (minRows = 0): number | null => {
       const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
       const rowEl = el.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
       if (!scrollBox || !rowEl) return null;
@@ -530,7 +530,7 @@ export default function DataTable<T extends object>({
       const headH = (el.querySelector('.dt-table thead') as HTMLElement | null)?.offsetHeight || 0;
       const rowH = rowEl.offsetHeight || 44;
       const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
-      return chrome + hBar + headH + onPage * rowH;
+      return chrome + hBar + headH + Math.max(onPage, minRows) * rowH;
     };
     const rowFloor = (): number => {
       if (!autoFitRows) return 240;
@@ -613,7 +613,12 @@ export default function DataTable<T extends object>({
         /* Nothing to measure means no rows — a filter that matched nothing, or
          * the first paint. The empty state still needs room to be read, so it
          * falls back to the flat floor the card used before. */
-        const mh = `${contentHeight() ?? 240}px`;
+        /* …with a floor of the table's own `minAutoRows`, capped by the size
+         * actually picked. Pick 50 against one record and the card collapsed
+         * to a single row under the toolbar; it now keeps the height the
+         * default shows. Pick 5 and the floor is 5, never 10. */
+        const floorRows = autoFitRows ? Math.min(minAutoRows, manualSize) : 0;
+        const mh = `${contentHeight(floorRows) ?? 240}px`;
         if (el.style.height === mh && !el.style.minHeight) return;
         el.style.flex = 'none';
         el.style.minHeight = '';
@@ -645,7 +650,7 @@ export default function DataTable<T extends object>({
        sizes the card to the rows actually on the page: the LAST page usually
        holds fewer than a full page, and with the card pinned the observer on
        the parent sees no size change to react to. */
-  }, [fitToViewport, loading, manualSize, autoFitRows, fillToFooter, pageSize, pageIndex, rows.length]);
+  }, [fitToViewport, loading, manualSize, autoFitRows, minAutoRows, fillToFooter, pageSize, pageIndex, rows.length]);
 
   useEffect(() => {
     if (!autoFitRows) return;
