@@ -5,15 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Platform-wide settings store. One row per section (general, security,
- * notifications, appearance, privacy, help, contact). Value is JSON so each
- * section can evolve its shape without a schema change.
- *
- * Reads = any authenticated user (so Contact Us, FAQs, branding can render
- *         on every page the SPA shows).
- * Writes = super_admin only (enforced in SettingsController).
- */
 return new class extends Migration {
     public function up(): void
     {
@@ -25,9 +16,6 @@ return new class extends Migration {
             $table->timestamps();
         });
 
-        // Seed sensible defaults so the SPA's Settings page renders something
-        // the very first time it loads. Idempotent — uses INSERT only when
-        // section is absent so re-running the seeder won't clobber edits.
         $defaults = [
             'general' => [
                 'platform_name'  => 'Cross Border Command',
