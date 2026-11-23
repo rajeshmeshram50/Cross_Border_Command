@@ -5,6 +5,7 @@ import type { ReportProduct } from './targetProducts';
 import { todayIso } from './data';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
 import { COUNTRY_CURRENCY, money } from './currency';
+import { limitNum, PRICE_DEC, PRICE_INT, RATE_DEC, RATE_INT } from './format';
 import { gstTypeFor, indianStates, overseasCountries, rateOf, stateCodeOf, useFormMasters } from './formMasters';
 import type { MapRequest } from './MapSupplierModal';
 import AttachPicker from './AttachPicker';
@@ -286,7 +287,7 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
               value={f.mobile} onChange={e => setF(p => ({ ...p, mobile: e.target.value.replace(intl ? /[^\d+\s-]/g : /\D/g, '') }))} {...aria('mobile')} />)}{msg('mobile')}</div>
           <div className="stnf-field"><span className="stnf-lbl">Segment <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'segment')}>
-              <MasterSelect value={f.segment} placeholder="Select segment..." invalid={bad('segment')}
+              <MasterSelect menuClassName="stnf-ms-menu" value={f.segment} placeholder="Select segment..." invalid={bad('segment')}
                 options={segmentOptions} searchable={segmentOptions.length > 8} searchPlaceholder="Search segment…" onChange={v => setF(p => ({ ...p, segment: v }))} />
             </div>{msg('segment')}</div>
         </div>
@@ -308,7 +309,7 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
         <div className="stnf-row stnf-row-3">
           <div className="stnf-field"><span className="stnf-lbl">Country <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'country')}>
-              <MasterSelect value={f.country} placeholder="Select country..." invalid={bad('country')} searchable
+              <MasterSelect menuClassName="stnf-ms-menu" value={f.country} placeholder="Select country..." invalid={bad('country')} searchable
                 searchPlaceholder="Search country…" options={countryOptions} onChange={pickCountry} />
             </div>{msg('country')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-province">State / Province</label>
@@ -322,7 +323,7 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
             {withIcon(FIELD_ICONS.globe, <input id="stnf-country" className={cls('stnf-inp', 'country')} value={f.country} onChange={set('country')} {...aria('country')} />)}{msg('country')}</div>
           <div className="stnf-field"><span className="stnf-lbl">State <span className="stnf-req">*</span></span>
             <div className={cls('stnf-ms', 'state')}>
-              <MasterSelect value={f.state} placeholder="Select state..." invalid={bad('state')} searchable
+              <MasterSelect menuClassName="stnf-ms-menu" value={f.state} placeholder="Select state..." invalid={bad('state')} searchable
                 searchPlaceholder="Search state…" options={stateOptions} onChange={pickState} />
             </div>{msg('state')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-stateCode">State Code</label>
@@ -343,13 +344,13 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
         </SecHead>
         <div className="stnf-row stnf-row-4">
           <div className="stnf-field"><span className="stnf-lbl">Currency <span className="stnf-req">*</span></span>
-            <div className="stnf-ms"><MasterSelect value={f.cur} options={currencyOptions} searchable={currencyOptions.length > 8} searchPlaceholder="Search currency…" onChange={pickCurrency} /></div>{msg('cur')}</div>
+            <div className="stnf-ms"><MasterSelect menuClassName="stnf-ms-menu" value={f.cur} options={currencyOptions} searchable={currencyOptions.length > 8} searchPlaceholder="Search currency…" onChange={pickCurrency} /></div>{msg('cur')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-price">Unit Price ({f.cur}) <span className="stnf-req">*</span></label>
             <input id="stnf-price" className={cls('stnf-inp stnf-inp--num', 'price')} inputMode="decimal" placeholder="Price in supplier currency"
-              value={f.price} onChange={e => setF(p => ({ ...p, price: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('price')} />{msg('price')}</div>
+              value={f.price} onChange={e => setF(p => ({ ...p, price: limitNum(e.target.value, PRICE_INT, PRICE_DEC) }))} {...aria('price')} />{msg('price')}</div>
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-fx">Exchange Rate (₹ per {f.cur}) <span className="stnf-req">*</span></label>
             {withIcon(FIELD_ICONS.fx, <input id="stnf-fx" className={cls('stnf-inp stnf-inp--num', 'fx')} inputMode="decimal"
-              value={f.fx} onChange={e => setF(p => ({ ...p, fx: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('fx')} />)}{msg('fx')}</div>
+              value={f.fx} onChange={e => setF(p => ({ ...p, fx: limitNum(e.target.value, RATE_INT, RATE_DEC) }))} {...aria('fx')} />)}{msg('fx')}</div>
           <div className="stnf-field"><span className="stnf-lbl">Price Valid Till</span>
             <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div>{msg('validTill')}</div>
         </div>
@@ -371,12 +372,12 @@ export default function NewSupplierForm({ scope, product, saving, serverErrors =
           <div className="stnf-field"><label className="stnf-lbl" htmlFor="stnf-price">Unit Price (excl. GST) <span className="stnf-req">*</span></label>
             <div className="stnf-cur"><span aria-hidden>₹</span>
               <input id="stnf-price" className={cls('stnf-inp', 'price')} inputMode="decimal" placeholder={target ? target.toFixed(2) : '0.00'}
-                value={f.price} onChange={e => setF(p => ({ ...p, price: e.target.value.replace(/[^\d.]/g, '') }))} {...aria('price')} />
+                value={f.price} onChange={e => setF(p => ({ ...p, price: limitNum(e.target.value, PRICE_INT, PRICE_DEC) }))} {...aria('price')} />
             </div>{msg('price')}</div>
           <div className="stnf-field"><span className="stnf-lbl">GST Rate <span className="stnf-req">*</span></span>
-            <div className="stnf-ms"><MasterSelect value={f.gst} options={gstOptions} onChange={v => setF(p => ({ ...p, gst: v }))} /></div></div>
+            <div className="stnf-ms"><MasterSelect menuClassName="stnf-ms-menu" value={f.gst} options={gstOptions} onChange={v => setF(p => ({ ...p, gst: v }))} /></div></div>
           <div className="stnf-field"><span className="stnf-lbl">GST Type <span className="stnf-req">*</span></span>
-            <div className="stnf-ms"><MasterSelect value={f.gstType} options={GST_TYPE_OPTIONS}
+            <div className="stnf-ms"><MasterSelect menuClassName="stnf-ms-menu" value={f.gstType} options={GST_TYPE_OPTIONS}
               onChange={v => { setGstTypeTouched(true); setF(p => ({ ...p, gstType: v as GstType })); }} /></div></div>
           <div className="stnf-field"><span className="stnf-lbl">Price Valid Till</span>
             <div className="stnf-ms"><MasterDatePicker value={f.validTill} minDate={today} placeholder="dd/mm/yyyy" onChange={v => setF(p => ({ ...p, validTill: v }))} /></div>{msg('validTill')}</div>

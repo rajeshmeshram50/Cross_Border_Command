@@ -679,8 +679,13 @@ body:has(.stsm-box) .master-select-item span[style*="max-width: 55%"] {
    MasterSelect puts the field's width in the inline min-width; width 0 lets that min-width decide,
    so the list matches the field and never changes while scrolling. A long name ends in "…" and
    shows in full in the row's tooltip (SupplierMasterForm passes fullLabel for that). */
-.master-select-menu.stsm-sup-menu {
+/* Only while it HAS rows: an empty / loading list gets the field's width as a plain inline width
+   (not min-width), and width 0 crushed it to the size of "No options" — small while loading, then
+   full width once the suppliers arrived. */
+.master-select-menu.stsm-sup-menu:not(:has(.master-select-empty)) {
     width: 0 !important;
+}
+.master-select-menu.stsm-sup-menu {
     max-width: calc(100vw - 24px) !important;
 }
 /* In the narrow list the name gets the room left after the code chip and the type badge. */

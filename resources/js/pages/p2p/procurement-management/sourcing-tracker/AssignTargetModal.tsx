@@ -9,7 +9,7 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import TruncText from '../../../../components/ui/TruncText';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useSaveGuard } from './useSaveGuard';
-import { dmy } from './format';
+import { dmy, limitNum } from './format';
 import { usePopup } from './popupHooks';
 import ClipText from './ClipText';
 import ClarityDialog, { clarityPreview, type Clarity } from './ClarityDialog';
@@ -677,7 +677,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                   <div className="sta-field">
                     <label className="sta-lab" htmlFor="sta-m-price">Target Price (₹) <span className="sta-req">*</span></label>
                     <input id="sta-m-price" type="text" inputMode="decimal" className={`sta-inp${mTried && !(Number(mPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
-                      value={mPrice} onChange={e => setMPrice(e.target.value.replace(/[^\d.]/g, ''))} onKeyDown={e => { if (e.key === 'Enter') addManual(); }} />
+                      value={mPrice} onChange={e => setMPrice(limitNum(e.target.value))} onKeyDown={e => { if (e.key === 'Enter') addManual(); }} />
                   </div>
                   <div className="sta-field">
                     <button type="button" className="sta-btn sta-btn-primary sta-btn--block" onClick={addManual}><IcoPlus size={13} sw={2.6} /> Add to List</button>
@@ -729,7 +729,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                         <span><input type="text" inputMode="decimal" aria-label={`Target price for ${r.name}`} className={`sta-pl-price${tried && priceBad(r) ? ' has-err' : ''}`} placeholder="Required"
                           title={tried && priceBad(r) ? 'Enter a price more than 0 and up to ₹9,99,99,99,999.99, with at most 2 decimals' : undefined}
                           value={r.targetPrice} readOnly={viewOnly} onChange={e => {
-                            patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') });
+                            patch(r.key, { targetPrice: limitNum(e.target.value) });
                             if (serverPriceKeys.has(r.key)) setServerPriceKeys(s => { const n = new Set(s); n.delete(r.key); return n; });
                           }} /></span>
                         <span>

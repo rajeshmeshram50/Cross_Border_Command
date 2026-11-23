@@ -891,6 +891,10 @@
     letter-spacing: -.1px;
     color: #0f172a;
     font-variant-numeric: tabular-nums;
+    /* A long amount (the top of the price range is ₹9,99,99,99,999.99) wraps inside its tile
+       rather than running across the next one. */
+    overflow-wrap: anywhere;
+    min-width: 0;
 }
 
 .stnf-k small {
@@ -898,7 +902,20 @@
     font-weight: 600;
     line-height: 1.35;
     color: #94a3b8;
+    overflow-wrap: anywhere;
 }
+
+.stnf-k { min-width: 0; }
+
+/* New Supplier form dropdowns (Segment, Country, State, Currency, GST): the menu is exactly as wide
+   as its field. MasterSelect lets a menu grow to its longest option (up to field + 260px), and one
+   long segment name pushed the Segment menu out past the popup's right edge. width: 0 lets the
+   inline min-width (= the field's width) decide; a long name ends in "…" with the full name in the
+   row's tooltip. The menu is portalled to <body>, hence its own class. */
+/* Only while it has rows — an empty list carries the field's width as a plain width, which width 0
+   would crush to the size of "No results". */
+.stnf-ms-menu.master-select-menu:not(:has(.master-select-empty)) { width: 0 !important; max-width: none !important; }
+.stnf-ms-menu .master-select-item { overflow: hidden; }
 
 .stnf-k--tot {
     background: linear-gradient(135deg, #ecfeff, #e0f7fa);

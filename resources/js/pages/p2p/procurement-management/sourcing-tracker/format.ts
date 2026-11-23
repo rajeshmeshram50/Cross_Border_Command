@@ -22,6 +22,22 @@ export const inr = (v: string | number | null | undefined) => {
   return `₹${grouped}.${(rawDec + '00').slice(0, 2)}`;
 };
 
+/* Typed amounts: the server's limits (App\Support\SupplierPricing) — a price up to 9,999,999,999.99
+   and an exchange rate up to 99,999.9999. Typing stops there, so an amount can never run past what
+   Save accepts, nor blow the computed tiles out into 30-digit and 1.2e+89% values. Target prices
+   take the price limit too: a target no supplier price can reach is meaningless. */
+export const PRICE_INT = 10;
+export const PRICE_DEC = 2;
+export const RATE_INT = 5;
+export const RATE_DEC = 4;
+/** Digits and one point only, at most `int` digits before it and `dec` after ("12a.3.45" → "12.34"). */
+export const limitNum = (raw: string, int = PRICE_INT, dec = PRICE_DEC) => {
+  const clean = raw.replace(/[^\d.]/g, '');
+  const dot = clean.indexOf('.');
+  const whole = (dot < 0 ? clean : clean.slice(0, dot)).slice(0, int);
+  return dot < 0 ? whole : `${whole}.${clean.slice(dot + 1).replace(/\./g, '').slice(0, dec)}`;
+};
+
 /** Up to two initials for an avatar ("Parth Lakare" → "PL"). */
 export const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();

@@ -6,6 +6,7 @@ import { lazyPage } from '../../../../utils/lazyPage';
 import type { SupplierScope } from '../../p2p-master-management/supplier-management/SupplierScopeGate';
 import { COUNTRY_CURRENCY, money } from './currency';
 import { rateOf, useFormMasters } from './formMasters';
+import { limitNum, PRICE_DEC, PRICE_INT, RATE_DEC, RATE_INT } from './format';
 import type { MapRequest, MasterQuote } from './MapSupplierModal';
 import { IcoBack, IcoCheck, IcoFlag, IcoGlobe, IcoPlus, IcoUserPlus, IcoX } from './icons';
 import './supplier-master-form.css';
@@ -47,7 +48,9 @@ const typeTone = (type: string): 'violet' | 'green' | 'gray' => {
   return 'violet';
 };
 const toNum = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
-const numeric = (v: string) => v.replace(/[^\d.]/g, '');
+/** Price / exchange rate as typed, capped at the server's limits (see limitNum in ./format). */
+const numeric = (v: string) => limitNum(v, PRICE_INT, PRICE_DEC);
+const numericRate = (v: string) => limitNum(v, RATE_INT, RATE_DEC);
 
 const Auto = () => <span className="stsm-auto">Auto</span>;
 const Req = () => <span className="stsm-req" aria-hidden>*</span>;
@@ -249,6 +252,8 @@ export default function SupplierMasterForm({
               <MasterSelect value={id} options={options} invalid={bad('sup')} menuClassName="stsm-sup-menu" onDisabledClick={onTakenClick}
                 placeholder={pool === null ? 'Loading suppliers…' : pool.length ? 'Select Supplier Name' : `No ${intl ? 'International' : 'Domestic'} suppliers in the Supplier Master`}
                 searchable searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code, name'}
+                /* Opened before the list arrives: say it is loading, not "No options". */
+                emptyText={pool === null ? 'Loading suppliers…' : `No ${intl ? 'International' : 'Domestic'} suppliers in the Supplier Master`}
                 onChange={c => pickSupplier(c)} />
             </div>
             )}
@@ -288,7 +293,7 @@ export default function SupplierMasterForm({
               <div className="stsm-f">
                 <label className="stsm-l" htmlFor="stsm-fx">Exchange Rate (₹ per {cur}) <Req /></label>
                 <input id="stsm-fx" className={`stsm-i${bad('fx') || srv('exchange_rate') ? ' is-err' : ''}`} inputMode="decimal"
-                  value={fx} onChange={e => setFx(numeric(e.target.value))}
+                  value={fx} onChange={e => setFx(numericRate(e.target.value))}
                   aria-invalid={bad('fx')} aria-describedby={bad('fx') ? 'stsm-fx-err' : undefined} />
                 {err('fx', 'stsm-fx-err', 'exchange_rate')}
               </div>
