@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Real Zoho Books sync needs to remember what it created so a second click
- * doesn't push a duplicate PO into Zoho. These columns hold the Zoho-side
- * purchase-order id, when it synced, the last error (for a truthful UI), and
- * a cached copy of Zoho's own rendered PDF. The vendor gets a cached Zoho
- * contact id so we resolve/create the Zoho vendor once, not every sync.
- */
 return new class extends Migration
 {
     public function up(): void
