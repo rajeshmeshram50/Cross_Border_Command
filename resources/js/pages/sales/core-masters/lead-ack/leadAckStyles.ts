@@ -554,7 +554,7 @@ export const LEAD_ACK_CSS = `
 .lam-modal-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 24px;
-  background: #fff;
+  background: #faf7ff; /* the body's colour, so body and footer read as one panel */
   border-top: 1px solid #ede9fe;
   flex-shrink: 0;
 }
