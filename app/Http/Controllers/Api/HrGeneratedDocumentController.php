@@ -15,10 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 use PhpOffice\PhpWord\PhpWord;
-use PhpOffice\PhpWord\Shared\Html;
-
 
 class HrGeneratedDocumentController extends Controller
 {
@@ -30,13 +27,6 @@ class HrGeneratedDocumentController extends Controller
 
     private const MODULE_SLUG = 'hr.doc_templates';
 
-    /* ───── PREVIEW ───── */
-
-    /**
-     * Render a single template/employee/custom-values combination and
-     * return the resolved HTML + the token map used. No DB write — this
-     * powers the Step 3 "Document Preview" cards in the wizard.
-     */
     public function preview(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -52,34 +42,14 @@ class HrGeneratedDocumentController extends Controller
 
         $customValues = $data['custom_values'] ?? [];
         $tokens = $this->resolveTokens($emp, $customValues, $tpl);
-        // Bold any token the operator supplied a value for in Step 2 — these
-        // are the "human-curated" parts of the document (registered custom
-        // fields like LastWorkingDate, EffectiveDate, etc.) and need to pop
-        // visually so reviewers can verify them at a glance.
         $boldNames = array_keys(array_filter($customValues, fn ($v) => $v !== '' && $v !== null));
         $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames, $this->rawHtmlTokenNames($customValues));
 
         return response()->json([
             'rendered_html' => $html,
             'tokens'        => $tokens,
-            /* Resolved letterhead for the on-screen preview. (#126)
-             *
-             * The modal draws the header strip itself from the template's
-             * stored header_config, which is why the preview showed the
-             * placeholder words "Company Name" and no logo at all: the config
-             * holds whatever was seeded when the template was written, and the
-             * frontend had nothing to resolve it against. The PDF path already
-             * resolves both — the branch logo via headerLogoDataUri() and the
-             * name via the CompanyName token — so the preview was showing
-             * something the finished document would never contain.
-             *
-             * Handed over as plain values rather than the {{CompanyLogo}} token,
-             * which is an <img> element the client would have to parse. */
             'letterhead'    => [
                 'company_name' => (string) ($tokens['CompanyName'] ?? ''),
-                /* Same branch-then-client fallback the {{CompanyLogo}} token
-                 * uses below, so the preview strip and the sent document
-                 * cannot show different letterheads. (#126) */
                 'logo_url'     => $this->letterheadLogoUrl($emp),
             ],
             'template'      => [
@@ -92,20 +62,6 @@ class HrGeneratedDocumentController extends Controller
         ]);
     }
 
-    /* ───── BULK GENERATE ───── */
-
-    /**
-     * Bulk-render one row per employee for the given template + custom values.
-     *
-     * Payload shape:
-     *   {
-     *     template_id: int,
-     *     recipients: [
-     *       { employee_id, custom_values: { TokenName: value, ... } },
-     *       ...
-     *     ]
-     *   }
-     */
     public function store(Request $request)
     {
         $this->authorize($request, 'can_add');
@@ -132,8 +88,6 @@ class HrGeneratedDocumentController extends Controller
                     $custom = is_array($r['custom_values'] ?? null) ? $r['custom_values'] : [];
 
                     $tokens = $this->resolveTokens($emp, $custom, $tpl);
-                    // Bold operator-supplied values — same rule as the preview
-                    // endpoint, so what they see in Step 3 is what gets stored.
                     $boldNames = array_keys(array_filter($custom, fn ($v) => $v !== '' && $v !== null));
                     $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames, $this->rawHtmlTokenNames($custom));
 
@@ -180,23 +134,12 @@ class HrGeneratedDocumentController extends Controller
         return response()->json($q->orderByDesc('id')->get());
     }
 
-    /* ───── SHOW / DOWNLOAD ───── */
-
     public function show(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
         return response()->json($this->resolveRow($request, (int) $id));
     }
 
-    /**
-     * Build a DOCX from the row's stored rendered_html and stream it back.
-     * Reuses the same renderer as the template editor's "Download DOCX" so
-     * the output carries the template's header strip (logo + title +
-     * subtitle), the body, and the footer (text + page number) — exactly
-     * what the operator sees in the Step 3 preview.
-     *
-     * Filename: {template_code}-{employee_code}.docx
-     */
     public function downloadDocx(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -209,9 +152,6 @@ class HrGeneratedDocumentController extends Controller
         $tpl = HrDocumentTemplate::find($row->template_id);
         if (!$tpl) abort(404, 'Source template missing.');
 
-        // Non-persisted clone of the template with content_html swapped for
-        // the row's fully-resolved HTML — the renderer handles the rest
-        // (header strip, footer strip, page setup, font sizing).
         $clone = $tpl->replicate();
         $clone->setRawAttributes($tpl->getAttributes(), true);
         $clone->id = $tpl->id;
@@ -224,18 +164,6 @@ class HrGeneratedDocumentController extends Controller
         return \App\Services\HrTemplateDocxRenderer::render($clone, $filename);
     }
 
-    /**
-     * Same document as downloadDocx, rendered to PDF.
-     *
-     * DOCX is the editable copy, but PhpWord can only write images in the
-     * legacy VML form (<w:pict>) — Word, LibreOffice, Google Docs and Office
-     * Online all render it, WordPad does not, so a letterhead could silently
-     * go missing depending on what opened the file. A PDF looks the same in
-     * every reader, which is what a document being sent OUT needs.
-     *
-     * Reuses the signed-document blade and DomPDF, so the header strip, the
-     * footer and the page numbering match the signed copies exactly.
-     */
     public function downloadPdf(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -248,20 +176,16 @@ class HrGeneratedDocumentController extends Controller
         $footerCfg = is_array($tpl->footer_config) ? $tpl->footer_config : [];
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
-            'row'         => $tpl,          // blade only reads ->template?->name
+            'row'         => $tpl,
             'header'      => $headerCfg,
             'footer'      => $footerCfg,
             'logoDataUri' => $this->headerLogoDataUri($headerCfg, $row),
-            /* Same resolution the {{CompanyName}} token uses, for letterheads
-               that stored the placeholder words as plain text. (#113) */
             'companyName' => (string) (
                 $row->employee?->legalEntity?->name
                 ?: $row->employee?->branch?->client?->org_name
                 ?: $row->employee?->branch?->name
                 ?: ''
             ),
-            // DomPDF runs headless and cannot fetch /storage over HTTP, so every
-            // local <img> — the body's company logo included — is inlined first.
             'bodyHtml'    => $this->inlineLocalImagesAsDataUris(
                 (string) ($row->rendered_html ?: '<p>(empty document)</p>')
             ),
@@ -272,21 +196,10 @@ class HrGeneratedDocumentController extends Controller
         return $pdf->download("{$tplCode}-{$empCode}.pdf");
     }
 
-    /**
-     * Header-strip logo as a base64 data URI. Same candidate order as the
-     * signed-PDF path: the config's saved path, the same config's URL resolved
-     * back to a disk path, then the employee's branch logo.
-     */
     private function headerLogoDataUri(array $headerCfg, HrGeneratedDocument $row): ?string
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
         $branchLogo = $row->employee?->branch?->logo;
-        /* …and the CLIENT's logo last. A branch that never uploaded its own
-         * left this returning null, so the finished PDF — the document that
-         * actually goes out for signature — carried no letterhead image even
-         * though the tenant had one on the client record. Same branch-then-
-         * client order as letterheadLogoUrl() and the {{CompanyLogo}} token,
-         * so the preview and the sent document cannot disagree. (#126) */
         $clientLogo = $row->employee?->branch?->client?->logo ?: $row->employee?->client?->logo;
 
         foreach ([
@@ -305,20 +218,6 @@ class HrGeneratedDocumentController extends Controller
         return null;
     }
 
-    /**
-     * Read an image off the public disk as a base64 data URI, DOWNSCALED to a
-     * sane print size first.
-     *
-     * Branch logos are uploaded at whatever the source file happened to be —
-     * one in this tenant is 9653 × 3094 and 1.1 MB, for a mark that renders
-     * about 64px tall. Base64 inflates that by a third, it went in twice (the
-     * header strip and the body's {{CompanyLogo}}), and the result was a 2 MB
-     * PDF for a one-page letter, slow to build and heavy to ship.
-     *
-     * The cap is generous — 900px still prints crisply at any letterhead size —
-     * and anything already smaller is passed through untouched, so nothing is
-     * re-encoded for no reason.
-     */
     private function imageDataUri(string $diskPath): ?string
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
@@ -330,7 +229,6 @@ class HrGeneratedDocumentController extends Controller
         }
 
         $ext = strtolower((string) pathinfo($diskPath, PATHINFO_EXTENSION));
-        // "image/jpg" is not a valid type — some readers refuse to decode it.
         $mime = match ($ext) {
             'jpg', 'jpeg' => 'image/jpeg',
             'svg'         => 'image/svg+xml',
@@ -338,7 +236,6 @@ class HrGeneratedDocumentController extends Controller
             default       => 'image/' . $ext,
         };
 
-        // SVG is already small and resolution-independent; GD can't read it anyway.
         if ($mime === 'image/svg+xml' || !function_exists('imagecreatefromstring')) {
             return 'data:' . $mime . ';base64,' . base64_encode($bytes);
         }
@@ -359,8 +256,6 @@ class HrGeneratedDocumentController extends Controller
             $newH = (int) max(1, round($h * ($maxWidth / $w)));
 
             $dst = imagecreatetruecolor($newW, $newH);
-            // Keep transparency — a logo flattened onto black is worse than a
-            // large one.
             imagealphablending($dst, false);
             imagesavealpha($dst, true);
             imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
@@ -374,7 +269,6 @@ class HrGeneratedDocumentController extends Controller
             imagedestroy($src);
             imagedestroy($dst);
 
-            // Only take the resized copy if it actually helped.
             if ($resized !== '' && strlen($resized) < strlen($bytes)) $bytes = $resized;
         } catch (\Throwable $e) {
             Log::warning('Logo downscale failed; embedding the original', [
@@ -386,7 +280,6 @@ class HrGeneratedDocumentController extends Controller
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
-    /** Resolve an image reference to a path on the public disk, or null. */
     private function diskPathFromUrl(string $src): ?string
     {
         $src = trim($src);
@@ -396,16 +289,11 @@ class HrGeneratedDocumentController extends Controller
         $path = ltrim(str_replace('\\', '/', $parsed['path'] ?? $src), '/');
 
         if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) return $m[1];
-        if (isset($parsed['scheme'])) return null;              // remote host
+        if (isset($parsed['scheme'])) return null;
         if (str_starts_with($path, 'public/')) $path = substr($path, strlen('public/'));
-        // A bare basename with no folder is a stale row from a buggy save.
         return str_contains($path, '/') ? $path : null;
     }
 
-    /**
-     * Rewrite local <img src> values into base64 data URIs so DomPDF, which
-     * runs headless, can embed them.
-     */
     private function inlineLocalImagesAsDataUris(string $html): string
     {
         return preg_replace_callback(
@@ -415,8 +303,6 @@ class HrGeneratedDocumentController extends Controller
                 if ($src === '' || str_starts_with($src, 'data:')) return $full;
                 $path = $this->diskPathFromUrl($src);
                 if (!$path) return $full;
-                // Same downscaling as the header logo — the body carries the
-                // very same file via {{CompanyLogo}}.
                 $uri = $this->imageDataUri($path);
                 return $uri ? '<img' . $pre . 'src=' . $q . $uri . $q . $post . '/>' : $full;
             },
@@ -424,24 +310,6 @@ class HrGeneratedDocumentController extends Controller
         ) ?? $html;
     }
 
-    /* ───── VARIABLE RESOLVER ───── */
-
-    /**
-     * Build the full token → value map for one employee.
-     *
-     * Order of precedence (later wins):
-     *   1. Employee-derived tokens (FirstName, JoiningDate, …)
-     *   2. Template-derived tokens (Signer{N}*, CompanyName from branch)
-     *   3. Operator-entered custom_values
-     */
-
-    /**
-     * Letterhead logo for an employee's documents: the employing BRANCH's own
-     * logo, falling back to the client's. Mirrors orgIdentity() in
-     * HrDocumentTemplateController and the {{CompanyLogo}} token, so the
-     * template draft, the on-screen preview and the generated document all
-     * resolve the same image. Null when neither carries one. (#126)
-     */
     private function letterheadLogoUrl(\App\Models\Employee $emp): ?string
     {
         $path = $emp->branch?->logo ?: $emp->branch?->client?->logo ?: $emp->client?->logo;
@@ -450,8 +318,6 @@ class HrGeneratedDocumentController extends Controller
 
     private function resolveTokens(Employee $emp, array $customValues, ?HrDocumentTemplate $tpl): array
     {
-        // reportingManagerUser: a manager can be a Branch / login user rather
-        // than an employee — {{ReportsTo}} has to resolve either kind.
         $emp->loadMissing([
             'department', 'designation', 'reportingManager', 'reportingManagerUser',
             'legalEntity', 'branch.client',
@@ -462,30 +328,12 @@ class HrGeneratedDocumentController extends Controller
         $last   = trim((string) ($emp->last_name ?? ''));
         $full   = trim($first . ' ' . ($middle ? $middle . ' ' : '') . $last);
 
-        // One format string for every date the template can print, so a letter
-        // never mixes "14 Aug 2026" with another rendering of the same field.
         $dateFormat = 'd M Y';
         $joining = $emp->date_of_joining
             ? Carbon::parse($emp->date_of_joining)->format($dateFormat)
             : '';
         $today = now()->format($dateFormat);
 
-        /* Token names a REGISTERED custom field has claimed. (#105)
-         *
-         * CurrentDate / Date / Today are built-ins filled with the generation
-         * date, which is right for a template that just wants "today" printed
-         * on it. But a tenant can also define a custom field of the same name,
-         * and then the date is not the system's to decide — it is a value the
-         * operator types on the Send-for-signature screen (a joining date, an
-         * effective date, an agreed date). Filling it automatically meant the
-         * field arrived pre-answered with today, and leaving it blank silently
-         * printed today anyway.
-         *
-         * A registered custom field therefore OWNS its name: the built-in is
-         * suppressed and the token starts blank, so it stays blank unless the
-         * operator fills it in. Compared case-insensitively because
-         * renderTemplate() matches tokens that way — {{Date}} and {{date}} are
-         * the same token and must not disagree about who owns them. */
         $claimedByCustomField = [];
         try {
             $claimedByCustomField = \App\Models\HrCustomField::query()
@@ -496,22 +344,11 @@ class HrGeneratedDocumentController extends Controller
                 ->flip()
                 ->all();
         } catch (\Throwable $e) {
-            // No registry (or it cannot be read) — behave exactly as before.
             $claimedByCustomField = [];
         }
         $ownedByOperator = fn (string $token): bool
             => isset($claimedByCustomField[mb_strtolower($token)]);
 
-        /* Reports To resolves EITHER kind of manager.
-         *
-         * This read `reportingManager` only — the employee-manager relation —
-         * so an employee whose manager is a Branch / login user
-         * (reporting_manager_user_id) rendered a blank line in every letter,
-         * which is half of "some placeholders are not fetching" (QA #39).
-         * `display_name` is preferred over first+last for the same reason
-         * MyTeamController::reportsToName() prefers it: it is the name HR
-         * actually maintains, and first/last can be empty on a record that has
-         * one. */
         $manager = $emp->reportingManager;
         $managerName = '';
         if ($manager) {
@@ -522,37 +359,12 @@ class HrGeneratedDocumentController extends Controller
             $managerName = trim((string) ($emp->reportingManagerUser->name ?? ''));
         }
 
-        // Legal entity = the employing branch. This previously read
-        // `legal_entity_name`, a column that never existed on the old
-        // master_legal_entities table either, so CompanyName always silently
-        // fell through to the client org name.
-        /* ...and finally the BRANCH's own name. Without a last resort this
-           returned '', and a footer written as "{{CompanyName}} Confidential"
-           then printed a bare "Confidential" on every page — read as the
-           document's classification rather than as a name that failed to
-           resolve (CBC #113). Every employee has a branch, so this always has
-           something true to say. */
         $companyName = $emp->legalEntity?->name
             ?: $emp->branch?->client?->org_name
             ?: $emp->branch?->name
             ?: '';
 
-        /* CompanyLogo and CompanyAddress were both hardcoded to '' — a template
-         * that used them rendered a blank line where the letterhead belonged,
-         * which is the "half the fields come through" report. Both come off the
-         * employing BRANCH, the same entity CompanyName resolves to.
-         * The logo is emitted as an <img>: file_url() gives a /storage URL,
-         * which the on-screen preview loads directly and the PDF path rewrites
-         * into a data URI (inlineLocalImagesAsDataUris) because DomPDF cannot
-         * fetch over HTTP. */
         $branch = $emp->branch;
-        /* Branch logo FIRST, then the client's. A branch that never uploaded
-         * its own logo produced no letterhead image at all — on the preview,
-         * on the PDF, and on the document that went out for signature — even
-         * though the tenant had one on the client record. HrDocumentTemplate-
-         * Controller::orgIdentity() already falls back this way when seeding a
-         * template's letterhead, so the two disagreed: the draft showed a logo
-         * the generated document then dropped. (#126) */
         $logoPath = $branch?->logo ?: $emp->branch?->client?->logo ?: $emp->client?->logo;
         $logoUrl = $logoPath ? file_url($logoPath) : null;
         $companyLogo = $logoUrl
@@ -570,21 +382,14 @@ class HrGeneratedDocumentController extends Controller
             ], fn ($v) => $v !== '')))
             : '';
 
-        /* The compensation actually in force. Revisions supersede rather than
-           overwrite (one `active` row per employee, Rule 19), so a letter must
-           read the active one — ordered defensively in case data ever carries
-           more than one. */
         $salaryStructure = \App\Models\SalaryStructure::where('employee_id', $emp->id)
             ->where('status', 'active')
             ->orderByDesc('effective_from')
             ->orderByDesc('id')
             ->first();
-        /* Blank, not "0.00", when a component genuinely isn't there — a zero in
-           an offer letter is a statement, an empty line is an omission. */
         $money = fn (?float $v) => $v === null ? '' : number_format($v, 2);
 
         $tokens = [
-            // Basic
             'FirstName'      => $first,
             'MiddleName'     => $middle,
             'LastName'       => $last,
@@ -592,67 +397,31 @@ class HrGeneratedDocumentController extends Controller
             'DisplayName'    => (string) ($emp->display_name ?: $full),
             'EmployeeNumber' => (string) ($emp->emp_code ?? ''),
 
-            // Contact
             'Email'   => (string) ($emp->email ?? ''),
             'Mobile'  => (string) ($emp->mobile ?? ''),
             'Address' => trim(((string) ($emp->address_line1 ?? '')) . ' ' . ((string) ($emp->address_line2 ?? ''))),
             'City'    => (string) ($emp->city ?? ''),
-            'State'   => '', // resolved via master_states when relation exists; left blank for Phase 1
+            'State'   => '',
 
-            // Job
             'JobTitle'    => (string) ($emp->designation?->name ?? ''),
             'Department'  => (string) ($emp->department?->name ?? ''),
             'Designation' => (string) ($emp->designation?->name ?? ''),
             'JoiningDate' => $joining,
             'ReportsTo'   => $managerName,
 
-            /* Salary. CTC is the headline figure on the employee row; the
-               breakdown comes off the employee's ACTIVE salary structure.
-               Both were hardcoded '' with a note deferring them to "Phase 2" —
-               but the engine did get wired in, and the components have been
-               sitting in salary_structures.earnings ever since, so every
-               template using {{Basic}} or {{HRA}} printed a blank line
-               (QA #39). These are MONTHLY amounts, as the structure stores
-               them and as Salary Setup shows them. */
             'CTC'   => (string) ($emp->annual_salary ?? ''),
             'Basic' => $salaryStructure ? $money($salaryStructure->basicAmount()) : '',
             'HRA'   => $salaryStructure ? $money($salaryStructure->hraAmount()) : '',
 
-            // Organization
             'CompanyName'    => $companyName,
             'CompanyAddress' => $companyAddress,
             'CompanyLogo'    => $companyLogo,
 
-            /* Date of generation. Templates were already written against
-             * {{Currentdate}} with no entry here, so an offer letter went out
-             * with the literal braces printed where the date belonged. Unknown
-             * tokens are deliberately left as-is — right for a typo, wrong for
-             * a field the author had every reason to expect.
-             * Only the canonical spellings are listed; renderTemplate() matches
-             * case-insensitively, so {{Currentdate}} and {{currentdate}} both
-             * resolve without an entry each. */
-            /* Blank when a custom field of the same name exists — see
-               $ownedByOperator above. Kept in the map (rather than dropped) so
-               the token still resolves: an unknown token is printed with its
-               braces intact, which would put a literal {{Date}} in the letter
-               whenever the operator left the field empty. (#105) */
             'CurrentDate'    => $ownedByOperator('CurrentDate') ? '' : $today,
             'Date'           => $ownedByOperator('Date') ? '' : $today,
             'Today'          => $ownedByOperator('Today') ? '' : $today,
         ];
 
-        /* Signer slot tokens. The NAME is the real person the role resolves to
-         * for this employee, not the role label: {{Signer1Name}} on a template
-         * whose first signer is "Employee" used to render the word "Employee"
-         * where that employee's own name belonged, and "Reporting Manager"
-         * instead of the manager's. Same resolver the send path uses
-         * (App\Support\SignerResolver), so the preview names the same people
-         * who will actually be asked to sign.
-         * Sign/Date are deliberately NOT registered: both are filled when a
-         * signer acts, so they must survive as literal {{SignerNSign}} /
-         * {{SignerNDate}} placeholders. Date used to resolve to '' while Sign
-         * stayed a token — so the preview chipped the signature slot and the
-         * date line beside it simply vanished. (QA #46) */
         if ($tpl && is_array($tpl->signers)) {
             foreach ($tpl->signers as $i => $s) {
                 $n = $i + 1;
@@ -665,16 +434,6 @@ class HrGeneratedDocumentController extends Controller
             }
         }
 
-        /* Operator overrides — win over derived values so an HR user can
-           manually correct an auto-fetched field before generating.
-
-           A date the operator PICKED arrives as the picker's ISO value
-           (2027-02-04), while every built-in date above is printed as
-           "04 Feb 2027". Pasting it through verbatim put both renderings in
-           one letter — the offer date in one style and the signature date
-           three lines below it in another, which reads as two documents
-           stapled together. An ISO date is therefore re-printed in the SAME
-           format as the rest of the document. */
         foreach ($customValues as $name => $val) {
             if (!is_string($name) || $name === '') continue;
             $tokens[$name] = is_scalar($val)
@@ -685,17 +444,6 @@ class HrGeneratedDocumentController extends Controller
         return $tokens;
     }
 
-    /**
-     * Re-print a bare ISO date in the document's own date format. Everything
-     * else is returned untouched.
-     *
-     * Deliberately strict, and only YYYY-MM-DD. That is a date picker's output
-     * and effectively nothing else, whereas "2026-2027" is a financial year and
-     * "PO 2026-09" is a reference — neither is a date, and rewriting either
-     * would corrupt a value the operator typed on purpose. The calendar check
-     * is there for the same reason: 2026-02-31 is not a date, so it is left
-     * alone rather than silently rolled forward to 3 March.
-     */
     private function normaliseDate(string $value, string $format): string
     {
         $v = trim($value);
@@ -704,17 +452,6 @@ class HrGeneratedDocumentController extends Controller
         return Carbon::parse($v)->format($format);
     }
 
-    /**
-     * Tokens whose value is MARKUP this controller built, not text — they must
-     * reach the document unescaped or the <img> prints as visible tag soup.
-     *
-     * Derived AFTER the operator overrides above and with anything the operator
-     * supplied removed: a custom field named "CompanyLogo" would otherwise be a
-     * route for arbitrary HTML into every generated document.
-     *
-     * @param  array<string,mixed> $customValues
-     * @return array<int,string>
-     */
     private function rawHtmlTokenNames(array $customValues): array
     {
         $raw = ['CompanyLogo'];
@@ -724,33 +461,8 @@ class HrGeneratedDocumentController extends Controller
         ));
     }
 
-    /**
-     * Substitute every {{Token}} in the template HTML with its resolved
-     * value. Unknown tokens are left untouched so the operator notices them
-     * in the preview. Placeholder-chip wrappers are stripped before
-     * substitution so the rendered output isn't full of indigo pills.
-     *
-     * Token names are matched exactly first, then case-insensitively. Template
-     * authors type {{JoiningDate}}, {{Joiningdate}} and {{joiningdate}}
-     * interchangeably, and an exact-match-only lookup printed the raw braces
-     * into a document going out to a new hire. A genuine typo still falls
-     * through untouched — that is what makes it visible in the preview.
-     *
-     * @param  array<string,string> $tokens     token name => resolved value
-     * @param  string[]             $boldNames  token names whose substituted
-     *                              value should be wrapped in <strong> — used
-     *                              for operator-supplied custom field values so
-     *                              they pop visually.
-     * @param  string[]             $rawHtmlNames  tokens whose value is markup
-     *                              THIS controller built (the company logo's
-     *                              <img>) and must not be escaped. Never pass
-     *                              an operator-supplied name — see
-     *                              rawHtmlTokenNames().
-     */
     private function renderTemplate(string $html, array $tokens, array $boldNames = [], array $rawHtmlNames = []): string
     {
-        // Strip Tiptap PlaceholderNode chip wrappers — keep only the inner
-        // {{Name}} text so the regex below can substitute it.
         $html = preg_replace(
             '/<span[^>]*data-placeholder="([^"]+)"[^>]*>([^<]*)<\/span>/',
             '$2',
@@ -760,10 +472,6 @@ class HrGeneratedDocumentController extends Controller
         $boldSet = array_flip($boldNames);
         $rawSet  = array_flip($rawHtmlNames);
 
-        /* Lowercased name => canonical name, built ONCE. Scanning the whole
-         * token map inside the callback made the fallback O(tokens × matches)
-         * on every render. First key wins, so the result does not depend on
-         * hash order when two names differ only in case. */
         $canonicalByLowerName = [];
         foreach (array_keys($tokens) as $tokenName) {
             $canonicalByLowerName[strtolower($tokenName)] ??= $tokenName;
@@ -775,15 +483,10 @@ class HrGeneratedDocumentController extends Controller
                 $name = $m[1];
                 if (!array_key_exists($name, $tokens)) {
                     $name = $canonicalByLowerName[strtolower($name)] ?? null;
-                    if ($name === null) return $m[0];   // unknown — leave it visible
+                    if ($name === null) return $m[0];
                 }
-                // Markup we generated ourselves goes through untouched; escaping
-                // it would print the <img> tag as visible text.
                 if (isset($rawSet[$name])) return (string) $tokens[$name];
                 $val = htmlspecialchars((string) $tokens[$name], ENT_QUOTES, 'UTF-8');
-                // Operator-supplied values render bold so reviewers can spot
-                // the human-curated bits at a glance — and so the bold
-                // round-trips into DOCX via PhpWord's <strong> handling.
                 if (isset($boldSet[$name])) {
                     return '<strong>' . $val . '</strong>';
                 }
@@ -792,8 +495,6 @@ class HrGeneratedDocumentController extends Controller
             (string) $html
         ) ?? $html;
     }
-
-    /* ───── HELPERS ───── */
 
     private function resolveTemplate(Request $request, int $id): HrDocumentTemplate
     {
@@ -835,8 +536,6 @@ class HrGeneratedDocumentController extends Controller
         return response()->json(['message' => $message], $status);
     }
 
-    /* ───── auth + tenant scoping ───── */
-
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
@@ -855,7 +554,6 @@ class HrGeneratedDocumentController extends Controller
         if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
     }
 
-    /** Shared tenant-scope shape used for templates, employees, and generated rows. */
     private function applyScopeOnTable($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
@@ -874,7 +572,6 @@ class HrGeneratedDocumentController extends Controller
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
-            // Every branch is an isolated peer — globals + client-level rows + own branch only.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
                   ->orWhere(function ($ww) use ($clientId, $branchId) {
