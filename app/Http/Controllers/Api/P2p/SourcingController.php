@@ -232,29 +232,31 @@ class SourcingController extends Controller
         $user = $request->user();
         $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
-        $deptIds = DB::table('master_departments')
-            ->whereRaw('LOWER(name) LIKE ? OR LOWER(name) LIKE ?', ['%sales%', '%purchase%'])
-            ->pluck('id');
-
+        // Every department now, not just Sales/Purchase — carry the department
+        // name so the picker can badge each person.
         $eligibleEmployees = Employee::where('client_id', $user->client_id)
-            ->whereIn('department_id', $deptIds)
-
             ->whereRaw('LOWER(status) = ?', ['active'])
-
             ->where('onboarding_stage_completed', '>=', 6)
             ->whereNotNull('user_id')
-            ->with('designation:id,name')
-            ->get(['id', 'user_id', 'designation_id', 'emp_code']);
+            ->with(['designation:id,name', 'department:id,name'])
+            ->get(['id', 'user_id', 'designation_id', 'department_id', 'emp_code']);
 
         $eligibleUserIds = $eligibleEmployees->pluck('user_id');
         $designationByUser = $eligibleEmployees
             ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->designation->name ?? null)]);
         $codeByUser = $eligibleEmployees
             ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->emp_code ?: null)]);
+        $deptByUser = $eligibleEmployees
+            ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->department->name ?? null)]);
 
         $rows = User::where('client_id', $user->client_id)
-            ->whereIn('id', $eligibleUserIds)
-
+            // Onboarded employees of any department, plus branch users and the
+            // signed-in creator so a branch user can self-assign.
+            ->where(function ($q) use ($eligibleUserIds, $user) {
+                $q->whereIn('id', $eligibleUserIds)
+                  ->orWhere('user_type', 'branch_user')
+                  ->orWhere('id', $user->id);
+            })
             ->whereRaw('LOWER(status) = ?', ['active'])
             ->when($branch, fn ($q) => $q->where('branch_id', $branch))
             ->where('user_type', '!=', 'super_admin')
@@ -264,7 +266,8 @@ class SourcingController extends Controller
                 'id' => (string) $u->id,
                 'name' => $u->name,
                 'code' => $codeByUser[(int) $u->id] ?? null,
-
+                'department' => ($deptByUser[(int) $u->id] ?? null)
+                    ?: ($u->user_type === 'branch_user' ? 'Branch Admin' : null),
                 'role' => ($designationByUser[(int) $u->id] ?? null)
                     ?: ($u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type))),
             ]);
@@ -396,13 +399,9 @@ class SourcingController extends Controller
         }
 
         $data = $this->validatePayload($request, true);
+        // Self-assign is allowed, so the creator is a valid assignee.
         if (! $this->assigneeAllowed($user->client_id, $data['assignee_id'] ?? null)) {
             throw ValidationException::withMessages(['assignee_id' => ['Pick an active team member of your company to assign this sourcing target.']]);
-        }
-        if ((int) ($data['assignee_id'] ?? 0) === (int) $user->id) {
-            throw ValidationException::withMessages([
-                'assignee_id' => ['You are creating this sourcing target, so it has to be assigned to another team member.'],
-            ]);
         }
 
         $target = DB::transaction(function () use ($user, $data) {
@@ -838,7 +837,16 @@ class SourcingController extends Controller
                 ->with(['segment:id,name', 'addresses'])
                 ->findOrFail($request->input('supplier_id'));
 
-            if ($p->suppliers()->where('source', 'master')->where('supplier_id', $v->id)->exists()) {
+            // Duplicate if already mapped as a Supplier Master row, OR mapped as
+            // a New Supplier that was later converted into this same vendor — the
+            // migration can leave a 'new' row behind, so match on the directory's
+            // converted_vendor_id too (CS-2308).
+            $convertedDirIds = P2pSupplier::where('client_id', $user->client_id)
+                ->where('converted_vendor_id', $v->id)->pluck('id');
+            $dup = $p->suppliers()->where('source', 'master')->where('supplier_id', $v->id)->exists()
+                || ($convertedDirIds->isNotEmpty()
+                    && $p->suppliers()->where('source', 'new')->whereIn('supplier_id', $convertedDirIds)->exists());
+            if ($dup) {
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
@@ -1039,15 +1047,23 @@ class SourcingController extends Controller
             ->whereIn('id', $p->suppliers()->where('source', 'new')->pluck('supplier_id'))
             ->pluck('converted_vendor_id', 'id');
 
-        $rows = $p->suppliers()->latest()->get()->map(fn ($s) => $this->mappedRow($s, $target, $converted));
+        // Master rows whose vendor was created by converting a New Supplier —
+        // so the card can show a "Converted" badge.
+        $convertedVendorIds = P2pSupplier::where('client_id', $request->user()->client_id)
+            ->whereIn('converted_vendor_id', $p->suppliers()->where('source', 'master')->pluck('supplier_id'))
+            ->pluck('converted_vendor_id')->map(fn ($v) => (int) $v)->unique()->all();
+
+        $rows = $p->suppliers()->latest()->get()->map(fn ($s) => $this->mappedRow($s, $target, $converted, $convertedVendorIds));
 
         return $this->ok($rows);
     }
 
-    private function mappedRow(SourcingProductSupplier $s, ?float $target, $converted): array
+    private function mappedRow(SourcingProductSupplier $s, ?float $target, $converted, array $convertedVendorIds = []): array
     {
         return [
             'id' => (string) $s->id,
+            // A Master row whose vendor was created by converting a New Supplier.
+            'converted' => $s->source === 'master' && in_array((int) $s->supplier_id, $convertedVendorIds, true),
 
             'supplier_id' => $s->supplier_id,
             'name' => $s->name,
@@ -1211,7 +1227,11 @@ class SourcingController extends Controller
         $s = P2pSupplier::where('client_id', $user->client_id)->findOrFail($supplier);
         $data = $request->validate(['vendor_id' => 'required|integer'], ['vendor_id.required' => 'Save the supplier in the Supplier Master first.']);
 
-        $vendor = Vendor::query()->forUser($user)->find($data['vendor_id']);
+        // Scope by tenant, not branch: forUser() is branch-scoped, so a vendor
+        // created in a different branch of the same client was rejected here and
+        // the link silently never persisted (the Convert button then never
+        // cleared). Client scope keeps tenant isolation without that false miss.
+        $vendor = Vendor::where('client_id', $user->client_id)->find($data['vendor_id']);
         if (! $vendor) {
             throw ValidationException::withMessages(['vendor_id' => ['Unknown supplier in the Supplier Master.']]);
         }

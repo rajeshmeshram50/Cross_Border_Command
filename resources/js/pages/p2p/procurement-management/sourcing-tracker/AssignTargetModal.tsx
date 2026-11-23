@@ -49,7 +49,7 @@ type Props = {
 type MasterProduct = { code: string; name: string; segment: string; hsn: string };
 /** GET /p2p/team-members row. `emp_code` (or `code`) is the employee code, shown before the name
     (employees.emp_code). */
-type Member = { id: string | number; name: string; role?: string | null; emp_code?: string | null; code?: string | null };
+type Member = { id: string | number; name: string; role?: string | null; emp_code?: string | null; code?: string | null; department?: string | null };
 type ApiClarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
 type EditRow = { id: number; mapped?: boolean; code?: string; name: string; segment?: string | null; hsn?: string | null; price?: string | number | null; clarity?: ApiClarity };
 type EditLoad = {
@@ -480,22 +480,22 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
     return () => window.removeEventListener('resize', measure);
   }, [listTab, shown.length]);
   const rowCls = isM ? 'stsrc-row stsrc-row--m' : 'stsrc-row stsrc-row--n';
-  /* Assign To: every eligible team member, the creator's own row disabled
-     rather than dropped so the picker says why instead of hiding a colleague. */
+  /* Assign To: every eligible team member across departments, self-assign
+     allowed. The creator's row is marked "(You)"; the department shows as a
+     badge beside each name. */
   const memberOptions = members.map(m => {
     const empCode = (m.emp_code ?? m.code ?? '').trim();
+    const dept = (m.department ?? '').trim();
+    const isMe = myId !== null && String(m.id) === myId;
     return {
       value: String(m.id),
       ...(empCode ? { code: empCode } : {}),
-      label: m.role ? `${m.name} · ${m.role}` : m.name,
+      label: `${m.name}${isMe ? ' (You)' : ''}${m.role ? ` · ${m.role}` : ''}`,
       selectedLabel: empCode ? `${empCode} · ${m.name}` : m.name,
-      disabled: !isEdit && myId !== null && String(m.id) === myId,
-      disabledReason: 'You are creating this target — assign it to someone else.',
+      ...(dept ? { badge: { text: dept, tone: 'violet' as const, listOnly: true } } : {}),
     };
   });
-  // Counts only the rows that can actually be picked, so a list holding just
-  // the creator still reads as "No team members available".
-  const assignableCount = memberOptions.filter(o => !o.disabled).length;
+  const assignableCount = memberOptions.length;
 
   return createPortal(
     // A click on the backdrop does nothing. Esc closes only an unchanged form; × and Cancel always close.
@@ -571,10 +571,6 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                           <MasterSelect value={assignee} placeholder={assignableCount ? 'Select team member' : 'No team members available'}
                             searchable={assignableCount > 6} searchPlaceholder="Search people…" disabled={locked}
                             invalid={!!(tried && errAssignee)} options={memberOptions}
-                            onDisabledClick={() => toast.warning(
-                              'Can’t assign to yourself',
-                              'You are creating this sourcing target, so it has to go to another team member.',
-                            )}
                             onChange={v => { setAssignee(v); setServerErr(s => ({ ...s, assignee: undefined })); }} />
                         </div>
                       </div>

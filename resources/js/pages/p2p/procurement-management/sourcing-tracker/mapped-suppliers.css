@@ -395,6 +395,33 @@
     flex: none;
 }
 
+/* Where the Convert button was, once the New Supplier is in the Master:
+   a non-interactive green "Converted" pill, same 40px footprint. */
+.stsv-card-converted {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
+    height: 40px;
+    padding: 0 16px;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 9px;
+}
+
+.stsv-card-converted svg { flex: none; }
+
+[data-bs-theme="dark"] .stsv-card-converted {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .12);
+    border-color: rgba(16, 185, 129, .35);
+}
+
 .stsv-card-idx {
     width: 26px;
     height: 26px;

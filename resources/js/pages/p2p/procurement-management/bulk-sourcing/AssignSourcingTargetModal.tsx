@@ -358,14 +358,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const clarityTitle = clarity ? (clarity.kind === 'master' ? `${masterRows[clarity.idx]?.code} — ${masterRows[clarity.idx]?.name}` : manualRows[clarity.idx]?.name) : '';
 
   const teamList = teamMembers.filter(m => { const q = teamSearch.toLowerCase(); return !q || (m.name + ' ' + m.role).toLowerCase().includes(q); });
-  /* A sourcing target is work handed to someone else, so the creator cannot be
-     its assignee. Only the create flow reaches the picker (the assignee is
-     locked on edit), so "created by" is always the signed-in user here. */
+  // Marks the creator's own row with "(You)"; self-assign is permitted.
   const isSelf = (id: string) => !!user && id === String(user.id);
-  const selfToast = () => toast.warning(
-    'Can’t assign to yourself',
-    'You are creating this sourcing target, so it has to go to another team member.',
-  );
   const openTeam = () => { setTeamPick(teamMembers.find(m => m.name === team)?.id ?? null); setTeamSearch(''); setTeamOpen(true); };
   const togglePick = (code: string) => setPicks(p => p.includes(code) ? p.filter(c => c !== code) : [...p, code]);
   const addMaster = () => {
@@ -420,9 +414,6 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     // be in the filtered team list). New targets resolve the pick by name.
     const resolvedAssigneeId = (isEdit ? assigneeId : null) ?? teamMembers.find(m => m.name === team)?.id ?? null;
     if (!resolvedAssigneeId) { toast.warning('Assign required', 'Assign this sourcing target to a team member before saving.'); return; }
-    // Only on create: an existing target keeps whatever assignee it was saved
-    // with, so an older self-assigned row stays editable.
-    if (!isEdit && isSelf(resolvedAssigneeId)) { selfToast(); return; }
     const body = {
       due_date: due, source,
       assignee_id: resolvedAssigneeId,
@@ -688,16 +679,13 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
             </div>
             <div className="astp-body">
               {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => {
-                /* The creator's own row stays visible but unselectable, so it is
-                   clear why they cannot pick it — hiding it would just look like
-                   a missing team member. */
+                // Self-assign is allowed; the creator's own row is marked "(You)".
                 const self = isSelf(m.id);
                 return (
-                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''} ${self ? 'is-disabled' : ''}`}
-                  aria-disabled={self || undefined}
-                  onClick={() => { if (self) { selfToast(); return; } setTeamPick(p => p === m.id ? null : m.id); }}>
+                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''}`}
+                  onClick={() => setTeamPick(p => p === m.id ? null : m.id)}>
                   <span className="astp-av">{tInit(m.name)}</span>
-                  <span className="astp-main"><span className="astp-name">{m.name}{self ? ' (You)' : ''}</span><span className="astp-role">{self ? 'Created by you — assign to someone else' : m.role}</span></span>
+                  <span className="astp-main"><span className="astp-name">{m.name}{self ? ' (You)' : ''}</span><span className="astp-role">{m.role}</span></span>
                   <span className="astp-check">{teamPick === m.id ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="16 9 11 14 8.5 11.5" /></svg> : <span className="astp-radio" />}</span>
                 </button>
                 );

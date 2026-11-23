@@ -720,14 +720,15 @@ class VendorController extends Controller
             'convert_supplier_id'                      => 'nullable|integer',
         ], [], self::FIELD_LABELS);
 
+        $convertSource = null;
         if (! empty($data['convert_supplier_id'])) {
-            $source = \App\Models\P2p\Supplier::where('client_id', $user->client_id)->find($data['convert_supplier_id']);
-            if (! $source || ($source->converted_vendor_id && (int) $source->converted_vendor_id !== (int) $vendor->id)) {
+            $convertSource = \App\Models\P2p\Supplier::where('client_id', $user->client_id)->find($data['convert_supplier_id']);
+            if (! $convertSource || ($convertSource->converted_vendor_id && (int) $convertSource->converted_vendor_id !== (int) $vendor->id)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'convert_supplier_id' => ['This New Supplier cannot be converted into this supplier.'],
                 ]);
             }
-            Vendor::$convertingSupplierId = (int) $source->id;
+            Vendor::$convertingSupplierId = (int) $convertSource->id;
         }
 
         $oldPrimaryAttachment = optional($vendor->addresses()->where('is_primary', true)->first())->attachment_path;
@@ -767,6 +768,28 @@ class VendorController extends Controller
             });
         } finally {
             Vendor::$convertingSupplierId = null;
+        }
+
+        // Register the conversion here, not only at the end of the form: the
+        // link lived solely in the final /convert POST, so abandoning the form
+        // mid-way left an orphaned vendor, the New Supplier unlinked, and the
+        // Convert button still showing — and each retry made another vendor.
+        if ($convertSource && (int) $convertSource->converted_vendor_id !== (int) $vendor->id) {
+            DB::transaction(function () use ($convertSource, $vendor, $user) {
+                \App\Models\P2p\SourcingProductSupplier::where('source', 'new')
+                    ->where('supplier_id', $convertSource->id)->get()
+                    ->each(function ($row) use ($vendor) {
+                        $dup = \App\Models\P2p\SourcingProductSupplier::where('sourcing_product_id', $row->sourcing_product_id)
+                            ->where('source', 'master')->where('supplier_id', $vendor->id)->exists();
+                        if ($dup) { $row->delete(); return; }
+                        $row->update(['source' => 'master', 'supplier_id' => $vendor->id, 'name' => $vendor->company_name]);
+                    });
+                $convertSource->update([
+                    'converted_vendor_id' => $vendor->id,
+                    'converted_at'        => now(),
+                    'converted_by'        => $user->id,
+                ]);
+            });
         }
 
         $vendor->load(self::SHOW_WITH);

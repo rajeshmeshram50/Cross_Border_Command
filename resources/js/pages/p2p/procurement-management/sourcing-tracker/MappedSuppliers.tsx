@@ -31,6 +31,8 @@ type Sup = {
   origin: 'domestic' | 'international' | null;
   /** New Supplier not yet in the Supplier Master: show "Convert to Supplier". */
   canConvert: boolean;
+  /** A Master supplier that was created by converting a New Supplier. */
+  converted: boolean;
   /** The quote stored with the mapping (null price = mapped before pricing existed). */
   quote: Quote;
   /** Unmasked saved values, to open a New Supplier for Edit ('' where the server masked one). */
@@ -48,7 +50,7 @@ type Quote = {
 type ApiSup = {
   id: string | number; supplier_id?: number | null; name?: string; segment?: string | null;
   contact?: string | null; mobile?: string | null; email?: string | null;
-  source?: string; origin?: string | null; canConvert?: boolean;
+  source?: string; origin?: string | null; canConvert?: boolean; converted?: boolean;
   country?: string | null; state?: string | null; currency?: string | null; price?: number | null;
   gstPercentage?: number | null; gstType?: string | null; gstAmount?: number | null; total?: number | null;
   exchangeRate?: number | null; inrAmount?: number | null; validTill?: string | null;
@@ -68,6 +70,7 @@ const toSup = (r: ApiSup): Sup => ({
   source: r.source === 'New Supplier' ? 'New Supplier' : 'Master',
   origin: r.origin === 'international' ? 'international' : r.origin === 'domestic' ? 'domestic' : null,
   canConvert: !!r.canConvert,
+  converted: !!r.converted,
   raw: {
     contact: real(r.contact), mobile: real(r.mobile), email: real(r.email), gmaps: real(r.gmaps), address: real(r.address),
     stateCode: real(r.state_code), city: real(r.city), card: real(r.card),
@@ -209,7 +212,7 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
   }, [row.code, product.id, retry, refreshKey]);
   const loading = loaded === null && !failed;
   const suppliers: Sup[] = (loaded ?? []).map(s => (
-    s.source === 'New Supplier' && converted?.has(supKey(s.supplierId, s.id)) ? { ...s, source: 'Master' as const, canConvert: false } : s));
+    s.source === 'New Supplier' && converted?.has(supKey(s.supplierId, s.id)) ? { ...s, source: 'Master' as const, canConvert: false, converted: true } : s));
   // Until the cards arrive the header keeps the report's count.
   const count = loaded ? suppliers.length : product.suppliers;
   const source = product.source === 'Product Master' ? 'Product Master' : 'Manual Entry';
@@ -309,7 +312,13 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       Convert to Supplier
                     </button>
                   )}
-                  </div>
+                  {/* Where the button was: a New Supplier now in the Master reads "Converted". */}
+                  {s.converted && (
+                    <span className="stsv-card-converted" title="This New Supplier is now in the Supplier Master">
+                      <Svg sw={2.6} size={12}><polyline points="20 6 9 17 4 12" /></Svg>
+                      Converted
+                    </span>
+                  )}
                 </div>
                 <div className="stsv-card-contacts">
                   {([['Contact Person', s.contact, 'user'], ['Mobile', s.mobile, 'phone'], ['Email', s.email, 'mail']] as const).map(([lbl, val, ico]) => (
