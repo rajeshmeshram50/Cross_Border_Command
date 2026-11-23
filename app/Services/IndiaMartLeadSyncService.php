@@ -8,39 +8,13 @@ use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-/**
- * IndiaMart CRM lead sync.
- *
- * Triggered by POST /sales/leads/sync (manual button on My Workplace) or
- * later by a scheduled job. CRM keys come from `config/lead_sync.php` which
- * is driven by .env — one deployment is intentionally scoped to one tenant
- * via LEAD_SYNC_CLIENT_ID / LEAD_SYNC_BRANCH_ID. The controller is
- * responsible for tenant-gating; this service trusts the caller and just
- * fans out the configured keys.
- *
- * Each key's `label` becomes the `platform` value on the resulting leads,
- * so the My Workplace "Lead Source" column reflects which CRM account the
- * row came from.
- *
- * The country whitelist is the deduped/uppercased copy of IDIMS_6.0's
- * `isLeadQualified` list — India intentionally absent (export-buyer CRM).
- */
 class IndiaMartLeadSyncService
 {
     private const INDIAMART_BASE_URL = 'https://mapi.indiamart.com/wservce/crm/crmListing/v2/';
     private const HTTP_TIMEOUT_SEC = 30;
 
-    /** How far back to ask IndiaMart for leads on each sync. Without an
-     *  explicit window IndiaMart's v2 endpoint returns 204 / "no leads
-     *  in the given time duration" — so we default to 7 days and let
-     *  the caller override if they want a wider/narrower sweep. */
     private const DEFAULT_LOOKBACK_DAYS = 7;
 
-    /**
-     * Run sync for every CRM key configured on this client.
-     *
-     * @return array{fetched:int,created:int,updated:int,disqualified:int,errors:array<int,string>}
-     */
     public function syncForClient(Client $client, ?User $triggeredBy = null): array
     {
         $totals = ['fetched' => 0, 'created' => 0, 'updated' => 0, 'disqualified' => 0, 'errors' => []];
@@ -80,19 +54,10 @@ class IndiaMartLeadSyncService
         return $totals;
     }
 
-    /**
-     * Fetch one CRM key's leads and upsert.
-     *
-     * @return array{fetched:int,created:int,updated:int,disqualified:int,errors:array<int,string>}
-     */
     private function fetchAndStore(string $crmKey, string $platform, Client $client, ?User $triggeredBy): array
     {
         $stats = ['fetched' => 0, 'created' => 0, 'updated' => 0, 'disqualified' => 0, 'errors' => []];
 
-        // IndiaMart's date params expect "DD-Mon-YYYY" (e.g. 21-May-2025).
-        // Build a [now - lookback_days, now] window so each sync grabs the
-        // most-recent leads. The exact format is required — without it the
-        // endpoint either rate-limits or returns 204.
         $endTime   = now()->format('d-M-Y');
         $startTime = now()->subDays(self::DEFAULT_LOOKBACK_DAYS)->format('d-M-Y');
         $url = self::INDIAMART_BASE_URL
@@ -106,11 +71,6 @@ class IndiaMartLeadSyncService
             return $stats;
         }
 
-        // IndiaMart returns 200 OK even when the call failed at their end —
-        // the real status is in the body's `CODE` / `STATUS` / `MESSAGE`.
-        // Most common failures: 401 (expired CRM key) and 429 (5-minute
-        // rate limit). Surfacing the message lets the user know to either
-        // regenerate the key or wait, instead of guessing why fetched=0.
         $body = $response->json();
         $apiCode    = (int)    ($body['CODE']    ?? 200);
         $apiStatus  = (string) ($body['STATUS']  ?? 'SUCCESS');
@@ -150,9 +110,6 @@ class IndiaMartLeadSyncService
                     'sender_mobile'       => $lead['SENDER_MOBILE']      ?? null,
                     'sender_email'        => $lead['SENDER_EMAIL']       ?? null,
                     'sender_company'      => $lead['SENDER_COMPANY']     ?? null,
-                    // ↓ FIXED: old project used un-prefixed keys (address/city/state/pincode/country_iso)
-                    //   and the LeadCustomer model silently dropped them because $fillable expected
-                    //   sender_* names. We hit `leads` directly here, no fillable-mismatch risk.
                     'sender_address'      => $lead['SENDER_ADDRESS']     ?? null,
                     'sender_city'         => $lead['SENDER_CITY']        ?? null,
                     'sender_state'        => $lead['SENDER_STATE']       ?? null,
@@ -170,22 +127,13 @@ class IndiaMartLeadSyncService
                 ];
 
                 if ($existing) {
-                    // Backfill branch on rows synced before branch attribution
-                    // existed, but never clobber a branch already set (e.g. a
-                    // manual reassignment).
                     if (!$existing->branch_id) {
                         $payload['branch_id'] = $this->resolveSyncBranchId($triggeredBy);
                     }
-                    // Never reset sales progress on an already-synced lead: a
-                    // salesperson may have advanced the pipeline stage or changed
-                    // the qualification. Refresh only the inbound contact/query
-                    // fields; preserve stage + qualification.
                     unset($payload['lead_stage_id'], $payload['qualified'], $payload['disqualified']);
                     $existing->update($payload);
                     $stats['updated']++;
                 } else {
-                    // Resolve the branch first — opp_code is sequenced PER BRANCH,
-                    // so the allocator needs to know which branch this lead lands in.
                     $payload['branch_id']  = $this->resolveSyncBranchId($triggeredBy);
                     $payload['opp_code']   = $this->nextOppCode($client->id, $payload['branch_id']);
                     $payload['created_by'] = $triggeredBy?->id;
@@ -197,7 +145,6 @@ class IndiaMartLeadSyncService
                 $stats['errors'][] = "{$platform} "
                     . ($lead['UNIQUE_QUERY_ID'] ?? '?')
                     . ': ' . $e->getMessage();
-                // ↓ FIXED: old project logged $data (undefined), now logs the actual lead row
                 Log::warning('IndiaMart lead row failed', [
                     'platform' => $platform,
                     'lead'     => $lead,
@@ -209,13 +156,6 @@ class IndiaMartLeadSyncService
         return $stats;
     }
 
-    /**
-     * Branch to stamp on synced leads. Mirrors the manual-create path, which
-     * uses the acting user's branch_id — so a lead synced by a branch user is
-     * attributed to that branch. Super-admins have no branch, so fall back to
-     * the env-pinned branch (config('lead_sync.branch')) only when it names a
-     * single id; for 'all' / a list / disabled it stays null (client-level).
-     */
     private function resolveSyncBranchId(?User $triggeredBy): ?int
     {
         if ($triggeredBy?->branch_id) {
@@ -226,15 +166,6 @@ class IndiaMartLeadSyncService
         return is_int($configured) ? $configured : null;
     }
 
-    /**
-     * Allocate the next opp_code — sequenced PER BRANCH (each branch restarts
-     * at OPP-0001), matching the manual-create allocator in SalesLeadController.
-     * Uses `withTrashed()` + highest-numeric-suffix + 1 rather than count():
-     * count() skips soft-deleted rows the UNIQUE index still sees, so a delete
-     * followed by a create would reuse a number and collide. The loop inside
-     * fetchAndStore runs sequentially in one process; the composite UNIQUE
-     * (client_id, branch_id, opp_code) catches any cross-request race.
-     */
     private function nextOppCode(int $clientId, ?int $branchId = null): string
     {
         $max = Lead::withTrashed()
@@ -246,19 +177,11 @@ class IndiaMartLeadSyncService
         return sprintf('OPP-%04d', ((int) $max) + 1);
     }
 
-    /** Country qualification — export-buyer CRM, so India (IN) is intentionally NOT in the list. */
     public static function isQualified(string $iso): bool
     {
         return in_array(strtoupper(trim($iso)), self::QUALIFIED_ISO_CODES, true);
     }
 
-    /**
-     * Deduped, uppercased copy of IDIMS_6.0's isLeadQualified list. Fixed
-     * three quirks from the old version:
-     *   - removed lowercase 'uk' duplicate (we compare uppercase)
-     *   - removed stray 'Canada' full-name entry (only 'CA' remains)
-     *   - moved comparison to strict uppercase so 'in' / 'In' fail correctly
-     */
     public const QUALIFIED_ISO_CODES = [
         'AL','DZ','AD','AO','AG','AR','AM','AU','AT','AZ',
         'BS','BH','BB','BY','BE','BZ','BJ','BO','BA','BW',
