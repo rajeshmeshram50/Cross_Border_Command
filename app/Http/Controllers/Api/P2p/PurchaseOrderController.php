@@ -36,7 +36,6 @@ class PurchaseOrderController extends Controller
         return PurchaseOrder::findOrFail($id);
     }
 
-
     public function nextCode(Request $request)
     {
         try {
@@ -147,7 +146,6 @@ class PurchaseOrderController extends Controller
             'kind' => 'purchase_order',
         ])->all(), $invoices);
     }
-
 
     private const TABS = [
         'all'          => 'TRUE',
@@ -311,7 +309,6 @@ class PurchaseOrderController extends Controller
             throw $e;
         }
     }
-
 
     private function stage1Rules(): array
     {
@@ -612,7 +609,6 @@ class PurchaseOrderController extends Controller
         ];
     }
 
-
     public function updateItems(Request $request, int $id)
     {
         try {
@@ -815,7 +811,6 @@ class PurchaseOrderController extends Controller
         $this->svc->recomputeTotals($po);
     }
 
-
     public function updateTerms(Request $request, int $id)
     {
         try {
@@ -950,7 +945,6 @@ class PurchaseOrderController extends Controller
             ])->all(),
         ];
     }
-
 
     public function cancel(Request $request, int $id)
     {
@@ -1115,7 +1109,6 @@ class PurchaseOrderController extends Controller
             throw $e;
         }
     }
-
 
     private function refreshSigning(PurchaseOrder $po): void
     {
