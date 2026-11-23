@@ -9,31 +9,13 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * On-demand ATTENDANCE test-data generator (run only when you ask, via a curl).
- *
- * For a date range, a client, a branch and a list of employee CODES it fills
- * the attendance section day by day:
- *   - a weekly-off day (per the employee's own WeekOff pattern) → "Weekly Off"
- *   - every other day → the chosen working status (default "Present"), with
- *     matching check-in / check-out punches.
- *
- * Idempotent per employee+day (updateOrInsert; punches are rebuilt). Admins only.
- */
 class AttendanceTestController extends Controller
 {
     use GuardsDevTooling;
 
     private const IST = 'Asia/Kolkata';
-    /** Marks the weekly leaves this tool creates, so re-runs can clear them. */
     private const LEAVE_TAG = 'Attendance test —';
 
-    /**
-     * Realistic multi-punch day per status — a list of [time, direction, label].
-     * Directions strictly alternate in → out → in → out (the attendance module
-     * rejects two same-direction punches in a row). Full days = 6 punches
-     * (in · break · lunch · out); short days = 4. No punches for absent/off.
-     */
     private function punchPlan(string $status): array
     {
         return match ($status) {
@@ -51,7 +33,7 @@ class AttendanceTestController extends Controller
             'Late' => [
                 ['11:30', 'in', 'Check In'], ['13:30', 'out', 'Lunch Out'], ['14:15', 'in', 'Lunch In'], ['18:30', 'out', 'Check Out'],
             ],
-            default => [], // Absent, Leave, Weekly Off — no punches
+            default => [],
         };
     }
 
@@ -67,7 +49,6 @@ class AttendanceTestController extends Controller
             'employee_codes.*' => ['string', 'max:40'],
             'start_date'       => ['required', 'date'],
             'end_date'         => ['required', 'date', 'after_or_equal:start_date'],
-            // Status applied to WORKING days (off days are always Weekly Off).
             'working_status'   => ['nullable', 'in:Present,Half Day,Late,Overtime,Absent,Leave'],
         ]);
 
@@ -93,10 +74,9 @@ class AttendanceTestController extends Controller
         }
 
         $toUtc = fn (string $date, string $time) => Carbon::parse("$date $time", self::IST)->utc()->toDateTimeString();
-        $plan  = $this->punchPlan($status);          // punches for a normal working day
-        $halfPlan = $this->punchPlan('Half Day');    // 4 punches for the weekly half-day
+        $plan  = $this->punchPlan($status);
+        $halfPlan = $this->punchPlan('Half Day');
 
-        // A paid leave type for the weekly full-leave + half-day requests.
         $leaveTypeId = DB::table('master_leave_types')
             ->where('client_id', $clientId)->where('branch_id', $branchId)
             ->whereRaw('LOWER(paid_unpaid) = ?', ['paid'])->orderBy('id')->value('id')
@@ -104,7 +84,6 @@ class AttendanceTestController extends Controller
 
         $out = [];
         foreach ($emps as $e) {
-            // Idempotent: clear this tool's own weekly leaves for the employee in range.
             DB::table('leave_requests')
                 ->where('employee_id', $e->id)->where('reason', 'like', self::LEAVE_TAG . '%')
                 ->whereBetween('from_date', [$start->toDateString(), $end->toDateString()])
@@ -119,18 +98,15 @@ class AttendanceTestController extends Controller
                     $off++;
                     continue;
                 }
-                // New ISO week → reset the per-week working-day counter.
                 $wk = $d->format('o-W');
                 if ($wk !== $week) { $week = $wk; $weekWorkIdx = 0; }
                 $weekWorkIdx++;
 
                 if ($weekWorkIdx === 1 && $leaveTypeId) {
-                    // 1st working day of the week → FULL-day leave.
                     $this->writeDay($clientId, $branchId, $e, $date, 'Leave', [], $toUtc);
                     $this->createLeave($clientId, $branchId, $e->id, $date, 'full', 1, $leaveTypeId, self::LEAVE_TAG . ' full leave');
                     $fullLeaves++;
                 } elseif ($weekWorkIdx === 2 && $leaveTypeId) {
-                    // 2nd working day of the week → HALF day.
                     $this->writeDay($clientId, $branchId, $e, $date, 'Half Day', $halfPlan, $toUtc);
                     $this->createLeave($clientId, $branchId, $e->id, $date, 'first_half', 0.5, $leaveTypeId, self::LEAVE_TAG . ' half day');
                     $halfDays++;
@@ -157,7 +133,6 @@ class AttendanceTestController extends Controller
         ]);
     }
 
-    /** Insert one approved leave request (full or half day). */
     private function createLeave(int $clientId, int $branchId, int $employeeId, string $date, string $dayType, float $days, int $typeId, string $reason): void
     {
         DB::table('leave_requests')->insert([
@@ -170,10 +145,8 @@ class AttendanceTestController extends Controller
         ]);
     }
 
-    /** Upsert one attendance row + rebuild its punches from the plan. */
     private function writeDay(int $clientId, int $branchId, object $e, string $date, string $status, array $plan, callable $toUtc): void
     {
-        // First IN / last OUT drive the header check-in/out on the attendance row.
         $cin = null; $cout = null;
         foreach ($plan as [$time, $dir]) {
             $ts = $toUtc($date, $time);
@@ -205,4 +178,3 @@ class AttendanceTestController extends Controller
         }
     }
 }
-  
