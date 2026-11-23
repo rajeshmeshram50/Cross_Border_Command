@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Adds the "DEFAULT plan" flag and the policy-explanation choice that
- * the Add Leave Plan modal exposes (system-generated vs. uploaded
- * custom doc). One default per branch is enforced in LeavePlanController,
- * not at the DB level, so HR can switch the default without races.
- */
 return new class extends Migration {
     public function up(): void
     {
