@@ -7142,6 +7142,17 @@ body.apm-map-gate-open .supch-ov {
   transform: none;
 }
 
+/* With no GST the button is disabled, so Tooltip wraps it in a span to catch
+   the hover a disabled control never emits — the auto margin has to move to
+   that span, or the action stops being pushed to the right of the bar. */
+.apm-sup-bar > span:has(> .apm-sup-map) {
+  margin-left: auto;
+}
+
+.apm-sup-bar > span:has(> .apm-sup-map) > .apm-sup-map {
+  margin-left: 0;
+}
+
 .apm-sup-map span {
   font-size: 14px;
   line-height: 1;
@@ -7435,6 +7446,38 @@ body.apm-map-gate-open .supch-ov {
 
 [data-bs-theme="dark"] .apm-sup-body {
   background: #1a1430;
+}
+
+/* The inner panel was the one piece of this popup with no dark rule, so a
+   white card sat between a dark body and a dark footer. */
+[data-bs-theme="dark"] .apm-sup-card {
+  background: #221c3d;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+}
+
+[data-bs-theme="dark"] .apm-sup-card-ico {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .30);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-sup-card-title {
+  color: #c4b5fd;
+}
+
+/* The divider under the bar was a near-white violet, which on the dark card
+   read as a bright line across it. */
+[data-bs-theme="dark"] .apm-sup-bar {
+  border-bottom-color: rgba(167, 139, 250, .18);
+}
+
+/* The light-mode disabled fill is a pale lavender — on the dark card it read
+   as a washed-out block with white text barely legible on it. */
+[data-bs-theme="dark"] .apm-sup-map:disabled {
+  background: rgba(124, 58, 237, .28);
+  color: rgba(255, 255, 255, .55);
+  opacity: 1;
 }
 
 [data-bs-theme="dark"] .apm-sup-foot {
