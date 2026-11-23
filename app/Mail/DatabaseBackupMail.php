@@ -7,11 +7,6 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 
-/**
- * Emails a database backup as a gzip-compressed .sql.gz attachment.
- * Sent inline (not queued) so the admin gets an immediate success/failure —
- * this project has no queue worker running by default.
- */
 class DatabaseBackupMail extends Mailable
 {
     public function __construct(
@@ -49,12 +44,9 @@ class DatabaseBackupMail extends Mailable
         );
     }
 
-    /** @return array<int, Attachment> */
     public function attachments(): array
     {
         return [
-            // fromPath (not fromData) so Symfony streams the file off disk —
-            // a large dump must never be materialised as a PHP string.
             Attachment::fromPath($this->gzPath)
                 ->as($this->gzFilename)
                 ->withMime('application/gzip'),
