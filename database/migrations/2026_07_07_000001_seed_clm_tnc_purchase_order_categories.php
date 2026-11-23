@@ -3,30 +3,8 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Seeds the two standard Purchase Order T&C document categories as a single
- * GLOBAL set (client_id = NULL) so they exist on every environment after a
- * plain `php artisan migrate` — exactly like the Quotation/Proforma Invoice
- * categories are seeded by 2026_06_10_000001_make_clm_tnc_categories_client_id_nullable.
- *
- *   • International Purchase Order  (IPO)
- *   • Domestic Purchase Order      (DPO)
- *
- * Previously these lived ONLY in the standalone ClmTncPurchaseOrderSeeder,
- * which never runs automatically — so fresh installs were missing DC-005/006
- * and the PO T&C auto-fetch had nothing to match. This migration makes them
- * self-sufficient. It mirrors ClmTncPurchaseOrderSeeder (which remains the
- * canonical idempotent source) and uses the query builder, not Eloquent, so
- * it stays valid even if the model changes.
- *
- * Idempotent: a global category already present (by name, case-insensitive)
- * is skipped, and DC-### codes continue from the highest existing global
- * suffix (so it lands on DC-005/006 after the four Quotation/PI rows). Any
- * leftover per-client copies of these two names are removed first.
- */
 return new class extends Migration
 {
-    /** name => short_code (≤ 12 chars). */
     private const CATEGORIES = [
         'International Purchase Order' => 'IPO',
         'Domestic Purchase Order'     => 'DPO',
@@ -36,8 +14,6 @@ return new class extends Migration
     {
         $names = array_keys(self::CATEGORIES);
 
-        // Remove leftover per-client copies of these standard names — they're
-        // now owned by the global set.
         DB::table('clm_tnc_categories')
             ->whereNotNull('client_id')
             ->where(function ($q) use ($names) {
@@ -47,8 +23,6 @@ return new class extends Migration
             })
             ->delete();
 
-        // Next global DC-### suffix (continue past any existing global rows,
-        // i.e. the four Quotation/PI categories → PO lands on DC-005/006).
         $next = 0;
         foreach (DB::table('clm_tnc_categories')->whereNull('client_id')->pluck('code') as $code) {
             if (preg_match('/^DC-(\d+)$/', (string) $code, $m)) {
