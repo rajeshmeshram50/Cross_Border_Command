@@ -4,11 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * A With-PO purchase order, once fully utilised, is synced to Zoho Books as a
- * Purchase Order AND a Bill (the bill carries all of the PO's payments). These
- * columns remember the Bill so re-syncs top up payments instead of duplicating.
- */
 return new class extends Migration
 {
     public function up(): void
