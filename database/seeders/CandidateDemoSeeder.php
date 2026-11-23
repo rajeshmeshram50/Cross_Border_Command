@@ -7,15 +7,6 @@ use App\Models\Recruitment;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
-/**
- * Demo candidates for a recruitment's Candidate Management screen (QA).
- * Seeds a spread across the pipeline so every tab + KPI populates:
- *   Final Round Selected = 'Final Interview', Selected = 'Selected'/'Offered',
- *   Rejected = 'Rejected', plus Applied / Shortlisted / In Interview / On Hold.
- *
- *   php artisan db:seed --class=CandidateDemoSeeder            (defaults to REC id 9)
- *   RECRUITMENT_ID=12 php artisan db:seed --class=CandidateDemoSeeder
- */
 class CandidateDemoSeeder extends Seeder
 {
     public function run(): void
@@ -33,15 +24,14 @@ class CandidateDemoSeeder extends Seeder
         $creator  = User::where('client_id', $clientId)->where('user_type', 'branch_user')->value('id')
             ?? User::where('client_id', $clientId)->value('id');
 
-        // How many per status (drives the tabs + KPI cards).
         $plan = [
             'Applied'          => 3,
             'Shortlisted'      => 2,
             'In Interview'     => 4,
-            'Final Interview'  => 5,   // → "Final Round Selected" tab
-            'Selected'         => 3,   // ┐ "Selected Candidates" tab (3 + 1)
-            'Offered'          => 1,   // ┘ kept within the 4 openings
-            'Rejected'         => 5,   // → "Rejected Candidates" tab
+            'Final Interview'  => 5,
+            'Selected'         => 3,
+            'Offered'          => 1,
+            'Rejected'         => 5,
             'On Hold'          => 1,
         ];
 
@@ -64,9 +54,9 @@ class CandidateDemoSeeder extends Seeder
                 $ln   = $lastNames[$i % count($lastNames)];
                 $name = "{$fn} {$ln}";
                 $slug = strtolower($fn . '.' . $ln);
-                $exp  = round(1 + ($i % 10) + (($i % 2) * 0.5), 2);   // 1.0 – 10.5 yrs
-                $cur  = round(4 + ($i % 12), 2);                       // 4 – 15 LPA
-                $exp2 = round($cur + 2 + ($i % 5), 2);                 // expected > current
+                $exp  = round(1 + ($i % 10) + (($i % 2) * 0.5), 2);
+                $cur  = round(4 + ($i % 12), 2);
+                $exp2 = round($cur + 2 + ($i % 5), 2);
 
                 Candidate::create([
                     'client_id'           => $clientId,
