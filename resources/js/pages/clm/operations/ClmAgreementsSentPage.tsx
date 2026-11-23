@@ -1,4 +1,3 @@
-import { clmFillHeight } from '../shared/clmShared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -258,7 +257,7 @@ export default function ClmAgreementsSentPage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = clmFillHeight(el, 240);
+      const fh = Math.max(240, window.innerHeight - top - 56);
       setFillH(prev => (prev === fh ? prev : fh));
 
       const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -328,7 +327,7 @@ export default function ClmAgreementsSentPage() {
           icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
 
-      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH, maxHeight: fillH }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts. */}
         {/* nowrap, with min-width 0 — these go together, and the pair is why
             the search no longer drops to its own line on a 1366 laptop.
@@ -629,7 +628,7 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 50 }}>SR NO</th>
@@ -707,7 +706,7 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -767,7 +766,7 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
   const slice = rows.slice(start, start + pageSize);
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>

@@ -1,4 +1,3 @@
-import { clmFillHeight } from '../shared/clmShared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -375,7 +374,7 @@ export default function ClmCaseToCasePage() {
       // Leave room at the bottom for the layout footer + the scroll container's
       // padding — with only a 24px gap the card overshot the main-content scroll
       // area and the pagination footer landed at the fold (cut off).
-      const fh = clmFillHeight(el, 240);
+      const fh = Math.max(240, window.innerHeight - top - 56);
       setFillH(prev => (prev === fh ? prev : fh));
 
       // Dynamic rows-per-page — fit as many rows as the card height allows so
@@ -516,7 +515,7 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {/* CARD 3 — CONTRACTS LIST */}
-      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH, maxHeight: fillH }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts.
             Padding was already 8 here; the gap was 10 down / 12 across. */}
         <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
@@ -557,7 +556,7 @@ export default function ClmCaseToCasePage() {
             {/* Only the table scrolls horizontally; the pager lives OUTSIDE this
                 container so it never inherits the table's 1380px min-width and
                 stays pinned to the visible card width when the table scrolls. */}
-            <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
               {/* 1560, not 1380. The eleven fixed columns come to 1378 on their own, so
     the old floor left Agreement Title two pixels and let the row spill past
     the card instead of scrolling. 1560 keeps the title usable at ~180. */}

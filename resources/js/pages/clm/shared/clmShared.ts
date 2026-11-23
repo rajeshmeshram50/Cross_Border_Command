@@ -123,7 +123,7 @@ export const CLM_CSS = `
   border-radius: 16px;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 12px; min-height: 58px; gap: 14px;
+  padding: 0 20px; min-height: 58px; gap: 14px;
   box-shadow: 0 2px 10px rgba(6,182,212,.10);
 }
 .clm-head-strip::before {
@@ -136,7 +136,7 @@ export const CLM_CSS = `
   pointer-events: none;
 }
 .clm-head-strip > * { position: relative; z-index: 1; }
-.clm-head-strip-left { display: flex; align-items: center; gap: 13px; padding-left: 6px; min-width: 0; }
+.clm-head-strip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; min-width: 0; }
 .clm-head-strip-ico-wrap { position: relative; flex-shrink: 0; }
 .clm-head-strip-ico {
   width: 38px; height: 38px; border-radius: 12px;
@@ -221,10 +221,8 @@ export const CLM_CSS = `
 }
 .clm-bref-head {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 13px;
-  /* Same insets as .clm-head-strip above it (12px sides + 6px before the icon),
-     so the two icons start, and the Add button and this arrow end, on one line. */
-  padding: 7px 12px 7px 18px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 12px;
   background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 30%, #d8f8fc 60%, #caf5fa 80%, #baf2f9 100%);
   border-bottom: 1px solid #A5F3FC;
   cursor: pointer; user-select: none;
@@ -239,7 +237,7 @@ export const CLM_CSS = `
 }
 .clm-bref.collapsed .clm-bref-head { border-bottom-color: transparent; }
 .clm-bref-ico {
-  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   display: flex; align-items: center; justify-content: center; color: #fff;
   position: relative; z-index: 1;
@@ -740,23 +738,31 @@ export const CLM_CSS = `
 .clm-table-fill.clm-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
-/* Table scrollbar, not a page scrollbar: a fill wrap is capped at the space
- * above the app footer and only the rows scroll (.clm-tscroll), under the
- * sticky column headings; the pager sits below the scrollbar, as in DataTable. */
-.clm-table-fill { overflow: hidden; }
-.clm-tscroll {
+/* Opened from the Master Control Center (/master/..., wrapped in .clm-mc):
+ * table scrollbar, not a page scrollbar -- the fill wrap is capped at the
+ * space above the app footer and only the rows scroll (.clm-tscroll), under
+ * the sticky column headings, with the pager below. From the CLM menu the
+ * page keeps its own CLM look: the wrap only has a minimum height, the page
+ * scrolls, and .clm-tscroll is a plain box. */
+body:not(:has(.clm-mc)) .clm-table-fill { max-height: none !important; }
+.clm-mc .clm-table-fill { overflow: hidden; }
+.clm-mc .clm-tscroll {
   flex: 1 1 0; min-height: 0; min-width: 0;
   overflow: auto; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: #a5e8f5 transparent;
 }
-.clm-tscroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.clm-tscroll::-webkit-scrollbar-track { background: transparent; }
-.clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
-.clm-tscroll::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
-[data-bs-theme="dark"] .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
-[data-bs-theme="dark"] .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
-.clm-inscroll { overscroll-behavior: contain; }
-.clm-inscroll thead th { position: sticky; top: 0; z-index: 3; }
+.clm-mc .clm-tscroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-track { background: transparent; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+/* Master Control Center header insets, as on the Master lists: 12px sides
+ * plus 6px before the icon, the What We Are Doing Here strip lined up under it. */
+.clm-mc .clm-head-strip { padding: 0 12px; }
+.clm-mc .clm-head-strip-left { padding-left: 6px; }
+.clm-mc .clm-bref-head { gap: 13px; padding: 7px 12px 7px 18px; }
+.clm-mc .clm-bref-ico { width: 38px; height: 38px; border-radius: 12px; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
  * viewports the "Showing…" pill and the page arrows are pushed outside the
@@ -2268,14 +2274,20 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
 }
 
-/* Height a CLM list's table box (or card) may take so the page itself never
- * scrolls: the scroll area's height, less where the box starts in it, less
- * everything that sits below the box -- the card's own bottom padding and
- * border, any content after it, gaps, .page-content's padding, and the app
- * footer when it lives inside the scroll area. A flat allowance (64 / 56 /
- * footer + 8) left out the card chrome, so the page ran a few pixels past the
- * screen and showed a full-page scrollbar next to the table's own one. */
-export function clmFillHeight(el: HTMLElement, min = 0): number {
+/* Height a CLM list's table box may take.
+ *
+ * From the Master Control Center (.clm-mc) the page itself never scrolls: the
+ * scroll area's height, less where the box starts in it, less everything that
+ * sits below the box -- the card's own bottom padding and border, any content
+ * after it, gaps, .page-content's padding, and the app footer when it lives
+ * inside the scroll area.
+ *
+ * From the CLM menu it is the CLM page's own flat allowance: the viewport less
+ * the box's top and `reserve` (the footer + 8, or 64). */
+export function clmFillHeight(el: HTMLElement, min = 0, reserve = 64): number {
+  if (!el.closest('.clm-mc')) {
+    return Math.max(min, window.innerHeight - el.getBoundingClientRect().top - reserve);
+  }
   const scroller = el.closest('.main-content') as HTMLElement | null;
   const rect = el.getBoundingClientRect();
   const top = scroller
@@ -2344,7 +2356,7 @@ export function useAutoFitRows(
         setRpp(prev => (prev === fit ? prev : fit));
       }
 
-      const fh = clmFillHeight(el);
+      const fh = clmFillHeight(el, 0, bottomReserve);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();

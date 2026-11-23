@@ -568,6 +568,14 @@ function DashboardRoutes({ user }: { user: any }) {
   );
 }
 
+/* A CLM master opened from the Master Control Center: .clm-mc turns on the
+   Master list behaviour (rows scroll inside the table, Master header insets).
+   display: contents, so the page's own layout is untouched. The CLM menu
+   routes (/clm/...) render the same page without it. */
+function ClmInMaster({ children }: { children: React.ReactNode }) {
+  return <div className="clm-mc" style={{ display: 'contents' }}>{children}</div>;
+}
+
 function DashboardRoutesInner({ user }: { user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -707,7 +715,16 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/inbox"    element={<Inbox />} />
               <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
-              <Route path="/master/segments" element={<ClmSegmentPage />} />
+              <Route path="/master/segments" element={<ClmInMaster><ClmSegmentPage /></ClmInMaster>} />
+              <Route path="/master/clm/authority"        element={<ClmInMaster><ClmAuthorityPage /></ClmInMaster>} />
+              <Route path="/master/clm/kyc"              element={<ClmInMaster><ClmKycPage /></ClmInMaster>} />
+              <Route path="/master/clm/due-diligence"    element={<ClmInMaster><ClmDdPage /></ClmInMaster>} />
+              <Route path="/master/clm/trade-licenses"   element={<ClmInMaster><ClmTradeLicensesPage /></ClmInMaster>} />
+              <Route path="/master/clm/quality-docs"     element={<ClmInMaster><ClmQcPage /></ClmInMaster>} />
+              <Route path="/master/clm/trade-documents"  element={<ClmInMaster><ClmTradeDocumentsPage /></ClmInMaster>} />
+              <Route path="/master/clm/terms-conditions" element={<ClmInMaster><ClmTncPage /></ClmInMaster>} />
+              <Route path="/master/clm/agreements"       element={<ClmInMaster><ClmAgreementsPage /></ClmInMaster>} />
+              <Route path="/master/clm/clause-library"   element={<ClmInMaster><ClmClauseLibraryPage /></ClmInMaster>} />
               <Route path="/master/holiday" element={<Navigate to="/master/holiday_groups" replace />} />
               <Route path="/master/lead-ack" element={<SalesLeadAckMaster variant="teal" />} />
               <Route path="/master/:slug" element={<MasterPage />} />

@@ -1,4 +1,3 @@
-import { clmFillHeight } from '../shared/clmShared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -307,7 +306,7 @@ export default function ClmAgreementsToApprovePage() {
       const top = el.getBoundingClientRect().top;
       // Stretch the card to the viewport (leave room for the layout footer + the
       // scroll container's padding, else the pager lands at the fold / cut off).
-      const fh = clmFillHeight(el, 240);
+      const fh = Math.max(240, window.innerHeight - top - 56);
       setFillH(prev => (prev === fh ? prev : fh));
 
       if (!autoFitRef.current) return;
@@ -380,7 +379,7 @@ export default function ClmAgreementsToApprovePage() {
         </div>, document.body)}
 
       {/* FILTER TABS + TABLE */}
-      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH, maxHeight: fillH }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         {/* 8px on every side, the toolbar padding Case to Case uses. It was
             10px 14px, so the rail sat further from the card's edge here than
             on the page beside it. */}
@@ -602,7 +601,7 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table className="ata-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -689,7 +688,7 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table className="ata-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
