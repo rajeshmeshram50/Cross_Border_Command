@@ -760,6 +760,14 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/p2p/sourcing-tracker" element={<SourcingTracker />} />
               <Route path="/p2p/service-management" element={<ServiceManagement />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
+              {/* The four Inventory masters as the Master Control Center opens them:
+                  their own /master/inventory/... paths, separate from the Inventory
+                  menu's, so each entry point can carry its own UI (pages read the
+                  path, as the CLM masters do). Same pages, no UI difference yet. */}
+              <Route path="/master/inventory/warehouse-master" element={<WarehouseMaster />} />
+              <Route path="/master/inventory/zone-master" element={<ZoneMaster />} />
+              <Route path="/master/inventory/rack-master" element={<RackMaster />} />
+              <Route path="/master/inventory/product-flags" element={<ProductFlagMaster />} />
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ZoneMaster />} />
               <Route path="/inventory-management/rack-master" element={<RackMaster />} />

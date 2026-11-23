@@ -13,10 +13,10 @@ import './p2p/purchase-management/order/po-list/order.css';
 import SearchClear from '../components/ui/SearchClear';
 
 const INVENTORY_MASTER_PAGES: Record<string, string> = {
-  'master.warehouse_master': '/inventory-management/warehouse-master',
-  'master.zone_master':      '/inventory-management/zone-master',
-  'master.racks':            '/inventory-management/rack-master',
-  'master.product_flags':    '/inventory-management/product-flags',
+  'master.warehouse_master': '/master/inventory/warehouse-master',
+  'master.zone_master':      '/master/inventory/zone-master',
+  'master.racks':            '/master/inventory/rack-master',
+  'master.product_flags':    '/master/inventory/product-flags',
   'sales.lead_ack_master': '/master/lead-ack',
   'hr.holiday':            '/master/holiday_groups',
   'clm.authority':         '/master/clm/authority',
@@ -318,7 +318,7 @@ export default function MasterDashboard() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const goTo   = (leaf: MenuChild) => navigate(INVENTORY_MASTER_PAGES[leaf.id] ?? `/master/${leaf.id.replace('master.', '')}`, { state: { fromMaster: true } });
+  const goTo   = (leaf: MenuChild) => navigate(INVENTORY_MASTER_PAGES[leaf.id] ?? `/master/${leaf.id.replace('master.', '')}`);
 
   if (groups.length === 0) {
     return (

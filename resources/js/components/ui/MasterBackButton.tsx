@@ -23,8 +23,10 @@ const CSS = `
 export default function MasterBackButton() {
   const loc = useLocation();
   const navigate = useNavigate();
-  const fromMaster = loc.pathname.startsWith('/master/')
-    || Boolean((loc.state as { fromMaster?: boolean } | null)?.fromMaster);
+  /* The route decides: every master the Master Control Center opens lives
+     under /master/... (Inventory masters at /master/inventory/...), while the
+     same pages reached from their own module menu do not. */
+  const fromMaster = loc.pathname.startsWith('/master/');
   if (!fromMaster) return null;
   return (
     <>
