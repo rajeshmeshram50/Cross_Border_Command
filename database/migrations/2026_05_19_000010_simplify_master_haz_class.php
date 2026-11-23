@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * The Haz Class master was simplified to just `name` + `status` (matches
- * the other lightweight masters like segments / vendor_behaviour). The
- * legacy `haz_code` and `packing_group` columns are no longer used by
- * the form, validation config, or fillable list — drop them so the
- * schema reflects the new shape.
- */
 return new class extends Migration
 {
     public function up(): void
