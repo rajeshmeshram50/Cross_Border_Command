@@ -540,6 +540,13 @@
 .mp-inv .dt-toolbar-actions:not(:empty) { padding-right: 20px; }
 .mp-inv .dt-lead:has(+ .dt-toolbar-actions:not(:empty)) > .spi-segrow { padding-right: 0; }
 .mp-inv .dt-lead > .spi-segrow .spi-seg { flex-shrink: 0; }
+/* One toolbar height, at every width: the tab rail (a 40px tab inside 3px of
+   padding and a 1px border) and the search are both 48px. order.css sizes the
+   tabs 42 / 38px and the search 52 / 46px, so the two never matched. */
+.mp-inv .ord-list .spi-segrow .spi-seg { padding: 3px; }
+.mp-inv .ord-list .spi-segrow .spi-seg-btn { height: 40px; }
+.mp-inv .ord-list .spi-segrow .spi-search { height: 48px; }
+.mp-inv .ord-list .spi-segrow .master-select-toggle { height: 48px; min-height: 48px; box-sizing: border-box; }
 [data-bs-theme="dark"] .mp-inv .dt-toolbar,
 [data-layout-mode="dark"] .mp-inv .dt-toolbar { border-bottom-color: rgba(148, 163, 184, .14); }
 @media (max-width: 768px) {
@@ -603,7 +610,7 @@
 }
 .mp-tealf-body > fieldset { display: flex; flex-direction: column; gap: 12px; }
 .mp-tealf .whm-sec__ico i { font-size: 14px; line-height: 1; }
-.mp-tealf .spi-mdl-foot { padding: 12px 22px; border-top-color: #e3f1f5; background: rgba(255, 255, 255, .55); }
+.mp-tealf .spi-mdl-foot { padding: 12px 22px; border-top-color: #e3f1f5; background: transparent; }
 .mp-tealf .spi-mdl-cancel,
 .mp-tealf .spi-mdl-confirm { height: 42px; border-radius: 12px; }
 
