@@ -9,41 +9,27 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Generic mailable for Sales Matrix → Quotation / Proforma Invoice docs.
- *
- * Used by `SalesPdfController::emailQuotation` and `emailProformaInvoice`
- * to send the matching PDF to the customer's primary email. The body
- * renders `emails.sales-document` with a branch-aware template — the
- * branch's name / email / website appear in the closing block so the
- * customer sees the issuing entity, not a generic system signature.
- *
- * Pre-generated PDF path is passed in so we don't re-render in the
- * Mailable; controller is responsible for writing the PDF to a temp
- * path and cleaning up after send.
- */
 class SalesDocumentEmail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public string $docKind;         // 'Quotation' | 'Proforma Invoice'
-    public string $docLabel;        // 'QT' | 'PI' — used as the short label in the info card
-    public string $docCode;         // QT/2026-27/6
-    public string $docDate;         // 25/05/2026 (dd/mm/yyyy)
+    public string $docKind;
+    public string $docLabel;
+    public string $docCode;
+    public string $docDate;
     public string $branchName;
     public ?string $branchEmail;
     public ?string $branchWebsite;
     public string $customerName;
-    public string $productSummary;  // first line item name (or "Multiple items")
-    public int $productsCount;      // total line-item count, displayed in the third info card
-    public float $grandTotal;       // grand total amount (used in the prominent total card)
-    public string $currency;        // currency code (e.g. "USD", "INR")
-    public string $docType;         // "International" | "Domestic"
-    public ?string $viewUrl;        // signed public URL that opens the PDF in a browser
-    public ?string $logoPath;       // absolute filesystem path to branch logo (for CID embed)
-    public ?string $pdfPath;        // absolute filesystem path to the attached PDF
-    public string $pdfFilename;     // visible name in the recipient's inbox
-    /** @var array<int, array{path: string, name: string}> further files attached after the PDF */
+    public string $productSummary;
+    public int $productsCount;
+    public float $grandTotal;
+    public string $currency;
+    public string $docType;
+    public ?string $viewUrl;
+    public ?string $logoPath;
+    public ?string $pdfPath;
+    public string $pdfFilename;
     public array $extraAttachments;
 
     public function __construct(array $payload)
@@ -70,7 +56,6 @@ class SalesDocumentEmail extends Mailable
 
     public function envelope(): Envelope
     {
-        // Subject reads like a finance team email: "Quotation QT/2026-27/6 from Inorbvict Agrotech"
         return new Envelope(
             subject: trim("{$this->docKind} {$this->docCode} from {$this->branchName}"),
         );
