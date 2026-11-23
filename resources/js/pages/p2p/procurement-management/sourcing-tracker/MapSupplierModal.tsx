@@ -159,7 +159,7 @@ export default function MapSupplierModal({ targetCode, product, edit, onClose, o
               <div className="stmap-ppill stmap-ppill--seg"><div className="stmap-ppill-lbl">Segment</div><FitTip label={product.segment}><div className="stmap-ppill-val">{product.segment}</div></FitTip></div>
             </>)}
             <div className="stmap-ppill-sep" />
-            <div className="stmap-ppill"><div className="stmap-ppill-lbl">Target Price</div><div className="stmap-ppill-val amber">{inr(product.targetPrice)}</div></div>
+            <div className="stmap-ppill stmap-ppill--price"><div className="stmap-ppill-lbl">Target Price</div><FitTip label={inr(product.targetPrice)}><div className="stmap-ppill-val amber">{inr(product.targetPrice)}</div></FitTip></div>
             <div className="stmap-ppill-sep" />
             <div className="stmap-ppill"><div className="stmap-ppill-lbl">Suppliers Mapped</div><div className="stmap-ppill-val green">{product.suppliers} Supplier{product.suppliers === 1 ? '' : 's'}</div></div>
           </div>

@@ -457,7 +457,11 @@
     border: 1px solid #e2e8f0;
 }
 
+/* One line, "…" for a very long value (tooltip shows it in full) — CS-2215. */
 .stpl-price {
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 12px;
     font-weight: 800;
     white-space: nowrap;

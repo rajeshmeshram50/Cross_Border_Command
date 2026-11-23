@@ -51,8 +51,9 @@ export default function ProductList({ row, onClose }: { row: SourcingTarget; onC
   // One fixed table height for both tabs (sticky header + up to 5 rows); see useFitRows.
   const bodyRef = useRef<HTMLDivElement>(null);
   const boxH = useFitRows(bodyRef, {
+    // As tall as the tab being viewed (up to 5 rows) — not the longer tab's height (CS-2215).
     headSelector: 'thead', rowSelector: 'tbody tr', tab,
-    rows: Math.min(VISIBLE_ROWS, Math.max(masters.length, manuals.length)),
+    rows: Math.min(VISIBLE_ROWS, shown.length),
   });
 
   // Scroll lock, Esc and focus; a backdrop click does nothing.
@@ -139,7 +140,7 @@ export default function ProductList({ row, onClose }: { row: SourcingTarget; onC
                       <td className="stpl-c-seg"><ClipText text={p.segment && p.segment !== '—' ? p.segment : 'N/A'} className="stpl-segment" /></td>
                       <td className="stpl-c-hsn"><span className="stpl-hsn">{p.hsn && p.hsn !== '—' ? p.hsn : 'N/A'}</span></td>
                     </>}
-                    <td className="stpl-price">{inr(p.targetPrice)}</td>
+                    <td className="stpl-price-cell"><FitTip label={inr(p.targetPrice)}><div className="stpl-price">{inr(p.targetPrice)}</div></FitTip></td>
                     <td><Status done={p.done} /></td>
                   </tr>
                 ))}

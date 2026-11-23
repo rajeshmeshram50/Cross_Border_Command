@@ -24,6 +24,8 @@ import { IcoCal, IcoCheck, IcoEdit, IcoPlus, IcoSearch, IcoUsers, IcoX, Svg } fr
 
 /** Product List rows shown before the list scrolls inside the popup. */
 const PLIST_ROWS = 4;
+/** The highest target price: the supplier price ceiling (SupplierPricing::MAX_PRICE). */
+const MAX_TARGET_PRICE = 9_999_999_999.99;
 
 /* Assign / Edit Sourcing Target popup, built element for element from the Figma (sta-* / stsrc-*
    classes). Data (see the Postman collection "P2P · Sourcing Management Tracker"):
@@ -137,6 +139,8 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
   const [tried, setTried] = useState(false);
   // Field messages the server sent back (422), shown under the field until it changes.
   const [serverErr, setServerErr] = useState<{ due?: string; assignee?: string }>({});
+  /** Product rows (by key) whose target price the server refused — marked until edited. */
+  const [serverPriceKeys, setServerPriceKeys] = useState<Set<string>>(() => new Set());
   const [claKey, setClaKey] = useState<string | null>(null);
   // The product whose Text clarity is being read (the note popup).
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -360,7 +364,19 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
   const days = dueDate ? Math.round((Date.parse(dueDate) - Date.parse(startDate)) / 86400000) : 0;
   const errAssignee = isEdit ? '' : serverErr.assignee || (!assignee ? 'Assign this target to a team member' : '');
   const errNone = list.length === 0;
-  const errPrice = list.some(r => !(Number(r.targetPrice) > 0));
+  /* A target price the server accepts: more than 0, plain digits with up to 2 decimals, at most 64
+     characters (validatePayload). Checked here too, so a bad price (".5", "1.234", 65+ digits) marks
+     its own row instead of coming back only as an "Assign failed" toast. A row the server still
+     refuses is marked from its 422 (products.N.target_price). */
+  /* Also capped at the supplier price ceiling (₹9,99,99,99,999.99, SupplierPricing::MAX_PRICE): a
+     target no supplier quote can reach can't be compared, and 30-digit targets broke every screen
+     that shows the price. */
+  const priceBad = (r: DraftProduct) => {
+    const v = r.targetPrice.trim();
+    return !(Number(v) > 0) || Number(v) > MAX_TARGET_PRICE || v.length > 64
+      || !/^\d+(\.\d{1,2})?$/.test(v) || serverPriceKeys.has(r.key);
+  };
+  const errPrice = list.some(priceBad);
   // Edit lets the creator rename a manual product: it cannot be left empty.
   const errName = list.some(r => r.source === 'Manual Entry' && !r.name.trim());
   const valid = !errDue && !errAssignee && !errNone && !errPrice && !errName;
@@ -397,7 +413,7 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
     if (viewOnly || loadingEdit) return;
     if (!valid || busy.current) {
       // A product price that is missing may be on the other list tab: switch to it.
-      const bad = list.find(r => !(Number(r.targetPrice) > 0) || (r.source === 'Manual Entry' && !r.name.trim()));
+      const bad = list.find(r => priceBad(r) || (r.source === 'Manual Entry' && !r.name.trim()));
       if (!errDue && !errAssignee && bad && bad.source !== listTab) setListTab(bad.source);
       if (!valid) requestAnimationFrame(goToFirstError);
       return;
@@ -426,6 +442,18 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
       } catch (e) {
         const fields = apiFieldErrors(e);
         setServerErr({ due: fields.due_date, assignee: fields.assignee_id });
+        // products.N.target_price → the row sent at index N (the body is the list, in order).
+        const badKeys = new Set(Object.keys(fields)
+          .map(k => /^products\.(\d+)\.target_price$/.exec(k)?.[1])
+          .filter((i): i is string => i !== undefined)
+          .map(i => list[Number(i)]?.key)
+          .filter((k): k is string => !!k));
+        setServerPriceKeys(badKeys);
+        if (badKeys.size) {
+          const first = list.find(r => badKeys.has(r.key));
+          if (first && first.source !== listTab) setListTab(first.source);
+          requestAnimationFrame(goToFirstError);
+        }
         toast.error(isEdit ? 'Update failed' : 'Assign failed', apiErrorMessage(e, 'Please try again.'));
       }
     });
@@ -702,8 +730,12 @@ export default function AssignTargetModal({ initial, onClose, onSaved }: Props) 
                             value={r.name} onChange={e => patch(r.key, { name: e.target.value })} /></span>
                         ) : <ProductName className="stsrc-name" name={r.name} />}
                         {isM && <><span><ClipText text={r.segment} /></span><span className="stsrc-hsn">{r.hsn}</span></>}
-                        <span><input type="text" inputMode="decimal" aria-label={`Target price for ${r.name}`} className={`sta-pl-price${tried && !(Number(r.targetPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
-                          value={r.targetPrice} readOnly={viewOnly} onChange={e => patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') })} /></span>
+                        <span><input type="text" inputMode="decimal" aria-label={`Target price for ${r.name}`} className={`sta-pl-price${tried && priceBad(r) ? ' has-err' : ''}`} placeholder="Required"
+                          title={tried && priceBad(r) ? 'Enter a price more than 0 and up to ₹9,99,99,99,999.99, with at most 2 decimals' : undefined}
+                          value={r.targetPrice} readOnly={viewOnly} onChange={e => {
+                            patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') });
+                            if (serverPriceKeys.has(r.key)) setServerPriceKeys(s => { const n = new Set(s); n.delete(r.key); return n; });
+                          }} /></span>
                         <span>
                           {clarities[r.key] ? (
                             // Chip first (opens it), ✏ after (edits it): what the

@@ -217,9 +217,17 @@
 }
 
 .stmap-ppill--name .stmap-ppill-val,
-.stmap-ppill--seg .stmap-ppill-val {
+.stmap-ppill--seg .stmap-ppill-val,
+.stmap-ppill--price .stmap-ppill-val {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+/* Target Price pill (CS-2308): capped like Product Name, so a very long price ends in "…" (tooltip
+   shows it all) instead of stretching the header strip into a sideways scroll. */
+.stmap-ppill--price {
+    flex: 0 1 auto;
+    min-width: 90px;
+    max-width: 200px;
 }
 
 .stmap-ppill-val.cyan {

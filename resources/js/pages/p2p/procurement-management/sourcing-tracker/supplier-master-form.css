@@ -672,3 +672,13 @@ body:has(.stsm-box) .master-select-item span[style*="max-width: 55%"] {
     max-width: none !important;
     overflow: visible !important;
 }
+
+/* Supplier Name list (CS-2308): one fixed width. The shared list sizes itself to its widest row and
+   adds 10 rows at a time while scrolling, so each longer name or badge that scrolled in widened the
+   whole list and every badge jumped sideways. Fixed, the badges stay in one column on the right and a
+   long name takes the "…". MasterSelect sets the width inline, hence !important; still never wider
+   than the screen, and never narrower than the field (its inline min-width). */
+.master-select-menu.stsm-sup-menu {
+    width: min(600px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+}

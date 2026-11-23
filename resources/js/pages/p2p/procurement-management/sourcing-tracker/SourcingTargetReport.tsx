@@ -81,11 +81,13 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onEd
   const shown = isM ? masters : manuals;
   const sourceType = row.sources.join(' + ');
 
-  // One fixed table height for both tabs (sticky header + up to 5 rows); see useFitRows.
+  // The table is as tall as the tab being viewed: its sticky header + its rows, up to 5, then it
+  // scrolls inside. It used to take the LONGER tab's height for both, so a tab with fewer products
+  // (e.g. 1 manual product beside 5 master ones) showed rows of empty space (CS-2215).
   const scrollRef = useRef<HTMLDivElement>(null);
   const boxH = useFitRows(scrollRef, {
     headSelector: '.str-row--head', rowSelector: '.str-row:not(.str-row--head)', tab,
-    rows: Math.min(VISIBLE_ROWS, Math.max(masters.length, manuals.length)),
+    rows: Math.min(VISIBLE_ROWS, shown.length),
   });
 
   const tiles: { icon: ReactNode; label: string; value: string; cls?: string }[] = [
@@ -169,7 +171,8 @@ export default function SourcingTargetReport({ row, onClose, onMapSupplier, onEd
                   {isM && <span className="c str-code">{p.code}</span>}
                   <ProductName name={p.name} />
                   {isM && <><span className="c"><ClipText text={p.segment} className={`str-seg ${segClass(p.segment)}`} /></span><span className="c str-hsn">{p.hsn}</span></>}
-                  <span className="c str-price">{inr(p.targetPrice)}</span>
+                  {/* One line: a very long price ends in "…" with the full value in the tooltip. */}
+                  <span className="c str-price-cell"><FitTip label={inr(p.targetPrice)}><span className="str-price">{inr(p.targetPrice)}</span></FitTip></span>
                   <span className="c"><ClarityChip clarity={p.clarity} productName={p.name} /></span>
                   <span className="c"><span className={`str-status${p.done ? '' : ' is-pend'}`}><i />{p.done ? 'Completed' : 'Pending'}</span></span>
                   <span className="c">

@@ -232,7 +232,7 @@ export default function SupplierMasterForm({
                 value={sup ? (sup.code ? `${sup.code} · ${sup.name}` : sup.name) : ''} placeholder={pool === null ? 'Loading supplier…' : '—'} />
             ) : (
             <div className={`stsm-ms${bad('sup') ? ' is-err' : ''}`} aria-labelledby="stsm-sup-l">
-              <MasterSelect value={id} options={options} invalid={bad('sup')}
+              <MasterSelect value={id} options={options} invalid={bad('sup')} menuClassName="stsm-sup-menu"
                 placeholder={pool === null ? 'Loading suppliers…' : pool.length ? 'Select Supplier Name' : `No ${intl ? 'International' : 'Domestic'} suppliers in the Supplier Master`}
                 searchable searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code, name'}
                 onChange={c => pickSupplier(c)} />

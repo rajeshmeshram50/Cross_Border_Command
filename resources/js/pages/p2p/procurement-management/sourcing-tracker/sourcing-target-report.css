@@ -393,6 +393,17 @@
 .str-price {
     font-weight: 800;
 }
+/* Target price on one line (CS-2215): a very long value ends in "…" (full value in the tooltip)
+   instead of wrapping into a tall block of digits. */
+.str-price-cell { min-width: 0; }
+.str-price-cell .str-price {
+    display: block;
+    min-width: 0;          /* a flex item: may shrink below its text, so the "…" can show */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 .str-dash {
     color: var(--c-ph);

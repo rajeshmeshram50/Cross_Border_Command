@@ -790,4 +790,18 @@
 .stsv-card-edit-btn + .stsv-card-convert-btn,
 .stsv-card-top .sct-frozen-wrap + .stsv-card-convert-btn { margin-left: 8px; }
 [data-bs-theme="dark"] .stsv-card-edit-btn { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
+
+/* Edit + Convert to Supplier: one group on the card's right edge, 8px apart (CS-2308). Inside it the
+   buttons drop their own auto margins, which only spread them apart. */
+.stsv-card-top .stsv-card-acts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+.stsv-card-acts .stsv-card-edit-btn,
+.stsv-card-acts .stsv-card-convert-btn,
+.stsv-card-acts .sct-frozen-wrap { margin-left: 0; }
+.stsv-card-acts:empty { display: none; }
 [data-bs-theme="dark"] .stsv-card-edit-btn:disabled { color: #64748b; background: rgba(148, 163, 184, .1); border-color: rgba(148, 163, 184, .2); }

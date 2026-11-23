@@ -283,6 +283,10 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       <span className="stsv-card-tag src">{s.source}</span>
                     </div>
                   </div>
+                  {/* Edit + Convert sit together on the right (CS-2308): the Tooltip wraps Edit in its own
+                      element, so Edit's own margin never reached the card edge and Convert was pushed
+                      far away from it. One group, pinned right, 8px apart. */}
+                  <div className="stsv-card-acts">
                   {/* Edit (assignee only): a New Supplier's details and quote; a Supplier Master mapping's
                       quote only, in the Supplier Master form (its details are edited in the Supplier Master). */}
                   {canMap && onEdit && (s.source === 'New Supplier' ? (
@@ -305,6 +309,7 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       Convert to Supplier
                     </button>
                   )}
+                  </div>
                 </div>
                 <div className="stsv-card-contacts">
                   {([['Contact Person', s.contact, 'user'], ['Mobile', s.mobile, 'phone'], ['Email', s.email, 'mail']] as const).map(([lbl, val, ico]) => (

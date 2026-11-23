@@ -239,6 +239,9 @@ export default function SourcingTracker() {
   const [page, setPage] = useState(1);
   // The current page of the current tab, as the server returned it.
   const [pageRows, setPageRows] = useState<SourcingTarget[]>([]);
+  /** The rows on screen, for the fetch effect (read without making it re-run on every change). */
+  const pageRowsRef = useRef<SourcingTarget[]>(pageRows);
+  pageRowsRef.current = pageRows;
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<SubTab, number>>({ all: 0, created: 0, assigned: 0 });
   const [loading, setLoading] = useState(true);
@@ -309,13 +312,21 @@ export default function SourcingTracker() {
   // Only while every row still FITS the new size: shrinking 25 → 10 must ask again, or the 25-row
   // answer stays on screen under a "10 per page" pager.
   const lastServed = useRef<{ key: string; complete: boolean; total: number } | null>(null);
+  /* What the rows on screen were asked for (tab, search, reload and page — NOT the page size). The
+     first answer is followed by an auto-fit of the page size to the screen; that second request used
+     to bring the shimmer back, so the rows appeared, blinked to the skeleton and came back (CS-2215).
+     When only the page size changed and rows are already showing, they stay on screen and are
+     replaced in place when the answer arrives. */
+  const shownFor = useRef<string | null>(null);
   useEffect(() => {
     if (mainTab !== 'targets') return;
     const key = `${sub}|${q}|${reloadKey}`;
     const held = lastServed.current;
     if (page === 1 && held?.key === key && held.complete && pageSize >= held.total) { setLoading(false); return; }
     const seq = ++reqSeq.current;
-    setLoading(true);
+    const view = `${key}|${page}`;
+    const quiet = shownFor.current === view && pageRowsRef.current.length > 0;
+    if (!quiet) setLoading(true);
     setFailed(false);
     // A short wait folds the quick page-size changes of the first layout into one request.
     const t = window.setTimeout(() => {
@@ -328,6 +339,7 @@ export default function SourcingTracker() {
           const list = d?.rows ?? [];
           const all = d?.pagination?.total ?? 0;
           setPageRows(list.map(fromApi));
+          shownFor.current = view;
           setTotal(all);
           setCounts({ all: d?.counts?.all ?? 0, created: d?.counts?.created ?? 0, assigned: d?.counts?.assigned ?? 0 });
           // The server clamps a page past the end (e.g. after the page size grew); follow it.
@@ -338,6 +350,7 @@ export default function SourcingTracker() {
         .catch(() => {
           if (seq !== reqSeq.current) return;
           lastServed.current = null;
+          shownFor.current = null;
           setPageRows([]); setTotal(0); setFailed(true);
         })
         .finally(() => { if (seq === reqSeq.current) setLoading(false); });
