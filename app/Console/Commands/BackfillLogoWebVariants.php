@@ -8,20 +8,6 @@ use App\Services\LogoWebVariantGenerator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Backfill the screen-sized "-w.png" logo variant for every client + branch
- * logo. These are generated at upload time now, so this is for logos uploaded
- * before that — which is all of them, and they are the ones costing the most:
- * the header renders a logo at 52px and the one on live is 9653x3094 / 1.1 MB,
- * which is the page's LCP element at 3.4-3.8 s.
- *
- * Nothing is overwritten. The original is left exactly as it is, because the
- * PDF headers embed it at full resolution.
- *
- *   php artisan logos:backfill-web           # only logos missing a variant
- *   php artisan logos:backfill-web --force   # regenerate all
- *   php artisan logos:backfill-web --dry-run # report what would be written
- */
 class BackfillLogoWebVariants extends Command
 {
     protected $signature = 'logos:backfill-web
@@ -43,11 +29,9 @@ class BackfillLogoWebVariants extends Command
             $rel = $this->relativePath($stored);
             $ext = strtolower(pathinfo($rel, PATHINFO_EXTENSION));
             if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) {
-                return; // svg is already small; nothing to shrink
+                return;
             }
 
-            // The dark variant is generated at full resolution too, so dark
-            // mode pays its own megabyte — both are reported.
             $sources = [$rel];
             $dark = preg_replace('/\.(png|jpe?g|webp)$/i', '-dark.png', $rel);
             if ($dark !== $rel && $disk->exists($dark)) $sources[] = $dark;
@@ -101,8 +85,6 @@ class BackfillLogoWebVariants extends Command
         return self::SUCCESS;
     }
 
-    /** Mirror of the controllers' helper: normalise a stored logo value to a
-     *  path relative to the public disk (strips host + leading "storage/"). */
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
