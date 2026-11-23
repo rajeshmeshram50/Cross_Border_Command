@@ -11,33 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Re-clones a customer's KYC into every "same as customer" consignee
- * attached to that customer. Called from the customer-side Document /
- * Owner controllers whenever an attachment is added, replaced, or
- * removed — so the mirrored consignees stay in lock-step instead of
- * drifting away from their source until the next manual re-clone.
- *
- * Mirrors the logic in ConsigneeController::cloneFromCustomer:
- *   1. Wipe existing consignee_documents + consignee_owners rows
- *      (and their on-disk files).
- *   2. Re-copy every customer_document attachment into
- *      consignee_documents/{consignee_id}/cloned-…
- *   3. Re-copy every customer_owner's three identity proofs into
- *      consignee_documents/{consignee_id}/owner-clone-…
- *
- * Replace semantics: each call produces an exact mirror, so removing
- * an attachment from the customer side cascades to a null attachment
- * on the consignee side automatically.
- */
 class ConsigneeKycMirror
 {
-    /**
-     * Re-sync every same-as-customer consignee linked to this customer.
-     * Silent no-op when no such consignee exists — the customer-side
-     * controllers always call this, but most customers won't have a
-     * mirror.
-     */
     public function resyncForCustomer(Customer $customer, ?int $actingUserId = null): void
     {
         $customer->loadMissing(['documents', 'owners']);
@@ -50,9 +25,6 @@ class ConsigneeKycMirror
 
         if ($mirrors->isEmpty()) return;
 
-        // Isolate each mirror: a failure on one (e.g. a disk hiccup mid-copy)
-        // must not abort the rest or bubble up and fail the customer's KYC
-        // request — as this method's docblock promises.
         foreach ($mirrors as $consignee) {
             try {
                 $this->resyncOne($customer, $consignee, $actingUserId);
@@ -66,21 +38,6 @@ class ConsigneeKycMirror
         }
     }
 
-    /**
-     * Push the customer's ENTIRE profile into every same-as-customer
-     * consignee — every shared core column AND the full address book
-     * (primary + every secondary location) — so editing the customer keeps
-     * the mirrored consignee in complete lock-step.
-     *
-     * Core fields are every column the two models share; the only customer
-     * column with no consignee equivalent is `type`, so it's skipped.
-     * Identity/ownership columns (ids, codes, customer_id, same_as_customer)
-     * are intentionally NOT copied.
-     *
-     * Lightweight vs the KYC resync — it touches columns + address rows
-     * only, never the documents/owners file copies (those have their own
-     * resyncForCustomer), so a profile edit doesn't re-copy every KYC file.
-     */
     public function syncCoreFromCustomer(Customer $customer, ?int $actingUserId = null): void
     {
         $mirrors = Consignee::query()
@@ -92,8 +49,6 @@ class ConsigneeKycMirror
 
         $customer->loadMissing('addresses');
 
-        // Every core field shared with the consignee (customer's `type` is
-        // the only one with no consignee column, so it's left out).
         $core = [
             'company_name'   => $customer->company_name,
             'legal_name'     => $customer->legal_name,
@@ -104,24 +59,17 @@ class ConsigneeKycMirror
             'status'         => $customer->status,
         ];
 
-        // The customer's FULL address book → consignee rows. Strip identity /
-        // ownership / timestamp columns; keep everything else (incl.
-        // `is_primary`) so the primary + secondary split is preserved.
         $addressRows = $customer->addresses->map(fn($a) => collect($a->getAttributes())
             ->except(['id', 'customer_id', 'consignee_id', 'created_at', 'updated_at'])
             ->all())->all();
 
         foreach ($mirrors as $consignee) {
-            // Segments are the union over ALL the consignee's customers (ids + names), never
-            // just this customer's — copying one customer here wiped the rest of the union.
             $custIds = $consignee->customers()->pluck('customers.id')->all() ?: [$customer->id];
             $core['segment']     = \App\Support\SegmentGuard::forCustomers($custIds) ?: null;
             $core['segment_ids'] = \App\Support\SegmentGuard::idsForCustomers($custIds) ?: null;
             DB::transaction(function () use ($consignee, $core, $addressRows) {
                 $consignee->update($core);
 
-                // Replace ALL addresses (primary + secondary) — same
-                // delete-and-recreate strategy the customer update uses.
                 $consignee->addresses()->delete();
                 foreach ($addressRows as $addr) {
                     ConsigneeAddress::create(array_merge($addr, ['consignee_id' => $consignee->id]));
@@ -130,20 +78,10 @@ class ConsigneeKycMirror
         }
     }
 
-    /**
-     * Single-consignee resync — the public method splits per consignee
-     * so each one gets its own transaction. A failure on one mirror
-     * (e.g. disk hiccup mid-copy) doesn't abort the rest.
-     */
     private function resyncOne(Customer $customer, Consignee $consignee, ?int $actingUserId): void
     {
         $disk = Storage::disk('public');
 
-        // Collect the OLD physical files but do NOT delete them yet. The new
-        // copies use fresh random names, so they never collide with these. We
-        // only unlink the originals AFTER the transaction commits — otherwise a
-        // mid-copy failure would roll back the DB rows but leave the evidence
-        // files permanently deleted.
         $oldFiles = [];
         foreach ($consignee->documents as $d) {
             if ($d->attachment_path) $oldFiles[] = $d->attachment_path;
@@ -155,11 +93,9 @@ class ConsigneeKycMirror
         }
 
         DB::transaction(function () use ($customer, $consignee, $actingUserId, $disk) {
-            // ── Wipe existing KYC rows (replace semantics; files unlinked post-commit) ──
             $consignee->documents()->delete();
             $consignee->owners()->delete();
 
-            // ── Documents ─────────────────────────────────────────────
             foreach ($customer->documents as $doc) {
                 $newPath = null;
                 if ($doc->attachment_path && $disk->exists($doc->attachment_path)) {
@@ -182,7 +118,6 @@ class ConsigneeKycMirror
                 ]);
             }
 
-            // ── Owners ────────────────────────────────────────────────
             $fileSlots = ['id_proof_path', 'address_proof_path', 'photograph_path'];
             foreach ($customer->owners as $owner) {
                 $copies = [];
@@ -211,12 +146,10 @@ class ConsigneeKycMirror
             }
         });
 
-        // Commit succeeded — now it's safe to unlink the superseded originals.
-        // (If the transaction had thrown, these files are still intact.)
         foreach ($oldFiles as $old) {
             try {
                 $disk->delete($old);
-            } catch (\Throwable $e) { /* best-effort cleanup */
+            } catch (\Throwable $e) {
             }
         }
     }
