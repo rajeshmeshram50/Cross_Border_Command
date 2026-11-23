@@ -7,39 +7,8 @@ use App\Models\Employee;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
-/**
- * Demo attendance-regularization requests for the HR → Regularization Requests
- * queue and its read-only detail popup (QA).
- *
- * Seeds one row per shape the screen has to render, so every tab, every badge
- * and every branch of the detail modal can be exercised without hand-filing
- * requests through the employee form:
- *
- *   Pending      — level 1 waiting; a second one with level 1 already approved
- *                  (two-level chain, so "· current" shows on level 2)
- *   Approved     — decided directly (approved_by set), decided through the
- *                  chain (approved_by NULL — exercises the name fallback), and
- *                  auto-approved with an EMPTY chain
- *   Rejected     — with an approver comment
- *   Cancelled    — withdrawn by the employee
- *   Edge cases   — an exempt day (no punches at all), a ~1,200-character reason
- *                  (the Reason panel must scroll on its own), a forgotten
- *                  check-out (punch with no `out`), a day with no original
- *                  punches, and multiple work locations
- *
- * Rows are written directly rather than through the controller on purpose: the
- * filing guards (future date, payroll lock, overlap, no-op correction) would
- * reject most of these shapes, and it is the READ path being exercised here.
- *
- *   php artisan db:seed --class=RegularizationDemoSeeder
- *   REG_CLIENT_ID=12 php artisan db:seed --class=RegularizationDemoSeeder
- *
- * Re-runnable: every seeded reason carries a marker and the seeder clears its
- * own previous rows before writing new ones.
- */
 class RegularizationDemoSeeder extends Seeder
 {
-    /** Appended to every seeded reason so a re-run can clean up after itself. */
     private const MARKER = ' [demo]';
 
     public function run(): void
@@ -57,8 +26,6 @@ class RegularizationDemoSeeder extends Seeder
             return;
         }
 
-        // The first employee doubles as the approver in every chain; the rest
-        // raise the requests, so no row is routed back to the person who filed it.
         $approver = $employees->first();
         $staff    = $employees->slice(1)->values();
         $clientId = (int) $approver->client_id;
@@ -76,7 +43,6 @@ class RegularizationDemoSeeder extends Seeder
                 . 'Raising this so the day is not marked as a half day. ', 6);
 
         $rows = [
-            // ── Pending, level 1 waiting ──────────────────────────────────
             [
                 'days'     => 2,
                 'mode'     => 'adjust',
@@ -88,7 +54,6 @@ class RegularizationDemoSeeder extends Seeder
                 'levels'   => [['status' => 'Pending']],
                 'current'  => 1,
             ],
-            // ── Pending at level 2 of a two-level chain ───────────────────
             [
                 'days'     => 3,
                 'mode'     => 'adjust',
@@ -103,7 +68,6 @@ class RegularizationDemoSeeder extends Seeder
                 ],
                 'current'  => 2,
             ],
-            // ── Long reason — the Reason panel must scroll on its own ─────
             [
                 'days'      => 4,
                 'mode'      => 'adjust',
@@ -116,7 +80,6 @@ class RegularizationDemoSeeder extends Seeder
                 'current'   => 1,
                 'locations' => ['Bhiwandi Warehouse', 'Client site — Andheri'],
             ],
-            // ── Approved directly (approved_by set) ───────────────────────
             [
                 'days'     => 6,
                 'mode'     => 'adjust',
@@ -130,8 +93,6 @@ class RegularizationDemoSeeder extends Seeder
                 'decided'  => true,
                 'comment'  => 'Approved — gate register matches.',
             ],
-            // ── Approved through the chain, approved_by NULL ──────────────
-            //    The modal must still name the approver, read from the chain.
             [
                 'days'     => 8,
                 'mode'     => 'adjust',
@@ -143,8 +104,6 @@ class RegularizationDemoSeeder extends Seeder
                 'levels'   => [['status' => 'Approved', 'acted' => 7]],
                 'current'  => 2,
             ],
-            // ── Auto-approved with an EMPTY chain ─────────────────────────
-            //    The modal shows "No approver assigned — auto-approved."
             [
                 'days'     => 9,
                 'mode'     => 'adjust',
@@ -157,7 +116,6 @@ class RegularizationDemoSeeder extends Seeder
                 'current'  => 1,
                 'comment'  => 'Auto-approved — no reporting manager assigned to act',
             ],
-            // ── Exempt day — carries no punches at all ────────────────────
             [
                 'days'      => 11,
                 'mode'      => 'exempt',
@@ -171,7 +129,6 @@ class RegularizationDemoSeeder extends Seeder
                 'decided'   => true,
                 'locations' => ['Nhava Sheva Port Office'],
             ],
-            // ── Forgotten check-out — a punch with an IN and no OUT ───────
             [
                 'days'     => 12,
                 'mode'     => 'adjust',
@@ -185,7 +142,6 @@ class RegularizationDemoSeeder extends Seeder
                 'decided'  => true,
                 'comment'  => 'Rejected — the yard log does not show this visit.',
             ],
-            // ── Rejected, longer approver comment ─────────────────────────
             [
                 'days'     => 14,
                 'mode'     => 'adjust',
@@ -199,7 +155,6 @@ class RegularizationDemoSeeder extends Seeder
                 'decided'  => true,
                 'comment'  => 'A late arrival is not a missed punch — the 11:15 tap stands.',
             ],
-            // ── Cancelled by the employee ─────────────────────────────────
             [
                 'days'     => 16,
                 'mode'     => 'adjust',
@@ -228,8 +183,6 @@ class RegularizationDemoSeeder extends Seeder
                 'work_locations'         => $spec['locations'] ?? [],
                 'punches'                => $spec['punches'],
                 'base_punches'           => $spec['mode'] === 'adjust' ? [] : null,
-                // original_summary is what the queue prints under "Original
-                // punches" and what the modal's "Before" chips are read from.
                 'original_summary'       => $spec['original'],
                 'reason'                 => $spec['reason'] . self::MARKER,
                 'status'                 => $spec['status'],
@@ -251,7 +204,6 @@ class RegularizationDemoSeeder extends Seeder
             . ' — approver: ' . trim($approver->first_name . ' ' . $approver->last_name) . '.');
     }
 
-    /** Build an approval_chain in the same shape snapshotApprovalChain() writes. */
     private function chain(array $levels, Employee $approver): array
     {
         $out = [];
