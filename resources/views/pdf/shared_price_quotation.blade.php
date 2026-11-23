@@ -8,7 +8,6 @@
     $b = $buyerDetails;
     $logo = $c->logo_data ?? null;
 
-    // Grand total spelled out (Indian numbering; falls back when ext-intl is absent).
     $__grand = (float) ($quotation->grand_total ?? 0);
     $__whole = (int) floor($__grand);
     $__frac = (int) round(($__grand - $__whole) * 100);
@@ -58,7 +57,6 @@
     }
     $amountInWords = $__ww . ($__fw !== '' ? ' and ' . $__fw . ' Paise' : '');
 
-    // Small barcode for the footer band.
     $footerBar = '';
     try {
         $footerBar = (new \Milon\Barcode\DNS1D())->getBarcodeHTML((string) ($quotation->pi_number ?? ''), 'C128', 0.7, 18);
@@ -202,9 +200,6 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 8px;
-            /* Fixed layout: columns keep the widths declared on the header cells
-               regardless of content, so a very large amount wraps inside its own
-               cell instead of stretching the column and breaking the row. */
             table-layout: fixed;
         }
 
@@ -236,7 +231,6 @@
             padding: 10px 8px;
             text-align: right;
             vertical-align: top;
-            /* Break inside a very long value so it never overflows its fixed cell. */
             word-wrap: break-word;
             overflow-wrap: break-word;
         }
@@ -328,10 +322,8 @@
 </head>
 
 <body>
-    <!-- ── HEADER (mirrors the Proforma-Invoice layout) ── -->
     <table style="width:100%; border-collapse:collapse;">
         <tr>
-            <!-- LEFT: logo + issuer letterhead (narrow column so the address wraps) -->
             <td style="width:40%; vertical-align:top;">
                 <div style="height:78px;">
                     @if ($logo)
@@ -356,16 +348,11 @@
                 </div>
             </td>
 
-            <!-- MIDDLE: blank spacer -->
             <td style="width:14%;"></td>
 
-            <!-- RIGHT: title + Opp Id/Date (left) with barcode (right); customer below
-                 sits inside the SAME 78px band as the left logo, so both letterheads
-                 (issuer + customer) start on the same row. -->
             <td style="width:42%; vertical-align:top; text-align:left;">
                 <div style="height:78px;">
                     <table style="width:100%; border-collapse:collapse;">
-                        {{-- Row 1: QUOTATION heading (spans both columns, left) --}}
                         <tr>
                             <td colspan="2" style="text-align:left;">
                                 <div class="doc-title" style="text-align:left; margin-bottom:6px;">
@@ -373,7 +360,6 @@
                                 </div>
                             </td>
                         </tr>
-                        {{-- Row 2: Opp Id/Opp Date (left) | barcode fills the right cell --}}
                         <tr>
                             <td
                                 style="vertical-align:middle; text-align:left; font-size:9px; line-height:14px; width:38%; white-space:nowrap;">
@@ -390,8 +376,6 @@
                     </table>
                 </div>
 
-                {{-- Customer letterhead — same field order/spacing as the issuer on the left:
-                name → address → region → phone → email → GST No. --}}
                 <div style="margin-top:10px; font-size:9px; line-height:14px; text-align:left;">
                     <strong
                         style="display:block; font-size:10px; color:#555; margin-bottom:5px;">{{ $b->name ?? '—' }}</strong>
@@ -412,7 +396,6 @@
 
     <div class="rule" style="margin:34px 0 18px;"></div>
 
-    <!-- ── PRODUCT TABLE ── -->
     <table class="prod">
         <thead>
             <tr>
@@ -434,10 +417,6 @@
                     <td class="l"><span class="pname">{{ $row['product_name'] }}</span></td>
                     <td class="c">{{ rtrim(rtrim(number_format((float) $row['quantity'], 3, '.', ','), '0'), '.') }}</td>
                     <td>{{ number_format((float) $row['rate'], 2) }}</td>
-                    {{-- Tax% is the product's mapped GST slab on a RUPEE quote, and
-                    0% when the product directory row is priced in a foreign
-                    currency (export — zero rated). Resolved in
-                    SalesPdfController::sharedPricePdf. --}}
                     <td class="c">{{ number_format((float) ($row['tax_pct'] ?? 0), 2) }}%</td>
                     <td>{{ number_format((float) ($row['tax_amount'] ?? 0), 2) }}</td>
                     <td>{{ number_format((float) $row['amount'], 2) }}</td>
@@ -446,10 +425,8 @@
         </tbody>
     </table>
 
-    {{-- Colored rule after the product table (matches the PI's post-table line). --}}
     <div class="rule" style="margin:14px 0;"></div>
 
-    <!-- ── TOTALS (mirrors the PI totals: labels #555, plain values, Grand Total emphasized) ── -->
     <table style="width:100%; border-collapse:collapse;">
         <tr>
             <td></td>
@@ -460,9 +437,6 @@
                         <td style="text-align:right; padding:3px 0;"><strong
                                 style="color:#555;">{{ number_format((float) $quotation->total, 2) }}</strong></td>
                     </tr>
-                    {{-- One consolidated Tax Amount instead of the IGST / CGST /
-                    SGST split: the place-of-supply breakdown isn't meaningful on a
-                    price-share, and a foreign-currency line is zero rated. --}}
                     <tr>
                         <td style="padding:3px 0; color:#555;">Tax Amount</td>
                         <td style="text-align:right; padding:3px 0;">
@@ -484,8 +458,6 @@
         </tr>
     </table>
 
-    {{-- ── AMOUNT IN WORDS ── (primary-colour bar; a full-width table so its right
-    edge lines up exactly with the product table / totals, not overflowing). --}}
     <table style="width:100%; border-collapse:collapse; margin-top:14px;">
         <tr>
             <td
@@ -496,7 +468,6 @@
         </tr>
     </table>
 
-    {{-- ── FOOTER: barcode (left) + issuer name (center), pinned to the page bottom ── --}}
     <div class="pdf-footer">
         <table style="width:100%; border-collapse:collapse;">
             <tr>
