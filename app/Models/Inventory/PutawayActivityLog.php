@@ -7,25 +7,12 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Inventory · everything that was done to a put-away, in the order it happened.
- *
- * The scan log knows about scans and nothing else, but a placement is final —
- * the shelf is locked and the location cannot be changed — and a record that
- * cannot be undone has to be able to say how it came about. A location
- * assigned, Change pressed, a task raised then cancelled, a manual
- * confirmation taken on somebody's word: none of those is a scan.
- *
- * APPEND ONLY. No updated_at, no soft delete, no update() anywhere. A log you
- * can edit answers nothing it is asked; corrections are new rows.
- */
 class PutawayActivityLog extends Model
 {
     use BelongsToTenant;
 
     protected $table = 'inventory_putaway_activity_logs';
 
-    /** Only created_at exists — there is nothing to update. */
     public const UPDATED_AT = null;
 
     public const ASSIGNED          = 'assigned';
