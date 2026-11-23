@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, PER_PAGE, paginate, clmFillHeight } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, SimpleDescModal, TruncCell } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -141,7 +141,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -188,7 +188,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
 
       <div className="clm-tab-body has-data">
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <table className="clm-table">
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 120, textAlign: 'center' }}>TYPE ID</th>
@@ -223,7 +223,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bAgr}</div>
@@ -295,7 +295,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -422,7 +422,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
 
       <div className="clm-tab-body has-data">
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <table className="clm-table" style={{ minWidth: 960 }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ minWidth: 960 }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 100, textAlign: 'center' }}>AGR. ID</th>
@@ -564,7 +564,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bAgr}</div>

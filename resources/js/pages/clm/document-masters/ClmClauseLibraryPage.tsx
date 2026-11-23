@@ -212,7 +212,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 {/* Shares, not pixels — the Segment Master pattern. With three
                     pixel-width columns and one free one, the name column
@@ -283,7 +283,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bCl}</div>
@@ -384,7 +384,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>CLAUSE ID</th>
@@ -420,7 +420,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bCl}</div>

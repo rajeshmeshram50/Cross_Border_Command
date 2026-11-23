@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, loadFailed, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, loadFailed, PER_PAGE, paginate, clmFillHeight } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead as SubHead, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, TruncCell } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
@@ -171,7 +171,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -214,7 +214,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
               lesser fault — and it is inherent, since the auto-fit sizes the
               page to the viewport and a two-record table cannot fill it. */}
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <table className="clm-table">
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 130, textAlign: 'center' }}>CATEGORY ID</th>
@@ -234,7 +234,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTnc}</div>
@@ -303,7 +303,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -368,7 +368,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
             above the pager shows most; the alternative, a card ending halfway
             up the screen, looked worse. */}
         <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-          <table className="clm-table">
+          <div className="clm-tscroll"><table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
               {/* 170, not 130: the column was sized for "T&C ID" and the
@@ -411,7 +411,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
           {isEmpty && (
             <div className="clm-empty" style={{ flex: 1 }}>
               <div className="clm-empty-ico">{ICO.bTnc}</div>
@@ -483,7 +483,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -549,7 +549,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
           {/* Stretched, as the sibling panes are — see the note on the
               Document Category pane. */}
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <table className="clm-table">
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 170, textAlign: 'center' }}>Terms and Conditions ID</th>
@@ -626,7 +626,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTnc}</div>
