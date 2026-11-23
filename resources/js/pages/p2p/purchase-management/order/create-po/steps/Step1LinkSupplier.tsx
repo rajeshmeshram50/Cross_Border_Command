@@ -26,6 +26,7 @@ import { formatDmy } from '../../../../../../utils/formatDmy';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useAuth } from '../../../../../../contexts/AuthContext';
 import type { SupplierDetail } from '../../api/po-api';
+import { squash as squashType } from '../../../../p2p-master-management/supplier-management/serviceMapping';
 import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPencil, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
 
 // Fixed choices with no master behind them; saved as the chosen text.
@@ -138,7 +139,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
         type,
         blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist'),
         // The supplier already on the PO stays pickable even if the PO type was changed after.
-        wrongType: s.id !== draft.vendorId && type.toLowerCase() !== needType.toLowerCase(),
+        // Spacing-insensitive: the master may hold "Material/ Goods" against the PO's "Material / Goods".
+        wrongType: s.id !== draft.vendorId && squashType(type) !== squashType(needType),
       };
     }),
   // eslint-disable-next-line react-hooks/exhaustive-deps

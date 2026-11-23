@@ -1334,6 +1334,16 @@ class VendorController extends Controller
             ], 422);
         }
 
+        // CS-2327: a product with no GST mapped (gst_id null, shown as 0%) cannot
+        // be mapped to a supplier — set its GST rate on the product first.
+        $noGst = \App\Models\Product::whereIn('id', $productIds)->whereNull('gst_id')->pluck('name', 'id');
+        if ($noGst->isNotEmpty()) {
+            return response()->json([
+                'message' => 'These products have no GST rate and cannot be mapped to a supplier — set a GST on the product first: '.$noGst->values()->implode(', ').'.',
+                'errors'  => ['mappings' => ['One or more products have no GST rate mapped.']],
+            ], 422);
+        }
+
         DB::transaction(function () use ($vendor, $data, $user) {
             $userId = $user?->id;
 
