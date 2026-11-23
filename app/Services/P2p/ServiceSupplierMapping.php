@@ -11,19 +11,8 @@ use App\Support\SupplierPricing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 
-/**
- * One service ↔ supplier mapping (a p2p_service_suppliers row), seen from
- * either end.
- *
- * Service Management maps suppliers to a service (ServiceController); the
- * Supplier Master maps services to a supplier (VendorController). Both write
- * the SAME row, so the rules that decide what a row may hold live here once:
- * visibility, edit rights, origin vs country, supplier type vs service type,
- * pricing through SupplierPricing, and moving a draft service to active.
- */
 class ServiceSupplierMapping
 {
-    /** Relations a supplier card needs (origin, state, currency, type bucket). */
     public const VENDOR_WITH = [
         'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
         'primaryAddress.state:id,name',
@@ -31,7 +20,6 @@ class ServiceSupplierMapping
         'vendorType:id,name,kind,service_type,classification',
     ];
 
-    /** Supplier type name => [service_type, classification] — the fallback. */
     public const VENDOR_TYPE_BY_NAME = [
         'soft service provider' => ['soft_digital', null],
         'trackable services'    => ['self_consumable', 'trackable'],
@@ -43,9 +31,6 @@ class ServiceSupplierMapping
         'outsourcing services'  => ['other_operational', 'outsourcing'],
     ];
 
-    /* ── Visibility and edit rights ─────────────────────────────────── */
-
-    /** Services the user may see — the same scope ServiceController::scoped() applies. */
     public function services($user, ?int $branchFilter = null, bool $withTrashed = false): Builder
     {
         $query = $withTrashed ? Service::withTrashed() : Service::query();
@@ -61,7 +46,6 @@ class ServiceSupplierMapping
         return $query;
     }
 
-    /** Null when the user may edit the service, else the reason. */
     public function serviceEditDenial($user, Service $service, string $action = 'edit'): ?string
     {
         if ($user && ($user->user_type ?? null) === 'employee'
@@ -73,15 +57,6 @@ class ServiceSupplierMapping
         return MasterVisibility::hierarchicalDenial($user, $service, $action);
     }
 
-    /* ── Supplier type vs service type ───────────────────────────────── */
-
-    /**
-     * The service bucket a supplier type serves, as [service_type, classification].
-     *
-     * Reads the stored columns first. The name map is a FALLBACK for rows that
-     * predate the fixed vocabulary or were find-or-created by name from the Add
-     * Supplier form — those carry no service_type.
-     */
     public function vendorServiceType($type): array
     {
         if (! $type) {
@@ -94,12 +69,6 @@ class ServiceSupplierMapping
         return self::VENDOR_TYPE_BY_NAME[mb_strtolower(trim((string) $type->name))] ?? [null, null];
     }
 
-    /**
-     * Refuses a supplier whose type does not serve this service's bucket.
-     * A Material / Goods or FFD / Transporter supplier serves no service; a
-     * service supplier must match the service type AND classification
-     * (Soft / Digital has no classification on either side).
-     */
     public function assertServes(Vendor $vendor, Service $service, string $field = 'service_id'): void
     {
         $vendor->loadMissing('vendorType:id,name,kind,service_type,classification');
@@ -122,8 +91,6 @@ class ServiceSupplierMapping
         throw ValidationException::withMessages([$field => [$message]]);
     }
 
-    /* ── Supplier card and pricing ───────────────────────────────────── */
-
     public function vendorCard(Vendor $v): array
     {
         $addr = $v->primaryAddress;
@@ -136,8 +103,6 @@ class ServiceSupplierMapping
             'company_name' => $v->company_name,
             'status' => $v->status,
             'supplier_type' => $v->vendorType?->name,
-            // Which service bucket this supplier serves, so the map-supplier
-            // dropdown can offer only the ones that match the service.
             'supplier_service_type' => $st,
             'supplier_classification' => $cls,
             'origin' => SupplierPricing::originOf($country),
@@ -151,13 +116,6 @@ class ServiceSupplierMapping
         ];
     }
 
-    /**
-     * The p2p_service_suppliers price columns for one mapping.
-     *
-     * $in: vendor_id, origin?, price, gst_id?, currency?, exchange_rate?.
-     * Origin must match the supplier's country; Domestic takes the service's
-     * GST; International carries no GST and stores inr_amount = price × rate.
-     */
     public function priceFields($user, array $in, Service $service, string $prefix = ''): array
     {
         $vendor = Vendor::query()->with(self::VENDOR_WITH)->find($in['vendor_id']);
@@ -205,7 +163,6 @@ class ServiceSupplierMapping
         return $amounts;
     }
 
-    /** The stored domestic columns. The intra / inter split is not stored (no columns for it). */
     public function domesticAmounts(float $price, Service $service): array
     {
         return array_intersect_key(
@@ -214,11 +171,6 @@ class ServiceSupplierMapping
         ) + ['gst_id' => $service->gst_id];
     }
 
-    /**
-     * The CGST + SGST / IGST split of a stored domestic row, worked out from
-     * the supplier's state against the tenant's home state. Derived on read:
-     * p2p_service_suppliers has no columns for it.
-     */
     public function gstSplit(ServiceSupplier $m, ?array $card, $user): array
     {
         if (($m->origin ?: SupplierPricing::DOMESTIC) === SupplierPricing::INTERNATIONAL) {
@@ -237,13 +189,6 @@ class ServiceSupplierMapping
         ];
     }
 
-    /* ── Writing a mapping ───────────────────────────────────────────── */
-
-    /**
-     * Creates the mapping or revives the (service, vendor) row that already
-     * exists — the table holds one row per pair (unique index), so an unmapped
-     * supplier comes back on its old row, never a second one.
-     */
     public function upsert(Service $service, int $vendorId, array $fields, ?int $userId): ServiceSupplier
     {
         $map = ServiceSupplier::firstOrNew(['service_id' => $service->id, 'vendor_id' => $vendorId]);
@@ -255,7 +200,6 @@ class ServiceSupplierMapping
         return $map;
     }
 
-    /** A service with an active supplier has finished Stage 2; a draft becomes active. */
     public function completeStageTwo(Service $service, ?int $userId): void
     {
         if ((int) $service->step_completed >= 2 && $service->status !== 'draft') {
