@@ -568,12 +568,8 @@ function DashboardRoutes({ user }: { user: any }) {
   );
 }
 
-/* A CLM master opened from the Master Control Center: .clm-mc turns on the
-   Master list behaviour (rows scroll inside the table, Master header insets).
-   display: contents, so the page's own layout is untouched. The CLM menu
-   routes (/clm/...) render the same page without it. */
 function ClmInMaster({ children }: { children: React.ReactNode }) {
-  return <div className="clm-mc" style={{ display: 'contents' }}>{children}</div>;
+  return <div className="clm-mc mp-inv" style={{ display: 'contents' }}>{children}</div>;
 }
 
 function DashboardRoutesInner({ user }: { user: any }) {

@@ -138,6 +138,17 @@ export function ClmBrefBox({ label, sub, steps, icon, defaultCollapsed = true }:
 export function ClmSubHead({ title, sub, count }: { title: string; sub: string; count: number }) {
   return (
     <div className="clm-total">
+      {/* From the Master Control Center (.clm-mc) the heading is the Master
+          list's single "All …" tab instead; CSS shows one or the other. */}
+      <div className="clm-mtab" role="tablist" aria-label={title}>
+        <span className="clm-mtab-btn" role="tab" aria-selected>
+          <span className="clm-mtab-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="2" width="16" height="20" rx="1.5" /><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="14" x2="20" y2="14" /></svg>
+          </span>
+          All {title}
+          <span className="clm-mtab-c">{count}</span>
+        </span>
+      </div>
       <div className="clm-subhead-text">
         <div className="clm-subhead-title">
           {title}

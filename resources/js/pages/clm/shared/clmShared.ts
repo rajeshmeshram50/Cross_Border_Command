@@ -1384,7 +1384,7 @@ body > .dropdown-menu.master-select-menu,
 
 /* Modal footer */
 .clm-modal-foot {
-  background: #fff;
+  background: #f0f9ff; /* the colour the body's wash ends on, so body and footer meet without a band */
   border-top: 1px solid rgba(6,182,212,.15);
   /* 10 on every side, matching the head and the body. */
   padding: 10px;
@@ -1910,7 +1910,9 @@ body > .dropdown-menu.master-select-menu,
   color: #fff; border-color: transparent;
 }
 [data-bs-theme="dark"] .clm-modal { background: #0f172a; }
-[data-bs-theme="dark"] .clm-modal-body { background: linear-gradient(160deg, rgba(8,145,178,.10), rgba(8,145,178,.05) 50%, #0f172a 100%); }
+/* Flat, the footer's own colour: the teal wash that faded down the body
+   left it a shade lighter than the footer, so the two read as separate bands. */
+[data-bs-theme="dark"] .clm-modal-body { background: #0f172a; }
 [data-bs-theme="dark"] .clm-modal-foot { background: #0f172a; border-top-color: rgba(6,182,212,.18); }
 /* Use background-color (not shorthand) so we don't reset the
    chevron background-image + no-repeat set in the base rule.
@@ -2162,6 +2164,217 @@ body > .dropdown-menu.master-select-menu,
   .clm-modal-head-ico { width: 38px; height: 38px; }
   .clm-modal-body { padding: 12px 14px; }
   .clm-modal-foot { padding: 10px 14px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * MASTER CONTROL CENTER SKIN
+ * A CLM master opened from the Master Control Center (/master/..., wrapped in
+ * .clm-mc) wears the Master list's UI: the P2P page header and Add button,
+ * an "All …" tab pill with the count, the wide tinted search, the Master
+ * table card, rows and the solid teal row buttons. The CLM menu (/clm/...)
+ * renders the same pages without .clm-mc and keeps CLM's own look.
+ * Values are the Master list's own (p2p-common.css .spi-*, order.css
+ * .ord-list, warehouse-master.css .whm-page, master.css .mp-inv).
+ * ══════════════════════════════════════════════════════════════════════════ */
+.clm-mc .clm-root { font-family: 'DM Sans', system-ui, sans-serif; }
+
+/* Header */
+.clm-mc .clm-head-strip {
+  border: 1px solid #9ce1ee; border-radius: 16px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(6, 182, 212, .2), 0 2px 8px rgba(0, 0, 0, .06);
+}
+.clm-mc .clm-head-strip::before { width: 5px; z-index: 10; border-radius: 16px 0 0 16px; background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); }
+.clm-mc .clm-head-strip::after {
+  inset: 0; height: auto;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, transparent 50%), radial-gradient(ellipse at 10% 50%, rgba(103, 232, 249, .45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .28) 0%, transparent 55%);
+}
+.clm-mc .clm-head-strip-title { font-weight: 800; color: #0c4a6e; }
+.clm-mc .clm-add-btn {
+  height: 40px; padding: 0 20px; border-radius: 12px;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  box-shadow: 0 4px 16px rgba(8, 145, 178, .5), 0 1px 3px rgba(14, 116, 144, .3), inset 0 1px 0 rgba(255, 255, 255, .2);
+  transition: transform .14s, box-shadow .14s;
+}
+.clm-mc .clm-add-btn::before { display: none; }
+.clm-mc .clm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .2); }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip {
+  border-color: rgba(34, 211, 238, .22);
+  background: linear-gradient(110deg, #0c2630 0%, #0e2e3a 40%, #103642 70%, #0c2c38 100%);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(34, 211, 238, .14);
+}
+[data-bs-theme="dark"] .clm-mc .clm-head-strip::after { background-image: radial-gradient(ellipse at 10% 50%, rgba(34, 211, 238, .18) 0%, transparent 55%), radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .12) 0%, transparent 55%); }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip-sub { color: #7dd3fc; }
+
+/* Card */
+.clm-mc .clm-page-card { border: 1px solid #d6eef5; border-radius: 16px; box-shadow: 0 4px 16px rgba(6, 182, 212, .06); }
+[data-bs-theme="dark"] .clm-mc .clm-page-card { background: #0e1b24; border-color: rgba(34, 211, 238, .18); box-shadow: 0 6px 22px rgba(0, 0, 0, .4); }
+
+/* Toolbar: the tab pill on the left, the search after it, actions last */
+.clm-mc .clm-tabs-bar,
+.clm-mc .clm-tabs-bar:has(.clm-total) {
+  gap: 14px; padding: 14px;
+  background: transparent;
+  border-bottom: 1px solid #eef5f8;
+}
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-tabs-bar, .clm-mc .clm-tabs-bar:has(.clm-total) { gap: 10px; padding: 10px 12px; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-tabs-bar, [data-bs-theme="dark"] .clm-mc .clm-tabs-bar:has(.clm-total) { background: transparent; border-bottom-color: rgba(148, 163, 184, .14); }
+
+/* The toolbar heading becomes the Master list's single "All …" tab */
+.clm-mtab { display: none; }
+.clm-mc .clm-total { padding-left: 0; min-height: 0; }
+.clm-mc .clm-total > .clm-subhead-text { display: none; }
+.clm-mc .clm-mtab {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 4px; border-radius: 14px;
+  border: 1px solid #d4f3f9;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+}
+.clm-mc .clm-mtab-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 42px; padding: 0 12px; border-radius: 11px;
+  font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
+  color: #fff;
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+  text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
+}
+.clm-mc .clm-mtab-ico {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px;
+  background: rgba(255, 255, 255, .24); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
+}
+.clm-mc .clm-mtab-ico svg { width: 13px; height: 13px; }
+.clm-mc .clm-mtab-c {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; margin-left: 1px; padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, .75); border-radius: 20px;
+  background: rgba(255, 255, 255, .9);
+  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0b5563;
+  font-variant-numeric: tabular-nums; text-shadow: none;
+}
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-mtab-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+}
+@media (min-width: 769px) and (max-width: 1280px) {
+  .clm-mc .clm-mtab-btn { padding: 0 8px; font-size: 11px; }
+  .clm-mc .clm-mtab-ico { display: none; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-mtab { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+
+/* Search: the Master list's wide tinted field */
+.clm-mc .clm-root .clm-tabs-bar .clm-search {
+  flex: 1 1 460px; width: auto; min-width: 260px; max-width: 594px;
+  height: 52px; margin-left: auto; padding: 0 16px;
+  border: 1.5px solid #d4f3f9; border-radius: 14px;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+  box-shadow: none;
+}
+.clm-mc .clm-root .clm-tabs-bar .clm-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .12); }
+.clm-mc .clm-root .clm-tabs-bar .clm-search > svg { stroke: #7ba6b8; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search input { font-size: 13px; font-weight: 600; color: #0c4a6e; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search input::placeholder { color: #9fb7c2; font-weight: 500; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex-basis: 400px; height: 46px; }
+}
+@media (min-width: 769px) and (max-width: 1280px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex-basis: 280px; min-width: 200px; }
+}
+@media (max-width: 768px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex: 1 1 100%; max-width: 100%; margin-left: 0; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search > svg { stroke: #5f8ea1; }
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search input { color: #e2e8f0; }
+
+/* Table: the Master list's head, rows and spacing */
+.clm-mc .clm-table-wrap, .clm-mc .clm-tab-body { background: #fff; }
+.clm-mc .clm-table thead th {
+  padding: 11px 12px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em; color: #0e7490;
+  background: linear-gradient(180deg, #f0fdff, #e3f7fb);
+  border-bottom: 1px solid #c9ebf2; box-shadow: none;
+}
+.clm-mc .clm-table tbody tr { background: #fff; border-bottom: 0; }
+.clm-mc .clm-table tbody tr:nth-child(even) { background: #fbfeff; }
+.clm-mc .clm-table tbody tr:hover { background: #f0fbfd; box-shadow: none; }
+.clm-mc .clm-table tbody td { padding: 12px; font-size: 11.5px; color: #1e293b; border-bottom: 1px solid #eef5f8; }
+.clm-mc .clm-table tbody tr:last-child td { border-bottom: 0; }
+.clm-mc .clm-table thead th:last-child, .clm-mc .clm-table tbody td:last-child { padding-right: 18px; }
+.clm-mc .clm-td-num { color: #0e7490; font-weight: 800; }
+[data-bs-theme="dark"] .clm-mc .clm-table-wrap, [data-bs-theme="dark"] .clm-mc .clm-tab-body { background: transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-table thead th { color: #67e8f9; font-weight: 800; background: linear-gradient(180deg, #102a34, #0f222c); border-bottom: 1px solid rgba(34, 211, 238, .2); box-shadow: none; }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr { background: transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr:nth-child(even) { background: rgba(148, 163, 184, .04); }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr:hover { background: rgba(34, 211, 238, .07); }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody td { color: #cbd5e1; border-bottom-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .clm-mc .clm-td-num { color: #67e8f9; }
+
+/* Row buttons: the Master list's solid teal squares, delete included */
+.clm-mc .clm-actions { gap: 8px; }
+.clm-mc .clm-act.clm-act {
+  width: 32px; height: 32px; border: 0; border-radius: 10px; color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 6px 12px -6px rgba(8, 145, 178, .75), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+.clm-mc .clm-act.clm-act:hover:not(:disabled) { background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63); transform: translateY(-1px); }
+.clm-mc .clm-act.clm-act svg { stroke: currentColor; }
+.clm-mc .clm-act.clm-act:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+[data-bs-theme="dark"] .clm-mc .clm-act.clm-act { color: #fff; }
+
+/* Tab rails (Segments' All / Highly / Less Regulated): the Master list's tabs */
+.clm-mc .clm-tabrail {
+  gap: 4px; padding: 4px; border-radius: 14px;
+  border: 1px solid #d4f3f9;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+  box-shadow: none;
+}
+.clm-mc .clm-tabrail .clm-tab {
+  height: 42px; gap: 7px; padding: 0 12px; border: 0; border-radius: 11px;
+  font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
+  color: #0e7490; background: transparent; box-shadow: none;
+}
+.clm-mc .clm-tabrail .clm-tab:not(.active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
+.clm-mc .clm-tabrail .clm-tab.active {
+  color: #fff;
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+  text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
+}
+.clm-mc .clm-tabrail .clm-tab .clm-tab-count {
+  min-width: 18px; height: auto; margin-left: 1px; padding: 2px 7px;
+  border: 1px solid #c2ecf3; border-radius: 20px; background: #e0f7fb;
+  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0e7490;
+}
+.clm-mc .clm-tabrail .clm-tab.active .clm-tab-count { border-color: rgba(255, 255, 255, .75); background: rgba(255, 255, 255, .9); color: #0b5563; text-shadow: none; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-tabrail { gap: 2px; }
+  .clm-mc .clm-tabrail .clm-tab { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-tabrail { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab:not(.active):hover { color: #a5f3fc; background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab.active { color: #fff; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab .clm-tab-count { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab.active .clm-tab-count { border-color: rgba(255, 255, 255, .6); background: rgba(255, 255, 255, .9); color: #0b5563; }
+
+/* One toolbar height, at every width: the tab rail, the search and every
+   toolbar button are 48px -- a 40px tab inside 3px of rail padding and a 1px
+   border. The Master list's own 42/38px tabs and 52/46px search made the rail,
+   the field and the buttons three different heights side by side. */
+.clm-mc .clm-mtab, .clm-mc .clm-tabrail { padding: 3px; }
+.clm-mc .clm-mtab-btn, .clm-mc .clm-tabrail .clm-tab { height: 40px; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search { height: 48px; }
+.clm-mc .clm-root .clm-tabs-bar :is(.auth-xl-btn, .clm-ie-btn, .clm-add-btn, .tdl-dl-btn) { height: 48px; box-sizing: border-box; }
+.clm-mc .clm-root .clm-tabs-bar .clm-filter-ms .master-select-toggle { height: 48px; min-height: 48px; box-sizing: border-box; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-mtab-btn, .clm-mc .clm-tabrail .clm-tab { height: 40px; }
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { height: 48px; }
 }
 `;
 
