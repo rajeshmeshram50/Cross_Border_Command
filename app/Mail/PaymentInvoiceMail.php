@@ -35,9 +35,6 @@ class PaymentInvoiceMail extends Mailable
         );
     }
 
-    /**
-     * @return array<int, Attachment>
-     */
     public function attachments(): array
     {
         $invoicePath = storage_path("app/invoices/{$this->payment->invoice_number}.pdf");
