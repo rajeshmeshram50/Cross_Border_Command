@@ -181,9 +181,6 @@ class SourcingController extends Controller
         $rows = $rows->map(fn ($t) => $this->row($t) + ['_names' => $t->products->pluck('name')->implode(' ')]);
 
         if ($q = mb_strtolower(trim((string) $request->query('q', '')))) {
-            // CS-2213: the Sourcing TAT is searchable in the format the list shows (18/11/2026) as well
-            // as the stored one (2026-11-18). Only the TAT: a start date matching would list targets
-            // whose TAT is another day.
             $dates = fn (string $ymd) => $ymd === '' ? '' : $ymd.' '.Carbon::parse($ymd)->format('d/m/Y');
             $rows = $rows->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
                 $r['id'], $r['source'], implode(' ', $r['sources']), $r['createdBy'], $r['assignee'],
@@ -252,7 +249,6 @@ class SourcingController extends Controller
         $eligibleUserIds = $eligibleEmployees->pluck('user_id');
         $designationByUser = $eligibleEmployees
             ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->designation->name ?? null)]);
-        // EMP-001 for the picker — two people can share a name, the code can't.
         $codeByUser = $eligibleEmployees
             ->mapWithKeys(fn ($e) => [(int) $e->user_id => ($e->emp_code ?: null)]);
 
@@ -403,10 +399,6 @@ class SourcingController extends Controller
         if (! $this->assigneeAllowed($user->client_id, $data['assignee_id'] ?? null)) {
             throw ValidationException::withMessages(['assignee_id' => ['Pick an active team member of your company to assign this sourcing target.']]);
         }
-        /* A sourcing target is work handed to someone else, so its creator may
-           not be its assignee. The picker disables the creator's own row; this
-           is the same refusal for a stale tab or a direct call. Create only —
-           an existing target keeps the assignee it was saved with. */
         if ((int) ($data['assignee_id'] ?? 0) === (int) $user->id) {
             throw ValidationException::withMessages([
                 'assignee_id' => ['You are creating this sourcing target, so it has to be assigned to another team member.'],
@@ -774,7 +766,6 @@ class SourcingController extends Controller
         return $this->ok($grouped);
     }
 
-    /** Who maps suppliers to a target: its creator, its assignee, or a super admin. */
     private function canMapSuppliers($t, $user): bool
     {
         return (int) $t->assignee_id === (int) $user->id
@@ -787,7 +778,6 @@ class SourcingController extends Controller
         $user = $request->user();
         $t = $this->target($request, $target);
 
-        // The creator and the assignee both map suppliers (the creator also edits the target).
         if (! $this->canMapSuppliers($t, $user)) {
             return response()->json([
                 'status' => false,
@@ -943,7 +933,6 @@ class SourcingController extends Controller
         $user = $request->user();
         $t = $this->target($request, $target);
 
-        // The creator and the assignee both map suppliers (the creator also edits the target).
         if (! $this->canMapSuppliers($t, $user)) {
             return response()->json([
                 'status' => false,
@@ -1098,10 +1087,6 @@ class SourcingController extends Controller
         ];
     }
 
-    // PATCH /p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}/price
-    // Re-quote a mapped supplier (Supplier Master or New Supplier): unit price,
-    // GST % / GST type (domestic), currency / exchange rate (international) and
-    // price valid till. The origin stays as mapped. Creator or assignee, like mapping.
     public function updateSupplierPrice(Request $request, string $target, int $product, int $supplier)
     {
         $user = $request->user();
