@@ -575,6 +575,10 @@
 .mp-head-right { display: flex; align-items: center; gap: 8px; z-index: 1; flex-shrink: 0; }
 .mp-inv .spi-head-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .mp-inv .spi-head-btn i { font-size: 15px; line-height: 1; }
+/* Header insets as on the CLM pages: 12px sides plus 6px before the icon, so
+   the icon and the Add button sit closer to the card's edges. */
+.mp-inv .spi-head { padding: 0 12px; }
+.mp-inv .spi-head-left { padding-left: 6px; }
 @media (max-width: 640px) {
   .mp-inv .spi-head { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
 }

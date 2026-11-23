@@ -20,6 +20,7 @@ import {
 import './DataTable.css';
 import { ShimmerTableRows } from './Shimmer';
 import Tooltip from './Tooltip';
+import { fillHeight } from '../../utils/fillHeight';
 export type DataTableAlign = 'left' | 'start' | 'center' | 'right' | 'end';
 
 export interface DataTableColumnMeta {
@@ -580,14 +581,17 @@ export default function DataTable<T extends object>({
          inside the card.
 
          `fillToFooter` opts out of the floor and always stretches to that
-         space, which is what CLM Segment Master and Suppliers expect.
+         space, which is what CLM Segment Master and Suppliers expect. On the
+         Master lists (.mp-inv) it is measured (fillHeight): everything under
+         the card -- page padding, the footer -- is subtracted, so the page
+         never gets its own scrollbar. Elsewhere it keeps the flat allowance.
 
          Measured, not released: clearing the height outright would let
          `.dt-scroll` — flex: 1; min-height: 0 — resolve against an auto-height
          parent, with no free space to grow into and nothing stopping it at
          zero, and the rows would vanish. */
       const h = `${fillToFooter
-        ? Math.max(240, window.innerHeight - top - bottomReserve())
+        ? (el.closest('.mp-inv') ? fillHeight(el, 240) : Math.max(240, window.innerHeight - top - bottomReserve()))
         : fittedHeight(top)}px`;
       if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
