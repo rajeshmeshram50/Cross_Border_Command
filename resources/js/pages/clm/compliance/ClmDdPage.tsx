@@ -172,7 +172,7 @@ export default function ClmDdPage() {
                 .clm-rows-scroll gave the rows a second scrollbar that no other
                 CLM list has. */}
             <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-              <table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>DD CODE</th>
@@ -197,7 +197,7 @@ export default function ClmDdPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bDoc}</div>

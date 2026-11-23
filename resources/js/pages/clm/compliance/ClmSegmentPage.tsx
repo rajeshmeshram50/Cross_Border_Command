@@ -340,7 +340,7 @@ export default function ClmSegmentPage() {
 
           <div className="clm-tab-body has-data">
               <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <div className="clm-tscroll"><table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
                     <th style={{ width: '12%', textAlign: 'center' }}>SEGMENT ID</th>
@@ -394,7 +394,7 @@ export default function ClmSegmentPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
                 {isEmpty && (
                   <div className="clm-empty" style={{ flex: 1 }}>
                     <div className="clm-empty-ico">{ICO.bSeg}</div>

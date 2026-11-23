@@ -320,7 +320,7 @@ export default function ClmAuthorityPage() {
               ref={scrollRef}
               style={{ minHeight: fillH, maxHeight: fillH }}
             >
-              <table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>AUTHORITY ID</th>
@@ -362,7 +362,7 @@ export default function ClmAuthorityPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bShield}</div>

@@ -144,7 +144,7 @@ export default function ClmQcPage() {
 
         <div className="clm-tab-body has-data">
             <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-              <table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>QC ID</th>
@@ -179,7 +179,7 @@ export default function ClmQcPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bCheck}</div>

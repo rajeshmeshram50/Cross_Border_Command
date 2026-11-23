@@ -159,7 +159,7 @@ export default function ClmKycPage() {
                 list has. The page scrolls instead now, as it does everywhere
                 else in the module. */}
             <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-              <table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>KYC ID</th>
@@ -184,7 +184,7 @@ export default function ClmKycPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bKyc}</div>

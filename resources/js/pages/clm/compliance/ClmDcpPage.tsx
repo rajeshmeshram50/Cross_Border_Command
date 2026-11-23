@@ -459,7 +459,7 @@ export default function ClmDcpPage() {
 
         <div className="clm-tab-body has-data">
             <div className={`clm-table-wrap clm-table-fill ${!loading && slice.length === 0 ? 'dcp-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-              <table className="clm-table" style={{ minWidth: 1100 }}>
+              <div className="clm-tscroll"><table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
@@ -527,7 +527,7 @@ export default function ClmDcpPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </table></div>
               {!loading && slice.length === 0 && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bDcp}</div>
