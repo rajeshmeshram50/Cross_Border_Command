@@ -7,23 +7,12 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Append-only trail of what was DONE to an SPI, in order.
- *
- * The fulfilment ledger says what a change did to the PO's pending quantity;
- * this says what a person did to the invoice — created it, saved items, packed
- * a box, printed a sticker, confirmed a put-away, submitted.
- *
- * `event` is a plain string, not an enum: the list grows as stages are built,
- * and nothing branches on it in SQL.
- */
 class SpiActivity extends Model
 {
     use BelongsToTenant;
 
     protected $table = 'p2p_spi_activities';
 
-    /** Append-only, and the timestamp is `performed_at`, not `created_at`. */
     public $timestamps = false;
 
     public const EVENTS = [
@@ -52,7 +41,6 @@ class SpiActivity extends Model
     public function box(): BelongsTo         { return $this->belongsTo(SpiBox::class, 'box_id'); }
     public function performedBy(): BelongsTo { return $this->belongsTo(User::class, 'performed_by'); }
 
-    /** A field changed from one value to another, as opposed to a bare event. */
     public function isFieldChange(): bool
     {
         return $this->field !== null;
