@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * CTC contracts can now be sent for counterparty signing via Zoho Sign.
- * `zoho_request_id` links the contract to its Zoho signature request so the
- * Stage-3 signing tracker can sync each signer's status back from Zoho;
- * `signature_request_id` points at the clm_signature_requests audit row.
- */
 return new class extends Migration
 {
     public function up(): void
