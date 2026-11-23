@@ -45,63 +45,21 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
-/**
- * CredVault — the company password manager. /api/credvault/*
- *
- * The shared half of the Kryptone CredVault prototype: Vault Dashboard,
- * Password Health, the all-vault list and View drawer, sharing, Team Vault,
- * Policies, Import & Recovery, Audit Logs and the Recycle Bin.
- *
- * TWO VAULTS, ONE TABLE (credvault_credentials.vault) — each with its own
- * controller folder and code series:
- *   NormalVault\NormalVaultController       CRD-0001 …   2-step is a recorded yes/no
- *   CriticalVault\CriticalVaultController   CCRD-0001 …  approvals + 2-step unlock
- *   CriticalVault\TwoStepController         Google Authenticator / email code setup
- *   CriticalVault\AccessRequestController   the unlock flow
- * They extend this class for the helpers below. docs/CREDVAULT_API_SHEET.md
- * lists every endpoint.
- *
- * WHO SEES A CREDENTIAL — the access rank, weakest first:
- *   use (0)  sign in with it, never see it     — a "Use Only" share
- *   view (1) reveal the secret                 — a "View" share
- *   copy (2) reveal and copy                   — a "Copy" share, or a member
- *                                                of the team it belongs to
- *   full (3) edit, share, delete               — the owner, a "Full" share,
- *                                                and on a team credential the
- *                                                department HOD and the Vault Admins
- * A personal credential is the owner's alone; not even a Vault Admin sees it
- * unless it was shared. Anything outside a user's ranks reads as 404.
- *
- * PROTECTED CREDENTIALS — Critical Vault credentials with any step on —
- * reveal nothing, to anyone, owner included, until an access request has
- * passed every step (Vault Admin → Reporting Manager → 2-step code, from the
- * authenticator app or by email) and its time window is open. The window closes on its
- * own; an expired unlock is swept to 'locked' on the next request that looks.
- *
- * Secrets never appear in a list or a detail response. The reveal endpoint is
- * the only way out, and every call to it is audited.
- *
- * Responses: { status: true, data, ... } on success; { status: false,
- * message, errors? } on refusal, with errors keyed by the API field.
- */
 class CredVaultController extends Controller
 {
     protected const RANK_USE  = 0;
     protected const RANK_VIEW = 1;
     protected const RANK_COPY = 2;
     protected const RANK_FULL = 3;
-    /** Wrong authenticator codes one person may enter on one credential in 24 h (two voided requests). */
     protected const OTP_DAILY_LIMIT = 6;
 
     protected const PAGE_SIZE   = 10;
-    protected const IMPORT_TTL  = 1800;   // seconds a previewed import stays claimable
-    // As the prototype accepts them: a type's own file field (crdField), and the extra attachments (crdXt).
+    protected const IMPORT_TTL  = 1800;
     protected const FIELD_FILE_TYPES = 'pdf,jpg,jpeg,png,pem,crt,cer,pfx';
     protected const ATTACH_TYPES     = 'pdf,png,jpg,jpeg,webp,doc,docx,xls,xlsx,csv,txt';
     protected const FILE_MAX_KB = 10240;
     protected const MAX_EXTRA_ATTACHMENTS = 5;
 
-    /** The non-secret columns every list, count and health pass needs. */
     protected const LIGHT_COLUMNS = [
         'id', 'client_id', 'branch_id', 'code', 'vault', 'type', 'category_group', 'name', 'scope', 'owner_id', 'department_id',
         'url', 'username', 'risk', 'strength', 'has_password', 'twofa', 'twofa_method', 'twofa_email', 'rotation_days',
@@ -109,7 +67,6 @@ class CredVaultController extends Controller
         'totp_linked_at', 'twofa_linked_at', 'created_at', 'updated_at',
     ];
 
-    /** What every access-request row needs, in one eager load. */
     protected const REQUEST_RELATIONS = [
         'credential:id,client_id,branch_id,code,vault,name,type,category_group,risk,url,owner_id,twofa_method,twofa_email,deleted_at',
         'requester:id,name,designation,department_id,branch_id,employee_code,client_id,user_type',
@@ -117,12 +74,8 @@ class CredVaultController extends Controller
         'adminDecider:id,name,designation', 'managerDecider:id,name,designation',
     ];
 
-    /** Per-request answers that several helpers ask for repeatedly. */
     protected array $memo = [];
 
-    /* ══════════════════════════════ META ══════════════════════════════ */
-
-    /** GET /credvault/meta — everything the forms need: types, enums, policy, me. */
     public function meta(Request $request)
     {
         $u   = $this->tenantUser($request);
@@ -140,7 +93,6 @@ class CredVaultController extends Controller
                 ['key' => 'low', 'label' => 'Low'], ['key' => 'medium', 'label' => 'Medium'],
                 ['key' => 'high', 'label' => 'High'], ['key' => 'critical', 'label' => 'Critical — needs approval to view'],
             ],
-            // The same 25 types in both. The Normal Vault takes low–high; the Critical Vault is always critical.
             'vaults'      => [
                 ['key' => 'normal', 'label' => 'My Vault', 'prefix' => Credential::VAULT_PREFIX['normal'], 'risks' => ['low', 'medium', 'high'], 'two_step' => 'recorded'],
                 ['key' => 'critical', 'label' => 'Critical Vault', 'prefix' => Credential::VAULT_PREFIX['critical'], 'risks' => ['critical'], 'two_step' => 'enforced'],
@@ -158,7 +110,6 @@ class CredVaultController extends Controller
                 ['key' => 'copy', 'label' => 'Copy',        'description' => 'Reveal and copy'],
                 ['key' => 'full', 'label' => 'Full Access', 'description' => 'Edit, share and delete'],
             ],
-            // As the Share popup offers them: a policy limit hides "No expiry"; no limit hides 90 days.
             'share_durations'  => collect([[1, '1 day'], [7, '7 days'], [30, '30 days'], [90, '90 days'], [0, 'No expiry']])
                 ->filter(fn ($d) => $pol['share_max_days'] ? ($d[0] && $d[0] <= $pol['share_max_days']) : $d[0] !== 90)
                 ->map(fn ($d) => ['days' => $d[0] ?: null, 'label' => $d[1], 'critical_allowed' => $d[0] !== 0])->values(),
@@ -166,7 +117,6 @@ class CredVaultController extends Controller
             'audit_actions'    => collect(AuditLog::ACTIONS)->map(fn ($v, $k) => ['key' => $k, 'label' => $v[0], 'severity' => $v[1], 'verb' => AuditLog::VERBS[$k] ?? $v[0]])->values(),
             'file_types'       => ['attachments' => explode(',', self::ATTACH_TYPES), 'file_fields' => explode(',', self::FIELD_FILE_TYPES), 'max_mb' => self::FILE_MAX_KB / 1024, 'max_attachments' => self::MAX_EXTRA_ATTACHMENTS],
             'policy'           => $pol,
-            // Recycle Bin retention: the viewer's branch period, one for both vaults (Policy::binDays).
             'bin_days'         => ['normal' => Policy::binDays($pol, $this->binBranchFor($u)), 'critical' => Policy::binDays($pol, $this->binBranchFor($u))],
             'me'               => [
                 'id'              => $u->id,
@@ -178,37 +128,11 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /* ═══════════════════════════ CREDENTIALS ═══════════════════════════ */
-
-    /**
-     * GET /credvault/credentials
-     *   ?tab=all|mine|team|shared|others   My Vault / Team Vault / Critical Vault tabs
-     *                                  (others = not mine, any route — the Critical
-     *                                  Vault's "Teams Critical Credentials" tab)
-     *   &vault=normal|critical         one vault (each vault's own list fixes it)
-     *   &risk=low|medium|high|critical
-     *   &q= &type= &group= &department_id= &member_id= &page= &per_page=
-     *
-     * member_id (a login) or member_employee_id (a tree node) is the Team Vault
-     * "credentials accessible to <person>" filter. It narrows what the caller
-     * can already see, so it reveals nothing new and anyone may use it.
-     *
-     * Tab counts follow the search box: with q, each tab counts its matches.
-     * The department and member filters belong to the Team side: the "mine"
-     * tab ignores both. tabs.sharedby is the Shared By Me count (active +
-     * expiring soon), searched as the Shared By Me list searches.
-     */
     public function index(Request $request)
     {
         return $this->listCredentials($request, null);
     }
 
-    /**
-     * GET /credvault/dev/totp — LOCAL-ONLY dev helper. Returns the current authenticator
-     * code for the caller's client's critical google-2-step credentials, so a developer
-     * can test the unlock flow without an authenticator app. Hard-gated to APP_ENV=local;
-     * 404 everywhere else. This bypasses 2FA on purpose — it must never ship enabled.
-     */
     public function devTotp(Request $request)
     {
         abort_unless(app()->environment('local'), 404);
@@ -227,7 +151,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** index, and each vault's own list — $vault fixes the vault; null lets ?vault= pick one. */
     protected function listCredentials(Request $request, ?string $vault)
     {
         $u = $this->tenantUser($request);
@@ -245,8 +168,6 @@ class CredVaultController extends Controller
 
         $vault = $vault ?? ($f['vault'] ?? null);
 
-        // The hierarchy-filter person, resolved first. Credentials they own (shared by them)
-        // plus ones shared with them or their department (accessible to them).
         $member = $this->memberFilter($u, $f);
         $memberShareIds = null;
         if ($member) {
@@ -257,10 +178,6 @@ class CredVaultController extends Controller
                     if ($memberDept) $s->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $memberDept));
                 })->select('credential_id');
         }
-        // A viewer who oversees the picked person (Vault Admin, branch admin, HOD, or
-        // up the reporting line) sees that person's WHOLE vault, any scope — these are
-        // company credentials. The Critical Vault's team side is the whole branch's;
-        // the Normal Vault keeps the reporting line.
         $memberFull = $member && $this->managesMember($u, $member);
         $base = $memberFull
             ? Credential::where('credvault_credentials.client_id', $u->client_id)
@@ -272,23 +189,18 @@ class CredVaultController extends Controller
         if (!empty($f['group'])) $base->where('category_group', $f['group']);
         $this->credentialSearch($base, $u, $f['q'] ?? null);
 
-        // The Team-side filters: everything but "mine".
         $teamSide = clone $base;
         if (!empty($f['department_id'])) $teamSide->where('department_id', $f['department_id']);
-        // A picked person the viewer does NOT oversee stays bounded by the viewer's own visibility.
         if ($member && !$memberFull) {
             $teamSide->where(fn ($w) => $w->where('owner_id', $member->id)
                 ->orWhereIn('credvault_credentials.id', $memberShareIds));
         }
 
         $sharedIds = $this->sharedWithMeIds($u);
-        // Logins this viewer oversees — their credentials (any scope) belong in the team view.
         $overseen = $this->overseenUserIds($u);
         $views = [
             'all'    => fn () => (clone $teamSide),
             'mine'   => fn () => (clone $base)->where('owner_id', $u->id),
-            // With a person picked, show their set as-is (any scope). Otherwise: team-scope
-            // credentials plus anything owned by the people this viewer oversees.
             'team'   => fn () => $member ? (clone $teamSide)
                 : (clone $teamSide)
                     ->where(fn ($w) => $w->where('scope', 'team')->when($overseen, fn ($q) => $q->orWhereIn('owner_id', $overseen)))
@@ -324,7 +236,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** The person behind member_id / member_employee_id — a login of this company. */
     protected function memberFilter(User $u, array $f): ?User
     {
         if (!empty($f['member_employee_id'])) {
@@ -339,18 +250,12 @@ class CredVaultController extends Controller
             ?? $this->reject('That person is not part of your company.', 'member_id', 404);
     }
 
-    /**
-     * The list search: ID, name, username, url, category (type label), group
-     * and owner — what the prototype's search box covers.
-     */
     protected function credentialSearch(Builder $q, User $u, ?string $term): void
     {
         if ($term === null || trim($term) === '') return;
         $like  = $this->likeTerm($term);
         $needle = mb_strtolower(trim($term));
         $types = collect(Credential::TYPES)->filter(fn ($t) => str_contains(mb_strtolower($t[0]), $needle))->keys()->all();
-        // CS-1461: the Risk and Strength columns are searchable by the words the list shows
-        // ("High", "Critical", "Weak", "Strong" …), matched like the category label.
         $risks  = array_values(array_filter(Credential::RISKS, fn ($r) => str_contains($r, $needle)));
         $levels = array_keys(array_filter(Credential::STRENGTH_LABELS, fn ($l) => $l !== '' && str_contains(mb_strtolower($l), $needle)));
 
@@ -360,31 +265,21 @@ class CredVaultController extends Controller
             }
             if ($types) $w->orWhereIn('credvault_credentials.type', $types);
             if ($risks) $w->orWhereIn('credvault_credentials.risk', $risks);
-            // Strength only means something for a password; the rest show N/A.
             if ($levels) $w->orWhere(fn ($s) => $s->where('credvault_credentials.has_password', true)->whereIn('credvault_credentials.strength', $levels));
             $w->orWhereIn('owner_id', User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id'));
         });
     }
 
-    /** GET /credvault/credentials/{id} — the View drawer. Secrets are masked, never sent. */
     public function show(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
         $this->sweepUnlocks($u->client_id);
         [$c, $acc] = $this->findCredential($u, $id);
         $d = $this->detail($c, $u, $acc, true);
-        // Opening the drawer is logged once by logAccess ('Opened credential details');
-        // an actual field reveal is logged by the reveal/copy endpoint. No entry here.
 
         return response()->json(['status' => true, 'data' => $d], 200);
     }
 
-    /**
-     * A share passed on by someone other than the owner rides on that person's Full
-     * Access. Whenever they lose it (revoke, downgrade, removal, the credential turning
-     * critical) the shares they made end too — repeated until stable, so a chain of
-     * re-shares unwinds however deep it goes.
-     */
     protected function endOrphanedShares(User $actor, Credential $c): void
     {
         for ($round = 0; $round < 10; $round++) {
@@ -404,7 +299,6 @@ class CredVaultController extends Controller
         }
     }
 
-    /** When the user's own Full share on $c ends — null when one of them never ends. */
     protected function ownShareEnd(User $u, Credential $c): ?Carbon
     {
         $dept = $this->teamShareDept($u);
@@ -417,7 +311,6 @@ class CredVaultController extends Controller
         return $ends->isEmpty() || $ends->contains(null) ? null : Carbon::parse($ends->max());
     }
 
-    /** What, if anything, this edit would change about the credential's protection. Unchanged values pass. */
     protected function protectionChange(Request $r, Credential $c): ?string
     {
         $on = fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN);
@@ -439,12 +332,6 @@ class CredVaultController extends Controller
         return null;
     }
 
-    /**
-     * DELETE …-vault/credentials/{id}, for either vault — moves to the Recycle Bin. Shares pause while it is there.
-     *
-     * On a credential someone shared with you it is the prototype's "Remove
-     * from your vault?": your own share ends, the credential itself is untouched.
-     */
     protected function binCredential(Request $request, int $id, string $vault)
     {
         $u = $this->tenantUser($request);
@@ -476,7 +363,6 @@ class CredVaultController extends Controller
             $c->deleted_by = $u->id;
             $c->saveQuietly();
             $c->delete();
-            // Any unlock in progress on it ends — a binned credential reveals nothing.
             AccessRequest::where('credential_id', $c->id)->whereIn('status', AccessRequest::OPEN)
                 ->update(['status' => 'cancelled', 'updated_at' => now()]);
             $this->audit($u, 'bin', $c, 'Moved to Recycle Bin');
@@ -492,14 +378,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /**
-     * POST /credvault/credentials/{id}/reveal   { action: reveal|copy, field? }
-     *
-     * The only way a secret leaves the server. field defaults to the type's
-     * main secret; any masked field, or 'recovery_key', may be named. On a
-     * critical credential someone else's reveal or copy also notifies the
-     * owner, as the View drawer's warning promises.
-     */
     public function reveal(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -541,18 +419,11 @@ class CredVaultController extends Controller
             'field'                 => $field,
             'label'                 => $label,
             'value'                 => $value,
-            // The client hides a revealed value and clears a copied one after this.
             'hide_after_seconds'    => 30,
             'clear_clipboard_after' => 30,
         ]], 200);
     }
 
-    /**
-     * POST /credvault/credentials/{id}/events { action: view|launch|copy, field? }
-     *
-     * The drawer opened, the site launched, or a plain field (username,
-     * registered email…) copied — the copies the prototype logs as "Field copied".
-     */
     public function logEvent(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -572,7 +443,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'message' => 'Recorded.'], 201);
     }
 
-    /** The label of a field that is NOT secret — a secret is copied through /reveal, which checks rank. */
     protected function plainFieldLabel(Credential $c, string $field): string
     {
         $extras = ['reg_email' => 'Registered email', 'reg_phone' => 'Registered phone', 'url' => 'Website', 'username' => 'Username'];
@@ -585,7 +455,6 @@ class CredVaultController extends Controller
         return $spec['label'];
     }
 
-    /** GET /credvault/credentials/{id}/activity?page= — the drawer's Activity tab, newest first. */
     public function activity(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -593,7 +462,6 @@ class CredVaultController extends Controller
         [$c] = $this->findCredential($u, $id);
 
         $page = AuditLog::where('client_id', $u->client_id)->where('credential_id', $c->id)
-            // Hide the legacy per-open reveal rows; opening is logged once as 'view'.
             ->whereNot(fn ($w) => $w->where('action', 'reveal')->where('detail', 'All stored values returned by the detail API'))
             ->with('user:id,name,user_type,designation')->orderByDesc('id')
             ->paginate($f['per_page'] ?? 50, ['*'], 'page', $f['page'] ?? 1);
@@ -605,7 +473,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** GET /credvault/credentials/{id}/attachments/{key} — streams one stored file. */
     public function attachment(Request $request, int $id, string $key)
     {
         $u = $this->tenantUser($request);
@@ -627,9 +494,6 @@ class CredVaultController extends Controller
         return strtoupper(mb_substr($parts[0] ?? '', 0, 1) . mb_substr(count($parts) > 1 ? end($parts) : '', 0, 1));
     }
 
-    /* ═════════════════════════════ SHARING ═════════════════════════════ */
-
-    /** GET /credvault/share-recipients?q= — people and teams a credential can be shared with. */
     public function shareRecipients(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -653,13 +517,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /**
-     * POST /credvault/credentials/{id}/shares
-     *   { recipient_type: user|team, recipient_id, permission, duration_days? | expires_at? (Y-m-d), reason? }
-     *
-     * Neither duration nor date means no expiry. Sharing again with the same
-     * recipient updates the live share instead of adding a second one.
-     */
     public function share(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -680,9 +537,6 @@ class CredVaultController extends Controller
             default                     => null,
         };
 
-        // Someone who holds Full Access through a share cannot pass on more than they have:
-        // their re-share ends when their own share does (a longer or open-ended pick is
-        // shortened to that, and the response says so).
         $capped = null;
         if ($acc[1] === 'share' && ($cap = $this->ownShareEnd($u, $c)) !== null && (!$until || $until->gt($cap))) {
             $until  = $cap->copy();
@@ -715,7 +569,6 @@ class CredVaultController extends Controller
             }
             $branch = $this->shareBranchOf($u);
             if ($branch && (int) $to->branch_id !== $branch) $this->reject("{$to->name} is not in your branch. Share only with people in your branch.", 'recipient_id');
-            // Shared With Me: never back to the person who shared it with you.
             if (isset($this->sharedToMeBy($u, $c)[$to->id])) $this->reject("{$to->name} shared this credential with you — it can't be shared back to them.", 'recipient_id');
             $toName  = $to->name;
             $members = collect([$to]);
@@ -726,7 +579,7 @@ class CredVaultController extends Controller
             $toName  = $dep->name;
             $all      = $this->teamMembers($u->client_id, $dep->id);
             $teamSize = $all->count();
-            $members  = $all->where('id', '!=', $u->id)->values();   // the sharer is not told of their own share
+            $members  = $all->where('id', '!=', $u->id)->values();
         }
 
         $share = $this->inTransaction('share the credential', function () use ($c, $u, $d, $until, $reason, $toName, $members) {
@@ -742,21 +595,19 @@ class CredVaultController extends Controller
                 'recipient_department_id' => $d['recipient_type'] === 'team' ? $d['recipient_id'] : null,
             ]);
             $renewed = $share->exists;
-            if (!$share->exists) $share->shared_by = $u->id;   // a renewal keeps who originally shared it
+            if (!$share->exists) $share->shared_by = $u->id;
             $share->fill(['permission' => $d['permission'], 'expires_at' => $until, 'reason' => $reason ?: null]);
 
             try {
                 $share->save();
             } catch (QueryException $e) {
-                // Two clicks raced past the lookup; the partial unique index stopped the second.
                 $this->reject("This credential was just shared with {$toName}. Refresh and try again.", null, 409);
             }
-            if ($renewed) $this->endOrphanedShares($u, $c);   // a Full share renewed as less ends what it passed on
+            if ($renewed) $this->endOrphanedShares($u, $c);
 
             $this->audit($u, 'share', $c, ($renewed ? 'Share renewed for ' : 'Shared with ') . $toName
                 . ' · ' . ucfirst($d['permission']) . ($until ? ' until ' . $until->format('d/m/Y') : ' · no expiry'),
                 ['share_id' => $share->id, 'permission' => $d['permission']]);
-            // The bell: the person, or every member of the team.
             $this->notify($members->pluck('id')->all(), 'shared', $renewed ? 'Share updated' : 'Credential shared with ' . ($share->recipient_type === 'team' ? "your team {$toName}" : 'you'),
                 "{$u->name} shared “{$c->name}” with " . ($share->recipient_type === 'team' ? "your team {$toName}" : 'you')
                 . ' (' . ucfirst($d['permission']) . ($until ? ', until ' . $until->format('d/m/Y') : '') . ').',
@@ -778,10 +629,8 @@ class CredVaultController extends Controller
         ], $renewed ? 200 : 201);
     }
 
-    /** Active logins of the company in the team (the same department test as deptOf: the user's, else their HR record's). */
     protected function teamMembers(int $clientId, int $deptId): Collection
     {
-        // An HR record links to its login by user_id, or by emp_code = the login's employee_code (as employeeOf).
         $emps = Employee::where('client_id', $clientId)->where('department_id', $deptId)->get(['user_id', 'emp_code']);
         $ids = $emps->pluck('user_id')->filter()->all();
         $codes = $emps->pluck('emp_code')->filter()->all();
@@ -792,17 +641,9 @@ class CredVaultController extends Controller
             ->orderBy('name')->get(['id', 'name', 'email', 'designation']);
     }
 
-    /**
-     * The share email — the Share popup's details, never a secret. A person gets their own;
-     * a team's members get one in BCC batches of 50. A mail failure is logged and reported
-     * in `mail`, and never undoes the share.
-     *
-     * @return array{status:string, recipients:int, sent:int, failed:int}
-     */
     protected function mailShare(Request $request, User $u, Credential $c, CredentialShare $s, Collection $members, bool $renewed, string $toName, ?int $teamSize = null): array
     {
         $to = $members->filter(fn ($m) => filter_var($m->email, FILTER_VALIDATE_EMAIL))->values();
-        // A copy of every share email (CC) — php@inhpl.com unless CREDVAULT_SHARE_COPY_EMAIL says otherwise.
         $copy = filter_var((string) config('services.credvault.share_copy_email'), FILTER_VALIDATE_EMAIL) ?: null;
         if ($copy && $to->contains(fn ($m) => strcasecmp($m->email, $copy) === 0)) $copy = null;
         $out = ['status' => 'sent', 'recipients' => $to->count(), 'sent' => 0, 'failed' => 0, 'copy_to' => $copy];
@@ -840,7 +681,7 @@ class CredVaultController extends Controller
         } else {
             foreach ($to->chunk(50)->values() as $i => $batch) {
                 $send(fn () => Mail::to((string) config('mail.from.address'), "{$toName} team")
-                    ->cc($copy && $i === 0 ? [$copy] : [])   // the copy once, on the first batch
+                    ->cc($copy && $i === 0 ? [$copy] : [])
                     ->bcc($batch->map(fn ($m) => ['email' => $m->email, 'name' => $m->name])->values()->all())
                     ->send(new CredVaultShareMail($data, null, $brand)), $batch->count());
             }
@@ -852,21 +693,6 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /**
-     * GET /credvault/shares — Shared By Me, one row per share, on credentials I own or shares I made.
-     *
-     *   tab            all | active | soon | expired | revoked    (counts in `tabs` ignore the search and filters)
-     *   q              credential ID / name / group / type, person, team, reason, permission label
-     *   credential_id  one credential (Password Health's "Fix" for an over-shared one)
-     *   permission     use | view | copy | full   — one, or several comma-separated
-     *   recipient_type user | team;  recipient_id  one person or one team (needs recipient_type)
-     *   vault          normal | critical;  risk  low | medium | high | critical;  type;  group
-     *   shared_from / shared_to    shared on, Y-m-d (in tz)
-     *   expires_from / expires_to  expiry date, Y-m-d (in tz)
-     *   sort           status (default: expiring soon first) | shared_at | expires_at | name;  dir  asc | desc
-     *   tz             the viewer's timezone for the dates shown and the date filters
-     *   page, per_page
-     */
     public function sharedByMe(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -905,12 +731,11 @@ class CredVaultController extends Controller
         ];
         $tabs = ['all' => (clone $base)->count()];
         foreach ($states as $k => $fn) $tabs[$k] = $fn(clone $base)->count();
-        $tabs['live'] = $tabs['active'] + $tabs['soon'];   // the My Vault "Shared By Me" tab badge
+        $tabs['live'] = $tabs['active'] + $tabs['soon'];
 
         $this->shareSearch($base, $u, $f['q'] ?? null);
         if (($tab = $f['tab'] ?? 'all') !== 'all') $states[$tab]($base);
 
-        // The filters.
         if (!empty($f['permission'])) $base->whereIn('permission', array_unique(explode(',', $f['permission'])));
         if (!empty($f['recipient_type'])) {
             $base->where('recipient_type', $f['recipient_type']);
@@ -947,7 +772,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** The Shared By Me search: credential ID / name / group / type, person, team, reason, permission label. */
     protected function shareSearch(Builder $base, User $u, ?string $term): void
     {
         if ($term === null || trim($term) === '') return;
@@ -968,7 +792,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /** DELETE /credvault/shares/{id} — revoke. The row stays as the record of who had access. */
     public function revokeShare(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -999,9 +822,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'message' => 'Access revoked.', 'data' => $this->shareRow($fresh, $u->client_id)], 200);
     }
 
-    /* ════════════════════════════ TEAM VAULT ════════════════════════════ */
-
-    /** The prototype's six levels, in display order. */
     protected const LEVELS = [
         'admin'  => 'Admin',
         'hod'    => 'HOD',
@@ -1011,7 +831,6 @@ class CredVaultController extends Controller
         'intern' => 'Intern',
     ];
 
-    /** A member's level, read from the HR designation (Head of Department, Team Leader, Executive, Intern / Trainee …). */
     protected function levelOf(?string $designation): string
     {
         $d = mb_strtolower((string) $designation);
@@ -1024,7 +843,6 @@ class CredVaultController extends Controller
         };
     }
 
-    /** GET /credvault/team/departments — the left pane: admin card and one card per department. */
     public function teamDepartments(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1068,15 +886,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /**
-     * GET /credvault/team/departments/{id} — one department's hierarchy.
-     * GET /credvault/team/organisation       — the admin card's "View all": every department.
-     *
-     * Members come flat (each with manager_employee_id and a level) and as `tree`, ready to draw:
-     * the Vault Admin at the root, then each member under their manager — a member whose manager
-     * sits outside the set hangs from the root (in the organisation view, from their department's
-     * node). Every node carries children_count (direct reports, the "2 ▾" badge) and team_size.
-     */
     public function teamDepartment(Request $request, int $id)
     {
         $u   = $this->tenantUser($request);
@@ -1101,7 +910,6 @@ class CredVaultController extends Controller
             ->with('designation:id,name')
             ->get(['id', 'user_id', 'emp_code', 'first_name', 'last_name', 'display_name', 'department_id', 'designation_id', 'reporting_manager_id', 'reporting_manager_user_id']);
 
-        // users.employee_code is the second route to a login when employees.user_id is empty.
         $byCode = User::where('client_id', $u->client_id)->whereIn('employee_code', $emps->whereNull('user_id')->pluck('emp_code')->filter()->all())
             ->pluck('id', 'employee_code');
         $ids    = $emps->pluck('id')->all();
@@ -1125,7 +933,7 @@ class CredVaultController extends Controller
         })->values();
         $counts = $members->countBy('level')->all();
         $admins = User::whereIn('id', $this->adminIds($u->client_id))->orderBy('id')->get(['id', 'name']);
-        $counts = ['admin' => $admins->count()] + $counts;   // the department's "Admin" chip: the Vault Admin(s)
+        $counts = ['admin' => $admins->count()] + $counts;
 
         $creds = Credential::where('client_id', $u->client_id)->where('scope', 'team')
             ->when($branch !== null, fn ($q) => $q->where('branch_id', $branch))
@@ -1149,7 +957,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /** The members as nested nodes under the Vault Admin; cycle-safe, children ordered by level then name. */
     protected function hierarchyTree(Collection $members, Collection $admins, ?Departments $dep): array
     {
         $rank = array_flip(array_keys(self::LEVELS));
@@ -1171,7 +978,6 @@ class CredVaultController extends Controller
         if ($dep) {
             $children = $roots->map(fn ($m) => $build($m))->values()->all();
         } else {
-            // The organisation: a node per department between the Vault Admin and its people.
             $children = $roots->groupBy(fn ($m) => $m['department']['id'])->map(function ($g) use ($build, $members) {
                 $nodes = $g->map(fn ($m) => $build($m))->values()->all();
                 $d = $g->first()['department'];
@@ -1188,24 +994,11 @@ class CredVaultController extends Controller
                 'children' => $children];
     }
 
-    /** [department_id => [level => active members]] for the tenant, in one query. */
-    /**
-     * Team Details for a Branch Admin (branch_user) covers only their own branch — a client with two
-     * branches must not show branch A's admin the employees of branch B. Everyone else: null (no branch
-     * filter; a client admin sees every branch, a manager is narrowed to their reporting line client-side).
-     * A branch_user with no branch on file gets 0, which matches nobody, rather than the whole company.
-     */
     protected function teamBranchOf(User $u): ?int
     {
         return $u->user_type === 'branch_user' ? (int) ($u->branch_id ?? 0) : null;
     }
 
-    /**
-     * Team Details shows only people actually on the team (CS-1447): Active, onboarding finished
-     * (all 6 HR stages — the app-wide rule Announcements and Attendance use), and not exited. The
-     * exit guard mirrors ExitController: a finished exit (Closed / Exited, not rehired) whose
-     * employees.status was never written back still counts as gone.
-     */
     protected function onboardedOrAdmin($q)
     {
         return $q->whereIn('users.user_type', self::ADMIN_TYPES)
@@ -1255,17 +1048,6 @@ class CredVaultController extends Controller
             ->filter(fn ($l) => $l['count'] > 0)->values()->all();
     }
 
-    /* ═════════════════════════ ACCESS REQUESTS ═════════════════════════ */
-
-    /* ═════════════════════════ PASSWORD HEALTH ═════════════════════════ */
-
-    /**
-     * GET /credvault/health?tab=all|weak|reused|twofa|rotation|shared|fixed&q=
-     *
-     * Checks every credential in the user's vaults — owned, administered and
-     * their team's; not ones merely shared with them. Each issue says whether
-     * this user can fix it (can_fix). "resolved" is accepted for "fixed".
-     */
     public function health(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1281,7 +1063,6 @@ class CredVaultController extends Controller
         $pg   = $f['page'] ?? 1;
         $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
 
-        // The tab counts follow the search: each badge is what that tab lists for the term typed.
         $matched = $term === '' ? $issues : $issues->filter(fn ($i) => str_contains(mb_strtolower(implode(' ', [
             $i['credential']['code'], $i['credential']['name'], $i['credential']['type_label'], $i['credential']['category_group'],
             $i['credential']['owner'], $i['issue'],
@@ -1330,12 +1111,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /**
-     * GET /credvault/health/summary — the score card and the five issue cards
-     * alone, without the list: how many credentials passed and failed, and of
-     * the failed ("need attention") how many are weak, reused, missing 2FA,
-     * rotation due and over-shared.
-     */
     public function healthSummaryView(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1345,13 +1120,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'data' => $this->healthSummary($creds, collect($this->healthIssues($creds, $pol, $u)), $pol)], 200);
     }
 
-    /**
-     * GET /credvault/health/attention?type=all|weak|reused|twofa|rotation|shared&q=&page=&per_page=
-     *
-     * The credentials that need attention — one row per credential (the list
-     * on /health is one row per issue), each with every issue it has. type
-     * keeps the credentials with that issue; counts are per credential.
-     */
     public function healthAttention(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1375,7 +1143,6 @@ class CredVaultController extends Controller
 
         $tab  = $f['tab'] ?? 'all';
         $term = mb_strtolower(trim((string) ($f['q'] ?? '')));
-        // The tab counts follow the search, like the list.
         $matched = $term === '' ? $rows : $rows->filter(fn ($r) => str_contains(mb_strtolower(implode(' ', [
             $r['credential']['code'], $r['credential']['name'], $r['credential']['type_label'], $r['credential']['owner'],
             implode(' ', array_column($r['issues'], 'issue')),
@@ -1398,17 +1165,6 @@ class CredVaultController extends Controller
     protected const HEALTH_TYPES = ['weak', 'reused', 'twofa', 'rotation', 'shared'];
     protected const SEVERITY_RANK = ['critical' => 0, 'high' => 1, 'medium' => 2];
 
-    /**
-     * The score card and the five cards. Passed = a credential with no open
-     * issue, failed = one with at least one ("need attention"). Each type is
-     * counted per credential and out of the credentials that check applies to:
-     *   weak, reused   — credentials with a password
-     *   twofa          — credentials whose risk level the policy requires 2FA for (2FA not "N/A")
-     *   rotation       — credentials with a password and a rotation period
-     *   shared         — every credential checked
-     * A credential can fail several checks, so the five add up to more than
-     * `failed`; `attention.multiple` is how many fail more than one.
-     */
     protected function healthSummary(Collection $creds, Collection $issues, array $pol): array
     {
         $total   = $creds->count();
@@ -1447,7 +1203,6 @@ class CredVaultController extends Controller
                 'issues'      => $ofType->count(),
                 'critical'    => $ofType->where('severity', 'critical')->count(),
                 'sub'         => "{$n} of {$of[$t]} {$card[$t][1]}",
-                // Share of the credentials that need attention.
                 'pct_of_attention' => $pct($n, $failed),
             ];
         }
@@ -1463,7 +1218,6 @@ class CredVaultController extends Controller
             'open_issues'     => $issues->count(),
             'at_risk'         => $failed,
             'critical_issues' => $issues->where('severity', 'critical')->count(),
-            // "Strong & safe": credentials with no open issue.
             'safe'            => $passed,
             'pct'             => [
                 'passed'          => $pct($passed, $total),
@@ -1488,17 +1242,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /* ═════════════════════════════ POLICIES ═════════════════════════════ */
-
-    /**
-     * GET /credvault/policies — the settings, the rule catalogue the screen is
-     * drawn from (sections, labels, "Applies to", option labels), and each
-     * card's insight box and "Live in your vault" numbers.
-     *
-     * "Reset to Defaults" in the prototype only fills the draft: the client
-     * loads `defaults` into the form and saves with PUT. POST /policies/reset
-     * is the one-step version.
-     */
     public function policies(Request $request)
     {
         $u   = $this->tenantUser($request);
@@ -1526,7 +1269,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /** "With every check off, critical credentials open without any approval." */
     protected function policyWarnings(array $pol): array
     {
         return !$pol['cp_admin'] && !$pol['cp_manager'] && !$pol['cp_otp']
@@ -1534,10 +1276,6 @@ class CredVaultController extends Controller
             : [];
     }
 
-    /**
-     * Each card's insight box and the "Live in your vault" numbers the
-     * prototype prints under it (polStats / polInsightHtml).
-     */
     protected function policyInsights(User $u, array $pol): array
     {
         $creds   = $this->healthScope($u);
@@ -1598,7 +1336,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /** PUT /credvault/policies — Vault Admins only; send just the keys that change. */
     public function updatePolicies(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1627,7 +1364,6 @@ class CredVaultController extends Controller
         return $this->savePolicies($u, $d);
     }
 
-    /** POST /credvault/policies/reset — every setting back to its default in one step, logged like any change. */
     public function resetPolicies(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1636,7 +1372,6 @@ class CredVaultController extends Controller
         return $this->savePolicies($u, Policy::DEFAULTS);
     }
 
-    /** GET /credvault/policies/history — the Change History card: entries, total, today, people. */
     public function policyHistory(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1681,23 +1416,8 @@ class CredVaultController extends Controller
         ];
     }
 
-    /* ════════════════════════════ AUDIT LOGS ════════════════════════════ */
-
-    /** The audit screens show the company's local time unless the viewer sends `tz`. */
     protected const AUDIT_TZ = 'Asia/Kolkata';
 
-    /**
-     * GET /credvault/audit-logs?tab=all|mine|team|alerts&range=24h|7d|30d|all|custom&from=&to=&tz=&action=&credential_id=&q=&page=&per_page=
-     *
-     * Tabs: All Activity · My Activity · Team Activity (everyone else the viewer may see) ·
-     * Security Alerts (critical events). Who sees what: a Vault Admin the whole company; a
-     * Branch Admin their branch's people; a manager their reporting line (HOD → TL → Employee
-     * → Intern); everyone their own events and the events on credentials they own.
-     *
-     * The tab counts and the summary follow the time range and the search — switching tab
-     * narrows only the timeline. `groups` heads the timeline by day ("Today · 05/11/2026 ·
-     * 15 events"), counted over every page; times are the viewer's (`tz`, default India).
-     */
     public function auditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1749,10 +1469,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /**
-     * The timeline's day headers for the days on this page: date, "Today" / "Yesterday" /
-     * "Tuesday, 03/11/2026", and the day's event count over the whole filtered view.
-     */
     protected function auditDayGroups(User $u, array $f, array $dates): array
     {
         if (!$dates) return [];
@@ -1776,10 +1492,6 @@ class CredVaultController extends Controller
         }, $dates);
     }
 
-    /**
-     * GET /credvault/audit-logs/export?format=csv|xlsx + the list's filters (tab, range, from, to, tz, q, action,
-     * credential_id) — Export Logs: exactly the view on screen, every event (up to 10,000), in the viewer's time.
-     */
     public function exportAuditLogs(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1816,16 +1528,12 @@ class CredVaultController extends Controller
                 'rows' => array_merge([$cols], array_map('array_values', $data))]])
             : VaultFile::build($cols, $data, 'csv');
 
-        // The log leaving the system is itself on the record (as info — it carries no secret).
         $this->writeAudit($u->client_id, $u->id, $u->branch_id, 'export', null, 'Audit log exported · ' . $rows->count() . ' events', ['rows' => $rows->count(), 'kind' => 'audit_log'], 'Audit Logs', 'info');
         $tab = ['all' => 'all-activity', 'mine' => 'my-activity', 'team' => 'team-activity', 'alerts' => 'security-alerts'][$f['tab'] ?? 'all'];
 
         return $this->download($body, "credvault-audit-log-{$tab}-" . now($f['tz'])->format('Ymd') . ".{$fmt}", $this->mime($fmt), ['X-CredVault-Count' => (string) $rows->count()]);
     }
 
-    /* ══════════════════════════ IMPORT & RECOVERY ══════════════════════════ */
-
-    /** The sample file's two rows, and the extra rows "Try it with sample data" adds — the prototype's IR_EXAMPLE / irTry. */
     protected const IMPORT_EXAMPLE = [
         ['Zoho Books Admin', 'https://books.zoho.in', 'admin@inorbvict.com', 'Zoho#Books2026!', 'Finance', 'Main accounting login'],
         ['Canva Team', 'https://www.canva.com', 'design@inorbvict.com', 'Canva!Team#2026x', 'Marketing', 'Shared design workspace'],
@@ -1837,21 +1545,6 @@ class CredVaultController extends Controller
     ];
     protected const IMPORT_COLUMNS = ['name', 'url', 'username', 'password', 'category', 'notes'];
 
-    /**
-     * POST /credvault/imports/preview  (multipart: file) — or { sample: true }
-     * for "No file yet? Try it with sample data".
-     *
-     * Reads the file, maps its columns, flags every row and parks the parsed
-     * rows server-side behind a token; the passwords never travel back to the
-     * browser and the import call names rows by index.
-     *
-     * Flags, as the prototype sets them: invalid (no name), nopw (no
-     * password), dup (already in your vaults), dupfile (repeated in the file,
-     * and not already a dup), weak (below the policy strength).
-     *   ok        importable — not invalid, not nopw
-     *   ready     ok with no flag at all (the "Ready" count)
-     *   selected  ticked by default: ok and not a duplicate (weak rows included)
-     */
     public function importPreview(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -1886,7 +1579,6 @@ class CredVaultController extends Controller
 
         $pol    = Policy::for($u->client_id);
         $source = $fmt === 'sample' ? 'Sample data' : ($this->detectSource($headers) ?: (Transfer::FORMAT_LABELS[$fmt] ?? strtoupper($fmt)) . ' file');
-        // Duplicates are checked against everything already in your vaults — owned and team, not shared-with-you.
         $existing = $this->healthScope($u);
         $seen = [];
         $rows = [];
@@ -1942,40 +1634,14 @@ class CredVaultController extends Controller
                 'cannot'     => $c->where('ok', false)->count(),
                 'selected'   => $c->where('selected', true)->count(),
             ],
-            // Everything but the password and notes themselves.
             'rows' => $c->map(fn ($r) => collect($r)->except(['password', 'notes'])->put('has_password', $r['password'] !== '')->all())->values(),
         ]], 200);
     }
 
-    /** Set while an import saves its rows: a weak password is imported (and counted), a file the sheet cannot carry is attached later. */
     protected bool $importing = false;
 
-    /**
-     * Set while an import by category saves its rows, so a 50-row sheet costs a few
-     * queries a row instead of 14: the next code (allocated once, under the client lock
-     * held for the whole import), the owner's names of this type (the duplicate check),
-     * and the audit rows (written in one insert at the end). persistCredential still
-     * validates every row exactly as the Add form does.
-     *
-     * @var array{prefix:string,next:int,names:array<string,bool>,audit:array<int,array>}|null
-     */
     protected ?array $importBatch = null;
 
-    /**
-     * POST /credvault/imports/preview  (multipart: type, file) — Import by category.
-     *
-     * type is one of the 25 forms. The file is that type's sheet (the sample's layout): an
-     * .xlsx is read at the tab named for the type (or its first tab), a CSV as it is. Every
-     * row is checked exactly as the type's Add form checks it — required fields, web
-     * addresses, emails, phones, dates, the select lists, card number and expiry, IFSC,
-     * CVV / PIN, seed phrases, setup keys, lengths, name, risk, rotation — and nothing is
-     * saved. Rows that fail come back in `failed` with the sheet row number and each
-     * reason; the rest are parked behind a token for POST /imports. No secret is returned.
-     *
-     * Flags on a valid row: dup (a credential of this type and name is already yours),
-     * dupfile (the name repeats in the file), weak (a password below the policy minimum —
-     * still importable, counted as weak). selected = valid and not a duplicate.
-     */
     protected function importPreviewTyped(Request $request, User $u)
     {
         $d = $request->validate([
@@ -2093,14 +1759,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /**
-     * POST /credvault/imports { token, rows: [index…], duplicates: skip|copy, scope?, department_id? }
-     *
-     * The token is consumed, so a second click imports nothing twice.
-     * "Import as copy" brings a row that is already in the vault in with
-     * " (imported)" added to its name. History counts follow the prototype:
-     * skipped = every row not imported; duplicates = every duplicate in the file.
-     */
     public function import(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2116,14 +1774,11 @@ class CredVaultController extends Controller
         $scope  = $d['scope'] ?? 'personal';
         $deptId = $scope === 'team' ? $this->teamDepartmentFor($u, $d['department_id'] ?? null) : null;
 
-        // The preview is spent only once the import commits: a run that imports nothing
-        // (all skipped, or an error) leaves it, so the person can change options and retry.
-        // The marker stops two runs of the same preview at once.
         $cacheKey = $this->importCacheKey($u, $d['token']);
         if (!Cache::add("{$cacheKey}:running", 1, 120)) $this->reject('This import is already running.', 'token', 409);
 
         try {
-            $payload = Cache::get($cacheKey);   // read only once the marker is ours
+            $payload = Cache::get($cacheKey);
             if (!$payload) $this->reject('This preview has expired or was already imported. Upload the file again.', 'token', 410);
             $payload = Crypt::decrypt($payload);
             $pol     = Policy::for($u->client_id);
@@ -2138,12 +1793,6 @@ class CredVaultController extends Controller
         return $result;
     }
 
-    /**
-     * Import by category: each picked valid row is saved through the type's Add form
-     * (persistCredential), so it gets the same code, encryption, strength, risk, audit and
-     * checks as one typed in. A row the form still refuses joins the failed list. History
-     * counts: imported · skipped (every row not imported) · weak · duplicates · failed.
-     */
     protected function runTypedImport(User $u, array $d, array $payload, string $scope, ?int $deptId)
     {
         $picked = array_flip($d['rows']);
@@ -2154,8 +1803,6 @@ class CredVaultController extends Controller
 
         $t = $this->inTransaction('import the credentials', function () use ($u, $d, $payload, $scope, $deptId, $picked, &$failed, &$items, &$weak, &$codes) {
             $this->importing = true;
-            // One code allocation for the whole sheet: nextCode takes the client lock, held
-            // until this transaction ends, so the numbers after it are ours to hand out.
             $prefix = Credential::VAULT_PREFIX['normal'];
             $this->importBatch = [
                 'prefix' => $prefix,
@@ -2175,7 +1822,6 @@ class CredVaultController extends Controller
                     if ($isDup) $p['name'] = Str::limit($p['name'], 139, '') . ' (imported)';
                     $auditMark = count($this->importBatch['audit']);
                     try {
-                        // persistCredential saves inside its own savepoint, so a refused row rolls back alone.
                         $res = $this->persistCredential(Request::create('/', 'POST', $p), $u, null, 'normal');
                         $codes[] = $res->getData(true)['data']['code'] ?? null;
                         $this->importBatch['next']++;
@@ -2191,7 +1837,6 @@ class CredVaultController extends Controller
                         $failed[] = ['row' => $row['row'], 'name' => $row['name'], 'errors' => [['field' => array_key_first($b['errors'] ?? []) ?? 'row', 'label' => '', 'message' => $b['message'] ?? 'Could not be imported.']]];
                     }
                 }
-                // The "credential added" entries, one insert (chunked for a 2,000-row sheet).
                 foreach (array_chunk($this->importBatch['audit'], 500) as $chunk) AuditLog::insert($chunk);
             } finally {
                 $this->importing = false;
@@ -2283,13 +1928,11 @@ class CredVaultController extends Controller
         ], 201);
     }
 
-    /** GET /credvault/imports — Imported Credentials History. */
     public function imports(Request $request)
     {
         return $this->transferHistory($request, 'import');
     }
 
-    /** GET /credvault/imports/{id} — one import, with its failed list (row, name, reasons). */
     public function importShow(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -2300,10 +1943,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'data' => $this->transferRow($t, $u) + ['failed_rows' => $t->failed_rows ?? []]], 200);
     }
 
-    /**
-     * GET /credvault/imports/types — the 25 categories the import screen offers, each with its
-     * sheet (tab) name, its columns (required, hint, options) and the files attached later.
-     */
     public function importTypes(Request $request)
     {
         $this->tenantUser($request);
@@ -2318,17 +1957,6 @@ class CredVaultController extends Controller
         })->values(), 'meta' => ['formats' => ['xlsx' => 'Excel', 'csv' => 'CSV'], 'max_rows' => VaultFile::MAX_ROWS, 'max_mb' => 5]], 200);
     }
 
-    /**
-     * GET /credvault/imports/sample?format=xlsx|csv&type=&layout=types|simple — Download sample file.
-     *
-     * layout types (the default) — one sheet per credential type, laid out as that type's form,
-     * each with two example rows that pass every check:
-     *   xlsx            one workbook: 25 tabs (Login … Outdoor License) and "How to fill"
-     *   xlsx + type     that type's tab and "How to fill"
-     *   csv + type      that type's sheet as a CSV
-     *   csv             a .zip with the 25 CSVs (a CSV has no tabs) and how-to-fill.csv
-     * layout simple — the older any-type sample (name, url, username, password, category, notes).
-     */
     public function importSample(Request $request)
     {
         $this->tenantUser($request);
@@ -2384,20 +2012,6 @@ class CredVaultController extends Controller
         return $this->download($body, 'credvault-import-sample.' . $fmt, $this->mime($fmt));
     }
 
-    /**
-     * POST /credvault/backups { format, scope: mine|team|all, include_passwords, lock, password, password_confirmation, account_password? }
-     *
-     * The file matches the prototype's backup: columns Name, Type, Category,
-     * Website, Username, [Password], Owner, Vault, Risk, 2FA, Rotation, Notes,
-     * Updated; Excel adds an "About" sheet; JSON wraps the rows with the
-     * backup's id, date, author and vault. A locked backup is an .xlsx with
-     * Excel's own password encryption (AES-256): Excel asks for the password
-     * when it opens, no zip. A CSV or JSON file cannot carry a password, so
-     * only Excel can be locked. Passwords without a lock would be a
-     * readable file, so that case asks for the account password again.
-     * Secrets of protected credentials are never written — they open through
-     * an unlock, not a file. A failed attempt is recorded too.
-     */
     public function backup(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2426,7 +2040,6 @@ class CredVaultController extends Controller
             });
             $this->reject($why . '.', $field);
         };
-        // The screen's rule: 8+ characters with letters, numbers and a symbol (Good or stronger, D34).
         if ($d['lock'] && $d['format'] !== 'xlsx') {
             $this->reject('A ' . $fmtLabel . ' file cannot hold a password. Choose Excel to lock the backup, or turn the lock off.', 'lock');
         }
@@ -2445,10 +2058,7 @@ class CredVaultController extends Controller
         [$keys, $rows, $withheld] = $this->backupRows($creds, $d['include_passwords']);
         $typeSheets = $d['format'] === 'xlsx' ? $this->backupTypeSheets($creds, $d['include_passwords']) : [];
         $name  = "credvault-{$d['scope']}-backup-" . now()->format('Ymd');
-        // Built inside the transaction below with the code it is recorded under, so the
-        // Backup ID in the file always matches the history row.
         $build = fn (string $code) => match ($d['format']) {
-            // (xlsx below: the summary, one tab per type in the import layout, About)
             'csv'  => VaultFile::csv(array_values($keys), array_map(fn ($r) => array_values(array_intersect_key(array_replace($keys, $r), $keys)), $rows)),
             'json' => json_encode(['format' => 'CredVault backup', 'id' => $code, 'created' => now()->toIso8601String(), 'by' => $u->name,
                 'scope' => $scopeLabel, 'count' => count($rows), 'credentials' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -2489,11 +2099,6 @@ class CredVaultController extends Controller
         ]);
     }
 
-    /**
-     * GET /credvault/backups?mine= — backup history (failed attempts included),
-     * plus what the Backup form shows before anything is downloaded: the
-     * credential count of each scope and the columns the file will hold.
-     */
     public function backups(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2505,11 +2110,6 @@ class CredVaultController extends Controller
         return response()->json($res, 200);
     }
 
-    /**
-     * The export's selection, exactly the table's: tab mine (My Credentials) or team (Team
-     * Credentials — the team's, not yours, not shared with you), then the table's filters.
-     * `scope` (team | personal) is the older name of the tab and still accepted.
-     */
     protected function exportRules(): array
     {
         return [
@@ -2530,7 +2130,6 @@ class CredVaultController extends Controller
         return $d['tab'] ?? (in_array($d['scope'] ?? 'team', ['personal', 'mine'], true) ? 'mine' : 'team');
     }
 
-    /** @return Collection the credentials of the selection (groups not applied), with _rank for fileSecret */
     protected function exportSet(User $u, array $d, bool $light = false): Collection
     {
         $tab = $this->exportTab($d);
@@ -2541,8 +2140,6 @@ class CredVaultController extends Controller
         if ($tab === 'mine') {
             $q->where('owner_id', $u->id);
         } else {
-            // The same set as the Team tab (listCredentials): team-scope credentials, plus the
-            // credentials of the people this viewer oversees, whatever their scope.
             $overseen = $this->overseenUserIds($u);
             $q->where(fn ($w) => $w->where('scope', 'team')->when($overseen, fn ($x) => $x->orWhereIn('owner_id', $overseen)))
                 ->where('owner_id', '!=', $u->id)->whereNotIn('credvault_credentials.id', $this->sharedWithMeIds($u));
@@ -2555,11 +2152,6 @@ class CredVaultController extends Controller
         return $all->each(fn ($c) => $c->setAttribute('_rank', $acc[$c->id][0] ?? self::RANK_USE)->setAttribute('_via', $acc[$c->id][1] ?? null))->values();
     }
 
-    /**
-     * GET /credvault/exports/preview?tab=mine|team&department_id=&vault=&risk=&type=&q= — the Export
-     * popup before anything downloads: a count per category (the "What to export" boxes), the total,
-     * how many are protected, and both tab counts — the same numbers as the table's tabs.
-     */
     public function exportPreview(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2582,16 +2174,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /**
-     * POST /credvault/exports { tab: mine|team, department_id?, vault?, risk?, type?, q?, groups?[],
-     *                          format: csv|json, include_notes, include_passwords, acknowledge, account_password }
-     *
-     * The "Export Credentials" popup: the table's selection (tab + filters), narrowed to the ticked
-     * categories, with every column the table shows (EXPORT_COLUMNS).
-     * The file is plain text, so including passwords takes the acknowledgement
-     * AND the account password; secrets of protected credentials are written
-     * as "[Protected — unlock in CredVault]".
-     */
     public function export(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2634,15 +2216,11 @@ class CredVaultController extends Controller
         ]);
     }
 
-    /** GET /credvault/exports — export history. */
     public function exports(Request $request)
     {
         return $this->transferHistory($request, 'export');
     }
 
-    /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
-
-    /** The bin's four tabs, on a query already narrowed to one vault. */
     protected function binTabCounts(Builder $q, User $u, array $pol): array
     {
         return [
@@ -2653,7 +2231,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /** The bin search: ID, name, category, group, type label, owner and who deleted it. */
     protected function binSearch(Builder $q, User $u, ?string $term): void
     {
         if ($term === null || trim($term) === '') return;
@@ -2667,18 +2244,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /**
-     * GET /credvault/recycle-bin?vault=normal|critical&tab=all|mine|team|soon&q=&page=&per_page=
-     *
-     * The four tabs (All Items · Deleted by Me · Team Credentials · Expiring Soon), each split
-     * into Normal Vault and Critical Vault. `vault` (default normal) picks the sub-tab; `tabs`
-     * are its four counts and `counts` all eight. Counts follow the search box.
-     *
-     * One retention period covers both vaults, set per branch (Policy::binDays): each item
-     * follows its branch's period, and `retention_days` is the viewer's. Critical items can be
-     * restored or deleted only by the Branch Admin (`can_restore`, `can_purge`).
-     * Expired items are purged first; `purged` says how many went. "expiring" = "soon".
-     */
     public function recycleBin(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2746,7 +2311,6 @@ class CredVaultController extends Controller
             'data'    => collect($page->items())->values()->map(function ($c, $i) use ($pol, $deleters, $u, $from, $binAdmin) {
                 $total = Policy::binDays($pol, $c->bin_branch);
                 $purge = $c->deleted_at->copy()->addDays($total);
-                // Never "0 days": an item still in the bin goes on its last day.
                 $days  = max(1, (int) ceil(now()->diffInHours($purge, false) / 24));
                 $deny  = $this->binDenial($u, $c);
 
@@ -2774,7 +2338,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** POST /credvault/recycle-bin/{id}/restore — a Critical Vault item: the Branch Admin only. */
     public function restore(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -2791,7 +2354,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'message' => "“{$c->name}” restored to {$to}.", 'data' => ['id' => $c->id, 'vault' => $c->vault, 'restored_to' => $to]], 200);
     }
 
-    /** DELETE /credvault/recycle-bin/{id} { confirm: true } — gone for good. A Critical Vault item: the Branch Admin only. */
     public function purge(Request $request, int $id)
     {
         $u = $this->tenantUser($request);
@@ -2807,13 +2369,6 @@ class CredVaultController extends Controller
         return response()->json(['status' => true, 'message' => "“{$c->name}” deleted permanently.", 'data' => ['id' => $c->id, 'vault' => $c->vault]], 200);
     }
 
-    /**
-     * DELETE /credvault/recycle-bin { confirm: true, vault?: normal|critical|all } — Empty Bin.
-     *
-     * vault all (the default) empties both vaults in one call: every Normal Vault item the
-     * user sees in the bin, and — for the Branch Admin — every Critical Vault item of the
-     * branch. Critical items anyone else sees are left and counted in `skipped`.
-     */
     public function emptyBin(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -2846,18 +2401,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /**
-     * GET /credvault/recycle-bin/retention[?days=7][&branch_id=3] — the Change period popup.
-     *
-     * One period covers both vaults (My Vault and Critical Vault), set per branch: `days` is the
-     * viewer's (their branch's own, else the company's), `normal` / `critical` repeat it per vault.
-     * A Branch Admin changes their branch's; a Vault Admin the company default (`branch_id`
-     * omitted) or one branch's, and gets `branches[]` with each branch's period.
-     *
-     * With `days`, `preview` says what that period would delete right away: the bin items of the
-     * branch (or of the branches on the company period) older than it (`total`), and those the
-     * user can see in their own bin (`items`).
-     */
     public function binRetention(Request $request)
     {
         $u   = $this->tenantUser($request);
@@ -2890,11 +2433,6 @@ class CredVaultController extends Controller
         ], fn ($v) => $v !== null)], 200);
     }
 
-    /**
-     * The branch a retention call is about: a Branch Admin's own (another branch → 403); for a
-     * Vault Admin the branch_id sent, or null = the company default. Others: their own branch,
-     * read-only. $change: the caller wants to change it.
-     */
     protected function retentionTarget(User $u, ?int $branchId, bool $change): ?int
     {
         if ($own = $this->adminBranchOf($u)) {
@@ -2911,7 +2449,6 @@ class CredVaultController extends Controller
         return $this->binBranchFor($u);
     }
 
-    /** The policy as it would read with $branch's period (null = the company's) set to $days. */
     protected function withRetention(array $pol, ?int $branch, int $days): array
     {
         if ($branch) $pol['bin_branch_days'][$branch] = $days;
@@ -2920,23 +2457,15 @@ class CredVaultController extends Controller
         return $pol;
     }
 
-    /**
-     * What a new period would delete at once — the same rule purgeExpired() applies, for the
-     * items the change covers: $branch's (or, for the company period, the branches without their
-     * own). `items` is the user's own bin view, oldest first.
-     */
     protected function retentionImpact(User $u, int $days, ?int $branch = null): array
     {
         $pol  = Policy::for($u->client_id);
         $next = $this->withRetention($pol, $branch, $days);
-        // Only what the change newly puts past its period: already-expired items go anyway.
         $hit  = fn (Builder $q) => $this->wherePastRetention($q, $next)->whereNotIn('credvault_credentials.id',
             $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id), $pol)->select('credvault_credentials.id'));
         $all   = $hit(Credential::onlyTrashed()->where('credvault_credentials.client_id', $u->client_id));
         $total = (clone $all)->count();
         $mine  = $hit($this->binQuery($u))->pluck('credvault_credentials.id')->flip();
-        // Every credential the change deletes — the viewer's own bin and other people's — so the confirm lists all of
-        // them, each marked with whose bin it is in (capped, as a guard on a very large bin).
         $items = (clone $all)->with('owner:id,name')->orderBy('deleted_at')->limit(500)
             ->get(['credvault_credentials.id', 'code', 'name', 'type', 'risk', 'vault', 'owner_id', 'deleted_at']);
 
@@ -2954,14 +2483,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /**
-     * PUT /credvault/recycle-bin/retention { days, branch_id?, confirm_purge?: true } — Change
-     * period, for both vaults. A Branch Admin sets their branch's period (every employee of the
-     * branch, My Vault and Critical Vault); a Vault Admin the company default (no branch_id: every
-     * branch without its own) or one branch's. `vault` is accepted and ignored — one period covers
-     * both. A shorter period deletes the items already past it, right away — so when it would
-     * delete any, the call needs confirm_purge (409 without it).
-     */
     public function updateBinRetention(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -3011,20 +2532,6 @@ class CredVaultController extends Controller
             'data' => ['days' => $days, 'applies_to' => 'both', 'scope' => $branch ? 'branch' : 'company', 'branch_id' => $branch, 'purged' => $purged]], 200);
     }
 
-    /* ═══════════════════════════ GENERATOR ═══════════════════════════ */
-
-    /**
-     * POST /credvault/generate-password — the Generate Password dialog and the ↻ button in
-     * password fields, one method and one set of defaults for both (GP-R8):
-     *
-     *   mode chars   length 12–64 (20) · upper · lower · numbers · symbols (all on) · avoid_ambiguous (on)
-     *   mode phrase  words 4–10 (6) · capitalize (on) · add_number (on) · separator hyphen | dot | underscore | space
-     *                (or the character itself; a bare " " is trimmed by the request middleware, so send "space")
-     *
-     * The level is the D34 rule every CredVault password follows (Fair · Good · Strong),
-     * `bits` only a hint. A setting that cannot reach the policy minimum is refused (GP-V03),
-     * so nothing below the minimum is ever shown. Only the action is audit-logged, never the value.
-     */
     public function generatePassword(Request $request)
     {
         $u   = $this->tenantUser($request);
@@ -3054,8 +2561,8 @@ class CredVaultController extends Controller
         if ($o['mode'] === 'phrase') {
             $out = $G::passphrase($o, $min >= 3);
         } else {
-            if (!$G::sets($o)) $this->reject('Keep at least one character set on', 'upper');                 // GP-V01
-            if ($G::charsLevel($o) < $min) $this->reject("This setting can’t reach the policy minimum ({$minLabel})", 'symbols'); // GP-V03
+            if (!$G::sets($o)) $this->reject('Keep at least one character set on', 'upper');
+            if ($G::charsLevel($o) < $min) $this->reject("This setting can’t reach the policy minimum ({$minLabel})", 'symbols');
             $out = $G::characters($o);
         }
         $level = Credential::strengthOf($out['password']);
@@ -3075,10 +2582,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /**
-     * GET /credvault/generate-password/options — what the dialog offers: the defaults, the
-     * ranges, the separators, and which Characters settings the policy minimum disables.
-     */
     public function generatorOptions(Request $request)
     {
         $u   = $this->tenantUser($request);
@@ -3089,40 +2592,22 @@ class CredVaultController extends Controller
             'defaults'       => $G::DEFAULTS,
             'length'         => ['min' => $G::LENGTH[0], 'max' => $G::LENGTH[1]],
             'words'          => ['min' => $G::WORDS[0], 'max' => $G::WORDS[1], 'list' => 'EFF long list', 'list_size' => count($G::wordList())],
-            // Send `name` (hyphen · dot · underscore · space): a bare space is trimmed from requests.
             'separators'     => collect($G::SEPARATORS)->map(fn ($l, $v) => ['name' => array_search($v, $G::SEPARATOR_NAMES, true), 'value' => $v, 'label' => $l])->values(),
             'symbols'        => $G::SYMBOLS,
             'ambiguous'      => $G::AMBIGUOUS,
             'policy_minimum' => ['level' => $min, 'label' => $G::label($min)],
-            // Characters mode reaches Good or Strong only with letters, numbers and symbols all on.
             'required_on_for_minimum' => $min >= 3 ? ['numbers', 'symbols', 'letters (upper or lower)'] : [],
             'add_number_forced'       => $min >= 3,
             'clipboard_clear_seconds' => 30,
         ]], 200);
     }
 
-    /* ═════════════════════════════ DASHBOARD ═════════════════════════════ */
-
-    /**
-     * GET /credvault/dashboard?range=7|14|30&tz= — the landing page, every
-     * widget in one call, computed as the prototype's vdData():
-     *
-     *   score = round(hp·.40 + tp·.25 + rp·.20 + bkp·.15), each factor a whole
-     *   percent first; a factor with nothing to measure counts 0.
-     *     hp  credentials with no open issue / credentials in your vaults
-     *     tp  2FA on / credentials where 2FA applies
-     *     rp  rotations on time (due-soon included) / credentials that rotate
-     *     bkp 50 for a good backup in 7 days (30 within 30 days) + 50 × locked share
-     *
-     * tz (an IANA zone, e.g. Asia/Kolkata) buckets the activity chart by the
-     * viewer's own midnight; the server runs on UTC.
-     */
     public function dashboard(Request $request)
     {
         $u = $this->tenantUser($request);
         $d = $request->validate([
             'range' => ['nullable', 'integer', Rule::in([7, 14, 30])],
-            'tz'    => ['nullable', 'timezone:all_with_bc'], // browsers still report aliases such as Asia/Calcutta
+            'tz'    => ['nullable', 'timezone:all_with_bc'],
         ]);
         $range = $d['range'] ?? 14;
         $tz    = $d['tz'] ?? config('app.timezone');
@@ -3132,7 +2617,7 @@ class CredVaultController extends Controller
 
         $all    = $this->visibleQuery($u)->select(self::LIGHT_COLUMNS)->with('owner:id,name')->get();
         $access = $this->accessMap($all, $u);
-        $own    = $all->filter(fn ($c) => ($access[$c->id][1] ?? null) !== 'share')->values();   // your vaults: what health counts
+        $own    = $all->filter(fn ($c) => ($access[$c->id][1] ?? null) !== 'share')->values();
         $issues = collect($this->healthIssues($own, $pol));
         $risky  = $issues->pluck('credential.id')->unique();
         $shared = $all->filter(fn ($c) => $c->owner_id !== $u->id && ($access[$c->id][1] ?? null) === 'share');
@@ -3143,7 +2628,6 @@ class CredVaultController extends Controller
         $tw   = $own->whereIn('twofa', ['yes', 'no']);
         $pw   = $own->where('has_password', true);
 
-        // Backups and imports over all history, in aggregate.
         $bk = Transfer::where('client_id', $u->client_id)->where('kind', 'backup');
         $bkStats = (clone $bk)->selectRaw(
             "sum(case when status = 'done' then 1 else 0 end) as ok,
@@ -3176,7 +2660,6 @@ class CredVaultController extends Controller
         $bin      = $this->binQuery($u)->select(['id', 'deleted_at', 'deleted_by'])->selectRaw(self::BIN_BRANCH_SQL . ' as bin_branch')->get();
         $binSoon  = $bin->filter(fn ($b) => $b->deleted_at->copy()->addDays(Policy::binDays($pol, $b->bin_branch))->lte(now()->addDays(7)))->count();
 
-        // Activity: this range and the one before it, by the viewer's day.
         $startLocal = now($tz)->subDays($range - 1)->startOfDay();
         $from = $startLocal->copy()->utc();
         $prevFrom = $startLocal->copy()->subDays($range)->utc();
@@ -3203,8 +2686,6 @@ class CredVaultController extends Controller
         $imQ     = Transfer::where('client_id', $u->client_id)->where('kind', 'import');
         $imStats = (clone $imQ)->selectRaw('count(*) as runs, coalesce(sum(items),0) as items, coalesce(sum(weak),0) as weak, coalesce(sum(duplicates),0) as dup, coalesce(sum(skipped),0) as skipped, count(distinct user_id) as people')->first();
 
-        // Departments: every one with people, counting each credential by its
-        // team or, for a personal one, by its owner's department.
         $ownerDept = $this->departmentsOfUsers($all->pluck('owner_id')->unique()->all());
         $deptOf    = fn ($c) => $c->department_id ?: ($ownerDept[$c->owner_id] ?? null);
         $members   = $this->memberCounts($u->client_id);
@@ -3296,7 +2777,6 @@ class CredVaultController extends Controller
         ]], 200);
     }
 
-    /** [user_id => department_id] from the login, else the employee record. */
     protected function departmentsOfUsers(array $ids): array
     {
         if (!$ids) return [];
@@ -3306,8 +2786,6 @@ class CredVaultController extends Controller
 
         return $out;
     }
-
-    /* ═════════════════════════ CREDENTIAL WRITES ═════════════════════════ */
 
     protected function credentialRules(bool $creating): array
     {
@@ -3335,21 +2813,14 @@ class CredVaultController extends Controller
             'lock_otp'             => ['sometimes', 'boolean'],
             'lock_admin_user_id'   => ['sometimes', 'nullable', 'integer', 'min:1'],
             'lock_manager_user_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            // Critical Vault 2-step, linked in the form before the save.
             'twofa_method'         => ['sometimes', 'nullable', Rule::in(Credential::TWOFA_METHODS)],
-            //   google: the secret from POST /critical-vault/two-step/google/new and one code from the app
             'totp_secret'          => ['sometimes', 'nullable', 'string', 'regex:/^[A-Z2-7]{16,128}$/', 'required_with:totp_code'],
             'totp_code'            => ['sometimes', 'nullable', 'regex:/^\d{6}$/', 'required_with:totp_secret'],
-            //   email: the inbox, and the token of a code verified by POST /critical-vault/two-step/email/verify
             'twofa_email'          => ['sometimes', 'nullable', 'email:rfc', 'max:191'],
             'email_otp_token'      => ['sometimes', 'nullable', 'string', 'size:40'],
         ];
     }
 
-    /**
-     * "yes"/"no" — what the form's 2FA switch posts — read as booleans, for
-     * the top-level switch and for the Password type's own 2FA toggle field.
-     */
     protected function normaliseSwitches(Request $request): void
     {
         $yn = fn ($v) => is_string($v) && in_array(strtolower($v), ['yes', 'no'], true) ? strtolower($v) === 'yes' : $v;
@@ -3361,22 +2832,6 @@ class CredVaultController extends Controller
         }
     }
 
-    /**
-     * Create ($c null) or update one credential — the Add and Edit forms of
-     * either vault. The vault is fixed at creation, like the type.
-     *
-     * Normal Vault: risk low / medium / high; 2-step is a yes/no the form
-     * records (twofa). Nothing is linked and nothing is asked on reveal.
-     *
-     * Critical Vault: risk is always critical, with the protection steps. The
-     * 2-step step is the type's 2FA switch on a type that has one (login,
-     * email, bank, crypto, passkey, password), lock_otp on any other. When it
-     * is on, the method is linked inside the form and the save is refused
-     * until its code matched, so nothing is ever locked behind a code nobody
-     * receives:
-     *   google  the secret shown as a QR code + one code from the app
-     *   email   the inbox + the token of a code verified by email/verify
-     */
     protected function persistCredential(Request $request, User $u, ?Credential $c, string $vault)
     {
         $creating = $c === null;
@@ -3399,7 +2854,6 @@ class CredVaultController extends Controller
         $scopeIds = $creating ? [] : $this->healthScope($u)->pluck('id')->all();
         $before = $creating ? [] : $this->singleIssues($c, $pol, $scopeIds);
 
-        // The Password type keeps its 2FA switch among its fields; it is the credential's 2FA, not a stored field.
         $inputFields = $data['fields'] ?? [];
         $toggle2fa = array_key_exists('twofa', $inputFields) ? $inputFields['twofa'] : null;
         unset($inputFields['twofa']);
@@ -3423,14 +2877,11 @@ class CredVaultController extends Controller
             : null;
 
         if ($critical) {
-            // A Critical Vault credential may carry any risk level; the vault (not the risk) drives
-            // its approval + 2-step protection, so a low-risk credential here is still critical.
             $risk = $data['risk'] ?? ($c->risk ?? 'critical');
         } else {
             if (($data['risk'] ?? null) === 'critical') {
                 $this->reject('Critical credentials are added in the Critical Vault, where they get approvals and 2-step verification.', 'risk');
             }
-            // A type that defaults to critical (card, bank, crypto, ID) starts at high here.
             $risk = $data['risk'] ?? ($c->risk ?? ($def['risk'] === 'critical' ? 'high' : $def['risk']));
         }
         $sec  = $def['sec'];
@@ -3446,31 +2897,23 @@ class CredVaultController extends Controller
             default                           => 'na',
         };
 
-        // Protection — the Critical Vault only. In the Normal Vault 2-step stays a recorded flag.
         $pick = fn (string $k, bool $default) => array_key_exists($k, $data) ? (bool) $data[$k] : $default;
         $lockAdmin   = $critical && $pick('lock_admin', $creating ? true : $c->lock_admin);
         $lockManager = $critical && $pick('lock_manager', $creating ? true : $c->lock_manager);
         $lockOtp     = $critical && (Credential::hasTwofaSwitch($type)
             ? $twofa === 'yes'
             : $pick('lock_otp', $creating ? true : $c->lock_otp));
-        // On a type without its own switch the 2-step step is what "2FA" means.
         if ($critical && !Credential::hasTwofaSwitch($type)) $twofa = $lockOtp ? 'yes' : 'na';
         if ($critical && !$lockAdmin && !$lockManager && !$lockOtp) {
             $this->reject('Turn on at least one protection step for a critical credential.', 'lock_admin');
         }
-        /* New flow: the form no longer pins a specific approver. Both are
-         * resolved when access is requested — the Vault Admin is the credential
-         * branch's Branch Admin (common), the manager is the requester's own
-         * reporting manager (individual). Only the on/off toggles are stored. */
         $adminUserId = null;
         $managerUserId = null;
 
-        // The 2-step method: linked afresh (a code that matched) or the one already linked, kept.
         [$method, $newSecret, $email, $emailToken] = $lockOtp ? $this->twoStepLink($data, $u, $c) : [null, null, null, null];
 
         $idSpec   = $def['id'] ? collect($def['fields'])->firstWhere('key', $def['id']) : null;
         $idValue  = $def['id'] ? ($fields[$def['id']] ?? null) : null;
-        // A secret id (account, passport, licence number) shows as its last four only.
         $username = $idValue === null ? null : (!empty($idSpec['secret']) ? '•••• ' . mb_substr((string) $idValue, -4) : $idValue);
         $url      = collect(['url', 'endpoint', 'host', 'domain'])->map(fn ($k) => $fields[$k] ?? null)->first(fn ($v) => filled($v));
 
@@ -3489,7 +2932,6 @@ class CredVaultController extends Controller
                     'vault' => $vault, 'type' => $type,
                 ]);
             }
-            // The verified email code is used up here, inside the save, so one code links one credential.
             if ($emailToken && !EmailOtp::consumeSetup($u, $emailToken, $email)) {
                 $this->reject('The email code has expired. Send a new code and verify it again.', 'email_otp_code');
             }
@@ -3519,7 +2961,6 @@ class CredVaultController extends Controller
                 $c->twofa_email = null;
             }
             if (!$method) $c->twofa_linked_at = null;
-            // An imported row carries no files (they are attached in the form afterwards): saved once, no attachments.
             $noFiles = $creating && $this->importBatch && !$request->allFiles();
             if ($noFiles) $c->attachments = [];
             $c->save();
@@ -3530,8 +2971,6 @@ class CredVaultController extends Controller
             }
 
             if ($creating) {
-                // CS-1479: a bulk import logs one "importx" summary entry, not a per-row
-                // "credential added" — so the activity log shows the import as one bulk entry.
                 if (!$this->importing) $this->audit($u, 'create', $c, "{$def['label']} credential added");
             } else {
                 $what = array_keys(array_diff_assoc(array_map('strval', $dirtyBefore), array_map('strval', [
@@ -3547,7 +2986,6 @@ class CredVaultController extends Controller
                     : 'Authenticator app linked', ['method' => $method]);
             }
 
-            // Password Health → Resolved: every issue this save made go away.
             $resolved = [];
             $open = $creating ? [] : $this->singleIssues($c, $pol, $scopeIds);
             foreach ($before as $issue) {
@@ -3561,14 +2999,12 @@ class CredVaultController extends Controller
         }, $stored);
 
         [$c, $resolved, $open] = $result;
-        // An import only needs the code it was saved under — not the full detail the form shows.
         if ($creating && $this->importBatch) {
             return response()->json(['status' => true, 'data' => ['id' => $c->id, 'code' => $c->code]], 201);
         }
         $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
         $body  = $this->detail($fresh, $u, $this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, $c->owner_id === $u->id ? 'owner' : 'admin']);
         if (!$creating) {
-            // The Fix flow's toast: "N health issues resolved" or "Saved — the issue is still open".
             $body['health'] = [
                 'resolved'   => array_map(fn ($i) => collect($i)->only(['type', 'severity', 'issue'])->all(), $resolved),
                 'still_open' => array_map(fn ($i) => collect($i)->only(['type', 'severity', 'issue'])->all(), $open),
@@ -3584,14 +3020,6 @@ class CredVaultController extends Controller
         ], $creating ? 201 : 200);
     }
 
-    /**
-     * The Critical Vault's 2-step on save: which method, and proof that its code
-     * matched — a fresh link, or the link already stored for the same method
-     * (and, for email, the same inbox). A request with totp_secret and no
-     * method means google, as the form sent it before email was offered.
-     *
-     * @return array{0:string,1:?string,2:?string,3:?string} method, new TOTP secret, inbox, verified email token
-     */
     protected function twoStepLink(array $data, User $u, ?Credential $c): array
     {
         $method = $data['twofa_method'] ?? (!empty($data['totp_secret']) ? 'google' : $c?->twofa_method);
@@ -3625,12 +3053,6 @@ class CredVaultController extends Controller
         return ['email', null, $email, null];
     }
 
-    /**
-     * The type form, checked field by field. Fields left out keep their stored
-     * value; a required field must hold a value once the edit is applied.
-     *
-     * @return array the merged fields, normalised
-     */
     protected function validateTypeFields(array $def, array $input, array $existing, Request $request, ?Credential $c, bool $critical = false): array
     {
         $errors = [];
@@ -3645,7 +3067,6 @@ class CredVaultController extends Controller
             if ($f['kind'] === 'file') {
                 $has = $request->hasFile("files.{$k}") || collect($c?->attachments ?? [])->contains('key', $k);
                 $removing = in_array($k, (array) $request->input('remove_attachments', []), true) && !$request->hasFile("files.{$k}");
-                // An import cannot carry a file: it is attached in the form afterwards.
                 if ($f['required'] && (!$has || $removing) && !$this->importing) $errors["files.{$k}"][] = "Upload the {$f['label']}.";
                 continue;
             }
@@ -3671,7 +3092,6 @@ class CredVaultController extends Controller
         return $merged;
     }
 
-    /** @return array{0:?string,1:string} an error message, or null and the normalised value */
     protected function checkField(string $type, array $f, string $v, bool $critical = false): array
     {
         $label = $f['label'];
@@ -3679,7 +3099,6 @@ class CredVaultController extends Controller
         if (mb_strlen($v) > $max) return ["{$label} can be at most {$max} characters.", $v];
 
         $err = match ($f['kind']) {
-            // A scheme is optional (the prototype accepts "books.zoho.in"); a path, query or fragment may follow.
             'url'    => preg_match('~^([a-z][a-z0-9+.-]*://)?((([\w-]+\.)+[a-z]{2,})|(\d{1,3}(\.\d{1,3}){3})|localhost)(:\d+)?([/?#]\S*)?$~i', $v)
                             ? null : "Enter a valid web address for {$label}.",
             'email'  => filter_var($v, FILTER_VALIDATE_EMAIL) ? null : "Enter a valid email for {$label}.",
@@ -3711,7 +3130,6 @@ class CredVaultController extends Controller
                 return ((int) $v >= 1 && (int) $v <= 65535) ? [null, $v] : ['Port must be between 1 and 65535.', $v];
             case 'seed':
                 if ($type === 'totp') {
-                    // The base32 setup-key check applies to the Critical Vault only; My / Team Vault keep the key as typed.
                     if (!$critical) return [null, $v];
                     $b32 = strtoupper(preg_replace('/\s+/', '', $v));
                     return preg_match('/^[A-Z2-7]{16,128}=*$/', $b32) ? [null, $b32] : ['Enter the base32 setup key from the QR setup.', $v];
@@ -3735,11 +3153,6 @@ class CredVaultController extends Controller
         return $sum % 10 === 0;
     }
 
-    /**
-     * Files: a type's own file field arrives as files[<key>] and replaces the
-     * stored one; extra attachments arrive as attachments[] (5 at most).
-     * Stored on the private disk — they are served only through the endpoint.
-     */
     protected function syncAttachments(Request $request, Credential $c, array $def, array $remove, array &$stored): array
     {
         $list = collect($c->attachments ?? []);
@@ -3768,14 +3181,11 @@ class CredVaultController extends Controller
             throw ValidationException::withMessages(['attachments' => ['A credential can hold at most ' . self::MAX_EXTRA_ATTACHMENTS . ' attachments.']]);
         }
 
-        // Removed files are deleted once the database write cannot fail any more.
         $paths = $gone->pluck('path')->all();
         DB::afterCommit(fn () => Storage::disk('local')->delete($paths));
 
         return $list->values()->all();
     }
-
-    /* ═════════════════════════ ACCESS DECISIONS ═════════════════════════ */
 
     protected function decide(User $u, int $id, bool $approve, ?string $note)
     {
@@ -3790,18 +3200,12 @@ class CredVaultController extends Controller
                     $this->reject('This request is waiting for ' . ($r->adminUser?->name ?? 'the Branch Admin') . '.', null, 403);
                 }
             } elseif ($stage === 'manager') {
-                // The requester forwards to the manager explicitly (raise-manager); until then it is not the manager's to act on.
                 if ($r->manager_status !== 'pending') $this->reject('This request has not been forwarded to the reporting manager yet.', null, 409);
                 if ($r->manager_user_id !== $u->id) $this->reject('This request is waiting for ' . ($r->managerUser?->name ?? 'the reporting manager') . '.', null, 403);
             } else {
                 $this->reject('This request has no approval waiting.', null, 409);
             }
 
-            /* When the Vault Admin approving is ALSO the requester's reporting
-               manager (the branch admin most employees report to), one approval
-               covers both steps: the request goes straight on to 2FA (or unlocks)
-               instead of coming back to the same person a second time. Both
-               steps are still recorded as decided, by them, at this moment. */
             $both = $approve && $stage === 'admin' && $r->manager_required
                 && (int) $r->manager_user_id === (int) $u->id && $r->manager_status !== 'approved';
 
@@ -3820,7 +3224,6 @@ class CredVaultController extends Controller
                     'manager_note'       => $note,
                 ]);
             }
-            // The manager stage is no longer opened automatically — the requester forwards it (raise-manager).
 
             $extra = ['request_id' => $r->id, 'credential_id' => $r->credential_id, 'url' => '/credentials-vault/critical-vault'];
             if (!$approve) {
@@ -3835,7 +3238,6 @@ class CredVaultController extends Controller
                 elseif ($next === 'otp')  $r->status = 'approved';
 
                 if ($next === 'manager') {
-                    // Admin approved; the requester forwards to the manager (raise-manager), so tell THEM — the manager is notified on the forward.
                     $this->notify([$r->requester_id], 'access_approved', 'Vault Admin approved',
                         "The Vault Admin approved your request to unlock “{$r->credential?->name}”. Forward it to your reporting manager to continue.", $extra);
                 } else {
@@ -3857,7 +3259,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /** Opens the window. Called inside the caller's transaction. */
     protected function unlock(AccessRequest $r, User $actor): void
     {
         $r->fill(['status' => 'unlocked', 'unlocked_at' => now(), 'expires_at' => now()->addMinutes($r->duration_minutes)])->save();
@@ -3865,7 +3266,6 @@ class CredVaultController extends Controller
             ['request_id' => $r->id, 'requester_id' => $r->requester_id], 'Critical Vault');
     }
 
-    /** Ends every unlock whose window has passed. One indexed read when there is nothing to do. */
     protected function sweepUnlocks(int $clientId): void
     {
         if (isset($this->memo["swept:{$clientId}"])) return;
@@ -3911,9 +3311,6 @@ class CredVaultController extends Controller
         return $r;
     }
 
-    /* ═════════════════════════════ HEALTH ═════════════════════════════ */
-
-    /** Credentials the user can fix: owned, or administered (HOD / Vault Admin) — never ones only shared with them. */
     protected function healthScope(User $u): Collection
     {
         $all = $this->visibleQuery($u)->select(self::LIGHT_COLUMNS)->with('owner:id,name')->get();
@@ -3923,7 +3320,6 @@ class CredVaultController extends Controller
             ->each(fn ($c) => $c->setAttribute('_rank', $acc[$c->id][0]))->values();
     }
 
-    /** Every open issue across $creds, sorted by severity then credential ID. */
     protected function healthIssues(Collection $creds, array $pol, ?User $u = null): array
     {
         if ($creds->isEmpty()) return [];
@@ -3940,7 +3336,6 @@ class CredVaultController extends Controller
             foreach ($this->issuesOf($c, $pol, $others, $shares[$c->id] ?? [], $exposure[$c->id] ?? 0) as $i) {
                 $out[] = $i + [
                     'credential' => $this->issueCredential($c),
-                    // Fixing means editing; a team member's copy access cannot.
                     'can_fix'    => ($c->_rank ?? self::RANK_FULL) >= self::RANK_FULL,
                 ];
             }
@@ -3952,7 +3347,6 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /** The credential columns a health row shows: ID, name + url, category, owner, Team/Personal, strength. */
     protected function issueCredential(?Credential $c, ?AuditLog $fallback = null): array
     {
         if (!$c) {
@@ -3969,10 +3363,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /**
-     * The issues of one credential, its reuse read against the same vaults the
-     * Health list checks — so a save resolves exactly what the list showed.
-     */
     protected function singleIssues(Credential $c, array $pol, array $scopeIds = []): array
     {
         $others = $c->has_password && $c->secret_hash
@@ -3984,17 +3374,12 @@ class CredVaultController extends Controller
         return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? [], $this->exposureSinceReset(collect([$c]))[$c->id] ?? 0);
     }
 
-    /**
-     * The prototype's six checks (phIssues), with its wording. `detail` is the
-     * one-line text; `details` the parts the Details column draws.
-     */
     protected function issuesOf(Credential $c, array $pol, array $reusedWith, array $shares, int $exposed = 0): array
     {
         $crit = $c->risk === 'critical';
         $out  = [];
 
         if ($c->has_password && $c->strength < $pol['min_strength']) {
-            // D34: Fair counts as weak. The level is named, never scored (D5).
             $label = Credential::STRENGTH_LABELS[$c->strength] ?? '';
             $out[] = ['type' => 'weak', 'severity' => ($crit || $c->strength <= 2) ? 'critical' : 'high',
                 'issue' => $c->strength <= 2 ? 'Weak password' : 'Password below the policy minimum',
@@ -4043,7 +3428,6 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /** ok | soon | over | null when the credential has no password or no rotation. */
     protected function rotationState(Credential $c, array $pol): array
     {
         if (!$c->has_password || !$c->rotation_days) return ['state' => null, 'due' => null, 'age' => null];
@@ -4056,16 +3440,11 @@ class CredVaultController extends Controller
         return ['state' => $state, 'due' => $due->toIso8601String(), 'age' => $age];
     }
 
-    /** [credential_id => ['n' => live shares, 'full' => of which Full Access]] in one query. */
     protected function liveShareCounts(array $ids): array
     {
         return collect($this->shareBreakdown($ids))->map(fn ($p) => ['n' => array_sum($p), 'full' => $p['full'] ?? 0])->all();
     }
 
-    /**
-     * [credential_id => recipients] who have had the password since it was last changed: a share still live, or
-     * revoked / expired after the change. Revoking does not unsee a password, so only a new password resets it.
-     */
     protected function exposureSinceReset(Collection $creds): array
     {
         $ids = $creds->pluck('id')->all();
@@ -4084,7 +3463,6 @@ class CredVaultController extends Controller
         return array_map('count', $out);
     }
 
-    /** [credential_id => [permission => live shares]] in one query. */
     protected function shareBreakdown(array $ids): array
     {
         if (!$ids) return [];
@@ -4097,18 +3475,9 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /* ═════════════════════════════ POLICIES ═════════════════════════════ */
-
-    /**
-     * Applies a set of changes. Only keys that really change are written and
-     * logged; 2FA risk levels are compared as a set and stored critical → low,
-     * so re-saving the same choice is not a change. Turning every critical
-     * check off is allowed — the prototype allows it — and answered with a warning.
-     */
     protected function savePolicies(User $u, array $changes)
     {
         $current = Policy::for($u->client_id);
-        // Validated input keeps its wire type ("1", 1, true); store what the defaults are.
         foreach ($changes as $k => $v) {
             if (!array_key_exists($k, Policy::DEFAULTS) || $v === null) continue;
             if (is_bool(Policy::DEFAULTS[$k])) $changes[$k] = (bool) $v;
@@ -4139,7 +3508,6 @@ class CredVaultController extends Controller
             }
             Policy::forget($u->client_id);
 
-            // A shorter retention takes effect now, as the screen warns.
             return $next['bin_days'] < $current['bin_days'] ? $this->purgeExpired($u->client_id, $next, $u->id) : 0;
         });
         $settings = Policy::for($u->client_id);
@@ -4151,13 +3519,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /* ════════════════════════════ RECYCLE BIN ════════════════════════════ */
-
-    /**
-     * What the user sees in the bin: theirs, what they binned, team items for a Vault Admin,
-     * and — for a Branch Admin — the branch's team items and every Critical Vault item of the
-     * branch (a Branch Admin is the one who restores or deletes those). $vault narrows it.
-     */
     protected function binQuery(User $u, ?string $vault = null): Builder
     {
         $admin  = $this->isAdmin($u);
@@ -4173,18 +3534,12 @@ class CredVaultController extends Controller
             });
     }
 
-    /** A credential of the branch: filed under it, or owned by someone in it. */
     protected function inBranch(Builder $q, int $clientId, int $branch): Builder
     {
         return $q->where(fn ($x) => $x->where('credvault_credentials.branch_id', $branch)
             ->orWhereIn('owner_id', User::where('client_id', $clientId)->where('branch_id', $branch)->select('id')));
     }
 
-    /**
-     * Whether the user may restore or permanently delete a binned item. A Critical Vault item
-     * is the Branch Admin's alone — of the branch it belongs to; anything else the user sees
-     * in the bin (binQuery) is theirs to restore. null = allowed, else the reason.
-     */
     protected function binDenial(User $u, Credential $c): ?string
     {
         if ($c->vault !== 'critical') return null;
@@ -4195,7 +3550,6 @@ class CredVaultController extends Controller
             ? null : 'Only the Branch Admin can restore or delete Critical Vault items in the Recycle Bin.';
     }
 
-    /** Purges everything past retention — both vaults, each item by its branch's period. Returns how many went. */
     protected function purgeExpired(int $clientId, array $pol, ?int $actorId = null): int
     {
         $old = $this->wherePastRetention(Credential::onlyTrashed()->where('credvault_credentials.client_id', $clientId), $pol)
@@ -4208,14 +3562,8 @@ class CredVaultController extends Controller
         return $old->count();
     }
 
-    /** The branch whose period a binned credential follows: the one it is filed under, else its owner's. */
     protected const BIN_BRANCH_SQL = 'coalesce(credvault_credentials.branch_id, (select users.branch_id from users where users.id = credvault_credentials.owner_id))';
 
-    /**
-     * Narrows $q to binned items past their branch's period — or, with $withinDays, due to
-     * go within that many days ("Expiring soon"). A branch without its own period follows
-     * the company's.
-     */
     protected function wherePastRetention(Builder $q, array $pol, int $withinDays = 0): Builder
     {
         $own = $pol['bin_branch_days'] ?? [];
@@ -4227,14 +3575,12 @@ class CredVaultController extends Controller
                 $w->orWhere(fn ($x) => $x->whereRaw(self::BIN_BRANCH_SQL . ' = ?', [(int) $branch])
                     ->where('credvault_credentials.deleted_at', $op, $cut((int) $days)));
             }
-            // Everything else — no branch, or a branch without its own period — on the company's.
             $w->orWhere(fn ($x) => $x->when($own, fn ($y) => $y->where(fn ($b) => $b->whereRaw(self::BIN_BRANCH_SQL . ' is null')
                     ->orWhereRaw(self::BIN_BRANCH_SQL . ' not in (' . implode(',', array_map('intval', array_keys($own))) . ')')))
                 ->where('credvault_credentials.deleted_at', $op, $cut((int) $pol['bin_days'])));
         });
     }
 
-    /** The branch a binned credential belongs to, for its period. */
     protected function binBranchOfCredential(Credential $c): ?int
     {
         $b = $c->branch_id ?: User::whereKey($c->owner_id)->value('branch_id');
@@ -4242,10 +3588,6 @@ class CredVaultController extends Controller
         return $b ? (int) $b : null;
     }
 
-    /**
-     * The branch whose period the user sees and sets: a Branch Admin's branch, an employee's
-     * own branch; null for a Vault Admin (the company period).
-     */
     protected function binBranchFor(User $u): ?int
     {
         if ($b = $this->adminBranchOf($u)) return $b;
@@ -4253,7 +3595,6 @@ class CredVaultController extends Controller
         return !$this->isAdmin($u) && $u->branch_id ? (int) $u->branch_id : null;
     }
 
-    /** Where the viewer's period comes from: their branch's own, or the company's. */
     protected function binRetentionScope(User $u, array $pol): array
     {
         $b = $this->binBranchFor($u);
@@ -4274,14 +3615,6 @@ class CredVaultController extends Controller
         DB::afterCommit(fn () => Storage::disk('local')->delete($paths));
     }
 
-    /* ══════════════════════════ FILES OUT / IN ══════════════════════════ */
-
-    /**
-     * The credentials an export or backup covers. mine = owned · team = team
-     * vault · all = both; never ones that are only shared with the user,
-     * and never Critical Vault ones.
-     * $light skips the encrypted columns — for counting, not for writing.
-     */
     protected function fileScope(User $u, string $scope, bool $light = false): Collection
     {
         $q   = $this->visibleQuery($u)->with(['owner:id,name', 'department:id,name'])->orderBy('code');
@@ -4292,7 +3625,6 @@ class CredVaultController extends Controller
             $via = $acc[$c->id][1] ?? null;
             if ($via === 'share' || $via === null) return false;
             if ($c->scope !== 'team' && $c->owner_id !== $u->id) return false;
-            // A backup is the My Vault / Team Vault file: Critical Vault credentials never leave in one.
             if ($c->isCriticalVault()) return false;
             return match ($scope) {
                 'mine'  => $c->owner_id === $u->id,
@@ -4302,12 +3634,6 @@ class CredVaultController extends Controller
         })->values()->each(fn ($c) => $c->setAttribute('_rank', $acc[$c->id][0]));
     }
 
-    /**
-     * A secret as a file may carry it: written only where the user could copy
-     * it, and never for a protected credential — those open through an unlock.
-     *
-     * @return array{0:?string,1:bool} the value, and whether it was withheld
-     */
     protected function fileSecret(Credential $c): array
     {
         if ($c->isProtected()) return ['[Protected — unlock in CredVault]', true];
@@ -4317,15 +3643,9 @@ class CredVaultController extends Controller
         return [($def['sec'] ? ($c->fields[$def['sec']] ?? null) : null) ?? ($c->has_password ? $c->secret : '') ?? '', false];
     }
 
-    /** The export file's columns — every column of the credentials table, in its order. */
     protected const EXPORT_COLUMNS = ['Sr. No', 'Credential ID', 'Created On', 'Credential Name', 'Website / App', 'Type', 'Category', 'Username',
         'Owner', 'Access', 'Department', 'Vault', 'Risk', 'Strength', '2FA', 'Rotation (days)', 'Last Updated'];
 
-    /**
-     * The export rows: EXPORT_COLUMNS, then [Password / Secret], [Notes].
-     *
-     * @return array{0:array,1:array,2:int} columns, rows, secrets withheld
-     */
     protected function exportRows(Collection $creds, bool $withSecrets, bool $withNotes): array
     {
         $cols = self::EXPORT_COLUMNS;
@@ -4357,18 +3677,12 @@ class CredVaultController extends Controller
         return [$cols, $rows, $withheld];
     }
 
-    /** The backup's columns: key => header, as the prototype's bkCreate(). */
     protected const BACKUP_KEYS = [
         'name' => 'Name', 'type' => 'Type', 'category' => 'Category', 'url' => 'Website', 'username' => 'Username',
         'password' => 'Password', 'owner' => 'Owner', 'vault' => 'Vault', 'risk' => 'Risk', 'twofa' => '2FA',
         'rotation' => 'Rotation', 'notes' => 'Notes', 'updated' => 'Updated',
     ];
 
-    /**
-     * The backup's rows, keyed as BACKUP_KEYS (the JSON keeps those keys).
-     *
-     * @return array{0:array,1:array,2:int} key => header map (password dropped when not included), rows, secrets withheld
-     */
     protected function backupRows(Collection $creds, bool $withSecrets): array
     {
         $keys = $withSecrets ? self::BACKUP_KEYS : array_diff_key(self::BACKUP_KEYS, ['password' => 1]);
@@ -4392,11 +3706,6 @@ class CredVaultController extends Controller
         return [$keys, $rows, $withheld];
     }
 
-    /**
-     * The Excel backup's type tabs — one per type in the backup, laid out exactly as that type's
-     * import sheet, so a tab can be imported back. Secret fields are written only with
-     * passwords included, and never for a protected (locked critical) credential.
-     */
     protected function backupTypeSheets(Collection $creds, bool $withSecrets): array
     {
         $sheets = [];
@@ -4444,10 +3753,6 @@ class CredVaultController extends Controller
         ], 200);
     }
 
-    /**
-     * Header aliases — the prototype's IR_ALIAS first, in its order, then the
-     * dotted keys a nested Bitwarden JSON export flattens to.
-     */
     protected const IMPORT_ALIASES = [
         'name'     => ['name', 'title', 'account', 'service', 'credential name', 'credential'],
         'url'      => ['url', 'login_uri', 'website', 'uri', 'site', 'web site', 'link', 'login.uris.uri', 'login.uri'],
@@ -4468,7 +3773,6 @@ class CredVaultController extends Controller
         return $map;
     }
 
-    /** The source label, tested in the prototype's order (irDetect). '' when nothing matches. */
     protected function detectSource(array $h): string
     {
         $has = fn (...$k) => !array_diff($k, $h);
@@ -4490,11 +3794,8 @@ class CredVaultController extends Controller
         return "credvault:import:{$u->client_id}:{$u->id}:{$token}";
     }
 
-    /* ═════════════════════════════ SERIALISERS ═════════════════════════════ */
-
     protected const STAGE_LABELS = ['admin' => 'Vault Admin', 'manager' => 'Reporting Manager', 'otp' => '2-Step Code'];
 
-    /** The code step, named after the credential's 2-step method. */
     protected function otpLabel(?Credential $c): string
     {
         return $c?->twofa_method === 'email' ? 'Email code' : 'Authenticator';
@@ -4521,7 +3822,6 @@ class CredVaultController extends Controller
             'owner'             => ['id' => $c->owner_id, 'name' => $c->owner?->name, 'initials' => $this->initials($c->owner?->name), 'is_me' => $c->owner_id === $u->id],
             'department'        => $c->department_id ? ['id' => $c->department_id, 'name' => $c->department?->name] : null,
             'risk'              => $c->risk,
-            // The name only (Weak / Fair / Good / Strong); null when the type has no password. The level sorts.
             'strength'          => (Credential::STRENGTH_LABELS[$c->strength] ?? '') ?: null,
             'strength_level'    => $c->strength,
             'has_password'      => $c->has_password,
@@ -4536,7 +3836,6 @@ class CredVaultController extends Controller
             'protected'         => $steps !== [],
             'lock_steps'        => $steps,
             'access'            => $acc ? ['permission' => CredentialShare::PERMISSIONS[$acc[0]], 'via' => $acc[1],
-                // Who shared it with the viewer (live shares to them or their team): the Share popup leaves them out.
                 'shared_by'     => collect($this->sharedToMeBy($u, $c))->map(fn ($name, $id) => ['id' => $id, 'name' => $name])->values()->all()] : null,
             'can'               => $acc ? $this->canFlags($c, $acc) : null,
             'unlock'            => $steps
@@ -4548,7 +3847,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /** What the row's and the drawer's buttons may do. */
     protected function canFlags(Credential $c, array $acc): array
     {
         return [
@@ -4557,23 +3855,11 @@ class CredVaultController extends Controller
             'edit'   => $acc[0] >= self::RANK_FULL,
             'share'  => $acc[0] >= self::RANK_FULL,
             'delete' => $acc[0] >= self::RANK_FULL && $acc[1] !== 'share' && ($c->risk !== 'critical' || in_array($acc[1], ['owner', 'admin', 'branch'], true)),
-            // "Remove from your vault" — a credential that reached you by a share.
             'remove' => $acc[1] === 'share',
             'edit_protection' => in_array($acc[1], ['owner', 'admin'], true),
         ];
     }
 
-    /**
-     * The View drawer. A protected credential that is not unlocked shows its
-     * summary and its unlock plan — the steps, who answers each, and the last
-     * decision — but none of its fields.
-     */
-    /**
-     * The View drawer. $plain (the single GET only): every stored value in plain text — passwords
-     * and secret fields, recovery key, registered email / phone, notes — for anyone allowed to
-     * reveal (View or higher), and only while the credential is open: a locked Critical Vault
-     * credential still shows nothing until its unlock, and Use Only never sees a secret.
-     */
     protected function detail(Credential $c, User $u, array $acc, bool $plain = false): array
     {
         $pol   = Policy::for($u->client_id);
@@ -4616,13 +3902,11 @@ class CredVaultController extends Controller
                 'reg_phone' => $stored['_reg_phone'] ?? null,
                 'has_recovery_key' => filled($stored['_recovery_key'] ?? null),
             ] + ($plain ? ['recovery_key' => $stored['_recovery_key'] ?? null] : []);
-            // Notes are encrypted like a secret: Use Only ("never see it") gets none.
             $out['notes'] = $acc[0] >= self::RANK_VIEW ? $c->notes : null;
             $out['has_notes'] = filled($c->notes);
             $out['attachments'] = $files->reject(fn ($a, $k) => collect($def['fields'])->contains('key', $k))
                 ->map(fn ($a) => collect($a)->except('path')->all())->values();
             if ($plain) {
-                // Everything stored, in one flat map: every type field, the recovery details and the notes.
                 $vals = [];
                 foreach ($def['fields'] as $f) {
                     $vals[$f['key']] = $f['kind'] === 'file' ? ($files->get($f['key'])['name'] ?? null)
@@ -4654,7 +3938,6 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /** The stepper before any request exists: each step and who will answer it, for the requester looking. */
     protected function unlockPlan(Credential $c, User $u, array $steps): array
     {
         $pol = Policy::for($u->client_id);
@@ -4663,8 +3946,6 @@ class CredVaultController extends Controller
 
         $out = [];
         foreach ($steps as $i => $s) {
-            // Common Vault Admin = the requester branch's Branch Admin; the
-            // manager is the requester's own reporting manager. (new flow)
             $branchAdmin = $this->branchAdminIds($u->branch_id, $u->client_id)[0] ?? null;
             $approver = match ($s) {
                 'admin'   => $person($this->liveAdmin($branchAdmin ?: $pol['cp_admin_user_id'], $c->client_id), 'Vault Admin')
@@ -4682,13 +3963,6 @@ class CredVaultController extends Controller
             'otp_sent_to' => in_array('otp', $steps, true) && $c->twofa_method === 'email' ? Credential::maskEmail($c->twofa_email) : null];
     }
 
-    /**
-     * The Critical Vault "Access Status" cell, in the prototype's four states:
-     *   open      unlocked, with the countdown
-     *   pending   waiting on an approver — who, and as what
-     *   progress  approvals in, the authenticator code still to enter
-     *   locked    nothing open: "Approval needed"
-     */
     protected function unlockState(?AccessRequest $r, array $steps): array
     {
         if (!$r) return ['state' => 'locked', 'label' => 'Approval needed'];
@@ -4701,7 +3975,6 @@ class CredVaultController extends Controller
         $order = $this->requestSteps($r);
         $n     = array_search($stage, $order, true) + 1;
         $who   = $stage === 'admin' ? ($r->adminUser?->name ?? 'Any Vault Admin') : ($stage === 'manager' ? $r->managerUser?->name : null);
-        // The manager stage is opened by the requester forwarding it; until then it awaits that forward, not the manager.
         $needsForward = $stage === 'manager' && $r->manager_status !== 'pending';
 
         return [
@@ -4723,11 +3996,6 @@ class CredVaultController extends Controller
         return array_keys(array_filter(['admin' => $r->admin_required, 'manager' => $r->manager_required, 'otp' => $r->otp_required]));
     }
 
-    /**
-     * One access request. status is the request's own life (pending, approved
-     * = waiting for the code, unlocked, locked, rejected, cancelled);
-     * display_status is the Access Request Management screen's three states.
-     */
     protected function requestRow(AccessRequest $r, User $u): array
     {
         $stage = $r->currentStage();
@@ -4738,8 +4006,6 @@ class CredVaultController extends Controller
 
         $canDecide = $r->status === 'pending' && $r->requester_id !== $u->id && (
             ($stage === 'admin' && $this->canApproveAdmin($u, $r))
-            // Manager step: the manager decides. When the manager IS the Vault Admin
-            // who approved step 1, that approval already covered this step (decide()).
             || ($stage === 'manager' && $r->manager_user_id === $u->id)
         );
         $display = match (true) {
@@ -4824,10 +4090,6 @@ class CredVaultController extends Controller
 
     protected const SHARE_STATE_LABELS = ['active' => 'Active', 'soon' => 'Expiring soon', 'expired' => 'Expired', 'revoked' => 'Revoked'];
 
-    /**
-     * One share, for every list and response that shows one. Beside the raw ISO times it carries the
-     * Shared By Me table's cells, ready to show: shared_on {date, time}, expires {date, left}, status_label.
-     */
     protected function shareRow(CredentialShare $s, ?int $clientId = null, ?string $tz = null, ?User $viewer = null): array
     {
         $c = $s->credential;
@@ -4853,7 +4115,6 @@ class CredVaultController extends Controller
             'recipient'  => $s->recipient_type === 'user'
                 ? ['type' => 'user', 'id' => $s->recipient_user_id, 'name' => $s->recipientUser?->name,
                    'initials' => $this->initials($s->recipientUser?->name), 'sub' => $s->recipientUser?->designation ?: 'Individual',
-                   // The branch is the leaf of the hierarchy — lead the access row with it.
                    'branch' => $s->recipientUser?->branch?->name]
                 : ['type' => 'team', 'id' => $s->recipient_department_id, 'name' => $s->recipientDepartment?->name,
                    'initials' => $this->initials($s->recipientDepartment?->name),
@@ -4877,7 +4138,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /** Timeline rows, with the credential's risk and type and each actor's role read in two queries for the page. */
     protected function eventRows(Collection $events, User $u, ?string $tz = null): Collection
     {
         $creds = Credential::withTrashed()->whereIn('id', $events->pluck('credential_id')->filter()->unique()->all())
@@ -4897,7 +4157,6 @@ class CredVaultController extends Controller
             'id'             => $e->id,
             'event_id'       => 'EVT-' . $e->id,
             'at'             => $e->created_at->toIso8601String(),
-            // As the timeline prints it: 15:22 over 46s, under the day's heading.
             'date'           => $local->toDateString(),
             'time'           => $local->format('H:i'),
             'seconds'        => $local->format('s') . 's',
@@ -4916,7 +4175,6 @@ class CredVaultController extends Controller
                 ? ['id' => $e->credential_id, 'code' => $e->credential_code, 'name' => $e->credential_name, 'risk' => $c?->risk, 'risk_label' => $risk,
                    'type' => $c?->type, 'vault' => $c?->vault]
                 : null,
-            // "Priya Sharma approved access to Kotak Vendor Payments A/c"
             'sentence'       => trim(($e->user_id ? ($e->user_id === $u->id ? 'You' : $e->user?->name) : 'System') . ' ' . (AuditLog::VERBS[$e->action] ?? $e->action)
                 . ' ' . ($e->credential_name ?? ($e->credential_id ? $e->credential_code : ''))),
             'target'         => $e->credential_id ? $e->credential_code : 'Vault settings',
@@ -4961,7 +4219,6 @@ class CredVaultController extends Controller
             'scope' => $t->scope, 'scope_label' => $scopeLabel,
             'format' => $t->format, 'format_label' => Transfer::FORMAT_LABELS[$t->format] ?? strtoupper((string) $t->format),
             'file_name' => $t->file_name, 'source' => $t->source,
-            // The line under the file name: "Bitwarden · into My Vault".
             'source_line' => $t->kind === 'import' ? trim(($t->source ?? '') . ' · into ' . $scopeLabel, ' ·') : null,
             'type' => $t->credential_type, 'type_label' => $t->credential_type ? (Credential::typeDef($t->credential_type)['label'] ?? $t->credential_type) : null,
             'items' => $t->items, 'skipped' => $t->skipped, 'weak' => $t->weak, 'duplicates' => $t->duplicates, 'failed' => (int) $t->failed,
@@ -4978,11 +4235,6 @@ class CredVaultController extends Controller
         ];
     }
 
-    /**
-     * Designation, department and the one-line role the screens print under a
-     * name ("Vault Administrator", "Executive · Accounts", "Team member"),
-     * for a batch of users. Cached for the request, so repeated rows cost nothing.
-     */
     protected function userInfo(array $ids): array
     {
         $this->memo['userInfo'] ??= [];
@@ -5005,7 +4257,6 @@ class CredVaultController extends Controller
         return array_intersect_key($this->memo['userInfo'], array_flip($ids));
     }
 
-    /** Users whose department (on the login or the employee record) matches a search term. */
     protected function usersInDepartmentsLike(int $clientId, string $like): array
     {
         $deps = Departments::where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $clientId))
@@ -5017,39 +4268,14 @@ class CredVaultController extends Controller
             ->unique()->values()->all();
     }
 
-    /* ═══════════════════════════ ACCESS MODEL ═══════════════════════════ */
-
-    /**
-     * Every credential the user can reach by any route — the base of each list.
-     *
-     * Team credentials, by who is asking:
-     *   Vault Admin (client admin)  every team credential;
-     *   Branch Admin (branch user)  the branch's — owned by its people below them;
-     *   manager                     the ones owned by their downline (HOD → TL → Employee → Intern);
-     *   HOD                         their department's (see accessMap for the rights).
-     * A peer outside the reporting line sees none of them — only a share reaches them.
-     *
-     * $branchCritical (the Critical Vault list only): a Branch Admin / employee also sees
-     * every Critical Vault credential of their branch — personal or team, any owner — not
-     * just their own or their team, still locked behind its approvals (accessMap: View, via
-     * branch_critical). The Branch Admin opens them directly; everyone else via the steps.
-     */
     protected function visibleQuery(User $u, bool $branchCritical = false): Builder
     {
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
         $down   = $this->downlineIds($u);
-        // Critical Vault list: everyone in the branch sees EVERY critical
-        // credential of the branch — personal or team, any owner — not just
-        // their own or their team. The reveal still runs the approval flow
-        // (accessMap gives View via branch_critical; the Branch Admin opens it
-        // directly). Only for a Branch Admin / employee; the client admin keeps
-        // its company-wide team-scope rule below. (new flow)
         $critBranch = ($branchCritical && !$admin) ? ($branch ?? ($u->branch_id ? (int) $u->branch_id : null)) : null;
 
-        // People this viewer oversees: their whole vault (personal and team) is visible,
-        // as these are company credentials. Reveal stays gated by accessMap, not this list.
         $overseen = $this->overseenUserIds($u);
 
         return Credential::where('credvault_credentials.client_id', $u->client_id)->where(function ($w) use ($u, $heads, $admin, $branch, $down, $critBranch, $overseen) {
@@ -5071,22 +4297,15 @@ class CredVaultController extends Controller
         });
     }
 
-    /** The logins that sit above every employee: no one below them gets rights over what they own. */
     protected const ADMIN_TYPES = ['super_admin', 'client_admin', 'branch_user'];
 
-    /** A level's place, top first — a smaller number is higher up. */
     protected const LEVEL_ORDER = ['admin' => 0, 'hod' => 1, 'tl' => 2, 'exec' => 3, 'emp' => 4, 'intern' => 5];
 
-    /** The branch a Branch Admin (branch user) runs, else null. */
     protected function adminBranchOf(User $u): ?int
     {
         return $u->isBranchUser() && $u->branch_id ? (int) $u->branch_id : null;
     }
 
-    /**
-     * The Branch Admin (Vault Admin) opens every Critical credential in their branch
-     * directly — no approval, no OTP. Keyed on the branch, not on ownership.
-     */
     protected function opensDirectly(User $u, Credential $c): bool
     {
         $branch = $this->adminBranchOf($u);
@@ -5097,7 +4316,6 @@ class CredVaultController extends Controller
         return $ob === $branch;
     }
 
-    /** The Branch Admins (branch users) that serve as the Vault Admin for one branch. */
     protected function branchAdminIds(?int $branchId, int $clientId): array
     {
         if (!$branchId) return [];
@@ -5107,17 +4325,11 @@ class CredVaultController extends Controller
             ->orderBy('id')->pluck('id')->map(fn ($i) => (int) $i)->all());
     }
 
-    /** The branch a request belongs to — the requester's, else the credential's. */
     protected function requestBranch(AccessRequest $r): ?int
     {
         return ($r->requester?->branch_id ?: $r->credential?->branch_id) ? (int) ($r->requester?->branch_id ?: $r->credential->branch_id) : null;
     }
 
-    /**
-     * May $u approve the Vault-Admin stage of request $r? The Branch Admin it names,
-     * or any Branch Admin of that branch when none is named — with a client admin as a
-     * safety net so a request never gets stuck if the branch admin is gone.
-     */
     protected function canApproveAdmin(User $u, AccessRequest $r): bool
     {
         if ($r->admin_user_id) return (int) $r->admin_user_id === (int) $u->id || $this->isAdmin($u);
@@ -5125,28 +4337,17 @@ class CredVaultController extends Controller
         return in_array((int) $u->id, $this->branchAdminIds($this->requestBranch($r), $r->client_id), true) || $this->isAdmin($u);
     }
 
-    /**
-     * The Recycle Bin's Vault Admin: the client admin or a Branch Admin. Only they change the
-     * retention period and delete permanently (an item, or Empty Bin); everyone else may only restore.
-     */
     protected function binAdmin(User $u): bool
     {
         return $this->isAdmin($u) || $this->adminBranchOf($u) !== null;
     }
 
-    /**
-     * The logins below the user in the reporting chain, at any depth (HOD → TL →
-     * Employee → Intern), never the user. Read from the HR employee records by either
-     * link HR may have used (reporting_manager_id / reporting_manager_user_id); a loop
-     * in the chain stops where it repeats.
-     */
     protected function downlineIds(User $u): array
     {
         return $this->memo("down:{$u->id}", function () use ($u) {
             $me = $this->employeeOf($u);
             [$children, $userOf, $underUser] = $this->reportingTree($u->client_id);
 
-            // Start from the user's employee record and from links that name the login itself.
             $out = []; $seen = $me ? [$me->id => true] : []; $queue = [];
             foreach (array_merge($me ? ($children[$me->id] ?? []) : [], $underUser[$u->id] ?? []) as $kid) {
                 if (isset($seen[$kid])) continue;
@@ -5166,7 +4367,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /** [manager employee id => [employee ids]], [employee id => login id], [manager login id => [employee ids]] for the tenant. */
     protected function reportingTree(int $clientId): array
     {
         return $this->memo("tree:{$clientId}", function () use ($clientId) {
@@ -5186,7 +4386,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /** A user's level: Admin for the admin logins, else from the HR designation. */
     protected function levelOfUser(?User $x): string
     {
         if (!$x) return 'emp';
@@ -5201,10 +4400,6 @@ class CredVaultController extends Controller
         return $u->branch_id ? (int) $u->branch_id : null;
     }
 
-    /**
-     * [user id => name] of the people who shared $c with $u — live shares to $u or to $u's team — so a
-     * Shared With Me credential is never shared back to them. The owner is excluded by the share rules already.
-     */
     protected function sharedToMeBy(User $u, Credential $c): array
     {
         return $this->memo("sharedby:{$u->id}:{$c->id}", function () use ($u, $c) {
@@ -5221,7 +4416,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /** Subquery: ids of credentials with a live share to the user or the user's team. */
     protected function sharedWithMeIds(User $u)
     {
         $dept = $this->teamShareDept($u);
@@ -5232,18 +4426,6 @@ class CredVaultController extends Controller
         })->select('credential_id');
     }
 
-    /**
-     * [id => [rank, via]] for a batch, in one share query.
-     * via: owner | admin | branch | manager | hod | team | branch_critical | share
-     *
-     * Full Access (edit, share, delete) on a team credential goes to the Vault Admin, the
-     * Branch Admin of the owner's branch, a manager the owner reports to (at any depth) and
-     * the HOD of its department — the last three only over people below them, never over
-     * someone above or at their level (a HOD keeps view-and-copy on those in the department).
-     * In the Critical Vault every employee of the branch gets View on every credential of
-     * their branch (personal or team) via branch_critical: it lists, and opens only through
-     * its approval steps — the Branch Admin opens it directly.
-     */
     protected function accessMap(Collection $creds, User $u): array
     {
         if ($creds->isEmpty()) return [];
@@ -5252,14 +4434,10 @@ class CredVaultController extends Controller
         $heads  = $this->headedDepts($u);
         $admin  = $this->isAdmin($u);
         $branch = $this->adminBranchOf($u);
-        // The branch whose Critical Vault credentials the viewer may see as View
-        // (new flow): a Branch Admin / employee sees their whole branch's; the
-        // client admin keeps its own team-scope rule, so null here.
         $critBranch = $admin ? null : ($branch ?? ($u->branch_id ? (int) $u->branch_id : null));
         $down   = array_flip($this->downlineIds($u));
         $overseen = $creds->contains(fn ($c) => $c->scope !== 'team' && $c->vault !== 'critical' && $c->owner_id !== $u->id)
             ? array_flip($this->overseenUserIds($u)) : [];
-        // Heading a department makes one an HOD whatever the HR designation says.
         $myRank = min(self::LEVEL_ORDER[$this->levelOfUser($u)], $heads ? self::LEVEL_ORDER['hod'] : PHP_INT_MAX);
         $owners = $creds->where('scope', 'team')->isNotEmpty() && !$admin
             ? User::whereIn('id', $creds->where('scope', 'team')->pluck('owner_id')->unique()->all())
@@ -5291,9 +4469,6 @@ class CredVaultController extends Controller
             if (!$best && $c->scope !== 'team' && $c->vault !== 'critical' && isset($overseen[$c->owner_id])) {
                 $best = [self::RANK_VIEW, 'oversee'];
             }
-            // Critical Vault: anyone in the branch sees every critical credential
-            // (personal or team) as View — it lists and opens only through the
-            // approval steps; the Branch Admin opens it directly. (new flow)
             if (!$best && $critBranch && $c->vault === 'critical' && (int) $c->branch_id === $critBranch) {
                 $best = [self::RANK_VIEW, 'branch_critical'];
             }
@@ -5304,7 +4479,6 @@ class CredVaultController extends Controller
         return $out;
     }
 
-    /** @return array{0:Credential,1:array} — 404 when out of reach, 403 when below $min. */
     protected function findCredential(User $u, int $id, int $min = self::RANK_USE, string $message = 'You do not have permission for this.'): array
     {
         $c   = Credential::where('client_id', $u->client_id)->with(['owner:id,name', 'department:id,name'])->find($id)
@@ -5315,7 +4489,6 @@ class CredVaultController extends Controller
         return [$c, $acc];
     }
 
-    /** findCredential, for a vault's own routes: a credential of the other vault reads as 404 there. */
     protected function findInVault(User $u, int $id, string $vault, int $min = self::RANK_USE, string $message = 'You do not have permission for this.'): array
     {
         [$c, $acc] = $this->findCredential($u, $id, self::RANK_USE);
@@ -5327,7 +4500,6 @@ class CredVaultController extends Controller
         return [$c, $acc];
     }
 
-    /** [credential_id => the user's open request] — a live unlock beats a pending one. */
     protected function openRequestsFor(User $u, array $ids): array
     {
         if (!$ids) return [];
@@ -5340,8 +4512,6 @@ class CredVaultController extends Controller
 
     protected function isAdmin(User $u): bool
     {
-        // The policy's named approver is chosen from the client admins; once demoted they
-        // stop being a Vault Admin, so the client-admin check alone decides.
         return $this->memo("admin:{$u->id}", fn () => $u->isClientAdmin());
     }
 
@@ -5350,8 +4520,6 @@ class CredVaultController extends Controller
         if (!$this->isAdmin($u)) $this->reject('Only a Vault Admin can change CredVault Policies.', null, 403);
     }
 
-    /** Active Vault Admins of the client. $withPolicy adds the policy's named admin. */
-    /** $id when it is still an active Vault Admin of the client, else null (= any Vault Admin). */
     protected function liveAdmin(?int $id, int $clientId): ?int
     {
         if (!$id) return null;
@@ -5359,13 +4527,11 @@ class CredVaultController extends Controller
 
         return $this->memo("liveadmin:{$clientId}:{$id}", function () use ($id, $clientId) {
             if (in_array($id, $this->adminIds($clientId), true)) return $id;
-            // A Branch Admin pinned on a request stays the Vault Admin while still an active branch user.
             return User::whereKey($id)->where('client_id', $clientId)
                 ->where('user_type', 'branch_user')->where('status', 'active')->exists() ? $id : null;
         });
     }
 
-    /** The admin a request names — dropped once that person stops being a Vault Admin, so the request never sticks. */
     protected function namedAdmin(AccessRequest $r): ?int
     {
         return $this->liveAdmin($r->admin_user_id, $r->client_id);
@@ -5375,7 +4541,6 @@ class CredVaultController extends Controller
     {
         $ids = $this->memo("admins:{$clientId}", fn () => User::where('client_id', $clientId)->where('user_type', 'client_admin')
             ->where('status', 'active')->pluck('id')->map(fn ($i) => (int) $i)->all());
-        // The named approver counts only while still an active client admin (already in $ids).
         return $ids;
     }
 
@@ -5387,12 +4552,6 @@ class CredVaultController extends Controller
             ->first(['id', 'user_id', 'emp_code', 'client_id', 'department_id', 'reporting_manager_id', 'reporting_manager_user_id']));
     }
 
-    /**
-     * Every login below this user in the reporting tree — direct reports, their
-     * reports, and so on down (TL → executive → intern). A report points up by
-     * employee id (reporting_manager_id) or, for a branch/login manager, by login
-     * id (reporting_manager_user_id). Self is not included (handled as owner).
-     */
     protected function reportsSubtree(User $u): array
     {
         return $this->downlineIds($u);
@@ -5406,11 +4565,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /**
-     * Does $u oversee $m? A Vault Admin (client admin), a branch admin over $m's branch,
-     * an HOD of $m's department, or anyone above $m in the reporting line. Such a viewer
-     * may see $m's whole vault through the hierarchy filter — these are company credentials.
-     */
     protected function managesMember(User $u, User $m): bool
     {
         if ((int) $m->id === (int) $u->id) return false;
@@ -5423,11 +4577,6 @@ class CredVaultController extends Controller
         return in_array((int) $m->id, $this->downlineIds($u), true);
     }
 
-    /**
-     * Every login this viewer oversees (never themselves): a Vault Admin sees the whole
-     * company; a branch admin their branch; an HOD their departments; anyone else their
-     * reporting line. Their credentials — personal and team — list in the viewer's Team Vault.
-     */
     protected function overseenUserIds(User $u): array
     {
         return $this->memo("overseen:{$u->id}", function () use ($u) {
@@ -5449,23 +4598,12 @@ class CredVaultController extends Controller
         });
     }
 
-    /**
-     * Departments the user heads. master_departments stores the HOD as a
-     * name (`head`), not a user id, so it is matched to the login by name.
-     */
     protected function headedDepts(User $u): array
     {
         return $this->memo("heads:{$u->id}", fn () => array_keys(array_filter(
             $this->deptHeads($u->client_id), fn ($uid) => $uid === $u->id)));
     }
 
-    /**
-     * department id => the login of its HOD. `master_departments.head` is only a
-     * name, so it is matched against the HR employee record — never the login's
-     * own name, which every user can edit on their profile. A name that matches
-     * no active employee, or more than one, names nobody: HOD rights are full
-     * access to a team vault and must not land on a namesake.
-     */
     protected function deptHeads(int $clientId): array
     {
         return $this->memo("deptHeads:{$clientId}", function () use ($clientId) {
@@ -5480,8 +4618,6 @@ class CredVaultController extends Controller
                 });
 
             $out = [];
-            // Only the tenant's own departments: a shared (client_id null) department has one
-            // head name for every tenant, which would hand HOD rights to a namesake anywhere.
             $deps = Departments::where('client_id', $clientId)->whereNotNull('head')->get(['id', 'head']);
             foreach ($deps as $d) {
                 $hits = $byName[Str::lower(preg_replace('/\s+/', ' ', trim((string) $d->head)))] ?? [];
@@ -5492,7 +4628,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /** The HOD as the screen shows it: the stored name, with the login it resolves to when there is one. */
     protected function hodOf(Departments $d, int $clientId): ?array
     {
         if (!filled($d->head)) return null;
@@ -5500,7 +4635,6 @@ class CredVaultController extends Controller
         return ['id' => $this->deptHeads($clientId)[(int) $d->id] ?? null, 'name' => $d->head, 'initials' => $this->initials($d->head), 'role' => 'HOD'];
     }
 
-    /** The login behind the user's reporting manager, by either link HR may have used. */
     protected function managerOf(User $u): ?int
     {
         return $this->memo("mgr:{$u->id}", function () use ($u) {
@@ -5514,14 +4648,12 @@ class CredVaultController extends Controller
         });
     }
 
-    /** Departments this tenant may use: its own and the platform's shared ones. */
     protected function clientDepartments(User $u): Collection
     {
         return $this->memo("deps:{$u->client_id}", fn () => Departments::where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $u->client_id))
             ->orderBy('name')->get(['id', 'client_id', 'name', 'head']));
     }
 
-    /** [department_id => active employees] for the tenant. */
     protected function memberCounts(int $clientId): array
     {
         return $this->memo("members:{$clientId}", fn () => Employee::where('client_id', $clientId)->where('status', 'Active')->whereNotNull('department_id')->where('onboarding_stage_completed', '>=', 6)
@@ -5529,19 +4661,17 @@ class CredVaultController extends Controller
             ->map(fn ($n) => (int) $n)->all());
     }
 
-    /** The team a team-scope write is filed under — the user's own, one they head or administer, or (editing) the one it already sits in. */
     protected function teamDepartmentFor(User $u, ?int $requested, ?Credential $c = null): int
     {
         $deptId = $requested ?: $this->deptOf($u) ?: $c?->department_id;
         if (!$deptId) $this->reject('Pick the team (department) this credential belongs to.', 'department_id');
         if (!$this->clientDepartments($u)->contains('id', $deptId)) $this->reject('That department does not exist.', 'department_id', 404);
 
-        // Editing a credential they can already manage, without moving it to a different department, is always allowed.
         $unchanged = $c && (int) $c->department_id === (int) $deptId;
 
         $mayUse = $unchanged
             || $this->isAdmin($u)
-            || $this->adminBranchOf($u)   // a branch admin manages their whole branch
+            || $this->adminBranchOf($u)
             || $deptId === $this->deptOf($u)
             || in_array($deptId, $this->headedDepts($u), true);
         if (!$mayUse) $this->reject('You can only add team credentials to your own department.', 'department_id', 403);
@@ -5549,14 +4679,6 @@ class CredVaultController extends Controller
         return (int) $deptId;
     }
 
-    /* ══════════════════════════ NOTIFICATIONS ══════════════════════════ */
-
-    /**
-     * A row in the bell inbox (the `notifications` table NotificationController
-     * reads), written the way the P2P approvals write theirs. Inside the
-     * caller's transaction, so a rolled-back request notifies nobody. A failed
-     * insert is logged and never fails the action that caused it.
-     */
     protected function notify(array $userIds, string $kind, string $title, string $message, array $extra = []): void
     {
         $now  = now();
@@ -5579,7 +4701,6 @@ class CredVaultController extends Controller
         }
     }
 
-    /** Who the request is waiting on now: the named approver, or every Vault Admin but the requester. */
     protected function notifyStage(AccessRequest $r, string $who): void
     {
         $stage = $r->currentStage();
@@ -5595,8 +4716,6 @@ class CredVaultController extends Controller
                 "{$who}'s request to unlock “{$c?->name}” passed the Vault Admin and needs your approval ({$r->code}).", $extra);
         }
     }
-
-    /* ═════════════════════════════ AUDIT ═════════════════════════════ */
 
     protected function audit(User $u, string $action, ?Credential $c = null, ?string $detail = null, array $meta = [], ?string $module = null): void
     {
@@ -5625,7 +4744,6 @@ class CredVaultController extends Controller
             'user_agent'      => Str::limit((string) request()?->userAgent(), 255, ''),
             'created_at'      => now(),
         ];
-        // During an import by category the rows are written together at the end (runTypedImport).
         if ($this->importBatch !== null) {
             $this->importBatch['audit'][] = ['meta' => $row['meta'] === null ? null : json_encode($row['meta'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)] + $row;
             return;
@@ -5637,8 +4755,6 @@ class CredVaultController extends Controller
     {
         return $this->listRules(['all', 'mine', 'team', 'alerts']) + [
             'range'         => ['nullable', Rule::in(['24h', '7d', '30d', 'all', 'custom'])],
-            // Either end may be left open: no From = from the start, no To = today.
-            // Dates are the viewer's calendar days (tz), not the server's UTC ones.
             'from'          => ['nullable', 'date_format:Y-m-d'],
             'to'            => ['nullable', 'date_format:Y-m-d'],
             'tz'            => ['nullable', 'timezone:all_with_bc'],
@@ -5656,8 +4772,6 @@ class CredVaultController extends Controller
     {
         $q = AuditLog::where('client_id', $u->client_id);
         if (!$this->isAdmin($u)) {
-            // Your team's activity, as the vaults define the team: your reporting line, and for a
-            // Branch Admin every person of the branch below them — plus events on credentials you own.
             $people = array_merge([$u->id], $this->downlineIds($u));
             $branch = $this->adminBranchOf($u);
             $q->where(function ($w) use ($u, $people, $branch) {
@@ -5693,7 +4807,6 @@ class CredVaultController extends Controller
         if (!empty($f['action']))        $q->where('action', $f['action']);
         if (!empty($f['credential_id'])) $q->where('credential_id', $f['credential_id']);
         if ($term = $f['q'] ?? null) {
-            // Event ID, actor, action label, credential, detail, module — what the prototype searches.
             $like    = $this->likeTerm($term);
             $t       = mb_strtolower(trim($term));
             $actions = collect(AuditLog::ACTIONS)->filter(fn ($a) => str_contains(mb_strtolower($a[0]), $t))->keys()->all();
@@ -5712,16 +4825,8 @@ class CredVaultController extends Controller
         return $q;
     }
 
-    /* ═════════════════════════════ PLUMBING ═════════════════════════════ */
-
-    /** The module row the Permissions screen grants CredVault access through. */
     protected const MODULE_SLUG = 'credentials-vault';
 
-    /**
-     * The signed-in user, provided CredVault is theirs to open: a client admin
-     * (the Vault Admin — approvals and policies live here) always, anyone else
-     * with view on the Credentials Vault module. Checked once per request.
-     */
     protected function tenantUser(Request $request): User
     {
         $u = $request->user();
@@ -5758,7 +4863,6 @@ class CredVaultController extends Controller
         return '%' . addcslashes(mb_strtolower(trim($term)), '%_\\') . '%';
     }
 
-    /** Case-insensitive contains, on any driver; "_" and "%" are literal. */
     protected function applySearch(Builder $q, ?string $term, array $cols): Builder
     {
         if ($term === null || trim($term) === '') return $q;
@@ -5770,12 +4874,6 @@ class CredVaultController extends Controller
         });
     }
 
-    /**
-     * The next code for a per-client series (CRD-0001, REQ-0001 …), allocated
-     * under a lock on the client's row so two saves cannot take the same one.
-     * Must run inside a transaction. The audit log is consulted too, so a code
-     * once used by a credential since purged is never handed out again.
-     */
     protected function nextCode(string $table, string $prefix, int $clientId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->value('id');
@@ -5831,7 +4929,6 @@ class CredVaultController extends Controller
         return $this->memo[$key];
     }
 
-    /** The 422 / 403 / 404 / 409 shape the forms read; the field puts the message on the right input. */
     protected function reject(string $message, ?string $field = null, int $status = 422): never
     {
         throw new HttpResponseException(response()->json(array_filter([
@@ -5841,10 +4938,6 @@ class CredVaultController extends Controller
         ], fn ($v) => $v !== null), $status));
     }
 
-    /**
-     * All-or-nothing; refusals pass through as they are, anything unexpected
-     * becomes a logged, clean 500. Files stored before the failure are removed.
-     */
     protected function inTransaction(string $action, callable $work, array &$cleanup = []): mixed
     {
         try {
