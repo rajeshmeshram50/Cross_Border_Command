@@ -66,7 +66,6 @@ const ROUTES: Record<string, () => Promise<unknown>> = {
   '/inventory/scan-log':                    () => import('../pages/inventory/InventoryScanLog'),
   '/inventory/stickers':                    () => import('../pages/inventory/InventoryStickers'),
   '/master':                                () => import('../pages/MasterDashboard'),
-  '/master/holiday':                        () => import('../pages/hrms/HrHoliday'),
   '/master/lead-ack':                       () => import('../pages/sales/core-masters/lead-ack/SalesLeadAckMaster'),
   '/master/segments':                       () => import('../pages/clm/compliance/ClmSegmentPage'),
   '/my-team':                               () => import('../pages/MyTeam'),

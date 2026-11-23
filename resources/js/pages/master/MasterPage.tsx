@@ -89,7 +89,7 @@ function MasterPageInner({
   const [loading, setLoading] = useState(false);
 
   const isSuperAdmin = user?.user_type === 'super_admin';
-  const fullSlug = `master.${cfg.slug}`;
+  const fullSlug = cfg.perm ?? `master.${cfg.slug}`;
   const modulePerm = user?.permissions?.[fullSlug];
   const permitsAdd = isSuperAdmin || !!modulePerm?.can_add;
 
@@ -1586,6 +1586,17 @@ function MasterPageInner({
                     <span className="spi-seg-c">{statusCounts[t.key]}</span>
                   </button>
                 ))}
+              </div>
+            )}
+            {!hasStatus && cfg.slug !== 'roles' && (
+              /* A master with no Active / Inactive status still gets its tab
+                 strip: one "All" tab with the record count. */
+              <div className="spi-seg" role="tablist" aria-label={mpPlural(singular)}>
+                <button type="button" role="tab" aria-selected className="spi-seg-btn is-active">
+                  <span className="spi-seg-ico">{MP_STATUS_TABS[0].icon}</span>
+                  All {mpPlural(singular)}
+                  <span className="spi-seg-c">{statusCounts.all}</span>
+                </button>
               </div>
             )}
             {cfg.slug === 'roles' && (

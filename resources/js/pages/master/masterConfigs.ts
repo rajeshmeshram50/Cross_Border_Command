@@ -61,6 +61,9 @@ export type MasterConfig = {
   desc: string;
   cat: string;
   endpoint?: string;
+  /** Permission module to check instead of `master.<slug>` (a master served by
+      another module's API, e.g. Holiday Groups under hr.holiday). */
+  perm?: string;
   noDelete?: boolean;
   inUseStatusOnly?: boolean;
   fields: FieldDef[];
@@ -763,6 +766,25 @@ const C: Record<string, MasterConfig> = {
       { id: 3, name: 'Notify Party', party_type: 'Third Party', status: 'Active' },
       { id: 4, name: 'Supplier', party_type: 'Supplier', status: 'Active' },
     ],
+  },
+
+  holiday_groups: {
+    key: 'holiday_groups', slug: 'holiday_groups', title: 'Holiday Groups', titleSingular: 'Holiday Group',
+    icon: 'ri-calendar-event-line', iconColor: 'info', iconBg: 'info',
+    desc: 'Holiday lists you assign to employees',
+    cat: 'HRMS Masters',
+    endpoint: '/holiday-groups',
+    perm: 'hr.holiday',
+    fields: [
+      { n: 'name', l: 'Group Name', t: 'text', r: true, p: 'e.g. Indian Employees', full: true,
+        pattern: "^(?=.*[A-Za-z])[A-Za-z0-9 \\-]+$",
+        patternMessage: 'Group name must include at least one letter. It can also contain numbers, spaces and hyphens.' },
+      { n: 'description', l: 'Description', t: 'textarea', p: 'Who this holiday list is for', full: true },
+    ],
+    cols: ['code', 'name', 'description', 'holidays_count'],
+    colL: ['Code', 'Group Name', 'Description', 'Holidays'],
+    uFields: ['name'],
+    data: [],
   },
 
   service_categories: {

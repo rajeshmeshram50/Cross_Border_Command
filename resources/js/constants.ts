@@ -61,7 +61,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.leave_type', icon: 'CalendarOff', label: 'Leave Type Master' },
       { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
       { id: 'master.overtime_rates', icon: 'Timer', label: 'Overtime (OT) Master' },
-      { id: 'hr.holiday', icon: 'CalendarDays', label: 'Holiday Master' },
+      { id: 'hr.holiday', icon: 'CalendarDays', label: 'Holiday Group Master' },
       { id: 'master.trigger_point', icon: 'Zap', label: 'Trigger Point Master' },
       { id: 'master.expense_category', icon: 'IndianRupee', label: 'Expense Categories' },
       { id: 'master.assets', icon: 'Briefcase', label: 'Assets' },
