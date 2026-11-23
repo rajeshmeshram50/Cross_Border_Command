@@ -135,19 +135,42 @@ export function ClmBrefBox({ label, sub, steps, icon, defaultCollapsed = true }:
  * stays .clm-total so the toolbar's existing layout rules — including the
  * narrow-screen stacking breakpoint — keep applying without change.
  */
-export function ClmSubHead({ title, sub, count }: { title: string; sub: string; count: number }) {
+export type ClmSubTab = { key: string; label: string; count: number; icon?: ReactNode };
+
+const ALL_TAB_ICO = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="2" width="16" height="20" rx="1.5" /><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="14" x2="20" y2="14" /></svg>
+);
+
+export function ClmSubHead({ title, sub, count, tabs, active = 'all', onTab }: {
+  title: string; sub: string; count: number;
+  /** Status tabs after "All" on the Master Control Center (e.g. Highly /
+      Less Regulatory), in place of a status dropdown. The "All" tab's key is 'all'. */
+  tabs?: ClmSubTab[];
+  active?: string;
+  onTab?: (key: string) => void;
+}) {
+  const all: ClmSubTab = { key: 'all', label: `All ${title}`, count, icon: ALL_TAB_ICO };
+  const list = tabs?.length ? [all, ...tabs] : [all];
   return (
     <div className="clm-total">
       {/* From the Master Control Center (.clm-mc) the heading is the Master
-          list's single "All …" tab instead; CSS shows one or the other. */}
+          list's tab rail instead -- "All …" plus any status tabs; CSS shows one
+          or the other. */}
       <div className="clm-mtab" role="tablist" aria-label={title}>
-        <span className="clm-mtab-btn" role="tab" aria-selected>
-          <span className="clm-mtab-ico">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="2" width="16" height="20" rx="1.5" /><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="14" x2="20" y2="14" /></svg>
-          </span>
-          All {title}
-          <span className="clm-mtab-c">{count}</span>
-        </span>
+        {list.map(t => {
+          const on = tabs?.length ? active === t.key : true;
+          return (
+            <button
+              key={t.key} type="button" role="tab" aria-selected={on}
+              className={`clm-mtab-btn${on ? ' is-active' : ''}`}
+              onClick={() => { if (!on) onTab?.(t.key); }}
+            >
+              <span className="clm-mtab-ico">{t.icon ?? ALL_TAB_ICO}</span>
+              {t.label}
+              <span className="clm-mtab-c">{t.count}</span>
+            </button>
+          );
+        })}
       </div>
       <div className="clm-subhead-text">
         <div className="clm-subhead-title">

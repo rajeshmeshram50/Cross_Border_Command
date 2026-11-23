@@ -2230,34 +2230,51 @@ body > .dropdown-menu.master-select-menu,
 .clm-mc .clm-total { padding-left: 0; min-height: 0; }
 .clm-mc .clm-total > .clm-subhead-text { display: none; }
 .clm-mc .clm-mtab {
-  display: inline-flex; align-items: center; flex-shrink: 0;
+  display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px;
   padding: 4px; border-radius: 14px;
   border: 1px solid #d4f3f9;
   background: linear-gradient(180deg, #f4fdff, #eafafd);
 }
 .clm-mc .clm-mtab-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 42px; padding: 0 12px; border-radius: 11px;
-  font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
-  color: #fff;
+  height: 42px; padding: 0 12px; border: 0; border-radius: 11px;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
+  color: #0e7490; background: transparent; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.clm-mc .clm-mtab-btn:not(.is-active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
+.clm-mc .clm-mtab-btn.is-active {
+  color: #fff; cursor: default;
   background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
   box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
   text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
 }
 .clm-mc .clm-mtab-ico {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px;
-  background: rgba(255, 255, 255, .24); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; color: #fff;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
+  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
 }
+.clm-mc .clm-mtab-btn.is-active .clm-mtab-ico { background: rgba(255, 255, 255, .24); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
 .clm-mc .clm-mtab-ico svg { width: 13px; height: 13px; }
 .clm-mc .clm-mtab-c {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; margin-left: 1px; padding: 2px 7px;
-  border: 1px solid rgba(255, 255, 255, .75); border-radius: 20px;
-  background: rgba(255, 255, 255, .9);
-  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0b5563;
+  border: 1px solid #c2ecf3; border-radius: 20px; background: #e0f7fb;
+  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0e7490;
   font-variant-numeric: tabular-nums; text-shadow: none;
 }
+.clm-mc .clm-mtab-btn.is-active .clm-mtab-c { border-color: rgba(255, 255, 255, .75); background: rgba(255, 255, 255, .9); color: #0b5563; }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active) { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active):hover { color: #a5f3fc; background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active) .clm-mtab-c { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+/* A status dropdown the tabs replace (T&C's Highly / Less Regulatory). */
+.clm-mc .clm-status-dd { display: none !important; }
+/* Dropdowns in CLM forms and wizards open exactly as wide as their field:
+   MasterSelect sizes a menu to its longest option (max-content), so one long
+   name pushed the menu past the edge of the form. Long options now end in an
+   ellipsis inside the field width (the option labels already clip). */
+body:has(:is(.clm-modal-bd, .clm-conf-bd, .tnw-overlay, .tdw-overlay, .dr-overlay, .rdf-overlay, .itm-overlay, .lfm-backdrop)) .master-select-menu[style*="min-width"] { width: 0 !important; }
 @media (min-width: 769px) and (max-width: 1800px) {
   .clm-mc .clm-mtab-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
 }
