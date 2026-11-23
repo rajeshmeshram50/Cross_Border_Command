@@ -208,7 +208,9 @@ docs/p2p/
 ├── purchase-order/               PURCHASE_ORDER_{FUNCTIONAL,TECHNICAL,API}_DOCUMENTATION.md
 │                                 PURCHASE_ORDER_CODE_WALKTHROUGH.md
 ├── payment-request/              PAYMENT_REQUEST_…
-└── refund-adjustment/            REFUND_ADJUSTMENT_…
+├── refund-adjustment/            REFUND_ADJUSTMENT_…
+└── service-management/           SERVICE_MANAGEMENT_… (the service catalogue
+                                  and its supplier mapping — P2P Master Management)
 ```
 
 Shows in the guide as **Procure to Pay (P2P)** — 3 items, 12 documents.
