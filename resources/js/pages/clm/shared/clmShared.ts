@@ -1903,7 +1903,7 @@ body > .dropdown-menu.master-select-menu,
 }
 [data-bs-theme="dark"] .clm-modal { background: #0f172a; }
 [data-bs-theme="dark"] .clm-modal-body { background: linear-gradient(160deg, rgba(8,145,178,.10), rgba(8,145,178,.05) 50%, #0f172a 100%); }
-[data-bs-theme="dark"] .clm-modal-foot { background: #1e293b; border-top-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .clm-modal-foot { background: #0f172a; border-top-color: rgba(6,182,212,.18); }
 /* Use background-color (not shorthand) so we don't reset the
    chevron background-image + no-repeat set in the base rule.
    Bug: shorthand "background: #1e293b" was clearing background-repeat

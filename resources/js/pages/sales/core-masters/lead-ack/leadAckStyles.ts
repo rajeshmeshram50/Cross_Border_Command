@@ -648,7 +648,7 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-modal { background: #1a1530; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 24px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .lam-modal-body { background: #221a3a; }
 [data-bs-theme="dark"] .lam-modal-helper { color: #9aa0b4; }
-[data-bs-theme="dark"] .lam-modal-footer { background: #1a1530; border-top-color: rgba(167,139,250,.20); }
+[data-bs-theme="dark"] .lam-modal-footer { background: #221a3a; border-top-color: rgba(167,139,250,.20); }
 
 [data-bs-theme="dark"] .lam-textarea,
 [data-bs-theme="dark"] .lam-select {
