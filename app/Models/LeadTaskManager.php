@@ -4,11 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-/**
- * Sales Matrix → Stage 1 Task Manager row. One-to-one with Lead;
- * upserted via POST /sales/leads/{lead}/task-manager. See the matching
- * migration for column intent.
- */
 class LeadTaskManager extends Model
 {
     protected $fillable = [
