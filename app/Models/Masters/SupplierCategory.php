@@ -24,30 +24,20 @@ class SupplierCategory extends Model
     ];
 
     protected $casts = [
-        // Forces the API to return 1/0 or true/false instead of "1" or "0"
         'status' => 'boolean',
         'is_system' => 'boolean',
     ];
 
-    /**
-     * The client that owns this master row.
-     */
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
     }
 
-    /**
-     * The branch that owns this master row.
-     */
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
 
-    /**
-     * The user who created this row.
-     */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
