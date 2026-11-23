@@ -6,14 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * A product line item under a SourcingTarget.
- *
- * Either a Product Master reference (product_id + snapshot fields) or a
- * Manual Entry (free-text name). Carries a target price, an optional
- * clarity note (text/link/pdf), and a completion flag that drives the
- * sourcing progress bar on the list page.
- */
 class SourcingTargetProduct extends Model
 {
     use SoftDeletes;
@@ -37,7 +29,6 @@ class SourcingTargetProduct extends Model
         return $this->belongsTo(SourcingTarget::class, 'sourcing_target_id');
     }
 
-    /** Set for Product Master rows; null for Manual Entry. */
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'product_id');
