@@ -9,28 +9,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-/**
- * Single notification class that handles every leave-request transition.
- * The `kind` argument routes to the right subject/body template so we
- * don't end up with 5 nearly-identical classes.
- *
- * Channels: mail + database (so a future bell-icon inbox can read from
- * notifications table without re-implementing the templates).
- *
- * Kinds:
- *   - submitted_to_approver — sent to the current-level approver when a
- *     request is created OR advances to a new level
- *   - cc_submitted          — sent to colleagues in notify.employee_ids
- *     when the request is filed
- *   - approved              — sent to the requester after the FINAL
- *     level approves
- *   - rejected              — sent to the requester when any level rejects
- *   - cancelled             — sent to the current-level approver (so they
- *     can drop the item from their queue)
- *   - escalated_to_hr       — sent to HR (branch_user / client_admin) when the
- *     requester's reporting manager is unavailable (on leave / disabled /
- *     unassigned) so the request doesn't deadlock — HR may act in their place
- */
 class LeaveRequestNotification extends Notification implements ShouldQueue
 {
     use Queueable;
@@ -40,24 +18,14 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
         public string $kind,
         public ?string $extraComment = null,
     ) {
-        // Defer queued sends until after the surrounding DB transaction
-        // commits — otherwise a queue worker can race ahead and try to
-        // load a leave_request that hasn't been written yet.
         $this->afterCommit();
     }
 
     public function via(object $notifiable): array
     {
-        // Bell row first, SMTP second, so a mail failure can't cost the bell.
-        // Laravel skips 'database' for AnonymousNotifiable (no User row).
         return ['database', 'mail'];
     }
 
-    /**
-     * Payload stored in the notifications table — drives the bell-icon
-     * dropdown UI. Kept compact (no full leave_request) so the json
-     * column doesn't bloat for tenants with thousands of notifications.
-     */
     public function toArray(object $notifiable): array
     {
         $r = $this->request;
@@ -174,10 +142,6 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
         };
     }
 
-    /**
-     * Deep link the recipient should follow. Currently a generic /hr/leave
-     * destination — once we have stable per-request URLs we'll wire those.
-     */
     private function actionPath(): string
     {
         return match ($this->kind) {
@@ -186,21 +150,11 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
         };
     }
 
-    // Mail needs the absolute URL; the bell needs the bare path. APP_URL can
-    // carry a sub-folder (/Cross_Border_Command/public) the SPA router has no
-    // route for, so an absolute URL in the payload lands on the 404 → dashboard.
     private function actionUrl(): string
     {
         return rtrim(config('app.url') ?? '', '/') . $this->actionPath();
     }
 
-    /**
-     * Resolve a Notifiable (a User) from an Employee record. The mailer
-     * needs `routeNotificationForMail()` on the notifiable, which User
-     * already provides. We return the User attached to an Employee, or
-     * a synthetic notifiable that just carries the raw email when the
-     * employee has no linked user account yet.
-     */
     public static function notifiableFromEmployee(Employee $employee): mixed
     {
         if ($employee->user_id) {

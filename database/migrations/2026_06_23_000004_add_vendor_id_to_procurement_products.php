@@ -5,23 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Record the ACTUAL sourced supplier on a procurement line.
- *
- * Until now a procurement carried no vendor at all — the only vendor↔deal link
- * was product-scoped (vendor_product_mappings), so a supplier flipped to
- * "Recurring" merely by sharing a product with someone else's procurement.
- *
- * procurement_products.vendor_id pins the supplier per line. Going forward the
- * procurement flow sets it (explicit pick, or auto when a product has a single
- * mapped vendor). Fresh/Recurring + the Evidence-Vault deal matrix then count
- * on THIS column instead of the product hop.
- *
- * Backfill rule: assign the line to the product's vendor ONLY when that product
- * is supplied by exactly one vendor (unambiguous). Products shared by several
- * vendors stay NULL — we genuinely can't infer who was sourced, so none of them
- * is wrongly credited.
- */
 return new class extends Migration
 {
     public function up(): void

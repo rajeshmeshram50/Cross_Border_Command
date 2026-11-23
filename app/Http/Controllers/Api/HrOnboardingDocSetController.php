@@ -12,21 +12,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * The Policies & Agreements document set for one employee: which onboarding
- * documents HR ticked as required, and whether that set is finalised.
- *
- * - Not finalised  → the matched templates are the working set; HR ticks the
- *   ones this hire needs. Nothing is enforced yet (backward-compatible with
- *   onboardings created before this feature: no rows = everything matched).
- * - Finalised      → the ticked set is frozen as the requirement; onboarding
- *   completion and the % are measured against it. No new document joins it.
- * - Re-open        → clears the lock so the set can change again, allowed only
- *   while nothing in it has been signed yet.
- */
 class HrOnboardingDocSetController extends Controller
 {
-    /** Resolve the employee and confirm the caller's tenant owns them. */
     private function employeeFor(Request $request, int $employeeId): Employee
     {
         $user = $request->user();
@@ -38,7 +25,6 @@ class HrOnboardingDocSetController extends Controller
         return $emp;
     }
 
-    /** The latest signature run per template id for this employee. */
     private function runsByTemplate(int $employeeId): array
     {
         $byTpl = [];
@@ -51,13 +37,11 @@ class HrOnboardingDocSetController extends Controller
         return $byTpl;
     }
 
-    /** Which lifecycle this set belongs to: 'onboarding' (default) or 'exit'. */
     private function kindOf(Request $request): string
     {
         return strtolower((string) $request->query('kind')) === 'exit' ? 'exit' : 'onboarding';
     }
 
-    /** The matched templates for the lifecycle. */
     private function templatesFor(Employee $emp, string $kind)
     {
         return ($kind === 'exit'
@@ -67,7 +51,6 @@ class HrOnboardingDocSetController extends Controller
             ->values();
     }
 
-    /** The lifecycle is complete (set sealed) — onboarding at stage 6, exit when finished. */
     private function sealed(Employee $emp, string $kind): bool
     {
         if ($kind === 'exit') {
@@ -76,7 +59,6 @@ class HrOnboardingDocSetController extends Controller
         return (int) ($emp->onboarding_stage_completed ?? 0) >= 6;
     }
 
-    /** GET /employees/{employee}/onboarding-doc-set?kind=onboarding|exit */
     public function show(Request $request, int $employee): JsonResponse
     {
         $emp  = $this->employeeFor($request, $employee);
@@ -86,7 +68,6 @@ class HrOnboardingDocSetController extends Controller
         $lock = HrOnboardingDocsetLock::where('employee_id', $emp->id)->where('kind', $kind)->first();
         $finalized = $lock && $lock->finalized_at !== null;
 
-        // Saved ticks. None yet = everything matched is ticked (the default set).
         $saved = HrOnboardingDocSelection::where('employee_id', $emp->id)->where('kind', $kind)->pluck('template_id')->map(fn ($x) => (int) $x)->all();
         $hasSaved = count($saved) > 0;
         $selectedSet = $hasSaved ? array_flip($saved) : array_flip($templates->pluck('id')->map(fn ($x) => (int) $x)->all());
@@ -100,7 +81,7 @@ class HrOnboardingDocSetController extends Controller
                 'code'        => $t->code,
                 'name'        => $t->name,
                 'selected'    => isset($selectedSet[(int) $t->id]),
-                'run_status'  => $status,                         // null | Pending | In Progress | Completed | Rejected | Cancelled
+                'run_status'  => $status,
                 'signed'      => $status === 'Completed',
                 'active'      => in_array($status, ['Pending', 'In Progress'], true),
             ];
@@ -110,14 +91,11 @@ class HrOnboardingDocSetController extends Controller
             'kind'         => $kind,
             'finalized'    => $finalized,
             'finalized_at' => $lock?->finalized_at,
-            // Re-open allowed any time BEFORE the lifecycle is complete; once
-            // complete the set is sealed.
             'can_reopen'   => $finalized && !$this->sealed($emp, $kind),
             'templates'    => $rows,
         ]);
     }
 
-    /** PUT /employees/{employee}/onboarding-doc-set?kind=…  { template_ids: [] } */
     public function save(Request $request, int $employee): JsonResponse
     {
         $emp  = $this->employeeFor($request, $employee);
@@ -132,12 +110,9 @@ class HrOnboardingDocSetController extends Controller
             return response()->json(['status' => false, 'message' => 'The document set is finalised. Re-open it before changing the selection.'], 422);
         }
 
-        // Only ids that still match this employee (for this lifecycle) are accepted.
         $valid = $this->templatesFor($emp, $kind)->pluck('id')->map(fn ($x) => (int) $x)->all();
         $ids = array_values(array_unique(array_intersect(array_map('intval', $data['template_ids']), $valid)));
 
-        // A document already sent for signature or signed cannot be dropped —
-        // force-keep any template with a live/completed run that is in this set.
         $inFlight = HrDocumentSignature::where('employee_id', $emp->id)
             ->whereIn('status', ['Pending', 'In Progress', 'Completed'])
             ->whereIn('template_id', $valid)
@@ -161,14 +136,11 @@ class HrOnboardingDocSetController extends Controller
         return $this->show($request, $employee);
     }
 
-    /** POST /employees/{employee}/onboarding-doc-set/finalize?kind=… */
     public function finalize(Request $request, int $employee): JsonResponse
     {
         $emp  = $this->employeeFor($request, $employee);
         $kind = $this->kindOf($request);
 
-        // Persist the current working set first (so a finalise with no explicit
-        // save still freezes exactly what's on screen — the default-all set).
         if (HrOnboardingDocSelection::where('employee_id', $emp->id)->where('kind', $kind)->doesntExist()) {
             $ids = $this->templatesFor($emp, $kind)->pluck('id')->map(fn ($x) => (int) $x)->all();
             foreach ($ids as $tid) {
@@ -190,7 +162,6 @@ class HrOnboardingDocSetController extends Controller
         return $this->show($request, $employee);
     }
 
-    /** POST /employees/{employee}/onboarding-doc-set/reopen?kind=… */
     public function reopen(Request $request, int $employee): JsonResponse
     {
         $emp  = $this->employeeFor($request, $employee);

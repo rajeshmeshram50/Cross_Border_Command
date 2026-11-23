@@ -5,43 +5,16 @@ namespace App\Support;
 use App\Models\Employee;
 use App\Models\User;
 
-/**
- * Turns a workflow signer ROLE ("Employee", "Reporting Manager", "Client (CEO)")
- * into the real person it means for a given employee.
- *
- * This lived as a private method on HrDocumentSignatureController, which is
- * where documents are SENT. The generate/preview path needed the same answer —
- * {{Signer1Name}} was resolving to the role label, so a preview read "Employee"
- * where the employee's own name belonged — and copying the rules into a second
- * controller is how two screens end up naming different people for the same
- * document. One implementation, both callers.
- */
 final class SignerResolver
 {
-    /**
-     * @return array{0: int|null, 1: string, 2: string|null}
-     *         [user_id, display name, designation]
-     *
-     * The designation is the signer's JOB TITLE, not the workflow role: a
-     * stepper naming only the role reads "Reporting Manager" for someone whose
-     * card says "Sr. Production Manager" (#23). Null when nobody's employee
-     * record stands behind the login, and the caller falls back to the role.
-     */
     public static function resolve(string $roleName, Employee $emp): array
     {
         $r = strtolower(trim($roleName));
 
         if (str_contains($r, 'reporting')) {
-            /* Two paths — employees.reporting_manager_id points to an Employee
-             * row (the common case), but reporting_manager_user_id points to a
-             * User when the manager is a Branch User / client admin with no
-             * employee record. Try the Employee path first, then the User one.
-             * Without the fallback a Branch-User manager surfaced as
-             * "(unassigned)" on every signature workflow. */
             if ($emp->reporting_manager_id) {
                 $mgr = Employee::with(['user', 'designation'])->find($emp->reporting_manager_id);
                 if ($mgr) {
-                    // resolved_user_id: the user_id link, else the employee code.
                     return [$mgr->resolved_user_id, $mgr->display_name ?? 'Reporting Manager', self::designationOf($mgr)];
                 }
             }
@@ -59,7 +32,6 @@ final class SignerResolver
         }
 
         if (str_contains($r, 'ceo') || str_contains($r, 'client')) {
-            // First client_admin in this client stands in for the CEO.
             $admin = $emp->client_id
                 ? User::where('client_id', $emp->client_id)->where('user_type', 'client_admin')->first()
                 : null;
@@ -73,13 +45,11 @@ final class SignerResolver
         return [null, $roleName ?: 'Unassigned', null];
     }
 
-    /** The signer's job title, or null when the designation master row is gone. */
     public static function designationOf(Employee $emp): ?string
     {
         return $emp->designation?->name ?: null;
     }
 
-    /** A signer resolved as a USER — find the employee record behind the login. */
     public static function designationForUser(int $userId): ?string
     {
         $emp = Employee::with('designation')->where('user_id', $userId)->first();
@@ -87,7 +57,6 @@ final class SignerResolver
         return $emp ? self::designationOf($emp) : null;
     }
 
-    /** Just the name — for the render path, which has no use for the user id. */
     public static function name(string $roleName, Employee $emp): string
     {
         return self::resolve($roleName, $emp)[1];

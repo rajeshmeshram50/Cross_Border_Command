@@ -25,10 +25,6 @@ class Roles extends Model
         'created_by',
     ];
 
-    /**
-     * Auto-generate the role code (ROL-01, ROL-02, …) on create when the
-     * caller doesn't supply one.
-     */
     protected static function booted(): void
     {
         static::creating(function (self $row) {

@@ -4,15 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * CredVault · the tenant's policy settings, one row per client.
- *
- * Stored as one json document rather than a row per key: the 17 settings are
- * always read together, and the defaults live in the model, so a key added
- * later needs no migration — a tenant without it simply reads the default.
- * Each change is recorded in credvault_audit_logs (action 'policy', with the
- * old and new value), which is the Change History screen.
- */
 return new class extends Migration
 {
     public function up(): void

@@ -3,28 +3,16 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Register the `hr.holiday` permission module (under the HR "Time & Pay
- * Inputs" category) and backfill permissions for users already provisioned
- * before it existed.
- *
- * Strategy: clone each user's `hr.leave` flag set onto a fresh `hr.holiday`
- * row — Holiday lives in the same HR category, so anyone who can see Leave
- * should see the Holiday calendar too. Skips users who already have a row.
- * Idempotent (ModuleSeeder also seeds the module for fresh installs).
- */
 return new class extends Migration
 {
     public function up(): void
     {
         $now = now();
 
-        // 1. Ensure the module exists, nested under hr.time_pay.
         $parentId = DB::table('modules')->where('slug', 'hr.time_pay')->value('id');
 
         $holidayId = DB::table('modules')->where('slug', 'hr.holiday')->value('id');
         if (!$holidayId) {
-            // Place it right after Leave in the category ordering.
             $leaveSort = DB::table('modules')->where('slug', 'hr.leave')->value('sort_order');
             $holidayId = DB::table('modules')->insertGetId([
                 'parent_id'   => $parentId,
@@ -40,7 +28,6 @@ return new class extends Migration
             ]);
         }
 
-        // 2. Backfill permissions from hr.leave.
         $leaveModuleId = DB::table('modules')->where('slug', 'hr.leave')->value('id');
         if (!$leaveModuleId) return;
 

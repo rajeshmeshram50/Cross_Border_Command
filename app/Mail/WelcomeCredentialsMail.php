@@ -20,14 +20,6 @@ class WelcomeCredentialsMail extends Mailable
     public string $loginUrl;
     public string $appName;
 
-    /**
-     * @param string|null $loginUrl Pre-resolved SPA login URL. Pass the
-     *   result of {@see PasswordChangedMail::resolveLoginUrl()} from the
-     *   controller so the "Sign In" button mirrors the origin the admin
-     *   triggered this from (localhost in dev, the live host in prod).
-     *   When null, falls back to the canonical config-based default —
-     *   correct for queued jobs / cron without an HTTP request.
-     */
     public function __construct(
         string $userName,
         string $userEmail,
@@ -41,10 +33,6 @@ class WelcomeCredentialsMail extends Mailable
         $this->password = $password;
         $this->userType = $userType;
         $this->orgName = $orgName;
-        // Reuse PasswordChangedMail::defaultLoginUrl() so the welcome mail
-        // and the password-changed mail are guaranteed to agree on what
-        // "the SPA login URL" means — one place to change if the route
-        // ever moves off /login.
         $this->loginUrl = $loginUrl ?: PasswordChangedMail::defaultLoginUrl();
         $this->appName = config('mail.from.name', 'Cross Border Command');
     }

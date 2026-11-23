@@ -9,10 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Advance Receipt Refund Adjustment — raised when a PO with money released is cancelled.
- * Recovered / balance are stored and rebuilt from the recoveries on every change.
- */
 class PoRefundAdjustment extends Model
 {
     use BelongsToTenant, SoftDeletes;

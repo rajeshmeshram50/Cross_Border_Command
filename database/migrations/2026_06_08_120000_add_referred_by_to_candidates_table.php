@@ -6,11 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Capture who referred a candidate when Source = Referral (HRMS-BUG-057).
-     * Stores both the employee FK (for linking/reporting) and a name snapshot
-     * so the referrer is still legible if the employee row later changes.
-     */
     public function up(): void
     {
         Schema::table('candidates', function (Blueprint $table) {

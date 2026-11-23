@@ -13,47 +13,26 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * HRMS Holiday calendar — per-tenant company holidays. Manual CRUD plus a
- * bulk Excel/CSV import (rows parsed client-side, posted here as JSON).
- *
- * Tenant scoping, ownership resolution and the permission gate all mirror
- * AnnouncementController so the module behaves like the rest of HRMS.
- */
 class HolidayController extends Controller
 {
     use ScopesHolidayTenant;
 
-    /** Module slug used for permission checks — matches ModuleSeeder. */
     private const MODULE_SLUG = 'hr.holiday';
 
-    /** Tenant-facing timezone used to resolve "today" when freezing past
-     *  holidays. The app runs in UTC; holiday dates are entered/read in IST. */
-    private const DISPLAY_TZ = 'Asia/Kolkata';
 
-    /** Allowed holiday categories. */
     private const TYPES = ['Public', 'Restricted', 'Company', 'Regional', 'Optional'];
 
     private const DEFAULT_PER_PAGE = 25;
     private const MAX_PER_PAGE = 200;
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  CRUD
-     * ───────────────────────────────────────────────────────────────── */
-
     public function index(Request $request)
     {
         $this->authorizeAction($request, 'can_view');
 
-        /* `creator` is not eager-loaded: no screen reads it off a holiday, and
-           it was a query plus a user object on every row for nothing. */
         $q = Holiday::query()->with(['group:id,name']);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($request->filled('holiday_group_id')) {
-            /* A comma list, because the filter panel allows more than one group
-               (QA 8). One id still arrives as a one-element array, so an older
-               caller is unaffected. */
             $ids = array_values(array_filter(array_map('intval', explode(',', (string) $request->query('holiday_group_id')))));
             $q->whereIn('holiday_group_id', $ids ?: [0]);
         }
@@ -64,7 +43,6 @@ class HolidayController extends Controller
                     ->orWhere('description', 'ilike', "%{$search}%");
             });
         }
-        // Type and year are multi-select — a comma list means "any of these".
         if ($type = $request->query('type')) {
             $types = array_values(array_filter(array_map('trim', explode(',', (string) $type))));
             if ($types) $q->whereIn('type', $types);
@@ -78,29 +56,9 @@ class HolidayController extends Controller
             }
         }
 
-        // Date-wise, with id as a stable tie-breaker so same-date holidays keep
-        // a deterministic order (the SPA prints a continuous Sr. No. over this).
         $q->orderBy('date')->orderBy('id');
 
-        /* Pagination is OPT-IN.
-         *
-         * Other screens read this endpoint as a plain array — HrLeave marks the
-         * holidays on its leave calendar from it — so returning the
-         * {data, total, …} envelope unconditionally would blank them. Only a
-         * caller that actually asks for a page gets one, the same contract
-         * EmployeeController::index uses.
-         *
-         * per_page is clamped rather than trusted: the Holiday list sizes its
-         * page to the viewport (DataTable's autoFitRows), so the value is
-         * whatever happens to fit — not one of the 10/25/50 the dropdown
-         * offers — and an unclamped one would let a caller ask for the whole
-         * table back, which is the thing paginating is here to prevent.
-         */
         if ($request->has('per_page') || $request->has('page')) {
-            // A junk or non-positive per_page falls back to the DEFAULT, not to
-            // the floor: max(1, (int) 'abc') is 1, which would answer a mistyped
-            // parameter with 400 single-row pages rather than the sensible page
-            // the caller obviously meant.
             $requested = $request->query('per_page');
             $perPage = is_numeric($requested) && (int) $requested > 0
                 ? min(self::MAX_PER_PAGE, (int) $requested)
@@ -109,14 +67,6 @@ class HolidayController extends Controller
             $page = $q->paginate($perPage);
             $this->stripGroupCounts($page->items());
 
-            /* The Year filter's options ride along with the page instead of
-               costing a request of their own. They cannot be derived from the
-               rows on screen (one page only contains its own years), and a
-               second endpoint for a seven-element list meant a second Laravel
-               boot on every visit — which on the dev server is a whole second.
-               One extra 2ms query is the cheaper half of that trade, and it
-               keeps the dropdown correct after an import or a delete without
-               a separate refresh. */
             $payload = $page->toArray();
             $payload['years'] = $this->yearOptions($request);
 
@@ -129,19 +79,6 @@ class HolidayController extends Controller
         return response()->json($rows);
     }
 
-    /**
-     * Distinct years present in this tenant's holidays, newest first — the
-     * options behind the list's Year filter.
-     *
-     * Deliberately ignores the request's own filters: it describes the whole
-     * calendar, not the current view. Scoped to the filters, picking 2026 would
-     * collapse the dropdown to [2026] and there would be no way back to another
-     * year.
-     *
-     * Only the distinct date column is fetched — no rows are hydrated — and the
-     * years are grouped in PHP so the query stays portable rather than
-     * depending on MySQL's or Postgres's own date functions.
-     */
     private function yearOptions(Request $request): array
     {
         $q = Holiday::query();
@@ -157,18 +94,6 @@ class HolidayController extends Controller
             ->all();
     }
 
-    /**
-     * Drop the count accessors from the `group` rows riding along with a
-     * holiday list.
-     *
-     * HolidayGroup appends holidays_count and employees_count, and those
-     * accessors fall back to a COUNT query each when withCount has not run.
-     * Eager-loading the group therefore bought two COUNTs per distinct group in
-     * the result: 26 queries to render a 10-row page, and over 400 for the
-     * unpaginated list HrLeave asks for. Nothing reads either count off a
-     * holiday's group — the list only wants the name — so they are stripped
-     * before serialisation and the queries never fire.
-     */
     private function stripGroupCounts(iterable $rows): void
     {
         foreach ($rows as $row) {
@@ -208,8 +133,6 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
-        // Editing is always allowed — the change just propagates to every
-        // employee on this holiday's group automatically.
 
         $data = $this->validatePayload($request, $row->id);
         $data['updated_by'] = $request->user()?->id;
@@ -223,8 +146,6 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
-        // A holiday can be EDITED freely (auto-propagates), but it can't be
-        // DELETED while its group is assigned to employees — they depend on it.
         $this->assertGroupNotInUse($row, 'removed');
 
         $row->delete();
@@ -232,17 +153,6 @@ class HolidayController extends Controller
         return response()->json(['message' => 'Holiday removed.']);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  BULK IMPORT (Excel / CSV → JSON rows from the frontend)
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Import many holidays at once. The frontend parses the .xlsx with
-     * SheetJS and posts `rows: [{ name, date, type?, is_recurring?,
-     * description? }, ...]`. Each row is validated independently; valid
-     * rows are inserted and invalid ones are returned with a reason so the
-     * user can fix the sheet — a partial import never aborts the whole batch.
-     */
     public function import(Request $request)
     {
         $this->authorizeAction($request, 'can_add');
@@ -255,22 +165,13 @@ class HolidayController extends Controller
 
         $auth = $request->user();
         [$clientId, $branchId] = $this->resolveOwnership($request);
-        // All imported rows land in this group (selected in the UI). Validated
-        // against the caller's tenant scope so a forged id can't cross tenants.
         $groupId = $this->resolveGroupId($request, $request->input('holiday_group_id'));
 
         $created = 0;
         $skipped = 0;
         $errors  = [];
-        // Today's date — one-time holidays must be in the future (mirrors the
-        // Add Holiday form's date picker, which blocks today + past).
         $today = Carbon::now()->toDateString();
 
-        // Each row can name its own Group (Excel "Group" column). Build a
-        // case-insensitive name → id map of THIS tenant's groups so a row's
-        // group resolves without the user pre-selecting one in the UI. A row
-        // naming an UNKNOWN group is rejected (we never auto-create groups from
-        // an import); a row with a BLANK group falls back to $groupId.
         $groupMapQ = \App\Models\HolidayGroup::query();
         $this->applyScope($groupMapQ, $auth, null);
         $groupMap = [];
@@ -278,9 +179,6 @@ class HolidayController extends Controller
             $groupMap[mb_strtolower(trim((string) $g->name))] = (int) $g->id;
         }
 
-        // Existing (group, date) pairs so we can skip duplicates without a query
-        // per row. Duplicates are judged WITHIN a group — the same date may
-        // legitimately exist in another group.
         $existing = Holiday::query()
             ->when($clientId === null, fn($q) => $q->whereNull('client_id'), fn($q) => $q->where('client_id', $clientId))
             ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
@@ -301,9 +199,6 @@ class HolidayController extends Controller
                     continue;
                 }
 
-                // Same name rule as the Add Holiday form — a sheet row named
-                // "2026" or "12345" is not a holiday name, so it is reported
-                // back instead of being imported silently.
                 if (!preg_match('/^(?=.*\pL)[\pL\pN .\'\-]+$/u', $name)) {
                     $errors[] = ['row' => $line, 'message' => "Invalid holiday name \"{$name}\" — a name must include at least one letter."];
                     continue;
@@ -317,20 +212,11 @@ class HolidayController extends Controller
 
                 $recurring = filter_var($raw['is_recurring'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-                // Holiday date must be in the FUTURE — today + past are blocked,
-                // mirroring the Add Holiday form's date picker (minDate = tomorrow).
-                // Applies to recurring rows too, so a past anchor date is rejected.
                 if ($date <= $today) {
                     $errors[] = ['row' => $line, 'message' => "Date \"{$rawDate}\" is today or in the past — a holiday must be a future date."];
                     continue;
                 }
 
-                // Per-row group from the Excel "Group" column. A named group MUST
-                // already exist — the import never creates groups "from outside", so
-                // an unknown name is REJECTED (not silently re-pointed to another
-                // group). A blank cell falls back to the UI-selected group; if
-                // neither resolves, the row is skipped (a holiday must belong to an
-                // existing group).
                 $rowGroupName = trim((string) ($raw['group'] ?? ''));
                 if ($rowGroupName !== '') {
                     $rowGroupId = $groupMap[mb_strtolower($rowGroupName)] ?? null;
@@ -346,7 +232,6 @@ class HolidayController extends Controller
                     continue;
                 }
 
-                // De-dupe against the DB and earlier rows — scoped to (group, date).
                 $dupeKey = ($rowGroupId ?? 'null') . '|' . $date;
                 if (isset($existing[$dupeKey]) || isset($seenInBatch[$dupeKey])) {
                     $skipped++;
@@ -383,12 +268,6 @@ class HolidayController extends Controller
         ]);
     }
 
-    /**
-     * Holidays for the logged-in user — resolved from the holiday group their
-     * employee record is assigned to. Lets an employee see exactly the
-     * holidays that apply to them (and that payroll credits). Returns an empty
-     * list (not an error) when the user has no employee row or no group.
-     */
     public function my(Request $request)
     {
         $user = $request->user();
@@ -405,8 +284,6 @@ class HolidayController extends Controller
             ->with('group:id,name')
             ->orderBy('date')
             ->get()
-            // Recurring holidays repeat yearly — surface them on the requested
-            // year regardless of the original year stored on the row.
             ->map(function (Holiday $h) use ($year) {
                 $arr = $h->toArray();
                 if ($h->is_recurring && $h->date) {
@@ -422,18 +299,8 @@ class HolidayController extends Controller
         return response()->json($holidays);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS
-     * ───────────────────────────────────────────────────────────────── */
-
     private function validatePayload(Request $request, ?int $id = null): array
     {
-        // Holiday names are labels — letters, numbers, spaces and basic name
-        // punctuation (. ' -) only, and they MUST contain at least one letter.
-        // "2026" or "12345" is not a holiday name, so the lookahead rejects a
-        // name made only of digits/spaces/punctuation while still allowing
-        // digits INSIDE a real name ("Diwali 2026"). Same idiom as the group
-        // name rule in HolidayGroupController.
         $data = $request->validate([
             'name'             => ['required', 'string', 'max:191', 'regex:/^(?=.*\pL)[\pL\pN .\'\-]+$/u'],
             'date'             => 'required|date',
@@ -442,24 +309,16 @@ class HolidayController extends Controller
             'description'      => 'nullable|string|max:1000',
             'holiday_group_id' => 'nullable|integer',
         ], [
-            // Says what a valid name IS, and names the rule that just failed.
             'name.regex' => 'Holiday name must include at least one letter — it can also contain numbers, spaces, dots, apostrophes and hyphens, but not numbers alone.',
         ]);
 
         $data['name'] = trim($data['name']);
 
-        // Normalise to a clean date string + defaults so the DB never sees a
-        // datetime or an unexpected type value.
         $data['date'] = Carbon::parse($data['date'])->toDateString();
         $data['type'] = $data['type'] ?? 'Public';
         $data['is_recurring'] = filter_var($request->input('is_recurring', false), FILTER_VALIDATE_BOOLEAN);
-        // Only honour a group id that belongs to the caller's tenant scope.
         $data['holiday_group_id'] = $this->resolveGroupId($request, $request->input('holiday_group_id'));
 
-        // Block duplicate holidays on the same date within the same tenant +
-        // group scope (the same date may legitimately exist in another group).
-        // Mirrors the bulk-import de-dupe so single-create can't bypass it.
-        // On update, the row being edited is excluded.
         [$clientId, $branchId] = $this->resolveOwnership($request);
         $duplicate = Holiday::query()
             ->when($clientId === null, fn($q) => $q->whereNull('client_id'), fn($q) => $q->where('client_id', $clientId))
@@ -481,12 +340,10 @@ class HolidayController extends Controller
         return $data;
     }
 
-    /** Accept ISO (YYYY-MM-DD), DD-MM-YYYY, DD/MM/YYYY or Excel-ish dates. */
     private function parseImportDate(string $raw): ?string
     {
         $raw = trim($raw);
 
-        // Excel serial date number (days since 1899-12-30).
         if (preg_match('/^\d{5}$/', $raw)) {
             return Carbon::create(1899, 12, 30)->addDays((int) $raw)->toDateString();
         }
@@ -496,11 +353,9 @@ class HolidayController extends Controller
                 $d = Carbon::createFromFormat($fmt, $raw);
                 if ($d !== false) return $d->toDateString();
             } catch (\Throwable $e) {
-                // try next format
             }
         }
 
-        // Last resort — let Carbon guess (handles "2026-01-26T00:00:00.000Z").
         try {
             return Carbon::parse($raw)->toDateString();
         } catch (\Throwable $e) {
@@ -508,13 +363,6 @@ class HolidayController extends Controller
         }
     }
 
-    /**
-     * Block edits/deletes on a holiday whose group is assigned to employees.
-     * Once a group is somebody's holiday list, its dates feed that employee's
-     * attendance/payroll, so changing or removing a holiday inside it would
-     * silently rewrite a calendar people depend on. The admin must first
-     * unassign the group from all employees. Un-grouped holidays are exempt.
-     */
     private function assertGroupNotInUse(Holiday $row, string $verb): void
     {
         if (!$row->holiday_group_id) return;
@@ -529,10 +377,6 @@ class HolidayController extends Controller
         }
     }
 
-    /**
-     * Fetch a row enforcing tenant scope so one tenant can't read/edit
-     * another's holiday by guessing an id.
-     */
     private function resolveRow(Request $request, int $id): Holiday
     {
         $q = Holiday::query()->where('id', $id);
@@ -540,11 +384,6 @@ class HolidayController extends Controller
         return $q->firstOrFail();
     }
 
-    /**
-     * Validate that the given holiday_group_id exists within the caller's
-     * tenant scope. Returns the id when valid, or null (un-grouped) when blank
-     * or out of scope — never trusts a raw id from the request body.
-     */
     private function resolveGroupId(Request $request, $rawId): ?int
     {
         if (!$rawId) return null;
@@ -561,8 +400,6 @@ class HolidayController extends Controller
 
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
         if (!$moduleId) {
-            // Module row not seeded yet — fall back to a sensible default so a
-            // freshly-migrated env still works for tenant admins.
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
             abort(403, 'Holiday module not enabled.');
         }

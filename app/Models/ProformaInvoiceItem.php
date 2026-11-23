@@ -6,14 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Sales Matrix → Proforma Invoice line item.
- *
- * Same line-total contract as QuotationItem — `amount` is the
- * server-computed `qty * rate * (1 + tax_pct/100)`. Renamed
- * computeAmount() lives on the parent helper to keep the math in
- * one place.
- */
 class ProformaInvoiceItem extends Model
 {
     use HasFactory;
@@ -39,7 +31,6 @@ class ProformaInvoiceItem extends Model
         return $this->belongsTo(ProformaInvoice::class);
     }
 
-    /** Single source of truth for the line total. */
     public static function computeAmount(float $qty, float $rate, float $taxPct): float
     {
         $base = $qty * $rate;

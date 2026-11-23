@@ -8,16 +8,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * CredVault · a share of one credential with a person or a team.
- * Never deleted — a revoke stamps revoked_at, an expiry is just a date.
- */
 class CredentialShare extends Model
 {
     protected $table = 'credvault_shares';
 
     public const RECIPIENTS  = ['user', 'team'];
-    /** Ordered weakest first: each level can do everything the one before it can. */
     public const PERMISSIONS = ['use', 'view', 'copy', 'full'];
 
     protected $fillable = [
@@ -30,14 +25,12 @@ class CredentialShare extends Model
         'revoked_at' => 'datetime',
     ];
 
-    /** Not revoked and not past its end date. */
     public function scopeLive(Builder $q): Builder
     {
         return $q->whereNull('revoked_at')
             ->where(fn ($w) => $w->whereNull('expires_at')->orWhere('expires_at', '>', now()));
     }
 
-    /** active | soon (under 3 days left) | expired | revoked — the Shared By Me status. */
     public function state(): string
     {
         if ($this->revoked_at) return 'revoked';

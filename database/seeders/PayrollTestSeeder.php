@@ -9,17 +9,6 @@ use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Seeds realistic attendance + leave + salary scenarios for ONE test client so
- * payroll can be exercised against every rule — including the male/female
- * Professional-Tax slabs (Rule 9).
- *
- *   php artisan db:seed --class=PayrollTestSeeder
- *
- * Idempotent: re-running wipes the test month's attendance/leave/structures
- * for the target employees and re-seeds them. Target client is the first
- * client that already has employees (defaults to client 1).
- */
 class PayrollTestSeeder extends Seeder
 {
     public function run(): void
@@ -33,19 +22,15 @@ class PayrollTestSeeder extends Seeder
 
         $this->command?->info("Seeding payroll test data for client {$clientId}, {$start->format('M Y')}");
 
-        // ── 1. Ensure an Unpaid leave type exists (for the unpaid-leave case) ──
         $unpaidTypeId = $this->ensureUnpaidLeaveType($clientId);
 
-        // ── 2. Test employees — covers every PT slab + scenario ──────────────
-        // gross drives the PT slab; gender flips the male/female rule.
         $specs = [
-            // code,           name,               gender,  state, gross, pf,  joining,  scenario
             ['PT-M-HIGH', 'Aarav PT-MaleHigh',  'Male',   14, 50000, true,  null,        'present_full'],
-            ['PT-M-MID',  'Vivek PT-MaleMid',   'Male',   14,  9000, false, null,        'late_marks'],   // 7501-10000 -> 175
-            ['PT-M-LOW',  'Sahil PT-MaleLow',   'Male',   14,  7000, false, null,        'absent'],       // <=7500 -> 0
-            ['PT-F-HIGH', 'Anjali PT-FemHigh',  'Female', 14, 30000, true,  null,        'paid_leave'],   // >25000 -> 200
-            ['PT-F-LOW',  'Priya PT-FemLow',    'Female', 14, 22000, false, null,        'unpaid_leave', $unpaidTypeId], // <=25000 -> 0 (exempt)
-            ['PT-PRORATE','Rohit PT-MidJoin',   'Male',   14, 26000, false, 15,          'present_full'], // joined 15th -> pro-rata
+            ['PT-M-MID',  'Vivek PT-MaleMid',   'Male',   14,  9000, false, null,        'late_marks'],
+            ['PT-M-LOW',  'Sahil PT-MaleLow',   'Male',   14,  7000, false, null,        'absent'],
+            ['PT-F-HIGH', 'Anjali PT-FemHigh',  'Female', 14, 30000, true,  null,        'paid_leave'],
+            ['PT-F-LOW',  'Priya PT-FemLow',    'Female', 14, 22000, false, null,        'unpaid_leave', $unpaidTypeId],
+            ['PT-PRORATE','Rohit PT-MidJoin',   'Male',   14, 26000, false, 15,          'present_full'],
         ];
 
         foreach ($specs as $s) {
@@ -73,10 +58,8 @@ class PayrollTestSeeder extends Seeder
                 ]
             );
 
-            // Salary structure (50/30/20 split) — supersede any active one.
             $this->setSalary($emp, $gross, $pf);
 
-            // Attendance + leave for the scenario.
             $this->seedAttendanceAndLeave($emp, $start, $end, $scenario, $unpaidId);
         }
 
@@ -100,13 +83,6 @@ class PayrollTestSeeder extends Seeder
 
     private function setSalary(Employee $emp, float $gross, bool $pf): void
     {
-        /* Read the outgoing version BEFORE superseding it, and bump. This
-         * superseded first and then hard-coded `version => 1`, so every re-run
-         * of the seeder added another row at version 1 — this database carries
-         * employees with seven of them, and PayrollService::activeStructure()
-         * has had to tie-break on id ever since to pick the right one. The
-         * controller path (SalaryStructureController::store) has always done
-         * it in this order; the seeder is now consistent with it. (#133) */
         $prev = SalaryStructure::where('employee_id', $emp->id)
             ->where('status', 'active')
             ->orderByDesc('version')
@@ -130,17 +106,11 @@ class PayrollTestSeeder extends Seeder
             'approval_status' => 'approved', 'approved_at' => now(),
         ]);
 
-        /* Keep the employee's own CTC in step with the structure, the way
-         * SalaryStructureController::store() does. Without this the seeded
-         * accounts opened Stage 4 – Compensation showing an annual_salary that
-         * had nothing to do with the gross payroll actually pays from, which
-         * reads on screen as the payslip ignoring the salary structure. (#133) */
         $emp->forceFill(['annual_salary' => round($gross * 12, 2)])->save();
     }
 
     private function seedAttendanceAndLeave(Employee $emp, Carbon $start, Carbon $end, string $scenario, ?int $unpaidTypeId): void
     {
-        // Clean the test month for this employee first (idempotent).
         Attendance::where('employee_id', $emp->id)
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])->forceDelete();
         if (\Illuminate\Support\Facades\Schema::hasTable('leave_requests')) {
@@ -155,7 +125,6 @@ class PayrollTestSeeder extends Seeder
         $absentLeft = $scenario === 'absent' ? 2 : 0;
         $halfLeft = $scenario === 'paid_leave' ? 1 : 0;
 
-        // Leave window (2 days) for leave scenarios.
         $leaveDays = [];
         if (in_array($scenario, ['paid_leave', 'unpaid_leave'], true)) {
             $lv = $workStart->copy()->addDays(5);
@@ -165,13 +134,13 @@ class PayrollTestSeeder extends Seeder
         }
 
         for ($d = $workStart->copy(); $d->lte($end); $d->addDay()) {
-            if ($d->dayOfWeek === Carbon::SUNDAY) continue;            // weekly off
+            if ($d->dayOfWeek === Carbon::SUNDAY) continue;
             $date = $d->toDateString();
-            if (in_array($date, $leaveDays, true)) continue;          // on leave, no attendance row
+            if (in_array($date, $leaveDays, true)) continue;
 
             $status = 'Present';
             if ($lateLeft > 0)      { $status = 'Late'; $lateLeft--; }
-            elseif ($absentLeft > 0) { $absentLeft--; continue; }     // absent = no row
+            elseif ($absentLeft > 0) { $absentLeft--; continue; }
             elseif ($halfLeft > 0)   { $status = 'Half Day'; $halfLeft--; }
 
             Attendance::create([

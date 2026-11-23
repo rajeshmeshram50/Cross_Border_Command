@@ -14,18 +14,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * P2P · Supplier Purchase Invoice — the header.
- * Tenant-scoped through BelongsToTenant (client + branch from the request).
- *
- * Four flavours, and the two splits are independent: with / without PO, each
- * with / without a shipment. Everything conditional keys off
- * `purchase_order_id IS NULL` — there is no separate "standalone" flag, because
- * a second column saying the same thing is a second thing to keep in step.
- *
- * The lead, shipment and procurement chips the list prints are NOT stored here.
- * They are read through the purchase order, which already holds all three.
- */
 class SupplierInvoice extends Model
 {
     use BelongsToTenant, SoftDeletes;
@@ -41,7 +29,6 @@ class SupplierInvoice extends Model
     public const STATUSES  = ['draft', 'mapped', 'grn_pending', 'closed', 'cancelled'];
     public const DOC_TYPES = ['domestic', 'international'];
 
-    /** What the list prints for each status — also what the search matches on. */
     public const STATUS_LABELS = [
         'draft'       => 'Draft',
         'mapped'      => 'Mapped',
@@ -56,8 +43,6 @@ class SupplierInvoice extends Model
         'code',
         'purchase_order_id',
         'vendor_id',
-        /* Direct SPI only. A PO-backed invoice leaves these null and keeps
-           reading the order's, which stays the authority while it exists. */
         'shipment_order_id',
         'procurement_request_id',
         'procurement_request_code',
@@ -73,10 +58,6 @@ class SupplierInvoice extends Model
         'total_sgst',
         'total_igst',
         'grand_total',
-        /* Direct SPI is paid on its own, so the deduction and the ledger
-           live here. TDS is cut on taxable_total, not grand_total — GST
-           is not subject to it. A PO-backed invoice leaves these null
-           and keeps deducting from its order. */
         'tds_percentage',
         'tds_amount',
         'tds_updated_by',
@@ -115,8 +96,6 @@ class SupplierInvoice extends Model
         'zoho_synced_at'  => 'datetime',
     ];
 
-    /* ── Relationships ───────────────────────────────────────────────── */
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -125,8 +104,6 @@ class SupplierInvoice extends Model
     {
         return $this->belongsTo(Branch::class);
     }
-    /** GST senior approvals raised against THIS invoice (Direct SPI only —
-     *  a PO-backed invoice raises them on its order). */
     public function gstApprovals(): HasMany
     {
         return $this->hasMany(PoGstApproval::class, 'supplier_invoice_id');
@@ -136,7 +113,6 @@ class SupplierInvoice extends Model
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');
     }
-    /** Direct SPI only — a PO-backed invoice reads its shipment through the order. */
     public function shipmentOrder(): BelongsTo
     {
         return $this->belongsTo(ShipmentOrder::class, 'shipment_order_id');
@@ -145,18 +121,6 @@ class SupplierInvoice extends Model
     {
         return $this->belongsTo(Vendor::class);
     }
-    /**
-     * The Inventory warehouse master — NOT master_warehouse_master.
-     *
-     * This pointed at the generic Masters table because on 9 Oct, when the SPI
-     * was written, that was the only warehouse master there was. The five
-     * Inventory masters arrived on 10 Oct with their own tables and the SPI was
-     * never switched over, so the Temporary Storage picker listed
-     * inventory_warehouses while the invoice read the id back out of
-     * master_warehouse_master — two unrelated tables whose ids happen to
-     * overlap. Picking WH-001 and reading back a different company's WH-001 is
-     * what that cost.
-     */
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_id');
@@ -187,15 +151,11 @@ class SupplierInvoice extends Model
         return $this->hasMany(SpiActivity::class, 'supplier_invoice_id');
     }
 
-    /** Payment requests raised against this invoice. The money still moves on the PO. */
     public function paymentRequests(): HasMany
     {
         return $this->hasMany(PoPaymentRequest::class, 'supplier_invoice_id');
     }
 
-    /* ── State ───────────────────────────────────────────────────────── */
-
-    /** No purchase order behind it: the supplier was picked directly. */
     public function isStandalone(): bool
     {
         return $this->purchase_order_id === null;
@@ -210,7 +170,6 @@ class SupplierInvoice extends Model
         return $this->status === self::STATUS_CANCELLED;
     }
 
-    /** Editable only while nothing downstream depends on it. */
     public function isEditable(): bool
     {
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_MAPPED], true);
@@ -221,11 +180,6 @@ class SupplierInvoice extends Model
         return $this->document_type === 'international';
     }
 
-    /**
-     * Only a standalone invoice creates its own Zoho bill. With a PO the bill
-     * already exists on the order, and creating a second one would show the
-     * supplier's amount twice in Zoho.
-     */
     public function ownsZohoBill(): bool
     {
         return $this->isStandalone();

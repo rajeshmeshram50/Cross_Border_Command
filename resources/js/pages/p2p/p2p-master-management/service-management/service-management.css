@@ -792,3 +792,15 @@
 .svm-page tr:not(.is-off) .svm-cnt.is-zero:disabled { opacity: 1; filter: none; cursor: default; }
 .svm-page .svm-cnt:disabled:hover { transform: none; filter: grayscale(1); }
 .svm-page tr:not(.is-off) .svm-cnt.is-zero:disabled:hover { filter: none; }
+
+/* Short screens (150% zoom on a 1080p display is ~630px tall): order.css lets
+ * the PO list shrink to its rows there, which left the card ending under one
+ * row with an empty band above the footer. Service Management keeps the card
+ * filling down to the footer, never shorter than 320px; if the screen is
+ * shorter than that, the page scrolls instead. */
+@media (min-width: 769px) and (max-height: 640px) {
+  .page-content:has(> .container-fluid > .svm-page) > .container-fluid,
+  .svm-page,
+  .svm-page .ord-list { flex: 1 0 auto; }
+  .svm-page .ord-list { min-height: 320px; }
+}

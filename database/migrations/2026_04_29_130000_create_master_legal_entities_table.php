@@ -13,7 +13,6 @@ return new class extends Migration
             $table->unsignedBigInteger('client_id')->nullable()->index();
             $table->unsignedBigInteger('branch_id')->nullable()->index();
 
-            // Identity
             $table->string('entity_code', 32)->nullable();
             $table->string('entity_name', 255)->nullable();
             $table->string('legal_name', 255)->nullable();
@@ -24,18 +23,15 @@ return new class extends Migration
             $table->string('nature_of_business', 64)->nullable();
             $table->unsignedBigInteger('country_id')->nullable()->index();
 
-            // Address
             $table->string('address_line1', 255)->nullable();
             $table->string('address_line2', 255)->nullable();
             $table->string('city', 128)->nullable();
             $table->unsignedBigInteger('state_id')->nullable()->index();
             $table->string('zip_code', 20)->nullable();
 
-            // Financial
             $table->unsignedBigInteger('currency_id')->nullable()->index();
             $table->string('financial_year', 32)->nullable();
 
-            // Documents
             $table->string('logo_path', 512)->nullable();
 
             $table->enum('status', ['Active', 'Inactive'])->default('Active');

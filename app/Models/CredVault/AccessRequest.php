@@ -6,10 +6,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * CredVault · a request to unlock a protected credential, Vault Admin →
- * Reporting Manager → authenticator code, and the time-boxed unlock it becomes.
- */
 class AccessRequest extends Model
 {
     protected $table = 'credvault_access_requests';
@@ -18,7 +14,6 @@ class AccessRequest extends Model
     public const STATUSES = ['pending', 'approved', 'unlocked', 'locked', 'rejected', 'cancelled'];
     public const DURATIONS = [5, 15, 30, 60];
     public const MAX_OTP_ATTEMPTS = 3;
-    /** The window when there is no Vault Admin step to choose one — the prototype's `|| 5`. */
     public const DEFAULT_MINUTES = 5;
 
     protected $fillable = [
@@ -43,10 +38,6 @@ class AccessRequest extends Model
         'locked_at'          => 'datetime',
     ];
 
-    /**
-     * The step waiting now: admin | manager | otp | null (unlocked or closed).
-     * Fixed order — the manager is not asked until the admin has approved.
-     */
     public function currentStage(): ?string
     {
         if (!in_array($this->status, ['pending', 'approved'], true)) return null;
@@ -56,7 +47,6 @@ class AccessRequest extends Model
         return null;
     }
 
-    /** An unlock whose window has run out still reads 'unlocked' until it is swept. */
     public function isLive(): bool
     {
         return $this->status === 'unlocked' && $this->expires_at && $this->expires_at->isFuture();
@@ -82,7 +72,6 @@ class AccessRequest extends Model
         return $this->belongsTo(User::class, 'manager_user_id');
     }
 
-    /** Who actually decided each stage — differs from admin_user_id when "any Vault Admin" could act. */
     public function adminDecider(): BelongsTo
     {
         return $this->belongsTo(User::class, 'admin_decided_by');

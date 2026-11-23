@@ -21,14 +21,6 @@ class Countries extends Model
         'created_by',
     ];
 
-    /**
-     * Resolve a free-text country value to its ISO code — matches on the
-     * country NAME or an existing iso_code, case-insensitively. Returns null
-     * when the value doesn't match any country (caller falls back to the raw
-     * text). The name→iso map is built once per process and reused, so callers
-     * shaping a whole list don't re-query per row. Used to render compact,
-     * aligned Country columns (QA #20).
-     */
     public static function isoFor(?string $value): ?string
     {
         $value = $value !== null ? trim($value) : '';
@@ -46,7 +38,6 @@ class Countries extends Model
                 if ($row->name) {
                     $map[mb_strtolower(trim((string) $row->name))] = $iso;
                 }
-                // A value that is ALREADY an iso code resolves to itself.
                 $map[strtolower($iso)] = $iso;
             }
         }

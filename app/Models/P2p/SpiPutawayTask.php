@@ -15,23 +15,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * P2P · a box handed to the warehouse floor for Zebra verification.
- *
- * Stage 04 confirms a placement two ways and they do not end in the same
- * place. Manual COMPLETES NOW. This one CREATES A SCAN TASK: the box leaves the
- * screen, sits in a queue, and is closed by a handheld that may be offline for
- * hours. Work that outlives the request that made it needs its own row.
- *
- * NOT p2p_spi_scan_logs. That logs every ATTEMPT, good and bad, forever. This
- * is the OUTSTANDING WORK — "what is still open on the floor", which needs only
- * the handful of pending rows.
- *
- * The expected address is copied here rather than read from the put-away row,
- * because what the operator was TOLD to scan is what a mismatch must be judged
- * against. A scan can confirm the instruction or refuse it; it never rewrites
- * it.
- */
 class SpiPutawayTask extends Model
 {
     use BelongsToTenant;
@@ -44,7 +27,6 @@ class SpiPutawayTask extends Model
     public const CANCELLED = 'cancelled';
     public const EXPIRED   = 'expired';
 
-    /** How long an unanswered task stays open before it is reaped. */
     public const DEFAULT_TTL_HOURS = 8;
 
     protected $fillable = [
@@ -96,26 +78,13 @@ class SpiPutawayTask extends Model
         return $this->status === self::PENDING;
     }
 
-    /** Refusals in a row before the operator is sent back to the box. */
     public const MAX_FAILS = 3;
 
-    /**
-     * Which location sticker this task expects — a shelf, or the zone itself
-     * in a warehouse that stores without racks.
-     */
     public function locationSlot(): string
     {
         return $this->shelf_id ? 'shelf' : 'zone';
     }
 
-    /**
-     * The address as a chain, deepest last: zone → rack → shelf.
-     *
-     * Only levels this task actually has. A rackless zone's chain is one
-     * level, and the last entry is what finishes the location.
-     *
-     * @return array<int, array{kind:string,id:int,scanned:bool}>
-     */
     public function locationChain(): array
     {
         $out = [];
@@ -127,7 +96,6 @@ class SpiPutawayTask extends Model
         return $out;
     }
 
-    /** Which level a given scan kind maps to on this task, or null. */
     public function levelIdFor(string $kind): ?int
     {
         return match ($kind) {
@@ -138,14 +106,6 @@ class SpiPutawayTask extends Model
         };
     }
 
-    /**
-     * Scanning a level implies every level ABOVE it.
-     *
-     * A shelf sits in exactly one rack, inside exactly one zone — reading the
-     * shelf label is already proof the operator is standing in both. Marking
-     * them keeps the progress display honest without asking for scans that
-     * could not possibly fail.
-     */
     public function markLocationScanned(string $kind): void
     {
         $now    = now();
@@ -163,7 +123,6 @@ class SpiPutawayTask extends Model
                 'zone_scan_at' => $this->zone_scan_at ?: ($this->zone_id ? $now : null),
             ];
         } elseif ($kind === 'zone') {
-            // A rackless task is finished by its zone; otherwise it is a step.
             $fields = $this->shelf_id || $this->rack_id
                 ? ['zone_scan_at' => $now]
                 : ['zone_scan_at' => $now, 'shelf_scan_at' => $now];
@@ -172,7 +131,6 @@ class SpiPutawayTask extends Model
         $this->forceFill($fields)->save();
     }
 
-    /** The most recent scan of any kind on this task. */
     public function lastScanAt(): ?\Illuminate\Support\Carbon
     {
         $times = array_filter([
@@ -184,13 +142,6 @@ class SpiPutawayTask extends Model
         return $times ? max($times) : null;
     }
 
-    /**
-     * Half-scanned and left alone too long.
-     *
-     * Only a PARTIAL run goes stale. A task nobody has touched is not stale,
-     * it is simply waiting, and one that is ready to complete has done the
-     * work — expiring either would be throwing away something correct.
-     */
     public function scansAreStale(?int $minutes = null): bool
     {
         $last = $this->lastScanAt();
@@ -199,14 +150,6 @@ class SpiPutawayTask extends Model
         return $last->lt(now()->subMinutes($minutes ?? (int) config('inventory.scan_stale_minutes', 30)));
     }
 
-    /**
-     * Seconds before a half-walked run is given up, or null when no clock is
-     * running — nothing scanned yet, or the pair is already in.
-     *
-     * A DURATION, never a deadline. The handheld's clock is not ours to trust,
-     * and a device ten minutes fast would read every fresh scan as already
-     * expired and bounce the operator back to the queue on every box.
-     */
     public function idleSecondsLeft(?int $minutes = null): ?int
     {
         $last = $this->lastScanAt();
@@ -217,7 +160,6 @@ class SpiPutawayTask extends Model
         return (int) max(0, $window - (int) abs($last->diffInSeconds(now())));
     }
 
-    /** The deepest level still unscanned — what the operator owes. */
     public function nextLocationLevel(): ?string
     {
         foreach ($this->locationChain() as $step) {
@@ -227,19 +169,6 @@ class SpiPutawayTask extends Model
         return null;
     }
 
-    /**
-     * TWO SLOTS, not a chain: the box and the location, fillable in either
-     * order.
-     *
-     * An operator at a pack bench scans the box and carries it to the rack. An
-     * operator with a trolley scans the rack once and feeds boxes into it.
-     * Both are real, and the proof is the same either way — the pair has to
-     * match the task. Refusing the second order only makes them fight the app.
-     *
-     * A scan that is waiting to be confirmed outranks any new scan, because
-     * the confirm is the operator reading back what the screen claims they
-     * just scanned.
-     */
     public function currentStep(): ?string
     {
         if (!$this->box_scan_at)   return 'scan_box';
@@ -253,8 +182,6 @@ class SpiPutawayTask extends Model
         if ($this->currentStep() === 'scan_box') return 'Scan the box';
         if ($this->currentStep() === 'complete') return 'Both matched — press Complete';
 
-        // Name the deepest level still owed, but any level above it is
-        // accepted too — the operator may be walking in from the aisle.
         $next = $this->nextLocationLevel();
 
         return $next === 'shelf' && ($this->zone_scan_at || $this->rack_scan_at)
@@ -262,7 +189,6 @@ class SpiPutawayTask extends Model
             : 'Scan the ' . ($next ?: 'location');
     }
 
-    /** The scan types still outstanding — what the floor may present next. */
     public function expectedScans(): array
     {
         return array_values(array_filter([
@@ -271,25 +197,11 @@ class SpiPutawayTask extends Model
         ]));
     }
 
-    /**
-     * Both slots scanned. The Complete press is the operator's single
-     * acknowledgement — it stamps both confirmed_at columns, so the record
-     * still distinguishes "a barcode was read" from "a person agreed", it
-     * just asks for that agreement once instead of twice.
-     */
     public function readyToComplete(): bool
     {
         return $this->box_scan_at !== null && $this->shelf_scan_at !== null;
     }
 
-    /**
-     * Back to the start after three refusals in a row.
-     *
-     * Not a failure of the task — the box still has to go somewhere. Three bad
-     * reads in a row almost always means the operator is standing at the wrong
-     * rack, and the cheapest fix is to make them scan the box again rather
-     * than let them keep guessing at a location.
-     */
     public function resetScans(): void
     {
         $this->forceFill([
@@ -302,7 +214,6 @@ class SpiPutawayTask extends Model
         ])->save();
     }
 
-    /** Kept for the older hand-scan chain, which still walks box → … → shelf. */
     public function nextScan(): ?string
     {
         if ($this->box_scan_at === null)   return 'box';

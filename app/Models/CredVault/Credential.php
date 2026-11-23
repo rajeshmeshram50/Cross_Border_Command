@@ -9,13 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * CredVault · one stored credential. A soft-deleted row is in the Recycle Bin.
- *
- * secret, fields, notes and totp_secret are encrypted casts — they are never
- * serialised: $hidden keeps them out of every toArray(), and the only way a
- * value leaves the server is the reveal endpoint, which logs it.
- */
 class Credential extends Model
 {
     use SoftDeletes;
@@ -26,14 +19,11 @@ class Credential extends Model
     public const RISKS  = ['low', 'medium', 'high', 'critical'];
     public const TWOFA  = ['yes', 'no', 'na'];
 
-    /** One table, two vaults, each with its own code series: CRD-0001 … and CCRD-0001 … */
     public const VAULTS = ['normal', 'critical'];
     public const VAULT_PREFIX = ['normal' => 'CRD', 'critical' => 'CCRD'];
-    /** Critical-vault 2-step: an authenticator app (Google / Microsoft / Authy) or a code sent by email. */
     public const TWOFA_METHODS = ['google', 'email'];
     public const ROTATIONS = [30, 60, 90, 180];
 
-    /** D34 levels. 1 (Weak) is no longer given — Fair is the lowest and counts as weak. */
     public const STRENGTH_LABELS = [0 => '', 1 => 'Weak', 2 => 'Fair', 3 => 'Good', 4 => 'Strong'];
 
     public const GROUPS = [
@@ -41,22 +31,6 @@ class Credential extends Model
         'Identity & Documents', 'Personal & Lifestyle',
     ];
 
-    /**
-     * The 25 credential types — copied from the prototype's CRD_TYPES, field
-     * for field, so the picker, the form and the server agree on every label.
-     *
-     *   [label, group, default risk, twofa, id, sec, isNew, description, fields]
-     *
-     *   twofa  the Security section shows a "2FA" switch for this type, and that
-     *          switch is also the authenticator lock (see the controller)
-     *   id     the field shown as Username in lists
-     *   sec    THE secret: strength, reuse, rotation and reveal all read it
-     *
-     * A field is [key, label, kind, required, placeholder, icon, extra].
-     *   kind   text url email tel number date select textarea password secret file toggle
-     *   extra  span (1–3 grid columns), max, upper, mono, secret (a textarea that is masked)
-     * For a select, the placeholder holds the options, "|"-separated — as in the prototype.
-     */
     public const TYPES = [
         'login' => ['Login', 'Logins & Access', 'medium', true, 'username', 'password', false, 'Website URL, username & password', [
             ['url', 'Website / URL', 'url', true, 'https://app.example.com', 'globe', ['span' => 2]],
@@ -231,7 +205,6 @@ class Credential extends Model
         'created_by', 'updated_by', 'deleted_by',
     ];
 
-    /** Never serialised. The only way a secret leaves the server is the reveal endpoint, which logs it. */
     protected $hidden = ['secret', 'secret_hash', 'fields', 'notes', 'totp_secret'];
 
     protected $casts = [
@@ -251,7 +224,6 @@ class Credential extends Model
         'twofa_linked_at'     => 'datetime',
     ];
 
-    /** Each type's tile icon — the prototype's `ico` per CRD_TYPES entry (names of its CRD_I set). */
     public const TYPE_ICONS = [
         'login' => 'globe', 'password' => 'key', 'email' => 'mail', 'passkey' => 'passkey', 'totp' => 'timer',
         'card' => 'card', 'bank' => 'bank', 'crypto' => 'btc', 'rewards' => 'gift',
@@ -260,7 +232,6 @@ class Credential extends Model
         'note' => 'note', 'membership' => 'ticket', 'medical' => 'med', 'outdoor' => 'tree',
     ];
 
-    /** Picker groups: description and icon, as the prototype's CRD_GRP_DESC / CRD_GRP_ICO. */
     public const GROUP_INFO = [
         'Logins & Access'      => ['Sign-ins, passwords, mailboxes and second factors', 'key'],
         'Finance & Banking'    => ['Cards, bank accounts, crypto wallets and rewards', 'bank'],
@@ -269,11 +240,6 @@ class Credential extends Model
         'Personal & Lifestyle' => ['Private notes, memberships, health records and permits', 'user'],
     ];
 
-    /**
-     * Recovery & Proof extras per type (CRD_XT_CONTACT / CRD_XT_KEY):
-     * registered email, registered phone, a recovery key. Attachments are
-     * offered to every type that has no file field of its own.
-     */
     private const XT_CONTACT = ['login' => 'both', 'password' => 'both', 'passkey' => 'both', 'totp' => 'both', 'email' => 'phone',
         'card' => 'both', 'bank' => 'both', 'crypto' => 'both', 'rewards' => 'both', 'membership' => 'both', 'api' => 'both',
         'license' => 'both', 'cert' => 'both', 'medical' => 'both', 'govid' => 'both'];
@@ -298,7 +264,6 @@ class Credential extends Model
                 'max'         => $x['max'] ?? null,
                 'upper'       => (bool) ($x['upper'] ?? false),
                 'mono'        => (bool) ($x['mono'] ?? false),
-                // Masked in every response, revealed only through /reveal.
                 'secret'      => in_array($f[2], ['password', 'secret'], true) || !empty($x['secret']) || $f[0] === $t[5],
             ];
         }, $t[8]);
@@ -318,7 +283,6 @@ class Credential extends Model
         ];
     }
 
-    /** Whether the type's main secret is a password (rotation and strength apply to it). */
     public static function secretIsPassword(string $type): bool
     {
         $def = self::typeDef($type);
@@ -329,24 +293,12 @@ class Credential extends Model
         return false;
     }
 
-    /** The type has a 2FA switch — in the Security section (twofa) or as a toggle field (password). */
     public static function hasTwofaSwitch(string $type): bool
     {
         $def = self::typeDef($type);
         return $def && ($def['twofa'] || collect($def['fields'])->contains(fn ($f) => $f['key'] === 'twofa' && $f['kind'] === 'toggle'));
     }
 
-    /**
-     * The password strength criteria (D34) — one rule for every password in CredVault,
-     * generated, typed, imported or edited:
-     *
-     *   Strong (4)  12 or more characters with letters, numbers and a special character
-     *   Good   (3)   8 or more characters with letters, numbers and a special character
-     *   Fair   (2)  anything else — under 8, only letters, only numbers, or no special
-     *               character. Fair counts as weak.
-     *
-     * A space is not a special character. 0 = no password.
-     */
     public static function strengthOf(?string $pw): int
     {
         $pw = (string) $pw;
@@ -358,21 +310,12 @@ class Credential extends Model
         return match (true) { $mixed && $len >= 12 => 4, $mixed && $len >= 8 => 3, default => 2 };
     }
 
-    /** HMAC under the app key: equal secrets match, the hash alone reveals nothing. */
     public static function hashSecret(?string $secret): ?string
     {
         if ($secret === null || $secret === '') return null;
         return hash_hmac('sha256', $secret, (string) config('app.key'));
     }
 
-    /**
-     * The unlock steps in force, in their fixed order — the credential's own
-     * switches, each gated by the tenant policy, as the prototype's cpLock().
-     * Only the Critical Vault has steps: in the Normal Vault 2-step is a flag
-     * that is recorded, never asked for.
-     *
-     * @return string[] subset of ['admin', 'manager', 'otp']
-     */
     public function lockSteps(): array
     {
         if (!$this->isCriticalVault()) return [];
@@ -390,7 +333,6 @@ class Credential extends Model
         return $this->vault === 'critical';
     }
 
-    /** The 2-step method is set up and verified — the unlock's code step can run. */
     public function twoStepLinked(): bool
     {
         return match ($this->twofa_method) {
@@ -400,7 +342,6 @@ class Credential extends Model
         };
     }
 
-    /** "ph•••@inhpl.com" — where an email code goes, without spelling it out. */
     public static function maskEmail(?string $email): ?string
     {
         if (!$email || !str_contains($email, '@')) return null;
@@ -409,13 +350,11 @@ class Credential extends Model
         return mb_substr($local, 0, 2) . '•••@' . $domain;
     }
 
-    /** Whether any unlock step guards this credential right now. */
     public function isProtected(): bool
     {
         return $this->lockSteps() !== [];
     }
 
-    /** The critical-vault id (CCRD-0012) — its own series, so it is simply the code. */
     public function criticalCode(): ?string
     {
         return $this->isCriticalVault() ? $this->code : null;

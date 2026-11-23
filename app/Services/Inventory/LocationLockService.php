@@ -6,29 +6,10 @@ use App\Models\Inventory\LocationLock;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Inventory · take and give back the exclusive hold on a location.
- *
- * The race between two operators reaching for the same shelf is settled by the
- * database, not here: uq_loc_lock_live is UNIQUE on (location_type,
- * location_id) WHERE released_at IS NULL, so one insert wins and the other
- * comes back as a constraint violation. Checking first and inserting after
- * would leave a window between the two in which both callers believe they hold
- * it.
- *
- * Expiry is swept lazily, on the way in. A reaper command can do the same on a
- * schedule, but a lock that blocks the very next request must not wait for it.
- */
 class LocationLockService
 {
-    /** How long a screen may hold a location without saying it is still there. */
     public const IDLE_MINUTES = 30;
 
-    /**
-     * Take the location, or fail saying who has it.
-     *
-     * @return array{0: ?LocationLock, 1: ?LocationLock} the lock taken, or the one in the way
-     */
     public function acquire(
         string $type,
         int $locationId,
@@ -45,16 +26,6 @@ class LocationLockService
         $this->reapExpired($type, $locationId);
 
         try {
-            /* INSIDE A SAVEPOINT, and that is the whole trick.
-               The losing insert raises a unique violation on purpose — that is
-               how the race is settled. But Postgres aborts the entire
-               transaction on any failed statement, so caught or not, every
-               query after it dies with 25P02 "current transaction is aborted".
-               The caller is mid-transaction (assign() holds the shelf row), so
-               a bare try/catch poisoned the request and the clean 409 came back
-               as a 500. DB::transaction() nested inside an open transaction
-               issues a SAVEPOINT and rolls back to it, which contains the
-               failure and leaves the outer transaction usable. */
             $lock = DB::transaction(fn () => LocationLock::create([
                 'client_id'         => $clientId,
                 'branch_id'         => $branchId,
@@ -75,14 +46,12 @@ class LocationLockService
 
             return [$lock, null];
         } catch (QueryException $e) {
-            // 23505 — unique_violation: somebody else holds it.
             if (($e->getCode() !== '23505') && !str_contains((string) $e->getMessage(), 'uq_loc_lock_live')) throw $e;
 
             return [null, $this->held($type, $locationId)];
         }
     }
 
-    /** The same user re-entering their own lock keeps it rather than being refused. */
     public function acquireOrExtend(
         string $type, int $locationId, int $warehouseId, int $clientId, ?int $branchId,
         ?int $userId, ?string $sessionId = null, string $reason = LocationLock::REASON_PUTAWAY,
@@ -121,7 +90,6 @@ class LocationLockService
         return $lock;
     }
 
-    /** Whoever is holding this location now, expiry already swept. */
     public function held(string $type, int $locationId): ?LocationLock
     {
         $this->reapExpired($type, $locationId);
@@ -132,12 +100,6 @@ class LocationLockService
             ->first();
     }
 
-    /**
-     * Which of these locations are held, for greying out a whole tree in one
-     * query rather than one per shelf.
-     *
-     * @return array<int, array{held_by:?int,expires_at:?string}> keyed by location id
-     */
     public function heldMap(string $type, array $locationIds): array
     {
         if (!$locationIds) return [];
@@ -155,7 +117,6 @@ class LocationLockService
             ->all();
     }
 
-    /** A lock nobody renewed is not a lock. Swept on the way past. */
     public function reapExpired(string $type, int $locationId): int
     {
         return $this->reapExpiredIn($type, [$locationId]);

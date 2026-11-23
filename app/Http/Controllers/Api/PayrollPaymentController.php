@@ -10,23 +10,6 @@ use App\Services\PayrollService;
 use App\Support\BankGroup;
 use Illuminate\Http\Request;
 
-/**
- * "Proceed to Pay" disbursement flow: review the payment advice, capture a
- * 3-level sign-off (Prepared → Verified → Approved), then initiate (mark
- * payslips Paid + lock).
- *
- * Cheque / payment-advice letter is the only mode; the online NEFT batch was
- * withdrawn. Historic payments may still carry mode 'online' and stay readable.
- *
- *   POST /payroll/payment/prepare            {run_id}
- *   GET  /payroll/payment/{id}               advice/batch detail
- *   POST /payroll/payment/{id}/approve       {prepared_by, verified_by, approved_by}
- *   POST /payroll/payment/{id}/initiate      disburse (Paid + lock)
- *   GET  /payroll/payment/{id}/bank-file      NEFT bank file (CSV) — no longer
- *                                            offered in the UI; kept so an
- *                                            already-filed batch stays fetchable.
- *   GET  /payroll/payment/{id}/audit          audit trail
- */
 class PayrollPaymentController extends Controller
 {
     public function __construct(
@@ -34,15 +17,11 @@ class PayrollPaymentController extends Controller
         private \App\Services\PayslipPdfService $pdf,
     ) {}
 
-    /** Create (or fetch the existing) payment draft for an approved run. */
     public function prepare(Request $request)
     {
         if (!$this->canManage($request)) {
             return response()->json(['message' => 'You are not allowed to disburse payroll.'], 403);
         }
-        // Cheque / payment-advice letter is the only disbursement mode — the
-        // online NEFT batch was withdrawn. Historic payments may still carry
-        // mode 'online', which stays readable; it just can't be created again.
         $data = $request->validate([
             'run_id' => ['required', 'integer'],
             'mode'   => ['nullable', 'in:cheque'],
@@ -62,7 +41,6 @@ class PayrollPaymentController extends Controller
         $payment = PayrollPayment::firstOrNew([
             'payroll_run_id' => $run->id,
         ]);
-        // A paid payment is immutable; otherwise (re)sync the draft.
         if ($payment->status !== 'paid') {
             $payment->fill([
                 'client_id'         => $run->client_id,
@@ -83,8 +61,6 @@ class PayrollPaymentController extends Controller
 
     public function show(Request $request, int $id)
     {
-        // The advice exposes every employee's net pay + bank details, so it is
-        // restricted to payroll managers (not visible to plain employees).
         if (!$this->canManage($request)) {
             return response()->json(['message' => 'You are not allowed to view payment details.'], 403);
         }
@@ -94,7 +70,6 @@ class PayrollPaymentController extends Controller
         return response()->json(['data' => $this->serialize($payment, $this->buildAdvice($run), $this->companyHeader($run))]);
     }
 
-    /** 3-level sign-off (Prepared → Verified → Approved). All mandatory. */
     public function approve(Request $request, int $id)
     {
         if (!$this->canManage($request)) {
@@ -104,18 +79,6 @@ class PayrollPaymentController extends Controller
             'prepared_by' => ['required', 'string', 'max:191'],
             'verified_by' => ['required', 'string', 'max:191'],
             'approved_by' => ['required', 'string', 'max:191'],
-            /* WHO is actually at the keyboard. The Branch Admin login is shared,
-               so created_by only ever says "the branch admin" — this is the one
-               field that says which person ran it. The popup has always sent it;
-               it was validated nowhere and stored nowhere. Required, because
-               "No name selected in Payroll Run By → do not allow payroll
-               confirmation" is the rule this screen is here to enforce.
-
-               Accepts the employee ID or the emp_code. The dropdown sent the
-               CODE until this was tightened, so an `integer` rule 422'd with
-               "The run by field must be an integer" — a message about a field
-               the operator never typed, on a client that simply had not been
-               reloaded. Resolved below rather than refused. */
             'run_by'      => ['required'],
         ]);
         $payment = $this->findScoped($request, $id);
@@ -124,10 +87,6 @@ class PayrollPaymentController extends Controller
             return response()->json(['message' => 'Payment is already executed.'], 422);
         }
 
-        /* Resolve the operator to a real employee row. emp_code is unique PER
-           CLIENT only, so the lookup is scoped to this payment's tenant — an
-           unscoped match could record another company's employee as the person
-           who ran this payroll. */
         $runBy = trim((string) $data['run_by']);
         $runByEmployeeId = ctype_digit($runBy)
             ? (int) $runBy
@@ -146,9 +105,6 @@ class PayrollPaymentController extends Controller
             ], 422);
         }
 
-        /* Parked, not logged. The audit row is written only once payroll has
-           actually been disbursed — approving is the intent to execute, not
-           the execution, and a log of intentions is not what was asked for. */
         $payment->update([
             'prepared_by_name'   => $data['prepared_by'],
             'verified_by_name'   => $data['verified_by'],
@@ -162,7 +118,6 @@ class PayrollPaymentController extends Controller
         return response()->json(['message' => 'Payment approved (3-level sign-off recorded).', 'data' => ['status' => 'approved']]);
     }
 
-    /** Execute the disbursement — mark payslips Paid and lock (Rule 12/14). */
     public function initiate(Request $request, int $id)
     {
         if (!$this->canManage($request)) {
@@ -175,18 +130,11 @@ class PayrollPaymentController extends Controller
         }
         $run = PayrollRun::with('period')->find($payment->payroll_run_id);
         if (!$run) return response()->json(['message' => 'Payroll run not found.'], 404);
-        // The run may have been reopened after this payment was approved.
-        // Refuse to disburse a stale payment against a draft/non-approved run.
         if (!in_array($run->status, ['approved', 'paid'], true)) {
             $payment->update(['status' => 'cancelled']);
             return response()->json(['message' => 'This payroll was reopened after approval — re-run and re-prepare the payment.'], 422);
         }
 
-        /* A failure has to be recorded as a failure, not left as silence.
-           "If payroll execution fails, the system should not mark the execution
-           as Completed" — so the log row is written on both paths, and the
-           exception is rethrown so the caller still sees the error it would
-           have seen. */
         try {
             $result = $this->payroll->disburseRun($run, $request->user()?->id);
         } catch (\Throwable $e) {
@@ -203,10 +151,6 @@ class PayrollPaymentController extends Controller
         ]);
         $this->logAudit($request, 'payment_initiate', $payment, "Payment initiated ({$payment->mode}) — {$result['paid']} paid, {$result['held']} held. Batch {$batchRef}");
 
-        /* The execution record. Held employees mean the cycle is not finished —
-           some were paid, the rest are waiting on bank details — so it reads
-           In Progress rather than Completed, which is what the status column is
-           for. A re-run writes another row; nothing here updates an old one. */
         $this->logExecution(
             $request,
             $payment,
@@ -224,12 +168,6 @@ class PayrollPaymentController extends Controller
         ]);
     }
 
-    /**
-     * Write one Payroll Execution Tracking row. Append-only — see the model.
-     *
-     * Never throws: an audit row failing to save must not undo a disbursement
-     * that has already moved money. It is logged loudly instead.
-     */
     private function logExecution(
         Request $request,
         PayrollPayment $payment,
@@ -243,9 +181,6 @@ class PayrollPaymentController extends Controller
             $user   = $request->user();
             $period = $run?->period;
 
-            /* The operator's name and code are SNAPSHOTTED. This record has to
-               keep naming the right person after they are renamed or leave, so
-               it cannot be a join. withTrashed for the same reason. */
             $emp = $payment->run_by_employee_id
                 ? \App\Models\Employee::withTrashed()
                     ->select('id', 'emp_code', 'display_name', 'first_name', 'last_name')
@@ -282,7 +217,6 @@ class PayrollPaymentController extends Controller
             ]);
         }
     }
-    /** NEFT bank file (CSV) — one row per payable employee. */
     public function bankFile(Request $request, int $id)
     {
         if (!$this->canManage($request) && !$this->canExport($request)) {
@@ -298,14 +232,13 @@ class PayrollPaymentController extends Controller
             $out = fopen('php://output', 'w');
             fputcsv($out, ['Beneficiary Name', 'Account Number', 'IFSC', 'Amount', 'Narration']);
             foreach ($advice['rows'] as $r) {
-                if ($r['status'] !== 'Ready') continue; // only payable rows go to the bank
+                if ($r['status'] !== 'Ready') continue;
                 fputcsv($out, [$r['name'], $r['account_full'] ?? $r['account'], $r['ifsc'], $r['amount'], 'Salary ' . $r['period']]);
             }
             fclose($out);
         }, 200, ['Content-Type' => 'text/csv', 'Content-Disposition' => "attachment; filename=\"$filename\""]);
     }
 
-    /** GET endpoint — the audit trail for this payment. */
     public function auditTrail(Request $request, int $id)
     {
         if (!$this->canManage($request)) {
@@ -335,36 +268,19 @@ class PayrollPaymentController extends Controller
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
                 'url' => $request->fullUrl(), 'method' => $request->method(),
             ]);
-        } catch (\Throwable $e) { /* best-effort */ }
+        } catch (\Throwable $e) { }
     }
 
-    /* ───────────────────────── helpers ───────────────────────── */
-
-    /** Build the payment advice / bank batch rows for a run. */
     private function buildAdvice(PayrollRun $run): array
     {
         $periodLabel = optional($run->period)->label ?? '';
         $slips = Payslip::where('payroll_run_id', $run->id)->orderBy('employee_name')->get();
-        // Live bank status per employee — same source disburseRun() uses, so the
-        // advice "Ready" set exactly matches what gets paid.
         $bankMap = \App\Models\Employee::whereIn('id', $slips->pluck('employee_id'))
             ->get(['id', 'bank_account_number', 'ifsc_code', 'bank_name'])->keyBy('id');
         $rows = [];
         $total = 0; $eligible = 0; $held = 0;
         foreach ($slips as $s) {
             $emp = $bankMap->get($s->employee_id);
-            /* Validate the SHAPE, exactly as PayrollService::disburseRun does.
-             *
-             * This used to test "non-empty", while disbursement tests the IFSC
-             * and account-number formats (P26). A typo'd IFSC therefore counted
-             * as Ready here — it was included in the eligible headcount, added
-             * into the advice total, and written onto the payment record — and
-             * was then HELD the moment the payment was initiated. Finance signed
-             * off a batch total that could never be paid out.
-             *
-             * The two rules have to be the same rule, or the advice is not an
-             * advice. Kept in App\Support\BankDetails so a third caller cannot
-             * reintroduce the drift. */
             $bankOk = \App\Support\BankDetails::isValid(
                 $emp->ifsc_code ?? null,
                 $emp->bank_account_number ?? null,
@@ -382,9 +298,6 @@ class PayrollPaymentController extends Controller
                 'emp_code'   => $s->employee_code,
                 'department' => $s->department,
                 'bank'       => $acct ? ($ifsc ? substr($ifsc, 0, 4) . ' Bank' : 'Bank') : null,
-                // Which sheet of the advice this employee belongs on. Decided
-                // from the live employee record (IFSC first, HR's free-text bank
-                // name only as a fallback) — see App\Support\BankGroup.
                 'bank_group' => BankGroup::of($emp->bank_name ?? null, $ifsc),
                 'account'    => $acct ? ('XXXX-XXXX-' . substr($acct, -4)) : null,
                 'account_full' => $acct,
@@ -427,20 +340,12 @@ class PayrollPaymentController extends Controller
         ];
     }
 
-    /* Both gates below use STRICT matching: a null client_id on the run or the
-     * payment must not pass for a scoped caller. Reading it as "no client set,
-     * so everyone owns it" is the same null-bypass already closed in
-     * PayrollController::ownsRow and findRun, and here it guards a disbursement
-     * — the row carries every employee's net pay and bank details. Branch is
-     * checked too, so a branch_user cannot reach another branch's batch. */
-
     private function ownsRun(Request $request, PayrollRun $run): bool
     {
         $user = $request->user();
         if (!$user) return false;
         if ($user->user_type === 'super_admin') return true;
         if ((int) $run->client_id !== (int) $user->client_id) return false;
-        // A branch-pinned user only ever operates their own branch's payroll.
         if ($user->user_type === 'branch_user' && $user->branch_id
             && $run->branch_id && (int) $run->branch_id !== (int) $user->branch_id) {
             return false;
@@ -468,8 +373,6 @@ class PayrollPaymentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
-        // Plain employees never disburse payroll — same rule as
-        // PayrollController::canManage.
         if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));
@@ -480,8 +383,6 @@ class PayrollPaymentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
-        // The bank file lists every employee's account number — never the
-        // employee tier.
         if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (bool) ($perm['can_export'] ?? false);

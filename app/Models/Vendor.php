@@ -18,19 +18,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-
 class Vendor extends Model
 {
-    /* Email uniqueness — the rule itself lives in
-       config/email_uniqueness.php; these two lines only say which
-       identity this model belongs to. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'vendor';
     protected static array  $emailColumns = ['primary_email'];
 
-    // Convert to Supplier: the P2P New Supplier this vendor is being created
-    // from (set by VendorController for the request). It is the same party, so
-    // its email is not a duplicate of this vendor's.
     public static ?int $convertingSupplierId = null;
 
     public function sameEmailOwnerRows(): array
@@ -47,8 +40,6 @@ class Vendor extends Model
 
     use SoftDeletes;
 
-    // Supplier name, code, type and status feed the cached master bundles
-    // (supplier pickers) — refresh them on every change.
     protected static function booted(): void
     {
         static::saved(fn () => MasterBundleCache::bump());
@@ -70,7 +61,6 @@ class Vendor extends Model
         'step_completed' => 'integer',
     ];
 
-    /* ── Tenant relations ─────────────────────────────────────────── */
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -86,7 +76,6 @@ class Vendor extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /* ── Master FK relations (for label rendering on read) ────────── */
     public function vendorType(): BelongsTo
     {
         return $this->belongsTo(VendorTypes::class, 'vendor_type_id');
@@ -112,22 +101,16 @@ class Vendor extends Model
         return $this->belongsTo(ComplianceBehaviours::class, 'compliance_behaviour_id');
     }
 
-    /** "Classification & Flags" — FK to the shared classification master. */
     public function classification(): BelongsTo
     {
         return $this->belongsTo(CustomerClassifications::class, 'classification_id');
     }
 
-    /**
-     * Supplier Segment is multi-select. The full set lives in the
-     * vendor_segments pivot; the scalar segment_id keeps the first one.
-     */
     public function segments(): BelongsToMany
     {
         return $this->belongsToMany(Segments::class, 'vendor_segments', 'vendor_id', 'segment_id');
     }
 
-    /* ── Child rows ───────────────────────────────────────────────── */
     public function addresses(): HasMany
     {
         return $this->hasMany(VendorAddress::class)
@@ -165,30 +148,12 @@ class Vendor extends Model
         return $this->hasMany(VendorProductMapping::class)->orderBy('id');
     }
 
-    /**
-     * Tenant visibility scope — delegates to MasterVisibility so the
-     * vendors module shares the exact same creator-hierarchy rule as
-     * customers, consignees and products. See Customer.php for the
-     * full role matrix.
-     *
-     * Usage:
-     *   Vendor::query()->forUser($user)->where(...)
-     */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        // Suppliers are a SHARED branch catalog — EVERY employee (not only the
-        // branch user/Director) sees the whole branch's suppliers: globals +
-        // client-level + their own branch's rows (sibling branches stay hidden).
-        // This mirrors the Product catalog scope (ProductController::applyScope)
-        // so a Purchase-department employee can map any supplier the branch
-        // created, and deliberately OVERRIDES MasterVisibility's peer-isolated
-        // employee default (which would show only self-created suppliers).
-        // Editing stays gated by hierarchicalDenial() elsewhere.
         if ($user && ($user->user_type ?? null) === 'employee') {
             \App\Support\MasterVisibility::applyBranchScope($q, $user);
             return $q;
         }
-        // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
         \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }

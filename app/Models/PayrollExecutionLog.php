@@ -4,14 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-/**
- * One row per payroll execution — see the migration for why it exists.
- *
- * Deliberately NOT soft-deleted and never updated: an audit log that can be
- * edited answers a different question from the one it was created to answer.
- * The only write in the application is the insert in
- * PayrollPaymentController::initiate(), after a disbursement has succeeded.
- */
 class PayrollExecutionLog extends Model
 {
     protected $table = 'payroll_execution_logs';

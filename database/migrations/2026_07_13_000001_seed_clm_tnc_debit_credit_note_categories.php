@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /** name => short_code (≤ 12 chars). */
     private const CATEGORIES = [
         'Debit Note'  => 'DN',
         'Credit Note' => 'CN',
@@ -24,7 +23,6 @@ return new class extends Migration
             })
             ->delete();
 
-        // Next global DC-### suffix (continue past any existing global rows).
         $next = 0;
         foreach (DB::table('clm_tnc_categories')->whereNull('client_id')->pluck('code') as $code) {
             if (preg_match('/^DC-(\d+)$/', (string) $code, $m)) {

@@ -19,18 +19,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * P2P · SPI Stage 04 steps 02 and 03 — choose a location, then hold it.
- *
- * Separate from SpiPutawayController, which owns the hand-scan chain. This one
- * owns the allocation: where may this box go, which place did the operator
- * take, and how was the placement attested.
- *
- * THE ORDER OF THE WRITES IS THE DESIGN. Assigning a location reserves its
- * capacity and locks it, before anything is confirmed, because a Zebra task can
- * sit open for hours and the shelf must not read as free meanwhile. Confirming
- * then changes only who says the box is there — never how full the shelf is.
- */
 class SpiPutawayAllocationController extends Controller
 {
     public function __construct(
@@ -57,27 +45,16 @@ class SpiPutawayAllocationController extends Controller
         return $spi;
     }
 
-    /**
-     * A 404 that says which thing was not found.
-     *
-     * findOrFail() throws ModelNotFoundException, which renders as "No query
-     * results for model [App\Models\P2p\SupplierInvoice] 200" with the stack
-     * trace attached — accurate, and no use to the person reading it. The id
-     * is quoted back so a wrong variable in a request is obvious at a glance.
-     */
     private function missing(string $message): never
     {
         abort(response()->json(['status' => false, 'message' => $message], 404));
     }
 
-    /** The box, proved to belong to this invoice rather than merely to exist. */
     private function findBox(SupplierInvoice $spi, int $boxId): SpiBox
     {
         $box = SpiBox::where('supplier_invoice_id', $spi->id)->find($boxId);
         if ($box) return $box;
 
-        // Say WHICH of the two it is — a box of another invoice is a different
-        // mistake from a box id that names nothing at all.
         $elsewhere = SpiBox::with('invoice:id,code')->find($boxId);
 
         $this->missing($elsewhere
@@ -85,7 +62,6 @@ class SpiPutawayAllocationController extends Controller
             : "No box found with id {$boxId} on {$spi->code}.");
     }
 
-    /** The put-away row of this invoice. */
     private function findRow(SupplierInvoice $spi, int $rowId): SpiPutaway
     {
         $row = SpiPutaway::where('supplier_invoice_id', $spi->id)->with('box:id,box_code')->find($rowId);
@@ -94,15 +70,6 @@ class SpiPutawayAllocationController extends Controller
         return $row;
     }
 
-    /* ══════════════════════════ STEP 02 — READ ══════════════════════════ */
-
-    /**
-     * GET /p2p/spi/{id}/putaway/locations?box_id&mode
-     *
-     * Without `mode`, only the two counts the opening modal asks for. With it,
-     * the whole tree plus the recommendation — one call, because Section A and
-     * Section B are the same ranked list read two ways.
-     */
     public function locations(Request $request, int $id)
     {
         try {
@@ -122,10 +89,6 @@ class SpiPutawayAllocationController extends Controller
 
             $box = $this->findBox($spi, (int) $data['box_id']);
 
-            /* Reading inside a transaction, as every other read here does: the
-               tree, its occupancy and its locks are counted across several
-               queries, and a put-away committing between them would leave the
-               screen showing a shelf as free that has just been taken. */
             $body = $this->finder->forBox($spi, $box, $data['mode'] ?? null, $user->id);
 
             DB::commit();
@@ -137,16 +100,6 @@ class SpiPutawayAllocationController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/putaway/board — where every box of this invoice stands.
-     *
-     * Driven from the BOXES, not from the put-away rows: a box nobody has
-     * touched has no put-away row at all, and it is exactly the box the
-     * operator is looking for. Starting from the rows would list only the work
-     * already begun and quietly hide everything still to do.
-     *
-     * Two queries whatever the box count — the rows, and the open tasks.
-     */
     public function board(Request $request, int $id)
     {
         try {
@@ -169,13 +122,11 @@ class SpiPutawayAllocationController extends Controller
                 $row  = $rows->get($b->id);
                 $task = $openTasks->get($b->id);
 
-                // No row at all is a box nobody has started: pending, step 01.
                 $status = $row ? $row->stage4Status((bool) $task) : SpiPutaway::PENDING;
 
                 return [
                     'box_id'      => (int) $b->id,
                     'box_code'    => $b->box_code,
-                    // The same code with the Stage 04 marker — never a second number.
                     'putaway_code' => $b->box_code ? 'PUT-' . $b->box_code : null,
                     'scenario'    => $b->scenario,
                     'condition'   => $b->condition,
@@ -202,7 +153,6 @@ class SpiPutawayAllocationController extends Controller
                     'draft'         => $by(SpiPutaway::DRAFT),
                     'awaiting_scan' => $by(SpiPutaway::AWAITING_SCAN),
                     'placed'        => $by(SpiPutaway::PLACED),
-                    // What the progress bar reads: "0 / 7 PLACED".
                     'remaining'     => $out->count() - $by(SpiPutaway::PLACED),
                 ],
                 'steps'  => collect(SpiPutaway::STEPS)->map(fn ($s, $k) => [
@@ -220,20 +170,6 @@ class SpiPutawayAllocationController extends Controller
         }
     }
 
-    /* ══════════════════════════ STEP 02 — WRITE ══════════════════════════ */
-
-    /**
-     * POST /p2p/spi/{id}/putaway/assign
-     *
-     * The box now has a place. Six writes, one transaction: lock the location,
-     * reserve its capacity, create or move the put-away row, resync the cached
-     * counters, log it.
-     *
-     * Re-assigning the same box releases its previous hold first, so a box
-     * never consumes two places at once — the partial unique index would refuse
-     * it anyway, but a clear release reads better in the trail than a caught
-     * constraint violation.
-     */
     public function assign(Request $request, int $id)
     {
         $user = $this->tenantUser($request);
@@ -252,7 +188,6 @@ class SpiPutawayAllocationController extends Controller
         $box   = $this->findBox($spi, (int) $data['box_id']);
         $place = $this->validatePlace($spi, $data);
 
-        // A placed box is final. Re-allocating it is not a correction, it is a move.
         $existing = SpiPutaway::where('box_id', $box->id)->first();
         if ($existing?->isPlaced()) {
             abort(response()->json([
@@ -270,7 +205,6 @@ class SpiPutawayAllocationController extends Controller
         try {
             DB::beginTransaction();
 
-            // Hold the master row so two operators cannot both pass the check below.
             $lockType = $place['shelf_id'] ? LocationLock::SHELF : LocationLock::ZONE;
             $lockId   = (int) ($place['shelf_id'] ?: $place['zone_id']);
             DB::table($place['shelf_id'] ? 'inventory_shelves' : 'inventory_zones')
@@ -321,8 +255,6 @@ class SpiPutawayAllocationController extends Controller
                 'occupancy_id'       => $occ->id,
                 'suggested_shelf_id' => $data['suggested_shelf_id'] ?? $row->suggested_shelf_id,
                 'destination'        => $this->describe($place),
-                /* Held but unconfirmed. If the operator never comes back this
-                   is what the box stays as, and what a worklist looks for. */
                 'status'             => SpiPutaway::DRAFT,
                 'assigned_at'        => now(),
                 'assigned_by'        => $user->id,
@@ -358,17 +290,6 @@ class SpiPutawayAllocationController extends Controller
         }
     }
 
-    /* ══════════════════════════ STEP 03 ══════════════════════════ */
-
-    /**
-     * POST /p2p/spi/{id}/putaway/{row}/confirm-manual — Option 02.
-     *
-     * The counters do not move here. The space was taken when the location was
-     * assigned; what changes now is who attests that the box is on it. Recorded
-     * as such, because a manual confirmation is somebody's word while a Zebra
-     * scan is evidence, and an audit that cannot tell them apart cannot weigh
-     * either.
-     */
     public function confirmManual(Request $request, int $id, int $rowId)
     {
         $user = $this->tenantUser($request);
@@ -445,18 +366,6 @@ class SpiPutawayAllocationController extends Controller
         }
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /**
-     * The chosen place, proved to belong to this invoice.
-     *
-     * An id in a request body is not evidence of ownership — these columns have
-     * no foreign key behind them, so every level is re-read and checked against
-     * the one above it. The branch comes from the WAREHOUSE, never from the
-     * caller's branch switcher: a warehouse is branch-owned, and filing a box
-     * under the operator's branch instead of the building's would lose it from
-     * the only list that looks for it.
-     */
     private function validatePlace(SupplierInvoice $spi, array $data): array
     {
         $wh = DB::table('inventory_warehouses')
@@ -500,7 +409,6 @@ class SpiPutawayAllocationController extends Controller
             'zone_id'      => (int) $zone->id,
             'rack_id'      => $rackId,
             'shelf_id'     => $shelfId,
-            // The building's branch, not the operator's.
             'branch_id'    => $wh->branch_id !== null ? (int) $wh->branch_id : $spi->branch_id,
         ];
     }
@@ -510,7 +418,6 @@ class SpiPutawayAllocationController extends Controller
         return response()->json(['status' => false, 'message' => $message], 422);
     }
 
-    /** The lock covering an occupancy row, released by the same hand. */
     private function releaseLockFor(LocationOccupancy $occ, string $reason, ?int $userId): void
     {
         $lock = $this->locks->held($occ->locationType(), $occ->locationId());
@@ -553,7 +460,6 @@ class SpiPutawayAllocationController extends Controller
         return $row->toArray() + [
             'box_code'    => $box?->box_code,
             'putaway_code' => $box?->box_code ? 'PUT-' . $box->box_code : null,
-            // Derived, never stored: see SpiPutaway::stage4Status().
             'status'      => $row->stage4Status((bool) $openTask),
             'draft_since' => $row->draftSince(),
             'occupancy'   => $occ ? [

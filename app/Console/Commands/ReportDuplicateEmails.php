@@ -6,32 +6,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Which addresses are held more than once, and by whom.
- *
- * An email address belongs to one record anywhere in this system (#221). The
- * application enforces that on every write path, so nothing NEW can duplicate
- * an address. Data created before the rule existed is another matter: a
- * production database can hold pairs nobody has looked at in years, and the
- * unique index in 2026_10_01_000001 refuses to build until they are gone.
- *
- *   php artisan email:duplicates                 # every participating table
- *   php artisan email:duplicates --table=users
- *   php artisan email:duplicates --create-index  # build the index once clean
- *
- * The last one exists because a migration that SKIPPED is still a migration
- * that ran: `migrate` will not revisit it, so after the duplicates are cleaned
- * there would otherwise be no way to add the index short of rolling the
- * migration back. This builds exactly the same index, and refuses while any
- * duplicate remains.
- *
- * Report only. It never edits a row — deciding which of two accounts is the
- * real one is a human judgement, and on `users` it is the difference between
- * someone keeping their login and losing it.
- *
- * The columns come from config/email_uniqueness.php, so a table added to a
- * scope there appears here with no change to this file.
- */
 class ReportDuplicateEmails extends Command
 {
     protected $signature = 'email:duplicates
@@ -72,9 +46,6 @@ class ReportDuplicateEmails extends Command
 
             $detail = [];
             foreach ($rows as $r) {
-                /* The holders themselves, so whoever cleans this up can see
-                   which record to keep without writing their own query. Only
-                   the columns every one of these tables has. */
                 $holders = DB::table($table)
                     ->whereRaw("lower(trim($column)) = ?", [$r->email])
                     ->when($softDeletes && Schema::hasColumn($table, 'deleted_at'),
@@ -114,7 +85,6 @@ class ReportDuplicateEmails extends Command
         return self::SUCCESS;
     }
 
-    /** [table, column, soft_deletes] for every source in every scope, de-duplicated. */
     private function participatingColumns(): array
     {
         $seen = [];

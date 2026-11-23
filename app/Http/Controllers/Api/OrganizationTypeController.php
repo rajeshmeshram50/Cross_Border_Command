@@ -41,7 +41,6 @@ class OrganizationTypeController extends Controller
 
         $type = OrganizationType::create($data);
 
-        // Org types feed the cached client form-bundle dropdown — refresh it.
         \App\Support\MasterBundleCache::bump();
 
         return response()->json($type, 201);
@@ -79,7 +78,6 @@ class OrganizationTypeController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        // Prevent deleting a type that is referenced by any client
         $inUse = \App\Models\Client::where('org_type', $organizationType->name)->exists();
         if ($inUse) {
             return response()->json([

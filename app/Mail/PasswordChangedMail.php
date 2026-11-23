@@ -21,18 +21,6 @@ class PasswordChangedMail extends Mailable
     public string $appName;
     public array $branding;
 
-    /**
-     * @param string|null $loginUrl Pre-resolved SPA login URL. Pass the result
-     *   of {@see self::resolveLoginUrl()} so the "Sign In" button points at
-     *   the same origin the user just acted from (localhost in dev, the live
-     *   host in production). When null, falls back to `APP_FRONTEND_URL`/
-     *   `APP_URL` from config — which is correct for queued jobs that run
-     *   without an HTTP request.
-     * @param array $branding Optional per-tenant overrides. Same keys as
-     *   PasswordResetOtpMail (brandName, brandShort, brandTagline, logoUrl,
-     *   supportEmail, supportPhone, websiteUrl, social URLs). Anything omitted
-     *   falls back to the platform default in the blade template.
-     */
     public function __construct(
         string $userName,
         string $userEmail,
@@ -46,12 +34,8 @@ class PasswordChangedMail extends Mailable
         $this->changedAt   = now('Asia/Kolkata')->format('M d, Y \· h:i A');
         $this->loginUrl    = $loginUrl ?: self::defaultLoginUrl();
         $this->appName     = $branding['brandName'] ?? config('mail.from.name', 'Cross Border Command');
-        // Keep empty strings — callers use '' to *intentionally suppress* a
-        // template default (e.g. client orgs hiding the IGC subline). Only
-        // drop true nulls.
         $this->branding    = array_filter($branding, fn($v) => $v !== null);
     }
-
 
     public static function resolveLoginUrl(Request $request): string
     {
@@ -68,26 +52,17 @@ class PasswordChangedMail extends Mailable
         return self::defaultLoginUrl();
     }
 
-    /** Last-resort URL when no request context is available (queued jobs). */
     public static function defaultLoginUrl(): string
     {
         $base = config('app.frontend_url') ?: config('app.url') ?: 'http://localhost';
         return rtrim($base, '/') . '/login';
     }
 
-    /**
-     * Normalize an Origin/Referer string into a `scheme://host[:port]` root.
-     * Returns null for anything that isn't a syntactically valid http(s) URL,
-     * so a malformed `Referer` header (or a frontend that sends garbage) can
-     * never compose a broken href in the email.
-     */
     private static function sanitizeOrigin(?string $url): ?string
     {
         if (!$url) return null;
         $url = trim($url);
         if ($url === '') return null;
-        // Trim trailing slash and any path before parsing — we only want the
-        // origin, never `/login` or `/dashboard` that leaked from a Referer.
         $parsed = parse_url($url);
         if (!is_array($parsed) || empty($parsed['scheme']) || empty($parsed['host'])) return null;
         if (!in_array($parsed['scheme'], ['http', 'https'], true)) return null;
@@ -109,10 +84,6 @@ class PasswordChangedMail extends Mailable
             with: array_merge([
                 'userName'    => $this->userName,
                 'userEmail'   => $this->userEmail,
-                // SECURITY: never email the plaintext password. The blade hides
-                // the password card when this is empty (@if !empty($newPassword)).
-                // The field is retained on the constructor for backward-compat
-                // but is intentionally NOT surfaced in the message body.
                 'newPassword' => '',
                 'changedAt'   => $this->changedAt,
                 'loginUrl'    => $this->loginUrl,

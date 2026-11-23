@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AdvanceRequest;
-use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
 use App\Models\HrDocumentSignature;
@@ -12,7 +11,6 @@ use App\Models\LeaveRequest;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
-
 
 class MyTeamController extends Controller
 {
@@ -27,19 +25,11 @@ class MyTeamController extends Controller
         'department:id,name',
         'designation:id,name,level',
         'reportingManager:id,display_name,first_name,last_name,emp_code',
-        // A manager can be a Branch User (reporting_manager_user_id) rather than
-        // an employee — load that too so "Reports To" resolves either kind.
         'reportingManagerUser:id,name',
         'branch:id,name',
         'photoDocument:id,employee_id,document_key,file_path',
     ];
 
-    /**
-     * Resolve an employee's reporting-manager NAME, handling either kind — an
-     * employee manager (reporting_manager_id → reportingManager) or a Branch /
-     * login user (reporting_manager_user_id → reportingManagerUser). Requires
-     * both relations to be eager-loaded on $emp.
-     */
     private function reportsToName($emp): ?string
     {
         if (!$emp) return null;
@@ -75,8 +65,6 @@ class MyTeamController extends Controller
         if ($status = $request->query('status')) $q->where('status', $status);
 
         $employees = $q->orderBy('display_name')->limit(500)->get()->map(function ($e) {
-            // Resolve "Reports To" from either manager kind (employee or Branch
-            // User) into one string the SPA can render directly.
             $name = null;
             if ($e->reportingManager) {
                 $m = $e->reportingManager;
@@ -96,14 +84,6 @@ class MyTeamController extends Controller
         ]);
     }
 
-    /**
-     * Unified pending approvals queue. For now this is just the document
-     * signature inbox; future modules (expense, leave) slot in by appending
-     * to the returned list with a stable `module` discriminator the SPA can
-     * branch on.
-     */
-    /** Best available name for an approval's subject employee: the display
-     *  name, else first + last, else the employee code, else a dash. */
     private function subjectName($emp): string
     {
         if (!$emp) return '—';
@@ -120,23 +100,19 @@ class MyTeamController extends Controller
 
         $items = [];
 
-        // Document signatures where the current user is the next signer.
         $q = HrDocumentSignature::query()
             ->with([
                 'template:id,code,name,doc_type',
-                // withTrashed for the same reason as the signature inbox (QA #65).
                 'employee' => fn ($r) => $r->withTrashed()->select(
                     'id', 'display_name', 'first_name', 'last_name', 'emp_code',
                     'department_id', 'reporting_manager_id', 'reporting_manager_user_id',
                 ),
                 'employee.department:id,name',
-                // Needed by reportsToName() for the approval row's manager.
                 'employee.reportingManager:id,display_name,first_name,last_name',
                 'employee.reportingManagerUser:id,name',
             ])
             ->whereIn('status', ['Pending', 'In Progress']);
 
-        // Reuse the same tenant scoping the signature controller applies.
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
@@ -160,16 +136,9 @@ class MyTeamController extends Controller
                 'id'            => $row->id,
                 'code'          => $row->code,
                 'title'         => $row->template?->name ?? '(template removed)',
-                /* `??` only catches NULL, and display_name is routinely an EMPTY
-                   STRING on records whose name was never consolidated — which
-                   rendered a blank Subject cell rather than the dash it promised.
-                   Falls through first + last, then the code. (QA #65) */
                 'subject_name'  => $this->subjectName($row->employee),
                 'subject_code'  => $row->employee?->emp_code ?: null,
                 'subject_dept'  => $row->employee?->department?->name ?: '—',
-                // Who the subject reports to. The Approval List showed the
-                // employee and their department but never the manager, so a
-                // reviewer could not tell whose line the request came up.
                 'subject_manager' => $this->reportsToName($row->employee) ?? '—',
                 'action'        => $current['action'] ?? 'Sign',
                 'status'        => $row->status,
@@ -179,14 +148,7 @@ class MyTeamController extends Controller
             ];
         }
 
-        // history=1 → the inbox "Updated (History)" tab: claims this user has
-        // already decided on (approved / rejected at their stage), instead of
-        // the pending queue. Documents have their own history endpoint, so the
-        // history response carries acted expense claims only.
         if ($request->boolean('history')) {
-            // Both modules share the inbox history tab. Merge acted expense
-            // claims + acted advance requests and surface the freshest
-            // decision first across both.
             $history = array_merge($this->actedExpenseClaims($user), $this->actedAdvanceRequests($user));
             usort($history, fn ($a, $b) => strcmp((string) ($b['acted_at'] ?? ''), (string) ($a['acted_at'] ?? '')));
             return response()->json([
@@ -195,31 +157,14 @@ class MyTeamController extends Controller
             ]);
         }
 
-        // Expense claims pending the user's action. Two paths feed in here:
-        //   - manager stage: rows whose assigned reporting manager is the
-        //     current user (manager_status = pending)
-        //   - HR stage: rows that have cleared manager and now need HR /
-        //     Finance approval (manager_status = approved, hr_status = pending)
-        //     — visible to users with hr.expense can_approve (or the admin
-        //     tiers branch_user / client_admin / client_user / super_admin
-        //     when the module row isn't seeded yet, matching the fallback in
-        //     ExpenseClaimController::guardHrPermission).
         foreach ($this->pendingExpenseClaims($user) as $entry) {
             $items[] = $entry;
         }
 
-        // Advance requests pending the user's action — same two-stage flow
-        // (manager → HR/Finance) as expense claims, streamed through the same
-        // queue with module = 'advance'. Without this, advances were only
-        // reachable via Expense Management → Team Advance Requests and never
-        // surfaced in the inbox for HR/manager action.
         foreach ($this->pendingAdvanceRequests($user) as $entry) {
             $items[] = $entry;
         }
 
-        // Leave requests pending the user's approval. Previously hard-coded to
-        // 0, so a manager's My Team → Approval List never surfaced any leave
-        // requests from their reports even when they were the assigned approver.
         foreach ($this->pendingLeaveRequests($user) as $entry) {
             $items[] = $entry;
         }
@@ -237,15 +182,6 @@ class MyTeamController extends Controller
         ]);
     }
 
-    /**
-     * Resolve pending leave-request approvals for the current user, shaped the
-     * same way the other modules are so the unified inbox can stream them.
-     *
-     * A request surfaces only to whoever can act on its CURRENT approval level
-     * — resolved with the controller's own canActOnLevel so the manager/HR/role
-     * gating stays in lockstep (no logic drift). No tier is exempt: the
-     * dedicated Leave Approvals page is where an admin sees everything.
-     */
     private function pendingLeaveRequests($user): array
     {
         $myEmployeeId = $user->employee_id;
@@ -261,20 +197,11 @@ class MyTeamController extends Controller
             ->where('status', 'Pending')
             ->orderByDesc('created_at');
 
-        /* A root user carries no client_id, so skipping this left every
-           tenant's leave in one list. It gets nothing here instead. */
         if ($user->user_type === 'super_admin') return [];
         if ($user->client_id) {
             $q->where('client_id', $user->client_id);
         }
 
-        // Leave is reporting-manager-only: HR is view-only on the dedicated
-        // Leave Approvals page and must NOT receive leave in their personal My
-        // Team / Inbox action queue. So — unlike expense/advance — there is NO
-        // admin blanket here. A request surfaces only to whoever can act on its
-        // current chain level: the reporting manager (an Employee RM, or a
-        // login-User RM such as a Client/Branch admin who is set as the RM), or
-        // anyone explicitly named on the chain.
         $uid = (int) $user->id;
         $eid = (int) ($myEmployeeId ?: 0);
         $q->where(function ($w) use ($myEmployeeId, $uid, $eid) {
@@ -290,8 +217,6 @@ class MyTeamController extends Controller
         $leaveCtrl = app(LeaveRequestController::class);
         $items = [];
         foreach ($q->get() as $row) {
-            // Per-level precision, no exceptions — only the current-level
-            // approver (the reporting manager) sees it.
             $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
             $idx   = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
             if (!$leaveCtrl->canActOnLevel($user, $chain, $idx, $row)) continue;
@@ -317,18 +242,6 @@ class MyTeamController extends Controller
         return $items;
     }
 
-    /**
-     * Resolve pending expense claim approvals for the current user.
-     * Returns rows shaped the same way the document-signature items are so
-     * the unified approvals endpoint can stream both modules through the
-     * same SPA table without per-module branching on the read side.
-     *
-     * Two visibility paths combine here:
-     *   1. The user is the assigned reporting manager (manager_id matches
-     *      their linked Employee.id) and the claim is still at manager-stage.
-     *   2. The user can HR-approve and the claim has cleared the manager
-     *      stage (manager_status = approved, hr_status = pending).
-     */
     private function pendingExpenseClaims($user): array
     {
         $myEmployeeId = $user->employee_id;
@@ -354,9 +267,6 @@ class MyTeamController extends Controller
                     });
                 }
                 if ($canHrApprove) {
-                    // No assigned employee manager → the branch admin is the
-                    // de-facto reporting manager and does the manager-stage
-                    // approval here (explicit two-step, not auto-approved).
                     $w->orWhere(function ($wm) {
                         $wm->whereNull('manager_id')
                            ->where('manager_status', 'pending');
@@ -368,10 +278,6 @@ class MyTeamController extends Controller
                 }
             });
 
-        // Never surface a user's OWN request in their approvals queue — you
-        // can't approve/pay your own; the branch user (reporting manager) does.
-        // (A branch user has no employee record, so myEmployeeId is null and
-        // this doesn't hide anything from them.)
         if ($myEmployeeId !== null) {
             $q->where('employee_id', '!=', $myEmployeeId);
         }
@@ -388,7 +294,6 @@ class MyTeamController extends Controller
             } elseif ($canHrApprove
                 && $row->manager_id === null
                 && $row->manager_status === 'pending') {
-                // Branch admin acting as the de-facto reporting manager.
                 $stage = 'manager';
             } elseif ($canHrApprove
                 && $row->manager_status === 'approved'
@@ -426,8 +331,6 @@ class MyTeamController extends Controller
                     'purpose'        => $row->purpose,
                     'manager_status' => $row->manager_status,
                     'hr_status'      => $row->hr_status,
-                    // The subject employee's reporting manager (employee OR Branch
-                    // User); fall back to the request's assigned approver.
                     'manager_name'   => $this->reportsToName($emp)
                         ?: ($row->manager
                             ? ($row->manager->display_name
@@ -443,21 +346,11 @@ class MyTeamController extends Controller
         return $out;
     }
 
-    /**
-     * Acted expense claims for the inbox "Updated (History)" tab — claims the
-     * current user has already decided on at their stage: manager-stage rows
-     * they approved/rejected as the assigned reporting manager, plus HR-stage
-     * rows they cleared when they hold HR/Finance approval rights.
-     */
     private function actedExpenseClaims($user): array
     {
         $myEmployeeId = $user->employee_id;
         $uid = (int) $user->id;
 
-        // History = claims THIS user personally acted on — either as the
-        // assigned reporting manager, OR as the HR/Finance approver (hr_user_id
-        // records who acted). Without the hr_user_id check the queue leaked
-        // every HR-acted claim in the tenant to any HR user. (Bug 50)
         $q = ExpenseClaim::query()
             ->with([
                 'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
@@ -484,9 +377,6 @@ class MyTeamController extends Controller
 
         $out = [];
         foreach ($q->orderByDesc('updated_at')->limit(60)->get() as $row) {
-            // Which stage did THIS user act at? Prefer the manager stage when
-            // they're the assigned manager and acted, else the HR stage they
-            // personally recorded.
             $stage = null; $verdict = null;
             if ($myEmployeeId && (int) $row->manager_id === (int) $myEmployeeId
                 && in_array($row->manager_status, ['approved', 'rejected'], true)) {
@@ -508,7 +398,7 @@ class MyTeamController extends Controller
                 'subject_name' => $employeeName ?: '—',
                 'subject_dept' => $emp?->department?->name ?? '—',
                 'subject_manager' => $this->reportsToName($emp) ?? '—',
-                'verdict'      => $verdict,                 // approved | rejected
+                'verdict'      => $verdict,
                 'acted_at'     => optional($row->updated_at)->toIso8601String(),
                 'status'       => $row->status,
                 'created_at'   => $row->created_at,
@@ -529,14 +419,6 @@ class MyTeamController extends Controller
         return $out;
     }
 
-    /**
-     * Pending advance-request approvals for the current user. Mirrors
-     * pendingExpenseClaims one-for-one: advance requests run the same
-     * manager → HR/Finance two-stage flow and share the hr.expense approval
-     * right (AdvanceRequestController::guardHrPermission also gates on the
-     * hr.expense module). Reuses applyExpenseTenantScope since the advance
-     * table carries the same client_id / branch_id / manager_id columns.
-     */
     private function pendingAdvanceRequests($user): array
     {
         $myEmployeeId = $user->employee_id;
@@ -561,9 +443,6 @@ class MyTeamController extends Controller
                     });
                 }
                 if ($canHrApprove) {
-                    // No assigned employee manager → the branch admin is the
-                    // de-facto reporting manager and does the manager-stage
-                    // approval here (explicit two-step, not auto-approved).
                     $w->orWhere(function ($wm) {
                         $wm->whereNull('manager_id')
                            ->where('manager_status', 'pending');
@@ -575,10 +454,6 @@ class MyTeamController extends Controller
                 }
             });
 
-        // Never surface a user's OWN request in their approvals queue — you
-        // can't approve/pay your own; the branch user (reporting manager) does.
-        // (A branch user has no employee record, so myEmployeeId is null and
-        // this doesn't hide anything from them.)
         if ($myEmployeeId !== null) {
             $q->where('employee_id', '!=', $myEmployeeId);
         }
@@ -595,7 +470,6 @@ class MyTeamController extends Controller
             } elseif ($canHrApprove
                 && $row->manager_id === null
                 && $row->manager_status === 'pending') {
-                // Branch admin acting as the de-facto reporting manager.
                 $stage = 'manager';
             } elseif ($canHrApprove
                 && $row->manager_status === 'approved'
@@ -633,8 +507,6 @@ class MyTeamController extends Controller
                     'reason'         => $row->reason,
                     'manager_status' => $row->manager_status,
                     'hr_status'      => $row->hr_status,
-                    // The subject employee's reporting manager (employee OR Branch
-                    // User); fall back to the request's assigned approver.
                     'manager_name'   => $this->reportsToName($emp)
                         ?: ($row->manager
                             ? ($row->manager->display_name
@@ -650,22 +522,15 @@ class MyTeamController extends Controller
         return $out;
     }
 
-    /**
-     * Acted advance requests for the inbox "Updated (History)" tab — the
-     * advance counterpart of actedExpenseClaims (same stage-resolution rules).
-     */
     private function actedAdvanceRequests($user): array
     {
         $myEmployeeId = $user->employee_id;
         $uid = (int) $user->id;
 
-        // History = advances THIS user personally acted on (manager stage, or
-        // the HR stage they recorded via hr_user_id). (Bug 50)
         $q = AdvanceRequest::query()
             ->with([
                 'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
-                // reportsToName() needs both manager kinds loaded.
                 'employee.reportingManager:id,display_name,first_name,last_name',
                 'employee.reportingManagerUser:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
@@ -729,16 +594,6 @@ class MyTeamController extends Controller
         return $out;
     }
 
-    /**
-     * "My Updates" — FYI notifications about the user's OWN expense
-     * claims and advance requests that have been actioned (approved or
-     * rejected at either manager or HR stage). Read-only, so each item
-     * is shaped with `action: 'View'` and no stage/approve-reject
-     * payload; the inbox just shows the line and a "View" deep-link.
-     *
-     * The endpoint returns at most 30 days of history so the list stays
-     * manageable; the inbox can paginate locally.
-     */
     public function myUpdates(Request $request)
     {
         $user = $request->user();
@@ -752,10 +607,6 @@ class MyTeamController extends Controller
         $since = now()->subDays(30);
         $out = [];
 
-        // Expense claims: include rows where either the manager or the HR
-        // stage has acted (status changed away from "pending"). Pure
-        // "still pending" rows are filtered out — those belong on the
-        // submitter's My/Team list in the profile, not the inbox.
         $claims = ExpenseClaim::query()
             ->with([
                 'category:id,name',
@@ -776,9 +627,6 @@ class MyTeamController extends Controller
             ->get();
 
         foreach ($claims as $row) {
-            // Pick the most recent stage action so the inbox card surfaces
-            // the freshest decision (HR overrides manager when both have
-            // acted on the same row).
             $stage = null;
             $actedAt = null;
             $actorName = null;
@@ -810,8 +658,8 @@ class MyTeamController extends Controller
                 'amount'      => (float) $row->amount,
                 'currency'    => $row->currency,
                 'category'    => $row->category?->name ?? $row->category_name,
-                'stage'       => $stage,                 // 'manager' | 'hr'
-                'verdict'     => $verdict,               // 'approved' | 'rejected'
+                'stage'       => $stage,
+                'verdict'     => $verdict,
                 'actor_name'  => $actorName,
                 'comment'     => $comment,
                 'acted_at'    => $actedAt,
@@ -819,7 +667,6 @@ class MyTeamController extends Controller
             ];
         }
 
-        // Advance requests: same shape, mirrors the expense pattern.
         $advances = AdvanceRequest::query()
             ->with([
                 'manager:id,display_name,first_name,last_name',
@@ -877,21 +724,13 @@ class MyTeamController extends Controller
             ];
         }
 
-        // Sort by acted_at desc so the freshest decision shows on top.
         usort($out, fn ($a, $b) => strcmp((string) $b['acted_at'], (string) $a['acted_at']));
 
         return response()->json(['updates' => $out]);
     }
 
-    /**
-     * Tenant scope for the expense-claims query — mirrors
-     * ExpenseClaimController::applyTenantScope so the My Team queue can't
-     * surface a row the user wouldn't be allowed to act on directly.
-     */
     private function applyExpenseTenantScope($q, $user, ?int $myEmployeeId): void
     {
-        /* No unscoped branch. super_admin used to return here, which put every
-           tenant's claims in one inbox list. It is no longer an approver. */
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
@@ -900,8 +739,6 @@ class MyTeamController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Every branch is an isolated peer — globals + client-level rows
-            // + own branch's rows (+ rows the user manages).
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
@@ -924,21 +761,10 @@ class MyTeamController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /**
-     * Whether the user has HR / Finance approval rights for expense claims.
-     * Falls back to admin-tier user_type when the hr.expense module row
-     * hasn't been seeded — same shape as ExpenseClaimController guards.
-     */
     private function userCanHrApproveExpense($user): bool
     {
         if (!$user) return false;
 
-        /* The approval hierarchy starts at the branch, so the pending queue
-           belongs to the branch user — not the client above them, who was
-           seeing every branch's claims in their inbox. The client tier keeps
-           its authority on Expense Management; this is the inbox only.
-           super_admin is the tier above that and belongs to no tenant at all,
-           so it is excluded on the same grounds. */
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true)) {
             return false;
         }
@@ -953,17 +779,6 @@ class MyTeamController extends Controller
             ->exists();
     }
 
-    /* ───── scope helpers ───── */
-
-    /**
-     * Resolves the visibility window:
-     *   super_admin → all employees
-     *   client_admin / client_user → everyone in the client
-     *   branch_user → only their branch (every branch is an isolated peer)
-     *   employee (manager) → only direct reports (employees whose
-     *                        reporting_manager_id points to this user's
-     *                        linked employee row)
-     */
     private function scopeForUser($q, $user): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -980,13 +795,6 @@ class MyTeamController extends Controller
         }
 
         if ($user->user_type === 'employee') {
-            // Resolve via Employee.user_id — `users.employee_id` is the
-            // back-pointer we don't always populate during onboarding, so
-            // relying on it dropped the My Team list to empty even when
-            // the employee genuinely has direct reports. The dashboard's
-            // `team_peers` query uses this same lookup, which is why the
-            // dashboard rendered the team correctly while this surface
-            // didn't.
             $myEmpId = $user->employee_id;
             if (!$myEmpId) { $q->whereRaw('1=0'); return; }
             $q->where('reporting_manager_id', $myEmpId);
@@ -1012,6 +820,4 @@ class MyTeamController extends Controller
         }
         return ['kind' => 'none', 'label' => 'No team'];
     }
-    
-
 }

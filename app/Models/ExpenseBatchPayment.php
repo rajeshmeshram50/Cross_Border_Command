@@ -7,10 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * A single consolidated payout settling several approved expense claims of one
- * employee at once (one UTR + one proof; one itemised Zoho expense).
- */
 class ExpenseBatchPayment extends Model
 {
     use SoftDeletes;

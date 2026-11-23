@@ -4,17 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Pivot between a leave plan and the leave types assigned to it. The
- * full per-(plan, type) Setup popup — the six side tabs (Accrual,
- * Leave Application, Approval, Year End, Probation, Notice Period) —
- * lives in `config_json` so the frontend interface can evolve without
- * a migration each time.
- *
- * `quota_summary` and `eoy_summary` are denormalized strings so the
- * Configuration table can render "12 days/year" / "Carry forward 5"
- * without parsing the JSON on every list call.
- */
 return new class extends Migration {
     public function up(): void
     {

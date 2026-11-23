@@ -17,8 +17,6 @@ class Holiday extends Model
     ];
 
     protected $casts = [
-        // Y-m-d so the API always emits a clean date the <input type="date">
-        // and the frontend formatDate() can consume without a time component.
         'date'         => 'date:Y-m-d',
         'is_recurring' => 'boolean',
     ];

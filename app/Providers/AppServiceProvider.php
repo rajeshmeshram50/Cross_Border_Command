@@ -11,28 +11,6 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        /* Telescope — local only, and only if actually installed.
-         *
-         * It is a `--dev` dependency, so `composer install --no-dev` on the
-         * server leaves no vendor/laravel/telescope at all. Both guards
-         * matter and neither is redundant:
-         *
-         *   environment('local')  → never exposes the dashboard (which shows
-         *                           request payloads, including auth tokens)
-         *                           on a deployed environment, even if a dev
-         *                           dependency did get installed there.
-         *   class_exists(...)     → keeps this line harmless when the package
-         *                           is missing. It also stops PHP ever
-         *                           autoloading App\Providers\
-         *                           TelescopeServiceProvider, which extends a
-         *                           vendor class and would fatal on its own —
-         *                           that is what makes the provider file safe
-         *                           to leave out of git entirely.
-         *
-         * Registered here rather than in bootstrap/providers.php because that
-         * file is committed and deployed; a hard reference there takes the
-         * whole app down on a server without the package.
-         */
         if ($this->app->environment('local') && class_exists(\Laravel\Telescope\Telescope::class)) {
             $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
         }
@@ -40,36 +18,19 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // CredVault keeps its migrations in their own folder; `migrate` runs them with the rest.
         $this->loadMigrationsFrom(database_path('migrations/credvault'));
 
-        /* CredVault limits. Named, because a plain throttle:N,1 keys on the
-         * user alone — every throttle on a route then shares one counter, and
-         * the tight OTP limit would count the user's ordinary list calls too.
-         * Each name gets its own bucket. */
         $byUser = fn (string $bucket) => fn (\Illuminate\Http\Request $r) => $bucket . ':' . ($r->user()?->id ?: $r->ip());
         \Illuminate\Support\Facades\RateLimiter::for('credvault', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(240)->by($byUser('cv')($r)));
-        // Six-digit codes: 10 tries a minute keeps a guess at 1 in 100,000 per minute.
         \Illuminate\Support\Facades\RateLimiter::for('credvault-otp', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($byUser('cv-otp')($r)));
         \Illuminate\Support\Facades\RateLimiter::for('credvault-reveal', fn ($r) => \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($byUser('cv-reveal')($r)));
 
-        /* dompdf's font cache must exist and be writable (it writes a .ufm per
-           @font-face font on first render). It lives in the system temp dir —
-           storage/ subdirs are owned by the deploy user and php-fpm cannot
-           write into them, which is what 500'd the sticker download. 0777 so
-           web, queue and CLI can all share the one cache. */
         $fontDir = config('dompdf.options.font_dir');
         if ($fontDir && ! is_dir($fontDir)) {
             @mkdir($fontDir, 0777, true);
             @chmod($fontDir, 0777);
         }
 
-        /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.
-         *
-         * Registered rather than hardcoded so the SMTP mailer stays intact and
-         * `failover` can hold both — the API first, SMTP behind it. Nothing
-         * that sends mail changes; only the transport under it does.
-         * See App\Mail\Transport\ZeptoMailTransport for why. */
         \Illuminate\Support\Facades\Mail::extend('zeptomail', function (array $config) {
             return new \App\Mail\Transport\ZeptoMailTransport(
                 (string) ($config['token'] ?? ''),
@@ -78,41 +39,16 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        // Auto-force https on every generated URL the moment APP_URL is set
-        // to an https:// origin (real cert or Cloudflare Flexible SSL).
-        //
-        // Why this matters for the face features:
-        //   navigator.mediaDevices.getUserMedia() refuses to open the camera
-        //   on plain http://. Even with SSL on the server, a stray http://
-        //   asset / link on a page can downgrade the document context. This
-        //   ensures every URL Laravel generates (assets, routes, redirects)
-        //   is https when the deploy is https — no manual hunt for http://
-        //   leftovers, no Cloudflare Flexible-SSL infinite-redirect loops.
-        //
-        // Behaviour:
-        //   APP_URL=https://cbc.idims.in  → URL::forceScheme('https') fires
-        //   APP_URL=http://localhost/...   → no-op (dev stays http)
         if (str_starts_with((string) config('app.url'), 'https://')) {
             URL::forceScheme('https');
         }
 
-        /* B36: register a custom `magic_mime` validator that inspects
-         *  the file's actual magic bytes (via finfo_*) rather than the
-         *  client-supplied Content-Type. Laravel's built-in `mimes:`
-         *  rule trusts the upload's Content-Type, which an attacker can
-         *  forge — a .pdf-named binary still passes "mimes:pdf".
-         *
-         *  Usage:  'attachment' => 'file|magic_mime:jpg,jpeg,png,pdf,doc,docx|max:5120'
-         *
-         *  Accepts the SAME extension list `mimes:` does so callers can
-         *  swap in-place. The map below covers the documents we expect
-         *  in this app — extend as new extensions are needed. */
         Validator::extend('magic_mime', function ($attribute, $value, $parameters, $validator) {
             if (!$value instanceof UploadedFile)        return false;
             if (!$value->isValid())                     return false;
-            if (!function_exists('finfo_open'))         return true; // graceful degrade
+            if (!function_exists('finfo_open'))         return true;
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if ($finfo === false)                       return true; // graceful degrade
+            if ($finfo === false)                       return true;
             $mime  = finfo_file($finfo, $value->getRealPath());
             finfo_close($finfo);
             $allowed = [];

@@ -7,30 +7,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
-/**
- * Generates a full logical dump of the active PostgreSQL database with pg_dump.
- *
- * Used by the scheduled backup command (backup:email). Kept request-free so it
- * can run from the console with no authenticated user.
- *
- * Reliability notes (learned the hard way running under XAMPP/Apache):
- *  - pg_dump 18 wraps plain-SQL output in a psql \restrict <key> block whose key
- *    is generated from the OS strong-RNG; under a Windows service account that
- *    call fails ("could not generate restrict key"). We supply our own key via
- *    --restrict-key so pg_dump never touches the OS RNG.
- *  - The spawned process does not reliably inherit PATH, so pg_dump.exe cannot
- *    find its sibling DLLs (libpq, etc.) and dies with an empty "pg_dump: error:".
- *    We pass an explicit PATH that starts with pg_dump's own bin directory.
- *  - PG_DUMP_PATH (env) points at the pg_dump binary; falls back to "pg_dump".
- */
 class DatabaseBackupService
 {
-    /**
-     * Run pg_dump into a temp file and return its path + filename.
-     *
-     * @return array{path:string, filename:string}
-     * @throws RuntimeException on any failure (message is safe to surface/log).
-     */
     public function generate(): array
     {
         @set_time_limit(0);
@@ -60,7 +38,6 @@ class DatabaseBackupService
         $filename = $dbName . '_backup_' . now()->format('Y-m-d_His') . '.sql';
         $path     = $dir . DIRECTORY_SEPARATOR . $filename;
 
-        // Sweep stale dumps (>1h) so aborted runs don't pile up.
         foreach (File::glob($dir . DIRECTORY_SEPARATOR . '*.sql*') as $old) {
             if (File::lastModified($old) < now()->subHour()->timestamp) {
                 File::delete($old);
@@ -116,16 +93,6 @@ class DatabaseBackupService
         return ['path' => $path, 'filename' => $filename];
     }
 
-    /**
-     * Gzip a dump into a sibling .gz file, streaming 1 MB at a time.
-     *
-     * Deliberately never loads the dump into a PHP string: a production dump can
-     * be hundreds of MB, and File::get() + gzencode() would hold two full copies
-     * in memory and blow memory_limit. The plain .sql is deleted on success.
-     *
-     * @return array{path:string, filename:string, size:int}
-     * @throws RuntimeException
-     */
     public function compress(string $sqlPath, string $sqlFilename): array
     {
         @set_time_limit(0);

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\HrDocumentSignature;
 use Illuminate\Http\Request;
 
-
 class NotificationController extends Controller
 {
     public function index(Request $request)
@@ -21,15 +20,6 @@ class NotificationController extends Controller
         return response()->json(['data' => $this->withLiveSignatureState($rows)]);
     }
 
-    /**
-     * A signature notification is written once and never again, so by the time
-     * it is read the document has usually moved on — the employee has signed and
-     * it is the manager's turn, or the run is finished. The frozen payload then
-     * says something untrue: "pending: self" to a signer who already signed.
-     *
-     * The pending signer is therefore read from the run itself at display time.
-     * One query for the page, no writes.
-     */
     private function withLiveSignatureState($rows)
     {
         $ids = $rows
@@ -65,8 +55,6 @@ class NotificationController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        /* Both numbers in one call: the bell prints the total so there is always
-           something to see, and colours it by the unread count. */
         return response()->json(['data' => [
             'count' => $user->unreadNotifications()->count(),
             'total' => $user->notifications()->count(),

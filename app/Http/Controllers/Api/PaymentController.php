@@ -123,7 +123,6 @@ class PaymentController extends Controller
 
         $payment->load(['client', 'plan']);
 
-        // Generate invoice PDF and send email for successful payments
         if ($payment->status === 'success') {
             $this->invoiceMailer->sendForPayment($payment);
         }
@@ -151,9 +150,6 @@ class PaymentController extends Controller
         return response()->json(['message' => 'Payment deleted successfully']);
     }
 
-    /**
-     * Send plan reminder email to client
-     */
     public function sendReminder(Request $request, Payment $payment)
     {
         if (!$request->user()->isSuperAdmin()) {
@@ -166,7 +162,6 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Client email not found'], 422);
         }
 
-        // Gated by Settings → Notifications → planExp (and master emailNotif)
         if (!Settings::shouldSendMail('planExp')) {
             return response()->json([
                 'message' => 'Plan expiry notifications are disabled in Settings → Notifications.',
@@ -174,10 +169,8 @@ class PaymentController extends Controller
         }
 
         try {
-            // Send to organization email
             $orgEmail = $payment->client->email;
 
-            // Also find client admin user email
             $adminUser = \App\Models\User::where('client_id', $payment->client->id)
                 ->where('user_type', 'client_admin')
                 ->first();
@@ -197,12 +190,8 @@ class PaymentController extends Controller
         }
     }
 
-    /**
-     * Download invoice PDF
-     */
     public function downloadInvoice(Request $request, Payment $payment)
     {
-        // Support token via query param for direct browser downloads
         $this->authenticateFromQuery($request);
         $this->authorizeViewPayment($request, $payment);
 
@@ -214,9 +203,6 @@ class PaymentController extends Controller
         ]);
     }
 
-    /**
-     * View invoice PDF inline in browser
-     */
     public function viewInvoice(Request $request, Payment $payment)
     {
         $this->authenticateFromQuery($request);
@@ -230,9 +216,6 @@ class PaymentController extends Controller
         ]);
     }
 
-    /**
-     * Authenticate user from query string token (for direct browser opens)
-     */
     private function authenticateFromQuery(Request $request): void
     {
         if (!$request->user() && $request->query('token')) {
@@ -249,19 +232,6 @@ class PaymentController extends Controller
         }
     }
 
-    /**
-     * Single source of truth for "can this user see this payment / invoice".
-     *
-     *   - super_admin    → any payment, any tenant.
-     *   - client_admin   → only payments belonging to their own client_id.
-     *   - everyone else  → 403. Payments is a billing surface aimed at
-     *     account owners only; employees / branch users / client_users have
-     *     no business reading another row's invoice PDF or details.
-     *
-     * Previously `show()` and the invoice view/download endpoints had no
-     * role check at all — any authenticated user could fetch any payment
-     * by id, which the QA team flagged as an employee-side data leak.
-     */
     private function authorizeViewPayment(Request $request, Payment $payment): void
     {
         $user = $request->user();
@@ -271,11 +241,6 @@ class PaymentController extends Controller
         abort(403, 'You do not have access to this payment.');
     }
 
-    /**
-     * Ensure PDF exists (delegates to InvoiceMailer) and abort if it
-     * couldn't be produced — used by view/download endpoints that need a
-     * file path to stream back to the browser.
-     */
     private function ensureInvoicePdf(Payment $payment): string
     {
         $path = $this->invoiceMailer->ensureInvoicePdf($payment);

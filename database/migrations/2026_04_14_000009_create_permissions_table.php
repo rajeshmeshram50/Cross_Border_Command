@@ -11,16 +11,13 @@ return new class extends Migration
         Schema::create('permissions', function (Blueprint $table) {
             $table->id();
 
-            // Who - one of these will be set based on scope
             $table->foreignId('user_id')->nullable()->constrained('users')->cascadeOnDelete();
             $table->foreignId('client_id')->nullable()->constrained('clients')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->cascadeOnDelete();
-            $table->string('role', 50)->nullable(); // client_admin, branch_manager, staff, viewer
+            $table->string('role', 50)->nullable();
 
-            // What
             $table->foreignId('module_id')->nullable()->constrained('modules')->cascadeOnDelete();
 
-            // CRUD permissions
             $table->boolean('can_view')->nullable()->default(false);
             $table->boolean('can_add')->nullable()->default(false);
             $table->boolean('can_edit')->nullable()->default(false);
@@ -29,12 +26,10 @@ return new class extends Migration
             $table->boolean('can_import')->nullable()->default(false);
             $table->boolean('can_approve')->nullable()->default(false);
 
-            // Granted by
             $table->foreignId('granted_by')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
 
-            // Indexes
             $table->index(['client_id', 'role']);
             $table->index('user_id');
             $table->index('module_id');

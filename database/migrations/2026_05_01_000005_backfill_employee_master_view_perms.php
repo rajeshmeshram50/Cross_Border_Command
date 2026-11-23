@@ -3,17 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Backfill view-only master perms for every existing employee user. Without
- * this, employees provisioned before the policy change can't load reference
- * dropdowns (Country / State / Designation / etc.) — every /master/{slug}
- * call returns 403 because their permission rows only covered profile,
- * dashboard and master.employees.
- *
- * Strategy: copy each employee's CREATOR's master.* `can_view` flags onto
- * the employee, leaving write/delete flags off. Idempotent — skips
- * (user_id, module_id) pairs that already exist.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -25,8 +14,6 @@ return new class extends Migration
 
         $now = now();
         foreach ($employees as $emp) {
-            // The Employee row has created_by; that user's master perms are
-            // the source of inheritance.
             $grantor = DB::table('employees')->where('user_id', $emp->id)->value('created_by');
             if (!$grantor) continue;
 
@@ -74,7 +61,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No safe down — the rows are indistinguishable from manually-granted
-        // ones at this point. Roll back via the Permissions UI if needed.
     }
 };

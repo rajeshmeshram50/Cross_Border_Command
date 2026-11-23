@@ -9,19 +9,6 @@ use App\Services\PayrollService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-/**
- * Overtime / Bonus / Incentive / one-off deduction adjustments (Rule 4 + 10).
- * Only APPROVED rows are picked up by the payroll engine. Approving / rejecting
- * a row recomputes the employee's non-locked payslips so the change flows into
- * payroll immediately.
- *
- *   GET    /payroll-adjustments?employee_id=&month=&year=
- *   GET    /payroll-adjustments/overtime-preview?employee_id=&month=&year=
- *   POST   /payroll-adjustments
- *   POST   /payroll-adjustments/{id}/approve
- *   POST   /payroll-adjustments/{id}/reject
- *   DELETE /payroll-adjustments/{id}
- */
 class PayrollAdjustmentController extends Controller
 {
     public function __construct(private PayrollService $payroll) {}
@@ -31,10 +18,6 @@ class PayrollAdjustmentController extends Controller
         $user = $request->user();
         $q = PayrollAdjustment::query()->orderByDesc('id');
         if ($user && $user->client_id) $q->where('client_id', $user->client_id);
-        /* Adjustments carry bonus / incentive / overtime amounts per employee.
-         * This listing was tenant-scoped only, so any logged-in employee could
-         * read what every colleague had been awarded. Pinned to their own rows
-         * — the same self-only rule the payslip endpoints apply (PAY-45). */
         if ($user && !$this->canManage($request)) {
             $q->where('employee_id', (int) ($user->employee_id ?? 0));
         }
@@ -47,19 +30,8 @@ class PayrollAdjustmentController extends Controller
         return response()->json(['data' => $q->get()->map(fn ($a) => $this->serialize($a))]);
     }
 
-    /**
-     * Overtime detected from attendance for a cycle — hours worked past the
-     * END of the employee's shift (branch Shift Details), the rate they'd be
-     * paid at and the resulting amount. Read-only: nothing is recorded and
-     * nothing is paid until an adjustment is created and approved.
-     */
     public function overtimePreview(Request $request)
     {
-        /* The preview returns the employee's OT rate, which is derived from
-         * their basic salary — plus a day-by-day attendance breakdown. It was
-         * tenant-scoped only, so anyone could price any colleague's overtime
-         * and read back their pay rate. Manage-only, like every other endpoint
-         * here. */
         if (!$this->canManage($request)) {
             return response()->json(['message' => 'You are not allowed to view overtime pricing.'], 403);
         }
@@ -92,8 +64,6 @@ class PayrollAdjustmentController extends Controller
             'rate'        => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
             'reason'      => ['nullable', 'string', 'max:500'],
             'auto_approve' => ['nullable', 'boolean'],
-            // Overtime only — fill `hours` from attendance (time worked past
-            // the shift end) instead of the caller supplying them.
             'from_attendance' => ['nullable', 'boolean'],
         ]);
 
@@ -102,9 +72,6 @@ class PayrollAdjustmentController extends Controller
 
         if ($data['type'] === 'overtime' && ($data['from_attendance'] ?? false) && empty($data['hours'])) {
             $preview = $this->payroll->overtimePreview($employee, (int) $data['month'], (int) $data['year']);
-            // Overtime off in the employee master is a different failure from
-            // "worked no extra hours" — say which, so HR knows whether to fix
-            // the setting or the attendance.
             abort_if(!$preview['applicable'], 422,
                 'Overtime is not applicable to this employee — set "Overtime Applicable" to Yes and pick an Overtime Rate in their Leave & Attendance step first.');
             abort_if($preview['detected_hours'] <= 0, 422,
@@ -112,16 +79,6 @@ class PayrollAdjustmentController extends Controller
             $data['hours'] = $preview['detected_hours'];
         }
 
-        // Overtime pricing (Rule 4) — the per-hour rate is DERIVED from the
-        // employee's package and OT policy:
-        //   hourly = BASIC ÷ working days ÷ shift hours;  rate = hourly × multiplier
-        //   amount = rate × approved hours
-        // `rate` is persisted ONLY when the request supplies one, because a
-        // stored rate means "manual override" to the engine. Leaving it NULL is
-        // what lets the payroll run re-derive the rate, so a salary revision or
-        // an OT-policy change after the fact still prices the hours correctly.
-        // The amount written here is just the preview HR sees in the
-        // adjustments list — the run recomputes it.
         $amount   = (float) $data['amount'];
         $override = isset($data['rate']) && (float) $data['rate'] > 0 ? (float) $data['rate'] : null;
         $hours    = isset($data['hours']) ? (float) $data['hours'] : null;
@@ -184,15 +141,8 @@ class PayrollAdjustmentController extends Controller
             'approved_by' => $request->user()?->id,
             'approved_at' => now(),
         ]);
-        // Approving or rejecting changes payroll inputs — propagate to drafts.
         $touched = $this->payroll->recomputeEmployeePayslips($adj->employee_id);
 
-        /* recomputeEmployeePayslips only rewrites payslips in DRAFT/GENERATED
-         * runs — an approved or paid cycle is frozen (Rule 14/15). That is
-         * correct, but it used to happen silently: HR approved a bonus for a
-         * month whose run was already approved, got a plain "Adjustment
-         * approved", and the money never appeared on any payslip. Say so, so
-         * the adjustment is moved to an open cycle or the run is reopened. */
         $note = '';
         if ($touched === 0 && $adj->status === 'approved') {
             $frozen = \App\Models\Payslip::where('employee_id', $adj->employee_id)
@@ -227,7 +177,6 @@ class PayrollAdjustmentController extends Controller
         return response()->json(['message' => 'Adjustment removed.']);
     }
 
-    /** Employee resolved and checked against the caller's tenant. */
     private function scopedEmployee(Request $request, int $employeeId): Employee
     {
         $user     = $request->user();
@@ -244,8 +193,6 @@ class PayrollAdjustmentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
-        // Plain employees never manage payroll, even if an hr.payroll grant
-        // leaked onto their record — same rule as PayrollController::canManage.
         if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));

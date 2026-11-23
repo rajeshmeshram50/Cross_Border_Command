@@ -11,13 +11,6 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 
-/**
- * Demo recruitments for QA — 5 per tab (In Progress / Completed / Cancelled /
- * Expired) for client_id = 1, branch_id = 3. Idempotent-ish: it appends fresh
- * REC-### codes after whatever already exists, so re-running just adds more.
- *
- *   php artisan db:seed --class=RecruitmentDemoSeeder
- */
 class RecruitmentDemoSeeder extends Seeder
 {
     public function run(): void
@@ -37,7 +30,6 @@ class RecruitmentDemoSeeder extends Seeder
             return;
         }
 
-        // Next REC-### for this tenant.
         $maxSeq = 0;
         foreach (Recruitment::withTrashed()->where('client_id', $clientId)->where('branch_id', $branchId)->pluck('code') as $c) {
             if (preg_match('/^REC-(\d+)$/i', (string) $c, $m)) {
@@ -66,8 +58,6 @@ class RecruitmentDemoSeeder extends Seeder
         foreach ($titles as $status => $jobs) {
             foreach ($jobs as $i => $job) {
                 $seq++;
-                // Dates per status. Expired needs a PAST deadline; In Progress a
-                // future one; the rest are illustrative.
                 [$start, $deadline] = match ($status) {
                     'In Progress' => [$today->copy()->subDays(5),  $today->copy()->addDays(30)],
                     'Completed'   => [$today->copy()->subDays(60), $today->copy()->subDays(10)],

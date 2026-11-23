@@ -18,16 +18,10 @@ use App\Models\Vendor;
 use App\Services\SegmentDocScope;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Rules shared by the P2P purchase-order endpoints: numbering, pending PI
- * quantity, the GST gate, tax mode and line maths.
- */
 class PurchaseOrderService
 {
-    /** A GST scrutiny or return older than this many months fails the gate. */
     public const GST_STALE_MONTHS = 3;
 
-    /** Restrict a query on a table with client_id / branch_id to the request tenant. */
     public function scopeTenant($query, string $table)
     {
         if (!TenantContext::active()) return $query;
@@ -38,7 +32,6 @@ class PurchaseOrderService
         return $query;
     }
 
-    /** Indian financial year label, e.g. 2025-26 for any date Apr 2025 – Mar 2026. */
     public function financialYear(?Carbon $on = null): string
     {
         $d = $on ?: now();
@@ -46,80 +39,31 @@ class PurchaseOrderService
         return $start . '-' . substr((string) ($start + 1), -2);
     }
 
-    /**
-     * Next PO/<FY>/<SEQ>, one sequence PER BRANCH. Call inside a transaction.
-     *
-     * It used to be one sequence per client, which meant a branch's numbering
-     * counted every other branch's orders too: raise PO/2026-27/001 in Pune
-     * and Mumbai's first order of the year came out PO/2026-27/002. A number
-     * that skips is read as a lost document, and one branch could infer how
-     * much the others were buying from the gaps (QA #15).
-     *
-     * Every other per-branch code in this codebase already works this way —
-     * emp_code, vendor_code, customer_code, and the inventory WH-/ZN-/RC-
-     * codes. The code is therefore NOT unique on its own: the unique index is
-     * (client_id, branch_id, code).
-     *
-     * The tenant scope is still lifted, because the read has to see rows the
-     * caller's own scope might hide (another user's draft in the same branch);
-     * the client and branch are then filtered explicitly.
-     */
     public function nextPoCode(int $clientId, ?int $branchId = null): string
     {
         return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), true, $branchId);
     }
 
-    /** The number the next PO would get — a read only: no lock, nothing reserved or written. */
     public function previewPoCode(int $clientId, ?int $branchId = null): string
     {
         return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false, $branchId);
     }
 
-    /**
-     * Next PRQ-### payment request code, one running sequence PER BRANCH. Call
-     * inside a transaction.
-     *
-     * Plain PRQ-001, not PRQ/<FY>/<SEQ> like the documents around it: a payment
-     * request is referred to by number in conversation, and the financial year
-     * added length without telling anyone anything the request date does not.
-     * The sequence therefore runs on and never restarts, or April would hand out
-     * a PRQ-001 that already exists.
-     *
-     * Per branch for the same reason the PO itself is (QA #15): a request is
-     * raised on one office's order and approved in that office, so counting
-     * another branch's requests only skips numbers and tells each branch how
-     * busy the others are.
-     */
     public function nextPaymentRequestCode(int $clientId, ?int $branchId = null): string
     {
         return $this->nextSerialCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'), true, $branchId);
     }
 
-    /** Next ADR/<FY>/<SEQ> (advance refund adjustment), one sequence per branch. */
     public function nextRefundCode(int $clientId, ?int $branchId = null, bool $allocate = true): string
     {
         return $this->nextCode($clientId, 'ADR', PoRefundAdjustment::withoutGlobalScope('tenant')->withTrashed(), $allocate, $branchId);
     }
 
-    /** Next DOC/<FY>/<SEQ>, one sequence per branch. */
     public function nextDocCode(int $clientId, ?int $branchId = null): string
     {
         return $this->nextCode($clientId, 'DOC', PurchaseOrderDocument::withoutGlobalScope('tenant')->withTrashed(), true, $branchId);
     }
 
-    /* ══════════════════ Stage 04 · documents from the CLM libraries ══════════════════ */
-
-    /**
-     * Materialise Stage 04's rows: the Purchase Order itself, then every trade
-     * document and agreement the CLM libraries currently hold for this PO's
-     * segments.
-     *
-     * Additive and safe to re-run — a row already there keeps its file, its
-     * signature and its Necessary flag. Stage 03 calls it on submit and Stage 04
-     * calls it on every read, so a document added to the segment master after the
-     * PO was raised still reaches the PO (CS-414). Anything new arrives Not
-     * necessary, so it never retroactively gates this PO or the supplier's others.
-     */
     public function ensureDefaultDocuments(PurchaseOrder $po, int $userId): void
     {
         $rows = array_merge(
@@ -131,16 +75,10 @@ class PurchaseOrderService
                 'name'        => $d['name'],
                 'sub'         => $d['sub'] ?: null,
                 'kind'        => $d['source_type'] === 'agreement' ? 'agreement' : 'other',
-                /* Only the Purchase Order is required outright. Whether a trade
-                   document or an agreement has to be signed for THIS order is
-                   decided on Stage 04 (Necessary / Not necessary) — the
-                   library's regulated flag no longer settles it in advance. */
                 'required'    => false,
             ], $this->segmentDocuments($po)),
         );
 
-        // One query for what the PO already carries, so a Stage 04 read costs the
-        // same whether the libraries grew or not.
         $have = $po->documents()->get(['doc_kind', 'source_type', 'source_id']);
         $seen = [];
         foreach ($have as $d) {
@@ -163,9 +101,6 @@ class PurchaseOrderService
                 'source_type'       => $row['source_type'],
                 'source_id'         => $row['source_id'],
                 'is_required'       => $row['required'] ? 'yes' : 'no',
-                /* CS-414: a document starts Not necessary and is promoted once
-                   someone has read it — the list opens answered, not with a
-                   column of questions. Only the PO itself starts necessary. */
                 'needed'            => $row['required'] ? 'yes' : 'no',
                 'generated_on'      => now()->toDateString(),
                 'status'            => PurchaseOrderDocument::STATUS_PENDING,
@@ -175,18 +110,6 @@ class PurchaseOrderService
         }
     }
 
-    /**
-     * The trade documents and agreements this PO has to carry.
-     *
-     * Segments come from the PO's own products — what is being bought decides
-     * the paperwork, not everything the supplier could supply. Only if the PO
-     * has no product segments does it fall back to the supplier's segments.
-     * A library row applies when it sits in one of those segments, carries the
-     * segment's regulatory status, is active, and names the Supplier as a party.
-     * "Highly regulated" is what makes a document mandatory.
-     *
-     * @return array<int,array{source_type:string,source_id:int,name:string,sub:string,required:bool}>
-     */
     public function segmentDocuments(PurchaseOrder $po): array
     {
         $clientId = (int) $po->client_id;
@@ -216,7 +139,6 @@ class PurchaseOrderService
             $agreements = $agreements->merge($this->clmLibraryRows('clm_agreement_library', 'agr_status', 'Active', $clientId, $segment));
         }
 
-        // The supplier's own type narrows both libraries; null keeps every Supplier-* document.
         $typeToken = $po->vendor_id
             ? SupplierPartyToken::forVendorTypeId(
                 (int) DB::table('vendors')->where('id', $po->vendor_id)->value('vendor_type_id') ?: null,
@@ -248,10 +170,6 @@ class PurchaseOrderService
         return $out;
     }
 
-    /**
-     * Library rows of one segment. `segment` holds a comma-separated list, so
-     * the name (or code) is matched on its own or inside that list.
-     */
     private function clmLibraryRows(string $table, string $statusColumn, string $statusValue, int $clientId, object $segment)
     {
         $needles = array_values(array_filter([$segment->name, $segment->code]));
@@ -272,14 +190,6 @@ class PurchaseOrderService
             ->get();
     }
 
-    /**
-     * A document is for this PO only when the Supplier is one of its parties.
-     * The master writes them as "Supplier-Material / Goods", "Supplier — Tech",
-     * and similar, so the token only has to start with "supplier". An empty
-     * party means the document is not restricted to anyone. With the
-     * supplier's type token, the document must also name that type (or a
-     * legacy spelling it replaced).
-     */
     private function appliesToSupplier(?string $party, ?string $typeToken = null): bool
     {
         $party = trim((string) $party);
@@ -295,20 +205,10 @@ class PurchaseOrderService
         return false;
     }
 
-    /**
-     * @param  int|null  $branchId  Numbers within this branch alone. Null keeps
-     *   the client-wide sequence, which is what ADR and DOC still use — those
-     *   are company references, not per-office documents.
-     */
     private function nextCode(int $clientId, string $prefix, Builder $query, bool $allocate = true, ?int $branchId = null): string
     {
         $fy = $this->financialYear();
 
-        /* Lock the BRANCH when numbering within one, not the client: two
-           branches numbering at the same moment are independent sequences and
-           must not queue behind each other, while two saves in one branch must.
-           A client-wide sequence still locks the client, and a branch-scoped
-           one with no branch falls back to it for the same reason. */
         if ($allocate) {
             $branchId !== null
                 ? DB::table('branches')->where('id', $branchId)->lockForUpdate()->first()
@@ -328,19 +228,8 @@ class PurchaseOrderService
         return sprintf('%s/%s/%03d', $prefix, $fy, $max + 1);
     }
 
-    /**
-     * A running <PREFIX>-### number with no financial year in it. Codes in the
-     * older <PREFIX>/<FY>/<SEQ> shape are ignored when the next number is read,
-     * so both can sit in the same table while the old rows keep the number they
-     * were issued under.
-     *
-     * @param  int|null  $branchId  Numbers within this branch alone; null keeps
-     *   the client-wide sequence.
-     */
     private function nextSerialCode(int $clientId, string $prefix, Builder $query, bool $allocate = true, ?int $branchId = null): string
     {
-        // The BRANCH row when numbering within one, so two branches do not queue
-        // behind each other; the client row otherwise. Same rule as nextCode().
         if ($allocate) {
             $branchId !== null
                 ? DB::table('branches')->where('id', $branchId)->lockForUpdate()->first()
@@ -360,8 +249,6 @@ class PurchaseOrderService
         return sprintf('%s-%03d', $prefix, $max + 1);
     }
 
-    /** The PI behind a shipment: its direct link, else the PI on the same opportunity. */
-    /** The PI's own date - the day it was raised. */
     public function piDate(?int $piId): ?string
     {
         $at = $piId ? DB::table('proforma_invoices')->where('id', $piId)->value('created_at') : null;
@@ -378,13 +265,6 @@ class PurchaseOrderService
         return null;
     }
 
-    /**
-     * Quantity already ordered per PI line, across every live PO of the client
-     * (all branches), excluding cancelled / deleted POs and optionally one PO
-     * being edited. Pending = PI qty − this.
-     *
-     * @return array<int, float> pi_item_id => ordered qty
-     */
     public function orderedByPiItem(int $clientId, array $piItemIds, ?int $excludePoId = null, ?int $excludeSpiId = null): array
     {
         if (!$piItemIds) return [];
@@ -393,15 +273,6 @@ class PurchaseOrderService
             ->join('p2p_purchase_orders as po', 'po.id', '=', 'p2p_purchase_order_items.purchase_order_id')
             ->where('po.client_id', $clientId)
             ->whereNull('po.deleted_at')
-            /* What holds PI quantity: an order that has been SUBMITTED, or one
-               still in draft that a senior is deciding on. A plain draft used
-               to hold it too and nothing ever released it — drafts abandoned at
-               Step 02 had taken a whole PI between them, so no further PO could
-               be raised and the reason read "nothing left to order". A draft
-               sitting with a senior is not abandoned, so it keeps its hold. */
-            /* A cancelled order holds nothing. Without this the approval
-               branch below kept its hold alive after cancellation —
-               the rows survive, so the EXISTS stayed true for ever. */
             ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
             ->where(fn ($q) => $q
                 ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
@@ -416,19 +287,6 @@ class PurchaseOrderService
             ->pluck('qty', 'pi_item_id')
             ->map(fn ($q) => (float) $q);
 
-        /* A DIRECT SPI holds PI quantity too. It has no purchase order, so the
-           query above cannot see it — and until this existed, two Direct SPIs
-           could each bill a PI line in full while pending_qty never moved.
-
-           purchase_order_id IS NULL is the whole condition: an invoice raised
-           against an order is already counted through that order's lines, and
-           counting it here as well would charge the PI twice for one delivery.
-
-           Which ones hold: every invoice that is not cancelled, drafts
-           included — the same rule openQtyByPoItem() applies on the PO side.
-           A draft SPI is a supplier's claim for goods that arrived, not an
-           intention someone may abandon, which is why the PO's stricter
-           "submitted, or with a senior" test does not belong here. */
         $spi = DB::table('p2p_supplier_invoice_items as si')
             ->join('p2p_supplier_invoices as s', 's.id', '=', 'si.supplier_invoice_id')
             ->where('s.client_id', $clientId)
@@ -443,9 +301,6 @@ class PurchaseOrderService
             ->pluck('qty', 'pi_item_id')
             ->map(fn ($q) => (float) $q);
 
-        /* Both hold against the same line, so the two sums add. Keyed by
-           pi_item_id, which is an integer — merge() would overwrite and
-           mergeRecursive() renumbers integer keys, so neither will do. */
         $out = $po->all();
         foreach ($spi->all() as $piItemId => $qty) {
             $out[$piItemId] = (float) ($out[$piItemId] ?? 0) + (float) $qty;
@@ -454,18 +309,6 @@ class PurchaseOrderService
         return $out;
     }
 
-    /**
-     * The supplier's standard paperwork that has run out — KYC, DD and trade
-     * licences, scoped to what this supplier's OWN segment rules ask for on
-     * the side its address puts it on.
-     *
-     * Scoped, not "every expired upload": blocking on a document no rule
-     * selects leaves nothing to renew, because the Evidence Vault never lists
-     * it. Lives here rather than on the PO controller because an invoice
-     * raised without an order has to ask the same question.
-     *
-     * @return array<int,array{code:string,name:string,expiry:string}>
-     */
     public function expiredStandardDocs(?int $vendorId, int $clientId): array
     {
         if (!$vendorId) return [];
@@ -502,7 +345,6 @@ class PurchaseOrderService
             ->all();
     }
 
-    /** Products mapped straight to a supplier, from either side (Product Master → Vendors, Supplier → Products). */
     public function vendorProductIds(int $vendorId): array
     {
         if (!$vendorId) return [];
@@ -511,10 +353,6 @@ class PurchaseOrderService
         return $a->merge($b)->filter()->map(fn ($v) => (int) $v)->unique()->values()->all();
     }
 
-    /**
-     * What this supplier charges for each product it is mapped to, product_id => rate.
-     * The newer vendor_product_mappings wins over the legacy product_vendor_maps.
-     */
     public function vendorProductRates(int $vendorId): array
     {
         if (!$vendorId) return [];
@@ -528,7 +366,6 @@ class PurchaseOrderService
         return $out;
     }
 
-    /** The tenant's own GST state code: the branch's, or the first two digits of its GSTIN. */
     public function homeStateCode(?int $branchId): ?string
     {
         if (!$branchId) return null;
@@ -538,14 +375,12 @@ class PurchaseOrderService
         return $code ?: null;
     }
 
-    /** intra (CGST + SGST) when supplier and tenant share a state, else inter (IGST). */
     public function taxMode(?string $supplierState, ?string $homeState): string
     {
         if (!$supplierState || !$homeState) return 'intra';
         return (string) $supplierState === (string) $homeState ? 'intra' : 'inter';
     }
 
-    /** Tax for one line, never trusted from the client. */
     public function lineAmounts(float $qty, float $rate, float $gstPct, string $taxMode): array
     {
         $taxable = round($qty * $rate, 2);
@@ -555,7 +390,7 @@ class PurchaseOrderService
             $igst = $gst;
         } else {
             $cgst = round($gst / 2, 2);
-            $sgst = round($gst - $cgst, 2);   // halves always add back to the full GST
+            $sgst = round($gst - $cgst, 2);
         }
         return [
             'taxable_amount' => $taxable,
@@ -566,13 +401,8 @@ class PurchaseOrderService
         ];
     }
 
-    /**
-     * GST gate on the supplier's latest scrutiny record: blocked when the
-     * scrutiny is stale, approval_required when only the return filing is.
-     */
     public function gstGate(?int $vendorId, bool $international = false): array
     {
-        // An import has no Indian GST — scrutiny and filing are not checked.
         if ($international) return ['gate' => 'clear', 'scrutiny_date' => null, 'filing_date' => null, 'gstin' => null];
         $row = $vendorId
             ? DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendorId)->whereNull('deleted_at')->orderByDesc('created_at')->first()
@@ -592,17 +422,11 @@ class PurchaseOrderService
         ];
     }
 
-    /** Recompute header totals from the saved lines and charges. */
-    /**
-     * Product and PI details for PO lines, read live from products / PI items
-     * (the line stores only the ids). Keyed by PO item id.
-     */
     public function lineDetails($items): array
     {
         $productIds = $items->pluck('product_id')->filter()->unique()->values()->all();
         $piItemIds  = $items->pluck('pi_item_id')->filter()->unique()->values()->all();
 
-        // No deleted_at filter: a PO line must still show a product deleted later.
         $products = $productIds ? DB::table('products as p')
             ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
@@ -653,11 +477,6 @@ class PurchaseOrderService
         $this->refreshPaymentTotals($po);
     }
 
-    /**
-     * Rebuild the stored paid / balance figures from the payment rows — never added to or
-     * subtracted from — so an edit, delete or failed save can't leave them wrong.
-     * Call inside the same transaction as the payment, TDS or value change.
-     */
     public function refreshPaymentTotals(PurchaseOrder $po): void
     {
         $paidByRequest = DB::table('p2p_po_payments')
@@ -666,7 +485,6 @@ class PurchaseOrderService
             ->selectRaw('payment_request_id, SUM(amount) as paid')
             ->pluck('paid', 'payment_request_id');
 
-        // Each request's paid amount, including back to 0 once its last payment is deleted.
         DB::table('p2p_po_payment_requests')->where('purchase_order_id', $po->id)->update(['paid_amount' => 0]);
         foreach ($paidByRequest as $requestId => $paid) {
             DB::table('p2p_po_payment_requests')->where('id', $requestId)->update(['paid_amount' => round((float) $paid, 2)]);
@@ -702,7 +520,6 @@ class PurchaseOrderService
         ]);
     }
 
-    /** History rows returning each line's quantity to its PI line. */
     public function releaseAll(PurchaseOrder $po, string $event, int $userId): void
     {
         $items = $po->items()->get();

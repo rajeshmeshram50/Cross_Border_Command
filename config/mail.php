@@ -1,42 +1,9 @@
 <?php
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Default Mailer
-    |--------------------------------------------------------------------------
-    |
-    | This option controls the default mailer that is used to send all email
-    | messages unless another mailer is explicitly specified when sending
-    | the message. All additional mailers can be configured within the
-    | "mailers" array. Examples of each type of mailer are provided.
-    |
-    */
-
     'default' => env('MAIL_MAILER', 'log'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Mailer Configurations
-    |--------------------------------------------------------------------------
-    |
-    | Here you may configure all of the mailers used by your application plus
-    | their respective settings. Several examples have been configured for
-    | you and you are free to add your own as your application requires.
-    |
-    | Laravel supports a variety of mail "transport" drivers that can be used
-    | when delivering an email. You may specify which one you're using for
-    | your mailers below. You may also add additional mailers if needed.
-    |
-    | Supported: "smtp", "sendmail", "mailgun", "ses", "ses-v2",
-    |            "postmark", "resend", "log", "array",
-    |            "failover", "roundrobin"
-    |
-    */
-
     'mailers' => [
-
         'smtp' => [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
@@ -49,10 +16,6 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
-        /* ZeptoMail's HTTP API. One POST instead of SMTP's ten-step
-           conversation — see AppMailTransportZeptoMailTransport.
-           The token is the SEND MAIL TOKEN from ZeptoMail's API tab, which is
-           a different credential from the SMTP password. */
         'zeptomail' => [
             'transport' => 'zeptomail',
             'token'     => env('ZEPTOMAIL_TOKEN'),
@@ -66,10 +29,6 @@ return [
 
         'postmark' => [
             'transport' => 'postmark',
-            // 'message_stream_id' => env('POSTMARK_MESSAGE_STREAM_ID'),
-            // 'client' => [
-            //     'timeout' => 5,
-            // ],
         ],
 
         'resend' => [
@@ -90,14 +49,6 @@ return [
             'transport' => 'array',
         ],
 
-        /* Both, in order: the API, then SMTP if it is unavailable.
-           Symfony marks a failing mailer unhealthy for retry_after seconds, so
-           an API outage costs one failed attempt rather than one per email.
-
-           'log' is deliberately NOT in this list. It "succeeds" by writing the
-           message to a file, so a failover that reached it would report mail
-           as sent that nobody will ever receive — the one outcome worse than
-           an error. */
         'failover' => [
             'transport' => 'failover',
             'mailers' => [
@@ -115,23 +66,10 @@ return [
             ],
             'retry_after' => 60,
         ],
-
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Global "From" Address
-    |--------------------------------------------------------------------------
-    |
-    | You may wish for all emails sent by your application to be sent from
-    | the same address. Here you may specify a name and address that is
-    | used globally for all emails that are sent by your application.
-    |
-    */
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
-
 ];

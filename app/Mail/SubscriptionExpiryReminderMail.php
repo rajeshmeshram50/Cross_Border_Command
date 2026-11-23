@@ -10,11 +10,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * "Your <service> subscription renews in N days" reminder, sent to the service
- * owner by the SendSubscriptionExpiryReminders command. Queued so a slow SMTP
- * round trip never blocks the scheduled run.
- */
 class SubscriptionExpiryReminderMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
@@ -22,10 +17,10 @@ class SubscriptionExpiryReminderMail extends Mailable implements ShouldQueue
     public string $serviceName;
     public string $provider;
     public string $ownerName;
-    public string $expiresOn;      // formatted date
+    public string $expiresOn;
     public int    $daysLeft;
     public bool   $expired;
-    public ?string $amount;        // formatted "INR 12,000" or null
+    public ?string $amount;
     public string $notes;
     public string $appName;
 

@@ -5,17 +5,6 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Audits seeded payroll QA data against the scenario sheet.
- *
- * Read-only. Run it after payroll:seed-scenarios to confirm what actually
- * landed, rather than trusting that the seeder said it wrote things:
- *
- *   php artisan payroll:verify-scenarios
- *   php artisan payroll:verify-scenarios --client=2 --branch=6 --month=2026-08
- *
- * Exits non-zero if anything fails, so it can gate a pipeline.
- */
 class VerifyPayrollScenarios extends Command
 {
     protected $signature = 'payroll:verify-scenarios
@@ -25,7 +14,6 @@ class VerifyPayrollScenarios extends Command
 
     protected $description = 'Check the seeded payroll scenario data against the sheet (read-only)';
 
-    /** emp_code => [name, gross, pf, esi, shift, scenario] — straight from the sheet. */
     private array $sheet = [
         'EMP-004' => ['Anushka Kadam',   33333,  false, false, 'General Shift',    'Correct On Time'],
         'EMP-014' => ['Sakshi Kale',     30000,  false, false, 'Morning Shift',    '4 Days Late 30 min + 30 min Late Out'],
@@ -62,7 +50,6 @@ class VerifyPayrollScenarios extends Command
 
         $this->info("Verifying client $client / branch $branch / $first..$last\n");
 
-        // 1. shifts on the branch
         $this->line('<options=bold>Branch shifts</>');
         $shifts = json_decode((string) DB::table('branches')->where('id', $branch)->value('shifts'), true) ?: [];
         $names  = array_column($shifts, 'name');
@@ -72,7 +59,6 @@ class VerifyPayrollScenarios extends Command
         $gen = collect($shifts)->firstWhere('name', 'General Shift');
         $this->chk('General Shift ends 18:30 (not the 06:30 typo)', ($gen['end'] ?? '') === '18:30', 'end=' . ($gen['end'] ?? '?'));
 
-        // 2. holiday
         $this->newLine();
         $this->line('<options=bold>Holiday</>');
         $hol = DB::table('holidays')->where('client_id', $client)
@@ -81,7 +67,6 @@ class VerifyPayrollScenarios extends Command
             $hol->isEmpty() ? 'none found' : '');
         foreach ($hol as $h) $this->line("       {$h->date} {$h->name}");
 
-        // 3. per employee
         $this->newLine();
         $this->line('<options=bold>Employees</>');
         $rows = [];
@@ -100,13 +85,6 @@ class VerifyPayrollScenarios extends Command
             $nAtt  = (clone $att)->count();
             $nLate = (clone $att)->where('status', 'Late')->count();
             $nHalf = (clone $att)->where('status', 'Half Day')->count();
-            /* Count punches by their PARENT attendance date, not by punched_at.
-             *
-             * A night shift starts at 22:00 and checks out at 06:00 the NEXT
-             * day, so the check-out for the 31st is stamped 1 September. Filtering
-             * on punched_at dropped it and reported 49 of 50 for EMP-003 — a
-             * false failure on data that was complete. The punch belongs to the
-             * day it was worked, which is the attendance row, not the wall clock. */
             $punch = DB::table('attendance_punches as p')
                 ->join('attendances as a', 'a.id', '=', 'p.attendance_id')
                 ->where('a.employee_id', $e->id)
@@ -117,12 +95,11 @@ class VerifyPayrollScenarios extends Command
             $nLv   = (clone $lv)->count();
             $dLv   = (float) (clone $lv)->sum('days');
 
-            // overtime = worked minutes beyond the shift window, summed
             $ot = 0.0;
             foreach ((clone $att)->get(['check_in_at', 'check_out_at']) as $a) {
                 if (!$a->check_in_at || !$a->check_out_at) continue;
                 $mins = (strtotime($a->check_out_at) - strtotime($a->check_in_at)) / 60;
-                $ot  += max(0, $mins - 540);              // 9h shift window
+                $ot  += max(0, $mins - 540);
             }
 
             $shiftOk = $e->shift === $shift;
@@ -156,7 +133,6 @@ class VerifyPayrollScenarios extends Command
         $this->table(['', 'Code', 'Scenario', 'Shift', 'DOJ', 'Gross', 'PF/ESI',
                       'Att', 'Punch', 'Late', 'Half', 'OT h', 'Leave'], $rows);
 
-        // 4. scenario-specific expectations
         $this->line('<options=bold>Scenario expectations</>');
         $late14 = $this->lateCount($client, $branch, 'EMP-014', $first, $last);
         $this->chk('EMP-014 has exactly 4 late days', $late14 === 4, "got $late14");

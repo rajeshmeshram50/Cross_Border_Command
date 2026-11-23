@@ -66,8 +66,6 @@ class Client extends Model
         return file_url($this->profile_photo);
     }
 
-    // ── Relationships ──
-
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
@@ -117,8 +115,6 @@ class Client extends Model
     {
         return $this->hasMany(ClientSetting::class);
     }
-
-    // ── Helpers ──
 
     public function isActive(): bool
     {

@@ -15,10 +15,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * P2P · Create Purchase Order — Stage 04 documents.
- * /api/p2p/orders/{po}/documents
- */
 class PurchaseOrderDocumentController extends Controller
 {
     use RunsInTransaction;
@@ -35,7 +31,6 @@ class PurchaseOrderDocumentController extends Controller
         return response()->json(['status' => false, 'message' => $message], $code);
     }
 
-    /** The PO (tenant-scoped) and one of its documents. */
     private function find(int $poId, ?int $docId = null): array
     {
         $po = PurchaseOrder::findOrFail($poId);
@@ -46,26 +41,18 @@ class PurchaseOrderDocumentController extends Controller
     private function shape(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null, ?string $masterCode = null): array
     {
         $ids = $sig && is_array($sig->trade_doc_ids) ? array_map('intval', $sig->trade_doc_ids) : [];
-        // A request raised through the CLM flow lists LIBRARY ids; one raised
-        // for our own files (the Purchase Order PDF) lists our row ids.
         $mine = $sig?->document_type === ClmSignatureRequest::DOC_P2P_PO_DOCUMENT || $d->source_id === null
             ? (int) $d->id
             : (int) $d->source_id;
         $pos = array_search($mine, $ids, true);
         return $d->toArray() + [
-            // The CLM library's own code, which is how the masters name this document.
             'master_code'      => $masterCode ?? $this->masterCodes(collect([$d]))[$d->id] ?? null,
             'file_url'         => $d->file_path ? file_url($d->file_path) : null,
-            // For the signing tracker: /clm/signature-requests/{id}, signed file at {index}
             'signature_status' => $sig?->status,
             'signature_index'  => $pos === false ? null : $pos,
         ];
     }
 
-    /**
-     * The CLM master code behind each row, keyed by document id. Two queries for
-     * the whole list — the row itself only stores which library row it came from.
-     */
     private function masterCodes($docs): array
     {
         $out = [];
@@ -80,15 +67,10 @@ class PurchaseOrderDocumentController extends Controller
         return $out;
     }
 
-    /** Documents of the PO with their signature requests, statuses synced first. */
     private function listShaped(PurchaseOrder $order): array
     {
-        // Each row already knows its signature request (recorded when this PO
-        // sent it, see markSent) — this only brings their statuses up to date.
         $this->docs->syncSignatures($order->documents()->get());
         $docs = $order->documents()->orderBy('id')->get();
-        // Scoped to the PO's own client: a row that somehow holds a foreign
-        // request id must read as "no signature", never as that request's state.
         $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())
             ->where('client_id', $order->client_id)
             ->get()->keyBy('id');
@@ -96,7 +78,6 @@ class PurchaseOrderDocumentController extends Controller
         return $docs->map(fn ($d) => $this->shape($d, $d->signature_request_id ? $sigs->get($d->signature_request_id) : null, $master[$d->id] ?? null))->all();
     }
 
-    /** The selected documents of a PO; each must have a file. */
     private function selected(PurchaseOrder $order, array $ids)
     {
         $docs = $order->documents()->whereIn('id', $ids)->orderBy('id')->get();
@@ -106,20 +87,6 @@ class PurchaseOrderDocumentController extends Controller
         return $docs;
     }
 
-    /** GET /p2p/orders/{po}/documents */
-    /**
-     * GET /p2p/orders/{po}/evidence-vault — every document filed against this
-     * order, including each invoice raised under it.
-     *
-     * The same service the invoice's own vault uses, entered from the other
-     * end: the order and its trade documents, then a block per SPI carrying
-     * that invoice, its e-way bill, a sticker per box and the packing images,
-     * then every payment proof released — each naming the invoice it answered.
-     *
-     * Read-only, and separate from index() on purpose: that one owns the PO's
-     * document ROWS and the Necessary marking, while this gathers paperwork
-     * from four tables and writes nothing.
-     */
     public function evidenceVault(int $po): JsonResponse
     {
         [$order] = $this->find($po);
@@ -130,23 +97,12 @@ class PurchaseOrderDocumentController extends Controller
     public function index(int $po): JsonResponse
     {
         [$order] = $this->find($po);
-        /* CS-414: the libraries are read again on every open, so a document added
-           to the segment master after this PO was raised still reaches it. Purely
-           additive — what is already here keeps its file, signature and Necessary
-           flag, and a new row arrives Not necessary, so it gates nothing. */
         if (!$order->isCancelled()) {
             $this->svc->ensureDefaultDocuments($order, (int) auth()->id());
         }
         return $this->ok($this->listShaped($order));
     }
 
-    /**
-     * POST /p2p/orders/{po}/documents/needs — mark documents Necessary or not
-     * on THIS purchase order. The Purchase Order itself is the one row that
-     * cannot be waved away; every library document is decided here.
-     *
-     * Body: { items: [{ id, needed }] } — one call for the whole selection.
-     */
     public function setNeeds(Request $request, int $po): JsonResponse
     {
         $user = $request->user();
@@ -163,14 +119,10 @@ class PurchaseOrderDocumentController extends Controller
         $docs = $order->documents()->whereIn('id', $wanted->keys())->get();
         if ($docs->count() !== $wanted->count()) return $this->fail('Some documents were not found on this PO.');
 
-        // The Purchase Order itself, and nothing else — its kind is what says
-        // so, which also covers rows seeded before the marking existed.
         $mandatory = $docs->filter(fn ($d) => $d->doc_kind === 'purchase_order' && !$wanted[$d->id]['needed']);
         if ($mandatory->isNotEmpty()) {
             return $this->fail($mandatory->pluck('name')->implode(', ') . ' always goes with the order and cannot be marked not necessary.');
         }
-        // Out for signature or signed: the answer is settled. A declined /
-        // recalled request puts the row back to pending, which frees it again.
         $settled = $docs->filter(fn ($d) => in_array($d->status, [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED], true));
         if ($settled->isNotEmpty()) {
             return $this->fail($settled->pluck('name')->implode(', ') . ' has already been sent for signature — it stays Necessary.');
@@ -190,15 +142,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok($this->listShaped($order->fresh()));
     }
 
-    /**
-     * POST /p2p/orders/{po}/documents/mark-sent — this PO just sent these rows
-     * for signature through the CLM flow, under this signature request.
-     *
-     * The link is recorded here, at the moment of sending, because nothing in
-     * the request itself points back at a purchase order: matching one up
-     * afterwards by supplier + library id claimed requests raised from other
-     * screens, and a document this PO never sent showed as Signed.
-     */
     public function markSent(Request $request, int $po): JsonResponse
     {
         [$order] = $this->find($po);
@@ -215,20 +158,6 @@ class PurchaseOrderDocumentController extends Controller
             return $this->fail('Some documents were not found on this PO.');
         }
 
-        /* The request has to be THIS company's, and it has to actually cover the
-         * documents being marked.
-         *
-         * `exists:clm_signature_requests,id` alone accepts any id on the
-         * platform. A stale one — the previous PO still held in the screen's
-         * state — was written onto these rows, and `signature_status` then
-         * reported that other request's state: a PO nobody had signed showed a
-         * signed timeline carrying another entry's data (QA #12).
-         *
-         * `trade_doc_ids` lists OUR row ids for a P2P PO document request and
-         * the CLM library ids otherwise, which is the same pair shape() reads
-         * to find a document's place in the request. An older request that
-         * recorded no ids cannot be checked that way, so it is let through on
-         * the tenant match alone rather than blocking a legitimate resend. */
         $sig = ClmSignatureRequest::where('id', $data['signature_request_id'])
             ->where('client_id', $order->client_id)
             ->first();
@@ -262,7 +191,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok($this->listShaped($order->fresh()));
     }
 
-    /** POST /p2p/orders/{po}/documents (multipart) — add a document, or its file. */
     public function store(Request $request, int $po): JsonResponse
     {
         $user = $request->user();
@@ -277,7 +205,6 @@ class PurchaseOrderDocumentController extends Controller
             'file'        => 'nullable|file|max:10240|mimes:pdf,doc,docx,jpg,jpeg,png',
         ]);
 
-        // The file is stored first; if the row can't be written it is removed again.
         $file = $request->file('file');
         $path = $file?->store("p2p/po-documents/{$order->id}", 'public');
         $doc = $this->inTransaction('add the document', function () use ($order, $user, $data, $file, $path) {
@@ -289,7 +216,6 @@ class PurchaseOrderDocumentController extends Controller
                 'name'              => $data['name'],
                 'doc_kind'          => $data['doc_kind'] ?? 'other',
                 'is_required'       => $data['is_required'] ?? 'no',
-                // Same start as the seeded rows: answered Not necessary (CS-414).
                 'needed'            => ($data['is_required'] ?? 'no') === 'yes' ? 'yes' : 'no',
                 'generated_on'      => now()->toDateString(),
                 'valid_up_to'       => $data['valid_up_to'] ?? null,
@@ -306,7 +232,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok($this->shape($doc), 201);
     }
 
-    /** POST /p2p/orders/{po}/documents/{doc}/file (multipart) — attach or replace the file. */
     public function uploadFile(Request $request, int $po, int $doc): JsonResponse
     {
         [$order, $document] = $this->find($po, $doc);
@@ -324,12 +249,10 @@ class PurchaseOrderDocumentController extends Controller
             'generated_on'  => now()->toDateString(),
             'updated_by'    => $request->user()->id,
         ]), [$path]);
-        // The old file goes only once the new one is safely recorded.
         if ($old) Storage::disk('public')->delete($old);
         return $this->ok($this->shape($document->fresh()));
     }
 
-    /** PATCH /p2p/orders/{po}/documents/{doc}/status — pending → sent → signed. */
     public function updateStatus(Request $request, int $po, int $doc): JsonResponse
     {
         [, $document] = $this->find($po, $doc);
@@ -344,7 +267,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok($this->shape($document->fresh()));
     }
 
-    /** POST /p2p/orders/{po}/documents/{doc}/generate — re-render the Purchase Order PDF. */
     public function generate(Request $request, int $po, int $doc): JsonResponse
     {
         [$order, $document] = $this->find($po, $doc);
@@ -358,7 +280,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok($this->shape($document->fresh()));
     }
 
-    /** POST /p2p/orders/{po}/documents/sign — send the selected documents to the supplier via Zoho Sign. */
     public function sign(Request $request, int $po): JsonResponse
     {
         [$order] = $this->find($po);
@@ -370,21 +291,16 @@ class PurchaseOrderDocumentController extends Controller
             'signer_email'   => 'nullable|email|max:255',
             'notes'          => 'nullable|string|max:1000',
             'expiry_days'    => 'nullable|integer|min:1|max:90',
-            // Several people can sign the same request; each keeps a role so
-            // the box dragged for them is the box they get.
             'signers'            => 'nullable|array|max:6',
             'signers.*.name'     => 'nullable|string|max:255',
             'signers.*.email'    => 'required_with:signers|email|max:255',
             'signers.*.role'     => 'nullable|string|max:40',
-            // { documentId: {x,y,page,width,height} | {role: {...}} | {boxes:[…]} }
             'document_settings'  => 'nullable|array',
         ]);
         $docs = $this->selected($order, $data['document_ids']);
         $busy = $docs->filter(fn ($d) => $d->status !== PurchaseOrderDocument::STATUS_PENDING)->pluck('name');
         if ($busy->isNotEmpty()) return $this->fail('Already sent or signed: ' . $busy->implode(', ') . '.');
 
-        // The supplier's own contact is the default signer; a screen that
-        // collected its own signer list carries them instead.
         $contact = $this->docs->supplierContact($order);
         $signer = ['name' => $data['signer_name'] ?? $contact['name'], 'email' => strtolower((string) ($data['signer_email'] ?? $contact['email']))];
         if (empty($data['signers']) && (!$signer['email'] || !filter_var($signer['email'], FILTER_VALIDATE_EMAIL))) {
@@ -399,7 +315,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok(['signature_request_id' => $sig->id, 'signer' => $signer, 'documents' => $this->listShaped($order)]);
     }
 
-    /** POST /p2p/orders/{po}/documents/email — email the selected documents to the supplier. */
     public function email(Request $request, int $po): JsonResponse
     {
         [$order] = $this->find($po);
@@ -420,7 +335,6 @@ class PurchaseOrderDocumentController extends Controller
         return $this->ok(['to' => $to, 'count' => $docs->count()]);
     }
 
-    /** GET /p2p/orders/{po}/documents/{doc}/download */
     public function download(int $po, int $doc)
     {
         [, $document] = $this->find($po, $doc);
@@ -428,7 +342,6 @@ class PurchaseOrderDocumentController extends Controller
         return Storage::disk('public')->download($document->file_path, $document->original_name ?: basename($document->file_path));
     }
 
-    /** DELETE /p2p/orders/{po}/documents/{doc} — not once signed, and never a required one. */
     public function destroy(Request $request, int $po, int $doc): JsonResponse
     {
         [, $document] = $this->find($po, $doc);

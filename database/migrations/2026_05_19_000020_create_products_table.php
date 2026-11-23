@@ -20,10 +20,8 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('brand', 255)->nullable();
 
-            // Master FK references — nullable so a partial save (Step 1 Core only) is valid.
-            // No FK constraints: keeps the products table flexible if a master row is deleted/replaced.
             $table->unsignedBigInteger('segment_id')->nullable();
-            $table->string('haz_type', 20)->nullable();             // 'Haz' | 'Non-Haz'
+            $table->string('haz_type', 20)->nullable();
             $table->unsignedBigInteger('haz_class_id')->nullable();
             $table->unsignedBigInteger('uom_id')->nullable();
             $table->unsignedBigInteger('hsn_id')->nullable();
@@ -34,26 +32,20 @@ return new class extends Migration
             $table->string('primary_image', 500)->nullable();
             $table->json('secondary_images')->nullable();
 
-            // Sales
             $table->decimal('base_price', 15, 2)->nullable();
             $table->unsignedBigInteger('gst_id')->nullable();
             $table->decimal('gst_amount', 15, 2)->nullable();
             $table->decimal('total_price', 15, 2)->nullable();
-            $table->string('mark_bottom', 30)->nullable();          // 'Bottom' | 'Non Bottom'
+            $table->string('mark_bottom', 30)->nullable();
 
-            // Quality - Box matrix
             $table->decimal('net_weight', 12, 3)->nullable();
             $table->decimal('gross_weight', 12, 3)->nullable();
             $table->decimal('length_cm', 12, 2)->nullable();
             $table->decimal('width_cm', 12, 2)->nullable();
             $table->decimal('height_cm', 12, 2)->nullable();
 
-            // Workflow
-            // draft     → Core info saved only
-            // inactive  → All Step 1 (Core + Sales + Quality) done, no vendor yet
-            // active    → Step 2 vendor mapping also complete
             $table->string('status', 20)->default('draft');
-            $table->unsignedTinyInteger('step_completed')->default(0); // 0..4 (1=core, 2=sales, 3=quality, 4=vendors)
+            $table->unsignedTinyInteger('step_completed')->default(0);
 
             $table->timestamps();
             $table->softDeletes();

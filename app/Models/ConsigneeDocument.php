@@ -5,16 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Consignee KYC document (Company Due Diligence + Trade Licence).
- *
- * `kind` distinguishes which sub-tab the row belongs to:
- *   'dd' → Company Due Diligence
- *   'tl' → Trade Licence
- *
- * Owner KYC uses {@see ConsigneeOwner} instead (different shape — no
- * license number, three identity-proof file slots).
- */
 class ConsigneeDocument extends Model
 {
     public const KIND_DD = 'dd';
@@ -33,12 +23,6 @@ class ConsigneeDocument extends Model
         'expiry_date' => 'date:Y-m-d',
     ];
 
-    /**
-     * Auto-append the resolved URL alongside the raw path. Mirrors the
-     * Client (logo_url) and Product (primary_image_url) accessor pattern
-     * — guarantees the View link works in every response shape without
-     * per-controller URL building.
-     */
     protected $appends = ['attachment_url'];
 
     public function getAttachmentUrlAttribute(): ?string

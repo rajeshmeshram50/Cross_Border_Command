@@ -5,15 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeOnboardingInvite;
-use App\Models\ExpenseClaim;
-use App\Models\Recruitment;
 use App\Models\Masters\Departments;
 use App\Models\Masters\Designations;
 use App\Models\Masters\Roles;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-
 
 class HrOverviewController extends Controller
 {
@@ -26,7 +23,6 @@ class HrOverviewController extends Controller
         $monthStart     = $now->copy()->startOfMonth();
         $twelveMonthAgo = $now->copy()->subMonths(11)->startOfMonth();
 
-        // ── KPI counters ──────────────────────────────────────────────────
         $activeEmployees = $this->scopedTable($user, $branchArg, 'employees')->count();
 
         $newHires = $this->scopedTable($user, $branchArg, 'employees')
@@ -59,9 +55,6 @@ class HrOverviewController extends Controller
             })
             ->count();
 
-        // ── Headcount by department (top 8 + Other rollup) ───────────────
-        // Joined query — must qualify every column that exists on both
-        // tables (`client_id`, `branch_id`, `status` on master_departments).
         $byDepartment = Employee::query()
             ->from('employees')
             ->leftJoin('master_departments', 'master_departments.id', '=', 'employees.department_id')
@@ -76,7 +69,6 @@ class HrOverviewController extends Controller
                 'count' => (int) $r->count,
             ]);
 
-        // ── Gender split ─────────────────────────────────────────────────
         $byGender = $this->scopedTable($user, $branchArg, 'employees')
             ->select('gender', DB::raw('COUNT(*) as count'))
             ->groupBy('gender')
@@ -86,7 +78,6 @@ class HrOverviewController extends Controller
                 'count'  => (int) $r->count,
             ]);
 
-        // ── Employment-status split ──────────────────────────────────────
         $byStatus = $this->scopedTable($user, $branchArg, 'employees')
             ->select('status', DB::raw('COUNT(*) as count'))
             ->groupBy('status')
@@ -96,14 +87,12 @@ class HrOverviewController extends Controller
                 'count'  => (int) $r->count,
             ]);
 
-        // ── 12-month joining trend (bucketed in PHP for driver portability) ─
         $joiningRows = $this->scopedTable($user, $branchArg, 'employees')
             ->whereDate('date_of_joining', '>=', $twelveMonthAgo->toDateString())
             ->whereDate('date_of_joining', '<=', $now->toDateString())
             ->get(['date_of_joining']);
         $joiningTrend = $this->bucketByMonth($joiningRows, 'date_of_joining', $twelveMonthAgo, $now);
 
-        // ── 12-month exit trend ──────────────────────────────────────────
         $exitRows = $this->scopedTable($user, $branchArg, 'employee_exits')
             ->whereNotNull('last_working_day')
             ->whereDate('last_working_day', '>=', $twelveMonthAgo->toDateString())
@@ -111,7 +100,6 @@ class HrOverviewController extends Controller
             ->get(['last_working_day']);
         $exitTrend = $this->bucketByMonth($exitRows, 'last_working_day', $twelveMonthAgo, $now);
 
-        // ── Recruitment status split ─────────────────────────────────────
         $recruitmentByStatus = $this->scopedTable($user, $branchArg, 'recruitments')
             ->select('status', DB::raw('COUNT(*) as count'))
             ->groupBy('status')
@@ -121,7 +109,6 @@ class HrOverviewController extends Controller
                 'count'  => (int) $r->count,
             ]);
 
-        // ── Expense-claim status split (rolled up to Pending/Approved/Rejected) ─
         $expenseRows = $this->scopedTable($user, $branchArg, 'expense_claims')
             ->select('manager_status', 'hr_status', DB::raw('COUNT(*) as count'))
             ->groupBy('manager_status', 'hr_status')
@@ -144,7 +131,6 @@ class HrOverviewController extends Controller
             ->map(fn ($v, $k) => ['status' => $k, 'count' => $v])
             ->values();
 
-        // ── Recent joiners (last 5 on or before today) ───────────────────
         $recentJoiners = Employee::query()
             ->from('employees')
             ->where(fn ($q) => $this->applyScope($q, $user, $branchArg, 'employees'))
@@ -169,7 +155,6 @@ class HrOverviewController extends Controller
                 'designation_name'=> $e->designation_name,
             ]);
 
-        // ── Upcoming joiners — future-dated employees + pending invites ──
         $upcomingFromEmployees = Employee::query()
             ->from('employees')
             ->where(fn ($q) => $this->applyScope($q, $user, $branchArg, 'employees'))
@@ -216,12 +201,6 @@ class HrOverviewController extends Controller
             ->take(5)
             ->values();
 
-        // ── Department turnover % (last 12 months) ──────────────────────
-        // turnover_pct = exits_in_window / current_headcount × 100.
-        // Joins both sides on department_id and keeps only departments with
-        // at least one current employee (avoids divide-by-zero for old depts
-        // that have been emptied). Departments with no exits but non-zero
-        // headcount still surface — they read as 0% (a useful "calm" signal).
         $headcountRows = $this->scopedTable($user, $branchArg, 'employees')
             ->leftJoin('master_departments', 'master_departments.id', '=', 'employees.department_id')
             ->select('employees.department_id', 'master_departments.name', DB::raw('COUNT(*) as headcount'))
@@ -254,11 +233,6 @@ class HrOverviewController extends Controller
         ->sortByDesc('turnover_pct')
         ->values();
 
-        // ── Probation snapshot (In Progress vs Completed) ────────────────
-        // probation_months defaults to 0/null for "no probation policy"; we
-        // count those as completed since there's no clock running. The
-        // window check is done in PHP because the per-row interval varies
-        // and DB drivers differ on date-add syntax.
         $probationRows = $this->scopedTable($user, $branchArg, 'employees')
             ->whereNotNull('date_of_joining')
             ->select('date_of_joining', 'probation_months')
@@ -282,11 +256,6 @@ class HrOverviewController extends Controller
             'completed'   => $probationDone,
         ];
 
-        // ── Top 5 expense categories by amount ───────────────────────────
-        // SUM(amount) groups identical category_name strings — the column
-        // is denormalized on ExpenseClaim so we don't need the categories
-        // master table. Approved + Pending both included so the chart
-        // reflects total committed spend, not just settled.
         $expenseByCategory = $this->scopedTable($user, $branchArg, 'expense_claims')
             ->select('category_name', DB::raw('SUM(amount) as amount'), DB::raw('COUNT(*) as count'))
             ->whereNotNull('category_name')
@@ -301,7 +270,6 @@ class HrOverviewController extends Controller
                 'count'    => (int) $r->count,
             ]);
 
-        // ── Master record totals ─────────────────────────────────────────
         $totals = [
             'departments'  => $this->scopedModelCount(Departments::class,  $user, $branchArg),
             'designations' => $this->scopedModelCount(Designations::class, $user, $branchArg),
@@ -333,12 +301,6 @@ class HrOverviewController extends Controller
         ]);
     }
 
-    /**
-     *  Quick helper — `DB::table($name)` already scoped by tenant. Use this
-     *  for simple aggregations that don't need an Eloquent model. The
-     *  $tableName is also used to qualify the scope columns so joined
-     *  queries don't trip Postgres' "ambiguous column" check.
-     */
     private function scopedTable($user, ?int $branchFilter, string $tableName)
     {
         $q = DB::table($tableName);
@@ -346,7 +308,6 @@ class HrOverviewController extends Controller
         return $q;
     }
 
-    /** Count an Eloquent master model honoring tenant scope. */
     private function scopedModelCount(string $modelClass, $user, ?int $branchFilter): int
     {
         $instance = new $modelClass;
@@ -354,10 +315,6 @@ class HrOverviewController extends Controller
         return $this->scopedTable($user, $branchFilter, $table)->count();
     }
 
-    /**
-     *  Group a date column into Y-m buckets between two inclusive month
-     *  boundaries. Returns a strict 12-row series so chart axes are stable.
-     */
     private function bucketByMonth($rows, string $column, Carbon $from, Carbon $to): array
     {
         $buckets = [];
@@ -385,12 +342,6 @@ class HrOverviewController extends Controller
         return $out;
     }
 
-    /**
-     *  Tenant scope — qualifies `client_id` / `branch_id` with the supplied
-     *  table prefix so joined queries don't get "ambiguous column" errors
-     *  on Postgres. Pass the table name even for un-joined queries; it's
-     *  always safe to qualify.
-     */
     private function applyScope($q, $user, ?int $branchFilter, string $table): void
     {
         $cl = "{$table}.client_id";

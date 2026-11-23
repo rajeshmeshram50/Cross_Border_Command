@@ -9,8 +9,6 @@ use App\Models\Employee;
 use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
 use App\Models\HrGeneratedDocument;
-use App\Models\Module;
-use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,22 +18,13 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-
 class HrDocumentSignatureController extends Controller
 {
-    /** Eager loads shared by every read path. A method rather than a const
-     *  because the employee relation needs a closure — see below. */
     private static function withRelations(): array
     {
         return [
             'template:id,code,name,doc_type,signing_mode,trigger_point_id,version',
             'template.triggerPoint:id,module_name',
-            /* WITH TRASHED. Employee is soft-deleted, and a plain belongsTo
-               resolves to NULL for a deleted row — so the Inbox's "Subject
-               Employee" column printed a dash for BOTH the name and the
-               employee ID the moment the subject was disabled, on documents
-               still waiting to be signed (QA #65). Same treatment
-               ExpenseClaimController gives its employee relation. */
             'employee' => fn ($r) => $r->withTrashed()->select(
                 'id', 'first_name', 'last_name', 'display_name', 'emp_code',
                 'department_id', 'designation_id', 'reporting_manager_id',
@@ -44,78 +33,26 @@ class HrDocumentSignatureController extends Controller
             'employee.department:id,name',
             'employee.designation:id,name,level',
             'creator:id,name',
-            // Needed by HrDocumentSignature::getHeaderConfigAttribute(), which
-            // falls back to the branch (then client) logo when the template
-            // carries none. Eager-loaded so the list endpoints don't fire one
-            // query per row resolving the header logo.
             'branch:id,name,logo',
             'client:id,org_name,logo',
         ];
     }
 
-    private const STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected', 'Cancelled'];
-    private const ACTIONS  = ['Sign', 'Approve', 'Review & Acknowledge'];
 
-    /** Parallel signing = every configured signer can act at the SAME time
-     *  (the document lands in ALL their inboxes at once, not one-by-one).
-     *  Sequential = strictly in order via current_index. Derived from the
-     *  source template's signing_mode (so an in-flight run honours the mode
-     *  the template was sent under). */
     private function isParallel($row): bool
     {
         return strtolower((string) ($row->template?->signing_mode ?? 'sequential')) === 'parallel';
     }
-
-    /* ───── LIST / INBOX / SHOW ───── */
 
     public function index(Request $request)
     {
         $q = HrDocumentSignature::query()->with(self::withRelations());
         $this->applyScope($q, $request->user());
 
-        /* A plain employee only ever sees runs where THEY are the subject.
-         *
-         * `applyScope` narrows this user tier to their CLIENT, which is the
-         * whole company — every colleague, every branch. What kept the Evidence
-         * Vault honest was the profile page remembering to send `employee_id`,
-         * so any caller that dropped it (or passed someone else's) read the
-         * whole tenant's signed documents. Pin the subject server-side instead,
-         * where the request cannot widen it.
-         *
-         * Deliberately here and not in `applyScope`: `inbox` shares that helper,
-         * and a manager who is themselves an `employee` must still reach the
-         * documents they are a SIGNER on — inbox scopes by signer, not subject.
-         *
-         * `?: 0` fails closed: a login with no employees row matches nothing
-         * rather than falling through to the client-wide scope. */
         $viewer = $request->user();
-        /* ...but HR are employees too.
-         *
-         * `user_type === 'employee'` is not "a person with no business seeing
-         * colleagues' documents" — it is simply "has an employees row", which
-         * is what almost every login in a tenant looks like, HR included. So
-         * this pin silently rewrote employee_id for the very staff whose job is
-         * to run onboarding: Stage 5 asked for the subject's signature runs and
-         * got the VIEWER'S own instead, which for their own account is normally
-         * none at all.
-         *
-         * The row then had no run to read. "Send for Signature" stayed on a
-         * document already out for signing (CBC #114), and stayed on one both
-         * parties had already signed, instead of turning into View/Download
-         * (CBC #115) — the send worked every time; only reading it back was
-         * scoped to the wrong person.
-         *
-         * The privacy rule it enforces is real and stays: an ordinary employee
-         * must not read a colleague's signed documents. It is just conditioned
-         * on the HR grant now, which is the thing that actually distinguishes
-         * the two cases. Anyone without it is still pinned to themselves. */
         if ($viewer && $viewer->user_type === 'employee' && !$this->mayReadOthersDocuments($viewer)) {
             $q->where('employee_id', $viewer->employee_id ?: 0);
         } elseif ($request->has('employee_id')) {
-            /* An employee_id that is PRESENT but not a positive integer must
-             * narrow to nothing, never widen to everything. `$request->integer()`
-             * turns a non-numeric value into 0, and the old `if ($empId = ...)`
-             * read that as "no filter asked for". Filters fail closed. */
             $q->where('employee_id', $request->integer('employee_id'));
         }
         if ($status = $request->query('status'))          $q->where('status', $status);
@@ -132,18 +69,11 @@ class HrDocumentSignatureController extends Controller
         }));
     }
 
-    /**
-     * Inbox = signature runs where the CURRENT user is the next signer.
-     * Returned shape mirrors `index` so the same row component renders both.
-     */
     public function inbox(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // history=1 → the "Updated" tab: documents this user has ALREADY
-        // acted on (signed / approved / acknowledged / rejected), regardless
-        // of the run's overall status. Default (no flag) → pending inbox.
         $history = $request->boolean('history');
 
         $q = HrDocumentSignature::query()->with(self::withRelations());
@@ -151,15 +81,6 @@ class HrDocumentSignatureController extends Controller
         $this->applyScope($q, $user);
 
         if ($history) {
-            /* History = documents this user is finished with. That means the
-               ones they ACTED on — and also the ones that ended without them.
-               A rejection closes the run for every signer, so it leaves the
-               pending list (status is no longer Pending/In Progress) while the
-               other signers' own slots are still 'Pending'; they matched
-               neither tab and the document disappeared from their screens with
-               no record of the outcome. Most visible on a parallel run, where
-               two people are asked at the same moment and only the one who
-               declined could see what had happened. */
             $settled = ['Rejected', 'Cancelled', 'Completed'];
             $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user, $settled) {
                 $signers = is_array($row->signers) ? $row->signers : [];
@@ -172,12 +93,6 @@ class HrDocumentSignatureController extends Controller
                     }
                 }
                 $isSettled = in_array((string) $row->status, $settled, true);
-                /* A settled run belongs to its SENDER too, not only to the
-                   people on the signer list. They are the one who has to act on
-                   a rejection — re-issue it, or go and ask why — and they are
-                   never a signer, so the rejection notice reached their bell
-                   and pointed at an Inbox where the document appeared in
-                   neither tab. */
                 if ($isSettled && (int) $row->created_by === (int) $user->id) {
                     return true;
                 }
@@ -186,12 +101,9 @@ class HrDocumentSignatureController extends Controller
             return response()->json($this->fillSignerDesignations($rows));
         }
 
-        // Filter in PHP since signer matching is JSON-shape-specific.
         $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user) {
             $signers = is_array($row->signers) ? $row->signers : [];
             if ($this->isParallel($row)) {
-                // Parallel: the doc is in EVERY not-yet-acted signer's inbox at
-                // once — show it if THIS user is any pending signer.
                 foreach ($signers as $s) {
                     if ((int) ($s['user_id'] ?? 0) === (int) $user->id
                         && !in_array($s['status'] ?? 'Pending', ['Done', 'Rejected', 'Skipped'], true)) {
@@ -200,7 +112,6 @@ class HrDocumentSignatureController extends Controller
                 }
                 return false;
             }
-            // Sequential: only the current_index signer's turn.
             $idx     = (int) $row->current_index;
             $current = $signers[$idx] ?? null;
             if (!$current) return false;
@@ -221,25 +132,6 @@ class HrDocumentSignatureController extends Controller
         return response()->json($row);
     }
 
-    /* ───── SEND ───── */
-
-    /**
-     * Who WOULD sign, and under what job title, if this template were sent for
-     * this employee now. Read-only: nothing is created or written.
-     *
-     * The signing workflow stored on a template names ROLES ("Employee",
-     * "Reporting Manager", "Client (CEO)") and almost never a designation —
-     * designation_name is null on every template in practice. Until a run
-     * exists there is no person and no job title to show, so the stepper could
-     * only print the bare role, which is what "designations are missing when
-     * sending for signature" reports (#23).
-     *
-     * Resolution is the SAME SignerResolver::resolve() that store() uses, so
-     * the preview cannot drift from what the send actually does. It stays a
-     * preview, though: store() resolves again at send time on purpose, so that
-     * a re-org between looking and sending is reflected rather than frozen
-     * from whatever was on screen.
-     */
     public function previewSigners(Request $request)
     {
         $data = $request->validate([
@@ -250,8 +142,6 @@ class HrDocumentSignatureController extends Controller
         $tpl = HrDocumentTemplate::findOrFail((int) $data['template_id']);
         $emp = Employee::with(['department', 'designation'])->findOrFail((int) $data['employee_id']);
 
-        /* Same tenant gate the rest of this controller applies — a preview
-           must not become a way to read another client's workflow. */
         $user = $request->user();
         if ($user && $user->user_type !== 'super_admin') {
             if ((int) $tpl->client_id !== (int) $user->client_id
@@ -271,9 +161,6 @@ class HrDocumentSignatureController extends Controller
                 'user_id'     => $userId,
                 'name'        => $displayName,
                 'designation' => $designation ?: ($s['designation_name'] ?? null),
-                /* The stepper greys a slot nobody resolves to, and store()
-                   refuses the send for the same reason — better to say so
-                   before the click than after it. */
                 'unassigned'  => $userId === null,
             ];
         }
@@ -286,9 +173,6 @@ class HrDocumentSignatureController extends Controller
         $data = $request->validate([
             'template_id' => 'required|integer|exists:hr_document_templates,id',
             'employee_id' => 'required|integer|exists:employees,id',
-            // Custom field values entered in the Generate wizard (token => value).
-            // Merged into the frozen content_html so a doc sent for signature
-            // keeps the edits the user filled in (e.g. {{TEST}} → "sssss").
             'custom_values'   => 'nullable|array',
             'custom_values.*' => 'nullable',
         ]);
@@ -299,11 +183,6 @@ class HrDocumentSignatureController extends Controller
             $tpl = HrDocumentTemplate::findOrFail((int) $data['template_id']);
             $emp = Employee::with(['department', 'designation'])->findOrFail((int) $data['employee_id']);
 
-            // When Send is fired from a document row (no custom_values in the
-            // request), inherit the values the user filled when they last
-            // "Save Generated" for this template + employee. This keeps the
-            // generate-then-send-from-outside flow lossless: the signed copy
-            // carries the same custom-field edits as the saved generated doc.
             $customValues = (array) ($data['custom_values'] ?? []);
             if (empty($customValues)) {
                 $lastGenerated = HrGeneratedDocument::where('template_id', $tpl->id)
@@ -315,12 +194,6 @@ class HrDocumentSignatureController extends Controller
                 }
             }
 
-            // Idempotency guard — a fast double-submit (double-click on Send)
-            // was creating two identical in-flight signature runs for the same
-            // template + employee. If an ACTIVE run already exists (Pending or
-            // In Progress), return it instead of creating a duplicate. The
-            // lockForUpdate serialises concurrent sends so the second request
-            // waits for the first to commit, then sees it and bails out.
             $existing = HrDocumentSignature::where('template_id', $tpl->id)
                 ->where('employee_id', $emp->id)
                 ->whereIn('status', ['Pending', 'In Progress'])
@@ -328,14 +201,9 @@ class HrDocumentSignatureController extends Controller
                 ->first();
             if ($existing) {
                 $existing->load(self::withRelations());
-                // Same shape as index(), so the caller can use this row
-                // directly instead of re-fetching the list.
                 return response()->json($this->fillSignerDesignations(collect([$existing]))->first(), 200);
             }
 
-            // Resolve workflow signers against real users at SEND time so a
-            // later re-org of reporting lines doesn't retroactively change
-            // who's on the hook for an in-flight document.
             $signersTpl = is_array($tpl->signers) ? $tpl->signers : [];
             $resolved = [];
             foreach ($signersTpl as $i => $s) {
@@ -344,44 +212,18 @@ class HrDocumentSignatureController extends Controller
                 $resolved[] = [
                     'index'        => $i,
                     'role_name'    => $roleName,
-                    // The job title, frozen with everything else at send time —
-                    // a promotion mid-flight must not relabel a signature that
-                    // was already given under the old designation (#23).
                     'designation'  => $designation,
                     'action'       => (string) ($s['action'] ?? 'Sign'),
                     'days'         => (int)    ($s['days']   ?? 3),
                     'user_id'      => $userId,
                     'name'         => $displayName,
-                    'status'       => 'Pending',           // Pending | Done | Skipped
+                    'status'       => 'Pending',
                     'acted_at'     => null,
-                    'signed_name'  => null,                // typed name for Sign
+                    'signed_name'  => null,
                     'note'         => null,
                 ];
             }
 
-            /* A workflow nobody can act on must not be created.
-             *
-             * resolveSignerUser() falls back to [null, "<Role> (unassigned)"]
-             * when a role has no real person behind it — an employee with no
-             * reporting manager set, a client with no admin. Its docblock says
-             * that lets "the admin still send the doc and re-assign manually
-             * later", but there is no re-assign endpoint and never was: the
-             * routes are action / reject / cancel / remind, none of which
-             * changes a signer.
-             *
-             * The consequence is a dead document. Signer identity is matched by
-             * user_id — `(int)($s['user_id'] ?? 0) === $user->id` in
-             * assertEmployeeMayRead — and a null becomes 0, which equals no
-             * real login. So the run sits Pending forever, appears in nobody's
-             * inbox, and cannot be signed. Worse, the idempotency guard above
-             * then treats it as an ACTIVE run, so every later Send returns this
-             * same corpse and the button goes permanently quiet: from the
-             * Evidence Vault it reads exactly as "Send does nothing" (CBC #112).
-             *
-             * Refusing at the click is the honest outcome — it names the role
-             * and what to fix, instead of recording a send that never happened.
-             * Cancelling the stuck run remains the way out for any already
-             * created. */
             if (!$signersTpl) {
                 abort(422, "\"{$tpl->name}\" has no signers configured, so there is nobody to send it to. Add a signer to the template first.");
             }
@@ -399,52 +241,23 @@ class HrDocumentSignatureController extends Controller
                     . ' Set that person on the employee record (or the template) and send again.');
             }
 
-            // Resolve placeholders to lock the body text at send time. The
-            // per-signer Sign/Date tokens are intentionally NOT substituted
-            // here — they're filled in by the action handler when each
-            // signer acts, so we pass preserveSignerSlots=true to keep the
-            // {{Signer{N}Sign}} / {{Signer{N}Date}} placeholders intact in
-            // the frozen content_html.
             $hrTplController = new HrDocumentTemplateController();
             $ref = new \ReflectionClass($hrTplController);
             $buildCtx = $ref->getMethod('buildTokenContext'); $buildCtx->setAccessible(true);
             $resolve  = $ref->getMethod('resolveTokens');     $resolve->setAccessible(true);
             $ctx = $buildCtx->invoke($hrTplController, $emp->loadMissing(['client']), $signersTpl);
 
-            /* Name the people we JUST recorded, rather than letting the token
-               context work them out a second time.
-               $resolved above is the authoritative list — it is what the
-               workflow routes to, what the reminder emails address, and what
-               the audit log names. Deriving {{SignerNName}} independently means
-               two answers to one question, and they diverge the moment a
-               reporting line changes between the two calls: the frozen document
-               would name somebody the workflow never asks to sign. One list,
-               used for both. (CBC #95 fixed the resolver they share; this makes
-               the send path stop asking twice.) */
             foreach ($resolved as $r) {
                 $n = ((int) $r['index']) + 1;
                 $ctx["Signer{$n}Name"] = (string) ($r['name'] ?? '');
                 $ctx["Signer{$n}Role"] = (string) ($r['role_name'] ?? '');
             }
 
-            // Overlay the wizard-entered custom field values onto the token
-            // context so {{CustomToken}} placeholders are frozen with the
-            // user's edits (not left blank) at send time.
             foreach ($customValues as $k => $v) {
                 if (is_scalar($v)) {
                     $ctx[(string) $k] = (string) $v;
                 }
             }
-            /* {{CompanyLogo}} resolves to an <img> the template controller
-               built, so it must NOT be escaped — escaping it froze the literal
-               tag into content_html as body text, and because this copy is
-               frozen at send time the tag then appeared on the signing screen,
-               the signed PDF and the download alike.
-
-               Any token the operator supplied a value for is struck off the
-               raw list first: a custom field someone named CompanyLogo would
-               otherwise be written into the document as live markup. Same
-               guard as HrGeneratedDocumentController::rawHtmlTokenNames(). */
             $rawHtmlNames = array_values(array_diff(
                 HrDocumentTemplateController::RAW_HTML_TOKENS,
                 array_keys($customValues),
@@ -455,7 +268,7 @@ class HrDocumentSignatureController extends Controller
                 'client_id'      => $emp->client_id,
                 'branch_id'      => $emp->branch_id,
                 'template_id'    => $tpl->id,
-                'template_version' => $tpl->version,   // the version this doc signs on
+                'template_version' => $tpl->version,
                 'employee_id'    => $emp->id,
                 'code'           => $tpl->code,
                 'content_html'   => $frozenHtml,
@@ -469,11 +282,6 @@ class HrDocumentSignatureController extends Controller
             ]);
             $row->load(self::withRelations());
 
-            /* The bell, not just the Inbox. The run already lands in the
-               signer's Inbox (inbox() reads it live), but nothing told the
-               bell, so the drawer never showed a document waiting on them —
-               only a manual Reminder ever wrote a row (CBC #11). Sequential
-               asks the first signer; parallel asks everyone at once. */
             $askNow = $this->isParallel($row) ? $resolved : array_slice($resolved, 0, 1);
             $this->notifySignersOfTurn($row, array_column($askNow, 'user_id'), $user?->name);
 
@@ -481,23 +289,13 @@ class HrDocumentSignatureController extends Controller
         });
     }
 
-    /* ───── TAKE ACTION ───── */
-
     public function action(Request $request, $id)
     {
         $data = $request->validate([
             'action'          => ['required', Rule::in(['Sign', 'Approve', 'Acknowledge'])],
             'signed_name'     => 'nullable|string|max:120',
-            // base64 PNG data URL from the signature pad. Loose `string` rule
-            // here — strict shape ("data:image/png;base64,...") is enforced
-            // inside the transaction so we can give a friendlier 422 message.
-            // Max 4 MB binary ≈ 5.4 MB base64 + ~30 chars for the data: prefix.
-            // Anything larger is rejected here AND by persistSignatureImage().
             'signature_image' => 'nullable|string|max:5600000',
             'note'            => 'nullable|string|max:500',
-            // Explicit "I have read and understood this document" tick. Only
-            // meaningful on a Sign step, where it is MANDATORY (checked below
-            // so the message can name the action).
             'consent'         => 'nullable|boolean',
         ]);
 
@@ -510,7 +308,6 @@ class HrDocumentSignatureController extends Controller
             if ($parallel) {
                 $idx = $this->pendingSlotFor($signers, $user);
             } else {
-                // Sequential: only the current_index signer may act.
                 $idx = (int) $row->current_index;
                 $cur = $signers[$idx] ?? null;
                 if (!$cur) abort(404, 'No pending signer on this document.');
@@ -521,23 +318,12 @@ class HrDocumentSignatureController extends Controller
             $current = $signers[$idx] ?? null;
             if (!$current) abort(404, 'No pending signer on this document.');
 
-            // Informed-consent gate — required for EVERY action (Sign, Approve
-            // and Acknowledge). The UI disables the action button until the box
-            // is ticked; this is the server-side backstop so a direct API call
-            // can't act without it. Recorded on the signer slot + audit trail:
-            // in an approval workflow, WHEN consent was given is part of the
-            // evidence, not just a UI nicety.
             if (!filter_var($data['consent'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
                 $verb = strtolower((string) ($current['action'] ?? 'act on'));
                 abort(422, "You must confirm you have read and understood the document before you {$verb} it.");
             }
             $current['consent_at'] = now()->toIso8601String();
 
-            // For Sign rows we require a typed name (always logged in the
-            // audit trail) and fill the {{SignerNSign}} token. The signer
-            // can additionally upload a drawn signature — when present, the
-            // token is replaced with an <img>; otherwise we fall back to
-            // the original cursive-rendered text.
             if (($current['action'] ?? '') === 'Sign') {
                 $name = trim((string) ($data['signed_name'] ?? ''));
                 if ($name === '') abort(422, 'Typed signature is required for Sign step.');
@@ -557,8 +343,6 @@ class HrDocumentSignatureController extends Controller
                 $rowHtml = $row->content_html ?: '';
                 $n = $idx + 1;
                 $rowHtml = str_replace("{{Signer{$n}Sign}}", $this->signatureMarkup($signImgUrl, $name), $rowHtml);
-                // now(), not date() — date() reads the SERVER timezone and would
-                // stamp a signature with a different day than the rest of the app.
                 $rowHtml = str_replace("{{Signer{$n}Date}}", now()->format('d M Y'), $rowHtml);
                 $row->content_html = $rowHtml;
             } else {
@@ -571,10 +355,6 @@ class HrDocumentSignatureController extends Controller
             $row->signers = $signers;
 
             if ($parallel) {
-                // Parallel: the run is done only when EVERY signer has acted;
-                // until then it stays In Progress and any remaining signer can
-                // still sign from their own inbox. current_index just points at
-                // the first still-pending slot (cosmetic / reminder target).
                 $allActed = collect($signers)->every(
                     fn ($s) => in_array($s['status'] ?? '', ['Done', 'Skipped'], true)
                 );
@@ -582,21 +362,16 @@ class HrDocumentSignatureController extends Controller
                 $row->current_index = $firstPending === false ? count($signers) : (int) $firstPending;
                 $row->status = $allActed ? 'Completed' : 'In Progress';
             } else {
-                // Sequential: advance to the next signer; done when none left.
                 $next = $idx + 1;
                 if ($next >= count($signers)) {
                     $row->status = 'Completed';
                 } else {
                     $row->current_index = $next;
                     $row->status = 'In Progress';
-                    // It is now the next signer's turn — tell their bell.
                     $this->notifySignersOfTurn($row, [$signers[$next]['user_id'] ?? null], $user?->name);
                 }
             }
 
-            // Audit detail. Consent is logged for EVERY action, not just Sign —
-            // an approval/acknowledgement carries the same "I have read and
-            // understood this" claim and needs the same evidence trail.
             $auditParts = [];
             if (!empty($data['signed_name'])) {
                 $auditParts[] = "signed: {$data['signed_name']}";
@@ -617,12 +392,8 @@ class HrDocumentSignatureController extends Controller
                 )),
             ]);
             $row->save();
-            /* A finished run waits on nobody — its "waiting on you" bell rows
-               would otherwise point the signer at an Inbox that has let it go. */
             if ($row->status === 'Completed') {
                 $this->clearTurnNotifications($row);
-                /* Freeze the signed PDF now, on the queue. afterCommit so the
-                   worker cannot read the row before this transaction lands. */
                 StoreSignedDocumentPdf::dispatch($row->id)->afterCommit();
             }
             $row->load(self::withRelations());
@@ -641,15 +412,6 @@ class HrDocumentSignatureController extends Controller
             $user = $request->user();
             $row  = $this->loadForAction($request, (int) $id);
             $signers = $row->signers;
-            /* Which slot is this user's? On a PARALLEL run it is whichever one
-             * is theirs and still pending — not current_index, which points at
-             * the first unacted slot in the list.
-             *
-             * This used to read current_index unconditionally, so on a parallel
-             * document the second signer was compared against the FIRST
-             * signer's slot and got a bare 403: they could sign (action() has
-             * had the parallel branch all along) but could not decline. One
-             * helper for both now, so the two cannot drift again. */
             $idx = $this->isParallel($row)
                 ? $this->pendingSlotFor($signers, $user)
                 : (int) $row->current_index;
@@ -657,15 +419,6 @@ class HrDocumentSignatureController extends Controller
             if (!$current) abort(404);
             if ((int) ($current['user_id'] ?? 0) !== (int) $user->id) abort(403);
 
-            /* Informed-consent gate — the same one `action()` applies, which
-             * this endpoint never had: rejecting was the one way to close a
-             * document without confirming you had read it.
-             *
-             * A rejection is a decision ON the document, and it is the decision
-             * most likely to be questioned later — "why was my request turned
-             * down" — so the evidence that the decider had actually read it
-             * matters more here, not less. Recorded on the signer slot beside
-             * the reason, exactly as it is for a signature. */
             if (!filter_var($data['consent'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
                 abort(422, 'You must confirm you have read and understood the document before you reject it.');
             }
@@ -677,13 +430,7 @@ class HrDocumentSignatureController extends Controller
             $signers[$idx] = $current;
             $row->signers = $signers;
             $row->status  = 'Rejected';
-            /* Drop the outstanding "waiting for you to sign" rows first — the
-               document is closed, so nobody is waiting on anything. */
             $this->clearTurnNotifications($row);
-            /* …then tell everyone else it was declined. On a parallel run the
-               other signers were asked at the same moment and are still sitting
-               on it; without this the document simply disappears from their
-               bell and their inbox with no account of why. */
             $this->notifySignersOfRejection($row, $user, (string) $data['reason'], $idx);
             $row->audit_log = array_merge($row->audit_log ?? [], [
                 $this->event($user, 'rejected', "Rejected by {$user?->name}: {$data['reason']}"),
@@ -711,23 +458,6 @@ class HrDocumentSignatureController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * Send a reminder email to the CURRENT pending signer on an
-     * in-flight workflow. HR uses this when a signer has been sitting
-     * on a doc — instead of pinging them on chat, click Reminder and
-     * the system emails them a polite nudge with the document link.
-     *
-     * Behaviour:
-     *  - Only fires on Pending / In Progress runs (Completed / Rejected
-     *    / Cancelled don't have a "current signer" to remind).
-     *  - Only emails the signer whose turn it is (sequential mode);
-     *    the rest are still waiting their turn and shouldn't get
-     *    reminders yet.
-     *  - Audit-logs the reminder so the admin can see how many nudges
-     *    have been sent from the Audit Trail timeline.
-     *  - Throttles to once per 6 hours per signer to avoid spam if HR
-     *    clicks the button repeatedly.
-     */
     public function remind(Request $request, $id)
     {
         $row = $this->loadForRead($request, (int) $id);
@@ -752,9 +482,6 @@ class HrDocumentSignatureController extends Controller
         $signerUser = \App\Models\User::find($userId);
         $signerName = $current['name'] ?? ($signerUser?->name ?? 'Signer');
 
-        // Throttle — bail if a reminder went out for THIS signer in the
-        // last 6 hours. Cheap protection against accidental double-click
-        // and intentional spam. Look at the audit log for the marker.
         $sixHoursAgo = now()->subHours(6);
         $recent = collect($row->audit_log ?? [])
             ->filter(function ($ev) use ($idx, $sixHoursAgo) {
@@ -776,11 +503,6 @@ class HrDocumentSignatureController extends Controller
         $action  = $current['action'] ?? 'Sign';
         $senderName = $request->user()?->name ?: 'HR';
 
-        // In-app notification — drop a row into the Laravel notifications
-        // table so the signer's bell icon flashes. NO email. The doc is
-        // already in the signer's HR Inbox (the inbox() endpoint returns
-        // every pending row where they're the current signer), so this
-        // notification just pulls their attention to it.
         if ($signerUser) {
             try {
                 \Illuminate\Support\Facades\DB::table('notifications')->insert([
@@ -797,8 +519,6 @@ class HrDocumentSignatureController extends Controller
                         'sender_name' => $senderName,
                         'message'     => "{$senderName} reminded you to {$action} {$docCode} — {$tplName}.",
                         'url'         => '/inbox',
-                        // A reminder only ever goes to the current signer, so the
-                        // badge reads the same way as on the turn notification.
                         'pending_role'    => $current['role_name'] ?? null,
                         'pending_name'    => $current['name'] ?? null,
                         'pending_user_id' => isset($current['user_id']) ? (int) $current['user_id'] : null,
@@ -815,13 +535,9 @@ class HrDocumentSignatureController extends Controller
                     'id'  => $row->id,
                     'err' => $e->getMessage(),
                 ]);
-                // Don't fail the whole request if the notification insert
-                // hiccups — audit log still records the reminder action.
             }
         }
 
-        // Append audit event with signer_index so the throttle check
-        // and the audit trail UI can both see who got reminded when.
         $row->audit_log = array_merge($row->audit_log ?? [], [
             array_merge(
                 $this->event($request->user(), 'reminded', "Reminder sent to {$signerName} (in-app Inbox)"),
@@ -836,37 +552,12 @@ class HrDocumentSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Bell notification telling each signer the document is now waiting on
-     * them. Written after the surrounding transaction commits: on Postgres a
-     * failed insert inside it would abort the whole send, and a rolled-back
-     * send must not leave a notification behind. A failed insert is logged,
-     * never surfaced — the Inbox still carries the document either way.
-     */
-    /**
-     * Drop the "waiting for you to Sign" bell rows of a run that is no longer
-     * waiting on anyone — cancelled, rejected, or finished.
-     *
-     * Without this the bell kept advertising a document the Inbox had already
-     * let go: a signer saw "waiting for you to Sign", opened the Inbox and
-     * found nothing there, because inbox() only lists Pending / In Progress
-     * runs. Re-sending a document made it worse — the superseded run's
-     * notification sat beside the live one, indistinguishable.
-     *
-     * Only this run's rows go, matched on document_id inside the payload. Read
-     * state is no reason to keep one: the text says "waiting for you to Sign",
-     * which is wrong once nobody is waiting, opened or not. The run's own audit
-     * log is the history; this row is a prompt.
-     */
     private function clearTurnNotifications(HrDocumentSignature $row): void
     {
         try {
             DB::table('notifications')
                 ->where('type', 'App\Notifications\HrSignatureRequest')
                 ->whereRaw("data::text LIKE ?", ['%"document_id":' . (int) $row->id . '%'])
-                /* Only the "waiting for you to sign" rows. An outcome notice —
-                   "declined by X" — carries the same type and document_id, and
-                   is the one thing that must SURVIVE the document closing. */
                 ->where(function ($w) {
                     $w->whereRaw('data::text LIKE ?', ['%"kind":"hr_signature_request"%'])
                       ->orWhereRaw('data::text LIKE ?', ['%"kind":"hr_signature_reminder"%']);
@@ -879,14 +570,6 @@ class HrDocumentSignatureController extends Controller
         }
     }
 
-    /**
-     * This user's own still-pending signer slot, wherever it sits in the list.
-     *
-     * The parallel rule: there is no order, so a signer acts on THEIR slot and
-     * current_index is only a cosmetic pointer at the first unacted one. Shared
-     * by action() and reject() — reject() used to read current_index directly,
-     * which made declining impossible for anyone but the first signer.
-     */
     private function pendingSlotFor(array $signers, $user): int
     {
         foreach ($signers as $i => $s) {
@@ -898,30 +581,15 @@ class HrDocumentSignatureController extends Controller
         abort(403, "You're not a pending signer on this document.");
     }
 
-    /**
-     * Tell the run's OTHER signers that it has been declined.
-     *
-     * A rejection closes the document for everyone, but only the person who
-     * rejected it had any way of knowing: the run leaves the pending inbox
-     * (status is no longer Pending/In Progress) and clearTurnNotifications()
-     * removes the bell row that put it there. On a parallel run that is a
-     * document two people were asked to sign at the same moment vanishing from
-     * one of their screens with no account of why.
-     *
-     * Written with kind `rejected`, which the notifications drawer already
-     * renders as a red "Rejected" state, so no client change is needed.
-     */
     private function notifySignersOfRejection(HrDocumentSignature $row, $actor, string $reason, int $actedIdx): void
     {
         $signers = is_array($row->signers) ? $row->signers : [];
         $targets = [];
         foreach ($signers as $i => $s) {
-            if ((int) $i === $actedIdx) continue;                   // not the decider
+            if ((int) $i === $actedIdx) continue;
             $uid = (int) ($s['user_id'] ?? 0);
             if ($uid > 0 && $uid !== (int) ($actor->id ?? 0)) $targets[$uid] = true;
         }
-        /* The sender is told too — they are the one who has to do something
-           about it, and they are not a signer. */
         if ($row->created_by && (int) $row->created_by !== (int) ($actor->id ?? 0)) {
             $targets[(int) $row->created_by] = true;
         }
@@ -978,14 +646,8 @@ class HrDocumentSignatureController extends Controller
         $sender  = $senderName ?: 'HR';
         $subject = $row->employee?->display_name
             ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''));
-        // The employee CODE as well — the payload named the person but never
-        // identified them, so a reader had nothing to fall back on. (QA #65)
         $subjectCode = (string) ($row->employee?->emp_code ?? '');
 
-        /* Where the document stands, so the bell can say who it is waiting on
-           rather than only "waiting on you": with two or more signers the run
-           reads Pending from the moment the first one signs, and the badge is
-           the only thing that says whose turn it actually is. */
         $acted  = $signers->filter(fn ($x) => in_array($x['status'] ?? '', ['Done', 'Skipped'], true))->count();
         $total  = $signers->count();
         $waiting = $signers->first(fn ($x) => !in_array($x['status'] ?? 'Pending', ['Done', 'Skipped', 'Rejected'], true));
@@ -1012,7 +674,6 @@ class HrDocumentSignatureController extends Controller
                             'message'       => "{$tplName} — waiting for you to {$action}"
                                 . ($subject ? " ({$subject})" : ''),
                             'url'           => '/inbox',
-                            // Whose signature the run is waiting on, and how far it has got.
                             'pending_role'    => $waiting['role_name'] ?? null,
                             'pending_name'    => $waiting['name'] ?? null,
                             'pending_user_id' => isset($waiting['user_id']) ? (int) $waiting['user_id'] : null,
@@ -1032,15 +693,6 @@ class HrDocumentSignatureController extends Controller
         });
     }
 
-    /* ───── SIGNED OUTPUT (download + email) ───── */
-
-    /**
-     * Per-employee list — returns the signature runs targeting an employee.
-     * Accepts either the numeric id or the EMP-### code as `{slug}` so the
-     * Employee Profile (which only knows the emp_code) doesn't need a
-     * separate resolve hop. Defaults to status=Completed but the SPA can
-     * widen with ?status=all to include in-flight runs.
-     */
     public function forEmployee(Request $request, $slug)
     {
         $emp = is_numeric($slug)
@@ -1088,39 +740,16 @@ class HrDocumentSignatureController extends Controller
         return null;
     }
 
-    /**
-     * PDF version of the signed document.
-     *
-     * A COMPLETED run is rendered ONCE and the file kept (signed_pdf_path);
-     * every later download streams it. Two reasons, and the first is the one
-     * that matters:
-     *
-     *   Evidence. Re-rendering from content_html plus the signature image
-     *   files means the copy handed over a year later is only as stable as
-     *   those files and as this renderer. A stored PDF is what was signed.
-     *
-     *   Speed. A render is seconds — DomPDF, plus a blob fetch per inlined
-     *   image; measured 4.2s per download on production. A file read is not.
-     *
-     * An in-flight run is never stored, because it still gains signatures, so
-     * it renders on demand as before.
-     */
     public function downloadSignedPdf(Request $request, $id)
     {
         $row      = $this->loadForRead($request, (int) $id);
         $filename = ($row->code ?: ('doc-' . $row->id)) . '-signed.pdf';
 
         if ($path = $this->storedSignedPdfPath($row)) {
-            /* readStream, and no exists() before it. The public disk is a
-             * local folder here and Azure Blob on the server, and the remote
-             * case is what this shape is for: exists() would be a whole extra
-             * round trip to learn what the read itself reports, and get()
-             * would pull the entire file into PHP memory before one byte
-             * reached the browser. */
             try {
                 $stream = Storage::disk('public')->readStream($path);
             } catch (\Throwable $e) {
-                $stream = null;   // unreadable store — render below instead
+                $stream = null;
             }
             if (is_resource($stream)) {
                 return response()->streamDownload(function () use ($stream) {
@@ -1132,8 +761,6 @@ class HrDocumentSignatureController extends Controller
 
         $bytes = $this->renderSignedPdfBytes($row);
 
-        /* Backfill: a run that completed before this existed, or whose job has
-           not landed yet, stores it here so only the first download pays. */
         if (strtolower((string) $row->status) === 'completed') {
             $this->storeSignedPdf($row, $bytes);
         }
@@ -1145,12 +772,6 @@ class HrDocumentSignatureController extends Controller
         );
     }
 
-    /**
-     * The stored PDF's path, or null when there is none worth trusting.
-     *
-     * signed_pdf_at older than updated_at means the row changed after the file
-     * was written, so the file is stale and the caller must render afresh.
-     */
     private function storedSignedPdfPath(HrDocumentSignature $row): ?string
     {
         $path = ltrim((string) ($row->signed_pdf_path ?? ''), '/');
@@ -1159,22 +780,8 @@ class HrDocumentSignatureController extends Controller
         return $path;
     }
 
-    /**
-     * Write rendered bytes to the public disk and point the row at them.
-     * Public so StoreSignedDocumentPdf can call it. Never throws: a document
-     * that cannot be stored still downloads, it just renders each time.
-     */
     public function storeSignedPdf(HrDocumentSignature $row, ?string $bytes = null): ?string
     {
-        /* Nothing to store into — so do not pay to find that out.
-         *
-         * Without the signed_pdf_path migration this ran the render, UPLOADED
-         * ~1.2MB to Azure Blob, and only then failed writing the column, where
-         * the catch below logged it. Every download paid for an upload that was
-         * discarded: QA measured the download going from 26s to 43s, a
-         * regression this guard removes. Checked once per process, and the
-         * answer cannot change under a running request — a migration starts a
-         * new one. */
         static $hasColumn = null;
         if ($hasColumn === null) {
             try { $hasColumn = \Illuminate\Support\Facades\Schema::hasColumn('hr_document_signatures', 'signed_pdf_path'); }
@@ -1184,56 +791,30 @@ class HrDocumentSignatureController extends Controller
 
         try {
             $bytes ??= $this->renderSignedPdfBytes($row);
-            /* A relative, disk-agnostic key — never a URL and never an
-             * absolute path. The same string addresses storage/app/public/...
-             * locally and a blob in the container on the server, because both
-             * are the one `public` disk with its driver swapped.
-             *
-             * Foldered client → branch, the c#/b# shape doc_templates and
-             * agreement_library already use. Not for access control — the
-             * column is what the download reads and loadForRead() is what
-             * authorises it — but so one tenant's, or one branch's, signed
-             * documents can be listed, audited or purged on offboarding
-             * without walking every file in the container. */
             $clientSlug = $row->client_id ? 'c' . $row->client_id : 'public';
             $branchSlug = $row->branch_id ? 'b' . $row->branch_id : 'b0';
             $path = "signed-documents/{$clientSlug}/{$branchSlug}/" . $row->id
                 . '-' . substr(md5($row->id . '|' . $row->updated_at), 0, 12) . '.pdf';
-            // %PDF or it never gets filed — a renderer that returned an error
-            // page must not be stored as the signed copy.
             if (substr($bytes, 0, 4) !== '%PDF') {
                 throw new \RuntimeException('Renderer did not produce a PDF');
             }
 
-            /* === false, not a try/catch alone: the public disk is configured
-               throw=false, so a failed Azure write RETURNS false rather than
-               raising. Unchecked, the column below would record a blob path
-               that holds nothing — the same guard ClmSignatureController
-               needed when every signed document vanished on the server. */
             $disk = Storage::disk('public');
             if ($disk->put($path, $bytes) === false) {
                 throw new \RuntimeException('Storage::put returned false (disk='
                     . config('filesystems.disks.public.driver') . ')');
             }
 
-            // A re-send writes a new key; drop the superseded file rather than
-            // leaving a ~1 MB orphan per re-send in the container.
             $old = ltrim((string) ($row->signed_pdf_path ?? ''), '/');
             if ($old !== '' && $old !== $path) {
-                try { $disk->delete($old); } catch (\Throwable $e) { /* orphan is harmless */ }
+                try { $disk->delete($old); } catch (\Throwable $e) { }
             }
-            /* withoutTimestamps, not a plain save: touching updated_at is what
-               storedSignedPdfPath compares against, and would mark the file
-               stale the instant it was written. */
             HrDocumentSignature::withoutTimestamps(fn () => $row->forceFill([
                 'signed_pdf_path' => $path,
                 'signed_pdf_at'   => now(),
             ])->save());
             return $path;
         } catch (\Throwable $e) {
-            /* The driver goes in the context deliberately: local and Azure
-               fail for entirely different reasons, and without it a silent
-               store failure on the server is unattributable. */
             Log::warning('Signed-PDF store failed', [
                 'run'  => $row->id,
                 'disk' => config('filesystems.disks.public.driver'),
@@ -1243,46 +824,14 @@ class HrDocumentSignatureController extends Controller
         }
     }
 
-    /**
-     * Render the run to PDF bytes — the frozen content_html wrapped in the
-     * same fixed-height header/footer chrome the viewer shows, through DomPDF.
-     * Public so the post-completion job renders through exactly this path
-     * rather than a second copy of the logo resolution below.
-     */
     public function renderSignedPdfBytes(HrDocumentSignature $row): string
     {
         $row->load(self::withRelations());
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $logoUrl = null;
-        /* header_config carries the SAME logo twice — `logo_path` (disk path)
-         * and `logo_url` (public URL) — and they are written together on
-         * upload. This only ever read logo_path, so a run whose config carried
-         * just the URL (older templates, or a config saved before logo_path
-         * existed) looked pathless and dropped into the client-logo fallback:
-         * the on-screen viewer, which reads logo_url, showed one company's logo
-         * while the downloaded PDF of the SAME signed document showed another.
-         * On an offer letter that is the wrong letterhead, not a cosmetic slip.
-         *
-         * The URL step is not a corner case: a header seeded from /me's
-         * branch_logo carries ONLY the URL — no path — which is the same thing
-         * ClmSignatureController::renderSignatureDocPdf already works around.
-         *
-         * Order: the saved path, the saved URL resolved back to a disk path,
-         * then the employing BRANCH's own logo — the branch is the legal entity
-         * printed as "FROM:" on the letter, so it is the right letterhead when
-         * the config names none — and only then the client's most recent
-         * template logo, a guess and the last resort it was always meant to be. */
         $disk = Storage::disk('public');
         $row->loadMissing('branch:id,logo');
-        /* LAZY candidates. (CBC #9)
-         *
-         * This was a plain array, so every element was evaluated before the
-         * loop chose one — including latestClientLogo(), a database query, and
-         * two URL→path resolutions. That work was thrown away on the common
-         * path, where the very first candidate (the config's own logo_path) is
-         * the one that wins. Closures defer each step until the search actually
-         * reaches it, so the usual case now costs one exists() check. */
         $logoCandidates = [
             fn () => (string) ($headerCfg['logo_path'] ?? ''),
             fn () => $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
@@ -1291,19 +840,9 @@ class HrDocumentSignatureController extends Controller
         ];
         foreach ($logoCandidates as $resolveCandidate) {
             $candidate = $resolveCandidate();
-            // Each candidate must exist before it wins. A logo_path pointing at
-            // a deleted file used to end the search and leave the header blank,
-            // even though the URL beside it named a file that was still there.
             $candidate = ltrim((string) $candidate, '/');
             if ($candidate === '' || !$disk->exists($candidate)) continue;
 
-            // Inline as data URI — DomPDF can't reach the storage URL because
-            // of relative-path resolution in headless renders, and reading
-            // through the disk (not storage_path) keeps this working when the
-            // public disk is Azure Blob on the server.
-            // Normalise the extension to a valid MIME — "jpg" is the common
-            // file extension but "image/jpg" is not a valid type; it must be
-            // "image/jpeg" or some PDF readers refuse to decode the image.
             $ext = strtolower((string) pathinfo($candidate, PATHINFO_EXTENSION));
             $mime = match ($ext) {
                 'jpg', 'jpeg' => 'image/jpeg',
@@ -1320,21 +859,12 @@ class HrDocumentSignatureController extends Controller
             'header'     => $headerCfg,
             'footer'     => $footerCfg,
             'logoDataUri'=> $logoUrl,
-            /* Letterhead name for templates that stored the placeholder words
-               instead of a real one — the blade substitutes it. Legal entity →
-               client org name → the employee's own BRANCH. (#113) */
             'companyName' => (string) (
                 $row->employee?->legalEntity?->name
                 ?: $row->employee?->branch?->client?->org_name
                 ?: $row->employee?->branch?->name
                 ?: ''
             ),
-            // Inline any storage-served <img> URLs (signatures, embedded
-            // images) as base64 data URIs. DomPDF runs headless and can't
-            // fetch /storage/... over HTTP — same workaround as the header
-            // logo above.
-            /* htmlRendersNothing(), not a truthiness check: "<p></p>" and
-               "   " are truthy and printed a blank page. (CBC #23) */
             'bodyHtml'   => $this->inlineLocalImagesAsDataUris(
                 $this->htmlRendersNothing($row->content_html)
                     ? '<p style="color:#9ca3af;font-style:italic;">This document has no stored content. '
@@ -1348,13 +878,6 @@ class HrDocumentSignatureController extends Controller
         return $pdf->output();
     }
 
-    /**
-     * Stream the run's current content as a DOCX. For a completed run this
-     * is the final signed copy (every {{SignerNSign}} has been replaced
-     * with the signer's typed name). For an in-flight run it still works —
-     * the signatures collected so far are baked in; unsigned spots stay
-     * as their placeholder tokens.
-     */
     public function downloadSigned(Request $request, $id)
     {
         $row = $this->loadForRead($request, (int) $id);
@@ -1362,11 +885,6 @@ class HrDocumentSignatureController extends Controller
         return (new HrDocumentTemplateController())->renderDocx($row, $filename);
     }
 
-    /**
-     * Email the signed DOCX to the subject employee. Records an audit
-     * event so the sender can see the document was dispatched (and to
-     * whom) from the audit trail modal.
-     */
     public function emailToEmployee(Request $request, $id)
     {
         $row = $this->loadForRead($request, (int) $id);
@@ -1415,7 +933,6 @@ class HrDocumentSignatureController extends Controller
         ]);
     }
 
-    /** Same applyScope wrapper as elsewhere, scoped for read-only fetches. */
     private function loadForRead(Request $request, int $id): HrDocumentSignature
     {
         $q = HrDocumentSignature::query();
@@ -1425,43 +942,10 @@ class HrDocumentSignatureController extends Controller
         return $row;
     }
 
-    /**
-     * A plain employee may read a run only as its SUBJECT or as one of its
-     * SIGNERS.
-     *
-     * `applyScope` leaves this tier the whole CLIENT's runs, so an id in the
-     * URL was by itself enough to open — or download the signed PDF of — a
-     * colleague's document, in any branch. Both halves of the rule are needed:
-     * subject-only would lock a reviewer out of the very document they are
-     * being asked to sign.
-     *
-     * Signer match is by `user_id` (the signers JSON stores the login), subject
-     * match by the employees row behind this login.
-     */
     private function assertEmployeeMayRead(?User $user, HrDocumentSignature $row): void
     {
         if (!$user || $user->user_type !== 'employee') return;
 
-        /* A GRANTED permission outranks the subject/signer rule. (CBC #13)
-         *
-         * The rule below exists to stop an ordinary employee opening a
-         * colleague's document by putting its id in the URL, and it still does
-         * that. But it keyed on the TIER alone, and an HR person's login is
-         * very often employee-tier — so HR, holding the Document Templates
-         * permission and looking at the Policies & Agreements list, could see a
-         * document it had itself produced and then be refused the download of
-         * it. Access was decided by who the document was about rather than by
-         * what the user is allowed to do, which is this ticket's complaint.
-         *
-         * Checked against the same module and Permission rows
-         * HrGeneratedDocumentController::authorize() uses, so the two screens
-         * cannot disagree about who may read a document. can_view is the right
-         * flag: this is a read, and a user who may list these documents may
-         * open them. Tenant and branch scoping are already applied by
-         * applyScope() before this runs, so a grant never reaches across an
-         * organisation or a branch. */
-        /* Same helper the list uses, so "it appears in my vault" and "I may
-         * open it" can never disagree (CBC #25). */
         if ($this->mayReadOthersDocuments($user)) return;
 
         $ownEmployeeId = $user->employee_id;
@@ -1474,55 +958,13 @@ class HrDocumentSignatureController extends Controller
         abort(403, 'This document does not belong to you.');
     }
 
-    /* ───── HELPERS ───── */
-
-    /**
-     * Modules whose view grant means "this login is HR staff, not a bystander".
-     *
-     * `hr.doc_templates` is the authoring grant — whoever may build templates
-     * and send documents may read the runs they produce.
-     *
-     * `hr.employee` joins it because it is the grant that opens somebody
-     * else's profile at all, Evidence Vault included
-     * (EmployeeController::authorize()). Keying document visibility on the
-     * templates grant ALONE meant an HR login configured with Employee access
-     * could open a colleague's vault, see their uploaded documents — those are
-     * only tenant-scoped — and find Organizational Documents empty, because
-     * this list quietly repinned the query to the VIEWER's own runs. The
-     * documents missing were exactly the ones a HOD or branch user had
-     * created, which is what made it look like a creator-hierarchy rule
-     * (CBC #25). Nothing here is hierarchical: it is one grant that the
-     * dependency map never implies from the other
-     * (ModuleDependencies::MAP — hr.doc_templates depends on hr.employee, not
-     * the reverse), so holding Employee alone left this closed.
-     */
-    /* `hr.documents` ("Document & Evidence") added when CBC #13 and QA #25 —
-     * the same defect reported twice — were fixed in parallel and merged.
-     *
-     * It is the module an admin actually ticks when they mean "this person
-     * handles other people's documents", and Anushka's report was precisely
-     * that granting it changed nothing. The other two stay: anyone holding
-     * them can read these documents today, and dropping either would trade one
-     * regression for another. The union is deliberate — both fixes' cases pass,
-     * neither is narrowed. */
     private const READ_OTHERS_MODULES = ['hr.documents', 'hr.doc_templates', 'hr.employee'];
 
-    /**
-     * May this employee-tier login read OTHER employees' signature runs?
-     *
-     * True when they hold view rights on any module in
-     * self::READ_OTHERS_MODULES. Tenant and branch scoping are applied by
-     * applyScope() separately, so a grant never reaches across organisations.
-     */
     private function mayReadOthersDocuments(?User $user): bool
     {
         if (!$user) return false;
 
         $moduleIds = \App\Models\Module::whereIn('slug', self::READ_OTHERS_MODULES)->pluck('id');
-        // No module rows means the tenant never had the feature broken out into
-        // grants; fall back to the same admin tiers HrDocumentTemplateController
-        // waves through in that case rather than locking HR out of their own
-        // screen.
         if ($moduleIds->isEmpty()) {
             return in_array($user->user_type, ['client_admin', 'branch_user'], true);
         }
@@ -1540,18 +982,6 @@ class HrDocumentSignatureController extends Controller
         return $q->findOrFail($id);
     }
 
-    /**
-     * Map a template signer role to a real user_id + display name.
-     * Falls back to null user_id with a placeholder name so the admin can
-     * still send the doc and re-assign manually later.
-     */
-    /**
-     * Delegates to App\Support\SignerResolver — the generate/preview path
-     * needs the same answer, and two copies of these rules is how two
-     * screens end up naming different people for one document.
-     *
-     * @return array{0: int|null, 1: string, 2: string|null}
-     */
     private function resolveSignerUser(string $roleName, Employee $emp): array
     {
         return \App\Support\SignerResolver::resolve($roleName, $emp);
@@ -1568,19 +998,6 @@ class HrDocumentSignatureController extends Controller
         ];
     }
 
-    /**
-     * The markup that replaces a {{SignerNSign}} token — a drawn/uploaded
-     * signature when one was supplied, otherwise the typed name in cursive.
-     *
-     * Both branches carry the SAME vertical metrics on purpose. The typed span
-     * used to have none, so its 22px cursive sat on the surrounding text's
-     * baseline and grew upwards — the signature rendered a line above the label
-     * it belongs to ("Dhanashri" floating over "Reporting Manager").
-     * `inline-block` + `line-height: 1` keeps it from stretching the line box,
-     * and `vertical-align: middle` centres it against the label.
-     *
-     * Both the URL and the name are escaped: the name is signer-supplied.
-     */
     private function signatureMarkup(?string $imageUrl, string $name): string
     {
         $safeName = htmlspecialchars($name, ENT_QUOTES);
@@ -1600,14 +1017,6 @@ class HrDocumentSignatureController extends Controller
         );
     }
 
-    /**
-     * Decode a `data:image/...;base64,...` payload from the SignaturePad
-     * (Type/Draw modes emit PNG, Upload mode can yield PNG/JPG/GIF/WEBP/SVG)
-     * and persist it under the tenant's public-disk folder. Returns the
-     * public URL on success, or null if the payload doesn't look like a
-     * valid base64 image — we don't abort, the signer can still proceed
-     * with the typed cursive fallback.
-     */
     private function persistSignatureImage(string $dataUrl, ?int $clientId, int $runId, int $signerN): ?string
     {
         if (!preg_match('#^data:image/(png|jpe?g|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=\s]+)$#i', trim($dataUrl), $m)) {
@@ -1620,9 +1029,6 @@ class HrDocumentSignatureController extends Controller
             default       => $mime,
         };
         $binary = base64_decode(preg_replace('/\s+/', '', $m[2]) ?: '', true);
-        // Hard cap at ~4 MB — matches the SignaturePad Upload tab limit. A
-        // typed/drawn signature is typically under 30 KB; this only kicks in
-        // for uploaded photo-style images.
         if ($binary === false || strlen($binary) === 0 || strlen($binary) > 4 * 1024 * 1024) {
             return null;
         }
@@ -1640,17 +1046,6 @@ class HrDocumentSignatureController extends Controller
         return file_url($folder . '/' . $filename);
     }
 
-    /**
-     * Resolve an image reference to a path on the PUBLIC disk, or null when it
-     * points somewhere we can't read (a remote host, a data URI, an app route).
-     *
-     * Accepts every shape these columns and editors produce: an absolute URL
-     * served off this app's /storage, a /storage/... path, a `public/...` or
-     * `storage/...` prefixed path, a Windows path with backslashes, and a bare
-     * disk-relative path. The normalisation mirrors file_url() in helpers.php —
-     * branch.logo and friends are stored raw, so a caller that only stripped a
-     * leading slash would hand Storage a path it can never find.
-     */
     private function diskPathFromUrl(string $src): ?string
     {
         $src = trim($src);
@@ -1660,57 +1055,29 @@ class HrDocumentSignatureController extends Controller
         $path = $parsed['path'] ?? $src;
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
-        // Absolute URL or /storage/... path — everything after /storage is the
-        // disk-relative part.
         if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) {
             return $m[1];
         }
-        // A remote host we can't read from.
         if (isset($parsed['scheme'])) return null;
 
         if (str_starts_with($path, 'public/')) {
             $path = substr($path, strlen('public/'));
         }
-        // A bare basename with no folder is a stale row from a buggy save —
-        // resolving it yields a confident-looking path that doesn't exist.
         return str_contains($path, '/') ? $path : null;
     }
 
-    /**
-     * Rewrite every <img src="..."> in $html that points to a storage-served
-     * URL (or a /storage/... relative path) into a base64 data URI, reading
-     * the file from the public disk. Skips srcs that are already data URIs
-     * or remote URLs we can't resolve. DomPDF runs headless and can't reach
-     * /storage/... over HTTP, so without this signatures render as broken
-     * images (or, depending on DomPDF settings, as nothing at all).
-     */
-    /**
-     * Is this stored HTML actually going to PRINT anything? (CBC #23)
-     *
-     * `$row->content_html ?: '<p>(empty)</p>'` only catches null and the empty
-     * string. A run whose content is "   ", "<p></p>" or an HTML comment is a
-     * TRUTHY string, so it sailed past that guard and DomPDF rendered it
-     * faithfully: a valid, well-formed, completely blank page. The viewer then
-     * showed a blank document with no error anywhere — the file was fine, it
-     * simply had nothing in it, and nothing said so.
-     *
-     * Images count as content: a signature block can legitimately be the only
-     * visible thing on the page, and stripping tags would call that empty.
-     */
     private function htmlRendersNothing(?string $html): bool
     {
         $html = (string) $html;
         if (trim($html) === '') {
             return true;
         }
-        // Anything that paints on its own, regardless of surrounding text.
         if (preg_match('/<(img|svg|hr|table|canvas)\b/i', $html)) {
             return false;
         }
         $text = preg_replace('/<!--.*?-->/s', '', $html);
         $text = strip_tags((string) $text);
         $text = html_entity_decode((string) $text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        // A non-breaking space is whitespace to a reader, not to trim().
         $text = str_replace("\xc2\xa0", ' ', (string) $text);
 
         return trim($text) === '';
@@ -1728,14 +1095,6 @@ class HrDocumentSignatureController extends Controller
                 if (!$diskPath) return $full;
 
                 try {
-                    /* exists() + get() + mimeType() was THREE calls per image.
-                     * On the server the public disk is Azure Blob, so each one
-                     * is a network round-trip, and a signed document carries one
-                     * image per signer plus anything embedded in the body — the
-                     * delay before the download started. get() already fails
-                     * when the file is missing, so the existence probe is
-                     * redundant, and the MIME is derivable from the extension
-                     * (the same mapping the header logo above uses). (CBC #9) */
                     $binary = Storage::disk('public')->get($diskPath);
                     if ($binary === null || $binary === '') return $full;
                     $ext  = strtolower((string) pathinfo($diskPath, PATHINFO_EXTENSION));
@@ -1757,20 +1116,6 @@ class HrDocumentSignatureController extends Controller
         ) ?? $html;
     }
 
-    /** Same tenant-scope rules as the template controller. */
-    /**
-     * Fill `designation` on signer slots recorded before it was stored (#23).
-     *
-     * store() freezes the job title now, but every run sent before that has
-     * signers with no `designation` key at all, and the stepper would read
-     * blank for them forever. Resolved live off the signer's user_id instead,
-     * in ONE query for the whole page rather than one per signer.
-     *
-     * Reads only — nothing is written back, so a historic run keeps naming the
-     * title it was actually signed under the moment it gets re-sent.
-     *
-     * @param  \Illuminate\Support\Collection<int, HrDocumentSignature>  $rows
-     */
     private function fillSignerDesignations($rows)
     {
         $missing = [];
@@ -1822,8 +1167,6 @@ class HrDocumentSignatureController extends Controller
             $branchId = $user->branch_id;
             $q->where(function ($w) use ($clientId, $branchId, $user) {
                 $w->where('client_id', $clientId)
-                  // employees can also see their OWN documents even if the
-                  // row belongs to a different branch (they're the subject)
                   ->orWhere('employee_id', $user->employee_id);
             });
             return;

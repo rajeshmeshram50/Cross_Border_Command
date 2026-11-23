@@ -4,15 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Sales Matrix → Proforma Invoice line items.
- *
- * Same shape as quotation_items — server computes `amount` from
- * `quantity * rate * (1 + tax_pct/100)` and rolls it up to the
- * header's sub_total / grand_total. `product_id` is a soft FK so
- * later product master renames don't rewrite history; product_name
- * + hsn are snapshotted at insert.
- */
 return new class extends Migration
 {
     public function up(): void

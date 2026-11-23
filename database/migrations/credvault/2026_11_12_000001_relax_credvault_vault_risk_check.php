@@ -5,8 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    // The Critical Vault may hold any risk (the vault, not the risk, drives its
-    // protection); a critical risk still may live only in the Critical Vault.
     public function up(): void
     {
         if (DB::getDriverName() !== 'pgsql') return;

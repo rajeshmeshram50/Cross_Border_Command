@@ -5,15 +5,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-/**
- * The password strength criteria (D34) replace the old 5-point meter:
- * Strong = 12+ characters with letters, numbers and a special character;
- * Good = 8+ with all three; anything else Fair (counts as weak). The stored
- * `strength` of every password credential is worked out again, so lists,
- * Password Health and the dashboard read the new levels. updated_at is left
- * alone: nothing about the credential changed. A secret that cannot be
- * decrypted is skipped and logged, never cleared.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -34,7 +25,6 @@ return new class extends Migration
             });
     }
 
-    /** The old meter's scores cannot be rebuilt without it; the D34 levels stay. */
     public function down(): void
     {
     }

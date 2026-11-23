@@ -16,7 +16,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-
 class ClmSegmentRuleController extends Controller
 {
     public function index(Request $request)
@@ -25,9 +24,6 @@ class ClmSegmentRuleController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'counts' => ['all' => 0, 'highly' => 0, 'less' => 0]]);
         }
-        // Branch-scoped read: a branch sees globals + client-level rules + its
-        // own branch's rules; sibling branches stay hidden. Newest rule first
-        // (descending) so the Document Control Panel lists latest-added at the top.
         $query = ClmSegmentRule::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
@@ -42,19 +38,11 @@ class ClmSegmentRuleController extends Controller
         ]);
     }
 
-    /**
-     * GET /clm/segment-rules/bootstrap — bundles every master the segment-rule
-     * modal needs so it can render Stage 1 + Stage 2 without further fetches.
-     */
     public function bootstrap(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
         $cid = $user->client_id;
 
-        // Branch-scoped read: a branch sees globals + client-level rows + its own
-        // branch's rows; sibling branches stay hidden. Without this, the SELECT
-        // SEGMENT dropdown (and the other CLM masters) leaked segments configured
-        // by independent sibling branches into this branch's DCP setup.
         $branchId = $request->integer('branch_id') ?: null;
         $load = function (string $modelClass) use ($cid, $user, $branchId) {
             if (!$cid) return collect();
@@ -68,18 +56,9 @@ class ClmSegmentRuleController extends Controller
         $kyc         = $load(ClmKycDocument::class);
         $dd          = $load(ClmDdDocument::class);
         $tl          = $load(ClmTradeLicense::class);
-        // Trade Documents (td) was removed from the Document Control Panel — it
-        // is no longer a configurable category, so it isn't shipped here.
         $qc          = $load(ClmQcDocument::class);
 
-        // The document masters store the authority by id; resolve to current
-        // names so the DCP table + configure modal display live values.
         $authMap = ClmAuthority::idNameMap($cid);
-        // Each row also carries `authority_list` — the SAME names as a
-        // structured array — so the DCP's AUTHORITIES column can count distinct
-        // authorities without splitting the joined string on commas (authority
-        // names may themselves contain commas, which would over-count). Compute
-        // the array from the original stored ids BEFORE overwriting the string.
         $kyc->each(function ($r) use ($authMap) {
             $r->authority_list = ClmAuthority::displayNamesList($r->authority, $authMap);
             $r->authority      = ClmAuthority::displayNames($r->authority, $authMap);
@@ -110,11 +89,6 @@ class ClmSegmentRuleController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a segment CODE to its id within the caller's own branch scope.
-     * Codes are unique per (client, branch), never per client, so this must
-     * never fall back to a client-wide match.
-     */
     private function resolveSegmentId($user, string $segmentCode): ?int
     {
         $q = ClmSegment::where('code', $segmentCode);
@@ -122,7 +96,6 @@ class ClmSegmentRuleController extends Controller
         return $q->value('id');
     }
 
-    // Rule status must match its segment, or "Sugar – Less" could carry a High rule.
     private function segmentStatusMismatch($user, array $data): ?\Illuminate\Http\JsonResponse
     {
         $q = ClmSegment::where('code', $data['segment_code']);
@@ -161,32 +134,19 @@ class ClmSegmentRuleController extends Controller
             ], 409);
         }
 
-        /* Reject a code that resolves to nothing the caller can see, instead of
-         * saving a rule with a null segment_id. Checked BEFORE the transaction
-         * so the per-client lock is not taken for a request that cannot
-         * succeed. Same fail-closed rule the rest of this module follows: a
-         * filter that cannot be satisfied narrows to nothing, it does not widen
-         * or silently pass. */
         if ($bad = $this->segmentStatusMismatch($user, $data)) return $bad;
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextRuleCode($user->client_id);
 
-            // Branch-scoped, like the duplicate guard above. Segment codes
-            // restart at SG-001 in every branch (nextCode() is branch-scoped),
-            // so a client-wide lookup by code resolves to whichever branch
-            // created its SG-001 first — a new branch's rule then stored the
-            // OLDER branch's segment_id, and /customers/master-bundle (which
-            // intersects branch-visible segments with rule segment_ids) served
-            // the new branch an empty segment list.
             $segmentId = $this->resolveSegmentId($user, $data['segment_code']);
 
             [$mand, $opt] = $this->countSelections($data['doc_selections']);
 
             return ClmSegmentRule::create([
                 'client_id'         => $user->client_id,
-                'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'         => $user->branch_id,
                 'segment_id'        => $segmentId,
                 'segment_code'      => $data['segment_code'],
                 'rule_code'         => $code,
@@ -201,11 +161,6 @@ class ClmSegmentRuleController extends Controller
             ]);
         });
 
-        // A rule going from 0 → ≥1 document makes its segment appear in the
-        // Customer/Consignee/Vendor segment pickers (masterBundle only offers
-        // segments whose rule has documents). Those bundles are cached per-user
-        // server-side, so bump the version or the new segment won't show for up
-        // to 5 minutes. Mirrors every other master controller's write path.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row], 201);
@@ -240,7 +195,6 @@ class ClmSegmentRuleController extends Controller
 
         $row->update([
             'segment_code'      => $data['segment_code'],
-            // Same branch-scoped resolution as store() — see the note there.
             'segment_id'        => $this->resolveSegmentId($user, $data['segment_code']),
             'regulatory_status' => $data['regulatory_status'],
             'document_type'     => $data['document_type'],
@@ -251,8 +205,6 @@ class ClmSegmentRuleController extends Controller
             'updated_by'        => $user->id,
         ]);
 
-        // Editing the doc selections can add OR remove the segment from the
-        // pickers (0 ↔ ≥1 documents), so invalidate the cached bundles.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
@@ -269,31 +221,11 @@ class ClmSegmentRuleController extends Controller
         }
         $row->delete();
 
-        // Removing a rule can drop its segment from the pickers — refresh the
-        // cached bundles.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * GET /clm/segment-rules/for-segment/{segmentId}
-     *
-     * Resolve the segment-rule for a given segment plus the FULL document
-     * master rows referenced by its doc_selections payload, so the consumer
-     * forms (AddCustomer, AddConsignee, AddVendor) can pre-populate their
-     * Stage-2 KYC / DD / Trade-Document lists without three extra fetches.
-     *
-     * Response shape — always 200 even when no rule exists, so the caller
-     * can render an empty Stage 2 instead of having to swallow a 404:
-     *   {
-     *     "rule": null | { … },
-     *     "kyc": [ { code, name, authority, requirement: 'M'|'O', … } ],
-     *     "dd":  [ … ],
-     *     "tl":  [ … ],
-     *     "qc":  [ … ]
-     *   }
-     */
     public function forSegment(Request $request, $segmentId)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -302,15 +234,6 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         }
 
-        // Resolve the segment inside the caller's branch scope, then match its
-        // rule by segment_CODE rather than the denormalised segment_id.
-        //
-        // segment_id is nullable and was, until recently, derived from a
-        // client-wide code lookup; because codes restart at SG-001 per branch,
-        // rules in a newer branch can carry a sibling branch's segment_id. This
-        // endpoint feeds Stage 2's KYC/DD/TL/QC lists, so an id mismatch showed
-        // the user an empty document set for a segment whose DCP rule exists.
-        // Matching on the code repairs those rows without a data migration.
         $segQuery = ClmSegment::whereKey($segmentId);
         MasterVisibility::applyReadScope($segQuery, $user, $user->branch_id ?: null);
         $segment = $segQuery->first();
@@ -319,8 +242,6 @@ class ClmSegmentRuleController extends Controller
         MasterVisibility::applyReadScope($ruleQuery, $user, $user->branch_id ?: null);
         $segment
             ? $ruleQuery->where('segment_code', $segment->code)
-            // Segment not visible to this user — match nothing rather than
-            // falling back to a client-wide id scan.
             : $ruleQuery->whereRaw('1 = 0');
 
         $reqType = $request->query('document_type');
@@ -329,14 +250,8 @@ class ClmSegmentRuleController extends Controller
         }
         $rule = $ruleQuery->first();
 
-        // Document masters store the authority by id — resolve to current names
-        // for the consumer forms.
         $authMap = ClmAuthority::idNameMap($cid);
 
-        // Resolve a category's codes (from doc_selections) to the actual
-        // master rows + stamp the M|O requirement so the frontend can render
-        // each row as Mandatory / Optional in one pass.
-        // Codes restart per branch, so documents come from the rule's own branch catalogue.
         $docBranch = $rule?->branch_id ?? $segment?->branch_id;
         $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid, $authMap, $docBranch) {
             $sel = $rule?->doc_selections ?? [];
@@ -346,21 +261,12 @@ class ClmSegmentRuleController extends Controller
             $rows = \App\Support\SegmentGuard::branchCatalogue($modelClass::query(), $cid, $codes, $docBranch)
                 ->get()->unique('code');
             return $rows->map(function ($r) use ($entries, $authMap) {
-                // Each model has a slightly different shape — surface the
-                // intersection plus everything from the row's attributes
-                // so the frontend can pick whatever fields it wants.
                 $base = $r->only(['id', 'code', 'name', 'status']);
-                // Optional fields — present on some models only.
                 foreach (['authority', 'expiry', 'validity', 'title', 'doc_type', 'purpose', 'party'] as $opt) {
                     if (array_key_exists($opt, $r->getAttributes())) {
                         $base[$opt] = $r->getAttribute($opt);
                     }
                 }
-                // `authority` is stored as ids — surface the resolved names AND
-                // the individual-name list. The frontend shows the first
-                // authority + a "+N" popup for the rest (QA #68); it needs the
-                // array because a joined string can't be split reliably (an
-                // authority name may itself contain a comma).
                 if (isset($base['authority'])) {
                     $base['authority_list'] = ClmAuthority::displayNamesList($base['authority'], $authMap);
                     $base['authority']      = ClmAuthority::displayNames($base['authority'], $authMap);
@@ -377,7 +283,6 @@ class ClmSegmentRuleController extends Controller
                 'kyc'  => $resolveCat('kyc', ClmKycDocument::class),
                 'dd'   => $resolveCat('dd',  ClmDdDocument::class),
                 'tl'   => $resolveCat('tl',  ClmTradeLicense::class),
-                // Trade Documents (td) removed from the DCP — no longer resolved.
                 'qc'   => $resolveCat('qc',  ClmQcDocument::class),
             ],
         ]);
@@ -388,9 +293,6 @@ class ClmSegmentRuleController extends Controller
         $data = $request->validate([
             'segment_code'      => 'required|string|max:16',
             'regulatory_status' => ['required', Rule::in(ClmSegmentRule::REG_VALUES)],
-            // Domestic / International is mandatory — every rule created or edited
-            // from the DCP going forward must be typed so a segment can carry a
-            // distinct domestic and international document set.
             'document_type'     => ['required', Rule::in(ClmSegmentRule::DOC_TYPE_VALUES)],
             'auths'             => 'nullable|array',
             'auths.*'           => 'string',
@@ -400,17 +302,10 @@ class ClmSegmentRuleController extends Controller
             'doc_selections.tl'           => 'nullable|array',
             'doc_selections.qc'           => 'nullable|array',
         ]);
-        // Trade Documents (td) was removed from the DCP — never persist it, even
-        // if an older client still includes it in the payload.
         unset($data['doc_selections']['td']);
         return $data;
     }
 
-    /**
-     * Roll up the per-document Mandatory / Optional counts across all five
-     * categories so the DCP listing table can render badges without re-parsing
-     * the JSON for every row.
-     */
     private function countSelections(array $sel): array
     {
         $mand = 0; $opt = 0;
@@ -423,18 +318,8 @@ class ClmSegmentRuleController extends Controller
         return [$mand, $opt];
     }
 
-    /**
-     * Allocate the next per-tenant rule code (SR-NNN). Uses MAX(numeric
-     * suffix) + 1 rather than count()+1 so a deleted rule in the middle of
-     * the sequence doesn't make the next allocation reuse a rule_code that
-     * still exists — which throws a unique-constraint violation on save.
-     * Caller must already hold the client row lock.
-     */
-
     private function nextRuleCode(int $clientId): string
     {
-        // rule_code is unique per CLIENT, but the tenant scope narrows reads to the
-        // user's branch — so it must be lifted here or another branch's code is reused.
         $codes = ClmSegmentRule::withoutGlobalScope('tenant')
             ->where('client_id', $clientId)->pluck('rule_code')->all();
         $maxN  = 0;

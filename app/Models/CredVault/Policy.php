@@ -4,20 +4,10 @@ namespace App\Models\CredVault;
 
 use Illuminate\Database\Eloquent\Model;
 
-/**
- * CredVault · the tenant's policy document. One row per client; a key the
- * row does not hold reads its default, so new settings need no migration.
- */
 class Policy extends Model
 {
     protected $table = 'credvault_policies';
 
-    /**
-     * The 15 settings and their defaults — the prototype's CV_POL_DEF.
-     * cp_admin_user_id null means "any Vault Admin of the client". The generator's
-     * length and symbols are no longer policies (D32): they are the generator's
-     * own defaults (PasswordGenerator::DEFAULTS), and a stored value is ignored.
-     */
     public const DEFAULTS = [
         'min_strength'     => 3,
         'rotation_default' => 90,
@@ -36,31 +26,23 @@ class Policy extends Model
         'bin_purge'        => true,
     ];
 
-    /** The values each setting may take; the PUT validates against these. */
     public const OPTIONS = [
         'min_strength'     => [2, 3, 4],
         'rotation_default' => [null, 30, 60, 90, 180],
         'rotation_warn'    => [7, 15, 30],
-        'share_max_days'   => [0, 7, 30, 90],      // 0 = no limit
+        'share_max_days'   => [0, 7, 30, 90],
         'overshare_limit'  => [2, 3, 5, 10],
         'cp_max_minutes'   => [5, 15, 30, 60],
         'bin_days'         => [7, 15, 30, 60, 90],
     ];
 
-    /**
-     * How long a binned item stays before it is deleted for good. One period covers both
-     * vaults (My Vault and Critical Vault). It is set per branch: a branch's own period
-     * (`bin_branch_days`, set by its Branch Admin), else the company's `bin_days`.
-     */
     public static function binDays(array $pol, ?int $branchId = null): int
     {
         return (int) ($branchId ? ($pol['bin_branch_days'][$branchId] ?? $pol['bin_days']) : $pol['bin_days']);
     }
 
-    /** 2FA risk levels are kept in this order — the order the policy screen and its summary read them. */
     public const RISK_ORDER = ['critical', 'high', 'medium', 'low'];
 
-    /** The five policy cards: [title, subtitle], as POL_SECS / POL_SUBS. */
     public const SECTIONS = [
         'password' => ['Password Policy', 'Strength and rotation'],
         'twofa'    => ['Two-Factor', 'When two-factor authentication is mandatory'],
@@ -69,11 +51,6 @@ class Policy extends Model
         'bin'      => ['Recycle Bin', 'How long removed credentials are kept'],
     ];
 
-    /**
-     * Every rule as the policy screen shows it:
-     * [section, label, description, applies to, control, options [[value, label]…]]
-     * control: seg (pick one) · multi (pick many) · switch · admin (a Vault Admin, null = any)
-     */
     public const CATALOG = [
         'min_strength' => ['password', 'Minimum password strength', 'Passwords below this level cannot be saved and are flagged as weak in Password Health.',
             ['Add / Edit Credential', 'Password Health'], 'seg', [[2, 'Fair'], [3, 'Good'], [4, 'Strong']]],
@@ -107,7 +84,6 @@ class Policy extends Model
             ['Recycle Bin'], 'switch', null],
     ];
 
-    /** The catalogue as the API serves it. */
     public static function catalog(): array
     {
         $out = [];
@@ -121,7 +97,6 @@ class Policy extends Model
         return $out;
     }
 
-    /** A value as people read it — the prototype's polFmt(): "Good", "Every 90 days", "1 hour", "No limit". */
     public static function format(string $key, $v, ?string $adminName = null): string
     {
         return match ($key) {
@@ -142,10 +117,8 @@ class Policy extends Model
 
     protected $casts = ['settings' => 'array'];
 
-    /** Read once per request — every CredVault endpoint consults the policy. */
     private static array $memo = [];
 
-    /** The tenant's settings with every missing key filled from DEFAULTS. */
     public static function for(int $clientId): array
     {
         if (!isset(self::$memo[$clientId])) {
@@ -153,18 +126,14 @@ class Policy extends Model
             self::$memo[$clientId] = array_merge(
                 self::DEFAULTS,
                 array_intersect_key($row?->settings ?? [], self::DEFAULTS),
-                // [branch id => days]: the branches with their own Recycle Bin period. Not a policy
-                // card of its own; kept in the same row and carried through every policy save.
                 ['bin_branch_days' => array_map('intval', $row?->settings['bin_branch_days'] ?? [])]
             );
         }
         return self::$memo[$clientId];
     }
 
-    /** After a save, so the rest of the same request reads the new values. */
     public static function forget(int $clientId): void
     {
         unset(self::$memo[$clientId]);
     }
-    
 }

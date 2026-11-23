@@ -21,12 +21,10 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 
-
 class ProformaInvoiceController extends Controller
 {
     use EnforcesSegmentBuyerConsignee;
 
-    /* ── LIST ───────────────────────────────────────────────── */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -36,25 +34,12 @@ class ProformaInvoiceController extends Controller
             ->with([
                 'customer:id,customer_code,company_name',
                 'consignee:id,consignee_code,company_name',
-                // lead_stage_id + won_at drive the "With Shipment" vs
-                // "Without Shipment" split — a PI only belongs in the
-                // With-Shipment tab once its opportunity reached the
-                // Victory Stage (lead_stage_id === 6 or won_at set).
                 'lead:id,opp_code,lead_stage_id,won_at',
                 'sourceQuotation:id,code',
                 'salesManager:id,name',
-                // Branch name for the BRANCH column in the QPI list (lets
-                // multi-branch users identify the record's owning branch).
                 'branch:id,name,code',
-                // Creator (+ creator's branch) drives the "Created By"
-                // column. Mirrors the Master Details pattern.
                 'creator:id,name,user_type,branch_id',
                 'creator.branch:id,name',
-                // Shipment order (per opportunity) → its sequential
-                // shipment_code (SHP-NNN) populates the "Shipp ID" column and
-                // its created_at the "SHP Date" column. shipment_orders has no
-                // separate date column — the Create Shipment form stamps
-                // "SHIPMENT DATE" as the day the order is raised, i.e. created_at.
                 'shipmentOrder:id,lead_id,shipment_code,created_at',
             ])
             ->orderByDesc('id');
@@ -66,11 +51,6 @@ class ProformaInvoiceController extends Controller
         $page    = max((int) $request->query('page', 1), 1);
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
-        // Sales Manager column = the OWNER's REPORTING MANAGER (not the owner).
-        // Owner = sales_manager_id (lead's salesperson) or created_by; the stored
-        // sales_manager_name is the owner's name, so override it at read time with
-        // the owner's manager, resolved in ONE query to avoid N+1. Mirrors
-        // QuotationController::index.
         $items    = collect($paginator->items());
         $ownerIds = $items->map(fn ($r) => (int) ($r->sales_manager_id ?: $r->created_by))
             ->filter()->unique()->values()->all();
@@ -80,46 +60,19 @@ class ProformaInvoiceController extends Controller
             ->get(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id'])
             ->keyBy('user_id');
 
-        // Stamp per-row `can_modify` — mirrors the Quotation API. Drives
-        // the frontend's edit/delete/email/reminder enable-state on rows
-        // visible-but-read-only (rows outside the user's own branch).
         $rows = $items->map(function ($r) use ($user, $mgrByOwner) {
             $r->can_modify = $this->userCanModify($r, $user);
-            // Flatten creator info for the "Created By" column — same
-            // shape as the Quotation list.
             $r->creator_name      = $r->creator?->name;
             $r->creator_user_type = $r->creator?->user_type;
-            // Reporting-manager override for the Sales Manager column (falls
-            // back to the stored owner name when the owner has no manager).
             $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
             $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
-            // Strictly the owner's Reporting Manager — never fall back to the
-            // owner's own name. Null when the owner has no manager so the column
-            // renders "—" instead of the employee's name (QA #4).
-            // Exception: a BRANCH USER has no manager above them, so a PI they
-            // created shows their own name as the Sales Manager.
             if (!$mgrName && ($r->creator?->user_type === 'branch_user')) {
                 $mgrName = $r->creator?->name;
             }
             $r->sales_manager_name = $mgrName ?: null;
-            // Victory-stage gate — the opportunity behind this PI has
-            // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id
-            // is at-or-past 6, OR won_at is stamped. Either signal flips
-            // the PI into the With-Shipment bucket; anything earlier
-            // stays Without-Shipment until the deal closes.
             $stageId = (int) ($r->lead?->lead_stage_id ?? 0);
             $r->victory_reached = $stageId >= 6 || $r->lead?->won_at !== null;
-            // Sequential shipment code (SHP-NNN) for the "Shipp ID" column —
-            // sourced from the opportunity's shipment order once created. Falls
-            // back to the legacy bt_id on the frontend when not yet shipped.
             $r->shipment_code = $r->shipmentOrder?->shipment_code;
-            // SHP Date — the date the shipment order was raised. Pairs with
-            // shipment_code above, which the "Shipp ID" column already prefers
-            // over the legacy bt_id. The date column had no such counterpart:
-            // it read bt_date alone, and bt_date is only ever stamped by
-            // convertToPi() — it stays NULL on every directly-created PI. So a
-            // shipped PI showed a SHP-NNN id next to an empty SHP Date. The
-            // frontend still falls back to bt_date for legacy rows.
             $r->shipment_date = $r->shipmentOrder?->created_at?->toDateString();
             return $r;
         })->all();
@@ -136,7 +89,6 @@ class ProformaInvoiceController extends Controller
         ]);
     }
 
-    /* ── SHOW ───────────────────────────────────────────────── */
     public function show(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -153,7 +105,6 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $row]);
     }
 
-    /* ── CREATE ─────────────────────────────────────────────── */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -164,17 +115,6 @@ class ProformaInvoiceController extends Controller
 
         $data = $this->validatePayload($request);
 
-        /* A disqualified lead is a dead deal — nothing further may be raised
-         * against it.
-         *
-         * `disqualified` was only ever a display flag: nothing on either side
-         * enforced it, so a lead qualified at Stage 2, advanced to Stage 3 and
-         * then disqualified on the way back still ran every remaining stage and
-         * produced a Quotation and a PI (QA). Documents against a rejected
-         * opportunity are worse than a blocked click — they reach customers.
-         *
-         * Enforced here rather than only in the UI because this is the
-         * authoritative path; a stale tab or a direct call must fail too. */
         if (!empty($data['opp_id'])) {
             $leadRow = \App\Models\Lead::where('client_id', $user->client_id)
                 ->whereKey($data['opp_id'])
@@ -187,13 +127,10 @@ class ProformaInvoiceController extends Controller
             }
         }
 
-        // DCP gate: the customer (and consignee, if mapped) must have uploaded
-        // every mandatory document for their segment before a PI can be made.
         if ($block = $this->partyDocsBlockResponse($user, $data['customer_id'] ?? null, $data['consignee_id'] ?? null)) {
             return $block;
         }
 
-        // Segment "Buyer ≠ Consignee" guard — same rule as Quotation create.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
             array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
@@ -202,8 +139,6 @@ class ProformaInvoiceController extends Controller
             return $block;
         }
 
-        // One-PI-per-opportunity rule. Skip when no opp_id is supplied
-        // (general PIs without an upstream opportunity stay unlimited).
         if (!empty($data['opp_id'])) {
             $existingPi = ProformaInvoice::where('client_id', $user->client_id)
                 ->where('opp_id', $data['opp_id'])
@@ -228,14 +163,6 @@ class ProformaInvoiceController extends Controller
         $row = DB::transaction(function () use ($user, $data, $items, $totals) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
-            // RE-CHECK the one-PI-per-opportunity rule INSIDE the lock. The check
-            // above (outside the transaction) is a fast fail for the common case,
-            // but two concurrent converts — e.g. the same lead open in two browser
-            // tabs, the stale tab's "Convert to PI" still enabled — both pass that
-            // outer check before either commits, so without this they'd each create
-            // a PI. The clients-row lock serialises them, so the second request now
-            // sees the first's committed PI here and aborts (409, transaction rolls
-            // back). HttpResponseException is turned into the response by Laravel.
             if (!empty($data['opp_id'])) {
                 $dupePi = ProformaInvoice::where('client_id', $user->client_id)
                     ->where('opp_id', $data['opp_id'])
@@ -308,8 +235,6 @@ class ProformaInvoiceController extends Controller
                 ProformaInvoiceItem::create($it);
             }
 
-            // If this PI came from a Quotation, flip the quotation's
-            // status so the list/UI reflects the conversion.
             if (!empty($data['source_quotation_id'])) {
                 Quotation::where('id', $data['source_quotation_id'])
                     ->where('client_id', $user->client_id)
@@ -319,11 +244,6 @@ class ProformaInvoiceController extends Controller
                     ]);
             }
 
-            // FREEZE the consignee onto the lead. Quotations on one opportunity
-            // may each quote a DIFFERENT consignee (nothing is written back to
-            // the lead at quotation time) — the PI is what settles which one the
-            // deal actually ships to. Writing it here is what makes the field
-            // read-only in every later form.
             $this->freezeLeadConsignee($user, $data['opp_id'] ?? null, $data['consignee_id'] ?? null);
 
             return $pi->fresh(['items']);
@@ -332,13 +252,6 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
-    /**
-     * Write the deal's FINAL consignee onto the lead. Called only from the two
-     * paths that mint a Proforma Invoice (direct create + convert-from-
-     * quotation) — quotations deliberately do NOT do this, so one opportunity
-     * can carry several quotations each addressed to a different consignee.
-     * Once set, the frontend renders the Consignee field read-only everywhere.
-     */
     private function freezeLeadConsignee($user, $leadId, $consigneeId): void
     {
         if (empty($leadId) || empty($consigneeId)) return;
@@ -347,15 +260,6 @@ class ProformaInvoiceController extends Controller
             ->update(['consignee_id' => $consigneeId]);
     }
 
-    /**
-     * Pre-flight version of the PI document gate, for the Create-PI wizard:
-     * before it lets the user leave Step 1 (party details) for Step 2 it asks
-     * whether the picked customer + consignee are document-complete, so a deal
-     * isn't priced out only to be rejected on submit. Same rule set as
-     * partyDocsBlockResponse — this is a read-only probe, never a mutation.
-     *
-     * GET /sales/proforma-invoices/party-docs-check?customer_id=&consignee_id=
-     */
     public function partyDocsCheck(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -386,12 +290,6 @@ class ProformaInvoiceController extends Controller
         ]);
     }
 
-    /**
-     * Block PI creation until the customer — and the consignee, when one is
-     * mapped and not flagged Same-as-Customer — have uploaded every
-     * DCP-mandatory document for their segment. Returns a 422 JsonResponse
-     * to short-circuit the caller, or null when both parties are complete.
-     */
     private function partyDocsBlockResponse($user, ?int $customerId, ?int $consigneeId): ?JsonResponse
     {
         $blocks = $this->missingPartyDocs($user, $customerId, $consigneeId);
@@ -403,25 +301,11 @@ class ProformaInvoiceController extends Controller
         ], 422);
     }
 
-    /**
-     * The shared rule behind both the pre-flight check and the hard gate:
-     * ['Customer' => [...missing docs], 'Consignee' => [...]] — empty when both
-     * parties are complete. Reuses SegmentDocUploadController::missingMandatoryDocs
-     * so it stays in lock-step with the Evidence Vault the user uploads from.
-     */
     private function missingPartyDocs($user, ?int $customerId, ?int $consigneeId): array
     {
         $checker = app(SegmentDocUploadController::class);
         $blocks  = [];
 
-        // Only gate on document categories the user can actually upload from
-        // the Customer / Consignee Evidence Vault: KYC (owner_kyc), DD
-        // (company_dd) and Trade Licences (trade_licenses).
-        //   - `td` (Trade Documents): the upload step (Stage 3 / Evidence
-        //      Vault) was removed from the customer/consignee form.
-        //   - `qc` (Quality & Compliance, e.g. COA): the vault has no QC
-        //      bucket at all, so a mandatory QC doc could never be satisfied.
-        // Both are dropped so they can't permanently block PI creation.
         $gatedCategories = ['kyc', 'dd', 'tl'];
         $onlyGated = fn(array $miss) => array_values(array_filter(
             $miss,
@@ -438,13 +322,7 @@ class ProformaInvoiceController extends Controller
         }
         if ($consigneeId) {
             $consignee = Consignee::where('client_id', $user->client_id)->find($consigneeId);
-            // Same-as-Customer consignees mirror the customer's docs (already
-            // checked above), so don't double-block on them.
             if ($consignee && !$consignee->same_as_customer) {
-                // Scope the consignee's checklist to THIS deal's customer, so
-                // the gate asks for exactly the documents the lead's Evidence
-                // Vault listed — not the union across every other customer the
-                // consignee happens to be mapped to.
                 $miss = $onlyGated($checker->missingMandatoryDocs($consignee, 'consignee', $customer));
                 if (!empty($miss)) $blocks['Consignee'] = $miss;
             }
@@ -453,7 +331,6 @@ class ProformaInvoiceController extends Controller
         return $blocks;
     }
 
-    /** Human-readable "Pending: Customer → A, B | Consignee → C" summary. */
     private function partyDocsMessage(array $blocks): string
     {
         $parts = [];
@@ -468,7 +345,6 @@ class ProformaInvoiceController extends Controller
             . implode('  |  ', $parts);
     }
 
-    /* ── UPDATE ─────────────────────────────────────────────── */
     public function update(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -476,7 +352,6 @@ class ProformaInvoiceController extends Controller
 
         $row = ProformaInvoice::findOrFail($id);
         $this->assertScope($row, $user, 'write');
-        // Once pushed to Zoho Books the invoice is the source of truth — block edits.
         if (!empty($row->zoho_invoice_id)) {
             return response()->json([
                 'status'  => false,
@@ -490,8 +365,6 @@ class ProformaInvoiceController extends Controller
             ], 409);
         }
 
-        // A signed PI is locked — the signed copy must keep matching the
-        // document the customer e-signed. Block edits outright.
         if (\App\Models\ClmSignatureRequest::hasSignedForDoc(
             $user->client_id,
             \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
@@ -503,20 +376,6 @@ class ProformaInvoiceController extends Controller
             ], 409);
         }
 
-        /* A PI that is OUT with the signer is locked too.
-         *
-         * Both screens (Sales Matrix Stage 5 and Quotations vs PI) already grey
-         * the pencil out and say "PI sent for signature - editing locked", but
-         * only the browser was enforcing it: this method accepted the edit and
-         * supersedeForDoc() below then silently killed the live Zoho request the
-         * customer was holding a link to. Any moment the screen lost the race --
-         * the seconds before the signature status loads, a second tab opened
-         * before the send, the back button -- the edit went through for real.
-         *
-         * That is why the flash kept being reported as unfixed: the fixes were
-         * on the screen, and a screen cannot hold this line. Recall the request
-         * first (or wait for the decline) and the edit is allowed again, which
-         * is what every non-inprogress state below permits. */
         $awaiting = \App\Models\ClmSignatureRequest::awaitingSignatureForDoc(
             $user->client_id,
             \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
@@ -533,13 +392,6 @@ class ProformaInvoiceController extends Controller
 
         $data  = $this->validatePayload($request);
 
-        /* B32: a PI created from a quotation must keep the source quote's
-         * currency. The items still hold quote-era prices in that currency;
-         * letting the user flip to USD here would render totals in the new
-         * currency while the line items keep INR (or vice-versa), creating
-         * a customer-visible discrepancy. The check is INSIDE update() so
-         * the validator's other rules still pass — we just early-out before
-         * the write if the currency changed AND a source quote is locked. */
         if (
             $row->source_quotation_id
             && array_key_exists('currency', $data)
@@ -558,11 +410,6 @@ class ProformaInvoiceController extends Controller
             [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName, $convertFromCode] =
                 $this->resolveCachedLabels($data);
 
-            // Resolve the effective pi_type for THIS update so the BT
-            // fields can be cleared in lock-step when the user flips
-            // from with_shipment → without_shipment. Without this,
-            // the old BT-NNN code stays on the row and corrupts both
-            // the table display and the printed PDF.
             $effectiveType = $data['pi_type'] ?? $row->pi_type;
             $isWithShipment = $effectiveType === ProformaInvoice::TYPE_WITH_SHIPMENT;
 
@@ -612,9 +459,6 @@ class ProformaInvoiceController extends Controller
             }
         });
 
-        // Editing the PI invalidates any e-signature already in flight or
-        // completed — the signed copy no longer matches the document — so
-        // the row reverts to "Not Sent" and must be sent for signature again.
         \App\Models\ClmSignatureRequest::supersedeForDoc(
             $user->client_id,
             \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
@@ -623,7 +467,6 @@ class ProformaInvoiceController extends Controller
 
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }
-
 
     public function destroy(Request $request, $id): JsonResponse
     {
@@ -647,7 +490,6 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'message' => 'Cancelled']);
     }
 
-
     public function duplicate(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -657,8 +499,6 @@ class ProformaInvoiceController extends Controller
 
         $clone = DB::transaction(function () use ($user, $src) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            // The clone keeps the source's branch_id (replicate copies it), so
-            // allocate its code from that branch's sequence.
             $newCode = $this->nextCode($user->client_id, $src->branch_id);
             $copy = $src->replicate(['code', 'status', 'version', 'created_by', 'updated_by']);
             $copy->code        = $newCode;
@@ -676,7 +516,6 @@ class ProformaInvoiceController extends Controller
         });
         return response()->json(['status' => true, 'data' => $clone], 201);
     }
-
 
     public function fromQuotation(Request $request, $quotationId): JsonResponse
     {
@@ -698,11 +537,6 @@ class ProformaInvoiceController extends Controller
             ], 409);
         }
 
-        // Business rule: an opportunity (lead) can have many quotations
-        // but exactly ONE Proforma Invoice. If this quotation has an
-        // opp_id and some other (non-cancelled) PI already exists for
-        // that same opp, block the conversion and tell the user which
-        // PI is blocking it so they can resolve manually.
         if ($qt->opp_id) {
             $existingPi = ProformaInvoice::where('client_id', $user->client_id)
                 ->where('opp_id', $qt->opp_id)
@@ -724,15 +558,10 @@ class ProformaInvoiceController extends Controller
             }
         }
 
-        // DCP gate: same mandatory-document check as direct PI creation —
-        // converting a quotation to a PI must also wait for the customer /
-        // consignee to upload their required documents.
         if ($block = $this->partyDocsBlockResponse($user, $qt->customer_id, $qt->consignee_id)) {
             return $block;
         }
 
-        // Segment "Buyer ≠ Consignee" guard — products come from the source
-        // quotation's items.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
             $qt->items()->pluck('product_id')->all(),
@@ -744,14 +573,6 @@ class ProformaInvoiceController extends Controller
         $pi = DB::transaction(function () use ($user, $qt) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
-            // RE-CHECK inside the lock — the checks above run outside the
-            // transaction, so two concurrent converts of the same lead (the same
-            // opportunity open in two browser tabs, the stale tab's "Convert to
-            // PI" still enabled) both pass them before either commits and each
-            // creates a PI. The clients-row lock serialises the two requests, so
-            // the second one now sees the first's result and aborts (409, rolled
-            // back). Covers both the one-PI-per-opportunity rule and a plain
-            // double-convert of the same quotation.
             $freshQt = Quotation::where('id', $qt->id)->first();
             if ($freshQt && in_array($freshQt->status, [Quotation::STATUS_CONVERTED_TO_PI, Quotation::STATUS_CANCELLED], true)) {
                 throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
@@ -835,16 +656,11 @@ class ProformaInvoiceController extends Controller
                 ]);
             }
 
-            // Mark the quotation as converted so it disappears from the
-            // "ready to convert" bucket but stays visible in history.
             $qt->update([
                 'status'     => Quotation::STATUS_CONVERTED_TO_PI,
                 'updated_by' => $user->id,
             ]);
 
-            // FREEZE the consignee onto the lead — the converted quotation's
-            // consignee (already document-verified above) becomes the deal's
-            // final consignee. See store() for the full rationale.
             $this->freezeLeadConsignee($user, $qt->opp_id, $qt->consignee_id);
 
             return $pi->fresh(['items']);
@@ -853,14 +669,10 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $pi], 201);
     }
 
-
     private function validatePayload(Request $request): array
     {
         $docType = $request->input('doc_type', ProformaInvoice::DOC_INTERNATIONAL);
 
-        /* Domestic is settled in rupees by definition — currency is DERIVED,
-         * not taken from the caller. Same rule as QuotationController; see the
-         * note there. */
         if ($docType === ProformaInvoice::DOC_DOMESTIC) {
             $request->merge(['currency' => 'INR']);
         }
@@ -876,9 +688,8 @@ class ProformaInvoiceController extends Controller
             'customer_id'        => 'required|integer|exists:customers,id',
             'consignee_id'       => 'nullable|integer|exists:consignees,id',
             'bank_account_id'    => 'nullable|integer',
-            // No length cap on currency — free-form code (USD, INR, EUR…).
             'currency'           => 'nullable|string',
-            'exchange_rate'      => FxRate::rules(),   // gt:0 and <= 10,000 — see App\Support\FxRate
+            'exchange_rate'      => FxRate::rules(),
             'sales_manager_id'   => 'nullable|integer|exists:users,id',
             'shipping'           => 'nullable|numeric|min:0',
             'terms'              => 'nullable|string|max:8000',
@@ -890,27 +701,18 @@ class ProformaInvoiceController extends Controller
             'items.*.quantity'     => 'required|numeric|min:0.0001',
             'items.*.unit'         => 'nullable|string|max:16',
             'items.*.rate'         => 'required|numeric|min:0',
-            // No upper cap on tax_pct — handles cess-stacked rates (>100%
-            // possible for compound taxes or special-jurisdiction surcharges).
             'items.*.tax_pct'      => 'nullable|numeric|min:0',
 
-            // GSTIN is 15 chars; the column allows 20 for slack. Snapshotted
-            // from the customer, so never required — a customer legitimately
-            // may not be GST-registered.
             'customer_gst_no'      => 'nullable|string|max:20',
         ];
 
         if ($docType === ProformaInvoice::DOC_INTERNATIONAL) {
-            // INCO Term stores the full master label (e.g. "CIP – Carriage
-            // and Insurance Paid"), so it isn't a short 16-char code.
             $rules['inco_term']         = 'required|string|max:100';
             $rules['port_of_loading']   = 'required|string|max:128';
             $rules['port_of_discharge'] = 'required|string|max:128';
             $rules['final_destination'] = 'required|string|max:128';
             $rules['origin_country']    = 'required|string|max:64';
             $rules['state_code']        = 'nullable|string|max:64';
-            // The Domestic block below collects these; an export document has
-            // ports/destination instead, so they stay optional here.
             $rules['dispatch_from']     = 'nullable|string|max:255';
             $rules['deliver_to']        = 'nullable|string|max:255';
         } else {
@@ -946,7 +748,6 @@ class ProformaInvoiceController extends Controller
         }, $items);
     }
 
-
     private function aggregateTotals(array $items, float $shipping): array
     {
         $rawSub = 0.0;
@@ -964,13 +765,6 @@ class ProformaInvoiceController extends Controller
         ];
     }
 
-    /**
-     * Same shape as QuotationController::resolveCachedLabels — and like
-     * that one, takes $data by reference so the lead's salesperson can
-     * be injected as the default sales_manager_id when none was sent.
-     *
-     * @return array{0:?string,1:?string,2:?string,3:?string,4:?string,5:?string,6:?string}
-     */
     private function resolveCachedLabels(array &$data): array
     {
         $customerName = $consigneeName = $oppCode = $oppDate = $bankLabel = $smName = $convertFrom = null;
@@ -1011,22 +805,13 @@ class ProformaInvoiceController extends Controller
         return [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName, $convertFrom];
     }
 
-
-    /**
-     * Read-only preview of the next PI code for the Create form's "PI ID"
-     * pill — PI/{FY}/{SEQ}, no advisory lock, never consumes a number.
-     */
     public function previewCode(Request $request): JsonResponse
     {
         $user = $request->user();
         $code = null;
         if ($user && $user->client_id) {
             $fy = $this->currentFinancialYear();
-            // PI numbering is PER BRANCH and store() stamps $user->branch_id, so
-            // preview against the same branch (null for client-level users).
             $branchId = $user->branch_id;
-            // Scan BOTH the new "PI/" and legacy "INV/" prefixes so the
-            // sequence stays continuous across the rename.
             $codes = ProformaInvoice::where('client_id', $user->client_id)
                 ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
                 ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
@@ -1050,15 +835,9 @@ class ProformaInvoiceController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         $fy = $this->currentFinancialYear();
-        // B20: defense-in-depth advisory lock — see QuotationController::nextCode.
-        // The branch is in the key so each branch's PI sequence serializes on
-        // its own lock (numbering restarts per branch).
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-code:{$clientId}:" . ($branchId ?? 0) . ":{$fy}")]);
         }
-        // Scan BOTH the new "PI/" and legacy "INV/" prefixes for the max
-        // sequence so numbering continues seamlessly after the rename — scoped
-        // to this branch so each branch gets its own PI/<FY>/1..N.
         $codes = ProformaInvoice::where('client_id', $clientId)
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
             ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
@@ -1084,10 +863,8 @@ class ProformaInvoiceController extends Controller
         return $code;
     }
 
-
     private function nextBtCode(int $clientId): string
     {
-        // B20: defense-in-depth advisory lock for BT sequence.
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-bt:{$clientId}")]);
         }
@@ -1120,13 +897,6 @@ class ProformaInvoiceController extends Controller
         return "{$startYear}-{$endShort}";
     }
 
-    /* ══════════════════════════ ZOHO SYNC (→ Invoice) ══════════════════════════ */
-
-    /**
-     * Push this proforma invoice to Zoho Books as an **Invoice**. Same shape as
-     * the Quotation → Estimate sync: 503 when unconfigured, an atomic lock,
-     * idempotent on zoho_invoice_id, customer + products created once (deduped).
-     */
     public function sync(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -1144,9 +914,6 @@ class ProformaInvoiceController extends Controller
             return response()->json(['status' => false, 'message' => 'A Zoho sync for this proforma invoice is already in progress — try again in a moment.'], 409);
         }
         try {
-            // Re-read under the lock so a request that loaded the row before a
-            // concurrent sync finished sees the freshly-written Zoho id — the
-            // idempotency check must not act on a stale in-memory copy.
             $pi->refresh();
             if (!empty($pi->zoho_invoice_id)) {
                 return response()->json(['status' => true, 'message' => 'This proforma invoice is already synced to Zoho Books (invoice ' . ($pi->zoho_invoice_number ?: $pi->zoho_invoice_id) . ').', 'data' => $this->shapeZoho($pi)]);
@@ -1167,13 +934,7 @@ class ProformaInvoiceController extends Controller
                 $stateCode  = $pi->state_code ?: null;
                 $registered = (bool) $gstin;
 
-                // Inter-state IGST only for a GST-registered customer (Zoho forces
-                // intra-state for unregistered ones).
                 $orgState   = $books->orgStateCode() ?: $this->homeStateCode($pi->branch_id);
-                // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
-                // label) before comparing so a single-digit / labelled code isn't
-                // mis-read as inter-state (which would apply IGST and drop
-                // place_of_supply on a same-state sale).
                 $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
                 $interState = $registered && $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
@@ -1210,7 +971,6 @@ class ProformaInvoiceController extends Controller
         }
     }
 
-    /** Stream the cached Zoho invoice PDF for a synced proforma invoice. */
     public function zohoPdf(Request $request, $id)
     {
         $user = $request->user();
@@ -1226,8 +986,6 @@ class ProformaInvoiceController extends Controller
         ]);
     }
 
-    /** Build the Zoho invoice payload (forward GST always applies on a sale;
-     *  tax type follows the customer's place of supply). */
     private function buildZohoInvoicePayload(ProformaInvoice $pi, ZohoBooksService $books, string $zohoCustomerId, bool $interState, ?string $placeOfSupply = null): array
     {
         $lineItems = $pi->items->map(function ($it) use ($books, $interState) {
@@ -1248,7 +1006,6 @@ class ProformaInvoiceController extends Controller
         $payload = [
             'customer_id'      => $zohoCustomerId,
             'date'             => now()->toDateString(),
-            // Our PI code rides on reference_number; Zoho auto-numbers the invoice.
             'reference_number' => (string) $pi->code,
             'line_items'       => $lineItems,
         ];
@@ -1272,7 +1029,6 @@ class ProformaInvoiceController extends Controller
         ];
     }
 
-    /** This tenant's own registered GST state code (branch), default MH(27). */
     private function homeStateCode(?int $branchId): string
     {
         $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
@@ -1292,27 +1048,16 @@ class ProformaInvoiceController extends Controller
         }
         $q->where('client_id', $user->client_id);
 
-        // Client-level admins / users see every branch under their client,
-        // but honour the BranchSwitcher's narrowing. Branch admins and
-        // employees never reach this path — they are pinned below.
-        /* Branch admins AND employees are pinned to their own branch; only
-         * the client-level roles cross branches (they hold the switcher).
-         * Employees used to take this client-wide path, and for one on the
-         * 'all' designation tier that leaves no narrowing at all. */
         if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
-        // Pinned account (branch admin / employee): own branch only — every
-        // branch is an isolated peer and neither can switch.
         $q->where('branch_id', $user->branch_id);
         \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
-    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
-     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -1323,7 +1068,6 @@ class ProformaInvoiceController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-
     private function assertScope(ProformaInvoice $row, $user, string $action = 'read'): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -1332,11 +1076,8 @@ class ProformaInvoiceController extends Controller
         if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return;
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
-        // Foreign branch — invisible to this user (every branch is an
-        // isolated peer).
         abort(404);
     }
-
 
     private function assertQuotationScope(Quotation $row, $user): void
     {
@@ -1349,7 +1090,6 @@ class ProformaInvoiceController extends Controller
         abort(404);
     }
 
-
     private function userCanModify(ProformaInvoice $row, $user): bool
     {
         if ($user->user_type === 'super_admin') return true;
@@ -1358,14 +1098,11 @@ class ProformaInvoiceController extends Controller
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 
-
     private function applyFilters($q, Request $request): void
     {
         if ($v = $request->query('status')) {
             $q->where('status', $v);
         } else {
-            // Cancelled PIs ("deleted") drop out of the default list — the
-            // record is kept for audit. Pass ?status=cancelled to view them.
             $q->where('status', '!=', ProformaInvoice::STATUS_CANCELLED);
         }
         if ($v = $request->query('pi_type'))      $q->where('pi_type', $v);

@@ -8,13 +8,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * "Thank You for Being a Part of Our Journey" — the farewell broadcast sent
- * (to the team / employee) when an employee exit is completed.
- *
- * Built to take a plain data array so it can be fired with static data while
- * the exit-completion hook is still being wired up.
- */
 class ExitFarewellMail extends Mailable
 {
     use Queueable, SerializesModels;
@@ -41,7 +34,6 @@ class ExitFarewellMail extends Mailable
         $this->logoUrl        = $data['logo_url'] ?? null;
         $this->introLine      = (string) ($data['intro_line'] ?? 'Hi Team,');
 
-        // Pronouns from gender so the copy reads naturally.
         $gender = strtolower((string) ($data['gender'] ?? ''));
         [$subj, $obj, $poss] = match (true) {
             str_starts_with($gender, 'f') => ['she', 'her', 'her'],
@@ -52,8 +44,6 @@ class ExitFarewellMail extends Mailable
         $this->objectPronoun     = $obj;
         $this->possessivePronoun = $poss;
 
-        // Default people-with-X icon (purple) as an inline SVG data URI so the
-        // template needs no external asset; override via `icon_url`.
         $this->iconUrl = $data['icon_url'] ?? self::defaultIcon();
     }
 

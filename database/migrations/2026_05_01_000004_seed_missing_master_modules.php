@@ -3,17 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Backfill modules + permissions for masters that exist in code/DB but were
- * never registered in the `modules` table. Without these rows the master
- * never appears in the Permissions UI, so client_admins can't grant access
- * to it — the menu item stays hidden even when the user has "all
- * permissions".
- *
- * Currently covers `master.kpis` and `master.legal_entities`. Idempotent on
- * both halves: skips inserts when the module already exists, and skips
- * permission rows that already match (user_id, module_id).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -43,11 +32,6 @@ return new class extends Migration
                 'updated_at'   => now(),
             ]);
 
-            // Backfill permissions: copy each existing user's flag set from
-            // their `master.departments` row (peer master under the same
-            // parent). Without this, admins who already had "all permissions"
-            // still wouldn't see the new menu items because their permissions
-            // map has no entry for the new modules.
             $deptModuleId = DB::table('modules')->where('slug', 'master.departments')->value('id');
             if (!$deptModuleId) continue;
 

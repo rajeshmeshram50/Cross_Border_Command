@@ -6,10 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * An approved-gated payroll adjustment: overtime / bonus / incentive (added to
- * pay) or a one-off deduction. Only `approved` rows affect payroll (Rule 4/10).
- */
 class PayrollAdjustment extends Model
 {
     use SoftDeletes;

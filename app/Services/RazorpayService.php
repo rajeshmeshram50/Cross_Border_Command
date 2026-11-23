@@ -26,9 +26,6 @@ class RazorpayService
         return config('services.razorpay.key');
     }
 
-    /**
-     * Create a Razorpay order. Amount must be in rupees; converted to paise here.
-     */
     public function createOrder(float $amountRupees, string $receipt, array $notes = []): array
     {
         $order = $this->api->order->create([
@@ -42,9 +39,6 @@ class RazorpayService
         return $order->toArray();
     }
 
-    /**
-     * Verify the signature returned by Razorpay checkout after successful payment.
-     */
     public function verifyPaymentSignature(string $razorpayOrderId, string $razorpayPaymentId, string $razorpaySignature): bool
     {
         try {
@@ -59,9 +53,6 @@ class RazorpayService
         }
     }
 
-    /**
-     * Verify a webhook payload using the configured webhook secret.
-     */
     public function verifyWebhookSignature(string $payload, string $signature): bool
     {
         $secret = config('services.razorpay.webhook_secret');
@@ -77,9 +68,6 @@ class RazorpayService
         }
     }
 
-    /**
-     * Fetch a payment from Razorpay (used for webhook reconciliation).
-     */
     public function fetchPayment(string $razorpayPaymentId): array
     {
         return $this->api->payment->fetch($razorpayPaymentId)->toArray();

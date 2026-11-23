@@ -6,10 +6,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * A senior-approval request for a PO whose supplier's GST filing is overdue.
- * No client_id of its own — always reached through its tenant-scoped PO.
- */
 class PoGstApproval extends Model
 {
     public const STATUS_PENDING  = 'pending';
@@ -18,9 +14,6 @@ class PoGstApproval extends Model
 
     protected $table = 'p2p_po_gst_approvals';
 
-    /* Exactly one of purchase_order_id / supplier_invoice_id is set. A Direct
-       SPI has no order to hang this off, and the gate it answers is the same
-       one — see the migration that made purchase_order_id nullable. */
     protected $fillable = [
         'purchase_order_id', 'supplier_invoice_id', 'requested_by', 'requested_to', 'request_note', 'requested_at',
         'status', 'reason', 'decided_at',

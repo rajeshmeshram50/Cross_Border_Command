@@ -5,11 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Shipment IDs (SHP-NNN) are sequenced per BRANCH (not per client). To scope
- * the counter we add a `branch_id` to shipment_orders and back-fill it from the
- * owning opportunity's branch (leads.branch_id).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -22,7 +17,6 @@ return new class extends Migration
             });
         }
 
-        // Back-fill from the linked lead's branch so existing rows are scoped.
         DB::statement("
             UPDATE shipment_orders so
             SET branch_id = l.branch_id

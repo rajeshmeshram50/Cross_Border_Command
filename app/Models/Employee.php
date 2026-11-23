@@ -15,33 +15,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Employee extends Model
 {
-    /* Email uniqueness — the rule itself lives in
-       config/email_uniqueness.php; these two lines only say which
-       identity this model belongs to. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'employee';
     protected static array  $emailColumns = ['email', 'official_email'];
 
     use SoftDeletes;
 
-    /**
-     * Stamp the previous designation whenever the grade changes.
-     *
-     * On the model rather than at the call sites because a designation can be
-     * written from several of them — the Employee form, the onboarding wizard's
-     * Stage 1, and any future bulk edit — and a promotion recorded by only some
-     * of them is worse than none: HR would see promotion paperwork appear for
-     * one route and not another with no way to tell why.
-     *
-     * `saving`, not `saved`: the stamp has to go into the same UPDATE as the
-     * new designation, otherwise a failure between the two writes leaves the
-     * record claiming a promotion that did not happen.
-     *
-     * Guarded on `isDirty` + a real difference so re-saving a form without
-     * touching the designation does not rewrite the date — the promotion date
-     * has to survive every later edit to the employee, or it dates the last
-     * profile save instead.
-     */
     protected static function booted(): void
     {
         static::saving(function (self $employee) {
@@ -50,8 +29,6 @@ class Employee extends Model
             $before = $employee->getOriginal('designation_id');
             $after  = $employee->designation_id;
 
-            // Setting a designation for the first time is not a promotion, and
-            // neither is clearing one.
             if ($before === null || $after === null || (int) $before === (int) $after) return;
 
             $employee->previous_designation_id = $before;
@@ -80,7 +57,6 @@ class Employee extends Model
         'mobile',
         'alt_mobile',
 
-        // Current address
         'country_id',
         'state_id',
         'city',
@@ -88,7 +64,6 @@ class Employee extends Model
         'address_line2',
         'pincode',
 
-        // Permanent address (added 2026-05-01)
         'perm_address_line1',
         'perm_address_line2',
         'perm_city',
@@ -104,8 +79,6 @@ class Employee extends Model
         'ancillary_role_id',
         'ancillary_role_ids',
         'work_type',
-        // Canonical employment type (Rule 8) — PF eligibility and the payroll
-        // export read this in preference to the free-text work_type.
         'employee_type',
         'reporting_manager_id',
         'reporting_manager_user_id',
@@ -119,7 +92,6 @@ class Employee extends Model
         'notice_period',
         'notice_period_days',
 
-        // Step 3 — Work Details (added 2026-05-01)
         'leave_plan',
         'holiday_list',
         'holiday_group_id',
@@ -137,7 +109,6 @@ class Employee extends Model
         'mobile_assigned',
         'other_assets',
 
-        // Step 4 — Compensation (added 2026-05-01)
         'enable_payroll',
         'pay_group',
         'annual_salary',
@@ -149,25 +120,18 @@ class Employee extends Model
         'pf_eligible',
         'detailed_breakup',
 
-        // Stage 1 Step 3 — asset assignments (added 2026-05-03). FKs into
-        // master_assets; uniqueness across employees enforced in
-        // EmployeeController so the same physical device can't be issued
-        // to two people at once.
         'laptop_master_asset_id',
         'mobile_master_asset_id',
         'other_master_asset_ids',
 
-        // Stage 3 — Physical Setup & Identification (added 2026-05-03).
         'biometric_status',
         'desk_workstation_no',
         'id_card_status',
-        // Face-biometric attendance (added 2026-05-12).
         'face_descriptor',
         'face_registered_at',
         'face_consent_given_at',
         'face_consent_revoked_at',
 
-        // Stage 4 — Payroll & Finance Setup (added 2026-05-03)
         'salary_payment_mode',
         'bank_name',
         'bank_account_number',
@@ -190,24 +154,8 @@ class Employee extends Model
         'onboarding_stage_completed',
     ];
 
-    /** Accessors auto-included on every JSON serialization. The
-     *  `other_assets_resolved` accessor short-circuits when the array
-     *  is empty, so rows without assets pay no DB cost.
-     *  `photo_url` resolves the passport-size photo uploaded as an
-     *  EmployeeDocument with document_key='photo' — eager-load
-     *  `photoDocument` to avoid N+1 on list endpoints. */
     protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered', 'encrypted_id', 'profile_completion'];
 
-    /** Never ship the raw 128-d descriptor on list/detail responses.
-     *  It's biometric data, ~1.5 KB per row, and the only legitimate
-     *  reader is the auth flow which fetches it directly from the DB. */
-    /* face_descriptor: biometric data, ~1.5 KB per row, and the only legitimate
-       reader is the auth flow which fetches it from the DB directly.
-       photoDocument: eager-loaded on most payloads purely to feed the photo_url
-       accessor without an N+1 — nothing reads the document row itself, so it
-       ships as a duplicate of a field already present. Hidden by RELATION name,
-       which is what getArrayableRelations() filters on; the snake_case
-       'photo_document' it serialises to matches nothing. */
     protected $hidden = ['face_descriptor', 'photoDocument'];
 
     protected $casts = [
@@ -218,7 +166,6 @@ class Employee extends Model
         'other_master_asset_ids' => 'array',
         'ancillary_role_ids' => 'array',
         'probation_months' => 'integer',
-        // Computed on the frontend from joining date + probation policy.
         'probation_end_date' => 'date',
         'probation_completion_emailed_at' => 'datetime',
         'notice_period_days' => 'integer',
@@ -240,33 +187,18 @@ class Employee extends Model
         'designation_changed_at' => 'datetime',
     ];
 
-    /**
-     * Build the cached "First Middle Last" string. Trim collapses any double
-     * spaces from missing middle/last names.
-     */
     public static function composeDisplayName(?string $first, ?string $middle, ?string $last): string
     {
         return trim(preg_replace('/\s+/', ' ', trim(($first ?? '') . ' ' . ($middle ?? '') . ' ' . ($last ?? ''))));
     }
 
-    /** Terminal statuses that disable the login + freeze profile activity. */
     public const DISABLED_STATUSES = ['inactive', 'resigned', 'terminated'];
 
-    /**
-     * A "disabled" employee is one whose login is off — either soft-deleted
-     * (the Remove action) or sitting in a terminal status (Inactive/Resigned/
-     * Terminated). Profile-write actions (edit, documents, face enrolment,
-     * etc.) must be refused for these until they're restored/re-activated.
-     * Shared by every controller that mutates an employee's profile so the
-     * rule stays consistent across the app.
-     */
     public function isDisabled(): bool
     {
         return $this->trashed()
             || in_array(strtolower((string) $this->status), self::DISABLED_STATUSES, true);
     }
-
-    // ── Tenant / ownership ──────────────────────────────────────────────
 
     public function client(): BelongsTo
     {
@@ -278,21 +210,6 @@ class Employee extends Model
         return $this->belongsTo(Branch::class);
     }
 
-    /**
-     * Resolve the assigned shift into a ["HH:MM" start, "HH:MM" end] window.
-     *
-     * The `shift` column stores only the shift NAME (e.g. "General") — the
-     * actual timings live on the branch's `shifts` repeater ({name,start,end}).
-     * Late-mark detection and payroll LOP must use the ACTUAL assigned timing,
-     * so we resolve name → branch shift here instead of trying to read a time
-     * out of the bare name (which always failed and fell back to 09:30).
-     * Resolution order:
-     *   1. a "HH:MM–HH:MM" range embedded in the shift string (legacy values),
-     *   2. the branch shift row whose name matches `shift`,
-     *   3. [null, null] → callers apply the 09:30–18:30 office default.
-     *
-     * Eager-load `branch:id,shifts` on list endpoints to avoid an N+1.
-     */
     public function resolveShiftWindow(): array
     {
         $shift = trim((string) ($this->shift ?? ''));
@@ -300,18 +217,10 @@ class Employee extends Model
             return [null, null];
         }
 
-        // 1. Time range already embedded in the value.
         if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
             return [$m[1], $m[2]];
         }
 
-        // 2. Match the shift NAME against the branch's configured shifts.
-        /* An eager load with a column list — EmployeeController uses
-           'branch:id,name' — returns a Branch with no `shifts` attribute at
-           all. Reading it yields null, which looks exactly like "this branch
-           defines no shifts", so every profile silently showed the shift name
-           with no window. Absent is not empty: fall back to a real query when
-           the loaded relation simply wasn't asked for the column. */
         $branch = $this->relationLoaded('branch') ? $this->getRelation('branch') : null;
         if (!$branch || !array_key_exists('shifts', $branch->getAttributes())) {
             $branch = $this->branch()->first();
@@ -326,27 +235,13 @@ class Employee extends Model
                 if ($start) {
                     return [$start, $end];
                 }
-                break; // name matched but timing unparseable → office default
+                break;
             }
         }
 
-        // 3. No parseable timing — caller falls back to the office default.
         return [null, null];
     }
 
-    /**
-     * Is overtime applicable to this employee?
-     *
-     * The employee form models this as a Yes/No toggle that, when Yes, forces
-     * the pick of an Overtime Rate from Master › Overtime (OT) — so the single
-     * `overtime` column carries BOTH facts: a rate name means applicable, blank
-     * (or the legacy "Not Applicable" / "No" sentinels the field held before the
-     * OT Master existed) means not.
-     *
-     * Everything overtime-related keys off this: attendance skips the shift-end
-     * auto-checkout for these employees so their post-shift time keeps
-     * accruing, and payroll only detects OT hours for them.
-     */
     public function overtimeApplicable(): bool
     {
         $v = trim((string) ($this->overtime ?? ''));
@@ -355,7 +250,6 @@ class Employee extends Model
             && strcasecmp($v, 'No') !== 0;
     }
 
-    /** First "HH:MM" found in $v, else null. Tolerates "9:30", "09:30:00", "09:30 AM". */
     private function hhmm($v): ?string
     {
         return preg_match('/(\d{1,2}:\d{2})/', (string) $v, $m) ? $m[1] : null;
@@ -366,24 +260,11 @@ class Employee extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** Login account paired to this employee (so they can sign into the dashboard). */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * The login behind this employee, by either route.
-     *
-     * `employees.user_id` is the intended link, but it is nullable and is NOT
-     * written when an account is created from the code alone — a whole tenant
-     * can have logins that work while every employee row still reads null.
-     * Everything that asks "is this person me?" went through that column only,
-     * so on such a tenant an approver could never be recognised: leave sat
-     * Pending with can_act_now false, and a signature role resolved to nobody.
-     * `users.employee_code` is the second route, and it is the one populated
-     * in that case.
-     */
     public function getResolvedUserIdAttribute(): ?int
     {
         if ($this->user_id) return (int) $this->user_id;
@@ -399,21 +280,11 @@ class Employee extends Model
         return $this->relations['resolvedUserId'];
     }
 
-    /** Passport-size photo doc uploaded during onboarding. The
-     *  `employee_documents` row with document_key='photo' is the canonical
-     *  source — also doubles as the employee's profile picture across the
-     *  app (list table avatar, EmployeeProfile hero, profile dropdown). */
     public function photoDocument(): HasOne
     {
         return $this->hasOne(EmployeeDocument::class)->where('document_key', 'photo');
     }
 
-    /**
-     * True when this employee has an enrolled face on file. Surfaces in the
-     * HR list so admins can see at a glance who has registered vs hasn't,
-     * without leaking the raw descriptor. The flag flips back to false
-     * after a revoke (which clears both the descriptor and the timestamp).
-     */
     public function getFaceRegisteredAttribute(): bool
     {
         return $this->face_registered_at !== null
@@ -421,44 +292,22 @@ class Employee extends Model
             && count($this->face_descriptor) > 0;
     }
 
-    /**
-     * Field-based profile completeness (0-100). Counts how many of the
-     * "business-card" profile fields are filled, so a created/onboarded
-     * employee with real data shows a meaningful % instead of 0% (which the
-     * onboarding-stage-only number reported until their wizard advanced).
-     * Exposed on the API payload so the HR Onboarding list, HR Employees,
-     * and the dashboard all read the SAME dynamic number.
-     */
     public function getProfileCompletionAttribute(): int
     {
-        // BLENDED completion: 50% from the onboarding-form data fields that
-        // are filled + 50% from the HR 6-stage onboarding progress. So a
-        // fully-filled record that HR hasn't onboarded yet ("Not Started")
-        // tops out at 50% (no longer a misleading 100%), and only a fully
-        // onboarded employee with all data reaches 100%.
-        //
-        // Data half mirrors the fields the onboarding form actually collects
-        // (basic → contact → address → job); purely optional fields
-        // (middle_name, alt_mobile, address_line2) are excluded so skipping
-        // them doesn't unfairly lower the score.
         $fields = [
-            // Basic details
             'first_name',
             'last_name',
             'gender',
             'date_of_birth',
             'work_country_id',
             'nationality_country_id',
-            // Contact & identity
             'email',
             'mobile',
-            // Address
             'address_line1',
             'city',
             'state_id',
             'country_id',
             'pincode',
-            // Job
             'department_id',
             'designation_id',
             'primary_role_id',
@@ -475,30 +324,11 @@ class Employee extends Model
         return (int) round($dataPart + $stagePart);
     }
 
-    /**
-     * Opaque, URL-safe handle the SPA puts into employee profile links so
-     * the real emp_code / DB id isn't visible (or tweakable) in the
-     * address bar. Wraps the numeric primary key in Laravel's symmetric
-     * Crypt::encryptString — each call produces a fresh ciphertext but
-     * decryption always recovers the same integer. The show() route
-     * accepts both this token and a plain numeric id, so legacy
-     * bookmarks keep working.
-     *
-     * Note: encryption alone is obfuscation, NOT authorisation —
-     * EmployeeController::resolveRow still enforces tenant scope via
-     * applyScope, so cross-tenant token guessing returns 404 even when
-     * the ciphertext is well-formed.
-     */
     public function getEncryptedIdAttribute(): ?string
     {
         if (!$this->id) return null;
         try {
             $enc = \Illuminate\Support\Facades\Crypt::encryptString((string) $this->id);
-            // Laravel's Crypt output is base64 with `+`, `/`, `=` which
-            // break route slugs ("/" is a path separator, "+" decodes to
-            // space, "=" trails awkwardly). Swap to URL-safe alphabet —
-            // strtr is symmetric so the resolver just inverts the map
-            // before Crypt::decryptString.
             return rtrim(strtr($enc, '+/', '-_'), '=');
         } catch (\Throwable $e) {
             return null;
@@ -507,18 +337,11 @@ class Employee extends Model
 
     public function getPhotoUrlAttribute(): ?string
     {
-        // Use the eager-loaded relation when present; fall back to a single
-        // lookup on detail views where eager-loading isn't worth it.
         $doc = $this->relationLoaded('photoDocument')
             ? $this->photoDocument
             : $this->photoDocument()->first();
         return $doc ? file_url($doc->file_path) : null;
     }
-
-    // ── Asset assignments (Stage 1 Step 3) ──────────────────────────────
-    // Single-row FKs go through plain BelongsTo; the `other_master_asset_ids`
-    // array is exposed via the `other_assets_resolved` accessor so the
-    // controller can return one consistent shape regardless of column type.
 
     public function laptopAsset(): BelongsTo
     {
@@ -543,17 +366,6 @@ class Employee extends Model
             ->values();
     }
 
-    /**
-     * Resolve the JSON-array of ancillary role ids into role rows so the
-     * SPA can render the chip + "+N" badge directly. Falls back to the
-     * legacy `ancillary_role_id` for rows that haven't been re-saved
-     * since the multi-role migration.
-     *
-     * @param  mixed  $value  a pre-resolved collection from
-     *   EmployeeController::batchAncillaryRoles, or null on the normal path.
-     *   See getOtherAssetsResolvedAttribute() for why that short circuit is
-     *   needed rather than nice to have.
-     */
     public function getAncillaryRolesResolvedAttribute($value = null): \Illuminate\Support\Collection
     {
         if ($value instanceof \Illuminate\Support\Collection) return $value;
@@ -566,12 +378,9 @@ class Employee extends Model
         return \App\Models\Masters\Roles::query()
             ->whereIn('id', $ids)
             ->get(['id', 'name'])
-            // Preserve the user's pick order, not the DB's natural order.
             ->sortBy(fn($r) => array_search($r->id, $ids))
             ->values();
     }
-
-    // ── Master refs ─────────────────────────────────────────────────────
 
     public function workCountry(): BelongsTo
     {
@@ -593,9 +402,6 @@ class Employee extends Model
         return $this->belongsTo(States::class, 'state_id');
     }
 
-    // Permanent-address relations — column pair mirrors the current-address
-    // country_id / state_id so the profile view can render both blocks
-    // without an extra round-trip per row.
     public function permCountry(): BelongsTo
     {
         return $this->belongsTo(Countries::class, 'perm_country_id');
@@ -606,12 +412,6 @@ class Employee extends Model
         return $this->belongsTo(States::class, 'perm_state_id');
     }
 
-    /**
-     * The employing legal entity — a BRANCH, not a master_legal_entities row.
-     * The branch carries the GST/PAN/CIN/IEC and bank accounts, so it is the
-     * registered entity an employee is hired into. Repointed by the
-     * 2026_07_30_000020 migration; the column name is kept for continuity.
-     */
     public function legalEntity(): BelongsTo
     {
         return $this->belongsTo(Branch::class, 'legal_entity_id');
@@ -642,65 +442,31 @@ class Employee extends Model
         return $this->belongsTo(Roles::class, 'ancillary_role_id');
     }
 
-    /** Manager → another Employee row (self-FK, may be null for top-of-tree). */
     public function reportingManager(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reporting_manager_id');
     }
 
-    /**
-     * Manager → a login User (Client/Branch user who hasn't been
-     * onboarded as an Employee row). Only ONE of `reporting_manager_id`
-     * or `reporting_manager_user_id` is populated per employee — the
-     * controller picks which based on the picker's `kind`.
-     */
     public function reportingManagerUser(): BelongsTo
     {
         return $this->belongsTo(\App\Models\User::class, 'reporting_manager_user_id');
     }
 
-    /**
-     * The inverse of reportingManager() — everyone who reports to this employee.
-     *
-     * Covers the EMPLOYEE-side link only. An employee whose manager is a login
-     * user (reporting_manager_user_id) is not returned here; that pairing is
-     * resolved from the user side. Used by the exit flow, which must not
-     * deactivate a manager while people still report to them — see
-     * ExitController::directReports().
-     */
     public function directReports(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(self::class, 'reporting_manager_id');
     }
 
-    /**
-     * The exit record for this employee (notice_date, last_working_day,
-     * reason, etc.). At most one row per employee — `employee_exits`
-     * carries a UNIQUE constraint on `employee_id`. Eager-loaded on the
-     * Employee list/detail JSON so HrExitManagement.tsx can read
-     * `last_working_day` directly off the row without a second call.
-     */
     public function exit(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(\App\Models\EmployeeExit::class, 'employee_id');
     }
 
-    /* ── Payroll graph ─────────────────────────────────────────────────
-     * Reverse links so payroll (and any other feature) can traverse from an
-     * employee to their attendance / leave / salary / payslips. The payroll
-     * engine reads via these inputs; keeping the relationships here makes the
-     * data model explicit and lets callers eager-load.
-     */
     public function attendances(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(\App\Models\Attendance::class, 'employee_id');
     }
 
-    /** Newest employer first. EmployeeController's eager load has always
-     *  documented this ordering ("so the frontend's [0] is the most recent
-     *  employer"), but the column-select string syntax it uses cannot carry an
-     *  orderBy — so the rows actually came back in insertion order and the
-     *  profile card's "Last Company" could show the oldest job. */
     public function previousEmployments(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(\App\Models\PreviousEmployment::class, 'employee_id')
@@ -717,7 +483,6 @@ class Employee extends Model
         return $this->hasMany(\App\Models\SalaryStructure::class, 'employee_id');
     }
 
-    /** The one currently-active salary structure (Rule 5/19). */
     public function activeSalaryStructure(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(\App\Models\SalaryStructure::class, 'employee_id')

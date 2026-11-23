@@ -4,18 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Face-biometric columns on the employees row.
- *
- * Stores the 128-d descriptor that face-api.js computes on the SPA. Plain JSON
- * array of floats — small enough (~1.5 KB) to live on the row itself, and easy
- * to read back into a JS Float32Array for distance comparison at clock-in.
- *
- * Consent columns are kept separately so the audit trail survives even after
- * the user revokes their biometric (we wipe the descriptor + the registered_at
- * timestamp on revoke, but keep `consent_given_at` and `consent_revoked_at` so
- * a future regulator query has a paper trail).
- */
 return new class extends Migration {
     public function up(): void
     {

@@ -6,46 +6,12 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * One-time cleanup — remove the super-admin-seeded "global" rows from
- * every master table EXCEPT:
- *
- *   • organization_types  (Organization master)
- *   • countries           (ISO country list)
- *   • states              (full state dataset)
- *   • state_codes         (GST state codes)
- *
- * Those four stay because they're platform-level reference data and
- * the rest of the app depends on the well-known global rows.
- *
- * The seed pattern that this migration targets:
- *   client_id  = NULL
- *   branch_id  = NULL
- *   created_by = <super_admin user id>
- *
- * Each tenant can then build out their own master values from scratch.
- *
- * SAFETY:
- *   • Only deletes rows that match all three predicates above, so
- *     anything a tenant has actually created stays untouched.
- *   • Skips tables that don't expose `client_id` / `branch_id` /
- *     `created_by` columns — those are platform-only masters that
- *     don't follow the tenant-scoped seeder pattern.
- *   • Wraps every per-table delete in a try/catch so one bad table
- *     can't abort the whole migration.
- *
- * REVERSAL:
- *   `down()` is a no-op. To restore the global rows, re-run the
- *   master seeder:  php artisan db:seed --class=Database\\Seeders\\MasterDataSeeder
- */
 return new class extends Migration
 {
     public function up(): void
     {
         $admin = User::where('user_type', 'super_admin')->first();
         if (! $admin) {
-            // Nothing to purge — there's no super_admin user, so no
-            // super-admin-seeded rows can exist.
             return;
         }
         $adminId = $admin->id;
@@ -63,12 +29,9 @@ return new class extends Migration
                 continue;
             }
             try {
-                /** @var \Illuminate\Database\Eloquent\Model $instance */
                 $instance = new $class();
                 $table = $instance->getTable();
 
-                // Skip tables that don't carry the tenant + creator triplet —
-                // they're not part of the super-admin seeded scope.
                 if (
                     ! Schema::hasColumn($table, 'client_id')
                     || ! Schema::hasColumn($table, 'branch_id')
@@ -88,8 +51,6 @@ return new class extends Migration
                     $tablesPurged[] = "$table ($deleted)";
                 }
             } catch (\Throwable $e) {
-                // Skip and continue — a missing table or model class
-                // shouldn't break the migration.
                 continue;
             }
         }
@@ -104,6 +65,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No-op — re-run MasterDataSeeder to restore.
     }
 };

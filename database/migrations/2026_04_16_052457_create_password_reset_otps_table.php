@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('password_reset_otps', function (Blueprint $table) {
             $table->id();
             $table->string('email')->index();
-            $table->string('otp'); // stores bcrypt hash
+            $table->string('otp');
             $table->integer('attempts')->default(0);
             $table->boolean('verified')->default(false);
             $table->timestamp('expires_at');

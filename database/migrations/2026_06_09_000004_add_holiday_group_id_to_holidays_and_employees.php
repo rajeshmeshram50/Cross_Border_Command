@@ -4,11 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Link holidays to a holiday group, and assign each employee a holiday group.
- * Both columns are nullable (ungrouped holidays + unassigned employees stay
- * valid) and follow the project's no-DB-FK convention for HR tables.
- */
 return new class extends Migration
 {
     public function up(): void

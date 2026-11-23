@@ -4,15 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Stage 2 — Previous Employment Companies. One row per company the
- * candidate worked at before. The Stage 2 form lets the admin add /
- * remove rows; per-company document uploads land in `employee_documents`
- * with a key like `prev_<previous_employment_id>_exp_letter`.
- *
- * Background-verification fields (HR emails + contact number) live on
- * this row so each company carries its own verification context.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -28,8 +19,6 @@ return new class extends Migration
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
 
-            // Background-verification context. Two HR emails so HR can
-            // cross-check; phone for direct contact.
             $table->string('hr_email_1', 191)->nullable();
             $table->string('hr_email_2', 191)->nullable();
             $table->string('contact_number', 30)->nullable();

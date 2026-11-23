@@ -5,23 +5,8 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Five international suppliers, one per country, for testing the Zoho Books
- * currency rules on a purchase order.
- *
- * The tenant had exactly one supplier outside India, so the only currency path
- * anyone could exercise was that supplier's — a domestic supplier has its
- * currency forced to INR and never shows the field at all.
- *
- * Singapore is deliberate: SGD sits in our currency master but is NOT enabled in
- * the Zoho org, so that supplier is the one to test the "currency not in Zoho
- * Books" notice with. The other four use currencies Zoho has.
- *
- * Re-runnable: a supplier already carrying its code is left exactly as it is.
- */
 class InternationalSupplierSeeder extends Seeder
 {
-    /** Material / Goods — the type a Material / Goods purchase order requires. */
     private const VENDOR_TYPE = 'Material / Goods';
     private const RISK_LEVEL  = 'Low';
 
@@ -32,9 +17,6 @@ class InternationalSupplierSeeder extends Seeder
             $this->command?->warn('No client — nothing to seed against.');
             return;
         }
-        /* The branch the tenant's existing suppliers actually sit in, not simply
-           the first one. Vendors are branch-scoped, so a supplier seeded into a
-           branch nobody works in never reaches the purchase-order dropdown. */
         $branchId = DB::table('vendors')
             ->where('client_id', $clientId)->whereNull('deleted_at')->whereNotNull('branch_id')
             ->select('branch_id')->selectRaw('count(*) as n')
@@ -44,8 +26,6 @@ class InternationalSupplierSeeder extends Seeder
         $typeId = DB::table('master_vendor_types')->where('name', self::VENDOR_TYPE)->value('id');
         $riskId = DB::table('master_risk_levels')->where('name', self::RISK_LEVEL)->value('id');
 
-        /* Segments that actually hold products, so Stage 02 has something to
-           order. A supplier mapped to an empty segment stalls the whole PO. */
         $segments = DB::table('products')
             ->where('client_id', $clientId)->whereNull('deleted_at')->whereNotNull('segment_id')
             ->distinct()->pluck('segment_id')->map(fn ($id) => (int) $id)->take(3)->values()->all();
@@ -103,10 +83,6 @@ class InternationalSupplierSeeder extends Seeder
         }
     }
 
-    /**
-     * @return array<int, array{code:string,company:string,legal:string,country:string,city:string,
-     *     address:string,contact:string,phone:string,email:string,currency:string}>
-     */
     private function suppliers(): array
     {
         return [
@@ -139,7 +115,6 @@ class InternationalSupplierSeeder extends Seeder
                 'currency' => 'AED',
             ],
             [
-                // SGD is in our master list but NOT enabled in Zoho — the notice case.
                 'code' => 'S-105', 'company' => 'Straits Agri Pte Ltd', 'legal' => 'Straits Agri Pte Ltd',
                 'country' => 'Singapore', 'city' => 'Singapore',
                 'address' => '8 Marina Boulevard, Level 11, Marina Bay Financial Centre, Singapore 018981',

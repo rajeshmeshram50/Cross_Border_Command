@@ -16,9 +16,6 @@ use Illuminate\Validation\ValidationException;
 
 class RecruitmentController extends Controller
 {
-    /* Page size when a caller asks to paginate without naming one, and the
-       ceiling on what it may name. Same values /employees uses, so the two
-       lists cannot drift apart. */
     private const DEFAULT_PER_PAGE = 25;
     private const MAX_PER_PAGE     = 200;
 
@@ -33,48 +30,20 @@ class RecruitmentController extends Controller
         'assignedHr:id,emp_code,display_name,first_name,last_name,status,deleted_at',
     ];
 
-    /** Module slug used for permission checks — matches ModuleSeeder. */
     private const MODULE_SLUG = 'hr.recruitment';
 
-    /** Whitelisted enum values — keep in sync with the frontend dropdowns. */
     private const EMPLOYMENT_TYPES = ['Full Time', 'Part Time', 'Contract', 'Internship'];
     private const WORK_MODES       = ['On-site', 'Remote', 'Hybrid', 'Flexible'];
     private const PRIORITIES       = ['Critical', 'High', 'Medium', 'Low'];
     private const STATUSES         = ['In Progress', 'Completed', 'Cancelled', 'Expired'];
 
-    /* Characters a job title / role may carry. (CBC #150)
-     *
-     * Was `[A-Za-z0-9 .,\-\/]` — letters, digits and four marks — which reads
-     * as "no special characters" but in practice refused ordinary job titles:
-     * "Sr. Engineer (R&D)", "Manager - Sales & Marketing", "Analyst, L&D",
-     * "Driver's Supervisor" all failed, and the error said only "No special
-     * characters", so there was nothing to tell the user which mark was the
-     * problem or that a title like theirs was never going to be accepted.
-     *
-     * Widened to the set already trusted on the qualification fields —
-     * & ( ) + apostrophes (straight and curly), % : ; and en/em dashes — so
-     * the two halves of the same form stop disagreeing about what a normal
-     * word looks like. Still no < > { } [ ] \ | " ` ~ = * # @ $ ^, which is
-     * what the rule is actually guarding against, and a separate rule
-     * requires at least one letter so punctuation alone cannot pass.
-     *
-     * Kept identical to TITLE_RE in HrRecruitment.tsx — the SPA validates
-     * first, and a client rule looser than the server's produces a 422 the
-     * form cannot attach to a field. */
     private const TITLE_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]+$/u';
     private const HAS_LETTER  = 'regex:/[A-Za-z]/';
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  LIST / SHOW / NEXT-CODE
-     * ───────────────────────────────────────────────────────────────── */
 
     public function index(Request $request)
     {
         $this->authorize($request, 'can_view');
 
-        // No scheduler runs in this app, so expiry is applied lazily on read:
-        // any overdue 'In Progress' recruitment is flipped to 'Expired' before
-        // the list is built, so it stops counting/behaving as an active opening.
         $branchFilter = $request->integer('branch_id') ?: null;
         $this->expireOverdue($request->user(), $branchFilter);
 
@@ -102,21 +71,6 @@ class RecruitmentController extends Controller
 
         $q->orderByDesc('id');
 
-        /* Pagination is OPT-IN, exactly as it is on /employees.
-         *
-         * Three screens read this endpoint and only one of them shows a table:
-         * the Recruitment list (paged), the "convert a hiring request" picker
-         * further down this page, and the Employee profile's recruitment
-         * lookup. The last two treat the body as a plain array and iterate it,
-         * so returning the {data, total, …} envelope unconditionally would
-         * empty both. Only a caller that asks for a page gets one.
-         *
-         * per_page is clamped rather than trusted — the list sizes its page to
-         * the viewport, so the number is whatever happens to fit, and an
-         * unclamped one would let a caller pull the whole table back, which is
-         * the thing paginating is here to prevent. A junk value falls back to
-         * the default rather than to the floor: max(1, (int) 'abc') is 1, which
-         * would answer a typo with 50 single-row pages. */
         if ($request->has('per_page') || $request->has('page')) {
             $requested = $request->query('per_page');
             $perPage = is_numeric($requested) && (int) $requested > 0
@@ -129,28 +83,11 @@ class RecruitmentController extends Controller
         return response()->json($q->get());
     }
 
-    /**
-     * KPI tiles + tab badges for the Recruitment list.
-     *
-     * Separate from index() for the reason every paginated list needs it: the
-     * browser used to count these off the full array, which only worked while
-     * index() returned every row. Once the list answers one page, counting it
-     * reports "Total Recruitments 10" on a tenant of 50.
-     *
-     * Narrowed by ?search but NOT by ?status — the badges are the breakdown
-     * the status tabs are cut FROM, so filtering them by the active tab would
-     * leave every tab reading its own count and zero for the others. Search is
-     * applied so the badges agree with the rows underneath them; a search that
-     * narrowed the table but left the tabs at their full totals is a screen
-     * contradicting itself.
-     */
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');
 
         $branchFilter = $request->integer('branch_id') ?: null;
-        // Same lazy expiry the list does, so a stale 'In Progress' is not
-        // counted as active in the tiles while the rows below call it Expired.
         $this->expireOverdue($request->user(), $branchFilter);
 
         $q = Recruitment::query();
@@ -163,7 +100,6 @@ class RecruitmentController extends Controller
             });
         }
 
-        // One pass, not five COUNTs that each re-scan the table.
         $row = $q->selectRaw("
             COUNT(*)                                                          AS total,
             SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END)           AS in_progress,
@@ -173,36 +109,16 @@ class RecruitmentController extends Controller
             COUNT(DISTINCT hiring_request_id)                                 AS converted
         ")->first();
 
-        /* SUM() comes back as a string on Postgres and null on an empty
-           tenant; these feed a counter animation that expects numbers. */
         return response()->json([
             'total'      => (int) ($row->total ?? 0),
             'inProgress' => (int) ($row->in_progress ?? 0),
             'completed'  => (int) ($row->completed ?? 0),
             'cancelled'  => (int) ($row->cancelled ?? 0),
             'expired'    => (int) ($row->expired ?? 0),
-            // COUNT(DISTINCT col) already skips NULLs, which is exactly the
-            // browser's old `.filter(id => id != null)` then Set().
             'converted'  => (int) ($row->converted ?? 0),
         ]);
     }
 
-    /**
-     * Ids of the hiring requests that have already become a recruitment.
-     *
-     * The Hiring Requests modal needs exactly this set — to split its rows
-     * into Pending / Recruitment Created and to decide whether "Create
-     * Recruitment" is offered. It used to get it by fetching the ENTIRE
-     * recruitments list, with every eager-loaded relation attached, and
-     * plucking one integer column out of it in the browser: 118 kB and ~1.8s
-     * to build a Set of numbers.
-     *
-     * Deliberately not folded into stats(): that endpoint is narrowed by
-     * ?search so its badges agree with the rows on screen, whereas this set
-     * classifies hiring requests and must cover the whole tenant regardless of
-     * what anyone has typed. Same reason it does not take a status filter — a
-     * cancelled recruitment still means that request was converted.
-     */
     public function linkedHiringRequests(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -225,11 +141,6 @@ class RecruitmentController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * Returns the next REC-### code for the tenant the new row would be
-     * stamped under. Sequence is isolated per (client_id, branch_id) just
-     * like employees and the auto-coded master tables.
-     */
     public function nextCode(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -238,10 +149,6 @@ class RecruitmentController extends Controller
         $code = $this->peekNextCode($clientId, $branchId);
         return response()->json(['code' => $code, 'prefix' => 'REC-']);
     }
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  STORE / UPDATE / DESTROY
-     * ───────────────────────────────────────────────────────────────── */
 
     public function store(Request $request)
     {
@@ -252,9 +159,6 @@ class RecruitmentController extends Controller
             $auth = $request->user();
             [$clientId, $branchId] = $this->resolveOwnership($request);
 
-            // Reject duplicates BEFORE allocating the next REC code so we
-            // don't burn a sequence number on a request that's about to be
-            // rejected. Surfaces inline on the `job_title` field.
             $this->guardDuplicate($data, $clientId, $branchId, null);
 
             $payload = array_merge($data, [
@@ -277,18 +181,8 @@ class RecruitmentController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
-        // Block edits that would collide with another row's full criteria
-        // signature within the same tenant — ignore the row being updated
-        // itself so re-saves don't trip the guard. Pass $row so omitted
-        // fields fall back to its current values.
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id, $row);
-        // Block "Mark as Completed" until every opening has a selected
-        // candidate — otherwise the recruitment's promise to fill N seats
-        // is silently broken.
         $this->guardStatusTransition($row, $data);
-        // Keep In Progress <-> Expired aligned with the (possibly edited)
-        // deadline so extending it reopens an expired recruitment and a past
-        // deadline expires it. Leaves explicit Completed/Cancelled untouched.
         $this->reconcileExpiryStatus($data, $row);
 
         $row->update($data);
@@ -297,15 +191,6 @@ class RecruitmentController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * Reject impossible status transitions before the row is saved.
-     *
-     * The only state we currently gate is `Completed` — the recruitment
-     * must have at least as many `Selected` candidates as openings before
-     * it can be closed out as filled. `Cancelled` is always allowed (the
-     * cancel modal captures a reason for audit), and any other transition
-     * (back to `In Progress`, etc.) is unrestricted.
-     */
     private function guardStatusTransition(Recruitment $row, array $data): void
     {
         $newStatus = $data['status'] ?? null;
@@ -330,27 +215,8 @@ class RecruitmentController extends Controller
         }
     }
 
-    /**
-     * Reject duplicates within the same tenant. A recruitment counts as a
-     * duplicate when EVERY substantive field matches an existing row — job
-     * title, department, designation, role, employment type, openings,
-     * experience, work mode, CTC range, priority, hiring manager, assigned
-     * HR, job description and requirements. The only fields deliberately
-     * left OUT of the signature are the dates (start_date / deadline): a
-     * re-post of the same opening with new dates is a legitimately distinct
-     * record, so changing a date is the supported way to post it again.
-     * Differing any non-date field makes it a distinct opening; matching all
-     * of them means it's an accidental double-submit and is blocked.
-     *
-     * Skips when job title or department is missing so partial PATCH updates
-     * that don't touch those columns aren't blocked. For updates, any field
-     * the PATCH omitted falls back to the existing row's value so the
-     * signature reflects the row's FINAL state, not just the changed columns.
-     */
     private function guardDuplicate(array $data, $clientId, $branchId, ?int $excludeId, ?Recruitment $existing = null): void
     {
-        // Resolve each comparison field from the incoming data, falling back
-        // to the existing row (update case) when the PATCH omitted it.
         $val = function (string $key) use ($data, $existing) {
             if (array_key_exists($key, $data)) return $data[$key];
             return $existing?->{$key};
@@ -360,11 +226,7 @@ class RecruitmentController extends Controller
         $deptId = $val('department_id');
         if ($title === '' || $deptId === null) return;
 
-        // Normalise free-text criteria for a forgiving, case-/whitespace-
-        // insensitive compare. NULL and '' are treated the same via COALESCE.
         $norm = fn ($v) => mb_strtolower(trim((string) ($v ?? '')));
-        // Numeric/FK criteria: NULL is treated as 0 so an unset FK on both
-        // rows still compares equal.
         $numNorm = fn ($v) => ($v === null || $v === '') ? 0 : (int) $v;
 
         $q = Recruitment::query()
@@ -409,26 +271,13 @@ class RecruitmentController extends Controller
         return response()->json(['message' => 'Recruitment removed.']);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS — mirror EmployeeController/MasterController patterns
-     * ───────────────────────────────────────────────────────────────── */
-
-    /** Cap the granular permission check to the 'hr.recruitment' module. */
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
-        // Tenant-level admins always pass.
         if ($user->isSuperAdmin())     return;
         if ($user->isClientAdmin())    return;
 
-        // Reporting managers get implicit access — they own the hiring
-        // pipeline for their direct reports, so the Recruitment module
-        // is effectively part of their day-to-day. Mirrors the rule in
-        // HiringRequestController so both sides of the flow stay in
-        // sync. Two FK shapes — reporting_manager_user_id (direct User
-        // FK) and reporting_manager_id (Employee FK, resolved through
-        // this user's own employees.user_id row).
         $isReportingManager = \App\Models\Employee::query()
             ->where(function ($q) use ($user) {
                 $q->where('reporting_manager_user_id', $user->id)
@@ -443,8 +292,6 @@ class RecruitmentController extends Controller
 
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
         if (!$moduleId) {
-            // First-run: module row not seeded yet. Fall back to plan-default
-            // (allow client_admin / branch_user; deny others).
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
             abort(403, 'Recruitment module not enabled.');
         }
@@ -456,7 +303,6 @@ class RecruitmentController extends Controller
         if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
     }
 
-    /** Pick (client_id, branch_id) for a new row. */
     private function resolveOwnership(Request $request): array
     {
         $user = $request->user();
@@ -472,9 +318,6 @@ class RecruitmentController extends Controller
         return [null, null];
     }
 
-    /** Tenant scoping — same rules used everywhere else. The optional
-     *  $branchFilter is honoured when the SPA's BranchSwitcher injects
-     *  ?branch_id=N for client_admin views. */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
@@ -492,8 +335,6 @@ class RecruitmentController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Every branch is an isolated peer — globals + client-level rows
-            // + own branch's rows only.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
@@ -511,8 +352,6 @@ class RecruitmentController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /** Narrow to BranchSwitcher's selected branch, validated to belong to
-     *  the user's own client (silent ignore for cross-tenant ids). */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -531,13 +370,6 @@ class RecruitmentController extends Controller
         return $this->maybeExpire($row);
     }
 
-    /**
-     * Lazily expire overdue recruitments for the current tenant scope. Any
-     * 'In Progress' row whose deadline has already passed (deadline < today)
-     * is moved to 'Expired'. Idempotent — 'Expired'/'Completed'/'Cancelled'
-     * rows and rows with no deadline (or a deadline still in the future) are
-     * never touched. Runs as a single bulk UPDATE so listing stays cheap.
-     */
     private function expireOverdue($user, ?int $branchFilter = null): void
     {
         $q = Recruitment::query();
@@ -548,7 +380,6 @@ class RecruitmentController extends Controller
           ->update(['status' => 'Expired']);
     }
 
-    /** Expire a single loaded row if it is overdue (mirrors expireOverdue). */
     private function maybeExpire(Recruitment $row): Recruitment
     {
         if ($row->status === 'In Progress' && $row->deadline && $row->deadline->lt(today())) {
@@ -558,13 +389,6 @@ class RecruitmentController extends Controller
         return $row;
     }
 
-    /**
-     * Keep the In Progress <-> Expired status in sync with the deadline when a
-     * recruitment is edited. Extending the deadline into the future reopens an
-     * Expired recruitment; a past (or unchanged-and-past) deadline expires it.
-     * Only toggles between those two states — an explicit move to Completed /
-     * Cancelled, or a row already in those states, is left untouched.
-     */
     private function reconcileExpiryStatus(array &$data, Recruitment $row): void
     {
         $effectiveStatus = $data['status'] ?? $row->status;
@@ -596,20 +420,12 @@ class RecruitmentController extends Controller
         }
     }
 
-    /**
-     * Validation rules. Required fields mirror the frontend's required-* labels:
-     * job_title, department_id, designation_id, primary_role_id, employment_type,
-     * openings, priority, hiring_manager_id, assigned_hr_id, start_date, deadline.
-     * Everything else is optional.
-     */
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;
         $req = fn (string $extra = '') => ($isUpdate ? 'sometimes|' : '') . 'required' . ($extra ? "|{$extra}" : '');
 
         return $request->validate([
-            // Letters, digits and ordinary title punctuation — see TITLE_REGEX
-            // for what is allowed and why. Must contain a letter.
             'job_title'         => array_values(array_filter([
                 $isUpdate ? 'sometimes' : null, 'required', 'string', 'max:191',
                 self::TITLE_REGEX, self::HAS_LETTER,
@@ -617,31 +433,16 @@ class RecruitmentController extends Controller
             'department_id'     => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_departments,id',
             'designation_id'    => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_designations,id',
             'primary_role_id'   => 'nullable|integer|exists:master_roles,id',
-            // Optional link back to the hiring request that spawned this
-            // recruitment. The Hiring Requests list uses it to surface a
-            // "Recruitment Created" tab. Stays nullable for recruitments
-            // that didn't originate from a request.
             'hiring_request_id' => 'nullable|integer|exists:hiring_requests,id',
 
             'employment_type'   => ['nullable', Rule::in(self::EMPLOYMENT_TYPES)],
             'openings'          => 'nullable|integer|min:1|max:9999',
             'experience'        => 'nullable|string|max:30',
-            // Optional (CBC #56). A recruitment may legitimately have no formal
-            // qualification requirement, and requiring it would block every
-            // existing row from being edited.
             'qualification'     => 'nullable|string|max:255',
             'work_mode'         => ['nullable', Rule::in(self::WORK_MODES)],
-            // A single value or a proper "min-max" range — exactly one
-            // hyphen, numbers/decimals only. Rejects multiple hyphens
-            // ("10---20") and stray separators even if a payload bypasses
-            // the SPA. Optional spaces around the hyphen are tolerated.
             'ctc_range'         => ['nullable', 'string', 'max:50', 'regex:/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/'],
             'priority'          => ['nullable', Rule::in(self::PRIORITIES)],
 
-            // An intern / trainee cannot own a hire (CBC #65). The picker
-            // already hides them; this closes the same hole for a payload that
-            // bypasses the SPA, and for someone who became a trainee after
-            // being assigned.
             'hiring_manager_id' => ['nullable', 'integer', 'exists:employees,id', function ($attr, $value, $fail) {
                 $emp = Employee::with('designation:id,level')->find($value);
                 if (EmployeeController::isTrainee($emp)) {
@@ -650,9 +451,6 @@ class RecruitmentController extends Controller
             }],
             'assigned_hr_id'    => 'nullable|integer|exists:employees,id',
             'start_date'        => 'nullable|date',
-            // TAT/Deadline must be strictly later than the start date — the
-            // same day is not a valid turnaround window, so 'after' (not
-            // 'after_or_equal') is enforced here and on the SPA.
             'deadline'          => 'nullable|date|after:start_date',
 
             'job_description'   => 'nullable|string',
@@ -671,7 +469,6 @@ class RecruitmentController extends Controller
         ]);
     }
 
-    /** Compute the next REC-### atomically inside the create transaction. */
     private function allocateCode($clientId, $branchId): string
     {
         $q = Recruitment::query()->withTrashed()->lockForUpdate();
@@ -681,7 +478,6 @@ class RecruitmentController extends Controller
         return $this->buildNext($q->pluck('code'));
     }
 
-    /** Same logic as allocateCode but without the row lock, for read-only previews. */
     private function peekNextCode($clientId, $branchId): string
     {
         $q = Recruitment::query()->withTrashed();

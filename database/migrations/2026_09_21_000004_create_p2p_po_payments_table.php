@@ -8,7 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Payment History: each payment released against an approved payment request.
         Schema::create('p2p_po_payments', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('client_id');

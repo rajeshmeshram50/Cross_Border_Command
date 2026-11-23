@@ -48,27 +48,17 @@ class Product extends Model
         'cold_chain_temp_max' => 'decimal:2',
     ];
 
-    /**
-     * Auto-append the resolved URLs alongside the raw paths so the frontend
-     * can render images without knowing the storage layout. Mirrors the
-     * `profile_photo_url` accessor pattern used on Client and Branch.
-     */
     protected $appends = ['primary_image_url', 'secondary_images_url', 'product_attachment_url'];
 
     public function getPrimaryImageUrlAttribute(): ?string
     {
         $p = $this->primary_image;
-        // `blob:` URLs are browser-session-only and never resolvable on the
-        // server. Treat them as empty so we don't emit `/storage/blob:...`.
         if (!$p || str_starts_with((string) $p, 'blob:')) {
             return null;
         }
         return file_url($p);
     }
 
-    /** Resolved URL for the product-level attachment (PDF / Word / image / …),
-     *  mirroring the primary-image accessor so the frontend can render/download
-     *  it without knowing the storage layout. */
     public function getProductAttachmentUrlAttribute(): ?string
     {
         $p = $this->product_attachment;
@@ -90,8 +80,6 @@ class Product extends Model
             ->values()
             ->all();
     }
-
-    /* ── Relations ───────────────────────────────────────────────────── */
 
     public function client(): BelongsTo
     {
@@ -153,12 +141,6 @@ class Product extends Model
         return $this->hasMany(ProductVendorMap::class);
     }
 
-    /* ── Helpers ─────────────────────────────────────────────────────── */
-
-    /**
-     * Resolve the next pending step (1 = Core, 2 = Sales, 3 = Quality, 4 = Vendor).
-     * Used by the frontend to re-open the wizard at the right place.
-     */
     public function nextStep(): int
     {
         return min(($this->step_completed ?? 0) + 1, 4);

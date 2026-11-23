@@ -4,10 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * UTR / bank reference number for an advance payout — lets HR/Finance trace the
- * transfer. Guarded so it's a no-op where the column already exists.
- */
 return new class extends Migration {
     public function up(): void
     {

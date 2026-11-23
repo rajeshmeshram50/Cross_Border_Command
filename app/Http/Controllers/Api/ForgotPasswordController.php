@@ -19,15 +19,9 @@ class ForgotPasswordController extends Controller
     use PasswordHistory;
 
     private const OTP_EXPIRY_MINUTES = 10;
-    // SECURITY: a 6-digit OTP must not tolerate hundreds of guesses. 5 wrong
-    // tries invalidates the code; 60s between resends stops email-bombing / rapid
-    // fresh-code minting. Routes are additionally IP-throttled (throttle:20,1).
     private const MAX_OTP_ATTEMPTS = 5;
     private const RESEND_COOLDOWN_SECONDS = 60;
 
-    /**
-     * Step 1: Send OTP to email
-     */
     public function sendOtp(Request $request)
     {
         $request->validate([
@@ -36,10 +30,6 @@ class ForgotPasswordController extends Controller
 
         $email = strtolower(trim($request->email));
 
-        // Check if user exists. Email can map to accounts in multiple clients
-        // now — prefer an ACTIVE one so a single inactive account doesn't block
-        // the reset when another active account shares the email. The actual
-        // account to reset is disambiguated later in resetPassword().
         $user = User::where('email', $email)->where('status', 'active')->first()
             ?? User::where('email', $email)->first();
         if (!$user) {
@@ -48,14 +38,12 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Check if user account is active
         if ($user->status !== 'active') {
             return response()->json([
                 'message' => 'Your account is not active. Please contact administrator.',
             ], 422);
         }
 
-        // Check resend cooldown — prevent spam
         $lastOtp = DB::table('password_reset_otps')
             ->where('email', $email)
             ->orderBy('created_at', 'desc')
@@ -70,13 +58,10 @@ class ForgotPasswordController extends Controller
             ], 429);
         }
 
-        // Delete old OTPs for this email
         DB::table('password_reset_otps')->where('email', $email)->delete();
 
-        // Generate 6-digit OTP
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-        // Store OTP
         DB::table('password_reset_otps')->insert([
             'email' => $email,
             'otp' => Hash::make($otp),
@@ -86,20 +71,12 @@ class ForgotPasswordController extends Controller
             'created_at' => now(),
         ]);
 
-        // Send email — master email toggle applies even to OTPs. If admin
-        // globally disables email they accept that password reset breaks.
         if (!Settings::shouldSendMail()) {
             return response()->json([
                 'message' => 'Email is disabled by platform admin. Contact support.',
             ], 503);
         }
         try {
-            // Branding is recipient-aware: BrandingResolver returns IGC
-            // platform defaults for super_admin AND client_admin users, and
-            // the parent client's own brand for branch users / employees.
-            // Keeps the OTP/credentials email contextual — client admins
-            // managed by us see "INORBVICT / GROUP OF COMPANIES"; branch
-            // users managed by their client see their client's wordmark.
             Mail::to($email)->cc('php@inhpl.com')->send(new PasswordResetOtpMail(
                 $otp,
                 $user->name,
@@ -117,16 +94,10 @@ class ForgotPasswordController extends Controller
         return response()->json([
             'message' => 'Verification code sent to your email.',
             'expires_in' => self::OTP_EXPIRY_MINUTES * 60,
-            // Backend is the source of truth for the resend cooldown so the
-            // VerifyOTP screen can't show "Resend in 0s" while the API is
-            // still throttling — fixes the timer-mismatch bug.
             'resend_after' => self::RESEND_COOLDOWN_SECONDS,
         ]);
     }
 
-    /**
-     * Step 2: Verify OTP
-     */
     public function verifyOtp(Request $request)
     {
         $request->validate([
@@ -148,7 +119,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Check if expired
         if (now()->greaterThan($record->expires_at)) {
             DB::table('password_reset_otps')->where('id', $record->id)->delete();
             return response()->json([
@@ -157,7 +127,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Check max attempts
         if ($record->attempts >= self::MAX_OTP_ATTEMPTS) {
             DB::table('password_reset_otps')->where('id', $record->id)->delete();
             return response()->json([
@@ -166,7 +135,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Verify OTP
         if (!Hash::check($request->otp, $record->otp)) {
             $attemptsLeft = self::MAX_OTP_ATTEMPTS - $record->attempts - 1;
             DB::table('password_reset_otps')
@@ -179,7 +147,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Mark as verified
         DB::table('password_reset_otps')
             ->where('id', $record->id)
             ->update(['verified' => true]);
@@ -189,22 +156,16 @@ class ForgotPasswordController extends Controller
         ]);
     }
 
-    /**
-     * Step 3: Reset password
-     */
     public function resetPassword(Request $request)
     {
         $request->validate([
             'email' => 'required|email',
             'password' => 'required|string|min:8|confirmed',
-            // Optional org pick — required only when the email exists in more
-            // than one client (email is unique per-tenant now).
             'client_id' => 'nullable|integer',
         ]);
 
         $email = strtolower(trim($request->email));
 
-        // Check for verified OTP
         $record = DB::table('password_reset_otps')
             ->where('email', $email)
             ->where('verified', true)
@@ -217,7 +178,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Check if verification hasn't expired (extra 5 min grace after OTP verify)
         if (now()->greaterThan(now()->parse($record->expires_at)->addMinutes(5))) {
             DB::table('password_reset_otps')->where('email', $email)->delete();
             return response()->json([
@@ -226,11 +186,6 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Find the user whose password to reset. Email is per-tenant now, so it
-        // can map to accounts in multiple clients — ask which one (the OTP was
-        // already proven, so listing the owner's orgs is safe). We return early
-        // WITHOUT consuming the verified OTP so the re-submit with client_id
-        // still works.
         $users = User::where('email', $email)->get();
         if ($users->isEmpty()) {
             return response()->json(['message' => 'User not found.'], 404);
@@ -257,42 +212,26 @@ class ForgotPasswordController extends Controller
             $user = $users->first();
         }
 
-        // Block re-use of the last 3 passwords (current + 2 historical).
-        // See App\Traits\PasswordHistory for the full policy.
         if ($this->isPasswordReused($user, $request->password)) {
             return response()->json([
                 'message' => $this->passwordReuseMessage(),
             ], 422);
         }
 
-        // Save the OLD hash to history BEFORE we overwrite it on the user.
         $this->recordPasswordHistory($user);
 
-        // Capture the plaintext password BEFORE hashing — the confirmation
-        // mail surfaces it so the user can recover their new credentials from
-        // their inbox if they forget what they just set. Mirrors the existing
-        // WelcomeCredentialsMail pattern. Drop this if policy ever bans
-        // emailing plaintext passwords.
         $newPassword = $request->password;
 
         $user->update([
             'password' => Hash::make($newPassword),
-            // Clear any forced-reset flag (e.g. set after an email change) so
-            // the user can sign in again now that they've set a new password.
             'must_reset_password' => false,
         ]);
 
-        // Delete all OTPs for this email
         DB::table('password_reset_otps')->where('email', $email)->delete();
 
-        // Revoke all tokens (force re-login)
         $user->tokens()->delete();
 
-        // Confirmation mail — gated by master emailNotif. Non-fatal so a
-        // transient SMTP hiccup never blocks the password reset itself
-        // (the password IS already saved).
         if (Settings::shouldSendMail()) try {
-            // Same recipient-aware branding rule as the OTP send above.
             Mail::to($user->email)->send(new PasswordChangedMail(
                 $user->name,
                 $user->email,
@@ -312,5 +251,4 @@ class ForgotPasswordController extends Controller
             'message' => 'Password reset successfully. You can now login with your new password.',
         ]);
     }
-
 }

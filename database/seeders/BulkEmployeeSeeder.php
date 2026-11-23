@@ -7,52 +7,14 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Fully-populated employee data for load / pagination / reporting testing.
- *
- * Creates the batch as a real ORG CHART rather than a flat list: every
- * department gets one HOD, team leaders under them, and executives / employees
- * / interns under those. `reporting_manager_id` follows that chain, so My Team,
- * approval routing (leave, expense, regularization) and the hierarchy screens
- * all have something true to walk.
- *
- * Each row is filled end to end — personal, contact, both addresses, job,
- * probation / notice, attendance policy, assets, statutory ids, bank details —
- * plus a matching `salary_structures` row (basic / HRA / special split, with PF
- * and ESI applicability derived from the actual amounts), which is what payroll
- * reads.
- *
- * ONBOARDED of them are fully onboarded (`onboarding_stage_completed` = 6, the
- * definition used codebase-wide — App\Support\OnboardingGuard::COMPLETE_STAGE);
- * the rest are left mid-flight at a random stage so the onboarding gates have
- * something to bite on.
- *
- * Run:  php artisan db:seed --class=BulkEmployeeSeeder
- *
- * Re-runnable: rows this seeder created are tagged by the @seed.mailinator.com
- * email domain and are deleted before a fresh block is written, so it can never
- * touch a real employee.
- *
- * Deliberately NOT created: login users. These rows fill lists and reports;
- * giving 400 of them sign-in accounts is a different, riskier thing to leave in
- * a database.
- */
 class BulkEmployeeSeeder extends Seeder
 {
     private const CLIENT_ID = 16;
     private const BRANCH_ID = 52;
     private const ONBOARDED = 200;
 
-    /** Marks every row this seeder owns — the delete filter on a re-run. */
     private const SEED_DOMAIN = '@seed.mailinator.com';
 
-    /* Master rows are looked up BY NAME, never by hard-coded id.
-       Ids are per-database: "India" is 104 locally and 2849 on the hosted
-       environment, "IT" is department 6 here and 42 there. A seeder carrying
-       literal ids would silently point 400 employees at whatever happens to
-       occupy that id in another database — a different department, another
-       tenant's row, or nothing at all. Resolved once in run(), and the run
-       aborts if a name cannot be found rather than writing bad foreign keys. */
     private const DEPARTMENT_NAMES = [
         'Sales',
         'Human Resources',
@@ -66,10 +28,6 @@ class BulkEmployeeSeeder extends Seeder
         'Export-Import',
     ];
 
-    /* One rung of the department chain, top downwards. The shape of each
-       department: 1 HOD -> 4 team leaders -> 10 executives -> 20 employees ->
-       5 interns = 40 people x 10 departments = 400.
-       `designation` and `role` are matched against the master tables by name. */
     private const LEVELS = [
         ['key' => 'hod',       'designation' => 'Head of Department (HOD)', 'role' => 'Manager',   'count' => 1,  'lpa' => [18.0, 26.0]],
         ['key' => 'lead',      'designation' => 'Team Leader',              'role' => 'Manager',   'count' => 4,  'lpa' => [10.0, 16.0]],
@@ -82,9 +40,6 @@ class BulkEmployeeSeeder extends Seeder
     private const WEEKLY_OFFS = ['Sunday Only', 'Saturday & Sunday'];
     private const GENDERS     = ['Male', 'Female'];
     private const BLOOD       = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
-    /* Bank name and IFSC prefix are ONE choice, not two: an HDFC account
-       whose IFSC starts ICIC is the kind of detail that makes seeded data
-       useless for testing anything that validates the pair. */
     private const BANKS = [
         ['HDFC Bank',           'HDFC'],
         ['ICICI Bank',          'ICIC'],
@@ -95,7 +50,6 @@ class BulkEmployeeSeeder extends Seeder
     private const SOCIETIES   = ['Sunrise Residency', 'Green Park', 'Lake View Apartments', 'Shanti Nagar'];
     private const LOCALITIES  = ['Baner', 'Balewadi', 'Hinjewadi', 'Kothrud', 'Aundh'];
 
-    /** [city, pincode] — all in the state resolved below. */
     private const CITIES = [
         ['Pune', '411045'],
         ['Mumbai', '400001'],
@@ -108,10 +62,9 @@ class BulkEmployeeSeeder extends Seeder
     private const STATE_NAME        = 'Maharashtra';
     private const HOLIDAY_GROUP     = 'Indian Employee';
 
-    /** Ids resolved from the names above, filled by resolveMasters(). */
     private array $departmentIds  = [];
-    private array $designationIds = [];   // designation name => id
-    private array $roleIds        = [];   // role name        => id
+    private array $designationIds = [];
+    private array $roleIds        = [];
     private ?int $countryId       = null;
     private ?int $stateId         = null;
     private ?int $holidayGroupId  = null;
@@ -182,8 +135,6 @@ class BulkEmployeeSeeder extends Seeder
 
     public function run(): void
     {
-        // Fixed seed -> the same people every run, so a bug found in this data
-        // can be reproduced on someone else's database.
         mt_srand(20260821);
 
         $this->resolveMasters();
@@ -191,8 +142,8 @@ class BulkEmployeeSeeder extends Seeder
 
         $now     = Carbon::now();
         $nextSeq = $this->nextEmpSeq();
-        $index   = 0;      // 0-based across the whole batch - drives the onboarded split
-        $created = [];     // emp_code => [id, department_id, designation_id], filled level by level
+        $index   = 0;
+        $created = [];
 
         foreach (self::LEVELS as $level) {
             $rows = [];
@@ -207,8 +158,6 @@ class BulkEmployeeSeeder extends Seeder
                 DB::table('employees')->insert($chunk);
             }
 
-            /* Ids only exist after the insert, and the NEXT level down reports
-               to these people - so map code => id before moving on. */
             DB::table('employees')
                 ->whereIn('emp_code', array_column($rows, 'emp_code'))
                 ->where('branch_id', self::BRANCH_ID)
@@ -234,13 +183,6 @@ class BulkEmployeeSeeder extends Seeder
         ));
     }
 
-    /**
-     * Turn every master NAME this seeder uses into an id in THIS database.
-     *
-     * Anything missing stops the run: 400 employees pointing at a department
-     * that does not exist (or, worse, at whatever else now holds that id) is a
-     * far more expensive problem to unpick than a seeder that refuses to start.
-     */
     private function resolveMasters(): void
     {
         $missing = [];
@@ -270,8 +212,6 @@ class BulkEmployeeSeeder extends Seeder
             }
         }
 
-        // Optional — a missing holiday group or leave plan leaves the column
-        // null, which is a legitimate state for an employee.
         $this->holidayGroupId = DB::table('holiday_groups')->where('name', self::HOLIDAY_GROUP)->value('id');
 
         $plans = DB::table('master_leave_plans')
@@ -297,7 +237,6 @@ class BulkEmployeeSeeder extends Seeder
         }
     }
 
-    /** Clear out an earlier run of THIS seeder (and only that). */
     private function removePreviousRun(): void
     {
         $ids = DB::table('employees')
@@ -314,7 +253,6 @@ class BulkEmployeeSeeder extends Seeder
         $this->command?->warn("Removed {$ids->count()} employees from a previous run of this seeder.");
     }
 
-    /** emp_code is unique PER BRANCH - continue from this branch's own highest. */
     private function nextEmpSeq(): int
     {
         $existing = Employee::withTrashed()
@@ -335,7 +273,6 @@ class BulkEmployeeSeeder extends Seeder
         $middle    = mt_rand(1, 100) <= 30 ? self::MIDDLE_NAMES[array_rand(self::MIDDLE_NAMES)] : null;
         $onboarded = $index < self::ONBOARDED;
 
-        // Seniority buys tenure: an HOD has been here longer than an intern.
         $maxTenureDays = match ($level['key']) {
             'hod'       => 2200,
             'lead'      => 1600,
@@ -347,7 +284,6 @@ class BulkEmployeeSeeder extends Seeder
         $born   = $joined->copy()->subYears(mt_rand(23, 55))->subDays(mt_rand(0, 364));
 
         [$city, $pin] = self::CITIES[array_rand(self::CITIES)];
-        // Most people's permanent address is their current one.
         [$permCity, $permPin] = mt_rand(1, 100) <= 70
             ? [$city, $pin]
             : self::CITIES[array_rand(self::CITIES)];
@@ -366,7 +302,6 @@ class BulkEmployeeSeeder extends Seeder
             'branch_id' => self::BRANCH_ID,
             'emp_code'  => $code,
 
-            // -- Personal --------------------------------------------------
             'first_name'    => $first,
             'middle_name'   => $middle,
             'last_name'     => $last,
@@ -377,7 +312,6 @@ class BulkEmployeeSeeder extends Seeder
             'nationality_country_id' => $this->countryId,
             'work_country_id'        => $this->countryId,
 
-            // -- Contact ---------------------------------------------------
             'email'          => strtolower($first . '.' . $last . '.' . $seq) . self::SEED_DOMAIN,
             'official_email' => strtolower($first . '.' . $last . '.' . $seq) . '@igcgroup.in',
             'mobile'         => $this->mobile(),
@@ -395,7 +329,6 @@ class BulkEmployeeSeeder extends Seeder
             'perm_country_id'    => $this->countryId,
             'perm_pincode'       => $permPin,
 
-            // -- Job -------------------------------------------------------
             'department_id'        => $deptId,
             'designation_id'       => $this->designationIds[$level['designation']],
             'primary_role_id'      => $this->roleIds[$level['role']],
@@ -411,7 +344,6 @@ class BulkEmployeeSeeder extends Seeder
             'notice_period'        => $noticeDays . ' Days',
             'notice_period_days'   => $noticeDays,
 
-            // -- Attendance / policy ---------------------------------------
             'attendance_tracking'  => true,
             'shift'                => self::SHIFTS[array_rand(self::SHIFTS)],
             'weekly_off'           => self::WEEKLY_OFFS[array_rand(self::WEEKLY_OFFS)],
@@ -424,7 +356,6 @@ class BulkEmployeeSeeder extends Seeder
             'holiday_list'         => 'Indian Employee',
             'holiday_group_id'     => $this->holidayGroupId,
 
-            // -- Assets / facilities ---------------------------------------
             'laptop_assigned'     => $level['key'] === 'intern' ? 'No' : 'Yes',
             'mobile_assigned'     => in_array($level['key'], ['hod', 'lead'], true) ? 'Yes' : 'No',
             'mobile_device'       => in_array($level['key'], ['hod', 'lead'], true) ? 'Company Issued' : null,
@@ -435,7 +366,6 @@ class BulkEmployeeSeeder extends Seeder
             'other_master_asset_ids' => json_encode([]),
             'ancillary_role_ids'     => json_encode([]),
 
-            // -- Payroll ---------------------------------------------------
             'enable_payroll'        => true,
             'pay_group'             => 'Monthly Staff',
             'annual_salary'         => $annual,
@@ -447,9 +377,6 @@ class BulkEmployeeSeeder extends Seeder
             'bonus_in_annual'       => mt_rand(0, 1) === 1,
             'detailed_breakup'      => true,
             'salary_payment_mode'   => 'bank',
-            /* PF is statutory below the 15,000 basic ceiling, ESI below a
-               21,000 monthly gross. Derived from the amounts rather than set at
-               random, so payroll cases line up with the numbers. */
             'pf_eligible'    => $monthlyBasic <= 15000,
             'pf_type'        => 'statutory',
             'pf_deduction'   => $monthlyBasic <= 15000 ? 'Yes' : 'No',
@@ -458,7 +385,6 @@ class BulkEmployeeSeeder extends Seeder
             'pan_number'     => $this->pan(),
             'gratuity_nominee_name' => self::FIRST_NAMES[array_rand(self::FIRST_NAMES)] . ' ' . $last,
 
-            // -- Bank ------------------------------------------------------
             'bank_name'           => $bankName,
             'bank_account_number' => (string) mt_rand(10000000000, 99999999999),
             'ifsc_code'           => $ifscPrefix . '0' . str_pad((string) mt_rand(1, 999999), 6, '0', STR_PAD_LEFT),
@@ -466,11 +392,7 @@ class BulkEmployeeSeeder extends Seeder
             'bank_branch'         => $city . ' Main Branch',
             'bank_account_type'   => 'Savings',
 
-            // -- Lifecycle -------------------------------------------------
             'status' => 'Active',
-            /* 6 is "fully onboarded" (OnboardingGuard::COMPLETE_STAGE); below
-               that leaves the employee mid-flight, which is what the SPA and
-               the server-side guards check. */
             'onboarding_stage_completed' => $onboarded ? 6 : mt_rand(0, 5),
             'wizard_step_completed'      => $onboarded ? 4 : mt_rand(0, 3),
             'stage4_completed_at'        => $onboarded ? $joined->copy()->addDays(2) : null,
@@ -479,16 +401,10 @@ class BulkEmployeeSeeder extends Seeder
         ];
     }
 
-    /**
-     * Who this person reports to, following the department's own chain: team
-     * leads -> their HOD, executives and employees -> a team lead in the same
-     * department, interns -> an executive. Picked at random from that pool so
-     * no single manager collects the whole department.
-     */
     private function managerFor(string $levelKey, int $deptId, array $created): ?int
     {
         $pool = match ($levelKey) {
-            'hod'                   => [],   // top of the department chain
+            'hod'                   => [],
             'lead'                  => $this->idsIn($created, $deptId, $this->designationIds['Head of Department (HOD)']),
             'executive', 'employee' => $this->idsIn($created, $deptId, $this->designationIds['Team Leader']),
             'intern'                => $this->idsIn($created, $deptId, $this->designationIds['Executive']),
@@ -498,7 +414,6 @@ class BulkEmployeeSeeder extends Seeder
         return $pool ? $pool[array_rand($pool)] : null;
     }
 
-    /** Ids already created for one department at one designation level. */
     private function idsIn(array $created, int $deptId, int $designationId): array
     {
         $ids = [];
@@ -511,11 +426,6 @@ class BulkEmployeeSeeder extends Seeder
         return $ids;
     }
 
-    /**
-     * One active, approved salary structure per employee - this, not the
-     * employee row's `annual_salary`, is what payroll reads. Split 50/30/20
-     * basic / HRA / special, the common Indian shape.
-     */
     private function seedSalaryStructures(array $rows, array $created, Carbon $now): void
     {
         $structures = [];
@@ -536,8 +446,6 @@ class BulkEmployeeSeeder extends Seeder
                 'branch_id'   => self::BRANCH_ID,
                 'employee_id' => $empId,
                 'version'     => 1,
-                /* The first structure runs from the day they joined - the same
-                   rule EmployeeController enforces on the form. */
                 'effective_from' => $row['date_of_joining'],
                 'status'         => 'active',
                 'earnings'       => json_encode([
@@ -574,7 +482,6 @@ class BulkEmployeeSeeder extends Seeder
         return (string) mt_rand(7000000000, 9999999999);
     }
 
-    /** AAAAA9999A - the real PAN shape, so format validation has something to pass. */
     private function pan(): string
     {
         $letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';

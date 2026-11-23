@@ -22,7 +22,6 @@ class ExpenseClaim extends Model
         'status', 'manager_status', 'manager_acted_at', 'manager_acted_by', 'manager_comment',
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
-        // Settlement (post-approval payment)
         'sanctioned_amount', 'deduction_amount', 'deduction_reason', 'deductions',
         'additions', 'addition_amount',
         'total_paid', 'settlement_status', 'settled_at', 'reimbursement_emailed_at',
@@ -64,8 +63,6 @@ class ExpenseClaim extends Model
         return $this->belongsTo(ExpenseCategories::class, 'category_id');
     }
 
-    /** The company advance this claim reimburses, if any (reverse of
-     *  advance_requests.settle_reimbursement_claim_id). */
     public function reimbursedAdvance(): HasOne
     {
         return $this->hasOne(AdvanceRequest::class, 'settle_reimbursement_claim_id');
@@ -81,8 +78,6 @@ class ExpenseClaim extends Model
         return $this->belongsTo(User::class, 'hr_user_id');
     }
 
-    /** The user who acted at the reporting-manager stage (any logged-in
-     *  approver — assigned manager, branch admin, etc.). */
     public function managerActor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'manager_acted_by');

@@ -5,14 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * The 2026_05_09 seed shipped cbc.com placeholder URLs, so the cookie
-     * banner's "Privacy Policy" link pointed at a domain nobody owns — and
-     * Google's OAuth consent screen needs that same URL to resolve.
-     *
-     * Only the untouched placeholders are replaced; anything an admin has
-     * already edited is left alone.
-     */
     private array $map = [
         'general' => [
             'website_url' => ['https://cbc.com' => 'https://kryptone.ai'],

@@ -16,7 +16,6 @@ class ClmTncLibrary extends Model
         'created_by', 'updated_by',
     ];
 
-    /** 'segment' - matched by the product's segment; 'global' - one per document category. */
     public const SCOPE_SEGMENT = 'segment';
     public const SCOPE_GLOBAL = 'global';
 

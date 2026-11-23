@@ -23,16 +23,8 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 
-
 class HrDocumentTemplateController extends Controller
 {
-    /* uploadDocx() calls docxPageLimitError(), which lives here along with the
-       DOCX_MAX_PAGES constant it reads — the trait was never pulled in, so
-       every .docx upload died on "Call to undefined method". ClmTradeDocument
-       does the same page-limit check off the same trait.
-       This class defines its own docxToHtml() and elementToHtml(); a class's
-       own method wins over the trait's, so those two keep behaving exactly as
-       they did. */
     use HandlesDocxHtmlRoundtrip;
 
     private const WITH = [
@@ -45,15 +37,11 @@ class HrDocumentTemplateController extends Controller
     private const MODULE_SLUG = 'hr.doc_templates';
 
     private const CATEGORIES   = ['IT', 'Non-IT', 'Legal'];
-    // Role types now mirror the canonical designation levels stored in the
-    // designation master (master_designations.level). Six values, exactly as
-    // shown in the level-chip strip on the master.
     private const ROLE_TYPES   = ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee'];
     private const STATUSES     = ['Draft', 'Active', 'Deprecated'];
     private const SIGN_MODES   = ['Sequential', 'Parallel'];
     private const EDITOR_MODES = ['web', 'word'];
 
-    // Short codes baked into the auto-generated template code (IT-INT-001 etc).
     private const CAT_SHORT  = ['IT' => 'IT',  'Non-IT' => 'NIT', 'Legal' => 'LGL'];
     private const ROLE_SHORT = [
         'Director / CEO'           => 'DIR',
@@ -65,31 +53,11 @@ class HrDocumentTemplateController extends Controller
     ];
 
     private const DOCX_MAX_KB = 20 * 1024;
-    // NOTE: DOCX_MAX_PAGES + docxPageLimitError() come from HandlesDocxHtmlRoundtrip
-    // (shared with ClmTradeDocumentController) — do NOT redefine them here; a class
-    // constant that differs from the trait's is a fatal "incompatible" error.
-
-    /* ───── LIST / SHOW / NEXT-CODE / STATS ───── */
 
     public function index(Request $request)
     {
         $this->authorize($request, 'can_view');
 
-        /* LIST COLUMNS ONLY. The four heavy columns are deliberately absent:
-             content_html  longText — the entire document body
-             header_config \ JSON letterhead blocks, logo references included
-             footer_config /
-             signers         JSON
-             audit_log       JSON, and it only ever grows
-           This endpoint used to return whole rows, so opening the list shipped
-           every template's full body — a page that renders code, name, type and
-           status was downloading the documents themselves, all of them, before
-           it could paint. The only screen that wants those fields is the View
-           modal, which shows ONE template at a time and now fetches it from
-           show() when it opens.
-           Keep this list in step with the columns the table and its filters
-           actually read; a field added to the UI but not here arrives as null,
-           which looks like missing data rather than a missing select. */
         $q = HrDocumentTemplate::query()
             ->select([
                 'id', 'client_id', 'branch_id',
@@ -118,8 +86,6 @@ class HrDocumentTemplateController extends Controller
 
         $rows = $q->orderByDesc('id')->get();
 
-        // Flag templates currently out for signature so the list can disable
-        // Edit / Deprecate on them (the action is refused server-side too). (#24)
         $live = HrDocumentSignature::whereIn('template_id', $rows->pluck('id'))
             ->whereIn('status', ['Pending', 'In Progress'])
             ->pluck('template_id')->map(fn ($x) => (int) $x)->flip();
@@ -148,14 +114,6 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
-    /**
-     * GET /hr-document-templates/last-branding
-     *
-     * Header/footer config of the caller's most recent template, so a NEW
-     * template can prefill the same letterhead (logo / title / footer) instead
-     * of re-uploading it every time. Scoped like the list; null when the tenant
-     * has no prior template.
-     */
     public function lastBranding(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -163,29 +121,12 @@ class HrDocumentTemplateController extends Controller
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
         $row = $q->orderByDesc('id')->first(['header_config', 'footer_config']);
         return response()->json([
-            // `?->` — with no previous template at all, $row is null and the
-            // old `$row->header_config` raised "property on null" on every
-            // first-ever template.
             'header_config' => $row?->header_config,
             'footer_config' => $row?->footer_config,
-            // Who this user's letterhead belongs to. The first template a
-            // branch writes has no previous branding to copy, and the blank
-            // defaults printed the literal words "Company Name" in the header
-            // and footer of the draft — so every new template started off
-            // branded as somebody else's. Seeds the same values the
-            // {{CompanyName}} / {{CompanyAddress}} / {{CompanyLogo}} tokens
-            // resolve to at generate time.
             'org' => $this->orgIdentity($request->user()),
         ]);
     }
 
-    /**
-     * The organisation a user's documents are issued by: their BRANCH first
-     * (a branch user's letterhead is their own office, not the parent org),
-     * falling back to the client row. Mirrors how {{CompanyName}},
-     * {{CompanyAddress}} and {{CompanyLogo}} resolve when a document is
-     * actually generated, so the draft the user designs matches the output.
-     */
     private function orgIdentity(?\App\Models\User $user): array
     {
         $branch = $user?->branch;
@@ -209,20 +150,6 @@ class HrDocumentTemplateController extends Controller
             'logo_url'  => $logoPath ? file_url($logoPath) : null,
         ];
     }
-    /**
-     * Live PDF preview of a template that has not been saved yet.
-     *
-     * The editor can only ESTIMATE where a page ends — it is a scrolling div,
-     * not a paginated engine — so the only way to show true A4 pages, the real
-     * header/footer bands and where an explicit page break actually lands is to
-     * render the draft through the same DomPDF pipeline the download uses and
-     * paint the result. Same blade as the generated/signed copies
-     * (pdf.signed-document), so preview and output cannot drift.
-     *
-     * Placeholders are deliberately left as written: this previews the TEMPLATE,
-     * and a designer needs to see {{FullName}} sitting where it will print. The
-     * per-employee preview (previewForEmployee) is the one that resolves them.
-     */
     public function previewLive(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -238,8 +165,6 @@ class HrDocumentTemplateController extends Controller
 
         $row = null;
         if (!empty($data['id'])) {
-            // Tenant-scoped lookup only — never trust an id from the request to
-            // reach another client's template.
             try { $row = $this->resolveRow($request, (int) $data['id']); }
             catch (\Throwable $e) { $row = null; }
         }
@@ -252,8 +177,6 @@ class HrDocumentTemplateController extends Controller
             $html = '<p style="color:#9ca3af">(empty template)</p>';
         }
 
-        // The blade only reads $row->template?->name for the <title>, and an
-        // unsaved draft has no row at all — hand it a stand-in.
         $document = $row ?: new HrDocumentTemplate(['name' => 'Template preview']);
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
@@ -261,29 +184,17 @@ class HrDocumentTemplateController extends Controller
             'header'      => $headerCfg,
             'footer'      => $footerCfg,
             'logoDataUri' => $this->previewLogoDataUri($headerCfg, $request->user()),
-            /* Preview has no subject employee, so it shows the AUTHOR's own
-               letterhead — branch name, then client org name. The preview must
-               show what the finished document will look like, and printing the
-               placeholder words here is what made them look intentional. (#113) */
             'companyName' => (string) (
                 $request->user()?->branch?->name
                 ?: $request->user()?->client?->org_name
                 ?: ''
             ),
-            // DomPDF runs headless and cannot fetch /storage over HTTP.
             'bodyHtml'    => $this->inlineLocalImages($html),
         ])->setPaper('A4');
 
-        // Inline so the SPA can pull it as a blob and paint it with pdf.js.
         return $pdf->stream('template-preview.pdf');
     }
 
-    /**
-     * Header-strip logo for the live preview: the config's saved disk path, the
-     * same config's URL mapped back to a disk path, then the signed-in user's
-     * branch (and client) logo — the same order the generated PDF uses, so the
-     * preview shows the letterhead the document will carry.
-     */
     private function previewLogoDataUri(array $headerCfg, $user): ?string
     {
         $candidates = array_filter([
@@ -300,7 +211,6 @@ class HrDocumentTemplateController extends Controller
         return null;
     }
 
-    /** '/storage/foo/bar.png' (or a full URL to it) → 'foo/bar.png'. */
     private function previewDiskPath(string $src): ?string
     {
         $src = trim($src);
@@ -310,21 +220,16 @@ class HrDocumentTemplateController extends Controller
         $path = ltrim(str_replace('\\', '/', $parsed['path'] ?? $src), '/');
 
         if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) return $m[1];
-        if (isset($parsed['scheme'])) return null;   // remote host — leave alone
+        if (isset($parsed['scheme'])) return null;
         if (str_starts_with($path, 'public/')) $path = substr($path, strlen('public/'));
         return str_contains($path, '/') ? $path : null;
     }
 
-    /** Public-disk file → base64 data URI, or null when unreadable.
-     *
-     *  Downscaled and cached — see App\Support\InlineImage. Embedding the
-     *  logo at its stored size was 99% of this preview’s render time. */
     private function previewImageDataUri(string $path): ?string
     {
         return \App\Support\InlineImage::dataUri($path);
     }
 
-    /** Rewrite local <img src> values into data URIs for DomPDF. */
     private function inlineLocalImages(string $html): string
     {
         return preg_replace_callback(
@@ -352,7 +257,6 @@ class HrDocumentTemplateController extends Controller
         $rows = (clone $q)->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
         $get = fn(string $s) => (int) ($rows[$s] ?? 0);
 
-        // Per-category counts for the IT/Non-IT/Legal top tabs.
         $byCat = HrDocumentTemplate::query();
         $this->applyScope($byCat, $request->user(), $request->integer('branch_id') ?: null);
         $catRows = (clone $byCat)
@@ -372,8 +276,6 @@ class HrDocumentTemplateController extends Controller
             ],
         ]);
     }
-
-    /* ───── STORE / UPDATE / DESTROY ───── */
 
     public function store(Request $request)
     {
@@ -399,9 +301,6 @@ class HrDocumentTemplateController extends Controller
                 $row->update(['docx_path' => $path, 'docx_original_name' => $orig, 'editor_mode' => 'word']);
             }
 
-            // v1 is a version like any other, so it gets its row too — without
-            // it the history would start at v2 and the original would be the
-            // one thing nobody could download.
             $this->snapshotVersion($row, $auth?->id);
 
             $row->load(self::WITH);
@@ -412,15 +311,8 @@ class HrDocumentTemplateController extends Controller
     public function update(Request $request, $id)
     {
         $row = $this->resolveRow($request, (int) $id);
-        // After resolveRow, because the rule depends on the row: the author of
-        // an unpublished draft may finish it with can_add alone (QA #36).
         $this->authorizeTemplateWrite($request, $row);
 
-        // Editing is fine mid-signature: a sent document signs on the FROZEN
-        // snapshot the run holds, and an edit only bumps the template version
-        // for FUTURE sends. Deprecating it, though, is what left onboarding
-        // stuck on a doc that could never be signed (#24) — so block only the
-        // transition to Deprecated while a run is live.
         $becomingDeprecated = strcasecmp((string) $request->input('status'), 'Deprecated') === 0
             && strcasecmp((string) $row->status, 'Deprecated') !== 0;
         if ($becomingDeprecated
@@ -434,8 +326,6 @@ class HrDocumentTemplateController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
 
-        // Re-allocate the code only if the category or role changed; the
-        // template's old code is otherwise stable across edits.
         if (
             isset($data['employee_category']) && isset($data['role_type'])
             && ($data['employee_category'] !== $row->employee_category || $data['role_type'] !== $row->role_type)
@@ -450,20 +340,8 @@ class HrDocumentTemplateController extends Controller
             $data['editor_mode'] = 'word';
         }
 
-        /* Every successful save is a new version. (#34)
-         *
-         * Computed from the STORED value, never from the payload: the editor
-         * round-trips the version it loaded, so taking the client's number
-         * would freeze it at whatever was on screen — which is why it sat at
-         * v1 on every template in the table. */
         $data['version'] = $this->nextVersion($row->version);
 
-        /* First edit of a template that predates version history: file what it
-           says NOW, before the overwrite, so its current version has a
-           snapshot too. Without this the history starts at the version AFTER
-           the first edit, and v1 — the only state the template has ever been
-           in — is the one thing nobody can read. Runs once per template; after
-           that a row always exists. */
         if (!HrDocumentTemplateVersion::where('template_id', $row->id)->exists()) {
             $this->snapshotVersion($row, $request->user()?->id);
         }
@@ -475,13 +353,6 @@ class HrDocumentTemplateController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * GET /hr-document-templates/{id}/versions — the save history.
-     *
-     * Newest first, because the question is almost always "what did it say
-     * before this change", and the body is left out: a list of versions is
-     * read, a version itself is downloaded.
-     */
     public function versions(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -511,14 +382,6 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
-    /**
-     * GET /hr-document-templates/{id}/versions/{versionId}/download
-     *
-     * Built from the SNAPSHOT, through the same renderer the current template
-     * uses — a transient model carrying that version's body and letterhead,
-     * never saved. Rendering rather than returning a stored file keeps an old
-     * version readable even though the letterhead is applied at render time.
-     */
     public function downloadVersion(Request $request, $id, $versionId)
     {
         $this->authorize($request, 'can_view');
@@ -531,10 +394,6 @@ class HrDocumentTemplateController extends Controller
             ->where('id', (int) $versionId)
             ->firstOrFail();
 
-        /* A throwaway model carrying that version's body and letterhead, never
-           saved. Both renderers already take a row, so the snapshot travels
-           through the same path as the live template and comes out looking the
-           way it did. */
         $snapshot = new HrDocumentTemplate();
         $snapshot->forceFill([
             'id'            => $row->id,
@@ -567,51 +426,14 @@ class HrDocumentTemplateController extends Controller
         return response()->json(['message' => 'Template removed.']);
     }
 
-    /* ───── DOCX — download generated, upload revised ───── */
-
-    /**
-     * Build a DOCX from the template's stored HTML content and stream it
-     * back. Used by the "Download DOCX" button on the MS Word tab.
-     */
     public function downloadDocx(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, (int) $id);
 
-        /* WITH the header, logo and footer. (#24)
-         *
-         * This used to render body-only, so the author downloaded a Word file
-         * that looked nothing like the document the employee receives — no
-         * letterhead at all, and on an empty template, a blank page.
-         *
-         * The round-trip is safe because they are written as real Word HEADER
-         * and FOOTER parts, not body paragraphs: Word keeps them in
-         * word/header1.xml and word/footer1.xml, and BOTH readers on the upload
-         * side take the body alone — PhpWord walks $section->getElements() and
-         * the raw fallback reads word/document.xml. So a file downloaded, edited
-         * and re-uploaded brings its body back and cannot duplicate the chrome.
-         *
-         * Still rendered fresh from content_html rather than returning the
-         * stored docx byte-for-byte: a file from the old renderer has the
-         * letterhead baked into its BODY, and handing that back would re-import
-         * it as content with no way out. content_html is the canonical body. */
         return $this->renderDocx($row, ($row->code ?: 'template') . '.docx', true);
     }
 
-    /**
-     * The template as a PDF, with its letterhead. (#30)
-     *
-     * The Actions column offered View, Edit, Deprecate and Delete, and the only
-     * way to get a file out was the DOCX button buried in the wizard's Word
-     * tab — so the people who review templates had no way to take one away and
-     * read it.
-     *
-     * Rendered through the SAME blade as the live preview, from the template's
-     * own content and header/footer config, so what downloads is what the
-     * preview shows. Tokens are left as {{Placeholders}}: this is the template,
-     * not a generated document for an employee — resolving them here would
-     * need a subject employee and would quietly produce a document for nobody.
-     */
     public function downloadPdf(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -623,14 +445,6 @@ class HrDocumentTemplateController extends Controller
         return $this->pdfResponse($row, $request, ($row->code ?: 'template') . '.pdf');
     }
 
-    /**
-     * Render a template — or a snapshot of one — to PDF.
-     *
-     * Takes the row loosely so a transient model carrying an old version's
-     * body and letterhead renders through exactly the same blade as the live
-     * template. Two renderers would be two things to keep in step, and the
-     * whole point of an archived version is that it still looks like itself.
-     */
     private function pdfResponse($row, Request $request, string $filename)
     {
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
@@ -651,15 +465,9 @@ class HrDocumentTemplateController extends Controller
                 ?: $request->user()?->client?->org_name
                 ?: ''
             ),
-            // DomPDF runs headless and cannot fetch /storage over HTTP.
             'bodyHtml'    => $this->inlineLocalImages($html),
         ];
 
-        /* Reuse the last render of this exact content instead of rebuilding it.
-           Profiled on a 22 kB template: logo 12ms, image inlining 0ms, blade
-           5ms, DomPDF 892ms — the render IS the request, and it scales with
-           HTML size (an 856 kB template takes 21s). Downloading the same
-           unchanged template twice should only pay that once. (QA #26) */
         $bytes = $this->cachedPdf($data, $row);
 
         return response($bytes, 200, [
@@ -669,19 +477,6 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
-    /**
-     * The rendered PDF for these exact inputs, rendering only on a miss.
-     *
-     * Keyed on a hash of everything the blade consumes — body, header, footer,
-     * logo and company name — so editing a template, swapping the letterhead or
-     * switching branch all miss naturally. There is nothing to invalidate by
-     * hand and no stale PDF to serve: a changed input is a different key.
-     *
-     * Kept on the LOCAL disk, never `public` or Azure. It is a derived artifact
-     * that never needs a URL, and a remote round trip for 100 kB would eat the
-     * saving it exists to produce. Each app server builds its own copy; that is
-     * what a cache is.
-     */
     private function cachedPdf(array $data, $row): string
     {
         $fingerprint = sha1(serialize([
@@ -697,7 +492,6 @@ class HrDocumentTemplateController extends Controller
         try {
             if ($disk->exists($path)) return (string) $disk->get($path);
         } catch (\Throwable $e) {
-            // An unreadable cache is a miss, never an error. Fall through.
         }
 
         $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', $data)
@@ -707,12 +501,6 @@ class HrDocumentTemplateController extends Controller
         try {
             $disk->put($path, $bytes);
 
-            /* Keep the newest few renders of this template and drop the rest —
-               otherwise every edit leaves a file behind forever. Not a straight
-               purge: downloadVersion() renders an archived snapshot under the
-               LIVE template's id, so purging on write would make "live, v3,
-               live, v3" miss every single time. Three covers that alternation
-               and still bounds the directory. */
             if ($id) {
                 $mine = array_values(array_filter(
                     $disk->files($dir),
@@ -724,42 +512,22 @@ class HrDocumentTemplateController extends Controller
                 }
             }
         } catch (\Throwable $e) {
-            // Caching is an optimisation. Failing to write one still returns
-            // the PDF the caller asked for.
             Log::warning('hr template pdf cache write failed', ['path' => $path, 'err' => $e->getMessage()]);
         }
 
         return $bytes;
     }
 
-    /**
-     * Upload a revised DOCX. We store it as-is for later re-download and
-     * also parse its HTML for the web editor so the user can keep editing
-     * inline after uploading.
-     */
     public function uploadDocx(Request $request, $id)
     {
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 
         $row = $this->resolveRow($request, (int) $id);
-        // Stage 3 writes the Word file into the draft the user just created,
-        // so the gate depends on the row, not the bare permission (QA #36).
         $this->authorizeTemplateWrite($request, $row);
 
-        // Parse from the uploaded file's REAL local temp path (getRealPath) — NOT
-        // from the stored path. On the server the public disk is Azure Blob, so
-        // Storage::path() of the stored file isn't a real local file and every
-        // native reader (PhpWord, ZipArchive) would fail. The PHP upload temp
-        // file is always local, so parse it first, then push it to storage.
         $uploaded = $request->file('docx');
         $abs = $uploaded->getRealPath();
 
-        // Best-effort DOCX → HTML so the web editor stays usable. If parsing
-        // fails or recovers nothing (legacy .doc, scanned/image-only doc, an
-        // unreadable structure), we KEEP the previous content rather than
-        // overwriting it with a blank — that silent wipe was why an upload
-        // sometimes showed no content. $contentExtracted tells the frontend
-        // whether the body actually refreshed, so it can warn when it didn't.
         $html = $row->content_html;
         $contentExtracted = false;
         try {
@@ -769,24 +537,14 @@ class HrDocumentTemplateController extends Controller
                 $contentExtracted = true;
             }
         } catch (\Throwable $e) {
-            // ignore — file is saved, web editor falls back to previous content
         }
 
-        // Checked AFTER the parse (the converted body is the fallback measure)
-        // but BEFORE storing, so an oversized file never lands in the bucket or
-        // replaces the template's current DOCX.
         if ($err = $this->docxPageLimitError($abs, $html)) {
             return response()->json(['status' => false, 'message' => $err], 422);
         }
 
         [$path, $orig] = $this->storeDocx($uploaded, $row->client_id, $row->id);
 
-        // Upload updates the BODY CONTENT ONLY. The header/footer/logo are
-        // managed in-app (HeaderFooterPanel) and are intentionally NOT lifted
-        // out of the uploaded Word file: the user's own header/logo in the
-        // file they revised must not overwrite the template's configured
-        // header/footer. Only content_html (+ the stored docx for re-download)
-        // changes here.
         $update = [
             'docx_path'          => $path,
             'docx_original_name' => $orig,
@@ -796,51 +554,22 @@ class HrDocumentTemplateController extends Controller
 
         $row->update($update);
         $row->load(self::WITH);
-        // content_extracted lets the frontend toast a warning when the DOCX was
-        // stored but its body couldn't be read (so the preview kept the old
-        // content) — instead of the user silently seeing nothing change.
         return response()->json(array_merge($row->toArray(), ['content_extracted' => $contentExtracted]));
     }
 
-    /* ───── ONBOARDING INTEGRATION ───── */
-
-    /**
-     * GET /api/hr-document-templates/match?employee_id=N
-     *
-     * Returns the Active templates whose (employee_category, role_type)
-     * matches the given employee's (department-mapped-category,
-     * designation.level). Used by the Onboarding > Evidence Vault to
-     * surface generable documents (Offer Letter, NDA, Welcome Kit, etc).
-     */
     public function matchForEmployee(Request $request)
     {
         $this->authorize($request, 'can_view');
         $request->validate([
             'employee_id'         => 'required|integer|exists:employees,id',
             'trigger_point_name'  => 'sometimes|nullable|string|max:255',
-            // Substring/keyword variant — preferred over trigger_point_name
-            // because branch users name their trigger-point rows freely
-            // ("Exit process trigger point", "Onboarding point", …) and
-            // the page can't rely on an exact title. Frontend now passes
-            // just the lifecycle keyword ('onboarding' / 'exit') and we
-            // LIKE-match against module_name.
             'trigger_keyword'     => 'sometimes|nullable|string|max:120',
-            /* Several lifecycle keywords in ONE request, comma separated.
-               The Evidence Vault needs onboarding + exit + promotion and was
-               asking for them with three separate calls that differ only by
-               this word — three round trips for one screen, which is what
-               makes it slow on a loaded server rather than the work itself
-               (measured: 9-54ms each locally). (QA #32) */
             'trigger_keywords'    => 'sometimes|nullable|string|max:400',
         ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
             ->find((int) $request->query('employee_id'));
 
-        // If the employee row is missing (deleted or wrong id), return an
-        // empty template set rather than allowing a ModelNotFoundException
-        // to bubble up and convert into a 404. The SPA expects an empty
-        // `templates` array when no matching templates are found.
         if (!$emp) {
             return response()->json([
                 'employee_category'  => null,
@@ -854,24 +583,11 @@ class HrDocumentTemplateController extends Controller
         }
 
         $category = HrTemplateMatch::categoryForDepartment($emp->department?->name);
-        $level    = $emp->designation?->level;  // 'Director / CEO' | 'Head of Department (HOD)' | …
+        $level    = $emp->designation?->level;
 
-        // Optional lifecycle filter. Two variants, both handled by the matcher:
-        //   - trigger_keyword (preferred) — substring LIKE match against
-        //     module_name. Frontend passes just the lifecycle word
-        //     ("onboarding" / "exit"), and any trigger row containing
-        //     that keyword qualifies. Tolerates branch-user naming
-        //     freedom ("Onboarding point", "Exit process trigger point").
-        //   - trigger_point_name (legacy) — exact case-/whitespace-
-        //     insensitive equality. Kept for any external callers still
-        //     using the old contract.
         $keyword   = trim((string) $request->query('trigger_keyword', ''));
         $exactName = trim((string) $request->query('trigger_point_name', ''));
 
-        /* Batched form: one request, one group per keyword. Each group carries
-           exactly the payload a single-keyword call returns, so a caller can
-           read groups[word] wherever it used to read the whole response. The
-           single-keyword contract below is untouched. (QA #32) */
         $many = array_values(array_filter(array_map(
             'trim',
             explode(',', (string) $request->query('trigger_keywords', '')),
@@ -899,16 +615,8 @@ class HrDocumentTemplateController extends Controller
         ]));
     }
 
-    /**
-     * The applicable templates for ONE lifecycle keyword, stamped with whether
-     * this employee has already been sent each one. Extracted from
-     * matchForEmployee so ?trigger_keywords= can build several groups in a
-     * single request without a second copy of the logic. (QA #32)
-     */
     private function matchGroup(Request $request, Employee $emp, string $keyword, string $exactName, array $meta): array
     {
-        // null = a keyword was asked for and no trigger point carries it, so
-        // nothing can match. Return an empty list rather than an unfiltered one.
         $q = HrTemplateMatch::query($emp, $keyword, $exactName);
         if (!$q) {
             return $meta + [
@@ -923,26 +631,12 @@ class HrDocumentTemplateController extends Controller
 
         $templates = $q->orderByDesc('id')->get();
 
-        /* Stamp each template with whether this employee has ALREADY been sent
-         * it, and the state of that run.
-         *
-         * The applicable set is recomputed from the employee's CURRENT
-         * department and designation, so it changes the moment either is
-         * edited — promote an Intern to Employee and a different set applies.
-         * Without this flag the caller cannot tell an untouched requirement
-         * from one that was signed months ago, which is the whole question HR
-         * needs answered before deciding what to send.
-         *
-         * Statuses are collected per template because the same template can be
-         * sent more than once (a re-issue after a rejection); the latest run is
-         * the one that describes where the requirement stands today.
-         */
         $runs = HrDocumentSignature::where('employee_id', $emp->id)
             ->whereIn('template_id', $templates->pluck('id'))
             ->orderBy('id')
             ->get(['id', 'template_id', 'status', 'code']);
 
-        $latestByTemplate = $runs->keyBy('template_id');   // ordered ASC, so last wins
+        $latestByTemplate = $runs->keyBy('template_id');
         $templates->each(function ($t) use ($latestByTemplate) {
             $run = $latestByTemplate->get($t->id);
             $t->setAttribute('signature_status', $run->status ?? null);
@@ -955,20 +649,10 @@ class HrDocumentTemplateController extends Controller
             'trigger_point_name' => $exactName ?: null,
             'trigger_keyword'    => $keyword ?: null,
             'templates'          => $templates,
-            // Convenience for the caller that only wants "what is outstanding".
             'pending_count'      => $templates->where('is_sent', false)->count(),
         ];
     }
 
-    /**
-     * GET /api/hr-document-templates/{id}/generate?employee_id=N
-     *
-     * Resolves the template's {{Tokens}} against the employee's data and
-     * streams the filled DOCX back to the client. This is the FINAL letterhead
-     * document, so it keeps the header/footer/logo (renderDocx defaults to
-     * withHeaderFooter=true) — unlike the template author's content-only
-     * "Download DOCX" — just with placeholders replaced.
-     */
     public function generateForEmployee(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -986,9 +670,6 @@ class HrDocumentTemplateController extends Controller
         $context = $this->buildTokenContext($emp, $row->signers ?? []);
         $resolvedHtml = $this->resolveTokens((string) $row->content_html, $context);
 
-        /* This route carries no custom-field values — it resolves employee data
-           only — so a template asking for them would render {{Token}} into a
-           real letter. Refused here rather than in each caller (#145). */
         if ($unfilled = $this->unfilledCustomFields($request, $resolvedHtml)) {
             return response()->json([
                 'status'        => false,
@@ -998,24 +679,13 @@ class HrDocumentTemplateController extends Controller
             ], 422);
         }
 
-        // Reuse the existing DOCX builder by temporarily swapping
-        // content_html on a non-persisted clone so we don't have to
-        // duplicate the header/footer + table emission code.
         $clone = $row->replicate();
-        $clone->setRawAttributes($row->getAttributes(), true);  // preserve casts
+        $clone->setRawAttributes($row->getAttributes(), true);
         $clone->id = $row->id;
         $clone->content_html = $resolvedHtml;
-        // Push the clone through the same renderer used by downloadDocx().
         return $this->renderDocx($clone, ($emp->display_name ?: ('EMP-' . $emp->id)) . ' - ' . ($row->name ?: $row->code) . '.docx');
     }
 
-    /**
-     * GET /api/hr-document-templates/{id}/preview?employee_id=N
-     *
-     * Returns the template's resolved body HTML + header/footer config so
-     * the SPA can render a live, page-style preview without round-tripping
-     * through DOCX. Used by the "View" button on the Evidence Vault.
-     */
     public function previewForEmployee(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
@@ -1032,16 +702,10 @@ class HrDocumentTemplateController extends Controller
         $context = $this->buildTokenContext($emp, $row->signers ?? []);
         $resolvedHtml = $this->resolveTokens((string) $row->content_html, $context);
 
-        // Surface which tokens did and didn't resolve so the Vault can warn
-        // the user about unfilled placeholders before they generate.
         $tokensInTemplate = [];
         if (preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', (string) $row->content_html, $m)) {
             $tokensInTemplate = array_values(array_unique($m[1]));
         }
-        // "Missing" = the token isn't recognised at all. A known token with
-        // an empty value (e.g. an employee whose Mobile field is blank) is
-        // resolved-as-empty, not missing — flagging those as missing turns
-        // the SPA's warning chip into a permanent false-positive.
         $unresolved = array_values(array_filter(
             $tokensInTemplate,
             fn($t) =>
@@ -1060,27 +724,13 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
-    /**
-     * Token catalogue. Mirrors the placeholder sidebar in TemplateEditor
-     * exactly — every token the user can click in the editor must resolve
-     * to a meaningful string here (or empty if the underlying field is
-     * null). Signer placeholders resolve to the role names captured in
-     * step 2 of the wizard; signing date is left blank until the doc is
-     * actually counter-signed.
-     */
     private function buildTokenContext(Employee $emp, $signers): array
     {
         $signers = is_array($signers) ? $signers : (is_string($signers) ? json_decode($signers, true) : []);
         $signers = is_array($signers) ? $signers : [];
 
-        // Relations the letterhead + company tokens read. The call sites
-        // eager-load only the employee-facing ones, so ask for these here
-        // rather than relying on lazy loading.
         $emp->loadMissing(['branch.client', 'legalEntity', 'client']);
 
-        /* Letterhead values off the employee's own branch — the entity that
-         * actually issues the document. The logo is emitted as an <img> so the
-         * preview renders it inline exactly as the generated document does. */
         $empBranch = $emp->branch;
         $branchAddress = $empBranch
             ? trim(implode(', ', array_filter([
@@ -1099,7 +749,6 @@ class HrDocumentTemplateController extends Controller
             : '';
 
         $ctx = [
-            // Basic
             'FirstName'      => (string) ($emp->first_name ?? ''),
             'MiddleName'     => (string) ($emp->middle_name ?? ''),
             'LastName'       => (string) ($emp->last_name ?? ''),
@@ -1107,72 +756,31 @@ class HrDocumentTemplateController extends Controller
             'DisplayName'    => (string) ($emp->display_name ?? ''),
             'EmployeeNumber' => (string) ($emp->emp_code ?? $emp->id),
 
-            // Contact
             'Email'   => (string) ($emp->email ?? ''),
             'Mobile'  => (string) ($emp->mobile ?? ''),
             'Address' => trim(((string) ($emp->address_line1 ?? '')) . ' ' . ((string) ($emp->address_line2 ?? ''))),
             'City'    => (string) ($emp->city ?? ''),
             'State'   => '',
 
-            // Job
             'JobTitle'    => (string) ($emp->designation?->name ?? ''),
             'Department'  => (string) ($emp->department?->name ?? ''),
             'Designation' => (string) ($emp->designation?->name ?? ''),
             'JoiningDate' => $emp->date_of_joining ? $emp->date_of_joining->format('d M Y') : '',
             'ReportsTo'   => (string) ($emp->reportingManager?->display_name ?? ''),
 
-            // Salary
             'CTC'   => $emp->annual_salary !== null ? number_format((float) $emp->annual_salary, 2) : '',
             'Basic' => '',
             'HRA'   => '',
 
-            // Organisation — best-effort from the tenant Client row.
-            /* Falls back all the way to the BRANCH name.
-             *
-             * Footers are commonly written as "{{CompanyName}} Confidential",
-             * so an unresolved token does not leave a blank — it leaves the
-             * word "Confidential" standing on its own at the foot of every
-             * page, which reads as the document's classification rather than
-             * as a missing name (CBC #113). There is always a branch, so there
-             * is always something truthful to print.
-             *
-             * This also read only `client->org_name`, while the generate path
-             * resolved the employing legal entity first — the same one-token,
-             * two-implementations split as the signer names. Same order in both
-             * now: legal entity, then the org behind the branch, then the
-             * client, then the branch itself. */
             'CompanyName'    => (string) ($emp->legalEntity?->name
                 ?: $emp->branch?->client?->org_name
                 ?: $emp->client?->org_name
                 ?: $emp->branch?->name
                 ?: ''),
-            /* Both were hardcoded to '' here while the generate path resolved
-             * them off the employing branch — so a template that used the
-             * letterhead tokens previewed with a blank line and only came out
-             * right in the final document. Same source in both paths now. */
             'CompanyAddress' => $branchAddress,
             'CompanyLogo'    => $branchLogo,
         ];
 
-        /* Signer{N}{Name|Role|Date} — N is 1-indexed, matching the editor sidebar.
-         *
-         * {{Signer{N}Name}} is the REAL PERSON the slot resolves to for this
-         * employee, not the workflow role label. It used to be the label, so a
-         * document whose signer role is "Reporting Manager" printed the words
-         * "Reporting Manager" on the signature line instead of the manager's
-         * name — and one whose role is "Employee" printed "Employee" where the
-         * employee's own name belonged (CBC #95).
-         *
-         * That was fixed once already, but only in HrGeneratedDocumentController
-         * — and this method is what the Evidence Vault's View/Generate buttons
-         * and the signature SEND path actually call, so the two screens named
-         * different people for the same document. Both now go through the one
-         * resolver (App\Support\SignerResolver), which is the whole reason it
-         * was pulled out into App\Support in the first place.
-         *
-         * The label is still reachable as {{Signer{N}Role}} for templates that
-         * genuinely want to print "Reporting Manager" as a caption under the
-         * signature line, which is the only legitimate use it had here. */
         foreach ($signers as $i => $s) {
             $n = $i + 1;
             $roleName = (string) ($s['role_name'] ?? '');
@@ -1181,59 +789,14 @@ class HrDocumentTemplateController extends Controller
                 ? \App\Support\SignerResolver::name($roleName, $emp)
                 : (string) ($s['designation_name'] ?? '');
             $ctx["Signer{$n}Date"] = '';
-            // Designation token is still resolved in case a legacy template
-            // references it — value falls back to role name when the wizard
-            // didn't capture a designation per signer.
             $ctx["Signer{$n}Designation"] = (string) ($s['designation_name'] ?? $s['role_name'] ?? '');
         }
 
         return $ctx;
     }
 
-    /** Replace every {{Token}} occurrence in $html using $ctx. Unknown
-     *  tokens are left as-is so an admin can spot them in the output.
-     *
-     *  When $preserveSignerSlots is true, the per-signer fill-at-action
-     *  tokens ({{Signer{N}Sign}} and {{Signer{N}Date}}) are NOT substituted
-     *  even when present in $ctx — they're left as literal placeholders so
-     *  the signature workflow can fill them when each signer acts. Used by
-     *  HrDocumentSignatureController::store() when freezing content_html at
-     *  send time; preview/generate flows leave this false to render unsigned
-     *  slots as empty strings. */
-    /**
-     * Tokens whose value is MARKUP THIS CONTROLLER BUILT and must therefore
-     * survive substitution unescaped.
-     *
-     * {{CompanyLogo}} resolves to an <img> tag assembled in
-     * buildTokenContext(). Escaping it printed the tag itself into the
-     * document — `<img src="https://…/logo.png" alt="Company logo" …/>` as
-     * visible body text on every downloaded, previewed and sent-for-signature
-     * copy, which is what the letterhead was supposed to be.
-     *
-     * The URL inside that tag is already htmlspecialchars'd where it is built,
-     * so nothing here is trusting an unescaped value — this only stops the
-     * markup being escaped a SECOND time.
-     *
-     * Deliberately a fixed allowlist, never "anything that looks like HTML".
-     * The list must only ever contain names whose value this class produces;
-     * see the $rawHtmlNames note on resolveTokens().
-     */
     public const RAW_HTML_TOKENS = ['CompanyLogo'];
 
-    /**
-     * @param string[] $rawHtmlNames Tokens to substitute WITHOUT escaping.
-     *   Defaults to RAW_HTML_TOKENS. A caller that overlays operator-supplied
-     *   values onto $ctx must subtract those keys first — otherwise a custom
-     *   field a user happened to name CompanyLogo would be injected into the
-     *   document as live markup. HrDocumentSignatureController::store() does
-     *   exactly that, mirroring HrGeneratedDocumentController::
-     *   rawHtmlTokenNames().
-     */
-    /**
-     * Custom-field tokens still left in already-resolved HTML, by their real
-     * name. Only tokens that match a custom field of this tenant count — an
-     * unknown {{Token}} is the template author's problem, not a blank value.
-     */
     private function unfilledCustomFields(Request $request, string $resolvedHtml): array
     {
         if (!preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', $resolvedHtml, $m)) return [];
@@ -1272,32 +835,6 @@ class HrDocumentTemplateController extends Controller
         }, $html);
     }
 
-    /**
-     * Shared DOCX builder. Public + duck-typed so the signature controller
-     * can reuse it against an HrDocumentSignature row (which carries the
-     * same `content_html` / `header_config` / `footer_config` triple).
-     *
-     * Stage 1 — buildDocxFile — produces a tmp file path. Used by the
-     * email-attachment path so we can attach + unlink after sending.
-     * Stage 2 — renderDocx — wraps stage 1 + streams as a download.
-     */
-    /**
-     * Resolve a header logo into a path PhpWord can actually embed.
-     *
-     * PhpWord's image element only accepts JPG/PNG/GIF/BMP. An uploaded SVG or
-     * WEBP logo renders fine in the web editor's <img> preview but silently
-     * fails addImage() — which is why the logo "disappears" in the downloaded
-     * Word file. We convert WEBP (via GD) and SVG (via Imagick when present) to
-     * a temporary PNG so the logo lands in the .docx. Returns null only when the
-     * file is missing or genuinely can't be rasterised.
-     */
-    /**
-     * Fallback logo lookup — the header logo is uploaded via uploadHeaderLogo()
-     * which stores the file under doc_templates/c{clientId}/logos/, but the path
-     * isn't always written back into the template's header_config. When that
-     * happens we fetch the MOST RECENTLY uploaded logo for this client straight
-     * from that folder so the download still carries a logo.
-     */
     public function latestClientLogo($clientId): ?string
     {
         $folder = 'doc_templates/c' . ($clientId ?: 'public') . '/logos';
@@ -1309,19 +846,6 @@ class HrDocumentTemplateController extends Controller
         return $files[0];
     }
 
-    /**
-     * Return a guaranteed LOCAL filesystem path for a file on the 'public' disk.
-     *
-     * On local disks this is just ->path(). On the SERVER the public disk is
-     * Azure Blob (FILESYSTEM_DISK=azure) where blobs have NO local path —
-     * ->path() returns a string that native libraries (ZipArchive, PhpWord's
-     * IOFactory, getimagesize, PhpWord addImage) cannot open. So for remote
-     * disks we stream the bytes into a temp file (keeping the original
-     * extension) and hand that back. Returns null when the source is missing.
-     *
-     * The boolean out-param $isTemp tells the caller whether the returned path
-     * is a throwaway copy it should unlink / deleteFileAfterSend.
-     */
     private function localFile(?string $path, ?bool &$isTemp = null): ?string
     {
         $isTemp = false;
@@ -1329,13 +853,11 @@ class HrDocumentTemplateController extends Controller
         $disk = Storage::disk('public');
         if (!$disk->exists($path)) return null;
 
-        // Local adapter — real file already on disk, use it directly.
         try {
             $local = $disk->path($path);
             if (is_string($local) && is_file($local)) return $local;
-        } catch (\Throwable $e) { /* non-local adapter → copy below */ }
+        } catch (\Throwable $e) { }
 
-        // Remote adapter (Azure/S3) — pull the bytes into a temp local file.
         try {
             $bytes = $disk->get($path);
             if ($bytes === null) return null;
@@ -1349,35 +871,6 @@ class HrDocumentTemplateController extends Controller
         }
     }
 
-    /**
-     * Turn every <img> in the BODY html into one PhpWord can actually embed,
-     * and hand back the temp files created so the caller can clean up.
-     *
-     * Why this is needed at all: PhpWord's Html parser embeds an <img> only
-     * when its src resolves to a readable LOCAL file. Anything else — a
-     * /storage URL, an Azure blob URL — is dropped **silently**. Not rendered
-     * as a broken image, not left as text: the tag simply disappears, so the
-     * downloaded .docx came out with the letterhead missing and no error
-     * anywhere to explain it. The header logo never had this problem because
-     * it goes through resolveDocxLogo() and addImage() with a real path; the
-     * body went straight to Html::addHtml.
-     *
-     * Three sources, in order:
-     *   1. data: URI      — decode to a temp file.
-     *   2. public-disk    — previewDiskPath() + resolveDocxLogo(), which also
-     *                       pulls Azure blobs local and rasterises WEBP/SVG.
-     *   3. absolute URL   — fetch the bytes. This is the server's case: with
-     *                       FILESYSTEM_DISK=azure, file_url() returns a blob
-     *                       URL that previewDiskPath() deliberately gives up
-     *                       on, so without this the fix would work locally and
-     *                       silently fail in production — the worst shape a
-     *                       fix can have.
-     *
-     * An image that cannot be resolved is left exactly as it was, so it fails
-     * no worse than before.
-     *
-     * @param  string[]  $temps  filled with temp paths to unlink after save
-     */
     private function localiseImagesForDocx(string $html, array &$temps): string
     {
         return preg_replace_callback(
@@ -1399,23 +892,10 @@ class HrDocumentTemplateController extends Controller
 
                 if (!$local || !is_file($local)) return $full;
 
-                /* ONLY register files that genuinely live in the system temp
-                   directory.
-                   resolveDocxLogo() returns the REAL path on disk when the
-                   image is already a local PNG/JPG — it only makes a copy for
-                   Azure blobs and for WEBP/SVG conversions. Registering its
-                   return value unconditionally meant the cleanup loop below
-                   deleted the tenant's actual stored logo the first time
-                   anyone downloaded a DOCX, and every screen that renders that
-                   logo went blank. A leaked temp file is a cost; deleting a
-                   customer's uploaded file is data loss. */
                 if ($this->isTempPath($local)) {
                     $temps[] = $local;
                 }
 
-                /* Backslashes are legal in a Windows path and illegal in the
-                   XML attribute PhpWord parses; forward slashes work on both
-                   platforms. */
                 $safe = htmlspecialchars(str_replace('\\', '/', $local), ENT_QUOTES);
                 return '<img' . $pre . 'src=' . $q . $safe . $q . $post . '/>';
             },
@@ -1423,16 +903,6 @@ class HrDocumentTemplateController extends Controller
         ) ?? $html;
     }
 
-    /**
-     * Is this path a scratch file we may delete?
-     *
-     * The guard on the cleanup loop, and the reason it is strict: the same
-     * helper hands back both throwaway copies and real stored files, and the
-     * two are indistinguishable by name. Anything not resolvably inside the
-     * system temp directory is treated as somebody's real file and left alone.
-     * realpath() on both sides so a symlinked or relative temp dir cannot slip
-     * a storage path past a string comparison.
-     */
     private function isTempPath(string $path): bool
     {
         $tmpDir = realpath(sys_get_temp_dir());
@@ -1444,7 +914,6 @@ class HrDocumentTemplateController extends Controller
         return str_starts_with($norm($real), $norm($tmpDir));
     }
 
-    /** data: URI → temp file, or null when it is not decodable image data. */
     private function tempFromDataUri(string $src): ?string
     {
         if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,(.*)$#i', $src, $m)) return null;
@@ -1455,11 +924,6 @@ class HrDocumentTemplateController extends Controller
         return file_put_contents($tmp, $bytes) !== false ? $tmp : null;
     }
 
-    /**
-     * Absolute URL → temp file. Used for blob-storage logos on the server.
-     * Any failure returns null and the <img> is left untouched — a letterhead
-     * is never worth failing a document download over.
-     */
     private function tempFromUrl(string $src): ?string
     {
         try {
@@ -1482,26 +946,8 @@ class HrDocumentTemplateController extends Controller
         }
     }
 
-    /** Widest the letterhead logo is ever embedded at. The DOCX header renders
-     *  it to 200px (see buildDocxFile's $maxW), so 1000 is 5x the display size
-     *  — ample at 300 DPI print — and still a fraction of what tenants upload. */
     private const DOCX_LOGO_MAX_W = 1000;
 
-    /**
-     * Downscale an oversized letterhead logo before PhpWord embeds it.
-     *
-     * The logo goes into the .docx at its STORED pixel size while the header
-     * shows it 200px wide. One tenant's was 9653x3094 — 1.17MB of a 1.24MB
-     * download, so 94% of every template DOCX was an image nobody can see at
-     * that resolution, on every version and every template. (QA #24)
-     *
-     * Returns the ORIGINAL path on any failure: a logo that renders large is a
-     * slow download, but a logo that fails to render is a broken letterhead.
-     *
-     * $sourceKey is the logo's STABLE relative path, used to cache the resized
-     * copy. $abs cannot be used for that — on the server it is a throwaway temp
-     * file copied out of Azure, with a different name every request.
-     */
     private function shrinkLogoForDocx(string $abs, ?string $sourceKey = null): string
     {
         try {
@@ -1509,11 +955,6 @@ class HrDocumentTemplateController extends Controller
             [$w, $h] = [(int) ($dim[0] ?? 0), (int) ($dim[1] ?? 0)];
             if ($w <= self::DOCX_LOGO_MAX_W || $w < 1 || $h < 1) return $abs;
 
-            /* Cache the resized copy. Decoding a 30-megapixel PNG and
-               resampling it is ~1.4s, and the result is identical for every
-               download of every template on this letterhead — paying it per
-               request trades 900KB of transfer for worse wall-clock. Keyed on
-               the source's path and byte size, so a re-upload misses. */
             $disk  = Storage::disk('public');
             $ck    = $sourceKey
                 ? 'docx-logo-cache/' . md5(ltrim($sourceKey, '/') . '|' . @filesize($abs) . '|' . self::DOCX_LOGO_MAX_W) . '.png'
@@ -1524,22 +965,20 @@ class HrDocumentTemplateController extends Controller
                         $hit = $this->localFile($ck);
                         if ($hit) return $hit;
                     }
-                } catch (\Throwable $e) { /* unreadable cache → resize below */ }
+                } catch (\Throwable $e) { }
             }
 
             $src = match (strtolower(pathinfo($abs, PATHINFO_EXTENSION))) {
                 'png'         => @imagecreatefrompng($abs),
                 'jpg', 'jpeg' => @imagecreatefromjpeg($abs),
                 'gif'         => @imagecreatefromgif($abs),
-                default       => null,          // bmp: rare, left alone
+                default       => null,
             };
             if (!$src) return $abs;
 
             $nw = self::DOCX_LOGO_MAX_W;
             $nh = max(1, (int) round($h * $nw / $w));
             $dst = imagecreatetruecolor($nw, $nh);
-            /* alphablending OFF + savealpha ON, and a transparent fill: without
-               this a PNG logo with a transparent background comes back black. */
             imagealphablending($dst, false);
             imagesavealpha($dst, true);
             imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
@@ -1551,11 +990,9 @@ class HrDocumentTemplateController extends Controller
             imagedestroy($dst);
             if (!$ok || !is_file($tmp) || filesize($tmp) < 1) return $abs;
 
-            // Best effort — a cache that cannot be written costs the next
-            // request a resize, nothing more.
             if ($ck) {
                 try { $disk->put($ck, (string) file_get_contents($tmp)); }
-                catch (\Throwable $e) { /* ignore */ }
+                catch (\Throwable $e) { }
             }
             return $tmp;
         } catch (\Throwable $e) {
@@ -1565,18 +1002,14 @@ class HrDocumentTemplateController extends Controller
 
     private function resolveDocxLogo(?string $logoPath): ?string
     {
-        // localFile() copies Azure blobs to a temp file so addImage() works on
-        // the server (where ->path() isn't a real local file).
         $abs = $this->localFile($logoPath);
         if (!$abs) return null;
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
 
-        // Formats PhpWord embeds natively — pass straight through, downscaled.
         if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) {
             return $this->shrinkLogoForDocx($abs, $logoPath);
         }
 
-        // WEBP → PNG via GD (bundled with PHP on XAMPP). Preserve transparency.
         if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
             try {
                 $img = @imagecreatefromwebp($abs);
@@ -1589,11 +1022,10 @@ class HrDocumentTemplateController extends Controller
                     imagedestroy($img);
                     return $tmp;
                 }
-            } catch (\Throwable $e) { /* fall through to null */
+            } catch (\Throwable $e) {
             }
         }
 
-        // SVG → rasterise via Imagick when the extension is available.
         if ($ext === 'svg' && class_exists('Imagick')) {
             try {
                 $im = new \Imagick();
@@ -1604,7 +1036,7 @@ class HrDocumentTemplateController extends Controller
                 $im->writeImage($tmp);
                 $im->clear();
                 return $tmp;
-            } catch (\Throwable $e) { /* fall through to null */
+            } catch (\Throwable $e) {
             }
         }
 
@@ -1614,11 +1046,6 @@ class HrDocumentTemplateController extends Controller
     public function buildDocxFile($row, bool $withHeaderFooter = true): string
     {
         $phpWord = new PhpWord();
-        // A4 in twips as INTEGERS — PhpWord's default computes these from
-        // inches with floating-point math and emits decimals (e.g.
-        // w:w="11905.51181..."), which Word rejects as a schema violation
-        // ("can't parse XML at line 2"). Hard-coding the spec values forces
-        // valid <w:pgSz> regardless of php's serialize_precision.
         $section = $phpWord->addSection([
             'pageSizeW'    => 11906,
             'pageSizeH'    => 16838,
@@ -1626,28 +1053,12 @@ class HrDocumentTemplateController extends Controller
             'footerHeight' => 50 * 20,
         ]);
 
-        // Header/footer (logo + title/subtitle + footer text + page numbers).
-        // Added ONLY when $withHeaderFooter is true:
-        //   • Generated employee documents (generateForEmployee) → true, so the
-        //     final letterhead document carries the company header/footer.
-        //   • The template author's "Download DOCX" on the MS Word tab → false,
-        //     so that round-trip file is BODY CONTENT ONLY and the in-app
-        //     header/footer is never baked in or duplicated on re-upload.
-        // The headerHeight/footerHeight on the section above are harmless when
-        // no header/footer is attached.
         if ($withHeaderFooter) {
             $headerCfg = is_array($row->header_config) ? $row->header_config : [];
-            // Prefer the path saved in header_config; if it's missing (the frontend
-            // didn't persist it), fall back to the latest logo uploaded for this
-            // client via uploadHeaderLogo() so the logo still lands in the DOCX.
             $logoPath  = $headerCfg['logo_path'] ?: $this->latestClientLogo($row->client_id);
             $title     = (string) ($headerCfg['title'] ?? '');
             $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
             $hAlign    = (string) ($headerCfg['align']    ?? 'right');
-            // Logo size — pixels in the SPA, clamped 24-200. DOCX uses the same
-            // pixel scale so the exported Word doc matches the on-screen preview.
-            // Width is left to PhpWord's auto-scale (passed as 0) so non-2:1
-            // logos aren't squished; ratio is preserved from the source image.
             $logoH     = (int) max(24, min(200, $headerCfg['logo_height'] ?? 60));
 
             $header = $section->addHeader();
@@ -1663,17 +1074,13 @@ class HrDocumentTemplateController extends Controller
             $absLogo = $this->resolveDocxLogo($logoPath);
             if ($absLogo) {
                 try {
-                    // Scale to fit the logo cell: cap by height (logo_height) AND by
-                    // a max width so a wide logo isn't clipped by the cell. Aspect
-                    // ratio is preserved by deriving the missing dimension from the
-                    // source image's real pixel size.
-                    $maxW = 200; // px — fits comfortably inside the ~32% logo cell
+                    $maxW = 200;
                     $dim  = @getimagesize($absLogo);
                     $iw   = $dim[0] ?? 0;
                     $ih   = $dim[1] ?? 0;
                     $h    = $logoH;
                     $w    = ($ih > 0) ? (int) round($iw * $h / $ih) : 0;
-                    if ($w > $maxW && $iw > 0) {            // too wide → cap width, recompute height
+                    if ($w > $maxW && $iw > 0) {
                         $w = $maxW;
                         $h = (int) round($ih * $w / $iw);
                     }
@@ -1685,9 +1092,6 @@ class HrDocumentTemplateController extends Controller
                 }
             }
             $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
-            // Split on CR/LF so multi-line titles entered in the SPA preview
-            // (Enter → \n) render as separate Word paragraphs instead of a
-            // single run with literal newline glyphs.
             $addMultiline = function ($cell, string $text, array $font, array $para) {
                 $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
                 $first = true;
@@ -1749,33 +1153,16 @@ class HrDocumentTemplateController extends Controller
         }
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
-        // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
-        // must be valid XML. Bare void tags from rich-text editors (<br>,
-        // <hr>, <img ...>) abort parsing silently and drop everything that
-        // follows. Self-close EVERY void tag before handing off, not just the
-        // three we first met: the web editor writes a table as
-        // <colgroup><col style="width: 347px;"></colgroup>, and a single
-        // unclosed <col> aborts the parse of the WHOLE body — not the table,
-        // the body — so the file downloaded after any web-editor table came out
-        // with no content at all. Measured on template #368: 0 elements before
-        // this, 313 after. (#57)
         $html = preg_replace(
             '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
             '<$1$2/>',
             $html
         );
-        /* Point every body <img> at a local file BEFORE self-closing them —
-           PhpWord drops any it cannot read off disk, silently. */
         $imgTemps = [];
         $html = $this->localiseImagesForDocx($html, $imgTemps);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $wrapped = '<html><body>' . $html . '</body></html>';
 
-        /* A FAILED PARSE IS SILENT. Html::addHtml swallows libxml's errors and
-           simply adds nothing — it does not throw — so the catch below never
-           fired and a broken body produced an empty .docx with no warning
-           anywhere. Count the elements instead: that is the only honest signal
-           that the body made it in. */
         $before = count($section->getElements());
         $parsed = false;
         try {
@@ -1794,78 +1181,34 @@ class HrDocumentTemplateController extends Controller
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
-        /* save() has copied the bytes into the archive by now, so the sources
-           can go. Left behind, one temp per image per download quietly fills
-           the system temp directory on a server that generates documents all
-           day. */
         foreach ($imgTemps as $t) {
             if (is_file($t)) @unlink($t);
         }
         return $tmp;
     }
 
-    /**
-     * Last-resort body writer: HTML the XML parser rejected, written as real
-     * Word paragraphs.
-     *
-     * The previous fallback was `addText(strip_tags($html))` — one addText call
-     * for the entire document, which is one Word paragraph. That is precisely
-     * the "everything merged into a single line" the ticket describes: not the
-     * conversion mangling the text, but every paragraph break being thrown away
-     * on the way out. Block ends become line breaks here, table cells become
-     * tabs, so the document stays readable even on the path that fails.
-     *
-     * Character formatting IS lost here (it lives in tags, and the tags are
-     * what could not be parsed). That is the trade for not losing the text.
-     */
     private function addHtmlAsPlainParagraphs($section, string $html): void
     {
-        // Cell boundaries first — a tab keeps a row on one line but still shows
-        // where one cell ends and the next begins.
         $t = preg_replace('#</t[dh]\s*>#i', "\t", $html);
-        // Every block end, and every <br>, is a paragraph break.
         $t = preg_replace('#<(?:br\s*/?|/p|/h[1-6]|/li|/tr|/div|/blockquote)\s*>#i', "\n", $t);
         $t = html_entity_decode(strip_tags($t), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         $wrote = false;
         foreach (preg_split('/\n/', $t) ?: [] as $line) {
-            // Collapse runs of spaces only — tabs are the cell separators.
             $line = trim(preg_replace('/[ \x{00A0}]{2,}/u', ' ', $line));
             if ($line === '') continue;
             $section->addText($line);
             $wrote = true;
         }
-        // A body that is all markup and no text still deserves a page.
         if (!$wrote) $section->addText(trim(strip_tags($html)));
     }
 
-    /**
-     * Stage 2 — wraps {@see buildDocxFile()} and streams the generated DOCX
-     * back to the browser. Used by the "Download DOCX" button and the
-     * per-employee generate flow. The tmp file is removed once the response
-     * is flushed via `deleteFileAfterSend`.
-     *
-     * $withHeaderFooter defaults to true (letterhead), so the per-employee
-     * generate flow keeps the header/footer/logo; the template author's
-     * content-only "Download DOCX" passes false.
-     */
     public function renderDocx($row, string $filename, bool $withHeaderFooter = true)
     {
         $tmp = $this->buildDocxFile($row, $withHeaderFooter);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
-    /* ───── HELPERS ───── */
-
-    /**
-     * Edit gate for the template wizard.
-     *
-     * Stage 1 creates the row (can_add) and every later stage updates it, so
-     * can_add on its own bought nothing — you could create an empty draft and
-     * were then refused at every save (QA #36). A user who may create templates
-     * may finish the DRAFT they created; anything already published, or authored
-     * by someone else, still needs can_edit.
-     */
     private function authorizeTemplateWrite(Request $request, $template): void
     {
         $user = $request->user();
@@ -1881,7 +1224,6 @@ class HrDocumentTemplateController extends Controller
         $this->authorize($request, 'can_edit');
     }
 
-    /** Quiet permission probe — no abort, for use in a compound decision. */
     private function hasPerm($user, string $perm): bool
     {
         if (!$user) return false;
@@ -1914,13 +1256,6 @@ class HrDocumentTemplateController extends Controller
         }
     }
 
-    /**
-     * Why the action was refused, in the words of the person refused (QA #37).
-     *
-     * "Missing can_edit on hr.doc_templates" is the column name and the module
-     * slug — accurate, and useless to an HR user who cannot act on it. These say
-     * which permission is missing and who can grant it.
-     */
     private static function denialMessage(string $perm): string
     {
         $what = match ($perm) {
@@ -1931,10 +1266,6 @@ class HrDocumentTemplateController extends Controller
             default      => 'perform this action on document templates',
         };
         $hint = $perm === 'can_edit'
-            /* The common case behind this message: someone was granted Add but
-               not Edit, created a draft, and then could not touch it again —
-               because after the first save every step of the wizard is an
-               update. Naming that explicitly saves a support round trip. */
             ? ' You can create a new template, but changing one — including '
               . 'completing a draft you just created — needs Edit as well.'
             : '';
@@ -1976,7 +1307,6 @@ class HrDocumentTemplateController extends Controller
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
-            // Every branch is an isolated peer — globals + client-level rows + own branch only.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
                     ->orWhere(function ($ww) use ($clientId, $branchId) {
@@ -1991,18 +1321,6 @@ class HrDocumentTemplateController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /**
-     * Narrow a client-tier user to the branch their switcher is on.
-     *
-     * A CLIENT-WIDE template (branch_id null) belongs to every branch, so the
-     * filter has to let it through — the branch_user arm of applyScope already
-     * does, and this one did not. The effect was a library that changed shape
-     * with who was looking: a client admin with a branch selected (Axios sends
-     * branch_id on every GET) lost every client-wide template, while HR in that
-     * same branch still saw them. Editing one then looked like it had not
-     * reached Onboarding or Exit at all, because the row the admin was reading
-     * the trigger point from was a different template (#66).
-     */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -2020,59 +1338,13 @@ class HrDocumentTemplateController extends Controller
         return $q->findOrFail($id);
     }
 
-    /**
-     * Creator-rank gate — NO LONGER APPLIED to templates.
-     *
-     * It used to run on update() and destroy(), refusing an edit or a delete
-     * when the template's creator outranked the actor: "You cannot delete this
-     * template — created by a higher-privileged user." The effect was that a
-     * user who had been granted Edit and Delete on the Document Template module
-     * still could not use them on most of the library, because the seeded and
-     * administrator-authored templates are exactly the ones created by the
-     * higher rank. A permission that cannot be exercised is not a permission.
-     *
-     * Templates are now governed by the MODULE PERMISSION alone — can_edit for
-     * update, can_delete for destroy, plus the tenant scope in resolveRow()
-     * which still prevents reaching another client's or branch's rows. Whoever
-     * holds the permission can act on any template they can see. (Decided by
-     * the product owner, Oct 2026.)
-     *
-     * Kept rather than deleted: the same rule still applies to employees,
-     * announcements, candidates, hiring requests and custom fields, where the
-     * record is ABOUT a person rather than a shared piece of configuration, and
-     * the argument for it is much stronger. If templates ever need it back,
-     * this is the method to call again.
-     */
-    private function guardHierarchicalAction($user, HrDocumentTemplate $row, string $verb): void
-    {
-        if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;
-        if ($row->created_by === $user->id) return;
-
-        $rank = fn(?string $t) => match ($t) {
-            'super_admin'  => 4,
-            'client_admin' => 3,
-            'client_user'  => 3,
-            'branch_user'  => 2,
-            'employee'     => 1,
-            default        => 0,
-        };
-        $creator = User::find($row->created_by);
-        if ($creator && $rank($creator->user_type) > $rank($user->user_type)) {
-            abort(403, "You cannot {$verb} this template — created by a higher-privileged user.");
-        }
-    }
-
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;
         $isDraft  = strtolower((string) $request->input('status')) === 'draft';
-        // On Draft saves and on edits, only category/role/name are strictly
-        // required so the wizard can persist partial progress.
         $req = fn() => $isUpdate || $isDraft ? 'nullable' : 'required';
 
         return $request->validate([
-            // 100, not the column's 191: an over-long name breaks the template
-            // card + list layouts. Mirrors TEMPLATE_NAME_MAX in TemplateForm.tsx.
             'name'              => [$req(), 'string', 'max:100'],
             'description'       => 'nullable|string',
             'employee_category' => ['nullable', Rule::in(self::CATEGORIES)],
@@ -2099,9 +1371,6 @@ class HrDocumentTemplateController extends Controller
             'content_html' => 'nullable|string',
             'docx'         => 'nullable|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB,
 
-            // Header / footer config — both are stored as JSON. The frontend
-            // owns the schema; we just validate that it's an object with the
-            // expected keys present.
             'header_config'                  => 'nullable|array',
             'header_config.logo_path'        => 'nullable|string|max:500',
             'header_config.logo_url'         => 'nullable|string|max:500',
@@ -2113,8 +1382,6 @@ class HrDocumentTemplateController extends Controller
             'header_config.show_logo'        => 'nullable|boolean',
             'header_config.show_title'       => 'nullable|boolean',
             'header_config.logo_height'      => 'nullable|integer|between:24,200',
-            // Free-drag positions (percentages of the header container,
-            // center-anchored). Saved alongside the rest of the config.
             'header_config.logo_pos'         => 'nullable|array',
             'header_config.logo_pos.x'       => 'nullable|numeric|between:0,100',
             'header_config.logo_pos.y'       => 'nullable|numeric|between:0,100',
@@ -2133,20 +1400,10 @@ class HrDocumentTemplateController extends Controller
 
             'status' => ['nullable', Rule::in(self::STATUSES)],
         ], [
-            // Match the wording the form shows, so an API-side rejection reads
-            // the same as the inline message.
             'name.max' => 'Template Name cannot exceed 100 characters.',
         ]);
     }
 
-    /* ───── Header logo upload ───── */
-
-    /**
-     * Stand-alone endpoint for uploading the header logo image. Works
-     * pre-save (no template id required) so the wizard can attach a logo
-     * before the row exists, and the path then rides along in the main
-     * save payload under header_config.logo_path.
-     */
     public function uploadHeaderLogo(Request $request)
     {
         $this->authorize($request, 'can_add');
@@ -2166,18 +1423,6 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
-    /* ───── code allocation ───── */
-
-    /**
-     * Keep what this version says, so the number means something.
-     *
-     * Called after every successful write. A snapshot rather than a diff: the
-     * body and its letterhead are copied whole, so a download of v2 needs no
-     * reconstruction and survives any later change to how templates render.
-     *
-     * Never fatal. The template is already saved by the time we get here, and
-     * failing to file a history row must not undo the author's edit.
-     */
     private function snapshotVersion(HrDocumentTemplate $row, ?int $userId): void
     {
         try {
@@ -2206,15 +1451,6 @@ class HrDocumentTemplateController extends Controller
         }
     }
 
-    /**
-     * v1 → v2, v9 → v10.
-     *
-     * The column is free text (varchar 10) and every row in it has always read
-     * "v1", so the trailing digits are the only thing worth trusting. Anything
-     * without a number — null, an empty string, a hand-typed label — counts as
-     * the first version and becomes v2 rather than refusing the save; a
-     * version label is not worth losing an edit over.
-     */
     private function nextVersion(?string $current): string
     {
         $n = preg_match('/(\d+)\s*$/', (string) $current, $m) ? (int) $m[1] : 1;
@@ -2229,15 +1465,6 @@ class HrDocumentTemplateController extends Controller
         return "{$c}-{$r}-";
     }
 
-    /**
-     * Every template in one code scope — INCLUDING deleted ones.
-     *
-     * withTrashed() is the whole point of #67. A code is issued once and never
-     * again: IT-INT-015 may already be on a signed document, quoted in an
-     * approval or filed by someone, so the next template must not answer to
-     * it. Counting only live rows handed the number straight back out, and the
-     * gap a delete leaves is therefore permanent and correct.
-     */
     private function codeScope($clientId, $branchId, string $cat, string $role)
     {
         $q = HrDocumentTemplate::withTrashed();
@@ -2254,7 +1481,6 @@ class HrDocumentTemplateController extends Controller
         return $this->buildNext($codes, $this->codePrefix($cat, $role));
     }
 
-    /** What the next code WOULD be. Read only — nothing locked or reserved. */
     private function peekNextCode($clientId, $branchId, string $cat, string $role): string
     {
         $codes = $this->codeScope($clientId, $branchId, $cat, $role)->pluck('code');
@@ -2275,11 +1501,6 @@ class HrDocumentTemplateController extends Controller
         return $prefix . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /* ───── DOCX storage + parse ───── */
-
-    // docxPageLimitError() is provided by HandlesDocxHtmlRoundtrip (canonical,
-    // shared with ClmTradeDocumentController). Not redefined here.
-
     private function storeDocx($file, $clientId, $templateId): array
     {
         $clientSlug = $clientId ? 'c' . $clientId : 'public';
@@ -2290,24 +1511,8 @@ class HrDocumentTemplateController extends Controller
         return [$path, $file->getClientOriginalName()];
     }
 
-    /* extractHeaderLogo() / extractHeaderFooterText() / docxPartParagraphs()
-       were removed with the Word header/footer round-trip: uploads now update
-       body content only and never lift a logo/title/footer out of the file
-       (see uploadDocx). Recover from git history if that decision reverses. */
-
-    /**
-     * Lightweight DOCX → HTML extractor. PhpWord doesn't ship a stock HTML
-     * reader so we walk the parsed model and stitch <p>/<b>/<i>/<u> tags
-     * from the rich elements PhpWord understands. Good enough for the
-     * "round-trip" use case where someone downloads, edits in Word, and
-     * uploads back — preserves text + basic formatting + paragraph breaks.
-     */
     private function docxToHtml(string $absPath): string
     {
-        // Primary: PhpWord's model — keeps tables + bold/italic WHEN it can read
-        // the file. Its Word2007 reader is limited though; it silently drops
-        // whole categories of content (content controls / w:sdt, text boxes,
-        // some field runs), which is why an upload sometimes came in blank.
         $phpwordHtml = '';
         try {
             $phpWord = IOFactory::load($absPath);
@@ -2321,33 +1526,15 @@ class HrDocumentTemplateController extends Controller
         }
         $phpwordHtml = trim($phpwordHtml);
 
-        // Fallback: read the text straight out of word/document.xml. This walk
-        // groups every <w:t> by its parent <w:p>, so it captures the text
-        // PhpWord's model misses — at the cost of flattening tables to
-        // paragraphs. Reliable where the primary path returns little/nothing.
         $rawHtml = $this->rawDocxParagraphs($absPath);
 
-        // Keep whichever recovered MORE visible text. Raw wins exactly when
-        // PhpWord dropped content; PhpWord wins on well-formed files (better
-        // structure). Comparing stripped-tag length is a good proxy for "how
-        // much of the document actually came through".
         $phpwordLen = mb_strlen(trim(strip_tags($phpwordHtml)));
         $rawLen     = mb_strlen(trim(strip_tags($rawHtml)));
         $chosen = $rawLen > $phpwordLen ? $rawHtml : $phpwordHtml;
 
-        // May legitimately be '' (both readers found nothing) — the caller
-        // guards against overwriting existing content with a blank result.
         return trim($chosen);
     }
 
-    /**
-     * Text-first DOCX extraction straight from word/document.xml — the reliable
-     * safety net for {@see docxToHtml()}. Groups every visible run (<w:t>) by
-     * its containing paragraph (<w:p>), so nothing PhpWord's reader skips
-     * (content controls, text boxes, odd field runs) is lost. Tables are
-     * flattened to paragraphs, which is an acceptable trade for never showing a
-     * blank preview after an upload.
-     */
     private function rawDocxParagraphs(string $absPath): string
     {
         if (!class_exists('ZipArchive') || !is_file($absPath)) return '';
@@ -2361,21 +1548,15 @@ class HrDocumentTemplateController extends Controller
         }
         if ($xml === false || $xml === '') return '';
 
-        // Body only, so header/footer parts never bleed into the content.
         if (preg_match('#<w:body\b[^>]*>(.*)</w:body>#s', $xml, $m)) {
             $xml = $m[1];
         }
 
         $out = '';
-        // One chunk per paragraph. The lookahead splits BEFORE each <w:p …> /
-        // <w:p> open tag; <w:pPr> (paragraph properties) does not match because
-        // the char after "<w:p" there is "P", not a space or ">".
         foreach (preg_split('#(?=<w:p[ >])#', $xml) as $chunk) {
-            if (strncmp($chunk, '<w:p', 4) !== 0) continue;   // skip pre-first-paragraph junk
+            if (strncmp($chunk, '<w:p', 4) !== 0) continue;
             if (!preg_match_all('#<w:t\b[^>]*>(.*?)</w:t>#s', $chunk, $mm)) continue;
 
-            // <w:t> content is XML-escaped in the file; decode to raw text, then
-            // re-escape for safe HTML output.
             $text = trim(html_entity_decode(implode('', $mm[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
             if ($text === '') continue;
 
@@ -2384,38 +1565,11 @@ class HrDocumentTemplateController extends Controller
         return $out;
     }
 
-    /**
-     * One DOCX element → HTML.
-     *
-     * $inline says where the element sits. A Text INSIDE a TextRun is part of a
-     * paragraph and must stay inline, or every bold word would start a new one.
-     * A Text at the TOP of a section IS a paragraph — PhpWord's reader emits
-     * one for any paragraph made of a single plain run, which is most of them
-     * in a plain Word document.
-     *
-     * Without the distinction the top-level case returned bare text, so a
-     * document of simple paragraphs came back as one unbroken string and
-     * downloaded as a single line. (#27/#57) It looked intermittent because the
-     * parser that wins is whichever recovers more text: a document with mixed
-     * formatting produces TextRuns and reads correctly, a plain one does not.
-     */
-    /**
-     * A DOCX element's paragraph alignment as an inline style attribute.
-     *
-     * PhpWord's HTML reader honours `text-align`, so what comes out here goes
-     * back in on the next download — centred signature blocks and right-aligned
-     * dates survive the round trip instead of all resetting to the left margin.
-     * Left alignment is the default and is left off.
-     */
     private function paragraphAlignAttr($el): string
     {
         if (!method_exists($el, 'getParagraphStyle')) return '';
         $p = $el->getParagraphStyle();
         $a = (is_object($p) && method_exists($p, 'getAlignment')) ? $p->getAlignment() : null;
-        /* Word's own names, not CSS's: OOXML calls them start/end (and PhpWord
-           keeps right/left as deprecated aliases), so a map is needed — reading
-           only 'right' let every right-aligned line drift back to the margin on
-           the first round trip while centred ones held. */
         $map = [
             'center' => 'center',
             'end'    => 'right',
@@ -2426,12 +1580,6 @@ class HrDocumentTemplateController extends Controller
         return isset($map[$a]) ? ' style="text-align:' . $map[$a] . '"' : '';
     }
 
-    /**
-     * Size and colour of a run as CSS. Both are read back by PhpWord's HTML
-     * reader, so carrying them keeps a document's type scale and colours
-     * through upload → edit → download; without them every run came back at
-     * the default size in black.
-     */
     private function fontCss($f): string
     {
         $css = [];
@@ -2457,11 +1605,6 @@ class HrDocumentTemplateController extends Controller
             if ($f) {
                 if (method_exists($f, 'isBold')   && $f->isBold())   $text = "<b>{$text}</b>";
                 if (method_exists($f, 'isItalic') && $f->isItalic()) $text = "<i>{$text}</i>";
-                /* getUnderline(), NOT isUnderline(): PhpWord's Font style has
-                   no isUnderline(), so method_exists() was always false and
-                   every underline in an uploaded document was silently
-                   dropped. It returns a style name ('single', 'dash', …) or
-                   'none'. (#57) */
                 $u = method_exists($f, 'getUnderline') ? $f->getUnderline() : null;
                 if ($u && $u !== 'none') $text = "<u>{$text}</u>";
                 $css = $this->fontCss($f);
@@ -2476,14 +1619,6 @@ class HrDocumentTemplateController extends Controller
         if ($cls === 'ListItem') {
             return '<li>' . htmlspecialchars((string) $el->getText(), ENT_QUOTES) . '</li>';
         }
-        /* ListItemRun deliberately has NO branch. It falls through to the
-         * getText() case below and comes out as a <p>, which is what it has
-         * always done and what the editor and the DOCX writer both handle. A
-         * <li> here would be a bare list item with no <ul> around it — checked
-         * against a real uploaded agreement carrying 127 of them: nothing is
-         * lost today, so there is nothing to win by changing it. */
-        /* An empty paragraph. Dropped before, so a deliberate blank line
-         * between two blocks disappeared and the blocks closed up. */
         if ($cls === 'TextBreak') {
             return $inline ? '<br/>' : '<p></p>';
         }
@@ -2493,8 +1628,6 @@ class HrDocumentTemplateController extends Controller
                 $cells = '';
                 foreach ($r->getCells() as $cell) {
                     $cellInner = '';
-                    /* A cell is a block context: its paragraphs each need their
-                       own <p>, exactly as they do in the body. */
                     foreach ($cell->getElements() as $child) $cellInner .= $this->elementToHtml($child);
                     $cells .= '<td>' . $cellInner . '</td>';
                 }

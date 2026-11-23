@@ -16,26 +16,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * PO payments: TDS, payment requests, their approval, and the payments released against them.
- *
- *  - Manage Payment Requests (one PO): summary cards + requests, TDS, raise, payments.
- *  - Payment Request Management (all POs): paged list, request detail, approve / decline.
- *
- * The PO's paid_amount / balance_amount and each request's paid_amount are stored, and
- * rebuilt from the payment rows inside the same transaction as every change.
- */
 class PoPaymentRequestController extends Controller
 {
     use RunsInTransaction;
 
     private const PROOF_RULE = 'file|max:10240|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp';
-    // Cheque (6 digits) through RTGS UTR (22), letters and digits only — as in the old PO payments.
     private const UTR_RULE = ['nullable', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'];
-    /** The highest rate that may be withheld at source on a PO. */
     public const TDS_MAX_PCT = 40.0;
 
-    /** Tabs of Payment Request Management: condition on the request row. */
     private const TABS = [
         'all'      => 'TRUE',
         'awaiting' => "r.status = 'pending'",
@@ -62,37 +50,26 @@ class PoPaymentRequestController extends Controller
         return $user;
     }
 
-    /** A PO the caller can see (tenant scope applies). */
     private function findPo(int $id): PurchaseOrder
     {
         return PurchaseOrder::findOrFail($id);
     }
 
-    /** Payments run on a submitted PO only. */
     private function payable(PurchaseOrder $po): ?JsonResponse
     {
         if ($po->isCancelled()) return $this->fail('This PO is cancelled — no payment requests or payments can be made on it.');
         if ($po->status !== PurchaseOrder::STATUS_SUBMITTED) return $this->fail('Submit the PO before managing its payments.');
-        /* Money moves only after the paperwork is out: the supplier has to have
-           been sent the PO for signature before anything is requested or paid. */
         if (!$po->signingStarted()) {
             return $this->fail('Send this PO for signature first — payments are managed only once the documents are out to the supplier.');
         }
         return null;
     }
 
-    /* ══════════════════════════ ONE PO — Manage Payment Requests ══════════════════════════ */
-
-    /** GET /p2p/orders/{po}/payment-requests — the two summaries and the request table. */
     public function forPo(int $po): JsonResponse
     {
         return $this->ok($this->poPayload($this->findPo($po)));
     }
 
-    /**
-     * PUT /p2p/orders/{po}/tds — one TDS per PO, on the base amount (without GST or charges).
-     * Editable until the first payment is recorded; not on an international PO.
-     */
     public function saveTds(Request $request, int $po): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -100,13 +77,11 @@ class PoPaymentRequestController extends Controller
         if ($blocked = $this->payable($order)) return $blocked;
         if ($order->document_type === 'international') return $this->fail('TDS does not apply to an international PO.');
 
-        // The base is taxable_total, not grand_total — TDS is not cut on GST.
         $tds = $this->tdsFor($request, (float) $order->taxable_total, 'PO');
         if ($tds instanceof JsonResponse) return $tds;
         [$pct, $amount] = $tds;
 
         $this->inTransaction('save the TDS', function () use ($order, $user, $amount, $pct) {
-            // Row lock: a payment saved at the same moment can't slip in under the old TDS.
             $locked = PurchaseOrder::whereKey($order->id)->lockForUpdate()->first();
             if ($this->tdsLockedBy($locked->id)) {
                 abort(response()->json(['status' => false, 'message' => $this->tdsLockMessage($locked->id)], 422));
@@ -119,15 +94,6 @@ class PoPaymentRequestController extends Controller
         return $this->ok($this->poPayload($order->fresh()));
     }
 
-    /**
-     * The TDS a request asks for, checked against the base it is cut from.
-     *
-     * Shared by the PO and the Direct-SPI endpoints: the arithmetic and all
-     * three refusals are identical, and only the noun in the message differs.
-     * Returns [percentage, amount], or a JsonResponse to send back as-is.
-     *
-     * @return array{0:float,1:float}|JsonResponse
-     */
     private function tdsFor(Request $request, float $base, string $noun)
     {
         $data = $request->validate([
@@ -138,7 +104,6 @@ class PoPaymentRequestController extends Controller
         ]);
 
         $base = round($base, 2);
-        // The amount is what was typed when given; otherwise it follows from the percentage.
         $amount = isset($data['tds_amount'])
             ? round((float) $data['tds_amount'], 2)
             : round($base * (float) $data['tds_percentage'] / 100, 2);
@@ -149,7 +114,6 @@ class PoPaymentRequestController extends Controller
         }
 
         $pct = $base > 0 ? round($amount / $base * 100, 2) : 0;
-        // The cap holds whichever field was typed — an amount above 40% is the same deduction.
         if ($pct > self::TDS_MAX_PCT + 0.001) {
             return $this->fail('TDS cannot be more than ' . self::TDS_MAX_PCT . '% — at most '
                 . number_format($base * self::TDS_MAX_PCT / 100, 2) . " on this {$noun}.", 422,
@@ -158,16 +122,6 @@ class PoPaymentRequestController extends Controller
 
         return [$pct, $amount];
     }
-    /**
-     * PUT /p2p/spi/{spi}/tds — deduct TDS on a DIRECT supplier invoice.
-     *
-     * The PO route cannot serve this one: a Direct SPI has no order, and the
-     * deduction belongs to the invoice that will be paid. A PO-backed invoice
-     * is refused here and sent to its order, so one document never carries two
-     * deductions.
-     *
-     * The base is taxable_total, not grand_total — TDS is not cut on GST.
-     */
     public function saveTdsForSpi(Request $request, int $spi): JsonResponse
     {
         $user    = $this->tenantUser($request);
@@ -186,18 +140,13 @@ class PoPaymentRequestController extends Controller
             return $this->fail('TDS does not apply to an international invoice.');
         }
 
-        // The base is taxable_total, not grand_total — TDS is not cut on GST.
         $tds = $this->tdsFor($request, (float) $invoice->taxable_total, 'invoice');
         if ($tds instanceof JsonResponse) return $tds;
         [$pct, $amount] = $tds;
 
         $this->inTransaction('save the TDS', function () use ($invoice, $user, $amount, $pct) {
-            // Row lock: a payment saved at the same moment cannot slip in under the old TDS.
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
 
-            /* Settled by a payment OR by an approval — the same two gates the
-               PO uses. An approval counts because it was given against the net
-               payable as it stood. */
             if ($lock = self::spiTdsLockedBy((int) $locked->id)) {
                 abort(response()->json(['status' => false,
                     'message' => $lock === 'payment'
@@ -212,8 +161,6 @@ class PoPaymentRequestController extends Controller
                 'tds_amount'     => $amount,
                 'tds_updated_by' => $user->id,
                 'tds_updated_at' => now(),
-                /* The ledger follows the deduction: nothing is paid yet, so the
-                   balance IS the net payable. */
                 'balance_amount' => round($net - (float) $locked->paid_amount, 2),
                 'updated_by'     => $user->id,
             ])->save();
@@ -234,13 +181,11 @@ class PoPaymentRequestController extends Controller
             'tds_updated_at' => optional($fresh->tds_updated_at)->toIso8601String(),
         ]);
     }
-    /** POST /p2p/orders/{po}/payment-requests — raise a request to an approver. */
     public function store(Request $request, int $po): JsonResponse
     {
         $user = $this->tenantUser($request);
         $order = $this->findPo($po);
         if ($blocked = $this->payable($order)) return $blocked;
-        // TDS decides the net payable, so it is settled before any request is raised.
         if ($order->document_type !== 'international' && !$order->tds_updated_at) {
             return $this->fail('Deduct the TDS on this PO first — save it (even as 0) before raising a payment request.', 422, ['tds' => ['Deduct TDS first.']]);
         }
@@ -250,9 +195,6 @@ class PoPaymentRequestController extends Controller
             'percentage'       => 'nullable|numeric|min:0|max:100',
             'requested_amount' => 'required|numeric|min:1|max:9999999999999.99',
             'reason'           => 'required|string|max:300',
-            /* Which supplier invoice this release is for. Records the link
-               only — the ceiling, the deduction and the balance all stay on
-               the PO. NULL on an advance raised before any invoice exists. */
             'supplier_invoice_id' => [
                 'nullable', 'integer',
                 Rule::exists('p2p_supplier_invoices', 'id')->where('purchase_order_id', $order->id),
@@ -270,8 +212,6 @@ class PoPaymentRequestController extends Controller
         $approver = DB::table('users')->where('id', $data['requested_to'])->where('client_id', $user->client_id)
             ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.', 422, ['requested_to' => ['Select an active user.']]);
-        // Only someone of the PO's branch: the branch head is the last approver, and a
-        // client admin cannot open the P2P screens to act on it anyway.
         $branch = $order->branch_id ?: $user->branch_id;
         if ($approver->user_type === 'client_admin') {
             return $this->fail('A request stops at the branch head — choose someone from this branch.', 422, ['requested_to' => ['Choose someone from this branch.']]);
@@ -283,7 +223,6 @@ class PoPaymentRequestController extends Controller
         $amount = round((float) $data['requested_amount'], 2);
         $row = $this->inTransaction('raise the payment request', function () use ($order, $user, $data, $amount) {
             $locked = PurchaseOrder::whereKey($order->id)->lockForUpdate()->first();
-            // Pending and approved requests together may not exceed the net payable.
             $open = $this->openToRequest($locked);
             if ($amount > $open + 0.001) {
                 abort(response()->json(['status' => false,
@@ -319,7 +258,6 @@ class PoPaymentRequestController extends Controller
         return $this->ok($this->poPayload($order->fresh()), 201);
     }
 
-    /** GET /p2p/orders/{po}/payment-requests/{req}/payments — the Payment History of one request. */
     public function payments(int $po, int $req): JsonResponse
     {
         $order = $this->findPo($po);
@@ -330,26 +268,16 @@ class PoPaymentRequestController extends Controller
         ]);
     }
 
-    /** POST /p2p/orders/{po}/payment-requests/{req}/payments (multipart) — record a payment. */
     public function storePayment(Request $request, int $po, int $req): JsonResponse
     {
         return $this->savePayment($request, $po, $req, null);
     }
 
-    /** POST /p2p/orders/{po}/payment-requests/{req}/payments/{payment} (multipart) — edit a payment. */
     public function updatePayment(Request $request, int $po, int $req, int $payment): JsonResponse
     {
         return $this->savePayment($request, $po, $req, $payment);
     }
 
-    /**
-     * A bank reference backs ONE payment across the company.
-     *
-     * Shared by the PO and Direct-SPI paths: the rule and the message are the
-     * same, and the holder is named rather than left for the user to hunt
-     * (CS-425). Returns a JsonResponse to send back, or null when the
-     * reference is free.
-     */
     private function utrClash(?string $utr, int $clientId, ?PoPayment $existing): ?JsonResponse
     {
         if (!$utr) return null;
@@ -360,7 +288,6 @@ class PoPaymentRequestController extends Controller
             ->first(['id', 'amount', 'purchase_order_id', 'supplier_invoice_id', 'payment_request_id']);
         if (!$dup) return null;
 
-        /* Whichever document holds it — an order, or an invoice paid directly. */
         $onDoc = $dup->purchase_order_id
             ? PurchaseOrder::withoutGlobalScope('tenant')->whereKey($dup->purchase_order_id)->value('code')
             : SupplierInvoice::withoutGlobalScope('tenant')->whereKey($dup->supplier_invoice_id)->value('code');
@@ -374,14 +301,6 @@ class PoPaymentRequestController extends Controller
         return $this->fail($msg, 422, ['utr_cheque_number' => [$msg]]);
     }
 
-    /**
-     * Record a payment against a DIRECT supplier invoice.
-     *
-     * The money moves on the invoice, so every ceiling is read from it: what
-     * the request still has approved and unpaid, and what the invoice itself
-     * still owes. The payment row carries supplier_invoice_id with a NULL
-     * purchase_order_id — the same shape the request uses.
-     */
     private function savePaymentForSpi(Request $request, SupplierInvoice $invoice, int $req, ?int $paymentId = null): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -398,8 +317,6 @@ class PoPaymentRequestController extends Controller
             return $this->fail("That payment request was not raised against {$invoice->code}.", 404);
         }
 
-        /* The payment being edited, when this is an update. firstOrFail so a bad
-           id is a 404 rather than a silent create. */
         $existing = $paymentId
             ? PoPayment::withoutGlobalScope('tenant')->whereNull('purchase_order_id')
                 ->where('supplier_invoice_id', $invoice->id)->where('payment_request_id', $row->id)
@@ -412,7 +329,6 @@ class PoPaymentRequestController extends Controller
                 ? 'This request is still awaiting approval — pay once it is approved.'
                 : 'This request was declined — nothing can be paid against it.');
         }
-        // TDS is fixed at the first payment, so it must be settled before one lands.
         if (!$invoice->isInternational() && !$invoice->tds_updated_at) {
             return $this->fail('Deduct the TDS on this invoice first — save it (even as 0) before recording a payment.',
                 422, ['tds' => ['Deduct TDS first.']]);
@@ -441,11 +357,9 @@ class PoPaymentRequestController extends Controller
         $path = $file?->store("p2p/spi-payments/{$invoice->id}", 'public');
 
         $saved = $this->inTransaction($existing ? 'update the payment' : 'record the payment', function () use ($invoice, $row, $existing, $user, $data, $amount, $utr, $file, $path) {
-            // Serialise payments on the invoice so two people cannot both pass the balance check.
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
             $req = PoPaymentRequest::whereKey($row->id)->first();
 
-            // The row being edited does not count against its own room.
             $others = (float) PoPayment::withoutGlobalScope('tenant')
                 ->where('payment_request_id', $req->id)
                 ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
@@ -481,7 +395,6 @@ class PoPaymentRequestController extends Controller
                 : PoPayment::create($attrs + [
                     'client_id'           => $locked->client_id,
                     'branch_id'           => $locked->branch_id,
-                    /* NULL, deliberately — this payment belongs to the invoice. */
                     'purchase_order_id'   => null,
                     'supplier_invoice_id' => $locked->id,
                     'payment_request_id'  => $req->id,
@@ -499,10 +412,6 @@ class PoPaymentRequestController extends Controller
         ], $existing ? 200 : 201);
     }
 
-    /**
-     * POST /p2p/spi/{id}/payment-requests/{req}/payments/{payment} — edit a
-     * Direct-SPI payment. POST, not PUT: a corrected proof arrives multipart.
-     */
     public function updatePaymentFromSpi(Request $request, int $spi, int $req, int $payment): JsonResponse
     {
         $invoice = SupplierInvoice::findOrFail($spi);
@@ -512,10 +421,6 @@ class PoPaymentRequestController extends Controller
         return $this->savePaymentForSpi($request, $invoice, $req, $payment);
     }
 
-    /**
-     * DELETE /p2p/spi/{id}/payment-requests/{req}/payments/{payment} — remove a
-     * Direct-SPI payment and re-derive the invoice ledger.
-     */
     public function destroyPaymentFromSpi(Request $request, int $spi, int $req, int $payment): JsonResponse
     {
         $user    = $this->tenantUser($request);
@@ -542,14 +447,6 @@ class PoPaymentRequestController extends Controller
         return $this->ok(['summary' => $this->spiPayload($invoice->fresh())]);
     }
 
-    /**
-     * The invoice's ledger, recomputed from its payments.
-     *
-     * refreshPaymentTotals() does this for an order; a Direct SPI keeps the
-     * same figures on itself. Each request's paid_amount is rewritten too, so
-     * deleting the last payment takes it back to 0 rather than leaving a
-     * stale total behind.
-     */
     private function refreshSpiPaymentTotals(SupplierInvoice $invoice): void
     {
         $paidByRequest = DB::table('p2p_po_payments')
@@ -588,7 +485,6 @@ class PoPaymentRequestController extends Controller
                 ? 'This request is still awaiting approval — pay once it is approved.'
                 : 'This request was declined — nothing can be paid against it.');
         }
-        // TDS is fixed at the first payment, so a domestic PO must have it saved before paying.
         if ($order->document_type !== 'international' && !$order->tds_updated_at) {
             return $this->fail('Deduct the TDS on this PO first — save it (even as 0) before recording a payment.', 422, ['tds' => ['Deduct TDS first.']]);
         }
@@ -609,7 +505,6 @@ class PoPaymentRequestController extends Controller
         ]);
 
         $utr = !empty($data['utr_cheque_number']) ? strtoupper($data['utr_cheque_number']) : null;
-        // A bank reference backs one payment only, across the company (deleted payments free it).
         if ($clash = $this->utrClash($utr, (int) $order->client_id, $existing)) return $clash;
 
         $amount = round((float) $data['amount'], 2);
@@ -617,7 +512,6 @@ class PoPaymentRequestController extends Controller
         $path = $file?->store("p2p/po-payments/{$order->id}", 'public');
 
         $saved = $this->inTransaction($existing ? 'update the payment' : 'record the payment', function () use ($order, $row, $existing, $user, $data, $amount, $utr, $file, $path) {
-            // Serialise payments on the PO so two people can't both pass the balance check.
             $locked = PurchaseOrder::whereKey($order->id)->lockForUpdate()->first();
             $req = PoPaymentRequest::whereKey($row->id)->first();
             $others = (float) $this->paymentRows(null, $req->id)->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
@@ -659,7 +553,6 @@ class PoPaymentRequestController extends Controller
         ], $existing ? 200 : 201);
     }
 
-    /** DELETE /p2p/orders/{po}/payment-requests/{req}/payments/{payment} — kept as a soft-deleted record. */
     public function destroyPayment(Request $request, int $po, int $req, int $payment): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -678,10 +571,6 @@ class PoPaymentRequestController extends Controller
         return $this->ok(['summary' => $this->poPayload($order->fresh())]);
     }
 
-    /**
-     * POST /p2p/orders/{po}/payment-requests/{req}/payments/{payment}/zoho-sync — from the row's
-     * Zoho Sync button: the PO + bill first if they are not there, then this one payment.
-     */
     public function zohoSyncPayment(Request $request, int $po, int $req, int $payment): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -691,8 +580,6 @@ class PoPaymentRequestController extends Controller
             return $this->fail('This payment is already posted to Zoho Books.');
         }
 
-        // The same chain every Zoho Sync button runs: PO + bill, payments, then the
-        // cancellation's vendor credit and refunds if this PO has one.
         $zoho = app(\App\Services\P2p\PoZohoService::class);
         try {
             $r = $zoho->syncAll($order, $user->id);
@@ -709,9 +596,6 @@ class PoPaymentRequestController extends Controller
         ], 200, ['message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
     }
 
-    /* ══════════════════════════ ALL POs — Payment Request Management ══════════════════════════ */
-
-    /** GET /p2p/orders/payment-requests?tab=&search=&mine=&page=&per_page= — paged, with every tab's count. */
     public function index(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -722,10 +606,6 @@ class PoPaymentRequestController extends Controller
         ]);
 
         $base = $this->scopedRequests($user);
-        // Who sees what. Deciding stays with the person a request was sent to (can_decide / decide()).
-        //  - client admin: every request of the company, to view
-        //  - branch user (branch head): every request of their branch, to view, plus any sent to them
-        //  - everyone else: only the requests sent to them
         if ($user->user_type === 'branch_user' && $user->branch_id) {
             $base->where(fn ($w) => $w->where('r.branch_id', $user->branch_id)->orWhere('r.requested_to', $user->id));
         } elseif ($user->user_type !== 'client_admin') {
@@ -755,7 +635,6 @@ class PoPaymentRequestController extends Controller
         ]);
     }
 
-    /** GET /p2p/orders/payment-requests/{req} — one request with its PO position and payments. */
     public function show(Request $request, int $req): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -764,9 +643,6 @@ class PoPaymentRequestController extends Controller
 
         $row = PoPaymentRequest::withoutGlobalScope('tenant')->findOrFail($req);
 
-        /* A request has one parent. For a Direct SPI there is no order to
-           summarise, so the invoice answers in its place and `po` comes back
-           null rather than exploding on a missing row. */
         $po  = $r->purchase_order_id
             ? PurchaseOrder::withoutGlobalScope('tenant')->findOrFail($r->purchase_order_id)
             : null;
@@ -776,7 +652,6 @@ class PoPaymentRequestController extends Controller
             'request'  => $this->shapeListRow($r, $user) + ['reason' => $row->reason],
             'po'       => $po ? $this->poPayload($po) : null,
             'spi'      => $spi ? $this->spiPayload($spi) : null,
-            // Every payment on the parent, tagged with the request it was paid against.
             'payments' => ($po
                 ? $this->paymentRows($po->id)
                 : $this->paymentRows(null)->whereNull('purchase_order_id')->where('supplier_invoice_id', $row->supplier_invoice_id)
@@ -786,7 +661,6 @@ class PoPaymentRequestController extends Controller
         ]);
     }
 
-    /** PUT /p2p/orders/payment-requests/{req}/decision — the approver approves (full or part) or declines. */
     public function decide(Request $request, int $req): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -797,7 +671,6 @@ class PoPaymentRequestController extends Controller
         $data = $request->validate([
             'decision'        => ['required', Rule::in([PoPaymentRequest::STATUS_APPROVED, PoPaymentRequest::STATUS_REJECTED])],
             'approved_amount' => 'required_if:decision,approved|nullable|numeric|min:1',
-            // A decline reason is capped at 300 characters, an approval remark at 400 (as on the popup).
             'note'            => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'approved_amount.required_if' => 'Enter the amount to approve.',
@@ -811,13 +684,6 @@ class PoPaymentRequestController extends Controller
         return $this->show($request, $req);
     }
 
-    /**
-     * PUT /p2p/orders/payment-requests/decisions — decide several requests at once.
-     *
-     * Each one goes through the very same rules as the single decision, on its own,
-     * so one refusal never holds up the rest: the answer names what was decided and
-     * what was not, and why (CS-429 / CS-436).
-     */
     public function decideMany(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -825,8 +691,6 @@ class PoPaymentRequestController extends Controller
             'ids'      => 'required|array|min:1|max:50',
             'ids.*'    => 'integer',
             'decision' => ['required', Rule::in([PoPaymentRequest::STATUS_APPROVED, PoPaymentRequest::STATUS_REJECTED])],
-            // Approving a batch approves each request in full; a part-approval is
-            // an amount of its own, so it stays a single-request decision.
             'note'     => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'ids.required'     => 'Select at least one payment request.',
@@ -854,21 +718,12 @@ class PoPaymentRequestController extends Controller
         return $this->ok(['decided' => $done, 'failed' => $failed], 200, ['message' => $message]);
     }
 
-    /**
-     * Approve (in full or in part) or decline one request, with every rule that
-     * guards it. Returns null when it was recorded, or why it was refused.
-     *
-     * @return array{message: string, status: int, errors: array}|null
-     */
     private function recordDecision(PoPaymentRequest $row, $user, string $decision, ?float $amount, ?string $note): ?array
     {
         $no = fn (string $m, int $s = 422, array $e = []) => ['message' => $m, 'status' => $s, 'errors' => $e];
 
         if ((int) $row->requested_to !== (int) $user->id) return $no('Only the person this request was sent to can decide it.', 403);
         if ($row->status !== PoPaymentRequest::STATUS_PENDING) return $no('This request is already ' . ($row->status === 'rejected' ? 'declined' : 'approved') . '.');
-        /* A request has ONE parent: an order, or - for a Direct SPI - the
-           invoice itself. Both answer the same two questions, so the decision
-           asks the parent rather than assuming an order. */
         $spi = null;
         $po  = $row->purchase_order_id
             ? PurchaseOrder::withoutGlobalScope('tenant')->find($row->purchase_order_id)
@@ -886,7 +741,6 @@ class PoPaymentRequestController extends Controller
             return $no('You can approve at most the requested ' . number_format((float) $row->requested_amount, 2) . '.', 422,
                 ['approved_amount' => ['Cannot be more than the requested amount.']]);
         }
-        // Headroom: net payable less what other approved requests on the PO already hold (or have paid).
         if ($approve) {
             $parent = $po ?: $spi;
             $held = (float) PoPaymentRequest::withoutGlobalScope('tenant')
@@ -909,8 +763,6 @@ class PoPaymentRequestController extends Controller
             'decided_at'      => now(),
         ]));
 
-        /* Whichever parent the request has - a Direct SPI has no order, and
-           naming a null one put "on " with nothing after it in the notice. */
         $parentCode = $po?->code ?? $spi?->code ?? '';
 
         $this->notify((int) $row->requested_by, [
@@ -925,66 +777,33 @@ class PoPaymentRequestController extends Controller
         return null;
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /** Requests of the client (all branches), joined to the PO, supplier and people. */
     private function scopedRequests($user)
     {
         return DB::table('p2p_po_payment_requests as r')
-            /* LEFT, not INNER: a Direct-SPI request has no order, and an INNER
-               join dropped it from the inbox, from show() and from decide() -
-               which answered "Payment request not found" for a row that was
-               sitting right there. */
             ->leftJoin('p2p_purchase_orders as po', 'po.id', '=', 'r.purchase_order_id')
-            /* The invoice the request was raised FROM — or, for a Direct SPI,
-               the one it was raised AGAINST. Joined before the vendor and the
-               shipment, because both now fall back to it. */
             ->leftJoin('p2p_supplier_invoices as spi', 'spi.id', '=', 'r.supplier_invoice_id')
-            /* On the coalesced id: a Direct-SPI request has no order, and
-               joining on po.vendor_id alone left it with no supplier. */
             ->leftJoin('vendors as v', 'v.id', '=', DB::raw('COALESCE(po.vendor_id, spi.vendor_id)'))
             ->leftJoin('users as rb', 'rb.id', '=', 'r.requested_by')
             ->leftJoin('users as rt', 'rt.id', '=', 'r.requested_to')
             ->leftJoin('shipment_orders as sh', 'sh.id', '=', DB::raw('COALESCE(po.shipment_order_id, spi.shipment_order_id)'))
             ->leftJoin('proforma_invoices as pi', 'pi.id', '=', DB::raw('COALESCE(po.proforma_invoice_id, sh.proforma_invoice_id)'))
             ->where('r.client_id', $user->client_id)
-            /* A deleted order hides its requests; a request with NO order is not
-               hidden by that test. */
             ->where(fn ($q) => $q->whereNull('r.purchase_order_id')->orWhereNull('po.deleted_at'));
     }
 
-    /**
-     * POST /p2p/spi/{spi}/payment-requests — raise a request FROM the invoice.
-     *
-     * A thin door onto store(): it finds the invoice's purchase order and
-     * hands over. The request still belongs to the PO — same ceiling, same
-     * approver rules, same deduction — the invoice is only recorded as what it
-     * was raised against. The SPI screen therefore never needs to know the PO id.
-     */
     public function storeFromSpi(Request $request, int $spi): JsonResponse
     {
         $invoice = SupplierInvoice::findOrFail($spi);
 
-        // A Direct SPI is paid on its own; there is no order to hand off to.
         if (!$invoice->purchase_order_id) {
             return $this->storeForSpi($request, $invoice);
         }
 
-        // The invoice is implied by the route, so the body does not carry it.
         $request->merge(['supplier_invoice_id' => $invoice->id]);
 
         return $this->store($request, (int) $invoice->purchase_order_id);
     }
 
-    /**
-     * A payment request raised against a DIRECT supplier invoice.
-     *
-     * The same row as a PO's request, with the other parent set:
-     * purchase_order_id stays NULL and supplier_invoice_id names the invoice.
-     * The ceiling is the invoice's own net payable, and the approver rule is
-     * the PO's rule read off the invoice — an active user of its branch, and
-     * never a client admin, because a request stops at the branch head.
-     */
     private function storeForSpi(Request $request, SupplierInvoice $invoice): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -995,7 +814,6 @@ class PoPaymentRequestController extends Controller
         if (round((float) $invoice->grand_total, 2) <= 0) {
             return $this->fail("{$invoice->code} has no amount to pay yet — complete Stage 02 first.");
         }
-        // TDS decides the net payable, so it is settled before any request is raised.
         if (!$invoice->isInternational() && !$invoice->tds_updated_at) {
             return $this->fail(
                 'Deduct the TDS on this invoice first — save it (even as 0) before raising a payment request.',
@@ -1040,7 +858,6 @@ class PoPaymentRequestController extends Controller
         $row = $this->inTransaction('raise the payment request', function () use ($invoice, $user, $data, $amount) {
             $locked = SupplierInvoice::whereKey($invoice->id)->lockForUpdate()->first();
 
-            // Pending and approved requests together may not exceed the net payable.
             $open = $this->openToRequestForSpi($locked);
             if ($amount > $open + 0.001) {
                 abort(response()->json(['status' => false,
@@ -1055,8 +872,6 @@ class PoPaymentRequestController extends Controller
             return PoPaymentRequest::create([
                 'client_id'           => $locked->client_id,
                 'branch_id'           => $locked->branch_id,
-                /* NULL, deliberately: this request has no order. The column is
-                   nullable and every read already LEFT JOINs the order. */
                 'purchase_order_id'   => null,
                 'supplier_invoice_id' => $locked->id,
                 'code'                => $this->svc->nextPaymentRequestCode(
@@ -1086,12 +901,6 @@ class PoPaymentRequestController extends Controller
         return $this->ok($this->spiPayload($invoice->fresh()), 201);
     }
 
-    /**
-     * What is still open to request on a Direct SPI: the net payable, less
-     * everything pending or already approved against it.
-     *
-     * The mirror of openToRequest(), keyed on the invoice instead of the order.
-     */
     private function openToRequestForSpi(SupplierInvoice $invoice): float
     {
         $open = (float) PoPaymentRequest::withoutGlobalScope('tenant')
@@ -1104,7 +913,6 @@ class PoPaymentRequestController extends Controller
         return round((float) $invoice->grand_total - (float) $invoice->tds_amount - $open, 2);
     }
 
-    /** The Direct-SPI answer to poPayload() — the same figures, read off the invoice. */
     private function spiPayload(SupplierInvoice $invoice): array
     {
         $total = round((float) $invoice->grand_total, 2);
@@ -1120,7 +928,6 @@ class PoPaymentRequestController extends Controller
         $pending  = $requests->where('status', PoPaymentRequest::STATUS_PENDING);
         $approved = $requests->where('status', PoPaymentRequest::STATUS_APPROVED);
 
-        /* One name lookup for every person in the list, not one per row. */
         $names = $this->names($requests->pluck('requested_by')->merge($requests->pluck('requested_to'))->all());
 
         return [
@@ -1135,7 +942,6 @@ class PoPaymentRequestController extends Controller
                 'tds_percentage' => (float) $invoice->tds_percentage,
                 'tds_amount'     => $tds,
                 'tds_saved'      => (bool) $invoice->tds_updated_at,
-                /* By a payment or by an approval — see spiTdsLockedBy(). */
                 'tds_locked'     => self::spiTdsLockedBy((int) $invoice->id) !== null,
                 'tds_locked_by'  => self::spiTdsLockedBy((int) $invoice->id),
                 'tds_applies'    => !$invoice->isInternational(),
@@ -1153,48 +959,28 @@ class PoPaymentRequestController extends Controller
                 'rejected_count'   => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
                 'requested_amount' => round((float) $requests->sum('requested_amount'), 2),
                 'awaiting_amount'  => round((float) $pending->sum('requested_amount'), 2),
-                /* The approved total across ALL requests on this invoice - it
-                   was taken from the single open request before. */
                 'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
                 'approved_unpaid'  => round((float) $approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
                 'paid'             => $paid,
                 'open_to_request'  => max(0, $this->openToRequestForSpi($invoice)),
-                // Kept too, so callers reading the short keys still work.
                 'total'    => $requests->count(),
                 'pending'  => $pending->count(),
                 'approved' => $approved->count(),
                 'rejected' => $requests->where('status', PoPaymentRequest::STATUS_REJECTED)->count(),
             ],
-            /* The other requests on this invoice, shaped like the PO's list, so
-               the Linked requests panel fills for a Direct SPI too - and each
-               carries can_decide, so a sibling can be acted on without opening
-               it. */
             'requests' => $requests
                 ->map(fn ($r) => $this->shapeRequest($r, $names, [$invoice->id => $invoice->code]))
                 ->values()->all(),
         ];
     }
-    /**
-     * POST /p2p/spi/{spi}/payment-requests/{req}/payments — the "Make SPI
-     * Payment" button.
-     *
-     * The same door as storeFromSpi(): the invoice names its purchase order and
-     * the existing logic takes over. The payment is still recorded against the
-     * PO and still reduces its balance — the invoice is where it was released
-     * from, not what it is measured against.
-     */
     public function storePaymentFromSpi(Request $request, int $spi, int $req): JsonResponse
     {
         $invoice = SupplierInvoice::findOrFail($spi);
 
-        // A Direct SPI is paid on its own; there is no order to hand off to.
         if (!$invoice->purchase_order_id) {
             return $this->savePaymentForSpi($request, $invoice, $req);
         }
 
-        /* Any request on the invoice's PO - raised from the PO, this SPI or a
-           sibling SPI - can be paid from here. The payment still lands on the
-           PO and storePayment() checks it against the PO's balance. */
         $belongs = PoPaymentRequest::where('id', $req)->where('purchase_order_id', $invoice->purchase_order_id)->exists();
         if (!$belongs) {
             return $this->fail("That payment request is not on the purchase order of {$invoice->code}.", 404);
@@ -1209,12 +995,8 @@ class PoPaymentRequestController extends Controller
             'r.id', 'r.code', 'r.purchase_order_id', 'r.payment_type', 'r.percentage', 'r.requested_amount',
             'r.status', 'r.approved_amount', 'r.paid_amount', 'r.requested_at', 'r.decided_at',
             'r.requested_by', 'r.requested_to', 'r.decision_note',
-            // Raised FROM this invoice. The money still moves on the PO.
             'r.supplier_invoice_id', 'spi.code as spi_code', 'spi.invoice_date as spi_date',
             'spi.invoice_no as spi_invoice_no', 'spi.grand_total as spi_total',
-            /* Each of these answers from whichever parent the request has.
-               Read off the order alone, a Direct-SPI request came back with a
-               blank supplier and zeroes for every amount. */
             DB::raw('COALESCE(po.vendor_id, spi.vendor_id) as vendor_id'),
             'po.physical_inspection', 'po.inspection_status',
             DB::raw('COALESCE(po.procurement_request_code, spi.procurement_request_code) as procurement_request_code'),
@@ -1222,8 +1004,6 @@ class PoPaymentRequestController extends Controller
             'po.code as po_code', 'po.po_date', 'po.status as po_status',
             DB::raw('COALESCE(po.grand_total, spi.grand_total) as grand_total'),
             DB::raw('COALESCE(po.tds_amount, spi.tds_amount) as tds_amount'),
-            // An import is priced in the supplier's currency and carries no GST,
-            // so every screen in this module needs both to print itself right.
             DB::raw("COALESCE(po.currency_code, spi.currency_code, 'INR') as currency_code"),
             DB::raw('COALESCE(po.document_type, spi.document_type) as document_type'),
             DB::raw('COALESCE(po.paid_amount, spi.paid_amount) as po_paid'),
@@ -1253,9 +1033,6 @@ class PoPaymentRequestController extends Controller
             'opportunity_code' => $r->opp_code, 'opportunity_date' => $r->pi_date ? substr((string) $r->pi_date, 0, 10) : null,
             'procurement_code' => $r->procurement_request_code,
             'po_code' => $r->po_code, 'po_date' => $r->po_date, 'po_status' => $r->po_status, 'link_type' => $r->link_type,
-            /* Which invoice this request was raised from, so the management
-               list can say "against PO/2026-27/033, via SPI/2026-27/003".
-               NULL on a PO-level advance raised before any invoice existed. */
             'spi' => $r->supplier_invoice_id ? [
                 'id'         => $r->supplier_invoice_id,
                 'code'       => $r->spi_code,
@@ -1273,7 +1050,6 @@ class PoPaymentRequestController extends Controller
         ];
     }
 
-    /** Live payments of a PO or a request, across branches (the approver may sit in another). */
     private function paymentRows(?int $poId, ?int $requestId = null)
     {
         return PoPayment::withoutGlobalScope('tenant')
@@ -1281,28 +1057,6 @@ class PoPaymentRequestController extends Controller
             ->when($requestId, fn ($q) => $q->where('payment_request_id', $requestId));
     }
 
-    /**
-     * What stops the TDS being edited: a recorded payment, or an APPROVAL.
-     *
-     * The approval used to count for nothing here, so TDS stayed editable until
-     * money actually moved. But the approver decides an amount against the net
-     * payable, and the net payable is the grand total less TDS — so editing the
-     * TDS afterwards silently changes the figure that was agreed to, on a
-     * decision already signed. Worse, every open request is validated against
-     * the new net, so raising the deduction can push an approved request past
-     * the ceiling it was approved under (QA #21).
-     *
-     * @return 'payment'|'approval'|null
-     */
-    /**
-     * What has settled the TDS on a DIRECT invoice: a payment, an approval,
-     * or nothing yet.
-     *
-     * The mirror of tdsLockedBy(). An APPROVAL locks it as firmly as a
-     * payment does: the approver agreed an amount against the net payable as
-     * it stood, and moving the deduction afterwards changes what they agreed
-     * to without asking them.
-     */
     public static function spiTdsLockedBy(int $spiId): ?string
     {
         $paid = PoPayment::withoutGlobalScope('tenant')
@@ -1336,7 +1090,6 @@ class PoPaymentRequestController extends Controller
             : 'TDS cannot be changed — a payment request on this PO has already been approved. It was approved against the current net payable.';
     }
 
-    /** Net payable less every pending and approved request. */
     private function openToRequest(PurchaseOrder $po): float
     {
         $open = (float) PoPaymentRequest::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)
@@ -1346,7 +1099,6 @@ class PoPaymentRequestController extends Controller
         return round((float) $po->grand_total - (float) $po->tds_amount - $open, 2);
     }
 
-    /** Everything the Manage Payment Requests modal shows. */
     private function poPayload(PurchaseOrder $po): array
     {
         $base  = round((float) $po->taxable_total, 2);
@@ -1359,8 +1111,6 @@ class PoPaymentRequestController extends Controller
 
         $requests = PoPaymentRequest::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)->orderBy('id')->get();
         $names = $this->names($requests->pluck('requested_to')->merge($requests->pluck('requested_by'))->all());
-        /* Each request says where it was raised from - the PO itself or one of
-           its invoices - since every screen of this PO and its SPIs lists them all. */
         $spiCodes = SupplierInvoice::withoutGlobalScope('tenant')
             ->whereIn('id', $requests->pluck('supplier_invoice_id')->filter()->unique()->all())
             ->pluck('code', 'id')->all();
@@ -1371,13 +1121,10 @@ class PoPaymentRequestController extends Controller
         return [
             'po' => [
                 'id' => $po->id, 'code' => $po->code, 'status' => $po->status, 'document_type' => $po->document_type,
-                // An import is priced in the supplier's currency; every amount on
-                // the request screen has to be printed in it, not in rupees.
                 'currency_code' => $po->currency_code ?: 'INR',
                 'base_amount' => $base, 'gst_amount' => $gst, 'gst_pct' => $base > 0 ? round($gst / $base * 100, 2) : 0,
                 'extra_charges' => $extra, 'grand_total' => $total,
                 'tds_percentage' => (float) $po->tds_percentage, 'tds_amount' => $tds, 'tds_saved' => (bool) $po->tds_updated_at,
-                // Locked by a payment OR by an approval — see tdsLockedBy().
                 'tds_locked' => $paid > 0 || $this->tdsLockedBy((int) $po->id) !== null,
                 'tds_locked_by' => $this->tdsLockedBy((int) $po->id),
                 'tds_applies' => $po->document_type !== 'international',
@@ -1407,13 +1154,8 @@ class PoPaymentRequestController extends Controller
         $approved = $r->approved_amount !== null ? (float) $r->approved_amount : null;
         $me = auth()->id();
         return [
-            /* Whether the person reading this may decide THIS request — the linked
-               list used to offer its buttons on the open request alone, so the
-               others could only be decided by opening each one (CS-436). */
             'can_decide' => $r->status === PoPaymentRequest::STATUS_PENDING && $me !== null && (int) $r->requested_to === (int) $me,
             'id' => $r->id, 'code' => $r->code, 'payment_type' => $r->payment_type,
-            // Which invoice this release was raised against, for the SPI-scoped
-            // history popup. NULL on a PO-level advance.
             'supplier_invoice_id' => $r->supplier_invoice_id,
             'supplier_invoice_code' => $r->supplier_invoice_id ? ($spiCodes[$r->supplier_invoice_id] ?? null) : null,
             'percentage' => $r->percentage !== null ? (float) $r->percentage : null,
@@ -1439,20 +1181,14 @@ class PoPaymentRequestController extends Controller
         ];
     }
 
-    /**
-     * A request's percentage is measured against the net payable (grand total less TDS) —
-     * that is the money the PO can actually release, so 100% means the whole of it.
-     */
     private function requestPct(PurchaseOrder $po, float $amount, $typed): ?float
     {
         $net = round((float) $po->grand_total - (float) $po->tds_amount, 2);
         if ($net <= 0) return null;
         $fromAmount = round($amount / $net * 100, 2);
-        // A typed percentage is trusted only when it agrees with the amount it produced.
         return $typed !== null && abs((float) $typed - $fromAmount) < 0.05 ? round((float) $typed, 2) : $fromAmount;
     }
 
-    /** Posted to the Zoho bill already: changing it here would leave the books wrong. */
     private function zohoLocked(?PoPayment $p): ?JsonResponse
     {
         return $p && (float) $p->zoho_applied_amount > 0
@@ -1460,7 +1196,6 @@ class PoPaymentRequestController extends Controller
             : null;
     }
 
-    /** A PO already in Zoho gets each new payment posted at once; a failure stays on the row for a retry. */
     private function postToZoho(PurchaseOrder $po, PoPayment $p): void
     {
         if (empty($po->zoho_bill_id)) return;
@@ -1471,7 +1206,6 @@ class PoPaymentRequestController extends Controller
         }
     }
 
-    /** @return array<int, array{name: ?string, role: ?string}> — name and role (department · designation). */
     private function names(array $ids): array
     {
         $ids = array_values(array_unique(array_filter($ids)));
@@ -1486,7 +1220,6 @@ class PoPaymentRequestController extends Controller
             ->all();
     }
 
-    /** Bell notification; a failed insert never undoes the change itself. */
     private function notify(int $userId, array $data): void
     {
         try {

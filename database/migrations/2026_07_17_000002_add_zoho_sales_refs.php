@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Sales-side Zoho Books sync: Quotation → Zoho Estimate, Proforma Invoice →
- * Zoho Invoice, Customer → Zoho contact (customer). Mirrors the P2P columns
- * (vendors.zoho_contact_id, spi.zoho_bill_id, etc.). The cached customer
- * contact id dedupes customers exactly like vendors; the doc-level ids make
- * each sync idempotent and remember Zoho's number + cached PDF + last error.
- */
 return new class extends Migration
 {
     public function up(): void

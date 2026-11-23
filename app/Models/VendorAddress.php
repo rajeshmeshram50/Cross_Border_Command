@@ -14,7 +14,6 @@ class VendorAddress extends Model
         'vendor_id', 'address_type',
         'address_line', 'country_id', 'state_id', 'state_code',
         'city', 'pincode',
-        // Google Maps link for the premises — see the 2026_08_25 migration.
         'google_location',
         'contact_name', 'designation', 'contact_no', 'email',
         'whatsapp_enabled',
@@ -27,8 +26,6 @@ class VendorAddress extends Model
         'is_primary'       => 'boolean',
     ];
 
-    // Country, state, GST state code, city and contact person feed the cached
-    // master bundles (supplier pickers) — refresh them on every change.
     protected static function booted(): void
     {
         static::saved(fn () => MasterBundleCache::bump());

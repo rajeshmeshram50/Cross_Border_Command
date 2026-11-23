@@ -20,15 +20,10 @@ class LeaveRequest extends Model
         'from_date',
         'to_date',
         'days',
-        // Sandwich Leave Policy override for THIS leave — an emergency the
-        // blanket branch rule cannot recognise. See the migration for why it
-        // is recorded here rather than on the payroll run.
         'sandwich_waived',
         'sandwich_waived_by',
         'sandwich_waived_at',
         'sandwich_waiver_reason',
-        // Days this request pushed the exit's last working day out by, when
-        // taken unpaid during a notice period (see NoticePeriodGuard).
         'notice_extension_days',
         'day_type',
         'reason',
@@ -52,7 +47,6 @@ class LeaveRequest extends Model
         'created_by',
     ];
 
-    /** Who signed off the sandwich waiver — surfaced on the approval screen. */
     public function sandwichWaiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sandwich_waived_by');

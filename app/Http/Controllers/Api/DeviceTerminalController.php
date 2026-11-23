@@ -8,15 +8,6 @@ use App\Models\DeviceTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-/**
- * Manage registered biometric terminals (eSSL / ZKTeco) — the registry that
- * makes the public /iclock push path tenant-safe (see EsslDeviceController).
- *
- * Tenant-scoped like the rest of the master endpoints: a client-admin sees /
- * manages only their own client's terminals; super-admins (null client_id) may
- * target a client via ?client_id / body client_id. The client_id is ALWAYS
- * derived here, never trusted from a device.
- */
 class DeviceTerminalController extends Controller
 {
     public function index(Request $request)
@@ -81,7 +72,6 @@ class DeviceTerminalController extends Controller
 
         $this->assertBranchInClient($data['branch_id'] ?? $terminal->branch_id, $terminal->client_id);
 
-        // client_id is immutable — a terminal never changes tenants.
         $terminal->update([
             'branch_id'   => array_key_exists('branch_id', $data) ? $data['branch_id'] : $terminal->branch_id,
             'serial'      => $data['serial'] ?? $terminal->serial,
@@ -102,7 +92,6 @@ class DeviceTerminalController extends Controller
         return response()->json(['message' => 'Terminal removed.']);
     }
 
-    /** Validate + normalise the payload (serial unique per soft-delete state). */
     private function validated(Request $request, ?int $ignoreId): array
     {
         return $request->validate([
@@ -115,7 +104,6 @@ class DeviceTerminalController extends Controller
         ]);
     }
 
-    /** A terminal's branch (when set) must belong to the same client. */
     private function assertBranchInClient(?int $branchId, ?int $clientId): void
     {
         if ($branchId && $clientId) {
@@ -124,7 +112,6 @@ class DeviceTerminalController extends Controller
         }
     }
 
-    /** Find a terminal scoped to the caller's client (super-admin sees all). */
     private function scopedFind(Request $request, int $id): DeviceTerminal
     {
         $user = $request->user();
@@ -133,5 +120,5 @@ class DeviceTerminalController extends Controller
             $query->where('client_id', $user->client_id);
         }
         return $query->findOrFail($id);
-    } 
+    }
 }

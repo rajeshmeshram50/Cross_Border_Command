@@ -15,19 +15,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/**
- * P2P · Physical inspection of a submitted PO — a verdict and proof per line,
- * then a sign-off on the PO header. /api/p2p/orders/{po}/inspection
- * Each verdict and upload is saved as it is made, so an inspection can be
- * paused and resumed.
- */
 class PurchaseOrderInspectionController extends Controller
 {
     use RunsInTransaction;
 
-    // Photos, videos and PDFs — what a phone camera or scanner produces.
     private const FILE_RULE = 'file|max:20480|mimetypes:image/*,video/*,application/pdf';
-    // Most proof files one line (or the sign-off note) can hold in total.
     private const MAX_PROOF = 10;
 
     public function __construct(private PurchaseOrderService $svc) {}
@@ -42,7 +34,6 @@ class PurchaseOrderInspectionController extends Controller
         return response()->json(['status' => false, 'message' => $message], $code);
     }
 
-    /** Only a submitted, not-cancelled PO that requires inspection can be inspected. */
     private function inspectable(int $poId): PurchaseOrder|JsonResponse
     {
         $po = PurchaseOrder::findOrFail($poId);
@@ -66,20 +57,11 @@ class PurchaseOrderInspectionController extends Controller
         return collect($files ?? [])->values()->map(fn ($f, $i) => $f + ['index' => $i, 'url' => file_url($f['path'])])->all();
     }
 
-    /**
-     * Proof files stream from here as an attachment. A link straight at the
-     * stored file cannot be downloaded once the disk is remote (Azure): the
-     * browser drops the `download` hint across origins and only opens the
-     * image. Route parameters arrive in URL order, so each route has its own
-     * method rather than one with an optional argument.
-     */
-    /** GET …/inspection/files/{index} — a sign-off note file. */
     public function downloadNoteFile(int $po, int $index): StreamedResponse|JsonResponse
     {
         return $this->streamProof(array_values(PurchaseOrder::findOrFail($po)->inspection_note_files ?? []), $index);
     }
 
-    /** GET …/inspection/lines/{item}/files/{index} — one line's proof file. */
     public function downloadLineFile(int $po, int $item, int $index): StreamedResponse|JsonResponse
     {
         $order = PurchaseOrder::findOrFail($po);
@@ -97,13 +79,11 @@ class PurchaseOrderInspectionController extends Controller
         return $disk->download($file['path'], $file['name'] ?? basename($file['path']));
     }
 
-    /** Header references, every line with its product details, and the sign-off. */
     private function summary(PurchaseOrder $po): array
     {
         $po->load(['items.inspection', 'vendor:id,vendor_code,company_name,legal_name']);
         $live = $this->svc->lineDetails($po->items);
 
-        // Product description and GST for the "Read more" column.
         $products = DB::table('products')->whereIn('id', $po->items->pluck('product_id')->filter())->pluck('description', 'id');
         $ship = $po->shipment_order_id ? DB::table('shipment_orders')->find($po->shipment_order_id) : null;
         $pi   = $po->proforma_invoice_id ? DB::table('proforma_invoices')->find($po->proforma_invoice_id) : null;
@@ -154,13 +134,11 @@ class PurchaseOrderInspectionController extends Controller
         ];
     }
 
-    /** GET /p2p/orders/{po}/inspection */
     public function show(int $po): JsonResponse
     {
         return $this->ok($this->summary(PurchaseOrder::findOrFail($po)));
     }
 
-    /** POST /p2p/orders/{po}/inspection/lines/{item} (multipart) — verdict and/or proof files for one line. */
     public function updateLine(Request $request, int $po, int $item): JsonResponse
     {
         $order = $this->inspectable($po);
@@ -169,15 +147,12 @@ class PurchaseOrderInspectionController extends Controller
 
         $line = $order->items()->findOrFail($item);
         $request->validate([
-            // Proof can be attached before the verdict is chosen.
             'verdict' => ['nullable', 'required_without:files', Rule::in(PoPhysicalInspection::VERDICTS)],
             'remark'  => 'nullable|string|max:1000',
             'files'   => 'nullable|array|max:' . self::MAX_PROOF,
             'files.*' => self::FILE_RULE,
         ]);
 
-        // New proof is added to what the line already holds, so the cap is on
-        // the total — checked before anything is written to storage.
         $adding = count($request->file('files', []));
         if ($adding > 0) {
             $held = count(PoPhysicalInspection::where('purchase_order_item_id', $line->id)->first()?->proof_files ?? []);
@@ -195,7 +170,6 @@ class PurchaseOrderInspectionController extends Controller
             $row->fill([
                 'verdict'      => $request->input('verdict', $row->verdict),
                 'remark'       => $request->has('remark') ? $request->input('remark') : $row->remark,
-                // New proof is added to what is already there, never replacing it.
                 'proof_files'  => array_merge($row->proof_files ?? [], $stored),
                 'inspected_by' => $request->user()->id,
                 'inspected_at' => now(),
@@ -205,7 +179,6 @@ class PurchaseOrderInspectionController extends Controller
         return $this->ok($this->summary($order));
     }
 
-    /** DELETE /p2p/orders/{po}/inspection/lines/{item}/files/{index} — remove one proof file. */
     public function removeFile(int $po, int $item, int $index): JsonResponse
     {
         $order = $this->inspectable($po);
@@ -218,13 +191,11 @@ class PurchaseOrderInspectionController extends Controller
         $gone = $files[$index]['path'];
         array_splice($files, $index, 1);
         $this->inTransaction('remove the proof file', fn () => $row->update(['proof_files' => $files]));
-        // The stored file is deleted only after the row no longer points at it.
         Storage::disk('public')->delete($gone);
 
         return $this->ok($this->summary($order));
     }
 
-    /** POST /p2p/orders/{po}/inspection/sign-off — every line must carry a verdict. */
     public function signOff(Request $request, int $po): JsonResponse
     {
         $order = $this->inspectable($po);
@@ -250,7 +221,6 @@ class PurchaseOrderInspectionController extends Controller
         return $this->ok($this->summary($order->fresh()));
     }
 
-    /** POST /p2p/orders/{po}/inspection/withdraw — reopen a signed-off inspection. */
     public function withdraw(Request $request, int $po): JsonResponse
     {
         $order = $this->inspectable($po);

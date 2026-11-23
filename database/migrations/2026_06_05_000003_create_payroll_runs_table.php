@@ -4,18 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * A payroll run = one execution of the engine against a period (Rule 14).
- *
- * Status ladder (locking rules):
- *   draft      → editable, can be regenerated freely
- *   generated  → recalculation still allowed
- *   approved   → edit locked (Rule 15 — adjustments go to next cycle)
- *   paid       → fully locked + period locked
- *
- * Only one non-superseded run exists per period; regenerating a draft replaces
- * its payslips rather than stacking a second run (Rule 13).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -28,8 +16,6 @@ return new class extends Migration
 
             $table->enum('status', ['draft', 'generated', 'approved', 'paid'])->default('draft');
 
-            // Headline totals — recomputed on every generate so the dashboard
-            // and the "Run Payroll" pre-flight read them without re-summing.
             $table->unsignedInteger('total_employees')->default(0);
             $table->unsignedInteger('employees_on_hold')->default(0);
             $table->decimal('total_gross', 16, 2)->default(0);

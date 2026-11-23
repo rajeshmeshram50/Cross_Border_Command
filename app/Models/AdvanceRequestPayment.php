@@ -6,11 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * One settlement installment against an approved advance request. An advance can
- * be paid in parts (partial payments) until its sanctioned amount is met — each
- * "Record Payment" adds a row here. Mirrors ExpenseClaimPayment.
- */
 class AdvanceRequestPayment extends Model
 {
     use SoftDeletes;

@@ -27,7 +27,6 @@ class VendorTypes extends Model
 
     protected $casts = ['is_system' => 'boolean'];
 
-    /** The dropdown's group heading; null for the three ungrouped types. */
     public function getGroupAttribute(): ?string
     {
         return match ($this->service_type) {

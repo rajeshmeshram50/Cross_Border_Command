@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
-
 class HrCustomFieldController extends Controller
 {
     private const WITH = [
@@ -29,32 +28,13 @@ class HrCustomFieldController extends Controller
 
     private const TYPES = ['text', 'date', 'number', 'textarea'];
 
-    /**
-     * The hard-coded employee-data tokens the TemplateEditor offers in its
-     * STATIC_PLACEHOLDER_GROUPS. Mirror this list when adding new built-in
-     * placeholders to the editor — see resources/js/pages/hrms/doc-templates/
-     * TemplateEditor.tsx.
-     */
     private const EMPLOYEE_TOKENS = [
-        // Basic
         'FirstName', 'MiddleName', 'LastName', 'FullName', 'DisplayName', 'EmployeeNumber',
-        // Contact
         'Email', 'Mobile', 'Address', 'City', 'State',
-        /* Job. 'JobTitle' is deliberately NOT offered (#40): it resolves to the
-           very same value as 'Designation' — both are $emp->designation->name in
-           HrGeneratedDocumentController — so the picker listed one field twice
-           under two names and left the author guessing which was which.
-           It is only removed from the MENU, not from the resolver: templates
-           already written against {{JobTitle}} must keep rendering, and an
-           unknown token prints its braces verbatim into the document. */
         'Department', 'Designation', 'JoiningDate', 'ReportsTo',
-        // Salary
         'CTC', 'Basic', 'HRA',
-        // Org
         'CompanyName', 'CompanyAddress', 'CompanyLogo',
     ];
-
-    /* ───── LIST / SHOW / STATS ───── */
 
     public function index(Request $request)
     {
@@ -73,9 +53,6 @@ class HrCustomFieldController extends Controller
 
         $rows = $q->orderBy('name')->get();
 
-        // Derive used_in by scanning templates the same user can see. One
-        // query for all templates in scope + a per-row substring check keeps
-        // this O(rows * templates) but cheap (typical counts are < 200).
         $usage = $this->computeUsage($request, $rows->pluck('name')->all());
 
         return response()->json($rows->map(function ($r) use ($usage) {
@@ -128,32 +105,12 @@ class HrCustomFieldController extends Controller
             'date'     => $date,
             'number'   => $get('number'),
             'textarea' => $get('textarea'),
-            // "Other Types" tile on the page — every type that isn't pure text/date.
             'other'    => $get('number') + $get('textarea'),
         ]);
     }
 
-    /* ───── EDITOR INTEGRATION ───── */
-
-    /**
-     * Full token catalogue for the template editor's left sidebar. Returns
-     * both the hard-coded employee-data tokens (grouped) and the user's
-     * registered custom fields, so the editor can render them in one strip
-     * with consistent styling and a single source of truth for "what's a
-     * known token."
-     */
     public function knownTokens(Request $request)
     {
-        /* Gated on EITHER module. This endpoint is not the Custom Fields admin
-         * screen — it is the catalogue the Generate Document modal needs to draw
-         * its inputs, and generating documents is granted through
-         * `hr.doc_templates`. Requiring the Custom Fields grant meant a user who
-         * WAS allowed to generate a document could not read the list of
-         * variables that document asks for: the modal lost the list to a 403 and
-         * then reported that the template referenced no custom fields at all, so
-         * the variables went out unfilled in a real letter.
-         * The payload is names, types and descriptions the templates already
-         * expose, and applyScope() below still confines it to the tenant. */
         $this->authorizeAny($request, 'can_view', [self::MODULE_SLUG, 'hr.doc_templates']);
 
         $q = HrCustomField::query();
@@ -172,27 +129,15 @@ class HrCustomFieldController extends Controller
         ]);
     }
 
-    /**
-     * Given an HTML/text blob, extract every {{Token}} occurrence and split
-     * them into known (employee field or registered custom field) vs unknown.
-     * The editor uses the unknown list to surface an "Add as Custom Field"
-     * CTA pre-filled with each unrecognised name.
-     */
     public function validateTokens(Request $request)
     {
         $this->authorize($request, 'can_view');
 
-        // Strip tags + decode entities before scanning so a token wrapped or
-        // split by inline markup ({{<b>Name</b>}}) still counts — same rule
-        // computeUsage() uses on the index endpoint.
         $html = (string) $request->input('content_html', '');
         $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u', $text, $m);
         $found = array_values(array_unique($m[1] ?? []));
 
-        // Built-in signer tokens follow a positional pattern — Signer{N}Name,
-        // Signer{N}Designation, Signer{N}Date — and are resolved at gen time
-        // from the template's own signers[] array. Treat them as known.
         $isSigner = fn (string $t) => (bool) preg_match('/^Signer\d+(Name|Designation|Date)$/', $t);
 
         $customNames = HrCustomField::query()->when(true, function ($q) use ($request) {
@@ -217,8 +162,6 @@ class HrCustomFieldController extends Controller
             'unknown' => $unknown,
         ]);
     }
-
-    /* ───── STORE / UPDATE / DESTROY ───── */
 
     public function store(Request $request)
     {
@@ -281,9 +224,6 @@ class HrCustomFieldController extends Controller
         $row = $this->resolveRow($request, (int) $id);
         $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
-        // Refuse to delete a field that's actively referenced — the user has
-        // to clean up the templates first. Senior-dev safety net: prevents
-        // silently breaking documents that compile {{X}} placeholders.
         $usage = $this->computeUsage($request, [$row->name]);
         $count = $usage[$row->name]['count'] ?? 0;
         if ($count > 0) {
@@ -300,18 +240,12 @@ class HrCustomFieldController extends Controller
         return response()->json(['message' => 'Custom field removed.']);
     }
 
-    /* ───── HELPERS ───── */
-
     private function validatePayload(Request $request, ?int $id = null): array
     {
         return $request->validate([
-            // PascalCase identifier — letters, digits, underscore; must start
-            // with a letter or underscore. Same shape as a JavaScript ident.
             'name'         => ['required', 'string', 'max:100', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'],
             'type'         => ['required', Rule::in(self::TYPES)],
             'description'  => 'nullable|string|max:500',
-            // Free-text hint for which templates the user *intends* this field
-            // to be used in. Independent of the server-derived `used_in` scan.
             'used_in_hint' => 'nullable|string|max:500',
         ], [
             'name.regex' => 'No spaces — use PascalCase (e.g. LastWorkingDate).',
@@ -330,25 +264,6 @@ class HrCustomFieldController extends Controller
         }
     }
 
-    /**
-     * Scan every template in scope for each given name; return a map of
-     *   name => [ 'templates' => [{id, code, name}], 'count' => int ]
-     *
-     * Match rules (kept aligned with the frontend's extractTokens regex so
-     * both sides agree on what counts as "this template references X"):
-     *   - tolerate whitespace inside the braces: {{ Name }} === {{Name}}
-     *   - tolerate stray HTML markup splitting the token, e.g.
-     *     "{{<span>Name</span>}}" or "{{Name<br></br>}}" — Tiptap and the
-     *     DOCX importer can interleave tags inside a run, especially when
-     *     formatting touches a placeholder. We strip tags from a sanitised
-     *     copy before scanning rather than trying to grok HTML in regex.
-     *
-     * Performance: one SELECT for the templates in scope + one strip_tags +
-     * one preg_match per (template, name) pair. For realistic sizes (low
-     * hundreds × low dozens) this is sub-millisecond. If the working set
-     * ever blows up, push the search into the DB (Postgres regexp_matches
-     * over content_html) or denormalise into a join table.
-     */
     private function computeUsage(Request $request, array $names): array
     {
         if (empty($names)) return [];
@@ -358,8 +273,6 @@ class HrCustomFieldController extends Controller
         $this->applyScopeTemplate($tpl, $request->user(), $request->integer('branch_id') ?: null);
         $templates = $tpl->get();
 
-        // Pre-compute the plain-text view of each template once so per-name
-        // scans don't repeat the strip_tags + html_entity_decode work.
         $plain = $templates->mapWithKeys(function ($t) {
             $html = is_string($t->content_html) ? $t->content_html : '';
             $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -382,28 +295,11 @@ class HrCustomFieldController extends Controller
         return $result;
     }
 
-    /**
-     * Translate a raw QueryException into a clean user-facing JSON response.
-     *
-     * Why: with APP_DEBUG=true Laravel's default renderer dumps the full
-     * SQL + file + line + trace into the response `message` field, which the
-     * frontend toaster then surfaces verbatim. That leaks schema details and
-     * is unreadable for end users. We catch the common SQLSTATEs explicitly
-     * and fall back to a generic message for everything else; the raw
-     * exception is logged so operators can still debug.
-     *
-     * @param  string $action  what the user was trying to do — used in the
-     *                         leading clause of the toast ("Could not add …").
-     */
     private function humaniseDbException(QueryException $e, string $action): JsonResponse
     {
-        // Postgres / MySQL share most SQLSTATE codes — those used below are
-        // Postgres canonical; MySQL maps the same situations to the same codes.
         $sqlState = $e->errorInfo[0] ?? null;
         $driver   = $e->errorInfo[1] ?? null;
 
-        // Log the raw exception with full context so operators can debug, but
-        // never echo it to the user.
         Log::error('hr_custom_fields DB exception', [
             'action'    => $action,
             'sql_state' => $sqlState,
@@ -424,8 +320,6 @@ class HrCustomFieldController extends Controller
         return response()->json(['message' => $message], $status);
     }
 
-    /* ───── auth + scoping (mirrors HrDocumentTemplateController) ───── */
-
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
@@ -444,12 +338,6 @@ class HrCustomFieldController extends Controller
         if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
     }
 
-    /**
-     * Same rules as authorize(), but the permission may come from ANY of the
-     * given modules — for endpoints that serve more than one screen.
-     *
-     * @param  string[] $moduleSlugs
-     */
     private function authorizeAny(Request $request, string $perm, array $moduleSlugs): void
     {
         $user = $request->user();
@@ -458,8 +346,6 @@ class HrCustomFieldController extends Controller
 
         $moduleIds = Module::whereIn('slug', $moduleSlugs)->pluck('id');
         if ($moduleIds->isEmpty()) {
-            // First-run: modules not seeded yet — same plan-default fallback
-            // authorize() uses.
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
             abort(403, 'Document variables are not available — the module is not enabled.');
         }
@@ -469,8 +355,6 @@ class HrCustomFieldController extends Controller
             ->where($perm, true)
             ->exists();
 
-        // A sentence, not "Missing can_view on hr.custom_fields" — this reaches
-        // a toast in front of an employee who cannot act on a module slug.
         if (!$allowed) {
             abort(403, 'You do not have access to document variables. Ask your administrator for access to Document Templates or Custom Fields.');
         }
@@ -506,8 +390,6 @@ class HrCustomFieldController extends Controller
             return;
         }
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Every branch is an isolated peer — globals + client-level rows
-            // + own branch's rows only.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
@@ -524,14 +406,8 @@ class HrCustomFieldController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /**
-     * Same shape as applyScope() but for an HrDocumentTemplate query — kept
-     * separate so future divergence (e.g. doc templates require Active status
-     * for usage counts) doesn't bleed into the custom-fields scope itself.
-     */
     private function applyScopeTemplate($q, $user, ?int $branchFilter = null): void
     {
-        // Identical algorithm — share it via inlined call.
         $this->applyScope($q, $user, $branchFilter);
     }
 

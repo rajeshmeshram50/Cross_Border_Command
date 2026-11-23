@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Payroll-recovery plan for a "return" (used-less) settlement when the employee
- * chooses "Cut from Payroll" instead of paying directly. Captured on OUR side
- * now (schedule metadata); the payroll engine will consume these later:
- *   - settle_return_recovery_start : first payroll month the deduction applies
- *   - settle_return_recovery_mode  : emi | lumpsum | bimonthly
- *   - settle_return_recovery_months: number of instalments (emi/bimonthly)
- *   - settle_return_monthly        : per-cycle amount (emi/bimonthly)
- *   - settle_return_scheduled_at   : when the payroll plan was set up
- */
 return new class extends Migration {
     public function up(): void
     {

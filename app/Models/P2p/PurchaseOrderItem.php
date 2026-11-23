@@ -8,10 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-/**
- * Stage 02 · one PO line matched against the exact PI line it orders from.
- * No client_id of its own — always reached through its tenant-scoped PO.
- */
 class PurchaseOrderItem extends Model
 {
     protected $table = 'p2p_purchase_order_items';

@@ -8,10 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * One payment request raised on a PO — a row of the Payment Requests History.
- * Tenant-scoped through BelongsToTenant (client + branch from the request).
- */
 class PoPaymentRequest extends Model
 {
     use BelongsToTenant;
@@ -26,10 +22,6 @@ class PoPaymentRequest extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'purchase_order_id',
-        // Which supplier invoice this release is for. The money still moves on
-        // the PO — this records the link so finance can answer "which invoice
-        // was this payment against?", which the PO alone cannot once several
-        // SPIs sit under it. NULL on an advance raised before any invoice.
         'supplier_invoice_id',
         'code', 'payment_type', 'percentage', 'requested_amount', 'reason',
         'requested_by', 'requested_to', 'requested_at',

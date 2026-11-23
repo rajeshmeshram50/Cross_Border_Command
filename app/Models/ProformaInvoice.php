@@ -9,14 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-/**
- * Sales Matrix → Proforma Invoice.
- *
- * Mirrors the Quotation model but with a `pi_type` discriminator
- * (with_shipment | without_shipment), BT reference fields, and a
- * source_quotation_id FK that links back to the quotation this PI
- * was converted from (nullable for standalone PIs).
- */
 class ProformaInvoice extends Model
 {
     use HasFactory;
@@ -89,9 +81,6 @@ class ProformaInvoice extends Model
     public function customer(): BelongsTo  { return $this->belongsTo(Customer::class); }
     public function consignee(): BelongsTo { return $this->belongsTo(Consignee::class); }
     public function lead(): BelongsTo      { return $this->belongsTo(Lead::class, 'opp_id'); }
-    /* Shipment order for this PI's opportunity. One shipment per opportunity
-     * (shipment_orders.lead_id is unique), keyed by the PI's opp_id. Carries
-     * the sequential shipment_code (SHP-NNN) shown in the "Shipp ID" column. */
     public function shipmentOrder(): HasOne { return $this->hasOne(ShipmentOrder::class, 'lead_id', 'opp_id'); }
     public function sourceQuotation(): BelongsTo { return $this->belongsTo(Quotation::class, 'source_quotation_id'); }
     public function salesManager(): BelongsTo { return $this->belongsTo(User::class, 'sales_manager_id'); }

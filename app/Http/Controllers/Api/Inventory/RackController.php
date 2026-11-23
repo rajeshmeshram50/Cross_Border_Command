@@ -10,17 +10,6 @@ use App\Services\Inventory\InventoryMasterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Inventory · Rack Master. /api/inventory/racks
- *
- * A rack only exists inside a RACKED zone, and its footprint has to fit in
- * what that zone has left. The screen cannot check either — it does not know
- * the other racks — so both are enforced here.
- *
- * area_sqft is computed server-side from the dimensions rather than taken from
- * the payload: it is the number the zone-capacity guard sums, so letting the
- * client send it would let the client decide whether the rack fits.
- */
 class RackController extends BaseInventoryController
 {
     public function __construct(
@@ -28,9 +17,6 @@ class RackController extends BaseInventoryController
         private InventoryCodeAllocator $codes,
     ) {}
 
-    /* ══════════════════════════ READ ══════════════════════════ */
-
-    /** GET /inventory/racks */
     public function index(Request $request)
     {
         try {
@@ -52,7 +38,6 @@ class RackController extends BaseInventoryController
             if (isset($f['cold_chain']))    $base->where('cold_chain', $f['cold_chain']);
             if (isset($f['hazardous']))     $base->where('hazardous', $f['hazardous']);
 
-            // The dropdown leaves before the tabs, the counts and the paging.
             if ($this->wantsOptions($request)) {
                 $body = $this->optionsBody($base, 'rack_name', fn (Rack $r) => $this->optionRow($r));
 
@@ -63,8 +48,6 @@ class RackController extends BaseInventoryController
 
             $tabs = $this->tabCounts(clone $base);
 
-            /* The grid shows levels and load against capacity. Three subqueries
-               for the whole page rather than three per row. */
             $q = $base
                 ->with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
@@ -73,10 +56,6 @@ class RackController extends BaseInventoryController
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
-            /* The screen's placeholder has always read "rack ID, rack name,
-               zone or warehouse" while only rack_name was searched — three of
-               the four did nothing. The code is a column now, and the other
-               two are one whereHas each. */
             $this->applySearch($q, $f['q'] ?? null, ['code', 'rack_name'], function ($w, $term) {
                 $like = '%' . $term . '%';
                 $w->orWhereHas('zone', fn ($h) => $h->where('zone_name', 'ilike', $like))
@@ -94,16 +73,11 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /**
-     * GET /inventory/racks/options?warehouse_id=&zone_id= - the put-away picker.
-     * Same method as the list; both ids are ordinary filters there.
-     */
     public function options(Request $request)
     {
         return $this->index($request->merge(['view' => 'options']));
     }
 
-    /** GET /inventory/racks/next-code — preview of the next rack's code. */
     public function nextCode(Request $request)
     {
         $user = $this->tenantUser($request);
@@ -114,7 +88,6 @@ class RackController extends BaseInventoryController
         ]], 200);
     }
 
-    /** GET /inventory/racks/{id} */
     public function show(Request $request, int $id)
     {
         try {
@@ -143,9 +116,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /* ══════════════════════════ WRITE ══════════════════════════ */
-
-    /** POST /inventory/racks */
     public function store(Request $request)
     {
         try {
@@ -158,7 +128,6 @@ class RackController extends BaseInventoryController
             $data = $this->inheritFlags($data, $zone);
 
             $rack = new Rack($data);
-            // The zone's tenancy, never the user's — see ZoneController::store.
             $rack->client_id    = $zone->client_id;
             $rack->branch_id    = $zone->branch_id;
             $rack->warehouse_id = $zone->warehouse_id;
@@ -166,7 +135,6 @@ class RackController extends BaseInventoryController
             $rack->cold_chain   = (int) ($data['cold_chain'] ?? 0);
             $rack->hazardous    = (int) ($data['hazardous'] ?? 0);
             $rack->created_by   = $user->id;
-            // Per branch, under a lock, inside this transaction — see Warehouse.
             $rack->code = $this->codes->next('inventory_racks', $zone->client_id, $zone->branch_id);
             $rack->save();
 
@@ -182,12 +150,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /**
-     * A rack takes its cold-chain and hazardous flags from its zone (QA CS-941
-     * #13). A cold-chain zone is a refrigerated room and a hazardous zone a
-     * segregated one — every rack standing in it is the same, so the form's
-     * switch is shown locked and whatever it sent is overridden here.
-     */
     private function inheritFlags(array $data, Zone $zone): array
     {
         $data['cold_chain'] = (int) $zone->cold_chain;
@@ -196,14 +158,12 @@ class RackController extends BaseInventoryController
         return $data;
     }
 
-    /** PUT /inventory/racks/{id} */
     public function update(Request $request, int $id)
     {
         try {
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            // Locked: a shelf saved meanwhile is what guardChildren() is judging.
             $rack = $this->ownedQuery(Rack::query(), $user)->lockForUpdate()->findOrFail($id);
             $data = $request->validate($this->rules());
 
@@ -233,7 +193,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /** PUT /inventory/racks/{id}/status */
     public function setStatus(Request $request, int $id)
     {
         try {
@@ -268,7 +227,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /** DELETE /inventory/racks/{id} */
     public function destroy(Request $request, int $id)
     {
         try {
@@ -295,13 +253,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /**
-     * GET /inventory/racks/{id}/preview — the label as data.
-     *
-     * The screen shows the QR and the details first; the download comes after,
-     * from the same numbers. Both read labelData(), so the modal and the paper
-     * can never disagree.
-     */
     public function preview(Request $request, int $id)
     {
         try {
@@ -321,7 +272,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /** GET /inventory/racks/{id}/label — the same label, as a 4x3in PDF. */
     public function label(Request $request, int $id)
     {
         try {
@@ -339,10 +289,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /**
-     * What the rack label prints. Scanned at put-away as scan_type 'rack',
-     * the third link in the chain.
-     */
     private function labelData(Request $request, int $id): array
     {
         $user = $this->tenantUser($request);
@@ -385,27 +331,12 @@ class RackController extends BaseInventoryController
         ];
     }
 
-    /**
-     * GET /inventory/racks/{id}/qr — the QR and nothing else.
-     *
-     * A bare PNG, served inline so it drops straight into an <img src>. The
-     * label endpoint wraps the same code in a printable card; this one is for
-     * a screen that places it itself.
-     *
-     * ?scale=10 sets pixels per module (1-20).
-     */
     public function qrImage(Request $request, int $id)
     {
         $data = $this->labelData($request, $id);
 
-        /* Whatever the printed label encodes, byte for byte — one source,
-           so a QR saved from this screen and one glued to the rack can never
-           resolve to different things. Carries the row id, because codes
-           restart at 001 in every branch and "WH-001" names three of them. */
         return $this->qrPng($this->stickerPayload($data), (int) $request->input('scale', 10), $data['code'] ?? null);
     }
-
-    /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function rules(): array
     {
@@ -415,32 +346,20 @@ class RackController extends BaseInventoryController
             'cold_chain' => ['nullable', 'integer', 'in:0,1'],
             'hazardous'  => ['nullable', 'integer', 'in:0,1'],
             'dim_unit'   => ['required', 'in:cm,m'],
-            // numeric(12,2) — past that is a database error, not a 422.
             'length'     => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
             'width'      => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
             'height'     => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
-            // No 'status' — setStatus() only, which checks the zone and cascades.
         ];
     }
 
-    /**
-     * Aborts on any breach, otherwise hands back the parent zone and the
-     * footprint in square feet the caller should store.
-     *
-     * @return array{0: Zone, 1: float}
-     */
     private function guard(array $d, ?Rack $editing, $user): array
     {
-        /* Locked: two racks saved into one zone at once would both read the
-           same free area and both fit. */
         $zone = $this->ownedQuery(Zone::query(), $user)->lockForUpdate()->find($d['zone_id']);
 
         if (!$zone) {
             $this->reject('Select a zone (with rack)', 'zone_id');
         }
 
-        /* Only when the rack is being PUT here. A rack whose zone was switched
-           off later must still be editable — it was refused even a rename. */
         $moving = !$editing || (int) $editing->zone_id !== (int) $zone->id;
 
         if ($moving && !$zone->isRacked()) {
@@ -450,7 +369,6 @@ class RackController extends BaseInventoryController
             $this->reject("{$zone->zone_name} is inactive — pick another zone.", 'zone_id');
         }
 
-        // Cold stock cannot be racked where the zone has no temperature range.
         if (!empty($d['cold_chain']) && !$zone->cold_chain) {
             $this->reject("{$zone->zone_name} is not a cold-chain zone.", 'cold_chain');
         }
@@ -458,9 +376,6 @@ class RackController extends BaseInventoryController
             $this->reject("{$zone->zone_name} does not allow hazardous goods.", 'hazardous');
         }
 
-        /* Unique across the whole warehouse, not just the zone (QA CS-941 #18):
-           racks are picked and scanned by name within a warehouse, and two
-           "Rack A"s in different zones of it cannot be told apart. */
         $clash = Rack::where('warehouse_id', $zone->warehouse_id)
             ->whereRaw('lower(trim(rack_name)) = lower(trim(?))', [$d['rack_name']])
             ->when($editing, fn ($q) => $q->where('id', '!=', $editing->id))
@@ -478,14 +393,6 @@ class RackController extends BaseInventoryController
         return [$zone, $area];
     }
 
-    /**
-     * What an edit may not take away from the shelves already in this rack.
-     *
-     * Every shelf was let in against the rack's length, width, height and
-     * flags (ShelfController::guard). Shrinking or narrowing the rack after
-     * the fact left those shelves uneditable — their next save failed a rule
-     * they had passed — so the rack may not go below what they use.
-     */
     private function guardChildren(array $d, Rack $rack): void
     {
         $shelves = Shelf::where('rack_id', $rack->id)->get(['length', 'width', 'height_cm', 'dim_unit', 'cold_chain', 'hazardous']);
@@ -524,7 +431,6 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /** The dropdown shape: enough for the put-away picker to validate a scan. */
     private function optionRow(Rack $r): array
     {
         return [
@@ -553,7 +459,6 @@ class RackController extends BaseInventoryController
             'zone_name'      => $r->zone?->zone_name,
             'cold_chain'     => (int) $r->cold_chain,
             'hazardous'      => (int) $r->hazardous,
-            // The range is the zone's; the rack only says it may use it.
             'temp_min_c'     => $r->cold_chain && $r->zone?->temp_min_c !== null ? (float) $r->zone->temp_min_c : null,
             'temp_max_c'     => $r->cold_chain && $r->zone?->temp_max_c !== null ? (float) $r->zone->temp_max_c : null,
             'dim_unit'       => $r->dim_unit,

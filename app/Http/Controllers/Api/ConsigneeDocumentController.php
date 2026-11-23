@@ -9,7 +9,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-
 class ConsigneeDocumentController extends Controller
 {
     public function index(Request $request, $consigneeId): JsonResponse
@@ -61,7 +60,6 @@ class ConsigneeDocumentController extends Controller
         $data = $this->validatePayload($request, $doc->id);
 
         if ($request->hasFile('attachment')) {
-            // Drop previous file (best-effort) before replacing.
             if ($doc->attachment_path) {
                 Storage::disk('public')->delete($doc->attachment_path);
             }
@@ -88,8 +86,6 @@ class ConsigneeDocumentController extends Controller
         return response()->json(['id' => $doc->id, 'deleted' => true]);
     }
 
-    /* ── Helpers ──────────────────────────────────────────────────── */
-
     private function shape(ConsigneeDocument $d): array
     {
         return [
@@ -101,12 +97,6 @@ class ConsigneeDocumentController extends Controller
             'issue_date'        => optional($d->issue_date)->toDateString(),
             'expiry_date'       => optional($d->expiry_date)->toDateString(),
             'attachment_path'   => $d->attachment_path,
-            // Uses the project-wide file_url() helper (app/helpers.php),
-            // the same one HR Employees + Onboarding use for their docs.
-            // It strips legacy storage/ + public/ prefixes, falls back
-            // to a constructed URL when the disk has no `url` config,
-            // and collapses double slashes — so the View link works on
-            // every server configuration (local, Azure, prod).
             'attachment_url'    => file_url($d->attachment_path),
             'attachment_name'   => $d->attachment_path ? basename($d->attachment_path) : null,
             'description'       => $d->description,
@@ -126,10 +116,6 @@ class ConsigneeDocumentController extends Controller
             'expiry_date'       => 'nullable|date|after_or_equal:issue_date',
             'description'       => 'nullable|string|max:1000',
             'status'            => 'nullable|in:Active,Inactive',
-            // Attachment: 2 MB cap, restricted to safe document types
-            // (image / PDF / Office docs). Rejects executables, scripts,
-            // and archives (.php, .zip, .txt, .exe, etc.) at the server
-            // so even a manipulated client request can't slip them through.
             'attachment'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
         ], [
             'attachment.mimes' => 'Attachment must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
@@ -144,11 +130,6 @@ class ConsigneeDocumentController extends Controller
         return $file->storeAs("consignee_documents/{$consigneeId}", $name, 'public');
     }
 
-    /**
-     * Resolve the parent consignee with the same tenant rules used by
-     * ConsigneeController. Aborts with 404 before any document touch
-     * if the caller isn't entitled to see this consignee.
-     */
     private function resolveConsignee(Request $request, $consigneeId, ?string $action = null): Consignee
     {
         $consignee = Consignee::query()

@@ -10,16 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Inventory · a zone inside a warehouse.
- *
- * rack_mode is the fork. A racked zone owns racks and leaves every capacity
- * column null; an unracked one has no shelf to scan, so it states its own
- * capacity — litres for a fridge, dimensions for an open floor.
- *
- * This is the only level that holds a temperature range. A rack and a shelf
- * each carry a cold_chain flag saying whether they may use it, nothing more.
- */
 class Zone extends Model
 {
     use BelongsToTenant;
@@ -49,15 +39,6 @@ class Zone extends Model
         'status', 'created_by', 'updated_by',
     ];
 
-    /**
-     * A new row is ACTIVE until somebody says otherwise.
-     *
-     * The column already defaults to 1 in the database, but Eloquent does not
-     * read a default back after an insert — so the model the create endpoint
-     * serialised still held null, `(int) null` made it 0, and the response said
-     * the row was inactive while the stored row was active. Invisible on screen
-     * only because every save reloads the list.
-     */
     protected $attributes = ['status' => 1];
 
     protected $casts = [
@@ -79,8 +60,6 @@ class Zone extends Model
 
     protected $appends = ['zone_code'];
 
-    /** The stored code — ZN-001, counted within this zone's own branch. See
-     *  Warehouse::getWhCodeAttribute() for why it is no longer the id. */
     public function getZoneCodeAttribute(): string
     {
         return $this->attributes['code']

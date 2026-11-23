@@ -10,18 +10,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Inventory · a location one person is working on, closed to everyone else.
- *
- * Not the same thing as an occupancy reservation. A reservation holds CAPACITY
- * — 12.9% of a shelf, leaving the rest open to others, correctly. This holds
- * THE LOCATION: while it is live nobody else is shown it, offered it, or
- * allowed to take it.
- *
- * IT EXPIRES ON PURPOSE. A lock only the happy path releases means the first
- * closed laptop takes a shelf out of service for good. The open screen pings
- * last_heartbeat_at; anything past expires_at is reaped.
- */
 class LocationLock extends Model
 {
     use BelongsToTenant;
@@ -64,7 +52,6 @@ class LocationLock extends Model
     public function warehouse(): BelongsTo { return $this->belongsTo(Warehouse::class, 'warehouse_id'); }
     public function heldBy(): BelongsTo    { return $this->belongsTo(User::class, 'held_by'); }
 
-    /** Still held. Expiry is checked separately — a stale lock is live until reaped. */
     public function scopeLive(Builder $q): Builder
     {
         return $q->whereNull('released_at');

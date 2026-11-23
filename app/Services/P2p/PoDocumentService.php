@@ -18,21 +18,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-/**
- * Purchase order documents: the PO PDF, e-signature through Zoho Sign, email
- * to the supplier, and keeping each document's status in step with its
- * signature request. Reuses the PO PDF template, the Zoho Sign service and
- * the sales document email the older PO screens use.
- */
 class PoDocumentService
 {
     private const PO_TYPE_LABELS = ['material_goods' => 'Material / Goods', 'services' => 'Services', 'ffd_transporter' => 'FFD / Transporter'];
 
     public function __construct(private ZohoSignService $zoho) {}
 
-    /* ══════════════════════════ PDF ══════════════════════════ */
-
-    /** The fields the shared PO PDF template reads, taken from the new PO. */
     private function pdfSource(PurchaseOrder $po): object
     {
         $po->loadMissing('items');
@@ -59,7 +50,6 @@ class PoDocumentService
             'shipping_charges'       => $po->shipping_charges,
             'packaging_charges'      => $po->packaging_charges,
             'other_charges'          => $po->other_charges,
-            // The template splits one GST total into CGST + SGST or IGST itself.
             'total_cgst'             => $gst,
             'total_sgst'             => 0,
             'total_product_cost'     => (float) $po->taxable_total + $gst,
@@ -86,11 +76,10 @@ class PoDocumentService
         return app(SalesPdfController::class)->renderPoPdfBytes($this->pdfSource($po), true, $vendor);
     }
 
-    /** (Re)generates the Purchase Order PDF onto its document row. A sent or signed one is left alone. */
     public function generatePoDocument(PurchaseOrder $po, PurchaseOrderDocument $doc, int $userId): PurchaseOrderDocument
     {
         if ($doc->status !== PurchaseOrderDocument::STATUS_PENDING) return $doc;
-        $name = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $po->code) . '.pdf';   // PO_2026-27_001.pdf
+        $name = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $po->code) . '.pdf';
         $path = "p2p/po-documents/{$po->id}/" . Str::uuid() . '_' . $name;
         if (Storage::disk('public')->put($path, $this->renderPoPdf($po)) === false) {
             throw new RuntimeException('Could not store the PO PDF.');
@@ -108,9 +97,6 @@ class PoDocumentService
         return $doc;
     }
 
-    /* ══════════════════════════ Supplier contact ══════════════════════════ */
-
-    /** Name and email of the supplier's primary contact. */
     public function supplierContact(PurchaseOrder $po): array
     {
         $vendor = $po->vendor_id ? Vendor::withTrashed()->with('primaryAddress')->find($po->vendor_id) : null;
@@ -122,7 +108,6 @@ class PoDocumentService
         ];
     }
 
-    /** Copies each document's stored file to a local temp path (the public disk may be Azure). */
     private function localCopies(Collection $docs): array
     {
         $dir = storage_path('app/temp');
@@ -136,9 +121,6 @@ class PoDocumentService
         })->all();
     }
 
-    /* ══════════════════════════ E-signature ══════════════════════════ */
-
-    /** Sends the documents to the supplier as one Zoho Sign request; they become "sent". */
     public function sendForSignature(PurchaseOrder $po, Collection $docs, array $signer, array $opts, int $userId, ?int $branchId): ClmSignatureRequest
     {
         if (!$this->zoho->isConfigured()) throw new RuntimeException('Zoho Sign is not configured. Contact your administrator.');
@@ -147,9 +129,6 @@ class PoDocumentService
         try {
             $expiryDays  = min(90, max(1, (int) ($opts['expiry_days'] ?? 30)));
             $requestName = 'Purchase Order ' . $po->code;
-            // One action per signer. `role` rides along so the coordinates the
-            // screen dragged for that signer can be found again after Zoho
-            // hands back its own action ids (ZohoSignService reads cbc_role).
             $signers = $this->signerList($signer, $opts['signers'] ?? []);
             $body = ['requests' => [
                 'request_name'    => $requestName,
@@ -173,9 +152,6 @@ class PoDocumentService
             $details   = $this->zoho->getRequest($requestId);
             $actions   = data_get($details, 'requests.actions', []);
             $zohoDocs  = data_get($details, 'requests.document_ids', []);
-            // Stamp each Zoho action with its signer's role, then hand over the
-            // boxes the screen positioned. With no coordinates Zoho falls back
-            // to its own default placement, as before.
             foreach ($actions as $i => $action) {
                 $actions[$i]['cbc_role'] = $signers[$i]['role'] ?? ('signer' . ($i + 1));
             }
@@ -184,7 +160,7 @@ class PoDocumentService
             $status = 'inprogress';
             try {
                 $status = strtolower((string) data_get($this->zoho->getRequest($requestId), 'requests.request_status', 'inprogress'));
-            } catch (\Throwable $e) { /* keep inprogress */ }
+            } catch (\Throwable $e) { }
 
             $sig = new ClmSignatureRequest();
             $sig->client_id         = $po->client_id;
@@ -203,7 +179,6 @@ class PoDocumentService
             $sig->expiry_date       = now()->addDays($expiryDays);
             $sig->metadata          = ['purchase_order_id' => $po->id, 'po_code' => $po->code, 'sent_at' => now()->toIso8601String()];
             $sig->created_by        = $userId;
-            // Zoho is already called above; only the local writes share the transaction.
             DB::transaction(function () use ($sig, $docs, $userId) {
                 $sig->save();
                 PurchaseOrderDocument::whereIn('id', $docs->pluck('id'))->update([
@@ -217,13 +192,6 @@ class PoDocumentService
         }
     }
 
-    /**
-     * Who signs, in order. The supplier's own contact is the default; a screen
-     * that collected several signers sends them instead. Each one keeps a role,
-     * which is what ties a signer to the box dragged for them.
-     *
-     * @return array<int,array{name:string,email:string,role:string}>
-     */
     private function signerList(array $fallback, array $given): array
     {
         $out = [];
@@ -239,7 +207,6 @@ class PoDocumentService
         }
         if (!$out) $out[] = ['name' => $fallback['name'], 'email' => $fallback['email'], 'role' => 'supplier'];
 
-        // Zoho refuses the same recipient twice in one request.
         $seen = [];
         return array_values(array_filter($out, function ($r) use (&$seen) {
             if (isset($seen[$r['email']])) return false;
@@ -248,14 +215,6 @@ class PoDocumentService
         }));
     }
 
-    /**
-     * The screen positions boxes against OUR document ids; Zoho answers with its
-     * own, in the order the files were uploaded. This re-keys one to the other.
-     *
-     * Each entry is either a single box (x, y, page, width, height), a box per
-     * signer role, or a `boxes` array when one signer signs a document several
-     * times — ZohoSignService understands all three.
-     */
     private function coordsByZohoDoc(array $settings, Collection $docs, array $zohoDocs): array
     {
         if (!$settings) return [];
@@ -269,10 +228,6 @@ class PoDocumentService
         return $out;
     }
 
-    /**
-     * Brings sent documents in step with their signature request: re-reads the
-     * request status from Zoho, a completed one marks its documents signed.
-     */
     public function syncSignatures(Collection $docs): void
     {
         $sigIds = $docs->where('status', PurchaseOrderDocument::STATUS_SENT)->pluck('signature_request_id')->filter()->unique();
@@ -295,15 +250,11 @@ class PoDocumentService
             if ($sig->status === 'completed') {
                 $sent->update(['status' => PurchaseOrderDocument::STATUS_SIGNED, 'signed_at' => $sig->completed_at ?? now()]);
             } elseif (in_array($sig->status, ['declined', 'rejected', 'recalled', 'expired'], true)) {
-                // Back to pending so it can be sent again; the request stays linked for the tracker.
                 $sent->update(['status' => PurchaseOrderDocument::STATUS_PENDING]);
             }
         }
     }
 
-    /* ══════════════════════════ Email ══════════════════════════ */
-
-    /** Emails the documents' files to the supplier (or `$to`). Returns the address used. */
     public function email(PurchaseOrder $po, Collection $docs, ?string $to): string
     {
         $contact = $this->supplierContact($po);

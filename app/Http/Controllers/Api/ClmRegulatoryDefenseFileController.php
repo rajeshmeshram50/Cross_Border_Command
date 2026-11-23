@@ -11,21 +11,6 @@ use App\Models\VendorProductMapping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/**
- * CLM Command Center → Regulatory Defense File (RDF).
- *
- * Read-only repository view. Composes the three tabs from the already-scoped
- * Buyer / Supplier profile aggregations (so compliance progress + tenant
- * isolation are inherited) plus the Case-to-Case contracts:
- *
- *   with_shipment    — shipment-linked records (buyer ⨝ supplier by SHP code)
- *   without_shipment — procurement-wise supplier records + compliance
- *   case_to_case     — per-deal agreement records mapped to counterparties
- *
- * The per-record Evidence Vault is served by the existing
- * /segment-uploads/{type}/{id}/vault endpoint — this controller only builds
- * the three index lists.
- */
 class ClmRegulatoryDefenseFileController extends Controller
 {
     public function index(
@@ -49,13 +34,6 @@ class ClmRegulatoryDefenseFileController extends Controller
         ]);
     }
 
-    /**
-     * Shipment-linked RDF rows. Each buyer shipment row (ws_eq + ws_neq) is
-     * expanded with EVERY procurement raised under its lead, and each
-     * procurement with EVERY supplier (vendor) that supplies a product in it.
-     * A single opportunity therefore shows all its procurement ids + suppliers
-     * stacked in one row, instead of being collapsed to a single supplier.
-     */
     private function withShipment(array $buyer, int $cid): array
     {
         $wsRows = array_merge($buyer['ws_eq'] ?? [], $buyer['ws_neq'] ?? []);
@@ -64,7 +42,6 @@ class ClmRegulatoryDefenseFileController extends Controller
             $wsRows
         ))));
 
-        // lead → [procurement ids]; procurement id → lead.
         $procByLead = [];
         $procIds = [];
         if ($cid && $leadIds) {
@@ -74,7 +51,6 @@ class ClmRegulatoryDefenseFileController extends Controller
             }
         }
 
-        // procurement → [product ids].
         $productsByProc = [];
         $productIds = [];
         if ($procIds) {
@@ -84,7 +60,6 @@ class ClmRegulatoryDefenseFileController extends Controller
             }
         }
 
-        // product → [vendor ids], then vendor id → {name, code}.
         $vendorsByProduct = [];
         $vendorIds = [];
         if ($productIds) {
@@ -97,7 +72,6 @@ class ClmRegulatoryDefenseFileController extends Controller
             ? Vendor::whereIn('id', array_values(array_unique($vendorIds)))->get(['id', 'company_name', 'vendor_code'])->keyBy('id')
             : collect();
 
-        // Suppliers for a procurement (deduped by vendor id).
         $suppliersForProc = function (int $procId) use ($productsByProc, $vendorsByProduct, $vendorById): array {
             $seen = [];
             $out = [];
@@ -123,8 +97,8 @@ class ClmRegulatoryDefenseFileController extends Controller
             $sr++;
             $lead = (int) ($r['leadId'] ?? 0);
 
-            $procs = [];        // [{proc, suppliers:[{name,code,id}], po}]
-            $vendorSeen = [];   // dedupe vault targets across procurements
+            $procs = [];
+            $vendorSeen = [];
             $vault = [];
             if (!empty($r['custId'])) $vault[] = ['key' => 'buyer', 'label' => 'Customer', 'type' => 'customer', 'id' => (int) $r['custId']];
             if (!empty($r['consId'])) $vault[] = ['key' => 'consignee', 'label' => 'Consignee', 'type' => 'consignee', 'id' => (int) $r['consId']];
@@ -157,10 +131,6 @@ class ClmRegulatoryDefenseFileController extends Controller
         return $rows;
     }
 
-    /**
-     * Procurement-wise RDF rows from the supplier "without shipment"
-     * transaction tables, carrying the per-supplier compliance fractions.
-     */
     private function withoutShipment(array $supplier): array
     {
         $rows = [];
@@ -187,7 +157,6 @@ class ClmRegulatoryDefenseFileController extends Controller
         return $rows;
     }
 
-    /** Per-deal agreement RDF rows mapped to their primary counterparty. */
     private function caseToCase(int $clientId): array
     {
         if (!$clientId) return [];
@@ -201,9 +170,6 @@ class ClmRegulatoryDefenseFileController extends Controller
                 $cps  = is_array($c->counterparties) ? $c->counterparties : [];
                 $first = $cps[0] ?? [];
 
-                // Every counterparty becomes an Evidence-Vault party tab so the
-                // drawer can show each side's Company DD / KYC / Trade Licenses /
-                // Trade Documents. Deduped by resolved (type,id).
                 $vault = [];
                 $seen = [];
                 foreach ($cps as $cp) {
@@ -218,8 +184,6 @@ class ClmRegulatoryDefenseFileController extends Controller
                     $dedupe = $t['type'] . '#' . $t['id'];
                     if (isset($seen[$dedupe])) continue;
                     $seen[$dedupe] = true;
-                    // Label the tab by the counterparty name (falls back to role)
-                    // so a deal with two buyers reads clearly.
                     $name = trim((string) ($cp['name'] ?? ''));
                     $t['label'] = $name !== '' ? $name : $t['label'];
                     $t['key']   = $dedupe;
@@ -238,7 +202,6 @@ class ClmRegulatoryDefenseFileController extends Controller
             ->all();
     }
 
-    /** Map a stored badge / source_type to one of Buyer | Supplier | Partner. */
     private function normaliseRole(string $raw): string
     {
         $r = mb_strtolower(trim($raw));
@@ -247,12 +210,6 @@ class ClmRegulatoryDefenseFileController extends Controller
         return 'Partner';
     }
 
-    /**
-     * Resolve a CTC counterparty reference to an Evidence-Vault target
-     * {key,label,type,id}. source_id may be a numeric PK or a party code
-     * ("C-009" / vendor_code / consignee_code); returns null when the party
-     * type isn't vault-backed or the reference can't be resolved.
-     */
     private function resolveVaultTarget(string $sourceType, $sourceId, int $clientId, $sourceDbId = null, $branchId = null): ?array
     {
         if (($sourceId === null || $sourceId === '') && ($sourceDbId === null || $sourceDbId === '')) return null;
@@ -266,12 +223,6 @@ class ClmRegulatoryDefenseFileController extends Controller
         };
         if (!$type) return null;
 
-        /* The picker's numeric PK first. Customer / consignee / vendor codes
-           restart per branch, so matching the code client-wide had one hit per
-           branch and ->first() could open ANOTHER branch's company in the
-           Evidence-Vault drawer -- their DD, KYC and trade licences under this
-           agreement's counterparty tab. Branch-scoped code match second,
-           client-wide last for rows with no branch. */
         $id = null;
         if ($sourceDbId !== null && $sourceDbId !== '' && (int) $sourceDbId > 0) {
             $id = (int) $sourceDbId;

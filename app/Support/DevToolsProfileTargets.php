@@ -6,28 +6,10 @@ use App\Models\Candidate;
 use App\Models\Employee;
 use App\Models\Recruitment;
 
-/**
- * What the Dev Tools → Load Testing screen can profile.
- *
- * A module has pages; a page has the API calls it fires on open and the React
- * component that renders it. The screen replays those calls with X-Profile: 1
- * and shows what came back — an in-app Network tab scoped to one screen, so you
- * can answer "why is Employee → List slow" without opening browser dev tools and
- * guessing which of the forty requests on the page belong to it.
- *
- * The list is hand-maintained on purpose. Deriving it from the React source
- * would mean parsing every useEffect, and would still miss calls made from
- * shared components — a wrong list that looks authoritative is worse than a
- * short one that is correct.
- */
 class DevToolsProfileTargets
 {
-    /**
-     * @return array<int, array{key:string,label:string,pages:array}>
-     */
     public static function all(int $clientId, ?int $branchId): array
     {
-        // Real ids so detail / edit actions profile a real payload, not a 404.
         $empId = Employee::where('client_id', $clientId)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->value('id');
         $recId = Recruitment::where('client_id', $clientId)
@@ -35,11 +17,6 @@ class DevToolsProfileTargets
         $candId = Candidate::where('client_id', $clientId)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->value('id');
 
-        /* A write action really runs — really inserts, really updates — and is then
-           rolled back by the profiler. That is the only way its query cost is
-           honest; a dry run would measure validation and nothing else. Every write
-           below therefore carries a payload the controller will actually accept,
-           because a 422 would profile the failure path instead of the real one. */
         $w = fn (string $method, string $url, string $label, array $body = []) => [
             'method' => $method, 'url' => $url, 'label' => $label,
             'body' => $body, 'write' => true,
@@ -62,11 +39,6 @@ class DevToolsProfileTargets
                         'key' => 'list', 'label' => 'List view',
                         'component' => 'resources/js/pages/hrms/HrEmployees.tsx',
                         'actions' => [
-                            /* These have to be the parameters HrEmployees.tsx really
-                               sends. `list_view=1` was not one of them — the controller
-                               reads ?view=, so the profiler was measuring the full
-                               untrimmed payload (417 rows, 1.6 MB, 68 queries) and
-                               calling it the list view, which no user has ever loaded. */
                             ['key' => 'load', 'label' => 'Open page', 'kind' => 'read', 'requests' => array_merge(
                                 [
                                     $r('/employees?view=list&page=1&per_page=10', 'Employee list'),
@@ -76,7 +48,6 @@ class DevToolsProfileTargets
                             ['key' => 'search', 'label' => 'Search / filter', 'kind' => 'read', 'requests' => [
                                 $r('/employees?view=list&page=1&per_page=10&search=a', 'Search "a"'),
                                 $r('/employees/stats?search=a', 'Counts for that search'),
-                                // The Active/Disabled tab is ?enabled=, not ?status=.
                                 $r('/employees?view=list&page=1&per_page=10&enabled=1', 'Tab: active'),
                             ]],
                             ['key' => 'detail', 'label' => 'Open a row', 'kind' => 'read', 'requests' => array_values(array_filter([
@@ -170,10 +141,6 @@ class DevToolsProfileTargets
                     'component' => 'resources/js/pages/employee-onboarding/HrEmployeeOnboarding.tsx',
                     'actions' => [['key' => 'load', 'label' => 'Open page', 'kind' => 'read', 'requests' => [
                         $r('/onboarding-invites', 'Onboarding invites'),
-                        /* Genuinely unfiltered — HrEmployeeOnboarding.tsx calls
-                           api.get('/employees') with no view, so this really is the
-                           full payload for every employee. It is the heaviest read
-                           left in HR and the obvious next candidate for a ?view=. */
                         $r('/employees', 'Employee list (FULL payload)'),
                     ]]],
                 ]],
@@ -219,19 +186,6 @@ class DevToolsProfileTargets
         ];
     }
 
-    /**
-     * Every JS chunk, stylesheet and static asset the browser downloads for a page.
-     *
-     * Read out of Vite's own build manifest rather than parsing imports ourselves:
-     * the manifest IS the module graph the bundler produced, so it accounts for
-     * shared chunks, dynamic imports and asset hashing that a hand-rolled parser
-     * would get wrong.
-     *
-     * A component with no manifest entry was never split into its own chunk — it
-     * is inside the main entry, so what it "loads" is the whole app bundle. That
-     * is reported honestly (bundled = true) instead of showing a small number
-     * that would imply the page is cheap when it is the opposite.
-     */
     public static function assetGraph(?string $component): array
     {
         $empty = ['bundled' => null, 'entry' => null, 'js' => [], 'css' => [], 'assets' => [],
@@ -249,9 +203,6 @@ class DevToolsProfileTargets
         $bundled = !isset($manifest[$component]);
         $entry   = $component;
         if ($bundled) {
-            // Several rows carry isEntry — the CSS entry sorts first, and taking
-            // it would report a stylesheet as the page JS. Pick the JS/TSX entry,
-            // which is the one that actually pulls in the module graph.
             foreach ($manifest as $k => $v) {
                 if (!empty($v['isEntry']) && preg_match('/[.](tsx|ts|jsx|js)$/i', $k)) { $entry = $k; break; }
             }
@@ -273,9 +224,6 @@ class DevToolsProfileTargets
             if (!empty($e['file'])) { $js[$e['file']] = true; }
             foreach (($e['css'] ?? []) as $c)    { $css[$c] = true; }
             foreach (($e['assets'] ?? []) as $a) { $assets[$a] = true; }
-            // Static imports only. dynamicImports are lazily fetched LATER, on a
-            // user action — counting them here would overstate what this page costs
-            // to open.
             foreach (($e['imports'] ?? []) as $i) { $walk($i); }
         };
         $walk($entry);
@@ -314,11 +262,6 @@ class DevToolsProfileTargets
         ];
     }
 
-    /**
-     * Front-end weight of a page: source size, and the built chunk the browser
-     * actually downloads. A 5,000-line component that ships as its own 120 KB
-     * chunk is a different problem from one bundled into the main entry.
-     */
     public static function frontendInfo(?string $component): array
     {
         if (!$component) {
@@ -328,8 +271,6 @@ class DevToolsProfileTargets
         $lines = is_file($path) ? count(file($path)) : null;
         $srcKb = is_file($path) ? (int) round(filesize($path) / 1024) : null;
 
-        // Vite names chunks <Component>-<hash>.js; no match means the component
-        // is bundled into the main entry rather than split out.
         $base  = pathinfo($component, PATHINFO_FILENAME);
         $hit   = glob(public_path("build/assets/{$base}-*.js"));
         $chunk = $hit ? basename($hit[0]) : null;
@@ -339,7 +280,7 @@ class DevToolsProfileTargets
             'source_kb' => $srcKb,
             'chunk'     => $chunk,
             'chunk_kb'  => $chunk ? (int) round(filesize($hit[0]) / 1024) : null,
-            'bundled'   => $chunk === null,   // true = rides in the main app chunk
+            'bundled'   => $chunk === null,
         ];
     }
 }

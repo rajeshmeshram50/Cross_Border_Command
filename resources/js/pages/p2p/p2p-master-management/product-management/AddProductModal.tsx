@@ -1153,8 +1153,11 @@ export default function AddProductModal(props: {
       return;
     }
     setFieldErrors({});
-    if (!productId && !isPurchaseDept) {
-      if (!gstId) toast.info('GST is mandatory', 'Please select a GST rate from the GST Master before proceeding to Stage 2.');
+    /* Every department, not just the ones that see Stage 2: Purchase has no
+       Sales Config tab, so skipping this gate let them create a product with
+       no GST and meet the validation later, at Map Supplier. */
+    if (!productId) {
+      if (!gstId) toast.info('GST is mandatory', 'Please select a GST rate from the GST Master — the product is created once GST is mapped.');
       setGstMapValue(gstId);
       setGstMasterOpen(false);
       setGstMapOpen(true);
@@ -1240,7 +1243,8 @@ export default function AddProductModal(props: {
 
       if (isPurchaseDept) {
         onSaved(res.data.id, true);
-        toast.success('Product saved', 'Product created successfully');
+        // The Map GST popup announces its own result, so don't toast twice.
+        if (!gstToCommit) toast.success('Product saved', 'Product created successfully');
         return true;
       }
       onSaved(res.data.id, false);

@@ -17,22 +17,10 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
-use PhpOffice\PhpWord\Shared\Html;
 
-/**
- * Trade Documents master — covers both tabs:
- *
- *   - /clm/trade-docs/names    (lightweight catalog: TDN-NNN + name)
- *   - /clm/trade-docs/library  (rich library: TDL-NNN + title, type, purpose, party, file)
- *
- * Combined into a single controller because the two tabs render on the
- * same page and share validation patterns.
- */
 class ClmTradeDocumentController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;
-
-    /* ── NAMES TAB ── */
 
     public function namesIndex(Request $request)
     {
@@ -40,14 +28,10 @@ class ClmTradeDocumentController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read: branch users see globals + client-level rows +
-        // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        // Newest first — the latest-added type surfaces at the top of the list.
         $nameQuery = ClmTradeDocName::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($nameQuery, $user, $branchFilter);
 
-        // Server-side search, paired with the paging below.
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
             $nameQuery->where(function ($w) use ($like) {
@@ -55,9 +39,6 @@ class ClmTradeDocumentController extends Controller
             });
         }
 
-        /* Pagination — opt-in via per_page. The draft modal and the Trade
-           Document form both read this endpoint unpaged to fill their type
-           picker, so it has to stay opt-in. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -66,10 +47,6 @@ class ClmTradeDocumentController extends Controller
 
         $rows = $perPage ? $nameQuery->forPage($page, $perPage)->get() : $nameQuery->get();
 
-        /* Usage map: how many Library drafts reference each name (by name string,
-         * case-insensitive — the library links to it by name, not an FK). Drives
-         * the "can't edit an in-use type" guard on the client. Scope the count the
-         * same way so a branch only counts library rows it can actually see. */
         $usageQuery = ClmTradeDocLibrary::query();
         MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
         $usage = $usageQuery
@@ -95,12 +72,6 @@ class ClmTradeDocumentController extends Controller
         $data = $request->validate(['name' => 'required|string|max:255']);
         $name = trim($data['name']);
 
-        // Reject a duplicate type name (case-insensitive, whitespace-trimmed).
-        // The dedupe + insert both run under the per-client lock so two
-        // concurrent "Add" requests can't slip a duplicate past the check.
-        // Scoped to the caller's visibility (globals + client-level + own
-        // branch) so a sibling branch that can't see this row may still reuse
-        // the name — consistent with the branch-scoped master rule.
         $result = DB::transaction(function () use ($user, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
@@ -114,7 +85,7 @@ class ClmTradeDocumentController extends Controller
             $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, $user->branch_id, 'TDN-');
             return ['row' => ClmTradeDocName::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $code,
                 'name'       => $name,
                 'created_by' => $user->id,
@@ -137,14 +108,10 @@ class ClmTradeDocumentController extends Controller
         $lookup = ClmTradeDocName::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // A branch user can VIEW shared client-level types but not manage them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Block edit while library drafts reference this name — the library links
-        // to it by the name STRING, so renaming would orphan those drafts. Only
-        // unused (fresh) types can be renamed. Mirrors namesDestroy's guard.
         $usedBy = ClmTradeDocLibrary::where('client_id', $user->client_id)
             ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim((string) $row->name))])
             ->count();
@@ -159,8 +126,6 @@ class ClmTradeDocumentController extends Controller
         $data = $request->validate(['name' => 'required|string|max:255']);
         $name = trim($data['name']);
 
-        // Reject a rename that collides with another visible type
-        // (case-insensitive, excluding this row itself).
         $dupe = ClmTradeDocName::query()
             ->whereKeyNot($row->id)
             ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
@@ -186,11 +151,6 @@ class ClmTradeDocumentController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Block delete if this trade document name is in use. Library drafts
-        // store the chosen name string in clm_trade_doc_library.name (the draft
-        // form picks it from this catalog), so a name referenced by any draft
-        // can't be removed without orphaning those drafts. Mirrors the Segment
-        // master's "in use" guard — reassign/remove the drafts first.
         $usedBy = ClmTradeDocLibrary::where('client_id', $user->client_id)
             ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim((string) $row->name))])
             ->count();
@@ -206,28 +166,16 @@ class ClmTradeDocumentController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /* ── LIBRARY TAB ── */
-
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         $branchFilter = $request->integer('branch_id') ?: null;
-        // Newest first — the latest-drafted document surfaces at the top.
         $libQuery = ClmTradeDocLibrary::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
 
-        /* LIST VIEW — opt-in via ?view=list, and it must stay opt-in.
-           The three columns left out are the whole document: `content` is the
-           drafted HTML, header_config / footer_config the letterhead blocks.
-           At ~8 KB a row that made this endpoint 808 KB for 100 rows, and the
-           LIST renders none of them — it shows code, name, type, purpose and
-           party. But ClmTradeDocumentDraftPage fetches the SAME endpoint and
-           reads row.content to seed its editor, so stripping unconditionally
-           would open every draft blank. The caller says which it wants. */
         if ($request->input('view') === 'list') {
             $libQuery->select([
                 'id', 'client_id', 'branch_id', 'code', 'name', 'title',
@@ -237,8 +185,6 @@ class ClmTradeDocumentController extends Controller
             ]);
         }
 
-        /* Search moves server-side with the paging — a client filtering one
-           page searches ten rows out of a hundred and reports the page. */
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
             $libQuery->where(function ($w) use ($like) {
@@ -249,8 +195,6 @@ class ClmTradeDocumentController extends Controller
             });
         }
 
-        // Pagination — opt-in via per_page, so the draft page's unpaged fetch
-        // is untouched.
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -259,9 +203,6 @@ class ClmTradeDocumentController extends Controller
 
         $rows = $perPage ? $libQuery->forPage($page, $perPage)->get() : $libQuery->get();
 
-        // Flag rows that have a signed (completed) signature request so the
-        // frontend can lock Edit / Delete on them. Batch lookup avoids an
-        // N+1 of per-row existence checks.
         $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_TRADE);
         $rows->each(fn ($r) => $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true)));
 
@@ -273,10 +214,6 @@ class ClmTradeDocumentController extends Controller
         ]);
     }
 
-    /**
-     * GET /clm/trade-doc-library/{id} — one document in full (content + letterhead).
-     * The list (?view=list) leaves these out, so the editor loads the row from here.
-     */
     public function libraryShow(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -301,16 +238,10 @@ class ClmTradeDocumentController extends Controller
             'doc_type'  => 'required|string|max:64',
             'purpose'   => 'required|string|max:500',
             'party'     => 'required|string|max:255',
-            // Regulatory tier + segment scope — mirrors clm_agreement_library.
-            // Segment is mandatory (at least one) — the frontend enforces the
-            // same rule in validateStep1.
             'regulatory' => 'nullable|string|in:highly,less',
             'segment'    => 'required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
-            // Stage 2 page-shell config — same JSON shape as
-            // hr_document_templates. Frontend layers it on top of
-            // DEFAULT_HEADER / DEFAULT_FOOTER so missing keys stay safe.
             'header_config' => 'nullable|array',
             'footer_config' => 'nullable|array',
         ]);
@@ -319,22 +250,15 @@ class ClmTradeDocumentController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            // Library codes use the TDL- prefix (matching the create-popup
-            // preview + the Trade Document Library list). Legacy TD- rows were
-            // renamed to TDL- by migration so this sequence stays continuous.
             $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, $user->branch_id, 'TDL-');
             return ClmTradeDocLibrary::create($data + [
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $code,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
             ]);
         });
-        /* Without the document body. The caller just posted it, so echoing it
-           back sends the whole draft a second time — a 94 kB document came back
-           as a 94 kB reply (QA #26). The draft modal reads only `id` from this,
-           and every other column still goes back. */
         return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
@@ -344,15 +268,10 @@ class ClmTradeDocumentController extends Controller
         $lookup = ClmTradeDocLibrary::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // Branch users may view shared client-level trade documents but not edit them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Lock once the draft has been sent and signed. A trade document that
-        // has come back signed via Zoho (a `completed` signature request) is
-        // a legal record — editing it would silently diverge the master from
-        // the copy the customer/consignee actually signed.
         if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
             return response()->json([
                 'status'  => false,
@@ -370,19 +289,12 @@ class ClmTradeDocumentController extends Controller
             'segment'    => 'sometimes|required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
-            // Same Stage 2 page-shell config as libraryStore. Re-validated
-            // independently so PUT-only callers (Stage 2 auto-save) can
-            // patch just the header/footer without re-sending the form.
             'header_config' => 'nullable|array',
             'footer_config' => 'nullable|array',
         ]);
 
-        // Measured against what is already stored, so an over-limit document
-        // can still be saved while it is being cut back down.
         if ($over = $this->contentOverLimit($data, $this->htmlTextLength($row->content))) return $over;
 
-        // Never let a save replace a document that has text with an empty one — that is how a
-        // blank editor silently wiped drafts. Clearing on purpose needs `clear_content: true`.
         $isBlank = fn ($html) => trim(html_entity_decode(strip_tags((string) $html)), " \t\n\r\0\x0B\xC2\xA0") === '';
         if (array_key_exists('content', $data) && $isBlank($data['content']) && !$isBlank($row->content)
             && !$request->boolean('clear_content')) {
@@ -394,20 +306,14 @@ class ClmTradeDocumentController extends Controller
         }
 
         $data['updated_by'] = $user->id;
-        // If the editor content was edited and saved, the previously-uploaded
-        // Word file no longer matches it. downloadDocx() prefers that stored
-        // file, so it would keep serving the OLD document. Drop the docx_path
-        // here (only when the content actually changed) so the download
-        // regenerates from the edited HTML the user sees in the editor.
         if (array_key_exists('content', $data) && $data['content'] !== null && $data['content'] !== $row->content) {
             if ($row->docx_path) {
-                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { /* ignore */ }
+                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { }
             }
             $data['docx_path'] = null;
             $data['docx_original_name'] = null;
         }
         $row->update($data);
-        // Without the document body — see libraryStore.
         return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
@@ -421,11 +327,6 @@ class ClmTradeDocumentController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // A trade document that has been used in a lead / sent for signature must
-        // stay on record. Block the delete once ANY signature request references
-        // this draft — draft (created), in-progress (out for signature) or
-        // completed (signed) — not only signed ones (the old check let a
-        // sent-but-unsigned trade document be deleted).
         if (ClmSignatureRequest::hasReferencingDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
             return response()->json([
                 'status'  => false,
@@ -437,31 +338,8 @@ class ClmTradeDocumentController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /* ── DOCX ROUND-TRIP ──
-     * Mirrors the HRMS Document Template upload/download flow:
-     *   GET  /clm/trade-doc-library/{id}/download    → streams the saved
-     *        DOCX if one was uploaded, otherwise generates a fresh DOCX
-     *        from the row's `content` HTML.
-     *   POST /clm/trade-doc-library/{id}/upload-docx → stores the user's
-     *        revised Word doc and refreshes `content` from its HTML so
-     *        the web editor stays in sync.
-     */
-    /**
-     * Allocate the next per-tenant code (TDN-NNN / TD-NNN). Uses
-     * MAX(numeric suffix) + 1 rather than count()+1 so a deleted row in the
-     * middle of the sequence doesn't make the next allocation reuse a code
-     * that still exists — which throws a unique-constraint violation on save.
-     * Caller must already hold the client row lock; the composite UNIQUE
-     * (client_id, code) is the final guard.
-     *
-     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
-     */
     private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        // Branch-scoped so each branch restarts its own sequence from 001
-        // (TD-001 / TDN-001) rather than continuing another branch's tally —
-        // the trade-document master is branch-isolated via MasterVisibility.
-        // A client-level creator ($branchId null) sequences the shared rows.
         $query = $modelClass::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();
@@ -485,44 +363,15 @@ class ClmTradeDocumentController extends Controller
 
     private const DOCX_MAX_KB = 20 * 1024;
 
-    /**
-     * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and
-     * PhpWord are near-quadratic on long content, so past this a single web
-     * request exhausts memory/time and crashes with a 500. Above it we return a
-     * clean "too large" message instead of letting the process die.
-     */
-    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 characters of TEXT; formatting does not count (CS-18)
+    private const RENDER_MAX_CHARS = 1000000;
 
-    /**
-     * Refuse to STORE content past the render ceiling.
-     *
-     * The limit was enforced on the PDF render, the Word render and the docx
-     * upload — everywhere the document is read back, and nowhere it is written.
-     * So an over-long document saved without complaint and only revealed itself
-     * later, when every export it exists for refused to run. That is the worst
-     * possible order to find out: the work is finished and the record is
-     * already stored, and the only way forward is to cut it down.
-     *
-     * Returns a 422 response to return from the caller, or null to continue.
-     * Counted as TEXT (htmlTextLength), the same measure the editors show, so
-     * a save is never refused at a figure the screen never displayed — and
-     * restyling a document, which changes only its markup, cannot push it over
-     * (CS-18).
-     *
-     * What is refused is GROWTH past the ceiling, not the state of being past
-     * it. Rows saved before this guard existed are already over, and on those
-     * a flat length check locks the record shut — every route to the editor
-     * runs through a save, so the only way to shorten the content sits behind
-     * the block. $storedLen lets an oversized document keep saving as long as
-     * it is getting smaller, which is the one direction that fixes it.
-     */
     private function contentOverLimit(array $data, int $storedLen = 0): ?\Illuminate\Http\JsonResponse
     {
         if (!array_key_exists('content', $data) || $data['content'] === null) return null;
 
         $len = $this->htmlTextLength($data['content']);
         if ($len <= $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) return null;
-        if ($len <= $storedLen) return null;   // already over, and not growing
+        if ($len <= $storedLen) return null;
 
         return response()->json([
             'status'  => false,
@@ -540,36 +389,18 @@ class ClmTradeDocumentController extends Controller
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
 
-        // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
-        // and time-heavy for table-rich documents. The web SAPI's default
-        // limits can be lower than CLI, producing intermittent OOM 500s that
-        // surface to the user as a generic "Download failed". Raise both
-        // defensively for this request only.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
-        // Prefer the user-uploaded DOCX (it's the source of truth after a
-        // Word round-trip — preserves header/footer/styling we can't fully
-        // reproduce from HTML alone). BUT when the user explicitly picks a page
-        // size (?size=a3 / ?orient=landscape) we must REGENERATE so the chosen
-        // page applies — the stored file keeps its original page size.
         $sizeRequested = $request->filled('size') || $request->filled('orient');
         if (!$sizeRequested && $row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
             $name = $row->docx_original_name ?: ($row->code ?: 'trade-document') . '.docx';
             try {
-                // Stream via the Storage disk — works for both local and cloud
-                // disks (Azure Blob). response()->download() needs a real local
-                // path and 500s with "The file does not exist" (leaking the path)
-                // when the file lives on a cloud disk. On any read failure we fall
-                // through and regenerate the DOCX from the row's content below.
                 return Storage::disk('public')->download($row->docx_path, $name);
             } catch (\Throwable $e) {
-                // fall through to regeneration
             }
         }
 
-        // Guard oversized content: past this, PhpWord crashes the request (500).
-        // Return a clean message the UI can show instead.
         if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -579,89 +410,44 @@ class ClmTradeDocumentController extends Controller
             ], 422);
         }
 
-        // Generate a fresh DOCX from the row's HTML content. Title goes on
-        // top so the user opening the file recognises which trade doc it
-        // belongs to before they start editing.
         $phpWord = new PhpWord();
-        // Match the PDF blade (font-family: Arial). Calibri renders smaller/
-        // lighter than Arial at the same point size, which made the DOCX look
-        // smaller than the "proper" PDF even though the point sizes matched.
         $phpWord->setDefaultFontName('Arial');
         $phpWord->setDefaultFontSize(11);
-        // Page size — A4 (default) or A3, portrait or landscape. A wide,
-        // many-column table doesn't fit A4; A3 / landscape gives it room.
         $section = $phpWord->addSection($this->docxPageStyle($request));
 
-        // Page-shell header + footer (logo, title, "Confidential", footer text,
-        // page number) from the saved config so the DOCX matches the preview.
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $client    = Client::find($row->client_id);
-        /* A local URL is /storage/<key>; an Azure blob URL is
-           https://<account>.blob.core.windows.net/<container>/<key>. Matching
-           only the first left blob URLs yielding nothing, so this candidate
-           was dead on Azure as well as the ones after it. */
         $urlPath = null;
         $rawLogoUrl = (string) ($headerCfg['logo_url'] ?? '');
         if ($rawLogoUrl !== '') {
             if (preg_match('#/storage/(.+)$#', $rawLogoUrl, $lm)) {
                 $urlPath = $lm[1];
             } elseif (preg_match('#^https?://[^/]+/[^/]+/(.+)$#', $rawLogoUrl, $lm)) {
-                $urlPath = $lm[1];   // strip scheme, host and container
+                $urlPath = $lm[1];
             }
         }
         $logoAbs   = null;
-        /* Resolve on whichever disk the file actually lives on — see
-           HandlesDocxHtmlRoundtrip::docxLogoFile(). This asked
-           Storage::disk('public') for both exists() AND path() while
-           FILESYSTEM_DISK is 'azure', so no candidate could ever match and the
-           Word file shipped without its logo. */
         foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
             $logoAbs = self::docxLogoFile($path);
             if ($logoAbs) break;
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
-        // NB: the document title is NOT prepended to the body — the page-shell
-        // header already identifies the document, and prepending it here made
-        // the title appear as a duplicate heading above the actual content in
-        // the downloaded Word file. The DOCX now mirrors the editor exactly.
-
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p></p>';
 
-        // PhpWord's HTML reader is finicky with the artefacts the browser's
-        // execCommand toolbar leaves behind (<font> tags, span-based bold/
-        // italic, alignment-via-div). Normalising them into the inline-tag
-        // and CSS shapes PhpWord recognises makes Bold/Italic/Underline/
-        // alignment/font-size/color all survive the round trip.
         $html = $this->normaliseEditorHtml($html);
 
-        // The browser's contentEditable emits HTML, not XHTML — unclosed <p>,
-        // bare <br>, unescaped &, etc. PhpWord parses with strict loadXML
-        // ("Premature end of data in tag p"), which silently mangled the
-        // tables into run-on text. Round-trip through the lenient HTML parser
-        // first so PhpWord receives well-formed markup and the tables render
-        // as real Word tables.
-        // Give width-less tables equal full-width columns BEFORE well-forming,
-        // so the injected <col> tags get self-closed (PhpWord's strict XML
-        // reader drops the whole table otherwise). Matches the editor layout.
         $html = $this->ensureTableColWidths($html);
         $html = $this->toWellFormedHtml($html);
 
-        // Add resiliently: try the whole body, and on a PhpWord failure fall
-        // back to PER-BLOCK adds so one bad element can't wipe every table /
-        // format (which the old whole-document strip_tags fallback did).
         $this->addHtmlResilient($section, $html);
 
         $filename = ($row->code ?: 'trade-document') . '.docx';
         $tmp      = tempnam(sys_get_temp_dir(), 'tdocx_');
         IOFactory::createWriter($phpWord, 'Word2007')->save($tmp);
 
-        // Repair any schema-invalid OOXML PhpWord emitted (bare &, fractional
-        // font sizes, invalid border colours) so the .docx opens cleanly in
-        // Word AND Google Docs, and stretch tables to the page width so the
-        // user never has to hand-drag columns.
         $this->sanitizeDocxXml($tmp, $this->docxUsableWidthTwips($request));
 
         return response()->download($tmp, $filename, [
@@ -669,12 +455,6 @@ class ClmTradeDocumentController extends Controller
         ])->deleteFileAfterSend(true);
     }
 
-    /**
-     * Download the trade document as a PDF rendered with its FULL page-shell
-     * (branded header + body content + footer / page numbers), reusing the
-     * same blade the Send-for-Signature flow renders. Placeholders are left
-     * as-is (they auto-fill only at generation time, when a party is bound).
-     */
     public function downloadPdf(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -685,7 +465,6 @@ class ClmTradeDocumentController extends Controller
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
-        // Guard oversized content: past this, dompdf crashes the request (500).
         if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -699,9 +478,6 @@ class ClmTradeDocumentController extends Controller
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
 
-        // Resolve the header logo to a base64 data URL — dompdf can't fetch
-        // /storage URLs at render time. Prefer the uploaded logo_path, then
-        // the seeded logo_url (strip the /storage/ prefix), then client brand.
         $logoUrlPath = null;
         $lu = $headerConfig['logo_url'] ?? null;
         if ($lu && str_contains($lu, '/storage/')) {
@@ -735,22 +511,6 @@ class ClmTradeDocumentController extends Controller
         return $pdf->download(($row->code ?: 'trade-document') . '.pdf');
     }
 
-    /**
-     * Live PDF preview for the Stage 2 draft editor.
-     *
-     * The same shape as CtcContractController::previewLive, and it renders the
-     * same blade the real download does — that is the whole point: a preview
-     * built from a different view would agree with the editor and disagree
-     * with the file people actually receive.
-     *
-     * Everything comes off the REQUEST, not off the saved row: the editor
-     * posts its current content, margins, header and footer on every debounce,
-     * so the preview tracks unsaved edits. The row is looked up only to give
-     * the blade a title and a code, and only inside the caller's own tenant.
-     *
-     * Streams inline rather than downloading — the SPA pulls it as a blob and
-     * paints it with pdf.js.
-     */
     public function previewLive(Request $request)
     {
         @ini_set('memory_limit', '1024M');
@@ -777,8 +537,6 @@ class ClmTradeDocumentController extends Controller
             $html = '<p><em>Nothing to preview yet — start typing in the editor.</em></p>';
         }
 
-        /* Same guard the download carries. dompdf does not fail gracefully on a
-           document past this size, it takes the request down with it. */
         if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -788,9 +546,6 @@ class ClmTradeDocumentController extends Controller
             ], 422);
         }
 
-        /* A draft still holds its placeholders. Blanked rather than left as
-           raw {{tokens}}, so the preview reads as the finished page will —
-           and the signature stamp is only ever injected after approval. */
         $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $html);
 
         $client       = Client::find($user->client_id);
@@ -798,8 +553,6 @@ class ClmTradeDocumentController extends Controller
         $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
         $pageConfig   = $data['page_config']   ?? (is_array($row->page_config   ?? null) ? $row->page_config   : []);
 
-        // dompdf cannot fetch /storage URLs at render time — same resolution
-        // chain the download uses.
         $logoUrlPath = null;
         $lu = $headerConfig['logo_url'] ?? null;
         if ($lu && str_contains($lu, '/storage/')) {
@@ -811,28 +564,8 @@ class ClmTradeDocumentController extends Controller
             $client?->logo,
         );
 
-        // A stand-in when the draft has never been saved, so the blade's
-        // $document->title still resolves.
         $document = $row ?: new ClmTradeDocLibrary(['title' => 'Trade document (draft preview)']);
 
-        /* ── Render cache ────────────────────────────────────────────────
-         * dompdf is essentially the whole cost of this endpoint — profiled on a
-         * 183k-character draft: 8 ms to build the HTML, 1,543 ms to turn it into
-         * a PDF, so 99% of the request. Its own options do not help; every
-         * variation tried came out the same or slower, and turning font
-         * subsetting off made the file seven times larger.
-         *
-         * What CAN be avoided is rendering the same document twice. The output
-         * is a pure function of the inputs below, so an unchanged draft is
-         * served from cache: re-opening the editor, toggling the preview pane,
-         * switching tabs and back, or typing and undoing to a state already
-         * rendered all become instant instead of costing another 1.5 s.
-         *
-         * The key covers everything the blade reads, including the date the
-         * footer stamps, so any change misses the cache and re-renders. Bytes
-         * are base64'd because the cache store is a database text column and
-         * raw PDF bytes are not valid UTF-8. Ten minutes is enough to span an
-         * editing session without holding rendered documents around. */
         $cacheKey = 'clm:tdpreview:' . sha1(implode('|', [
             (int) $user->client_id,
             (string) ($row->code ?? 'DRAFT'),
@@ -848,20 +581,11 @@ class ClmTradeDocumentController extends Controller
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="trade-document-preview.pdf"',
         ];
-        /* Best-effort, both ways.
-         *
-         * A preview must never fail because the CACHE failed. On a server
-         * where the cache table has not been migrated, or Redis is down, or
-         * the store is set to 'array', these calls throw or no-op — and
-         * without the guard that would turn a working preview into a 500.
-         * Swallowed, the worst case is exactly the behaviour before this
-         * cache existed: render it. */
         try {
             if ($hit = Cache::get($cacheKey)) {
                 return response(base64_decode($hit), 200, $headers);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
         $pdf = Pdf::loadView('pdf.clm-signature-document', [
@@ -880,26 +604,15 @@ class ClmTradeDocumentController extends Controller
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
         $bytes = $pdf->output();
-        /* Skip absurd blobs: the store here is a database text column, and a
-           multi-megabyte base64 row per preview is not worth the write. */
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
                 Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return response($bytes, 200, $headers);
     }
-
-    /**
-     * Walk candidate public-disk paths and return the first that resolves to
-     * a file, base64-encoded for inline embedding in the PDF header. Returns
-     * '' when none resolve so the blade falls back to a text-only header.
-     */
-    // toWellFormedHtml() now lives in the shared HandlesDocxHtmlRoundtrip
-    // trait so the Agreement DOCX export gets the same table/structure repair.
 
     private function resolveLogoBase64(?string ...$candidates): string
     {
@@ -907,9 +620,6 @@ class ClmTradeDocumentController extends Controller
         foreach ($candidates as $path) {
             if (!$path) continue;
             try {
-                // RAW base64 only — the blade wraps it in
-                // `data:image/png;base64,{{ ... }}` itself, so a data-URI
-                // prefix here would double up and break the <img>.
                 if ($disk->exists($path)) return base64_encode($disk->get($path));
             } catch (\Throwable $e) { continue; }
         }
@@ -928,9 +638,6 @@ class ClmTradeDocumentController extends Controller
 
         $this->validateDocxUpload($request);
 
-        // Converting a Word file to editor HTML is memory/time-heavy for a big
-        // file; without this the web SAPI runs out and the conversion silently
-        // fails, leaving the editor blank. Raise both for this request only.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
@@ -941,11 +648,6 @@ class ClmTradeDocumentController extends Controller
         $filename   = Str::random(16) . '.' . $ext;
         $path       = $file->storeAs($folder, $filename, 'public');
 
-        // Best-effort DOCX → HTML so the web editor reflects the upload.
-        // Read the stored BYTES into a temp LOCAL file before converting: on a
-        // cloud disk (Azure Blob, used on the server) Storage::path() returns an
-        // unreadable path, so ZipArchive/PhpWord silently fail and the editor
-        // goes blank. ->get() works on both local and cloud disks.
         $html = null;
         $convFailed = false;
         $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
@@ -958,9 +660,6 @@ class ClmTradeDocumentController extends Controller
             @unlink($tmpDocx);
         }
 
-        // If nothing readable came out, DON'T silently keep the old content —
-        // tell the user so they know the upload didn't take. The usual cause is
-        // an older .doc (binary) file, which the converter can't read.
         if ($convFailed || trim(strip_tags((string) $html)) === '') {
             Storage::disk('public')->delete($path);
             return response()->json([
@@ -971,8 +670,6 @@ class ClmTradeDocumentController extends Controller
             ], 422);
         }
 
-        // Reject a document whose text is over the render cap: it could never be
-        // downloaded as PDF/Word afterwards. Drop the stored file and tell the user.
         if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             Storage::disk('public')->delete($path);
             return response()->json([
@@ -993,22 +690,6 @@ class ClmTradeDocumentController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * Standalone DOCX → HTML conversion (no library row / no persistence).
-     * Used by editors that aren't backed by a saved library record — e.g.
-     * the CTC (Case-to-Case) agreement draft editor — so "Upload Doc" can
-     * load a .docx straight into the contentEditable. The uploaded file is
-     * read from its temp path and converted via the shared roundtrip trait.
-     */
-    /**
-     * Validate an uploaded Word document. We deliberately do NOT use Laravel's
-     * `mimes:doc,docx` rule: a .docx is a ZIP container, and php-fileinfo on
-     * many servers reports it as `application/zip` (or `application/octet-stream`),
-     * so `mimes:docx` rejects perfectly valid Word files with a 422 ("Import
-     * failed / Could not convert this document"). Instead we check file + size +
-     * the client extension. Genuinely broken/other content still fails safely
-     * later, when PhpWord tries to read it (caught → friendly 422).
-     */
     private function validateDocxUpload(Request $request): void
     {
         $request->validate(['docx' => ['required', 'file', 'max:' . self::DOCX_MAX_KB]]);
@@ -1028,14 +709,6 @@ class ClmTradeDocumentController extends Controller
         try {
             $abs  = $request->file('docx')->getRealPath();
             $html = $this->docxToHtml($abs);
-            /* Measured in characters, like everything else these editors do.
-               This used to refuse anything over 70 pages, which works out at
-               roughly 210,000 characters — so a document the CTC / agreement /
-               trade-document editor would happily hold (their counter and the
-               row's own save both allow a million) could not be uploaded into
-               it, and a file exported from the Trade Document library came
-               straight back as "Import failed". The renderers give out at the
-               million, which is where the refusal belongs. */
             if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
                 return response()->json(['status' => false, 'message' => 'This document converts to '
                     . number_format($len) . ' characters. The limit is ' . number_format(self::RENDER_MAX_CHARS)
@@ -1049,18 +722,6 @@ class ClmTradeDocumentController extends Controller
         return response()->json(['status' => true, 'html' => $html ?: '']);
     }
 
-    /**
-     * Stage 2 page-shell logo upload. Stores the file under the tenant's
-     * own folder and returns { path, url } in the exact shape
-     * [[HeaderFooterPanel.tsx]] expects, so the same component works for
-     * both HR document templates and Trade Document drafts.
-     *
-     * Mirrors HrDocumentTemplateController::uploadHeaderLogo. We don't
-     * attach the path to a specific library row here — that linkage
-     * happens later when the user saves the form and the path lands in
-     * the row's header_config JSON. This keeps the endpoint usable for
-     * brand-new (not-yet-saved) drafts too.
-     */
     public function uploadHeaderLogo(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -1079,18 +740,6 @@ class ClmTradeDocumentController extends Controller
         ]);
     }
 
-    /* ── PARTY FILTER ──
-     * Returns library rows whose `party` CSV mentions the given party key.
-     * Supports three logical buckets used by the customer/consignee/vendor
-     * forms:
-     *   buyer / customer → matches "Buyer"
-     *   consignee        → matches "Consignee"
-     *   supplier         → matches ANY "Supplier-*" sub-type, or only one
-     *                       supplier type's documents when ?vendor_type_id=
-     *                       or ?vendor_type= names a recognised type.
-     * Anything else falls through to a literal substring match so a caller
-     * can request a specific Supplier-* sub-type if needed.
-     */
     public function libraryForParty(Request $request, $party)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -1106,7 +755,6 @@ class ClmTradeDocumentController extends Controller
         } elseif ($key === 'consignee') {
             $q->where('party', 'like', '%Consignee%');
         } elseif ($key === 'supplier') {
-            // ?vendor_type_id= / ?vendor_type= narrow it to that supplier type's documents.
             $token = \App\Support\SupplierPartyToken::forVendorTypeId(
                 $request->integer('vendor_type_id') ?: null,
                 (int) $user->client_id,
@@ -1121,16 +769,6 @@ class ClmTradeDocumentController extends Controller
             $q->where('party', 'like', '%' . $party . '%');
         }
 
-        /* ?view=list drops the document body, exactly as libraryIndex does and
-           for the same reason: three of the four callers here only read `code`
-           (and `name`) off these rows — the Add Customer, Add Consignee and Add
-           Vendor modals, which use them to work out which trade documents a
-           party needs. Unsliced, this reply is over a megabyte: 113 kB for
-           buyer AFTER gzip.
-
-           It stays opt-in because the fourth caller cannot do without it:
-           SalesCustomerSendForSignatureModal seeds its editor from
-           `doc.content`, so for it the body IS the point. */
         if ($request->input('view') === 'list') {
             $q->select([
                 'id', 'client_id', 'branch_id', 'code', 'name', 'title',

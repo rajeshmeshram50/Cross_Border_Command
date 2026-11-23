@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Tracks when a CTC's Zoho Sign request was declined by a signer, so the
- * Stage-3 tracker can surface the decline (and reason, stored per-recipient
- * in signing_recipients) and offer an "edit & resend" path without logging a
- * duplicate version event on every status poll.
- */
 return new class extends Migration
 {
     public function up(): void

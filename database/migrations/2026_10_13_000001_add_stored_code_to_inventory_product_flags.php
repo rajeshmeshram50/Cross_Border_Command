@@ -5,26 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Inventory · Product flags get the stored, per-branch code the others have.
- *
- * The fifth master was left behind by 2026_10_12_000008: warehouses, zones and
- * racks now store a code counted per branch, while a flag's code was still
- * 'PF-' . pad($this->id) off the model — one platform-wide sequence, so a
- * branch's first flag of its own could read PF-007.
- *
- * NUMBERING, and why it does not start at 001.
- * The three platform defaults (Hazardous, Cold Chain, Fragile) are owned by
- * nobody and appear on EVERY branch's picker, so their codes are spent in
- * every branch. A tenant's own first flag therefore continues after them —
- * PF-004 — and each branch numbers from there independently, so two branches
- * both call their first flag PF-004. Starting a tenant flag at 001 would print
- * PF-001 beside the shared Hazardous on the same dropdown.
- *
- * Unique on (client_id, branch_id, code), like the other three. A flag is not
- * scanned, so unlike a shelf label a reused number costs nothing — the
- * allocator counts live rows, and this table has no soft deletes.
- */
 return new class extends Migration
 {
     private const TABLE  = 'inventory_product_flags';
@@ -43,10 +23,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Platform defaults first, in id order; every branch then continues from
-     * where they stop, so an existing tenant flag keeps a code above theirs.
-     */
     private function backfill(): void
     {
         $platform = DB::table(self::TABLE)

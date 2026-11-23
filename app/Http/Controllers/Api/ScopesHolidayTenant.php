@@ -5,12 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Models\Branch;
 use Illuminate\Http\Request;
 
-/**
- * Shared tenant scoping for the Holiday + Holiday Group controllers. Mirrors
- * the resolveOwnership / applyScope pattern used across HRMS (Announcement,
- * Recruitment, …) so holidays honour client/branch isolation and the
- * BranchSwitcher selection identically.
- */
 trait ScopesHolidayTenant
 {
     protected function resolveOwnership(Request $request): array
@@ -45,8 +39,6 @@ trait ScopesHolidayTenant
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Every branch is an isolated peer — branch users + employees
-            // see globals + client-level rows + their own branch's rows.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 

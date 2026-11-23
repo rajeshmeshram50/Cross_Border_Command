@@ -8,7 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Money received back from the supplier against a refund adjustment.
         Schema::create('p2p_po_refund_recoveries', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('client_id');
@@ -18,13 +17,12 @@ return new class extends Migration
 
             $t->decimal('amount', 16, 2);
             $t->date('recovered_date');
-            $t->string('reference_no', 64)->nullable();                // cheque / UTR
+            $t->string('reference_no', 64)->nullable();
             $t->string('proof_path', 500)->nullable();
             $t->string('proof_name', 255)->nullable();
 
-            // Zoho Books vendor credit refund.
             $t->string('zoho_refund_id', 64)->nullable();
-            $t->string('zoho_sync_status', 20)->nullable();            // synced | failed
+            $t->string('zoho_sync_status', 20)->nullable();
             $t->timestamp('zoho_synced_at')->nullable();
             $t->text('zoho_error')->nullable();
 

@@ -9,19 +9,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Queued deliberately.
- *
- * Sent inline, this mail put a full Gmail SMTP conversation inside the HTTP
- * request — TCP, STARTTLS, AUTH, MAIL FROM / RCPT TO / DATA, each its own
- * round trip — which is ~5s the admin spends staring at a spinner for work
- * that has nothing to do with their response. The invite row is already
- * committed by then; the mail is not something the caller needs to wait on.
- *
- * REQUIRES A RUNNING QUEUE WORKER (`php artisan queue:work`). Without one the
- * job sits in the `jobs` table and the candidate never gets the link.
- * See deploy/queue-supervisor.conf.
- */
 class OnboardingInviteMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
@@ -56,8 +43,6 @@ class OnboardingInviteMail extends Mailable implements ShouldQueue
 
     public function envelope(): Envelope
     {
-        // Guard against an empty org name so the subject is never a dangling
-        // "Complete your onboarding — " (a blank-ish subject hurts deliverability).
         $org = trim($this->orgName);
         return new Envelope(
             subject: $org !== '' ? "Complete your onboarding at {$org}" : 'Complete your onboarding',

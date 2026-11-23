@@ -7,16 +7,8 @@ use App\Models\LeadAckReason;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-
 class LeadAckReasonController extends Controller
 {
-    /**
-     * GET /sales/lead-ack-reasons
-     *
-     * Returns the three opportunity buckets grouped — saves the page from
-     * firing three round trips on mount. Each bucket is already sorted by
-     * id ascending (matching the source design's display order).
-     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -29,9 +21,6 @@ class LeadAckReasonController extends Controller
             ]);
         }
 
-        // Branch isolation: each branch owns its own reasons. GET requests
-        // carry ?branch_id from the Axios interceptor (active branch); fall back
-        // to the user's own branch.
         $branchId = $this->effectiveBranchId($request, $user);
         $rows = LeadAckReason::where('client_id', $user->client_id)
             ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
@@ -45,9 +34,6 @@ class LeadAckReasonController extends Controller
         ]);
     }
 
-    /**
-     * POST /sales/lead-ack-reasons
-     */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -63,8 +49,6 @@ class LeadAckReasonController extends Controller
             'dq_status'        => ['nullable', Rule::in(LeadAckReason::DQ_VALUES)],
         ]);
 
-        // dq_status is only meaningful for disqualified rows. Reject a payload
-        // that asks for one without the other — keeps the data clean.
         $isDisqualified = $data['opportunity_type'] === LeadAckReason::TYPE_DISQUALIFIED;
         if ($isDisqualified && empty($data['dq_status'])) {
             return response()->json(['message' => 'dq_status is required for disqualified opportunities'], 422);
@@ -84,19 +68,9 @@ class LeadAckReasonController extends Controller
         return response()->json($row, 201);
     }
 
-    /**
-     * PUT /sales/lead-ack-reasons/{id}
-     *
-     * Used for both "Edit" (reason/status/dq_status change) and the
-     * "Mark Inactive" trash button (status only). opportunity_type is
-     * intentionally immutable — moving a reason between tabs would corrupt
-     * historical references on existing opportunities.
-     */
     public function update(Request $request, $id)
     {
         $user = $request->user();
-        // Scope by branch too so a branch can only touch its OWN reason row —
-        // a reason id belongs to exactly one branch after isolation.
         $branchId = $this->effectiveBranchId($request, $user);
         $row  = LeadAckReason::where('client_id', $user->client_id)
             ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
@@ -115,8 +89,6 @@ class LeadAckReasonController extends Controller
         if (array_key_exists('status', $data) && $data['status'] !== null) {
             $updates['status'] = $data['status'];
         }
-        // Only the disqualified type carries dq_status; silently drop the
-        // field for the other two so a fat-fingered payload can't pollute them.
         if ($row->opportunity_type === LeadAckReason::TYPE_DISQUALIFIED
             && array_key_exists('dq_status', $data)
             && $data['dq_status'] !== null) {
@@ -133,19 +105,9 @@ class LeadAckReasonController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * DELETE /sales/lead-ack-reasons/{id} — hard delete.
-     *
-     * The trash icon in the UI currently flips status to inactive via the
-     * update endpoint (matching the source design's "mark inactive"). This
-     * endpoint exists for true cleanup — e.g. an admin removing a duplicate
-     * row that was created in error.
-     */
     public function destroy(Request $request, $id)
     {
         $user = $request->user();
-        // Scope by branch too so a branch can only touch its OWN reason row —
-        // a reason id belongs to exactly one branch after isolation.
         $branchId = $this->effectiveBranchId($request, $user);
         $row  = LeadAckReason::where('client_id', $user->client_id)
             ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
@@ -155,12 +117,6 @@ class LeadAckReasonController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
-    /**
-     * Resolve the active branch for this request. GETs carry ?branch_id from the
-     * Axios interceptor (active branch in the switcher); writes pass it
-     * explicitly from the Lead-Ack page. `input()` covers both query + body.
-     * Falls back to the user's own branch; null when neither is set.
-     */
     private function effectiveBranchId(Request $request, $user): ?int
     {
         $b = $request->input('branch_id');

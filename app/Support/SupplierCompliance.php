@@ -10,56 +10,15 @@ use App\Models\SegmentDocUpload;
 use App\Models\Vendor;
 use Illuminate\Support\Carbon;
 
-/**
- * Is a supplier's mandatory document set complete and unexpired?
- *
- * Compliance used to be a value someone PICKED from the Compliance Behaviour
- * master — ten states, typed in by hand, and stale the moment a document
- * lapsed. It is now DERIVED, so it cannot disagree with the documents it is
- * meant to describe. Two values only: Compliant / Non Compliant.
- *
- * A supplier is Compliant when, for its own segments:
- *
- *   • every MANDATORY doc in KYC, Due Diligence, Trade Licences and Trade
- *     Documents has a file uploaded against it, and
- *   • no uploaded file's expiry date has passed, and
- *   • every applicable Supplier-party Agreement has a COMPLETED signature.
- *
- * Trade Documents and Agreements are CASE-TO-CASE: they exist per purchase
- * order, and the Evidence Vault lists no case at all for a supplier with no PO
- * (CS-409). Such a supplier is judged on its standard set alone (KYC, DD,
- * Trade Licences) — demanding per-deal papers before there is a deal kept it
- * Non Compliant forever (QA #45). Once a PO exists, both count again.
- *
- * Optional docs are ignored — that is what "mandatory document set" means, and
- * it matches the CLM card's own "X of Y" counter, which has always counted
- * requirement === 'M' only.
- *
- * WHAT COUNTS AS NOTHING TO CHECK: a supplier whose segments carry no rules
- * has no mandatory set, so there is nothing it can fail. It reads Compliant.
- * The alternative — Non Compliant until someone writes a DCP rule — would
- * report a red pill for every supplier in a tenant that has not set the module
- * up yet, which says nothing about the supplier.
- *
- * BULK BY DESIGN. This backs a paginated list AND its facet counts, so it is
- * never called per row: give it every id at once and it answers in a fixed
- * number of queries regardless of how many suppliers are asked about.
- */
 class SupplierCompliance
 {
     public const COMPLIANT     = 'Compliant';
     public const NON_COMPLIANT = 'Non Compliant';
 
-    /** Upload-backed buckets. Agreements are signature-backed and handled apart. */
     private const DOC_CATEGORIES = ['kyc', 'dd', 'tl', 'td'];
 
-    /** Per-deal buckets — only owed once the supplier has a purchase order. */
     private const CASE_CATEGORIES = ['td'];
 
-    /**
-     * @param  array<int>  $vendorIds
-     * @return array<int, string>  vendor id => Compliant | Non Compliant
-     */
     public static function statuses(array $vendorIds, int $clientId): array
     {
         $vendorIds = array_values(array_unique(array_map('intval', $vendorIds)));
@@ -67,9 +26,6 @@ class SupplierCompliance
 
         $today = Carbon::today();
 
-        /* 1. Each supplier's segments and trade type. The pivot is the real
-              answer (a supplier can carry several segments); vendors.segment_id
-              is the legacy scalar and only fills in when the pivot is empty. */
         $vendors = Vendor::query()
             ->whereIn('id', $vendorIds)
             ->with(['segments:id', 'primaryAddress:id,vendor_id,country_id', 'primaryAddress.country:id,name'])
@@ -86,16 +42,11 @@ class SupplierCompliance
             $docTypeByVendor[$v->id] = trim((string) $country) === 'India' ? 'domestic' : 'international';
         }
 
-        /* 2. Every rule for the tenant, indexed by segment then document type.
-              One query for all of them — the alternative is a query per
-              supplier, which is what makes a derived column tempting. */
         $rulesBySegment = [];
         foreach (ClmSegmentRule::where('client_id', $clientId)->get() as $rule) {
             $rulesBySegment[(int) $rule->segment_id][] = $rule;
         }
 
-        /* 3. Uploads for all the suppliers at once, keyed the way the check
-              asks for them: vendor => "category::code" => expiry. */
         $uploadsByVendor = [];
         SegmentDocUpload::query()
             ->where('uploadable_type', Vendor::class)
@@ -105,16 +56,10 @@ class SupplierCompliance
                 $uploadsByVendor[(int) $u->uploadable_id][$u->category . '::' . $u->doc_code] = $u->expiry_date;
             });
 
-        /* 4. Agreements: the applicable Supplier-party library rows per segment,
-              plus each supplier's completed signatures. Both loaded whole and
-              matched in PHP — the library is small and the segment match is a
-              CSV LIKE that would otherwise be a query per segment. */
         $allSegIds = collect($segIdsByVendor)->flatten()->unique()->values()->all();
         $agreementsBySegment = self::agreementLibrary($clientId, $allSegIds);
         $signedByVendor      = self::signedAgreements($clientId, $vendorIds);
 
-        /* 4b. Which suppliers have a case at all — the same test the vault's
-               Case to Case section uses (buildPoDeals): a live PO raised on them. */
         $hasPo = array_fill_keys(
             \Illuminate\Support\Facades\DB::table('p2p_purchase_orders')
                 ->where('client_id', $clientId)
@@ -127,8 +72,6 @@ class SupplierCompliance
             true
         );
 
-        /* 5. Evaluate. Every supplier asked about gets an answer, including any
-              whose row was not returned above (deleted mid-request). */
         $out = [];
         foreach ($vendorIds as $vid) {
             $out[$vid] = self::evaluate(
@@ -145,7 +88,6 @@ class SupplierCompliance
         return $out;
     }
 
-    /** Convenience for a single supplier — still one call, not a loop. */
     public static function status(int $vendorId, int $clientId): string
     {
         return self::statuses([$vendorId], $clientId)[$vendorId] ?? self::COMPLIANT;
@@ -161,11 +103,6 @@ class SupplierCompliance
         Carbon $today,
         bool $hasCase
     ): string {
-        /* Mandatory codes per category, unioned across the supplier's segments.
-           One rule per segment: the one matching the supplier's trade type, or
-           whatever the segment has when it carries only the other type — a
-           supplier must not lose its documents because its segment was written
-           before the domestic/international split. */
         $mandatory = [];
         foreach ($segIds as $sid) {
             $rules = $rulesBySegment[$sid] ?? [];
@@ -176,7 +113,6 @@ class SupplierCompliance
 
             $sel = $rule->doc_selections ?? [];
             foreach (self::DOC_CATEGORIES as $cat) {
-                // No PO, no case: per-deal documents are not owed yet.
                 if (!$hasCase && in_array($cat, self::CASE_CATEGORIES, true)) continue;
                 $entries = $sel[$cat] ?? [];
                 if (!is_array($entries)) continue;
@@ -186,25 +122,17 @@ class SupplierCompliance
             }
         }
 
-        // Every mandatory doc needs a file, and that file must not have lapsed.
         foreach (array_keys($mandatory) as $key) {
             if (!array_key_exists($key, $uploads)) return self::NON_COMPLIANT;
             $expiry = $uploads[$key];
             if ($expiry && Carbon::parse($expiry)->lt($today)) return self::NON_COMPLIANT;
         }
 
-        /* An OPTIONAL doc that was uploaded and has since expired also fails.
-           Expiry is about the evidence on file, not about whether the DCP asked
-           for it: a lapsed licence sitting in the vault is not a clean supplier
-           just because the rule marked it optional. */
         foreach ($uploads as $expiry) {
             if ($expiry && Carbon::parse($expiry)->lt($today)) return self::NON_COMPLIANT;
         }
 
-        /* Applicable agreements must be signed, and that signature still in
-           date. Expiry lives on the SIGNATURE, not the library row — the
-           library defines the agreement, the request is the executed copy. */
-        if (!$hasCase) return self::COMPLIANT;   // agreements are per deal too
+        if (!$hasCase) return self::COMPLIANT;
         foreach ($segIds as $sid) {
             foreach ($agreementsBySegment[$sid] ?? [] as $agrId) {
                 if (!array_key_exists($agrId, $signed)) return self::NON_COMPLIANT;
@@ -216,12 +144,6 @@ class SupplierCompliance
         return self::COMPLIANT;
     }
 
-    /**
-     * Supplier-applicable agreement library rows, grouped by the segment they
-     * belong to.
-     *
-     * @return array<int, array<int>>  segment id => agreement library ids
-     */
     private static function agreementLibrary(int $clientId, array $segIds): array
     {
         if (empty($segIds)) return [];
@@ -248,12 +170,6 @@ class SupplierCompliance
         return $bySegment;
     }
 
-    /**
-     * The library stores its segments as a CSV of names or codes, so membership
-     * is a token match rather than an FK. Mirrors the LIKE ladder in
-     * SegmentDocUploadController::matchSegmentLibrary(), done in PHP because
-     * this runs once for the whole library instead of once per segment.
-     */
     private static function segmentMatches(?string $csv, ?string $name, ?string $code): bool
     {
         $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $csv)));
@@ -264,11 +180,6 @@ class SupplierCompliance
         return false;
     }
 
-    /**
-     * A blank party means "every party". A doc that names parties but none of
-     * them is a Supplier does not apply here. Mirrors
-     * SegmentDocUploadController::supplierApplicable().
-     */
     private static function supplierApplicable(?string $party): bool
     {
         $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $party)));
@@ -279,13 +190,6 @@ class SupplierCompliance
         return false;
     }
 
-    /**
-     * Agreement library ids each supplier has a COMPLETED signature for. An
-     * agreement signed on ANY of the supplier's deals counts as done, which is
-     * the same rule the Evidence Vault applies.
-     *
-     * @return array<int, array<int, mixed>>  vendor id => [agreement id => signature expiry]
-     */
     private static function signedAgreements(int $clientId, array $vendorIds): array
     {
         $rows = ClmSignatureRequest::query()
@@ -293,9 +197,8 @@ class SupplierCompliance
             ->where('model_name', 'Vendor')
             ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
             ->where('status', 'completed')
-            // party_id, not model_id: model_name says WHICH table, party_id the row.
             ->whereIn('party_id', $vendorIds)
-            ->orderBy('id')                       // later request wins on a re-sign
+            ->orderBy('id')
             ->get(['id', 'party_id', 'trade_doc_id', 'trade_doc_ids', 'expiry_date']);
 
         $out = [];

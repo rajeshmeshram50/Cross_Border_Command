@@ -43,8 +43,6 @@ class Plan extends Model
         ];
     }
 
-    // ── Relationships ──
-
     public function clients(): HasMany
     {
         return $this->hasMany(Client::class);
@@ -66,8 +64,6 @@ class Plan extends Model
             ->withPivot('access_level', 'usage_limit', 'notes')
             ->withTimestamps();
     }
-
-    // ── Helpers ──
 
     public function isActive(): bool
     {

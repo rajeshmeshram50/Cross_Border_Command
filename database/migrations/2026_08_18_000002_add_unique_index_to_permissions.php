@@ -5,24 +5,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * One permission row per (user, module).
- *
- * The table has always been written as delete-then-insert, so nothing produced
- * duplicates in practice — but the schema never said so. A second row for the
- * same module is silently contradictory (which flags win?), and every reader
- * assumes at most one, so the invariant belongs in the database rather than in
- * the discipline of every future writer.
- *
- * Same for department_permissions, which is written with updateOrCreate on
- * exactly this key triple.
- */
 return new class extends Migration
 {
     public function up(): void
     {
-        // Collapse any duplicates first (keep the newest row per pair) — the
-        // index cannot be created while they exist.
         $dupes = DB::table('permissions')
             ->select('user_id', 'module_id', DB::raw('MAX(id) as keep_id'))
             ->groupBy('user_id', 'module_id')

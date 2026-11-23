@@ -4,15 +4,6 @@ namespace App\Services\CredVault;
 
 use RuntimeException;
 
-/**
- * Excel's own "Encrypt with Password" for an .xlsx (MS-OFFCRYPTO Agile
- * Encryption: AES-256-CBC, SHA-512, 100,000 spins), so a locked backup is an
- * .xlsx that Excel opens itself after asking for the password — no zip, which
- * Windows' built-in extractor cannot open when it is AES-encrypted.
- *
- * The result is a Compound File (OLE2) holding the EncryptionInfo and
- * EncryptedPackage streams plus the \x06DataSpaces storage Office writes.
- */
 class ExcelLock
 {
     private const SPIN = 100000;
@@ -24,25 +15,21 @@ class ExcelLock
     private const BLK_HMAC_KEY       = "\x5f\xb2\xad\x01\x0c\xb9\xe1\xf6";
     private const BLK_HMAC_VALUE     = "\xa0\x67\x7f\x02\xb2\x2c\x84\x33";
 
-    /** The .xlsx bytes, encrypted so only $password opens them. */
     public static function encrypt(string $xlsx, string $password): string
     {
         $secretKey = random_bytes(32);
         $keySalt   = random_bytes(16);
         $pwSalt    = random_bytes(16);
 
-        // EncryptedPackage: the plain size, then 4096-byte segments, each with its own IV.
         $package = pack('P', strlen($xlsx));
         foreach (str_split($xlsx, self::SEGMENT) as $i => $seg) {
             $package .= self::aes($secretKey, self::iv($keySalt, pack('V', $i)), $seg);
         }
 
-        // Data integrity: an HMAC of the whole package, its key and value encrypted with the secret key.
         $hmacKey = random_bytes(64);
         $encHmacKey   = self::aes($secretKey, self::iv($keySalt, self::BLK_HMAC_KEY), $hmacKey);
         $encHmacValue = self::aes($secretKey, self::iv($keySalt, self::BLK_HMAC_VALUE), hash_hmac('sha512', $package, $hmacKey, true));
 
-        // The password key: SHA-512 over salt + UTF-16LE password, spun 100,000 times.
         $h = hash('sha512', $pwSalt . mb_convert_encoding($password, 'UTF-16LE', 'UTF-8'), true);
         for ($i = 0; $i < self::SPIN; $i++) $h = hash('sha512', pack('V', $i) . $h, true);
         $key = fn (string $blk) => substr(hash('sha512', $h . $blk, true), 0, 32);
@@ -79,7 +66,6 @@ class ExcelLock
         ]);
     }
 
-    /** AES-256-CBC without padding; the data is zero-filled to the 16-byte block. */
     private static function aes(string $key, string $iv, string $data): string
     {
         if ($r = strlen($data) % 16) $data .= str_repeat("\0", 16 - $r);
@@ -94,7 +80,6 @@ class ExcelLock
         return substr(hash('sha512', $salt . $blk, true), 0, 16);
     }
 
-    /** UNICODE-LP-P4: byte length, UTF-16LE text, padded to 4 bytes. */
     private static function lp(string $s): string
     {
         $u = mb_convert_encoding($s, 'UTF-16LE', 'UTF-8');
@@ -102,19 +87,13 @@ class ExcelLock
         return pack('V', strlen($u)) . str_pad($u, (int) (ceil(strlen($u) / 4) * 4), "\0");
     }
 
-    /* ═══════════════ Compound File (version 3, 512-byte sectors) ═══════════════ */
-
     private const FREE = 0xFFFFFFFF;
     private const END  = 0xFFFFFFFE;
     private const FAT  = 0xFFFFFFFD;
     private const CUTOFF = 4096;
 
-    /**
-     * @param array<string,string|array> $tree name => stream bytes, or name => [children] for a storage
-     */
     private static function compoundFile(array $tree): string
     {
-        // Flatten into directory entries: 0 is the Root Entry.
         $entries = [['name' => 'Root Entry', 'type' => 5, 'kids' => []]];
         $add = function (array $tree, int $parent) use (&$add, &$entries) {
             foreach ($tree as $name => $node) {
@@ -126,7 +105,6 @@ class ExcelLock
         };
         $add($tree, 0);
 
-        // Small streams go in the mini stream (64-byte sectors), the rest in regular sectors.
         $mini = '';
         $miniFat = [];
         foreach ($entries as &$e) {
@@ -148,7 +126,6 @@ class ExcelLock
         while ($fatN * 128 < $fatN + $dirN + $mfN + $msN + $bigN) $fatN++;
         if ($fatN > 109) throw new RuntimeException('The backup is too large to lock.');
 
-        // Layout: FAT, directory, mini FAT, mini stream, big streams — each a contiguous chain.
         $fat = array_fill(0, $fatN * 128, self::FREE);
         $next = 0;
         $chain = function (int $n) use (&$fat, &$next) {
@@ -172,7 +149,6 @@ class ExcelLock
         $entries[0]['start'] = $msStart;
         $entries[0]['data'] = $mini;
 
-        // Each storage's children as a balanced tree (all black): shorter names first, then case-insensitive.
         $left = $right = $child = array_fill(0, count($entries), self::FREE);
         $cmp = function (int $a, int $b) use ($entries) {
             $x = mb_strtoupper($entries[$a]['name']);

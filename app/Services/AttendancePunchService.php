@@ -7,36 +7,8 @@ use App\Models\AttendancePunch;
 use App\Models\Employee;
 use Illuminate\Database\QueryException;
 
-/**
- * Shared attendance-punch mechanics, extracted from AttendanceController so the
- * in-app face clock-in AND the eSSL device-import path apply IDENTICAL rules:
- *
- *   - one Attendance row per (employee, date), created on the first punch;
- *   - direction alternates strictly in → out → in → out — RE-DERIVED across the
- *     whole day in time order after every change, so a punch that arrives out of
- *     chronological order (device import / backfill landing before existing
- *     punches) can never corrupt the sequence;
- *   - the parent daily summary is recomputed from the (re-derived) punches.
- *
- * The face path layers face-match + HTTP-422 rejection on top of this; the
- * device path layers tenant mapping + timezone normalisation. Both funnel
- * through here so the timeline can never diverge.
- *
- * See docs/ESSL_ATTENDANCE_INTEGRATION.md §6 (Phase 0), §13.
- */
 class AttendancePunchService
 {
-    /**
-     * Find (optionally locking) or create the employee's attendance row for a
-     * given calendar date.
-     *
-     * Robust against two edge cases the plain first()+create() had:
-     *  - a SOFT-DELETED row still occupies the (employee, date) unique slot (the
-     *    index is not partial) → we restore+reuse it instead of 500-ing;
-     *  - the FIRST punch of a day can't be serialised by lockForUpdate (nothing
-     *    to lock yet), so two concurrent first-punches race → we catch the unique
-     *    violation and re-resolve instead of 500-ing.
-     */
     public function findOrCreateDay(Employee $employee, string $date, bool $lock = true): Attendance
     {
         $attendance = $this->lookupDay($employee->id, $date, $lock);
@@ -49,21 +21,6 @@ class AttendancePunchService
         }
 
         try {
-            /* Stamp the shift the employee is on RIGHT NOW onto the day. (#216)
-             *
-             * Everything downstream — late marks, expected hours, payroll LOP —
-             * used to resolve the window from the employee at read time, so the
-             * employee's single `shift` column retro-applied to every day they
-             * had ever worked. Reassigning someone re-judged their whole history
-             * against the new timing, and a shift set this afternoon governed a
-             * day already worked and punched out of.
-             *
-             * Written on the FIRST punch of the day and never rewritten, so a
-             * reassignment made later today cannot reach back into a day that is
-             * already under way: the row holds the shift the employee actually
-             * started on, and the new one takes effect with tomorrow's first
-             * punch. That is the "effective from the next day" the ticket asks
-             * for, expressed where it can't be bypassed. */
             [$shiftStart, $shiftEnd] = $employee->resolveShiftWindow();
 
             return Attendance::create([
@@ -78,7 +35,6 @@ class AttendancePunchService
                 'shift_end'       => $shiftEnd,
             ]);
         } catch (QueryException $e) {
-            // Lost the create race (or a trashed row exists) — re-resolve.
             $existing = $this->lookupDay($employee->id, $date, $lock);
             if (!$existing) {
                 throw $e;
@@ -103,11 +59,6 @@ class AttendancePunchService
         return $query->first();
     }
 
-    /**
-     * The direction the NEXT punch must take, resolved from server-side
-     * history: no punches → 'in'; otherwise the opposite of the last punch.
-     * Used by the real-time face path for its 422 alternation guard.
-     */
     public function nextDirection(Attendance $attendance): string
     {
         $last = AttendancePunch::where('attendance_id', $attendance->id)
@@ -116,14 +67,6 @@ class AttendancePunchService
         return !$last ? 'in' : ($last->direction === 'in' ? 'out' : 'in');
     }
 
-    /**
-     * Append a punch, then re-derive + refresh the whole day so the sequence is
-     * always correct regardless of insertion order.
-     *
-     * @param  array  $attrs  direction, label, method, punched_at (required)
-     *                        + optional match_distance, ip, lat, lng,
-     *                        device_serial, device_user_id, raw_status, notes
-     */
     public function appendPunch(Attendance $attendance, Employee $employee, array $attrs): AttendancePunch
     {
         $punch = AttendancePunch::create(array_merge([
@@ -136,12 +79,6 @@ class AttendancePunchService
         return $punch;
     }
 
-    /**
-     * Re-derive EVERY punch's direction + label from strict time order (even =
-     * in, odd = out), then refresh the summary. This is the single source of
-     * truth for the in→out alternation invariant — callers that bulk-insert
-     * punches (the importer) call this once after inserting a day's punches.
-     */
     public function recomputeDay(Attendance $attendance): void
     {
         $punches = AttendancePunch::where('attendance_id', $attendance->id)
@@ -158,14 +95,6 @@ class AttendancePunchService
         $this->recomputeSummary($attendance, $punches);
     }
 
-    /**
-     * Rewrite the parent row's cached check-in/out from the (re-derived) punches:
-     * first 'in' is the check-in; the check-out is the last 'out' ONLY when the
-     * day is closed (ends on an 'out') — while the last punch is an open 'in' the
-     * employee is still clocked in, so check_out_at stays null.
-     *
-     * @param  \Illuminate\Support\Collection|null  $punches  time-ordered punches (re-fetched if null)
-     */
     public function recomputeSummary(Attendance $attendance, $punches = null): void
     {
         $punches ??= AttendancePunch::where('attendance_id', $attendance->id)

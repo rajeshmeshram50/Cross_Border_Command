@@ -28,11 +28,6 @@ use App\Support\BrandingResolver;
 
 class BranchController extends Controller
 {
-    // Deliverable-email shape — a TLD is REQUIRED (QA #4). Laravel's `email`
-    // rule alone accepts test@mailinator, because a bare hostname is valid to
-    // an RFC parser (root@localhost is a real address). Nothing here mails an
-    // intranet host — these addresses get welcome credentials and branch
-    // correspondence over the public internet. Twin of EMAIL_RE in BranchForm.tsx.
     private const EMAIL_REGEX = '/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/';
 
     public function index(Request $request)
@@ -76,11 +71,10 @@ class BranchController extends Controller
             $query->where('branch_type', $request->query('type'));
         }
 
-
         if ($branchFilter = $request->integer('branch_id') ?: null) {
             $belongsToClient = $clientId
                 ? Branch::where('id', $branchFilter)->where('client_id', $clientId)->exists()
-                : true;  // super_admin can target any branch
+                : true;
             if ($belongsToClient) {
                 $query->where('id', $branchFilter);
             }
@@ -101,7 +95,6 @@ class BranchController extends Controller
             return response()->json(['message' => 'Only client admins can create branches'], 403);
         }
 
-        // Enforce plan limit (max_branches) if configured
         $client = \App\Models\Client::with('plan')->find($clientId);
         $maxBranches = (int) ($client?->plan?->max_branches ?? 0);
         if ($maxBranches > 0) {
@@ -113,8 +106,6 @@ class BranchController extends Controller
             }
         }
 
-        // Canonicalise identifier case before validation — GSTIN/PAN upper,
-        // emails lower — so the unique checks and the stored values agree.
         $this->normalizeIdentifierCasing($request);
 
         $request->validate([
@@ -127,50 +118,17 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'code' => 'nullable|string|max:50',
-            // Required: the branch email is what quotations, invoices and
-            // onboarding invites are sent from and replied to, so a branch
-            // without one silently breaks those flows.
-            // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            /* The reverse of the `organisation` scope: a branch contact address
-               cannot be one a person already holds as a login or an employee
-               record. Without it the rule only closed one direction — an
-               employee could no longer take a branch address, but a branch
-               could still be pointed at an employee's. `person`, not
-               `organisation`, so a client and its head-office branch may go on
-               sharing one mailbox. (#221) */
             'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX, new \App\Rules\UniqueSystemEmail('person', $clientId)],
 
-            // Required: this is the number that goes onto quotations and
-            // invoices, so a branch without one prints a blank contact.
-            //
-            // The lookahead counts DIGITS, 7 to 13. The old {7,20} counted
-            // characters, so "+91 (0)-  -" passed on punctuation alone while a
-            // real 13-digit number with spaces could fail on length.
             'phone' => ['required', 'string', 'max:20', 'regex:/^(?=(?:\D*\d){7,13}\D*$)[+\d\s\-()]+$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
-            // Optional, but a single letter is a typo rather than a contact.
             'contact_person' => 'nullable|string|min:2|max:255',
             'branch_type' => 'nullable|string|max:50',
-            // Mandatory: an admin must state the branch's sandwich stance
-            // rather than inherit a silent default, because the answer changes
-            // how every leave in this office is counted. `required` still
-            // accepts a literal false — it only rejects null / "" / absent,
-            // which is exactly the "never chosen" case we want to block.
             'sandwich_policy' => 'required|boolean',
-            /* Loss-of-pay policy. Two scalars rather than a nested
-               `lop_policy` object because this form also posts as
-               multipart (logo / signature uploads), where a nested array
-               arrives as a JSON string and validation on it is guesswork.
-               Composed into the stored object by Branch::normalizeLopPolicy. */
             'lop_basis'   => ['nullable', Rule::in(Branch::LOP_BASES)],
             'lop_divisor' => ['nullable', Rule::in(Branch::LOP_DIVISORS)],
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
-            /* The branch's legal identity is MANDATORY (QA #5 / #6): these
-               numbers print on quotations, proforma invoices and export
-               paperwork, and gst_state_code decides the CGST+SGST vs IGST
-               split on every one of them. Server-side twin of the SPA rules
-               in BranchForm.tsx — the form can be bypassed, the API can't. */
             'gst_number' => array_merge([
                 'required',
                 'string',
@@ -190,8 +148,6 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'required|string|max:50',
-            // Letterhead / export-house compliance fields — all optional,
-            // surface on the Quotation/PI PDF when filled.
             'gst_state_code'   => array_merge(
                 ['required', 'string', 'max:10'],
                 $this->gstStateCodeConsistencyRules($request),
@@ -214,40 +170,19 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
-            // Work shifts repeater — arrives as a JSON string on multipart
-            // uploads and as a real array on JSON requests; normalised below.
             'shifts' => 'nullable',
-            // Late-mark deduction rule — { enabled, count, deduction }. Same
-            // transport as shifts (JSON string on multipart, array on JSON), so
-            // the element rules below only bite on the array form; the rest is
-            // clamped by Branch::normalizeLateMarkPolicy().
             'late_mark_policy' => 'nullable',
             'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
-            // Half day / full day only — payroll works in 0.5-day steps.
             'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
-            // false = any N late marks in the period; true = only N in a row. (#53)
             'late_mark_policy.consecutive' => 'sometimes|boolean',
-            // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-            // Authorised-signatory image (signature + stamp combined).
-            // Goes on the with-signature PDF variant. PNG preferred so
-            // transparent background blends with the branded footer.
             'signature_path' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
 
-            // Branch user login credentials
-            // Letters and spaces only — matches the employee form's name rule.
-            // Without it digits and punctuation went through untouched.
             'user_name' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z ]+$/'],
-            // Email is unique PER TENANT — scope the dup check to THIS branch's
-            // client so the same email used in a different client doesn't block
-            // creation here. Matches the users_email_client_unique DB index.
-            /* #221: system-wide — an address that is a login anywhere, in any
-               client or branch, is taken. The client_id filter that used to
-               narrow this is gone. */
             'user_email' => ['required', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
@@ -262,18 +197,12 @@ class BranchController extends Controller
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
-        // At least one bank account — see assertHasBankAccount().
         $this->assertHasBankAccount($request);
 
-        // …and at least one complete shift — see assertHasShift().
         $this->assertHasShift($request);
 
         try {
             return DB::transaction(function () use ($request, $clientId, $user) {
-                // Auto-allocate BR-### when the user didn't supply a code.
-                // Race-safe — allocateBranchCode() uses lockForUpdate() inside
-                // the surrounding transaction so two concurrent creates can't
-                // both grab the same number.
                 $branchCode = trim((string) $request->code);
                 if ($branchCode === '') {
                     $branchCode = $this->allocateBranchCode($clientId);
@@ -289,10 +218,6 @@ class BranchController extends Controller
                     'contact_person' => $request->contact_person,
                     'branch_type' => $request->branch_type,
                     'sandwich_policy' => $request->boolean('sandwich_policy'),
-                    /* normalizeLopPolicy() applies the documented defaults
-                       (basic ÷ calendar) for anything absent or unrecognised,
-                       so a caller that omits these gets the same policy new
-                       branches have always had. */
                     'lop_policy' => Branch::normalizeLopPolicy([
                         'basis'   => $request->input('lop_basis'),
                         'divisor' => $request->input('lop_divisor'),
@@ -329,14 +254,10 @@ class BranchController extends Controller
                     'created_by' => $user->id,
                 ]);
 
-                // Store relative path so it resolves correctly across local and
-                // Azure disks. URL is generated at read time via file_url().
                 if ($request->hasFile('logo')) {
                     $logoPath = $request->file('logo')->storeAs("branches/logos/{$branch->id}", $this->uploadFileName($request->file('logo')), 'public');
                     $branch->update(['logo' => $logoPath]);
                     \App\Services\LogoDarkVariantGenerator::generate($logoPath);
-                    // AFTER the dark variant, so the screen-sized copy is made
-                    // for both. The original stays full resolution for PDFs.
                     \App\Services\LogoWebVariantGenerator::generate($logoPath);
                 }
                 if ($request->hasFile('profile_photo')) {
@@ -344,19 +265,12 @@ class BranchController extends Controller
                         'profile_photo' => $request->file('profile_photo')->storeAs("branches/profile-photos/{$branch->id}", $this->uploadFileName($request->file('profile_photo')), 'public'),
                     ]);
                 }
-                // Authorised-signatory image — used by the Quotation/PI PDF's
-                // with-signature variant. PNG with transparent background works
-                // best because the stamp + signature sit on the branded footer.
                 if ($request->hasFile('signature_path')) {
                     $branch->update([
                         'signature_path' => $request->file('signature_path')->storeAs("branches/signatures/{$branch->id}", $this->uploadFileName($request->file('signature_path')), 'public'),
                     ]);
                 }
 
-                // Create branch user. We store TWO copies of the password:
-                //   - `password`           — bcrypt hash, used for auth.
-                //   - `password_encrypted` — reversibly encrypted (Crypt::encryptString)
-                //     so Super Admin / Client Admin can read the original on edit.
                 $branchUser = User::create([
                     'name' => $request->user_name,
                     'email' => $request->user_email,
@@ -372,26 +286,11 @@ class BranchController extends Controller
 
                 $branch->loadCount(['users', 'departments']);
 
-                // Send welcome email — gated by Settings → Notifications →
-                // newUser (and the master emailNotif). Non-fatal so branch
-                // creation succeeds even if mail fails or is disabled. When it
-                // DOES fail, the reason is bubbled up in $mailWarning so the UI
-                // can tell the admin the credentials email didn't go out (and
-                // why) instead of silently logging it.
                 $mailWarning = null;
                 if (Settings::shouldSendMail('newUser')) {
                     try {
                         $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
 
-                        /* Mail goes to the branch USER who'll actually log in
-                     * (user_email), and is CC'd to the branch's own
-                     * organisation inbox (the `email` field on the
-                     * Branch Details form, e.g. ops@gurgaon.acme.com)
-                     * when one was provided AND it's a different
-                     * mailbox from the user. That gives the branch
-                     * admin / operations inbox a record of the
-                     * credentials handover without duplicating the
-                     * message to the same address. */
                         $branchEmail = trim((string) $request->email);
                         $userEmail   = trim((string) $request->user_email);
                         $mail = Mail::to($userEmail);
@@ -422,8 +321,6 @@ class BranchController extends Controller
                     'message' => 'Branch created successfully',
                     'branch' => $branch,
                     'branch_user' => $branchUser->only(['id', 'name', 'email', 'user_type', 'status']),
-                    // null when the mail sent fine (or notifications are off);
-                    // otherwise the exact reason the welcome email failed.
                     'mail_warning' => $mailWarning,
                 ], 201);
             });
@@ -447,15 +344,10 @@ class BranchController extends Controller
 
         $branch->loadCount(['users', 'departments']);
 
-        // Get branch user (first branch_user for this branch)
         $branchUser = User::where('branch_id', $branch->id)
             ->where('user_type', 'branch_user')
             ->first();
 
-        // Super Admin AND the owning Client Admin (managing their own branches)
-        // both get the decrypted password back so they can review/edit it.
-        // Anyone else (other client_admin, branch_user, etc.) gets the
-        // redacted payload — no cross-tenant credential leakage.
         $canReadPassword = $user && (
             $user->user_type === 'super_admin'
             || ($user->user_type === 'client_admin' && $user->client_id === $branch->client_id)
@@ -467,19 +359,11 @@ class BranchController extends Controller
                 try {
                     $userPayload['password_plain'] = Crypt::decryptString($branchUser->password_encrypted);
                 } catch (\Throwable $e) {
-                    // APP_KEY rotated since the value was stored — fall through
-                    // and let the admin set a fresh password.
                     $userPayload['password_plain'] = null;
                 }
             }
         }
 
-        /* How many employees sit on each of this branch's shifts.
-         *
-         * Sent so the form can disable a delete it knows will be refused,
-         * instead of letting HR click it, fill in the rest of the page and
-         * discover on Save that the whole submission bounced. The server still
-         * enforces the rule — this is only the earlier, kinder half of it. */
         $shiftUsage = [];
         foreach ((array) ($branch->shifts ?? []) as $shift) {
             $name = trim((string) ($shift['name'] ?? ''));
@@ -513,14 +397,8 @@ class BranchController extends Controller
             ->where('user_type', 'branch_user')
             ->first();
 
-        // Canonicalise identifier case before validation — GSTIN/PAN upper,
-        // emails lower — so the unique checks and the stored values agree.
         $this->normalizeIdentifierCasing($request);
 
-        // Only enforce per-client name uniqueness when the user is actually
-        // RENAMING the branch. If the name is unchanged we skip the check —
-        // otherwise legacy duplicates (created before the rule existed) trap
-        // users editing unrelated fields like country/state.
         $nameRules = ['required', 'string', 'max:255'];
         if ($request->input('name') !== $branch->name) {
             $nameRules[] = Rule::unique('branches', 'name')
@@ -532,46 +410,17 @@ class BranchController extends Controller
         $request->validate([
             'name' => $nameRules,
             'code' => 'nullable|string|max:50',
-            // Required: the branch email is what quotations, invoices and
-            // onboarding invites are sent from and replied to, so a branch
-            // without one silently breaks those flows.
-            // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            /* The reverse of the `organisation` scope: a branch contact address
-               cannot be one a person already holds as a login or an employee
-               record. Without it the rule only closed one direction — an
-               employee could no longer take a branch address, but a branch
-               could still be pointed at an employee's. `person`, not
-               `organisation`, so a client and its head-office branch may go on
-               sharing one mailbox. (#221) */
             'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX, new \App\Rules\UniqueSystemEmail('person', $branch->client_id)],
 
-            // Required: this is the number that goes onto quotations and
-            // invoices, so a branch without one prints a blank contact.
-            //
-            // The lookahead counts DIGITS, 7 to 13. The old {7,20} counted
-            // characters, so "+91 (0)-  -" passed on punctuation alone while a
-            // real 13-digit number with spaces could fail on length.
             'phone' => ['required', 'string', 'max:20', 'regex:/^(?=(?:\D*\d){7,13}\D*$)[+\d\s\-()]+$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
-            // Optional, but a single letter is a typo rather than a contact.
             'contact_person' => 'nullable|string|min:2|max:255',
             'branch_type' => 'nullable|string|max:50',
-            // Mandatory: an admin must state the branch's sandwich stance
-            // rather than inherit a silent default, because the answer changes
-            // how every leave in this office is counted. `required` still
-            // accepts a literal false — it only rejects null / "" / absent,
-            // which is exactly the "never chosen" case we want to block.
             'sandwich_policy' => 'required|boolean',
-            /* Loss-of-pay policy. Two scalars rather than a nested
-               `lop_policy` object because this form also posts as
-               multipart (logo / signature uploads), where a nested array
-               arrives as a JSON string and validation on it is guesswork.
-               Composed into the stored object by Branch::normalizeLopPolicy. */
             'lop_basis'   => ['nullable', Rule::in(Branch::LOP_BASES)],
             'lop_divisor' => ['nullable', Rule::in(Branch::LOP_DIVISORS)],
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
-            // Mandatory on edit too — see the matching block in store().
             'gst_number' => array_merge([
                 'required',
                 'string',
@@ -615,32 +464,18 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
-            // Work shifts repeater — JSON string on multipart, array on JSON.
             'shifts' => 'nullable',
-            // Late-mark deduction rule — { enabled, count, deduction }. Same
-            // transport as shifts (JSON string on multipart, array on JSON), so
-            // the element rules below only bite on the array form; the rest is
-            // clamped by Branch::normalizeLateMarkPolicy().
             'late_mark_policy' => 'nullable',
             'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
-            // Half day / full day only — payroll works in 0.5-day steps.
             'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
-            // false = any N late marks in the period; true = only N in a row. (#53)
             'late_mark_policy.consecutive' => 'sometimes|boolean',
-            // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-            // Authorised-signatory image (signature + stamp combined).
-            // Goes on the with-signature PDF variant. PNG preferred so
-            // transparent background blends with the branded footer.
             'signature_path' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
-            // Letters and spaces only — matches the employee form's name rule.
-            // Without it digits and punctuation went through untouched.
             'user_name' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z ]+$/'],
-            // #221: system-wide, as on create.
             'user_email' => ['nullable', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
@@ -655,25 +490,15 @@ class BranchController extends Controller
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
-        // Only when the payload carries the repeater — a partial save that
-        // leaves bank_accounts out keeps whatever the branch already has.
         $this->assertHasBankAccount($request, true);
         $this->assertHasShift($request, true);
 
         try {
             return DB::transaction(function () use ($request, $branch, $branchUser) {
-                // Detect status transition from active → inactive. Existing user
-                // sessions need to be revoked otherwise the login guard only blocks
-                // FRESH logins; users already logged in keep working with their
-                // existing Sanctum tokens.
                 $statusBecomingInactive = $request->filled('status')
                     && $branch->status === 'active'
                     && $request->input('status') !== 'active';
 
-                // Reverse transition — when an admin flips an inactive branch
-                // back to active we need to restore the users / employees
-                // we soft-deleted during the deactivation cascade. Otherwise
-                // the branch returns "live" but with zero people in it.
                 $statusBecomingActive = $request->filled('status')
                     && $branch->status !== 'active'
                     && $request->input('status') === 'active';
@@ -714,47 +539,17 @@ class BranchController extends Controller
                     'secondary_color',
                 ]));
 
-                // Deliberately NOT in the ->only() list above. Branch edits post as
-                // multipart (logo / signature uploads), so a false arrives as the
-                // STRING "false" or "0" — and Eloquent's boolean cast is a plain
-                // (bool), which reads any non-empty string as true. A branch could
-                // therefore never be switched back off. $request->boolean()
-                // interprets "0"/"false"/"off"/"" correctly.
                 if ($request->has('sandwich_policy')) {
                     $sandwichBefore = (bool) $branch->sandwich_policy;
                     $sandwichAfter  = $request->boolean('sandwich_policy');
                     $branch->update(['sandwich_policy' => $sandwichAfter]);
 
                     if ($sandwichBefore !== $sandwichAfter) {
-                        /* The switch is memoised per branch for the life of the
-                         * request (payroll sizes a whole roster in one pass), so
-                         * the recompute below would otherwise price every payslip
-                         * against the value this request just replaced. */
                         \App\Support\SandwichPolicy::flushCache();
-                        /* Same reasoning as the late-mark policy above, and the
-                         * same omission this fixes: the sandwich switch feeds
-                         * payroll's loss of pay directly — PayrollService's
-                         * leaveAggregates() charges sandwiched off-days on an
-                         * unpaid leave only while it is on — so every draft
-                         * payslip in the branch is stale the moment it is
-                         * flipped. Locked/paid runs are frozen and skipped inside
-                         * recomputeEmployeePayslips(). */
                         $this->recomputeBranchPayslips($branch);
                     }
                 }
 
-                /* Loss-of-pay policy — which amount an absent day is priced
-                 * against (basic or gross) and over how many days.
-                 *
-                 * Payroll reads this on every run, so a change has to invalidate
-                 * the same draft payslips a sandwich-policy change does: the
-                 * per-day LOP rate moves, and every draft priced under the old
-                 * basis is stale the moment it is saved. Locked / paid runs are
-                 * frozen and skipped inside recomputeEmployeePayslips().
-                 *
-                 * Only the keys actually sent are changed — a partial update
-                 * (basis only) keeps the stored divisor rather than silently
-                 * resetting it to the default. */
                 if ($request->has('lop_basis') || $request->has('lop_divisor')) {
                     $lopBefore = $branch->lopPolicy();
                     $lopAfter  = Branch::normalizeLopPolicy([
@@ -768,25 +563,9 @@ class BranchController extends Controller
                     }
                 }
 
-                // Shifts / bank accounts handled separately — the array cast would
-                // double-encode the JSON string that arrives on multipart uploads.
                 if ($request->has('shifts')) {
                     $incoming = $this->normalizeShifts($request->input('shifts'));
 
-                    /* Refuse to drop a shift that people are actually working.
-                 *
-                 * employees.shift stores the shift NAME, not an id, so deleting
-                 * the row here does not cascade — it orphans. The employee keeps
-                 * a name that no longer resolves to any start/end time, and
-                 * everything downstream that reads a shift (attendance's
-                 * late-mark heuristic, payroll's shift-start) silently loses its
-                 * reference. This branch's data already shows the damage:
-                 * employees sit on "General Shift" / "Morning Shift" while the
-                 * branch only defines "General".
-                 *
-                 * Renaming counts as deleting for the same reason — the old name
-                 * stops resolving.
-                 */
                     $inUse = $this->shiftsInUse($branch, $incoming);
                     if (!empty($inUse)) {
                         $parts = [];
@@ -805,20 +584,11 @@ class BranchController extends Controller
                 if ($request->has('bank_accounts')) {
                     $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
                 }
-                // Same reason as shifts — normalise before writing so the array cast
-                // doesn't double-encode the JSON string multipart sends.
                 if ($request->has('late_mark_policy')) {
                     $before = Branch::normalizeLateMarkPolicy($branch->late_mark_policy);
                     $after  = Branch::normalizeLateMarkPolicy($request->input('late_mark_policy'));
                     $branch->update(['late_mark_policy' => $after]);
 
-                    /* The rule feeds payroll's LOP, so an already-generated draft
-                 * payslip is stale the moment it changes — HR would edit the
-                 * branch, reopen payroll and see the OLD deduction with no hint
-                 * why. Every other payroll input (salary structure, leave
-                 * approval, adjustments) already recomputes on save; this now
-                 * matches. Locked/paid runs are frozen and skipped inside
-                 * recomputeEmployeePayslips(). */
                     if ($before !== $after) {
                         $this->recomputeBranchPayslips($branch);
                     }
@@ -841,8 +611,6 @@ class BranchController extends Controller
                     }
                     $branch->update(['profile_photo' => $request->file('profile_photo')->storeAs("branches/profile-photos/{$branch->id}", $this->uploadFileName($request->file('profile_photo')), 'public')]);
                 }
-                // Replace the signature image when a new file comes in;
-                // the old one is deleted from storage so we don't leak files.
                 if ($request->hasFile('signature_path')) {
                     if ($branch->signature_path) {
                         Storage::disk('public')->delete($this->relativePath($branch->signature_path));
@@ -852,25 +620,15 @@ class BranchController extends Controller
 
                 if ($statusBecomingInactive) {
                     $this->revokeAllUserTokensForBranch($branch->id);
-                    // Mirror the deactivation cascade so newly-disabled
-                    // branches don't leave their users / employees alive in
-                    // an inactive container.
                     User::where('branch_id', $branch->id)->delete();
                     Employee::where('branch_id', $branch->id)->delete();
                 }
 
                 if ($statusBecomingActive) {
-                    // Bring back the people who were soft-deleted when the
-                    // branch was deactivated. We can't tell apart "deleted
-                    // because the branch was deactivated" from "deleted for
-                    // their own reasons", so the restore is conservative:
-                    // only rows whose deleted_at falls within the branch's
-                    // current inactive window are restored.
                     User::withTrashed()->where('branch_id', $branch->id)->restore();
                     Employee::withTrashed()->where('branch_id', $branch->id)->restore();
                 }
 
-                // Update branch user if provided
                 if ($branchUser && $request->user_name) {
                     $userData = array_filter([
                         'name' => $request->user_name,
@@ -883,17 +641,12 @@ class BranchController extends Controller
                     $passwordChanged = false;
                     if ($request->user_password) {
                         $userData['password'] = Hash::make($request->user_password);
-                        // Keep the readable mirror in sync with the new password.
                         $userData['password_encrypted'] = Crypt::encryptString($request->user_password);
                         $passwordChanged = true;
                     }
 
                     $branchUser->update($userData);
 
-                    // Confirmation mail goes to the branch user whenever the
-                    // admin actually rotates their password from the Branch form.
-                    // Use the post-update email so a simultaneous email change
-                    // delivers to the new mailbox, not the stale one.
                     if ($passwordChanged && Settings::shouldSendMail()) {
                         try {
                             Mail::to($branchUser->email)->send(new PasswordChangedMail(
@@ -936,25 +689,6 @@ class BranchController extends Controller
             && str_contains($e->getMessage(), 'users_email_unique');
     }
 
-    /**
-     * Canonicalise the case of identifier fields BEFORE validation, so that
-     * what we validate is exactly what we store.
-     *
-     * GSTIN / PAN are uppercase by statute; email addresses are stored
-     * lowercase (QA #3). Case matters for more than tidiness here:
-     *
-     *   • The unique rules below compare with `=`, and Postgres string
-     *     comparison is case-SENSITIVE — without this, Admin@x.com and
-     *     admin@x.com both pass the "already registered" check and land as two
-     *     accounts sharing one mailbox.
-     *   • Login looks the user up with where('email', …) — also exact — so a
-     *     stored capital letter forces the user to reproduce it every time,
-     *     and Google sign-in (which lowercases the Google payload) never
-     *     matches at all.
-     *
-     * Blank strings are left alone rather than normalised to '', so a field the
-     * request never meant to touch stays absent for the validator.
-     */
     private function normalizeIdentifierCasing(Request $request): void
     {
         $patch = [];
@@ -964,7 +698,6 @@ class BranchController extends Controller
                 $patch[$field] = strtoupper(trim($val));
             }
         }
-        // Branch contact email + the branch admin's login email.
         foreach (['email', 'user_email'] as $field) {
             $val = $request->input($field);
             if (is_string($val) && $val !== '') {
@@ -974,38 +707,9 @@ class BranchController extends Controller
         if ($patch) $request->merge($patch);
     }
 
-    /**
-     * Cross-field consistency closures for `gst_number` (QA #1).
-     *
-     * The three legal-identity fields are NOT independent — a GSTIN is built
-     * out of the other two:
-     *
-     *     2 7 A A F C D 5 6 7 8 L 1 Z 5
-     *     └┬┘ └─────┬─────────┘
-     *      │        └── characters 3-12 ARE the PAN of the same entity
-     *      └─────────── the state code of the registration
-     *
-     * Format rules alone accept 27AAFCD5678L1Z5 alongside PAN AAECS1234W and
-     * state code 07 — three numbers belonging to three different entities in
-     * two different states — and every quotation, PI and export document then
-     * prints that contradiction. Worse, `gst_state_code` decides the CGST+SGST
-     * vs IGST split, so a code that disagrees with the GSTIN mis-taxes invoices
-     * silently rather than failing loudly.
-     *
-     * Server-side twin of the SPA rules in BranchForm.tsx — the form can be
-     * bypassed, the API can't.
-     *
-     * @param string|null $fallbackState State to compare against when the
-     *        request omits the key entirely (an edit that PATCHes only the tax
-     *        fields must still be checked against the branch's stored state).
-     */
     private function gstNumberConsistencyRules(Request $request, ?string $fallbackState = null): array
     {
         return [
-            /* GSTIN chars 3-12 vs the PAN Number field. Skipped unless BOTH are
-             * well-formed — otherwise a user who mistyped the PAN gets this
-             * mismatch on top of the format error, which reads as two problems
-             * when there is one. */
             function ($attribute, $value, $fail) use ($request) {
                 $gstin = strtoupper(trim((string) $value));
                 $pan   = strtoupper(trim((string) $request->input('pan_number')));
@@ -1017,13 +721,6 @@ class BranchController extends Controller
                     $fail("The PAN inside this GSTIN ({$embedded}) does not match the PAN Number entered ({$pan}). A GSTIN's characters 3-12 are the PAN of the same entity.");
                 }
             },
-            /* GSTIN's first two digits vs the address state's statutory code.
-             * Resolved from the state NAME via the master table (not from the
-             * request's gst_state_code) so a direct API call can't slip a
-             * mismatched pair through by sending a code that doesn't belong to
-             * its state — same approach as CustomerController. Skipped when the
-             * master has no code for that state (non-Indian addresses), so a
-             * foreign branch isn't made unsaveable. */
             function ($attribute, $value, $fail) use ($request, $fallbackState) {
                 $gstin = strtoupper(trim((string) $value));
                 $prefix = Gst::stateCodeFromGstin($gstin);
@@ -1038,10 +735,6 @@ class BranchController extends Controller
         ];
     }
 
-    /**
-     * Cross-field consistency closures for `gst_state_code` — see
-     * gstNumberConsistencyRules() for why these fields can't disagree.
-     */
     private function gstStateCodeConsistencyRules(Request $request, ?string $fallbackState = null): array
     {
         return [
@@ -1054,8 +747,6 @@ class BranchController extends Controller
                     return;
                 }
 
-                // The GSTIN wins the tie-break: it's the registration itself,
-                // while gst_state_code is a derived convenience column.
                 $prefix = Gst::stateCodeFromGstin($request->input('gst_number'));
                 if ($prefix && $prefix !== $code) {
                     $fail("GST State Code ({$code}) must match the first two digits of the GST Number ({$prefix}).");
@@ -1079,32 +770,16 @@ class BranchController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // "Delete" is now a soft *deactivate* — the branch row stays so
-        // that historical records (employees, payroll, audit logs) keep
-        // pointing at a real branch and the admin can re-enable later.
-        // Concretely:
-        //   - branch.status -> 'inactive' (still visible in the list,
-        //     just badged Inactive)
-        //   - login users on the branch are soft-deleted + tokens
-        //     revoked so they can't sign back in
-        //   - employees on the branch are soft-deleted so they land
-        //     in the Disabled Employees tab instead of the Active one
-        //
-        // We deliberately do NOT soft-delete the branch itself; the
-        // previous behaviour orphaned the employees (they kept their
-        // branch_id pointing at a now-trashed branch) which is what
-        // surfaced them under a freshly-created replacement branch.
         DB::transaction(function () use ($branch) {
             $this->revokeAllUserTokensForBranch($branch->id);
-            $branch->users()->delete();              // soft-delete (User uses SoftDeletes)
-            Employee::where('branch_id', $branch->id)->delete(); // soft-delete employees
+            $branch->users()->delete();
+            Employee::where('branch_id', $branch->id)->delete();
             $branch->status = 'inactive';
             $branch->save();
         });
 
         return response()->json(['message' => 'Branch deactivated successfully']);
     }
-
 
     private function revokeAllUserTokensForBranch(int $branchId): int
     {
@@ -1117,14 +792,6 @@ class BranchController extends Controller
             ->delete();
     }
 
-
-    /**
-     * Filename to store an uploaded branch asset under. Keeps the name the
-     * user actually picked (slugged, so nothing odd reaches the filesystem)
-     * so the branch form can show the current file name on reopen instead of
-     * the browser's "No file chosen". The caller stores it under a per-branch
-     * subfolder, so two branches uploading "logo.png" can never collide.
-     */
     private function uploadFileName(\Illuminate\Http\UploadedFile $file): string
     {
         $slug = \Illuminate\Support\Str::slug(
@@ -1140,9 +807,6 @@ class BranchController extends Controller
         return $slug . '.' . $ext;
     }
 
-    /**
-     * Normalize a stored value to a disk-relative path for Storage::delete().
-     */
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -1156,18 +820,6 @@ class BranchController extends Controller
         return $stored;
     }
 
-    /**
-     * Normalise the shifts repeater payload into a clean array of
-     * { name, start, end } rows. Accepts a JSON string (multipart uploads),
-     * an already-decoded array (JSON requests), or null. Blank-named rows
-     * are dropped so empty repeater rows never persist.
-     */
-    /**
-     * Shift names being removed from this branch that employees still sit on.
-     *
-     * @param  array  $incoming  the shift rows the request wants to keep
-     * @return array<string,int> shift name => employee count (empty = safe to save)
-     */
     private function shiftsInUse(Branch $branch, array $incoming): array
     {
         $names = fn(array $rows) => collect($rows)
@@ -1187,14 +839,8 @@ class BranchController extends Controller
 
         $inUse = [];
         foreach ($dropped as $name) {
-            // Case-insensitive on purpose: Postgres compares strings exactly, so
-            // "general shift" would slip past a plain WHERE and the guard would
-            // pass while the employee's shift still breaks.
             $count = Employee::withTrashed()
                 ->where('branch_id', $branch->id)
-                // Someone who has exited is not "using" the shift any more; a
-                // merely DISABLED employee still is — they can be switched back
-                // on and would come back to a shift that no longer exists.
                 ->where(function ($w) {
                     $w->whereNull('status')
                         ->orWhereNotIn('status', ['Resigned', 'Terminated']);
@@ -1210,15 +856,6 @@ class BranchController extends Controller
         return $inUse;
     }
 
-    /**
-     * Re-run payroll for this branch's employees after a policy change.
-     *
-     * Scoped to employees who actually HAVE a payslip in an open (draft /
-     * generated) run — a branch with 400 people but one open run should cost
-     * one recompute, not 400. Failures are swallowed on purpose: a payroll
-     * hiccup must not roll back the branch edit the admin just made; the run
-     * can always be regenerated from the Payroll screen.
-     */
     private function recomputeBranchPayslips(Branch $branch): void
     {
         try {
@@ -1233,8 +870,6 @@ class BranchController extends Controller
                 $payroll->recomputeEmployeePayslips((int) $id);
             }
         } catch (\Throwable $e) {
-            // Called for the late-mark, LOP and sandwich switches now, so the
-            // message no longer names one of them.
             Log::warning('Branch policy payslip recompute failed for branch ' . $branch->id . ': ' . $e->getMessage());
         }
     }
@@ -1264,50 +899,6 @@ class BranchController extends Controller
         }, $raw)));
     }
 
-    /**
-     * Normalise the bank-accounts repeater into clean
-     * { bank_name, branch_name, account_number, ifsc_code, account_type,
-     *   is_primary } rows. Same transport handling as normalizeShifts()
-     * (JSON string on multipart, array on JSON, null when absent).
-     *
-     * A row with no bank name is dropped — the inline editor requires one, so
-     * a nameless row can only be junk. IFSC is upper-cased to match the Legal
-     * Entities master. Only the FIRST row flagged primary keeps the flag, so
-     * the data can't end up with two primary accounts.
-     */
-    /**
-     * At least one bank account is required on a branch (QA #7).
-     *
-     * Can't be expressed as a validation rule: the repeater arrives as a JSON
-     * STRING on multipart uploads, and "at least one row that actually names a
-     * bank" is exactly what normalizeBankAccounts() already decides — a card
-     * the user opened and never filled in is not an account.
-     *
-     * @param bool $onlyIfPresent  On update, a payload that omits the key is a
-     *                             partial save and leaves the stored accounts
-     *                             alone, so there is nothing to require.
-     */
-    /**
-     * At least one COMPLETE work shift is required on a branch.
-     *
-     * The form marks Shift Name, Start Time and End Time with a red asterisk,
-     * but a branch saved with the repeater left untouched went through: the
-     * client skipped rows nobody had typed in, and the server only ever had
-     * `shifts => nullable`. Three required fields that can all be left empty
-     * is not a validation rule, it is decoration.
-     *
-     * "Complete" means all three, not just a name — normalizeShifts() already
-     * drops nameless rows, but it keeps a named row with no times, and a shift
-     * without times is useless to the Employee form's Shift dropdown and to
-     * payroll's late-mark maths, which are the two things that read this.
-     *
-     * Can't be a validation rule for the same reason the bank guard can't: the
-     * repeater arrives as a JSON STRING on multipart uploads.
-     *
-     * @param bool $onlyIfPresent  On update, a payload that omits the key is a
-     *                             partial save and leaves the stored shifts
-     *                             alone, so there is nothing to require.
-     */
     private function assertHasShift(Request $request, bool $onlyIfPresent = false): void
     {
         if ($onlyIfPresent && !$request->has('shifts')) {
@@ -1377,33 +968,6 @@ class BranchController extends Controller
         }, $raw)));
     }
 
-
-
-    /**
-     * Legal-entity options for the Employee / Onboarding forms.
-     *
-     * The branch IS the registered legal entity for a tenant — it carries the
-     * GST, PAN, CIN, IEC and bank accounts — so the "Legal Entity" dropdown
-     * lists branch names and the read-only "Location" beside it is the branch's
-     * own city + country. `location` is pre-composed here so every consumer
-     * (Employee form, HR onboarding, public onboarding) shows the same string.
-     *
-     * Branch resolution mirrors shiftOptions(): a branch_user only ever sees
-     * their own branch; a client_admin sees the BranchSwitcher's branch, or all
-     * of the client's branches when "All Branches" is selected.
-     *
-     * Deliberately not behind the Branches module permission — it's a form
-     * lookup, and HR staff who can add an employee may not be able to manage
-     * branches.
-     */
-    /**
-     * "Our Organisation" options for the CLM Case-to-Case form = ALL of the
-     * caller's client branches (including the caller's own branch), with the
-     * Head-Office row excluded because it represents the CLIENT, not a branch.
-     *
-     * Always scoped to the authenticated user's client — a client_id is never
-     * taken from the request (tenant isolation).
-     */
     public function ctcOrganisationOptions(Request $request)
     {
         $user = $request->user();
@@ -1412,8 +976,6 @@ class BranchController extends Controller
         }
 
         $query = Branch::where('client_id', $user->client_id)
-            // Exclude the Head-Office row — that represents the CLIENT itself,
-            // not a branch, so it must never appear in the branch list.
             ->where('code', '!=', 'HO')
             ->where('name', 'not ilike', '% — Head Office');
 
@@ -1444,10 +1006,8 @@ class BranchController extends Controller
                 'email'      => $b->email,
                 'phone'      => $b->phone,
                 'location'   => self::composeBranchLocation($b),
-                // Branch logo drives the document-header logo when this org is
-                // picked in the CTC "Our Organisation" panel.
-                'logo'       => $b->logo,            // public-disk relative path
-                'logo_url'   => $b->logo_url,        // absolute URL (accessor)
+                'logo'       => $b->logo,
+                'logo_url'   => $b->logo_url,
             ])->values(),
         ]);
     }
@@ -1463,7 +1023,6 @@ class BranchController extends Controller
 
         $query = Branch::where('client_id', $user->client_id);
         if ($branchId) {
-            // Ignore a branch_id that isn't this client's (no cross-tenant leak).
             $query->where('id', $branchId);
         }
 
@@ -1482,21 +1041,6 @@ class BranchController extends Controller
         ]);
     }
 
-    /**
-     * Which branch the form lookups (/branch-legal-entities, /branch-shifts)
-     * should resolve against.
-     *
-     * ANY caller that is bound to a branch is locked to it — not just a
-     * branch_user. An EMPLOYEE granted the HRMS module is equally branch-bound,
-     * but the BranchSwitcher is only rendered for client_admin, so no
-     * `branch_id` is ever saved for them and the axios interceptor injects
-     * nothing. Keying off user_type alone therefore left an employee adding a
-     * hire with EVERY branch of the client returned: the Legal Entity field
-     * (auto-fetched, resolves only when exactly one branch comes back) stayed
-     * blank on a multi-branch client, and the Shift dropdown merged sibling
-     * branches' shifts. Falling back to the request param stays for
-     * client-level users (branch_id IS NULL), who genuinely span branches.
-     */
     private static function callerBranchId(Request $request): ?int
     {
         $user = $request->user();
@@ -1506,10 +1050,6 @@ class BranchController extends Controller
         return $request->integer('branch_id') ?: null;
     }
 
-    /**
-     * The employee "Location" string for a branch: "Pune, India". Skips blanks
-     * so a branch with no city doesn't render a leading comma.
-     */
     public static function composeBranchLocation(?Branch $branch): string
     {
         if (!$branch) {
@@ -1534,19 +1074,6 @@ class BranchController extends Controller
         ]);
     }
 
-    /**
-     * Work-shift options for the Employee form's Shift dropdown.
-     *
-     * Resolves the branch the same way employee creation does:
-     *  - branch_user  → their own branch's shifts
-     *  - client_admin → the branch the BranchSwitcher points at (?branch_id);
-     *    with "All Branches" selected there is no single branch, so we return
-     *    the union of every branch's shifts (deduped by name).
-     *  - super_admin  → the requested branch_id.
-     *
-     * Response: { shifts: [{ name, start, end }, ...] }. Empty when nothing is
-     * configured — the frontend then falls back to its default list.
-     */
     public function shiftOptions(Request $request)
     {
         $user = $request->user();
@@ -1558,13 +1085,11 @@ class BranchController extends Controller
 
         $query = Branch::where('client_id', $user->client_id);
         if ($branchId) {
-            // Ignore a branch_id that isn't this client's (no cross-tenant leak).
             $query->where('id', $branchId);
         }
 
         $rows = $query->get(['id', 'shifts']);
 
-        // Flatten + dedupe by name (first occurrence wins) preserving order.
         $seen = [];
         $shifts = [];
         foreach ($rows as $branch) {
@@ -1601,9 +1126,6 @@ class BranchController extends Controller
     {
         $max = 0;
         foreach ($codes as $c) {
-            // Only count codes that match our auto-generated pattern.
-            // Legacy / manually-entered codes (e.g. 'HO', 'MUM-WH-01')
-            // are ignored so they don't poison the sequence.
             if (preg_match('/^BR-(\d+)$/i', (string) $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $max) $max = $n;
@@ -1612,12 +1134,10 @@ class BranchController extends Controller
         return 'BR-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-
     public function formBundle(Request $request)
     {
         $user = $request->user();
         $cacheKey = \App\Support\MasterBundleCache::key('branch:form-bundle:masters', $user?->id);
-
 
         $masters = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             $scope = fn($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
@@ -1641,7 +1161,6 @@ class BranchController extends Controller
             ];
         });
 
-
         $clientId = $user?->client_id;
         $nextCode = $clientId
             ? $this->peekNextBranchCode($clientId)
@@ -1650,9 +1169,6 @@ class BranchController extends Controller
         return response()->json([
             'countries'   => $masters['countries'],
             'states'      => $masters['states'],
-            // May be absent from a cache entry written before this key existed;
-            // the SPA treats a missing list as "no codes known" and skips the
-            // state/GSTIN check, which the API still enforces.
             'state_codes' => $masters['state_codes'] ?? [],
             'next_code' => $nextCode,
             'prefix'    => 'BR-',

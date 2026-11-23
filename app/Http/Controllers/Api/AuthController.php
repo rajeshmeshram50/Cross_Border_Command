@@ -15,29 +15,15 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Validation\ValidationException; 
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    use PasswordHistory; 
+    use PasswordHistory;
 
     private const BF_MAX_ATTEMPTS = 5;
     private const BF_WINDOW_MIN   = 15;
 
-    /** Lowercased + trimmed cache key shared across all login paths so an
-     *  attacker can't bypass rate-limiting by switching login methods. */
-    /**
-     * True when a posted face descriptor is not a real capture.
-     *
-     * A face-api.js descriptor is a 128-float embedding whose magnitude sits
-     * around 1. An all-zero (or near-zero) vector has no such magnitude: it
-     * lands an equal, small distance from every enrolled face, so it is both
-     * useless as a credential and dangerous as a probe. Non-finite values are
-     * rejected for the same reason — they poison the distance sum.
-     *
-     * Shared by the login, enrollment and punch paths so all three agree on
-     * what counts as a usable capture.
-     */
     public static function isDegenerateDescriptor(?array $descriptor): bool
     {
         if (!is_array($descriptor) || count($descriptor) !== 128) {
@@ -51,8 +37,6 @@ class AuthController extends Controller
             $sum += ((float) $v) * ((float) $v);
         }
 
-        // Magnitude of a genuine descriptor is ~1; 0.1 is far below anything a
-        // real capture produces while still admitting unusual but valid faces.
         return sqrt($sum) < 0.1;
     }
 
@@ -61,19 +45,12 @@ class AuthController extends Controller
         return 'login_attempts:' . strtolower(trim((string) $email));
     }
 
-    /** Returns true when the account is currently locked. Safe to call with
-     *  bruteForce disabled — short-circuits to false. */
     private function bruteForceIsLocked(string $lockKey): bool
     {
         if (!Settings::is('security', 'bruteForce', true)) return false;
         return (int) Cache::get($lockKey, 0) >= self::BF_MAX_ATTEMPTS;
     }
 
-    /** Atomically increment the failure counter. Uses Cache::add to install
-     *  a 15-min TTL on first miss, then Cache::increment so concurrent
-     *  failing requests can't race-bypass the 5-attempt limit (TOCTOU was a
-     *  bug pre-this — two requests both saw 4 attempts and both bumped to 5
-     *  without locking, letting a 6th through). */
     private function bruteForceRecordFailure(string $lockKey): void
     {
         if (!Settings::is('security', 'bruteForce', true)) return;
@@ -86,8 +63,6 @@ class AuthController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
-            // Optional — sent only when the SPA re-submits after asking which
-            // organization to sign in to (duplicate email across clients).
             'client_id' => 'nullable|integer',
         ]);
 
@@ -99,20 +74,9 @@ class AuthController extends Controller
             ]);
         }
 
-        // Eager-load branch.client too — branch_user / employee rows often
-        // have no direct client_id, so the parent-org check has to traverse
-        // branch → client. Without this, an inactive client would only lock
-        // out client_admin / client_user, leaving branch users able to log in.
-        //
-        // Email is unique PER TENANT now, so the same email can belong to
-        // accounts in different clients. Gather ALL matches and let the
-        // PASSWORD pick which account the user means — a single-account email
-        // behaves exactly as before (one candidate, one password check).
         $candidates = User::with(['client', 'branch.client'])->where('email', $request->email)->get();
         $matches = $candidates->filter(fn ($u) => Hash::check($request->password, $u->password))->values();
 
-        // If the SPA already asked which organization (same email+password
-        // matched more than one), it re-submits with the chosen client_id.
         if ($request->filled('client_id')) {
             $matches = $matches->where('client_id', (int) $request->client_id)->values();
         }
@@ -125,9 +89,6 @@ class AuthController extends Controller
         }
 
         if ($matches->count() > 1) {
-            // Same email + same password across multiple clients. The user has
-            // proven the credential, so it's safe to list their organizations
-            // and let them pick which one to sign in to.
             Cache::forget($lockKey);
             return response()->json([
                 'needs_org_selection' => true,
@@ -142,7 +103,6 @@ class AuthController extends Controller
 
         $user = $matches->first();
 
-        // Successful login → clear any prior failed-attempt counter
         Cache::forget($lockKey);
 
         if ($user->status !== 'active') {
@@ -164,22 +124,11 @@ class AuthController extends Controller
             ]);
         }
 
-        // Forced-reset gate — after an email change the old password must not
-        // grant access. The user has to set a new password via Forgot Password
-        // (OTP is sent to their current email) before they can sign in again.
         if ($user->must_reset_password) {
             throw ValidationException::withMessages([
                 'email' => ['Your sign-in email was changed, so your password must be reset for security. Use "Forgot Password" to set a new one before logging in.'],
             ]);
         }
-
-        // Onboarding gate — an employee whose onboarding isn't fully complete
-        // cannot enter the app yet (logs the blocked attempt for audit).
-        // NOTE: onboarding-incomplete employees may now sign in. The SPA
-        // restricts them to the Inbox (via the onboarding_pending flag on the
-        // user payload) so they can sign their pending onboarding documents —
-        // blocking login entirely created a deadlock where the employee could
-        // never sign, so onboarding could never complete.
 
         $user->update([
             'last_login_at' => now(),
@@ -197,38 +146,15 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Face-based login. The SPA captures a face frame, computes the 128-d
-     * descriptor with face-api.js and POSTs it here along with the user's
-     * email. We compare against the enrolled descriptor on that user's
-     * linked Employee row.
-     *
-     * Threshold is tighter than attendance (0.50 vs 0.55) because this is
-     * authentication — a false match here hands over the session. The face
-     * is a SECOND factor in spirit, not the only factor: the user still
-     * has to know which email account to identify themselves as.
-     *
-     * All the same active-account / org / branch gates fire as the password
-     * login, plus brute-force lockout on the same Cache key so an attacker
-     * can't bypass rate-limiting by switching login methods.
-     */
     public function faceLogin(Request $request)
     {
         $request->validate([
             'email'        => 'required|email',
             'descriptor'   => 'required|array|size:128',
-            // Bounds match the attendance punch path, which has always had
-            // them. A face-api.js descriptor is a unit-ish vector; anything
-            // outside ±5 is not a face, and without the bound a caller could
-            // post huge or INF values and skew the distance arithmetic.
             'descriptor.*' => 'required|numeric|between:-5,5',
-            // Optional org pick when the email exists in multiple clients.
             'client_id'    => 'nullable|integer',
         ]);
 
-        // A degenerate vector (all zeros / near-zero) is not a face either; it
-        // sits an equal distance from everything and would otherwise be a
-        // legitimate-looking probe against every enrolled descriptor.
         if ($this->isDegenerateDescriptor($request->input('descriptor'))) {
             throw ValidationException::withMessages([
                 'descriptor' => ['That face capture was not usable. Please try again.'],
@@ -243,10 +169,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // Email is per-tenant — the same email can have accounts in multiple
-        // clients. Try the captured face against EACH matching account's
-        // enrolled descriptor and pick the closest under threshold. A
-        // single-account email behaves exactly as before.
         $accounts = User::with(['client', 'branch.client'])->where('email', $request->email)->get();
         if ($request->filled('client_id')) {
             $accounts = $accounts->where('client_id', (int) $request->client_id)->values();
@@ -255,10 +177,6 @@ class AuthController extends Controller
         $captured = $request->input('descriptor');
         $threshold = 0.50;
         $anyFaceOnFile = false;
-        // Every candidate that matched under threshold, not just the closest.
-        // Keeping them all is what lets an INACTIVE nearest account stop
-        // shadowing a valid active one, and what makes multi-org detection
-        // possible below.
         $matches = [];
 
         foreach ($accounts as $candidate) {
@@ -280,21 +198,9 @@ class AuthController extends Controller
 
         usort($matches, fn ($a, $b) => $a['distance'] <=> $b['distance']);
 
-        /* Prefer ACTIVE accounts. The old code took the numerically closest
-         * match and only then checked status, so a disabled account that
-         * happened to be a hair closer locked the employee out of the active
-         * account they were actually trying to reach. If nothing active
-         * matched, the inactive match is kept so the honest "your account is
-         * not active" message still fires below rather than "face did not
-         * match". */
         $activeMatches = array_values(array_filter($matches, fn ($m) => $m['user']->status === 'active'));
         $usable = $activeMatches !== [] ? $activeMatches : $matches;
 
-        /* Org selection — the same gate password and Google login already
-         * apply. With one face enrolled in two tenants, the winner used to be
-         * decided by capture noise: which tenant you landed in changed between
-         * attempts. The face has been proven against both, so listing them and
-         * asking is safe. Skipped when the caller already named a client_id. */
         if (count($usable) > 1 && !$request->filled('client_id')) {
             $orgs = collect($usable)
                 ->map(fn ($m) => $m['user'])
@@ -318,8 +224,6 @@ class AuthController extends Controller
         $bestEmployee = $best['employee'] ?? null;
         $bestDistance = $best['distance'] ?? INF;
 
-        // No account with this email has a face enrolled. Generic message so we
-        // don't leak which condition failed (mirrors the original guard).
         if (!$anyFaceOnFile) {
             $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
@@ -327,7 +231,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // A face is on file but none matched closely enough.
         if (!$bestUser || $bestDistance > $threshold) {
             $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
@@ -341,9 +244,6 @@ class AuthController extends Controller
 
         Cache::forget($lockKey);
 
-        // Same status / org / branch gates as the password login. We refuse
-        // to issue a token if any of these are inactive so a "face match"
-        // alone can't bypass account-disabled state.
         if ($user->status !== 'active') {
             throw ValidationException::withMessages([
                 'email' => ['Your account is not active. Contact administrator.'],
@@ -367,7 +267,6 @@ class AuthController extends Controller
             ]);
         }
 
-   
         $user->update([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
@@ -389,7 +288,6 @@ class AuthController extends Controller
     {
         $request->validate([
             'id_token' => 'required|string',
-            // Optional org pick when the email exists in multiple clients.
             'client_id' => 'nullable|integer',
         ]);
 
@@ -417,11 +315,6 @@ class AuthController extends Controller
         $email = strtolower($payload['email']);
         $googleId = $payload['sub'];
 
-        // Brute-force lockout — shares the same login_attempts:<email> cache
-        // key as password + face login, so an attacker can't bypass the
-        // 5-in-15-min limit by switching login method. Check is gated on the
-        // verified email (post-Google verification) so anonymous token spam
-        // doesn't poison real users' counters.
         $lockKey = $this->bruteForceKey($email);
         if ($this->bruteForceIsLocked($lockKey)) {
             return response()->json([
@@ -429,10 +322,6 @@ class AuthController extends Controller
             ], 429);
         }
 
-        // Email is per-tenant — the same Google email can map to accounts in
-        // multiple clients. Google only proves the email (no password), so when
-        // there's more than one we must ask which organization. The email is
-        // Google-verified, so listing the orgs to its owner is safe.
         $googleAccounts = User::with(['client', 'branch.client'])->where('email', $email)->get();
         $selectedClientId = $request->input('client_id');
         if ($selectedClientId !== null && $selectedClientId !== '') {
@@ -482,8 +371,6 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Forced-reset gate (mirrors password / face login) — a Google sign-in
-        // must not bypass the post-email-change password reset requirement.
         if ($user->must_reset_password) {
             $this->bruteForceRecordFailure($lockKey);
             return response()->json([
@@ -491,14 +378,6 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Same onboarding gate as password / face login — can't bypass via Google.
-        // NOTE: onboarding-incomplete employees may now sign in. The SPA
-        // restricts them to the Inbox (via the onboarding_pending flag on the
-        // user payload) so they can sign their pending onboarding documents —
-        // blocking login entirely created a deadlock where the employee could
-        // never sign, so onboarding could never complete.
-
-        // Clear the failure counter on success — mirrors password / face paths.
         Cache::forget($lockKey);
 
         $updates = [
@@ -541,32 +420,21 @@ class AuthController extends Controller
             return response()->json(['message' => 'Current password is incorrect'], 422);
         }
 
-        // Block re-use of the last 3 passwords (current + 2 historical).
-        // See App\Traits\PasswordHistory for the full policy.
         if ($this->isPasswordReused($user, $request->password)) {
             return response()->json([
                 'message' => $this->passwordReuseMessage(),
             ], 422);
         }
 
-        // Save the OLD hash to history BEFORE we overwrite it on the user.
         $this->recordPasswordHistory($user);
 
-        // Capture plaintext before hashing so the confirmation mail can echo
-        // the new credential. Matches the forgot-password flow's behaviour.
         $newPassword = $request->password;
 
         $user->update([
             'password' => Hash::make($newPassword),
-            // Any forced-reset flag is satisfied once a new password is set.
             'must_reset_password' => false,
         ]);
 
-        // Confirmation mail — non-fatal so SMTP issues never roll back the
-        // (already persisted) password change. Master notifications.emailNotif
-        // toggle gates ALL platform mail; transactional sends honour it too
-        // because once an admin globally disables email they accept the
-        // trade-off (no OTP, no welcome creds, etc.).
         if (Settings::shouldSendMail()) {
             try {
                 Mail::to($user->email)->send(new PasswordChangedMail(
@@ -588,15 +456,12 @@ class AuthController extends Controller
         return response()->json(['message' => 'Password changed successfully']);
     }
 
-  
     public function updateProfile(Request $request)
     {
         $request->validate([
             'name' => 'required|string|min:2|max:255',
             'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'designation' => 'nullable|string|max:100',
-            // Profile photo lives on the tenant row (client/branch). Accepted only
-            // for tenant users; super_admin has no tenant to attach it to.
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ], [
             'phone.regex' => 'Phone may only contain digits, spaces, +, -, ( and ) and must be 7–20 characters.',
@@ -605,10 +470,6 @@ class AuthController extends Controller
         $user = $request->user();
         $user->update($request->only(['name', 'phone', 'designation']));
 
-        // Profile photo update — branch_user writes to their branch row,
-        // client_admin writes to their client row, everyone else (super_admin,
-        // employees, client_user) writes to their own user row. Same fallback
-        // chain that formatUser surfaces (branch > client > user_profile_photo).
         if ($request->hasFile('profile_photo')) {
             if ($user->user_type === 'branch_user' && $user->branch_id) {
                 $branch = $user->branch;
@@ -673,7 +534,6 @@ class AuthController extends Controller
         $nameParts = explode(' ', trim($user->name));
         $initials = strtoupper(substr($nameParts[0], 0, 1) . substr(end($nameParts), 0, 1));
 
-        // Get permissions with module slugs
         $permissions = [];
         if (!$user->isSuperAdmin()) {
             $perms = Permission::where('user_id', $user->id)
@@ -695,48 +555,15 @@ class AuthController extends Controller
             }
         }
 
-        /* Plan info for client users. (#206)
-         *
-         * Resolved the way the REST of login resolves a tenant, not from the
-         * raw `users.client_id`. This block used to read `$user->client_id` /
-         * `$user->client` directly, which is the one column login itself warns
-         * is unreliable on these rows — see the note above the candidate query:
-         * "branch_user / employee rows often have no direct client_id, so the
-         * parent-org check has to traverse branch → client".
-         *
-         * That made plan state per-ROW rather than per-tenant, and one employee
-         * could be told the plan had expired while every colleague in the same
-         * client and branch was fine:
-         *
-         *   · client_id pointing at a different or legacy client — baked in
-         *     permanently at creation from a mis-scoped creator or invite —
-         *     read THAT client's expiry;
-         *   · client_id set but the client soft-deleted — `$user->client` is
-         *     null, so has_plan came out false and the user was blocked;
-         *   · client_id null — the block was skipped entirely and the user was
-         *     never gated, which is why colleagues looked healthy.
-         *
-         * For an employee or branch user the BRANCH is the authoritative tenant
-         * link: it is what scopes every other query they make. So where the two
-         * disagree, the branch wins, and the plan they are judged against is
-         * the plan of the tenant whose data they actually see. Client-tier
-         * users are unaffected — they have no branch to prefer, and
-         * effectiveClient() returns exactly what `$user->client` did. */
         $client = $user->effectiveClient();
         if (in_array($user->user_type, ['employee', 'branch_user'], true) && $user->branch?->client) {
             $client = $user->branch->client;
         }
 
         $planInfo = null;
-        // Keyed on a RESOLVED client, not on the presence of a column. A row
-        // whose client_id survives its client is no longer read as "on a plan
-        // that has run out".
         if ($client) {
             $expired = $client->plan_expires_at && $client->plan_expires_at->isPast();
             $planInfo = [
-                // suggested_plan_id is the plan the Super Admin assigned to this
-                // client when they were created/edited — the My Plan page uses
-                // it to visually highlight the recommended card on purchase.
                 'suggested_plan_id' => $client?->plan_id,
                 'has_plan' => $client?->plan_id !== null && $client?->plan_type === 'paid',
                 'expired' => $expired,
@@ -746,14 +573,6 @@ class AuthController extends Controller
             ];
         }
 
-        // Linked Employee row when the user logs into an employee profile.
-        // Both id (numeric) and emp_code (EMP-### string) are surfaced so the
-        // frontend can detect "is this my own profile?" regardless of which
-        // form the URL slug carries — without an extra round-trip.
-        /* employees.user_id is the intended link but is nullable and often
-           never written; users.employee_code is then the only route. Reading
-           one of them left a logged-in employee with no profile, no approvals
-           and no documents wherever that back-link was missing. */
         $linkedEmployee = \App\Models\Employee::where(function ($w) use ($user) {
                 $w->where('user_id', $user->id);
                 if (!empty($user->employee_code)) {
@@ -763,7 +582,6 @@ class AuthController extends Controller
                     });
                 }
             })
-            // A real link wins over a code match when both exist.
             ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$user->id])
             ->select(['id', 'emp_code', 'onboarding_stage_completed', 'department_id', 'designation_id'])
             ->with(['photoDocument:id,employee_id,document_key,file_path', 'department:id,name', 'designation:id,name'])
@@ -771,54 +589,22 @@ class AuthController extends Controller
         $linkedEmployeeId = $linkedEmployee?->id;
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
         $linkedEmployeePhoto = $linkedEmployee?->photo_url;
-        // Department name of the logged-in employee — used by the SPA for
-        // department-based UI gating (e.g. Product view: Sales hides Mapped
-        // Suppliers, Purchase locks the selling price).
         $linkedEmployeeDepartment = $linkedEmployee?->department?->name;
-        // Employee's HR designation (HOD / Team Leader / Executive / …) — the SPA
-        // shows this in the profile badge instead of the generic user-type label.
         $linkedEmployeeDesignation = $linkedEmployee?->designation?->name;
 
-        // Onboarding gate. An employee whose onboarding isn't fully complete
-        // (onboarding_stage_completed < 6) CAN log in, but the SPA restricts
-        // them to the Inbox so they can sign their pending onboarding
-        // documents. Once HR finishes onboarding (stage 6) the flag clears and
-        // full access opens up (subject to the module permissions the branch
-        // then grants). Without this in-between state the employee could never
-        // sign — they couldn't log in, so onboarding could never complete.
         $onboardingStage   = $linkedEmployeeId ? (int) ($linkedEmployee->onboarding_stage_completed ?? 0) : 6;
         $onboardingPending = $linkedEmployeeId && $onboardingStage < 6;
 
-        // Flag the My Team menu visibility: anyone who's been assigned as
-        // someone else's reporting manager (i.e. has direct reports) — plus
-        // branch/client users who always need a team view. Computed here so
-        // the SPA can gate the profile-dropdown item without an extra fetch.
         $hasReports = $linkedEmployeeId
             ? \App\Models\Employee::where('reporting_manager_id', $linkedEmployeeId)->exists()
             : false;
         $isReportingManager = $hasReports
             || in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
 
-        // Inbox count — number of in-flight document signatures where this
-        // user is the next signer. Surfaced on /me so the profile dropdown
-        // can render a badge without a second round-trip on every page load.
-        // Cheap lookup: the JSON `signers` column is small and the row is
-        // already filtered to Pending / In Progress.
         $inboxCount = 0;
         try {
             $candidates = \App\Models\HrDocumentSignature::query()
                 ->whereIn('status', ['Pending', 'In Progress'])
-                /* $linkedEmployeeId has to be captured by BOTH closures.
-                 * Neither used to take it, so at this depth it was undefined —
-                 * a PHP warning on every /me call, and `employee_id = NULL` in
-                 * the SQL, which matches nothing. The "documents addressed to
-                 * me" arm of this OR was therefore dead: the count came out of
-                 * the client_id arm alone, and a signature row carrying this
-                 * employee_id but a different client_id could not be seen at
-                 * all. The per-signer check below still had to agree, so the
-                 * total was usually right by accident rather than by this
-                 * query. Relevant here because an onboarding-pending employee
-                 * is locked to the Inbox this number describes. */
                 ->when($user->user_type !== 'super_admin', function ($q) use ($user, $linkedEmployeeId) {
                     if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
                         $q->where(function ($w) use ($user) {
@@ -827,8 +613,6 @@ class AuthController extends Controller
                     } elseif (in_array($user->user_type, ['branch_user', 'employee'], true)) {
                         $q->where(function ($w) use ($user, $linkedEmployeeId) {
                             $w->where('client_id', $user->client_id);
-                            // Only a real id is worth an OR arm; a null one
-                            // would just reinstate `employee_id = NULL`.
                             if ($linkedEmployeeId) {
                                 $w->orWhere('employee_id', $linkedEmployeeId);
                             }
@@ -845,8 +629,6 @@ class AuthController extends Controller
                 $inboxCount++;
             }
         } catch (\Throwable $e) {
-            // /me must never fail because of an inbox lookup; swallow and
-            // let the SPA fall back to fetching the inbox endpoint directly.
             $inboxCount = 0;
         }
 
@@ -864,37 +646,17 @@ class AuthController extends Controller
             'branch_name' => $user->branch?->name,
             'client_logo' => file_url($user->client?->logo),
             'branch_logo' => file_url($user->branch?->logo),
-            /* The screen-sized copies, for the header only — null until
-               logos:backfill-web has run on this environment.
-
-               Separate fields rather than shrinking the two above, because
-               those are not only a header source: a signature row seeded from
-               /me keeps the branch_logo URL in header_config.logo_url, and the
-               PDF renderers resolve the header logo from it. Pointing them at
-               a 160px image would print a blurred logo. */
             'client_logo_web' => file_url(LogoWebVariantGenerator::existingWebPath($user->client?->logo)),
             'branch_logo_web' => file_url(LogoWebVariantGenerator::existingWebPath($user->branch?->logo)),
             'client_profile_photo' => file_url($user->client?->profile_photo),
             'branch_profile_photo' => file_url($user->branch?->profile_photo),
-            // Passport-size photo from the employee onboarding documents
-            // (employee_documents.document_key='photo'). Only populated when
-            // the logged-in user is linked to an Employee row.
             'employee_profile_photo' => $linkedEmployeePhoto,
-            // Personal photo on the user row — always set for super_admin (no
-            // tenant), and used as a fallback for tenant users when the
-            // client/branch photo is blank.
             'user_profile_photo' => file_url($user->profile_photo),
-            // Effective tenant theme colors — branch values win over client values,
-            // null when neither is set so the frontend falls back to app defaults.
-            // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else
-            // is dropped so we never inject malformed CSS into :root.
             'primary_color' => $this->pickHexColor($user->branch?->primary_color, $user->client?->primary_color),
             'secondary_color' => $this->pickHexColor($user->branch?->secondary_color, $user->client?->secondary_color),
             'is_reporting_manager' => $isReportingManager,
             'has_direct_reports'   => $hasReports,
             'inbox_count'          => $inboxCount,
-            // When true the SPA locks this employee to the Inbox until HR
-            // completes their onboarding (see DashboardRoutes gate).
             'onboarding_pending'   => $onboardingPending,
             'onboarding_stage'     => $onboardingStage,
             'status' => $user->status,
@@ -906,9 +668,8 @@ class AuthController extends Controller
             'permissions' => $permissions,
             'plan' => $planInfo,
         ];
-    } 
+    }
 
-  
     private function pickHexColor(?string ...$candidates): ?string
     {
         foreach ($candidates as $c) {
@@ -920,8 +681,6 @@ class AuthController extends Controller
         return null;
     }
 
-
-
     public function updateBranding(\Illuminate\Http\Request $request)
     {
         $request->validate([
@@ -932,7 +691,6 @@ class AuthController extends Controller
 
         $user = $request->user();
 
-        // Client admin → patch the client row
         if ($user->user_type === 'client_admin' && $user->client_id) {
             $client = $user->client;
             if (!$client) return response()->json(['message' => 'Client not found'], 404);
@@ -956,7 +714,6 @@ class AuthController extends Controller
                 ]);
             }
         }
-        // Branch user → patch the branch row
         elseif ($user->user_type === 'branch_user' && $user->branch_id) {
             $branch = $user->branch;
             if (!$branch) return response()->json(['message' => 'Branch not found'], 404);
@@ -990,7 +747,6 @@ class AuthController extends Controller
         ]);
     }
 
-   
     private function uploadFileName(\Illuminate\Http\UploadedFile $file): string
     {
         $slug = \Illuminate\Support\Str::slug(
@@ -1006,7 +762,6 @@ class AuthController extends Controller
         return $slug . '.' . $ext;
     }
 
-    
     private function relativeFilePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -1019,5 +774,4 @@ class AuthController extends Controller
         }
         return $stored;
     }
- 
 }

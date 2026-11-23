@@ -5,29 +5,13 @@ namespace App\Services\CredVault;
 use RuntimeException;
 use ZipArchive;
 
-/**
- * Reading and writing the files CredVault exchanges: CSV / TSV, JSON, Excel
- * (.xlsx and Excel 2003 XML) in, CSV / JSON / .xlsx out.
- *
- * No spreadsheet library is installed, and .xlsx is only a zip of XML parts,
- * so ZipArchive and SimpleXML cover it. A locked backup is encrypted by
- * ExcelLock (Excel's own password), not wrapped in a zip.
- */
 class VaultFile
 {
     public const MAX_ROWS = 2000;
 
-    /** An Excel file with a password (a locked backup) or an old .xls — both are OLE2 files, not a zip. */
     private const OLE2 = "\xD0\xCF\x11\xE0";
     private const OLE2_MESSAGE = 'This Excel file is password-protected or in the old .xls format. Open it in Excel (with the backup password if it is a locked backup), remove the password under File > Info > Protect Workbook > Encrypt with Password, and Save As .xlsx — then upload again.';
 
-    /* ═════════════════════════════ READ ═════════════════════════════ */
-
-    /**
-     * The file as a list of [header => value] rows.
-     *
-     * @throws RuntimeException with a message fit for the person who uploaded it
-     */
     public static function read(string $path, string $ext): array
     {
         $raw = (string) file_get_contents($path);
@@ -61,8 +45,6 @@ class VaultFile
         while (($cells = fgetcsv($fh, 0, $sep, '"', '')) !== false) {
             if ($cells === [null]) continue;
             if ($head === null) { $head = array_map(fn ($h) => trim((string) $h), $cells); continue; }
-            // Undo safeCell(): our own CSVs guard =+-@ with a leading apostrophe, which
-            // would otherwise come back as part of the password.
             $cells = array_map(fn ($v) => is_string($v) && preg_match("/^'+[=+\\-@\t\r]/", $v) ? substr($v, 1) : $v, $cells);
             $rows[] = self::combine($head, $cells);
         }
@@ -81,7 +63,6 @@ class VaultFile
         }
         if (!array_is_list($data)) throw new RuntimeException('The JSON file has no list of credentials in it.');
 
-        // Nested exports (Bitwarden's login.username) are flattened to dotted keys.
         return array_map(fn ($r) => is_array($r) ? self::flatten($r) : [], $data);
     }
 
@@ -93,7 +74,6 @@ class VaultFile
             if (is_array($v) && !array_is_list($v)) {
                 $out += self::flatten($v, $key . '.');
             } elseif (is_array($v)) {
-                // login.uris[0].uri — the first entry is the one that matters.
                 $first = $v[0] ?? null;
                 if (is_array($first)) $out += self::flatten($first, $key . '.');
                 elseif ($first !== null) $out[$key] = (string) $first;
@@ -104,11 +84,6 @@ class VaultFile
         return $out;
     }
 
-    /**
-     * The sheet names of an .xlsx, in workbook order, with their part paths.
-     *
-     * @return array<string,string> name => xl/worksheets/sheetN.xml
-     */
     public static function xlsxSheets(string $path): array
     {
         if ((string) @file_get_contents($path, false, null, 0, 4) === self::OLE2) throw new RuntimeException(self::OLE2_MESSAGE);
@@ -134,11 +109,6 @@ class VaultFile
         return $out;
     }
 
-    /**
-     * One sheet of an .xlsx — by name (case and spacing ignored, via $match), or the first.
-     *
-     * @return array{0:string,1:array} the sheet's name, its rows
-     */
     public static function readXlsxSheet(string $path, ?callable $match = null): array
     {
         $sheets = self::xlsxSheets($path);
@@ -161,7 +131,6 @@ class VaultFile
         if (($xml = $zip->getFromName('xl/sharedStrings.xml')) !== false) {
             $sx = simplexml_load_string($xml);
             foreach ($sx->si as $si) {
-                // Plain text sits in <t>; rich text is split into <r><t> runs.
                 $text = (string) $si->t;
                 foreach ($si->r as $run) $text .= (string) $run->t;
                 $shared[] = $text;
@@ -175,14 +144,12 @@ class VaultFile
         $sx   = simplexml_load_string($sheet);
         $grid = [];
         foreach ($sx->sheetData->row as $row) {
-            // A row that is only blank cells (Excel keeps formatted rows) is not a credential.
             $any = false;
             foreach ($row->c as $c) if (trim((string) $c->v . (string) $c->is->t) !== '') { $any = true; break; }
             if (!$any) continue;
             $cells = [];
             $next = 0;
             foreach ($row->c as $c) {
-                // A cell may leave out its reference (r="B2") — it then sits right after the previous one.
                 $ref = preg_replace('/\d+/', '', (string) $c['r']);
                 $col = $ref !== '' ? self::colIndex($ref) : $next;
                 $next = $col + 1;
@@ -204,7 +171,6 @@ class VaultFile
         return array_map(fn ($cells) => self::combine($head, $cells), $grid);
     }
 
-    /** Excel 2003 "XML Spreadsheet" (.xls saved as XML). */
     private static function readXmlSheet(string $raw): array
     {
         $sx = @simplexml_load_string($raw);
@@ -238,14 +204,6 @@ class VaultFile
         return $n - 1;
     }
 
-    /* ═════════════════════════════ WRITE ═════════════════════════════ */
-
-    /**
-     * $rows (keyed by column) as a file body. JSON is a bare array of row
-     * objects unless an envelope is given, then {…envelope, credentials: […]}.
-     * CSV cells that start with = + - @ are prefixed with a quote so a
-     * spreadsheet never runs them as a formula.
-     */
     public static function build(array $columns, array $rows, string $format, ?array $jsonEnvelope = null): string
     {
         $records = array_map(fn ($r) => array_combine($columns, array_map(fn ($c) => $r[$c] ?? '', $columns)), $rows);
@@ -258,10 +216,6 @@ class VaultFile
         };
     }
 
-    /**
-     * CSV with a BOM and CRLF line ends, as Excel opens it. A value is quoted
-     * only when it holds a quote, a comma or a line break — the prototype's rule.
-     */
     public static function csv(array $header, array $rows): string
     {
         $q = function ($v): string {
@@ -277,15 +231,9 @@ class VaultFile
     private static function safeCell($v): string
     {
         $v = (string) $v;
-        // Apostrophes already in front of a formula character get one more, so the
-        // reader's single-apostrophe strip always gives the original value back.
         return preg_match("/^'*[=+\\-@\t\r]/", $v) ? "'" . $v : $v;
     }
 
-    /**
-     * A workbook. Each sheet: ['name', 'rows' => [[…], …], 'head' => bool
-     * (style the first row), 'freeze' => bool (freeze it), 'widths' => [chars…]].
-     */
     public static function xlsx(array $sheets): string
     {
         $esc  = fn ($v) => htmlspecialchars((string) $v, ENT_XML1 | ENT_QUOTES, 'UTF-8');
@@ -323,7 +271,6 @@ class VaultFile
         return self::zip($parts);
     }
 
-    /** Several files in one plain zip (e.g. one CSV per credential type). @param array<string,string> $files name => body */
     public static function bundle(array $files): string
     {
         return self::zip($files);

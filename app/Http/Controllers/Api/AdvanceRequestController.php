@@ -12,22 +12,11 @@ use App\Support\OnboardingGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-
-
 class AdvanceRequestController extends Controller
 {
     private const STATUSES         = ['pending', 'approved', 'rejected'];
-    /* 'Loan' shares this whole pipeline rather than getting a module of its own.
-     * A staff loan IS an advance with a longer EMI schedule — same sanction,
-     * same recovery modes, same arrears ledger, same FOI headroom — so a
-     * parallel implementation would have been a second copy of all of it,
-     * drifting out of step. What a loan does get is its own payslip line:
-     * PayrollService splits Loan-type recoveries into `loan_recovery`, which
-     * until now was hardcoded to 0 (Rule 11). */
     private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Loan', 'Other'];
     private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
-
-
 
     public function index(Request $request)
     {
@@ -45,20 +34,15 @@ class AdvanceRequestController extends Controller
 
         $q = AdvanceRequest::query()
             ->with([
-                // withTrashed so a disabled (soft-deleted) employee's name still
-                // resolves instead of the row collapsing to "#<id>".
                 'employee' => fn ($r) => $r->withTrashed()
                     ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'reporting_manager_user_id', 'department_id'),
                 'employee.department:id,name',
-                // Branch-user manager (when the employee reports to a branch user).
                 'employee.reportingManagerUser:id,name',
                 'manager' => fn ($r) => $r->withTrashed()
                     ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
-                // Who acted at the manager stage (named in the audit log).
                 'managerActor:id,name',
-                // Payout list for the audit log (payer name + amount + date).
                 'payments' => fn ($r) => $r->with('payer:id,name'),
             ])
             ->orderByDesc('id');
@@ -66,34 +50,16 @@ class AdvanceRequestController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-            /* "Mine" = the advances of the employee being LOOKED AT. See the
-               twin block in ExpenseClaimController::index — both tabs live on
-               the same Employee Profile screen and showed the VIEWER's rows
-               under somebody else's name (QA #64). */
             $myEmployeeId = $this->currentEmployeeId($user);
             $targetEmployeeId = $myEmployeeId;
             if ($employeeIdFilter && $employeeIdFilter !== $myEmployeeId) {
-                /* Someone ELSE's profile. Entitled viewers get that employee;
-                   everyone else gets NOTHING — never the viewer's own rows,
-                   which is what put one person's advances under another
-                   person's name in the first place. -1 matches no employee. */
                 $targetEmployeeId = $this->mayReadEmployeeAdvances($user, $employeeIdFilter, $myEmployeeId)
                     ? $employeeIdFilter
                     : -1;
             }
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
-            // Team scope rules (mirrors ExpenseClaimController):
-            //   - super_admin / client_admin / branch_user → no extra
-            //     employee filter; the tenant scope already restricts what
-            //     they can see and they should be able to view the whole
-            //     team workload from the My Team surface.
-            //   - employee / client_user acting as a manager → all rows
-            //     filed by their transitive downstream (direct + indirect
-            //     reports), not just the first hop.
             if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
-                // Tenant scope is the only filter — except that Team never
-                // shows the viewer their own rows, admin or not (QA #180/#181).
                 $myEmployeeId = $this->currentEmployeeId($user);
                 if ($myEmployeeId) {
                     $q->where('employee_id', '!=', $myEmployeeId);
@@ -101,34 +67,13 @@ class AdvanceRequestController extends Controller
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
-                // Being a manager is what makes a "team" exist at all. Someone
-                // who has never had a report gets an EMPTY team view — without
-                // this gate the self-row below made Team an exact duplicate of
-                // My Advances, which reads as "these are my team's" when
-                // they are the viewer's own. Past counts as managing: a report
-                // reassigned elsewhere leaves rows still routed here.
                 $managedOthers = $myEmployeeId && AdvanceRequest::where('manager_id', $myEmployeeId)
                     ->where('employee_id', '!=', $myEmployeeId)
                     ->exists();
                 if (!$teamIds && !$managedOthers) {
                     return response()->json([]);
                 }
-                /* The viewer's OWN rows are NOT part of Team. They were (QA
-                   #144, "a manager is part of their team"), and that is the
-                   reading QA #180 / #181 overturned: a manager opening Team
-                   wants what is waiting on them from other people, and their
-                   own filings are one tab away under My Expenses. Excluded
-                   below rather than simply left out of $teamIds, because the
-                   manager_id OR-clause would otherwise pull a self-filed row
-                   back in through the manager stamped on it. */
                 $teamIds = array_values(array_unique($teamIds)) ?: [-1];
-                // Filtering on employee_id alone reads the hierarchy as it stands
-                // TODAY: the moment a report is moved under a different manager,
-                // every row they ever filed disappears from this manager's team
-                // view and it collapses to just their own rows. manager_id is
-                // stamped from the employee's reporting manager at filing time,
-                // so OR-ing it back in keeps the rows that were actually routed
-                // here — approval history stays with whoever owned the approval.
                 $q->where(function ($w) use ($teamIds, $myEmployeeId) {
                     $w->whereIn('employee_id', $teamIds);
                     if ($myEmployeeId) {
@@ -153,21 +98,13 @@ class AdvanceRequestController extends Controller
         }
 
         $rows = $q->get();
-        // One query for every row's recovery ledger, instead of ~4 per row.
         $this->primeLedger($rows->pluck('id')->all());
         return response()->json($rows->map(fn ($r) => $this->serialize($r)));
     }
 
-   
-
     public function store(Request $request)
     {
         $user = $request->user();
-        // Non-super-admins can only file for their OWN employee record (guarded
-        // below). Derive it from the authenticated user, not from a request
-        // employee_id/employee_code — the SPA posts a numeric employee_id and
-        // resolveEmployeeId returns any numeric id verbatim, so a stale/wrong
-        // value would resolve to another row and trip a confusing 403.
         if ($user && $user->user_type === 'super_admin') {
             $employeeId = $this->resolveEmployeeId(
                 $request->input('employee_id'),
@@ -190,23 +127,17 @@ class AdvanceRequestController extends Controller
         if (!$employee) {
             abort(404, 'Employee not found.');
         }
-        // Anyone but super_admin can only file under their own Employee record.
         if ($user->user_type !== 'super_admin'
             && $employee->user_id !== $user->id) {
             abort(403, 'You can only file advance requests for your own employee record.');
         }
 
-        // Onboarding gate (CBC #85) — no advances until HR has finished
-        // onboarding the employee. Same reachability gap as the expense claim
-        // above: /profile stays open mid-onboarding and carries the form.
         OnboardingGuard::assertComplete(
             $employee,
             'raise an advance request',
             (int) ($employee->user_id ?? 0) === (int) $user->id,
         );
 
-        // A future-joining employee is not yet on the roster — they cannot raise
-        // an advance request before their joining date (CBC #32).
         if ($employee->date_of_joining
             && $employee->date_of_joining->toDateString() > now()->toDateString()) {
             return response()->json([
@@ -216,59 +147,24 @@ class AdvanceRequestController extends Controller
             ], 422);
         }
 
-        // Earliest salary-recovery start = 1st of the month after the request.
-        // requested_date is pinned to today by the rules below, so "now" is the
-        // right base even if the client omits or fakes it.
         $minRecoveryStart = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
-        // …and the latest: the end of the same month a year on. Without a
-        // ceiling the picker offered dates years out (CBC #157), and a recovery
-        // starting that late is an open-ended loan rather than a schedule.
         $maxRecoveryStart = now()->addYear()->endOfMonth()->toDateString();
 
-        // The browser normalises <textarea> newlines to CRLF when serialising
-        // multipart/form-data, so a reason the employee typed as 492 chars (each
-        // line break counted once on-screen) arrives with an extra character per
-        // line and can trip max:500 even though the counter is within limit
-        // (QA #89). Fold CRLF back to LF so the server counts what the user saw.
         if ($request->has('reason')) {
             $request->merge(['reason' => str_replace("\r\n", "\n", (string) $request->input('reason'))]);
         }
 
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
-            // Only meaningful when advance_type='Other'. The frontend already
-            // gates the input but the backend accepts any string up to 255
-            // chars when present.
             'advance_type_other'  => ['nullable', 'string', 'max:255'],
-            // Cap at 9,999,999,999,999.99 to fit inside the decimal(18,2)
-            // column — matches the expense-claim guard so the SPA's input
-            // sanitiser (12 whole digits + 2 fraction) can't overflow it.
-            // Floor at ₹100 — a token ₹1 advance spread over many cycles produced
-            // a zero-value repayment (QA #135). Cap fits the decimal(18,2) column.
             'amount'              => ['required', 'numeric', 'min:100', 'max:9999999999999.99'],
-            // Who the advance is for. 'self' = the existing recoverable-from-salary
-            // flow; 'company' = spent on the company's behalf, NOT recovered.
             'used_for'            => ['required', 'string', 'in:self,company'],
-            // Requested date IS the request creation date — it must be today.
-            // No future-dating (the request is being created now) and no past.
             'requested_date'      => ['required', 'date', 'after_or_equal:today', 'before_or_equal:today'],
-            // Recovery start / mode only apply to a SELF advance (salary recovery).
-            // A COMPANY advance has NO recovery and NO date at all.
-            // Recovery can only begin in the month AFTER the request: the
-            // requested month's payroll is already in flight, so no deduction
-            // can land on it (CBC #93). Same rule the settle-return schedule
-            // already enforces further down.
             'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:' . $minRecoveryStart, 'before_or_equal:' . $maxRecoveryStart],
             'recovery_mode'       => ['required_if:used_for,self', 'nullable', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
-            // Months + monthly EMI only required when mode='emi'. The
-            // validator below promotes them to required-when conditionally.
             'recovery_months'     => ['nullable', 'integer', 'min:1', 'max:120'],
             'monthly_emi'         => ['nullable', 'numeric', 'min:0', 'max:9999999999999.99'],
-            // Capped at 500 chars so a long reason can't break the table layout.
             'reason'              => ['required', 'string', 'max:500'],
-            // A supporting document / proof is MANDATORY for an advance request
-            // (financial request), enforced server-side so a direct API call
-            // can't bypass it. PDF/JPG/PNG up to 2 MB each (mirrors the picker).
             'files'               => ['required', 'array', 'min:1'],
             'files.*'             => ['file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ], [
@@ -285,10 +181,6 @@ class AdvanceRequestController extends Controller
         ]);
 
         $isCompany = ($data['used_for'] ?? 'self') === 'company';
-        // Each recovery instalment must be at least ₹500 — an advance can't be
-        // repaid in tiny sub-₹500 slices that stretch recovery out (supersedes the
-        // old ₹1 floor, QA #135). For an advance below ₹500 the floor is the whole
-        // amount (a single instalment).
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)) {
             $months   = (int) ($data['recovery_months'] ?? 0);
             $perCycle = (float) ($data['monthly_emi'] ?? 0) > 0
@@ -308,9 +200,6 @@ class AdvanceRequestController extends Controller
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true) && empty($data['recovery_months'])) {
             abort(422, 'Number of instalments is required for EMI / Bi-Monthly recovery.');
         }
-        // A single instalment can never exceed the advance itself — equal (a
-        // one-month recovery) is fine, more is not. Guards against a direct API
-        // call slipping a monthly_emi larger than the amount past the UI.
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)
             && (float) ($data['monthly_emi'] ?? 0) > (float) $data['amount'] + 0.005) {
             return response()->json([
@@ -323,8 +212,6 @@ class AdvanceRequestController extends Controller
             abort(422, 'Please specify the advance type when "Other" is selected.');
         }
 
-        // File attachments — same pattern as expense_claims, stored on the
-        // public disk under advance_requests/{employeeId}.
         $attachments = [];
         if ($request->hasFile('files')) {
             $files = $request->file('files');
@@ -342,10 +229,6 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        // Company advance amount DISTRIBUTION (optional). Rows arrive as a JSON
-        // string in `request_items`; each row's proof_index lines up with the
-        // uploaded files[] order, so we bind the stored proof path to each row.
-        // Rows must sum to the total amount.
         $requestItems = null;
         $rawItems = $request->input('request_items');
         if ($isCompany && $rawItems) {
@@ -376,14 +259,6 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        // Manager stage always starts PENDING. When no EMPLOYEE reporting
-        // manager is assigned, the BRANCH ADMIN is the de-facto reporting
-        // manager and approves it explicitly in their Inbox — no more silent
-        // "auto-approved · no reporting manager" phantom approval. This gives a
-        // two-step audit trail (Manager approved by the branch admin, then
-        // HR/Finance). Unassigned manager-stage rows are routed to branch
-        // admins in MyTeamController::approvals. (QA: manager approve must be
-        // an explicit Inbox step.)
         $managerStatus   = 'pending';
         $managerActedAt  = null;
         $managerComment  = null;
@@ -400,8 +275,6 @@ class AdvanceRequestController extends Controller
                 'amount'            => $data['amount'],
                 'used_for'          => $data['used_for'],
                 'requested_date'    => $data['requested_date'],
-                // Self → salary recovery (recovery_start + mode). Company → no
-                // recovery and no date at all.
                 'recovery_start'    => $isCompany ? null : ($data['recovery_start'] ?? null),
                 'expected_use_date' => null,
                 'recovery_mode'     => $isCompany ? null : ($data['recovery_mode'] ?? null),
@@ -423,13 +296,10 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row), 201);
     }
 
- 
-
     public function show(Request $request, $id)
     {
         $user = $request->user();
         $row = AdvanceRequest::with([
-                // withTrashed so a disabled employee's name still resolves (see index()).
                 'employee' => fn ($r) => $r->withTrashed(),
                 'manager' => fn ($r) => $r->withTrashed(),
                 'creator', 'hrUser',
@@ -439,7 +309,6 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-   
     public function downloadAttachment(Request $request, $id, $index)
     {
         return $this->streamJsonAttachment(
@@ -451,10 +320,6 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /**
-    /** Shared tail of the five proof endpoints: resolve the disk, 404 if the file
-     *  has gone, otherwise respond. The "gone" wording stays a parameter so the
-     *  message still names WHICH document is missing. */
     private function streamStoredFile(string $path, ?string $name, string $goneMessage)
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
@@ -464,11 +329,6 @@ class AdvanceRequestController extends Controller
         return $disk->response($path, $name ?: basename($path));
     }
 
-    /** downloadAttachment, settleProof, returnProof and recoveryPaymentProof were
-     *  four copies of: authenticate from the query token, load the advance, check
-     *  tenant access, read one entry from a JSON array. Only the column, the two
-     *  keys and the messages differed — so a fix to the token or tenant check had
-     *  to be made four times. */
     private function streamJsonAttachment(
         Request $request,
         $id,
@@ -506,7 +366,6 @@ class AdvanceRequestController extends Controller
         }
     }
 
- 
     public function managerApprove(Request $request, $id)
     {
         return $this->managerAct($request, $id, 'approved');
@@ -524,15 +383,11 @@ class AdvanceRequestController extends Controller
         $this->ensureTenantAccess($row, $user);
 
         $myEmployeeId = $this->currentEmployeeId($user);
-        // No self-approval: an approver can't act on their OWN request — their
-        // reporting manager (the branch user) does the approval/payment.
         if ($user->user_type !== 'super_admin' && $myEmployeeId !== null && (int) $row->employee_id === (int) $myEmployeeId) {
             abort(403, 'You cannot approve your own advance request — your reporting manager (branch user) will approve it.');
         }
         $isAssignedManager = $myEmployeeId !== null && (int) $row->manager_id === (int) $myEmployeeId;
         if ($user->user_type !== 'super_admin' && !$isAssignedManager) {
-            // No assigned EMPLOYEE manager → the branch admin is the de-facto
-            // reporting manager and does this approval (needs HR-approve rights).
             if ($row->manager_id === null) {
                 $this->guardHrPermission($user, 'can_approve');
             } else {
@@ -549,8 +404,6 @@ class AdvanceRequestController extends Controller
 
         $row->manager_status   = $verdict;
         $row->manager_acted_at = now();
-        // Record the exact logged-in user who acted, so the audit log names them
-        // whoever they are — assigned manager, branch admin, or anyone else.
         $row->manager_acted_by = $user->id;
         $row->manager_comment  = $data['comment'] ?? null;
         if ($verdict === 'rejected') {
@@ -561,8 +414,6 @@ class AdvanceRequestController extends Controller
         $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
     }
-
-    
 
     public function hrApprove(Request $request, $id)
     {
@@ -580,7 +431,6 @@ class AdvanceRequestController extends Controller
         $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
-        // No self-approval — the branch user (reporting manager) approves it.
         $myEmp = $this->currentEmployeeId($user);
         if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
             abort(403, 'You cannot approve your own advance request — your reporting manager (branch user) will approve it.');
@@ -593,8 +443,6 @@ class AdvanceRequestController extends Controller
             abort(409, 'This advance request has already been actioned by HR / Finance.');
         }
 
-        // On APPROVAL, HR also locks the one-time settlement adjustments here
-        // (additions / deductions) — after this the advance is payment-only.
         $data = $request->validate([
             'comment'             => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
             'deductions'          => ['nullable', 'array'],
@@ -641,12 +489,6 @@ class AdvanceRequestController extends Controller
                 $row->deduction_reason  = $deductionRows
                     ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
                     : null;
-                // The recovery EMI was computed off the REQUESTED amount at
-                // request time. HR may sanction a different net (additions /
-                // deductions), so recompute the per-cycle instalment against the
-                // sanctioned amount over the SAME number of cycles — otherwise
-                // payroll keeps recovering the old EMI and the schedule is wrong
-                // (QA #108). Self-advance EMI/bi-monthly only; lump-sum has none.
                 if (in_array($row->recovery_mode, ['emi', 'bimonthly'], true) && (int) $row->recovery_months > 0) {
                     $row->monthly_emi = round($sanctioned / (int) $row->recovery_months, 2);
                 }
@@ -658,23 +500,6 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-  
-
-    /** May this user read ANOTHER employee's advances? Same rule as
-     *  ExpenseClaimController::mayReadEmployeeClaims — admin tiers inside their
-     *  tenant scope, everyone else only their own downstream reports. */
-    /**
-     * Does this user hold the hr.expense VIEW grant?
-     *
-     * The non-aborting twin of guardHrPermission(), which this controller
-     * already uses for writes. Memoised: the entitlement is asked once per
-     * request but the module lookup would otherwise repeat.
-     */
-    /** Keyed by user id, NOT a single flag. A bare flag caches the first
-     *  caller's answer and hands it to the next one — an entitlement leak
-     *  the moment a controller instance serves two users, which is exactly
-     *  what happens outside the per-request lifecycle (a job, a test, a
-     *  console command). Caught by probing two viewers on one instance. */
     private array $hrExpenseView = [];
 
     private function hasHrExpenseView($user): bool
@@ -685,9 +510,6 @@ class AdvanceRequestController extends Controller
 
         $moduleId = Module::where('slug', 'hr.expense')->value('id');
         if (!$moduleId) {
-            /* The module was never seeded. Falling open here would hand every
-               employee the whole tenant's claims, so it falls CLOSED — the
-               reporting-line path above still works. */
             return $this->hrExpenseView[$uid] = false;
         }
 
@@ -716,13 +538,6 @@ class AdvanceRequestController extends Controller
             return $target->branch_id === null
                 || (int) $target->branch_id === (int) $user->branch_id;
         }
-        /* Employee tier. Two ways in:
-           - their own downstream, direct or indirect (a manager), or
-           - the hr.expense grant, which is what "has HRMS access" means:
-             it is the module that governs this very data, and it is how
-             an HR employee reaches a colleague from the employee list.
-           Branch stays enforced either way — every branch is an isolated
-           peer, so a grant does not reach across one. */
         if (in_array($targetEmployeeId, $this->downstreamEmployeeIds($myEmployeeId), true)) {
             return true;
         }
@@ -740,7 +555,6 @@ class AdvanceRequestController extends Controller
         return $user->employee_id;
     }
 
-  
     private function downstreamEmployeeIds(?int $rootEmployeeId): array
     {
         if (!$rootEmployeeId) return [];
@@ -767,10 +581,6 @@ class AdvanceRequestController extends Controller
             $codeInput = $codeInput ?: $idInput;
         }
         if ($codeInput) {
-            // emp_code is unique PER CLIENT only, so scope the lookup to the
-            // caller's client — otherwise a serial code (EMP-001) shared by
-            // another tenant resolves the wrong employee and trips the
-            // "your own record" ownership guard with a 403.
             $q = Employee::where('emp_code', $codeInput);
             if ($user && $user->user_type !== 'super_admin' && $user->client_id) {
                 $q->where('client_id', $user->client_id);
@@ -781,7 +591,6 @@ class AdvanceRequestController extends Controller
         return null;
     }
 
-  
     private function guardHrPermission($user, string $perm): void
     {
         if (!$user) abort(401, 'Authentication required');
@@ -803,10 +612,6 @@ class AdvanceRequestController extends Controller
         }
     }
 
-    /** Non-throwing variant of guardHrPermission — does this user have the HR
-     *  expense `can_approve` right (or is a super / tenant admin)? Used to decide
-     *  whether a return payment they record is auto-confirmed vs. left pending
-     *  for a branch admin / HR to approve. */
     private function isHrApprover($user): bool
     {
         if (!$user) return false;
@@ -821,10 +626,6 @@ class AdvanceRequestController extends Controller
             ->exists();
     }
 
-    /** Recompute whether a company-advance RETURN is fully closed: it counts
-     *  only APPROVED direct payments plus payroll deductions (payroll = the
-     *  company cutting salary itself). A pending, unconfirmed employee payment
-     *  does NOT close the return until a branch admin / HR approves it. */
     private function recomputeReturnComplete(AdvanceRequest $row): void
     {
         $balance  = round((float) $row->settle_balance, 2);
@@ -853,9 +654,6 @@ class AdvanceRequestController extends Controller
             if ($row->client_id !== null && $row->client_id !== $user->client_id) {
                 abort(403, 'Out of tenant scope.');
             }
-            // Every branch is an isolated peer — a branch row is accessible only
-            // when it belongs to the caller's own branch, or the caller is the
-            // requesting employee / assigned manager.
             if ($row->branch_id !== null) {
                 $allowed = $row->branch_id === $user->branch_id;
                 $myEmployeeId = $this->currentEmployeeId($user);
@@ -889,8 +687,6 @@ class AdvanceRequestController extends Controller
             $branchId = $user->branch_id;
             $myEmployeeId = $this->currentEmployeeId($user);
 
-            // Every branch is an isolated peer — globals + client-level rows + own branch only,
-            // plus rows where the caller is the requesting employee or assigned manager.
             $q->where(function ($w) use ($clientId, $branchId, $myEmployeeId) {
                 $w->whereNull('client_id')
                   ->orWhere(function ($ww) use ($clientId, $branchId, $myEmployeeId) {
@@ -921,7 +717,6 @@ class AdvanceRequestController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /** Sequential ADV code. Shared allocator — see \App\Support\DocumentNumber. */
     private function nextAdvanceNo(?int $clientId, ?int $branchId): string
     {
         return \App\Support\DocumentNumber::next(
@@ -932,9 +727,7 @@ class AdvanceRequestController extends Controller
             $branchId,
         );
     }
-    
 
-   
     private function serialize(AdvanceRequest $row): array
     {
         $employee = $row->employee;
@@ -947,29 +740,19 @@ class AdvanceRequestController extends Controller
             ? ($manager->display_name
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
             : null;
-        // No EMPLOYEE manager, but the employee reports to a BRANCH USER
-        // (reporting_manager_user_id) — surface that user's name so a PENDING
-        // stage reads "Awaiting <de-facto manager>" instead of "manager review".
         if (!$managerName && $employee && $employee->reporting_manager_user_id) {
             $managerName = $employee->relationLoaded('reportingManagerUser')
                 ? $employee->reportingManagerUser?->name
                 : \App\Models\User::whereKey($employee->reporting_manager_user_id)->value('name');
         }
-        // Once acted, prefer the ACTUAL approver — whoever logged in and approved
-        // or rejected the manager stage (assigned manager, branch admin, anyone).
         if ($row->manager_status !== 'pending' && $row->manager_acted_by) {
             $actorName = $row->relationLoaded('managerActor')
                 ? $row->managerActor?->name
                 : \App\Models\User::whereKey($row->manager_acted_by)->value('name');
             if ($actorName) $managerName = $actorName;
         }
-        // What payroll has recovered so far on each stream, so the list's Settle
-        // column can show "Recovered" once recovery is complete (not forever
-        // "Recovering"). Self target = advance amount; return target = balance.
-        $selfRecovered   = $this->selfRecoveredTotal($row);   // payroll ledger + direct pay-offs
+        $selfRecovered   = $this->selfRecoveredTotal($row);
         $returnRecovered = $this->recoveryLedgerTotal($row->id, 'return');
-        // Recovery target is the sanctioned (net) amount when set — a self advance
-        // can now carry deductions — else the requested amount.
         $selfTarget      = (float) ($row->sanctioned_amount ?? $row->amount);
         $selfComplete    = $row->recovery_mode && $row->hr_status === 'approved'
             && $selfTarget > 0 && $selfRecovered + 0.005 >= $selfTarget;
@@ -982,7 +765,6 @@ class AdvanceRequestController extends Controller
             'department_id'      => $employee?->department_id,
             'department_name'    => $employee?->department?->name,
             'manager_id'         => $row->manager_id,
-            // Branch USER acting as reporting manager (when no employee manager).
             'reporting_manager_user_id' => $employee?->reporting_manager_user_id,
             'manager_name'       => $managerName,
             'advance_type'       => $row->advance_type,
@@ -1019,17 +801,12 @@ class AdvanceRequestController extends Controller
             'created_by'         => $row->created_by,
             'creator_name'       => $row->creator?->name,
             'created_at'         => optional($row->created_at)->toIso8601String(),
-            // ── Settlement (post-approval payout) — mirrors ExpenseClaim ──
             'sanctioned_amount'  => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
             'deduction_amount'   => (float) $row->deduction_amount,
             'deduction_reason'   => $row->deduction_reason,
             'total_paid'         => (float) $row->total_paid,
             'settlement_status'  => $row->settlement_status ?: 'unpaid',
             'settled_at'         => optional($row->settled_at)->toIso8601String(),
-            // Zoho Books sync state for the list column — for BOTH self and
-            // company advances, keyed off the recorded payouts (the payout to the
-            // employee is what gets booked in Zoho): na (no payouts) | pending
-            // (none synced) | partial | completed.
             'zoho_sync'          => (function () use ($row) {
                 $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
                 if ($payments->isEmpty()) return 'na';
@@ -1040,34 +817,27 @@ class AdvanceRequestController extends Controller
             'remaining_amount'   => $row->sanctioned_amount !== null
                 ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
                 : null,
-            // Employee "Settle Payment" — the employee reconciles a fully-paid
-            // COMPANY advance against the ACTUAL amount spent.
             'employee_settled_at'  => optional($row->employee_settled_at)->toIso8601String(),
             'employee_settle_note' => $row->employee_settle_note,
             'settle_actual_amount' => $row->settle_actual_amount !== null ? (float) $row->settle_actual_amount : null,
-            'settle_type'          => $row->settle_type,          // equal | return | reimburse
+            'settle_type'          => $row->settle_type,
             'settle_balance'       => (float) $row->settle_balance,
-            'settle_declared_type' => $row->settle_declared_type, // equal | minimum | maximum
+            'settle_declared_type' => $row->settle_declared_type,
             'settle_target_amount' => $row->settle_target_amount !== null ? (float) $row->settle_target_amount : null,
-            // Settlement approval gate (branch/HR approve the usage before payout).
             'settle_approval_status'  => $row->settle_approval_status,
             'settle_approval_comment' => $row->settle_approval_comment,
             'settle_approved_at'      => optional($row->settle_approved_at)->toIso8601String(),
-            // Follow-through status so the list can show the right action button.
             'settle_returned_at'         => optional($row->settle_returned_at)->toIso8601String(),
             'settle_return_scheduled_at' => optional($row->settle_return_scheduled_at)->toIso8601String(),
             'settle_reimbursed'          => (bool) $row->settle_reimbursement_claim_id,
             'settle_return_remaining'    => (function () use ($row) {
                 $bal  = round((float) $row->settle_balance, 2);
-                // Exclude rejected — their amount is freed to re-record.
                 $paid = round(array_sum(array_map(
                     fn ($p) => (($p['status'] ?? 'approved') !== 'rejected') ? (float) ($p['amount'] ?? 0) : 0.0,
                     $row->settle_return_payments ?? []
                 )), 2);
                 return max(0, round($bal - $paid, 2));
             })(),
-            // Return payments the employee recorded that a branch admin / HR has
-            // not yet confirmed — lets the list flag "return payment pending".
             'settle_return_pending'      => round(array_sum(array_map(
                 fn ($p) => (($p['status'] ?? 'approved') === 'pending') ? (float) ($p['amount'] ?? 0) : 0.0,
                 $row->settle_return_payments ?? []
@@ -1079,7 +849,6 @@ class AdvanceRequestController extends Controller
                 'proof_name'=> $it['proof_name'] ?? null,
                 'proof_url' => !empty($it['proof_path']) ? url("/api/advance-requests/{$row->id}/settle-proof/{$i}") : null,
             ])->all(),
-            // Compact payout list for the Approval Audit Log (payer + amount + date).
             'payments'             => (function () use ($row) {
                 $ps = $row->relationLoaded('payments') ? $row->payments : $row->payments()->with('payer')->get();
                 return $ps->map(fn ($p) => [
@@ -1093,19 +862,12 @@ class AdvanceRequestController extends Controller
         ];
     }
 
-    /**
-     * POST /advance-requests/{id}/employee-settle
-     * The employee who took a fully-paid COMPANY advance marks it as settled
-     * (a status — they've accounted for the company-paid amount). Only the owner
-     * employee may do this; only on a Company, approved, fully-paid advance.
-     */
     public function employeeSettle(Request $request, $id)
     {
         $user = $request->user();
         $row  = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
 
-        // Only the employee who raised it may settle (super_admin may act too).
         $myEmployeeId = $this->currentEmployeeId($user);
         if ($user->user_type !== 'super_admin' && $row->employee_id !== $myEmployeeId) {
             abort(403, 'Only the employee who took this advance can settle it.');
@@ -1116,16 +878,10 @@ class AdvanceRequestController extends Controller
         if ($row->status !== 'approved' || ($row->settlement_status ?? 'unpaid') !== 'paid') {
             abort(409, 'The advance must be fully paid before it can be settled.');
         }
-        // Settlement is INCREMENTAL: bills can be added over several saves; the
-        // advance only locks when the employee explicitly finalises it. Once
-        // finalised, no further bills may be added and old ones can't be removed.
         if ($row->employee_settled_at) {
             abort(409, 'This advance is already finalised and locked.');
         }
 
-        // New usage rows — one row per bill: amount + reason + proof (all required).
-        // Files arrive as proofs[] aligned by index to items[]. On a pure finalise
-        // (locking previously-saved bills) items/proofs may be empty.
         $data = $request->validate([
             'items'          => ['nullable', 'array'],
             'items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:9999999999999.99'],
@@ -1142,10 +898,6 @@ class AdvanceRequestController extends Controller
         $finalize   = filter_var($request->input('finalize', false), FILTER_VALIDATE_BOOLEAN);
         $sanctioned = (float) ($row->sanctioned_amount ?? $row->amount);
 
-        // Declared target — captured up front on the first save, then LOCKED.
-        //   equal   → target == advance
-        //   minimum → 0 < target < advance (employee returns the balance)
-        //   maximum → target > advance (company reimburses the extra)
         if ($row->settle_declared_type === null) {
             $declaredType = $data['declared_type'] ?? 'equal';
             $target = $declaredType === 'equal'
@@ -1178,7 +930,6 @@ class AdvanceRequestController extends Controller
             ], 422);
         }
 
-        // Append the new rows to the existing (locked) ledger.
         $settleItems = array_values($row->settle_items ?? []);
         foreach ($items as $i => $it) {
             $amt  = round((float) $it['amount'], 2);
@@ -1195,10 +946,6 @@ class AdvanceRequestController extends Controller
 
         $hasBills = !empty($settleItems);
 
-        // A bill-less FINALISE is allowed (simplified flow): the employee just
-        // confirms "used exactly the advance" (equal) or "used more" with the
-        // declared amount (maximum → reimburse the extra) — no itemised bills.
-        // Bills are still required for an incremental SAVE (non-finalise).
         if (!$hasBills && !$finalize) {
             return response()->json([
                 'status'  => false,
@@ -1207,11 +954,6 @@ class AdvanceRequestController extends Controller
             ], 422);
         }
 
-        // Cumulative usage vs the sanctioned (paid) amount. With no bills, the
-        // declared target IS the amount used:
-        //   equal     → 0 balance
-        //   return    → total < sanctioned → employee returns the unused part
-        //   reimburse → total > sanctioned → company reimburses the extra
         $total      = $hasBills
             ? round(array_sum(array_map(fn ($it) => (float) $it['amount'], $settleItems)), 2)
             : round($target, 2);
@@ -1219,9 +961,6 @@ class AdvanceRequestController extends Controller
         $settleType = abs($diff) < 0.005 ? 'equal' : ($diff < 0 ? 'return' : 'reimburse');
         $balance    = round(abs($diff), 2);
 
-        // Bills (when present) may never exceed the declared "amount used", and
-        // a bill-based finalise must total it exactly. A bill-less finalise
-        // skips these — the declared target defines the outcome.
         if ($hasBills && $total > $target + 0.005) {
             return response()->json([
                 'status'  => false,
@@ -1245,8 +984,6 @@ class AdvanceRequestController extends Controller
         $row->settle_type          = $settleType;
         $row->settle_balance       = $balance;
         if ($finalize) {
-            // No separate approval step — the employee's confirmation finalises
-            // it directly: equal → completed; maximum → reimburse ready to raise.
             $row->employee_settled_at     = now();
             $row->settle_approval_status  = 'approved';
             $row->settle_approved_by      = $user->id;
@@ -1272,11 +1009,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/settle-approve
-     * A branch admin / HR approves the employee's finalised settlement. Only
-     * after this can the return / reimbursement / close proceed.
-     */
     public function settleApprove(Request $request, $id)
     {
         $user = $request->user();
@@ -1301,11 +1033,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/settle-reject
-     * Reject the settlement and REOPEN it (clears employee_settled_at) so the
-     * employee can fix the bills and resubmit. A remark is required.
-     */
     public function settleReject(Request $request, $id)
     {
         $user = $request->user();
@@ -1324,7 +1051,6 @@ class AdvanceRequestController extends Controller
         $row->settle_approval_comment = trim($data['comment']);
         $row->settle_approved_by      = $user->id;
         $row->settle_approved_at      = now();
-        // Reopen so the employee can edit the bills and resubmit for approval.
         $row->employee_settled_at     = null;
         $row->save();
 
@@ -1336,9 +1062,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Stream a settlement usage-row proof (bill) by its index. Token-authed.
-     */
     public function settleProof(Request $request, $id, $index)
     {
         return $this->streamJsonAttachment(
@@ -1350,21 +1073,12 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /**
-     * POST /advance-requests/{id}/raise-reimbursement
-     * A finalised COMPANY advance that settled as "reimburse" (used more than the
-     * advance) owes the employee the extra. This raises a reimbursement Expense
-     * Claim for that balance so it flows through the normal expense payout, and
-     * links it back so the button can't be pressed twice.
-     */
     public function raiseReimbursement(Request $request, $id)
     {
         $user = $request->user();
         $row  = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
 
-        // Owner employee, super_admin, or HR/Finance (approve rights) may raise it —
-        // HR often actions this from the management view after the employee settles.
         $myEmployeeId = $this->currentEmployeeId($user);
         if ($user->user_type !== 'super_admin' && $row->employee_id !== $myEmployeeId) {
             $this->guardHrPermission($user, 'can_approve');
@@ -1388,7 +1102,6 @@ class AdvanceRequestController extends Controller
             abort(404, 'Employee not found.');
         }
 
-        // Carry the settlement bills over as the claim's supporting documents.
         $attachments = [];
         foreach (($row->settle_items ?? []) as $it) {
             if (!empty($it['proof_path'])) {
@@ -1400,8 +1113,6 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        // Manager stage starts pending; a no-employee-manager row is approved by
-        // the branch admin in the Inbox (see the advance store() note).
         $managerStatus  = 'pending';
         $managerActedAt = null;
         $managerComment = null;
@@ -1446,10 +1157,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Next EXP-#### sequence for a tenant (mirrors ExpenseClaimController).
-     */
-    /** Sequential EXP code. Shared allocator — see \App\Support\DocumentNumber. */
     private function nextExpenseClaimNo(?int $clientId, ?int $branchId): string
     {
         return \App\Support\DocumentNumber::next(
@@ -1461,22 +1168,10 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /**
-     * POST /advance-requests/{id}/record-return
-     * A finalised COMPANY advance that settled as "return" (used less than the
-     * advance) owes the company the unused balance. This records that the
-     * employee has returned it (method + optional proof), closing the advance.
-     */
     public function recordReturn(Request $request, $id)
     {
         $user = $request->user();
 
-        // Return can be paid directly (in one or more instalments) or cut from
-        // payroll (single, closes the whole remaining at once).
-        //
-        // Validated BEFORE the transaction opens: input shape doesn't depend on
-        // anything in the row, and a 422 here should not have taken — and then
-        // released — a write lock on the advance.
         $data = $request->validate([
             'mode'   => ['required', 'in:direct,payroll'],
             'amount' => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
@@ -1496,23 +1191,6 @@ class AdvanceRequestController extends Controller
             ]);
         }
 
-        /* THE WHOLE read-check-write runs under a row lock.
-         *
-         * This appends to a JSON ledger: it reads every payment recorded so far,
-         * totals them, checks the balance is not yet covered, then writes the
-         * array back. Unlocked, two requests that overlap — a double-clicked
-         * Submit, or a client retry — both read the same ledger, both compute
-         * the same remaining, both pass the check, and both write their own
-         * copy. Either the second save overwrites the first (a payment vanishes
-         * from an employee's ledger) or both survive and more is recorded as
-         * returned than was ever owed, with recomputeReturnComplete() closing
-         * the return against the wrong total.
-         *
-         * lockForUpdate() makes the second request wait here and then re-read,
-         * so it sees the first payment and either shrinks its own amount or
-         * hits the "already fully recorded" guard. Same pattern nextAdvanceNo()
-         * already uses for the advance number.
-         */
         return DB::transaction(function () use ($request, $id, $user, $data, $rec) {
         $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
         $this->ensureTenantAccess($row, $user);
@@ -1536,8 +1214,6 @@ class AdvanceRequestController extends Controller
         }
 
         $ledger    = array_values($row->settle_return_payments ?? []);
-        // Rejected payments free up the balance again so the employee can
-        // re-record — only pending + approved count as "recorded so far".
         $paidSoFar = round(array_sum(array_map(
             fn ($p) => (($p['status'] ?? 'approved') !== 'rejected') ? (float) ($p['amount'] ?? 0) : 0.0,
             $ledger
@@ -1546,17 +1222,11 @@ class AdvanceRequestController extends Controller
         if ($remaining <= 0) {
             abort(409, 'The return has already been fully recorded.');
         }
-        // Once payroll recovery is scheduled it covers the whole remaining, so
-        // no further payment of ANY kind can be added.
         if ($row->settle_return_scheduled_at) {
             abort(409, 'Payroll recovery is already scheduled — no further payments can be added.');
         }
 
         if ($data['mode'] === 'payroll') {
-            // Payroll deduction — capture the recovery SCHEDULE (start / type /
-            // monthly / months). Recorded on our side now; the payroll engine
-            // will consume these fields later. Clears the whole remaining.
-            // ($rec was validated above, before the lock was taken.)
             $recType = $rec['recovery_type'];
             if ($recType === 'lumpsum') {
                 $monthly = $remaining;
@@ -1566,8 +1236,6 @@ class AdvanceRequestController extends Controller
                 if ($monthly <= 0) {
                     return response()->json(['message' => 'Enter a monthly deduction amount.', 'errors' => ['monthly' => ['A monthly amount is required.']]], 422);
                 }
-                // A single instalment can't exceed the balance being returned —
-                // equal (a one-cycle recovery) is fine, more is not.
                 if ($monthly > $remaining + 0.005) {
                     return response()->json([
                         'message' => 'The monthly deduction ₹' . number_format($monthly, 2)
@@ -1576,8 +1244,6 @@ class AdvanceRequestController extends Controller
                     ], 422);
                 }
                 $months = (int) max(1, ceil($remaining / $monthly));
-                // ≤120-instalment guard (mirrors the Advance Request cap). Too
-                // low a monthly amount stretches recovery past 120 cycles.
                 if ($months > 120) {
                     $unit = $recType === 'bimonthly' ? 'cycles' : 'months';
                     $minMonthly = ceil($remaining / 120);
@@ -1616,10 +1282,6 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        // A payroll deduction is the company cutting salary itself, so it counts
-        // as confirmed on record. A DIRECT payment recorded by the employee is
-        // PENDING until a branch admin / HR confirms the money was received; one
-        // recorded by an approver is auto-approved (they ARE the confirmer).
         $autoOk = ($data['mode'] === 'payroll') || $this->isHrApprover($user);
         $ledger[] = [
             'amount'      => $amount,
@@ -1636,8 +1298,6 @@ class AdvanceRequestController extends Controller
         ];
         $row->settle_return_payments = $ledger;
         $newPaid = round($paidSoFar + $amount, 2);
-        // Close the return ONLY when APPROVED payments cover the balance — a
-        // pending employee payment leaves it open until HR/branch confirms it.
         $this->recomputeReturnComplete($row);
         if ($request->filled('note')) {
             $row->employee_settle_note = trim(($row->employee_settle_note ? $row->employee_settle_note . "\n" : '') . $data['note']);
@@ -1649,7 +1309,6 @@ class AdvanceRequestController extends Controller
         if ($data['mode'] === 'payroll') {
             $msg = 'Payroll recovery scheduled for ₹' . number_format($amount, 2) . '.';
         } elseif (!$autoOk) {
-            // Employee-recorded payment — awaits branch admin / HR confirmation.
             $msg = 'Return of ₹' . number_format($amount, 2) . ' recorded — pending branch admin / HR approval.';
         } else {
             $msg = $left <= 0.005
@@ -1664,25 +1323,11 @@ class AdvanceRequestController extends Controller
         });
     }
 
-    /**
-     * POST /advance-requests/{id}/return-payments/{index}/approve
-     * A branch admin / HR confirms that a specific employee return payment was
-     * actually received by the company. The return only closes once EVERY
-     * payment covering the balance is approved. Payroll deductions are already
-     * confirmed on record, so they cannot be approved/rejected here.
-     */
     public function approveReturnPayment(Request $request, $id, $index)
     {
         $user = $request->user();
         $this->guardHrPermission($user, 'can_approve');
 
-        /* Locked for the same reason recordReturn() is, with one addition: this
-         * writes the WHOLE ledger array back to change ONE entry. If HR approves
-         * index 0 while a branch admin rejects index 1 at the same moment, the
-         * second save carries a copy of the array read before the first
-         * decision — and silently erases it. No error anywhere; the ledger just
-         * shows one of the two actions.
-         */
         return DB::transaction(function () use ($request, $id, $index, $user) {
             $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
             $this->ensureTenantAccess($row, $user);
@@ -1693,10 +1338,6 @@ class AdvanceRequestController extends Controller
             if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
                 abort(422, 'Payroll deductions are confirmed automatically — nothing to approve.');
             }
-            /* Idempotency. Re-approving an already-approved payment used to
-               succeed and re-stamp approved_at / approved_by with the current
-               time and user — quietly rewriting who confirmed the money and
-               when. That is audit history, not a value to refresh. */
             if (($ledger[$i]['status'] ?? null) === 'approved') {
                 abort(409, 'This payment has already been approved.');
             }
@@ -1719,18 +1360,12 @@ class AdvanceRequestController extends Controller
         });
     }
 
-    /**
-     * POST /advance-requests/{id}/return-payments/{index}/reject
-     * A branch admin / HR rejects a return payment (money not actually received).
-     * Its amount is freed so the employee can re-record. The return stays open.
-     */
     public function rejectReturnPayment(Request $request, $id, $index)
     {
         $user = $request->user();
         $this->guardHrPermission($user, 'can_approve');
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
 
-        // Same whole-array write, same lock — see approveReturnPayment().
         return DB::transaction(function () use ($id, $index, $user, $data) {
             $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
             $this->ensureTenantAccess($row, $user);
@@ -1741,9 +1376,6 @@ class AdvanceRequestController extends Controller
             if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
                 abort(422, 'Payroll deductions cannot be rejected here.');
             }
-            // Don't re-stamp an existing rejection (see approveReturnPayment).
-            // Rejecting an APPROVED payment is still allowed — that is a genuine
-            // correction, not a duplicate submit.
             if (($ledger[$i]['status'] ?? null) === 'rejected') {
                 abort(409, 'This payment has already been rejected.');
             }
@@ -1765,9 +1397,6 @@ class AdvanceRequestController extends Controller
         });
     }
 
-    /**
-     * Stream a return-payment proof (by ledger index). Token-authed.
-     */
     public function returnProof(Request $request, $id, $index)
     {
         return $this->streamJsonAttachment(
@@ -1779,17 +1408,6 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /* ============================================================ */
-    /*  SETTLEMENT — post-approval payout (partial payments)         */
-    /*  Mirrors ExpenseClaimController; no category / expense-type /  */
-    /*  Zoho — an advance payout only carries amount + method + note. */
-    /* ============================================================ */
-
-    /**
-     * GET /advance-requests/{id}/settlement
-     * State for the Record-Payment form: requested/sanctioned amounts, running
-     * total, adjustments and the list of installment payments made so far.
-     */
     public function settlement(Request $request, $id)
     {
         $user = $request->user();
@@ -1816,19 +1434,12 @@ class AdvanceRequestController extends Controller
             'project'           => null,
             'category_id'       => null,
             'category_name'     => $row->advance_type,
-            // Salary-recovery schedule (self advance) — shown in the review modal.
             'recovery_start'    => optional($row->recovery_start)->format('Y-m-d'),
             'recovery_mode'     => $row->recovery_mode,
             'recovery_months'   => $row->recovery_months,
             'monthly_emi'       => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
-            // What has ACTUALLY been recovered so far (self stream) — lets the
-            // recovery schedule flip instalments from Pending → Recovered instead
-            // of always showing Pending. Per-month payroll rows + running total,
-            // where the total also folds in one-time DIRECT pay-offs.
             'recovery_ledger'   => $this->recoveryLedgerRows($row->id, 'self'),
             'recovery_recovered'=> $this->selfRecoveredTotal($row),
-            // One-time direct repayments (from profile, not payroll) + what's left
-            // to recover — drives the "Pay Off (one-time)" action in the modal.
             'recovery_direct_payments' => collect($row->recovery_direct_payments ?? [])->values()->map(fn ($p, $i) => [
                 'amount'    => (float) ($p['amount'] ?? 0),
                 'method'    => (string) ($p['method'] ?? ''),
@@ -1867,16 +1478,12 @@ class AdvanceRequestController extends Controller
                 'size' => $a['size'] ?? null,
                 'url'  => url("/api/advance-requests/{$row->id}/attachments/{$i}"),
             ])->all(),
-            // Company-advance amount distribution (rows sum to the amount) so the
-            // approver can review each purpose + proof before approving.
             'request_items'     => collect($row->request_items ?? [])->values()->map(function ($it, $i) use ($row) {
                 return [
                     'amount'       => (float) ($it['amount'] ?? 0),
                     'purpose'      => $it['purpose'] ?? '',
                     'payment_type' => $it['payment_type'] ?? '',
                     'proof_name'   => $it['proof_name'] ?? null,
-                    // Item order matches the attachments order at create time, so
-                    // the row's proof is served via attachments/{i}.
                     'proof_url'    => ($it['proof_path'] ?? null)
                         ? url("/api/advance-requests/{$row->id}/attachments/{$i}")
                         : null,
@@ -1899,8 +1506,6 @@ class AdvanceRequestController extends Controller
                 'paid_by_role' => $p->payer?->user_type,
                 'paid_at'      => optional($p->paid_at)->toIso8601String(),
             ])->all(),
-            // Advance-specific settle context so the modal can render the
-            // employee "Settlement" section (company advances only).
             'employee_id'          => $row->employee_id,
             'used_for'             => $row->used_for ?: 'self',
             'employee_settled_at'  => optional($row->employee_settled_at)->toIso8601String(),
@@ -1946,15 +1551,11 @@ class AdvanceRequestController extends Controller
                 'mode'      => (string) ($p['mode'] ?? 'direct'),
                 'note'      => $p['note'] ?? null,
                 'paid_at'   => $p['paid_at'] ?? null,
-                // Approval state of this payment. Legacy rows (recorded before
-                // the approval gate) default to 'approved' so they stay closed.
                 'status'    => (string) ($p['status'] ?? 'approved'),
                 'rejected_reason' => $p['rejected_reason'] ?? null,
                 'proof_name'=> $p['proof_name'] ?? null,
                 'proof_url' => !empty($p['proof_path']) ? url("/api/advance-requests/{$row->id}/return-proof/{$i}") : null,
             ])->all(),
-            // Remaining excludes REJECTED payments (their amount is freed to
-            // re-record); approved + pending count as recorded.
             'settle_return_remaining' => (function () use ($row) {
                 $bal  = round((float) $row->settle_balance, 2);
                 $paid = round(array_sum(array_map(
@@ -1963,30 +1564,22 @@ class AdvanceRequestController extends Controller
                 )), 2);
                 return max(0, round($bal - $paid, 2));
             })(),
-            // Direct payments confirmed by HR/branch (payroll counts as approved).
             'settle_return_approved' => round(array_sum(array_map(
                 fn ($p) => (($p['status'] ?? 'approved') === 'approved') ? (float) ($p['amount'] ?? 0) : 0.0,
                 $row->settle_return_payments ?? []
             )), 2),
-            // Employee-recorded payments still awaiting HR/branch confirmation.
             'settle_return_pending' => round(array_sum(array_map(
                 fn ($p) => (($p['status'] ?? 'approved') === 'pending') ? (float) ($p['amount'] ?? 0) : 0.0,
                 $row->settle_return_payments ?? []
             )), 2),
-            // Payroll-recovery plan (when the return is cut from payroll).
             'settle_return_scheduled_at'    => optional($row->settle_return_scheduled_at)->toIso8601String(),
             'settle_return_recovery_start'  => optional($row->settle_return_recovery_start)->format('Y-m-d'),
             'settle_return_recovery_mode'   => $row->settle_return_recovery_mode,
             'settle_return_recovery_months' => $row->settle_return_recovery_months,
             'settle_return_monthly'         => $row->settle_return_monthly !== null ? (float) $row->settle_return_monthly : null,
-            // What payroll has recovered on the RETURN stream so far.
             'settle_return_ledger'          => $this->recoveryLedgerRows($row->id, 'return'),
             'settle_return_recovered'       => $this->recoveryLedgerTotal($row->id, 'return'),
-            // Employee monthly salary — used to gate the "Single Lump" payroll
-            // option (net take-home when a payslip exists, else structure gross,
-            // else annual/12). Read-only; no payroll-engine change.
             'employee_monthly_salary'       => $this->employeeMonthlySalary($row->employee_id),
-            // Total-EMI headroom (70% of salary − ongoing EMIs, excluding this row).
             'emi_ongoing'   => $this->ongoingEmiTotal($row->employee_id, $row->id),
             'emi_available' => (function () use ($row) {
                 $net = $this->employeeMonthlySalary($row->employee_id);
@@ -1996,11 +1589,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Best-available monthly take-home for an employee: latest payslip net_pay,
-     * else active salary-structure monthly_gross, else annual_salary / 12.
-     * Returns null when nothing is on file (single-lump check then allowed).
-     */
     private function employeeMonthlySalary($employeeId): ?float
     {
         if (!$employeeId) return null;
@@ -2019,30 +1607,10 @@ class AdvanceRequestController extends Controller
         return $annual !== null && (float) $annual > 0 ? round((float) $annual / 12, 2) : null;
     }
 
-    /** Percentage of salary that total advance EMIs may occupy (FOI ceiling). */
     private const EMI_HEADROOM_PCT = 0.70;
 
-    /**
-     * Sum of an employee's ONGOING advance EMIs (per-month), across both
-     * self-advance salary recovery and company-advance return-via-payroll
-     * schedules. "Ongoing" = a recurring EMI/bi-monthly plan whose last cycle
-     * hasn't passed. Optionally excludes one advance (the one being edited).
-     */
-    /* ── Recovery-ledger cache ────────────────────────────────────────────
-     * serialize() asks for a row's recovery ledger up to four times. Each ask
-     * used to run its OWN query plus a Schema::hasTable() probe (an uncached
-     * pg_class lookup), so a list of N advances cost ~4N queries — measured at
-     * 1,207 queries / 304 ms for 300 rows, growing without limit.
-     *
-     * Now the ledger is fetched for a whole SET of advances in one query and
-     * answered from memory. index() primes it with the ids it is about to
-     * serialise; a single-row path fetches just that id on first ask. Same
-     * values, same output — 1 query instead of 4N.
-     *
-     * Per-instance, not static, so nothing leaks between requests in a
-     * long-lived worker. */
-    private array $ledgerCache = [];      // "<advance_id>|<stream>" => rows
-    private array $ledgerLoaded = [];     // advance ids already fetched
+    private array $ledgerCache = [];
+    private array $ledgerLoaded = [];
     private ?bool $ledgerTableExists = null;
 
     private function ledgerTableExists(): bool
@@ -2053,8 +1621,6 @@ class AdvanceRequestController extends Controller
         return $this->ledgerTableExists;
     }
 
-    /** Load the ledger for these advances in ONE query. Ids already loaded are
-     *  skipped, so calling it again after index() costs nothing. */
     private function primeLedger(array $advanceIds): void
     {
         $ids = array_values(array_diff(
@@ -2062,8 +1628,6 @@ class AdvanceRequestController extends Controller
             array_keys($this->ledgerLoaded)
         ));
         if (!$ids) return;
-        // Mark loaded up-front: an advance with no ledger rows must not be
-        // re-queried every time it is asked for.
         foreach ($ids as $id) $this->ledgerLoaded[$id] = true;
         if (!$this->ledgerTableExists()) return;
 
@@ -2083,8 +1647,6 @@ class AdvanceRequestController extends Controller
         }
     }
 
-    /** Per-cycle recovery rows the payroll engine has recorded for an advance
-     *  on a given stream ('self' or 'return'). Empty if the ledger is absent. */
     private function recoveryLedgerRows($advanceId, string $stream): array
     {
         $id = (int) $advanceId;
@@ -2092,7 +1654,6 @@ class AdvanceRequestController extends Controller
         return $this->ledgerCache[$id . '|' . $stream] ?? [];
     }
 
-    /** Total the payroll engine has recovered for an advance on a stream. */
     private function recoveryLedgerTotal($advanceId, string $stream): float
     {
         return round(array_sum(array_column(
@@ -2100,8 +1661,6 @@ class AdvanceRequestController extends Controller
         )), 2);
     }
 
-    /** Total the employee has repaid DIRECTLY (from profile, not payroll) against
-     *  a self advance's recovery — the one-time pay-offs recorded at exit etc. */
     private function selfDirectRepaid(AdvanceRequest $row): float
     {
         return round(array_sum(array_map(
@@ -2110,7 +1669,6 @@ class AdvanceRequestController extends Controller
         )), 2);
     }
 
-    /** Everything recovered on the SELF stream = payroll ledger + direct pay-offs. */
     private function selfRecoveredTotal(AdvanceRequest $row): float
     {
         return round($this->recoveryLedgerTotal($row->id, 'self') + $this->selfDirectRepaid($row), 2);
@@ -2129,7 +1687,6 @@ class AdvanceRequestController extends Controller
             return \Illuminate\Support\Carbon::parse($start)->addMonthsNoOverflow(($n - 1) * $step)->startOfMonth();
         };
 
-        // Self advances still recovering from salary.
         $self = AdvanceRequest::where('employee_id', $employeeId)
             ->where('status', 'approved')
             ->whereIn('recovery_mode', ['emi', 'bimonthly'])
@@ -2141,7 +1698,6 @@ class AdvanceRequestController extends Controller
             if (!$end || $end->gte($nowMonth)) $total += (float) $a->monthly_emi;
         }
 
-        // Company advances returned via payroll, still recovering.
         $ret = AdvanceRequest::where('employee_id', $employeeId)
             ->whereIn('settle_return_recovery_mode', ['emi', 'bimonthly'])
             ->whereNotNull('settle_return_monthly')
@@ -2155,7 +1711,6 @@ class AdvanceRequestController extends Controller
         return round($total, 2);
     }
 
-   
     public function emiInfo(Request $request)
     {
         $user = $request->user();
@@ -2177,7 +1732,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-   
     public function setDeductions(Request $request, $id)
     {
         $user = $request->user();
@@ -2233,14 +1787,12 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-  
     public function settle(Request $request, $id)
     {
         $user = $request->user();
         $row  = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
-        // No self-payment — the branch user (reporting manager) records it.
         $myEmp = $this->currentEmployeeId($user);
         if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
             abort(403, 'You cannot record a payout for your own advance — your reporting manager (branch user) will do it.');
@@ -2266,9 +1818,6 @@ class AdvanceRequestController extends Controller
             'payment_type'        => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
             'reference_number'    => ['nullable', 'string', 'max:64'],
             'note'                => ['required', 'string', 'max:500'],
-            // Proof capped at 2 MB (2048 KB) — matches the attachment limits and
-            // stays under PHP's upload cap so it never fails with the cryptic
-            // "The proof failed to upload." (QA #100)
             'proof'               => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
         ], [
             'proof.max'      => 'The proof must be 2 MB or smaller.',
@@ -2355,7 +1904,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-   
     public function paymentProof(Request $request, $paymentId)
     {
         $this->authenticateFromQueryToken($request);
@@ -2373,14 +1921,12 @@ class AdvanceRequestController extends Controller
         );
     }
 
-  
     public function recoverOnetime(Request $request, $id)
     {
         $user = $request->user();
         $row  = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
 
-        // The employee can record their own pay-off; anyone else needs HR rights.
         $myEmployeeId = $this->currentEmployeeId($user);
         if ($user->user_type !== 'super_admin' && (int) $row->employee_id !== (int) $myEmployeeId) {
             $this->guardHrPermission($user, 'can_approve');
@@ -2463,9 +2009,8 @@ class AdvanceRequestController extends Controller
             'No proof was attached to this recovery payment.',
             'Proof file is missing on the server.',
         );
-    }  
+    }
 
-   
     private function zohoExpenseUrl(string $expenseId): string
     {
         $cfg    = config('services.zoho_books');
@@ -2476,7 +2021,6 @@ class AdvanceRequestController extends Controller
         }
         return "https://books.zoho.{$region}/app/{$org}#/expenses/" . rawurlencode($expenseId);
     }
-
 
     public function syncPaymentToZoho(Request $request, $paymentId)
     {
@@ -2494,15 +2038,11 @@ class AdvanceRequestController extends Controller
             ]);
         }
 
-        /** @var \App\Services\ZohoBooksService $zoho */
         $zoho = app(\App\Services\ZohoBooksService::class);
         if (!$zoho->isConfigured()) {
             return response()->json(['status' => false, 'message' => 'Zoho Books is not configured on the server.'], 503);
         }
 
-        // The advance type doubles as the Zoho expense account (e.g. "Travel
-        // Advance"); "Other" carries its free-text label. Fall back to a generic
-        // employee-advance account so a sync never fails on a missing category.
         $advanceType = $row->advance_type === 'Other' && $row->advance_type_other
             ? $row->advance_type_other
             : ($row->advance_type ?: 'Employee Advance');
@@ -2519,7 +2059,6 @@ class AdvanceRequestController extends Controller
                 'description'             => (string) ($payment->note ?? ''),
                 'product_type'            => 'goods',
             ];
-            // GST-registered orgs need source/destination of supply on the expense.
             $state = $zoho->orgStateCode();
             if ($state) {
                 $payload['source_of_supply']      = $state;
@@ -2529,9 +2068,6 @@ class AdvanceRequestController extends Controller
             $expense   = $zoho->createExpense($payload);
             $expenseId = (string) ($expense['expense_id'] ?? '');
 
-            // Attach EVERY related PDF (best-effort — a receipt failure must not
-            // undo an otherwise-created expense). Order: payout proof first, then
-            // each distribution row's proof, then the advance's own attachments.
             if ($expenseId !== '') {
                 $disk = \Illuminate\Support\Facades\Storage::disk('public');
 
@@ -2548,7 +2084,6 @@ class AdvanceRequestController extends Controller
                     if (empty($p)) continue;
                     $receiptFiles[] = ['path' => $p, 'name' => (is_array($att) ? ($att['name'] ?? null) : null) ?: basename($p)];
                 }
-                // De-dup by stored path and respect Zoho's 5-receipt-per-expense cap.
                 $seen = [];
                 $receiptFiles = array_values(array_filter($receiptFiles, function ($f) use (&$seen) {
                     if (isset($seen[$f['path']])) return false;
@@ -2570,7 +2105,6 @@ class AdvanceRequestController extends Controller
                 }
             }
         } catch (\Throwable $e) {
-            // Reverse a partially-created expense so a retry starts clean.
             if ($expenseId) { try { $zoho->deleteExpense($expenseId); } catch (\Throwable $ignore) {} }
             return response()->json(['status' => false, 'message' => 'Zoho Books sync failed: ' . $e->getMessage()], 422);
         }
@@ -2587,7 +2121,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-  
     private function normaliseAdjustments(array $items, string $kind): array
     {
         $rows  = [];
@@ -2608,6 +2141,4 @@ class AdvanceRequestController extends Controller
         }
         return [$rows, round($total, 2), null];
     }
-
 }
-    

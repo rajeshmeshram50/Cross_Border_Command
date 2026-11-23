@@ -29,7 +29,6 @@ class HolidayGroup extends Model
         return $this->hasMany(Holiday::class);
     }
 
-    /** Employees assigned this group as their holiday list. */
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class, 'holiday_group_id');
@@ -50,18 +49,11 @@ class HolidayGroup extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** Number of holidays in this group — drives the count chip in the UI. */
     public function getHolidaysCountAttribute(): int
     {
         return $this->resolveCount('holidays');
     }
 
-    /**
-     * Number of employees assigned to this group. Drives the "in use" lock:
-     * when > 0 the group (and its holidays) can no longer be edited/deleted,
-     * because doing so would silently rewrite the calendar those employees
-     * depend on (and that payroll credits against).
-     */
     public function getEmployeesCountAttribute(): int
     {
         return $this->resolveCount('employees');

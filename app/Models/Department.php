@@ -21,8 +21,6 @@ class Department extends Model
         'head_user_id',
     ];
 
-    // ── Relationships ──
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);

@@ -10,7 +10,6 @@ class VendorGstScrutiny extends Model
 {
     use SoftDeletes;
 
-    
     protected $table = 'vendor_gst_scrutiny';
 
     protected $fillable = [

@@ -20,8 +20,6 @@ class ProductQcRecord extends Model
         'attachment_path',
     ];
 
-    /** Mirrors the Product image accessors so the frontend can render
-     *  the attachment without rebuilding the storage URL itself. */
     protected $appends = ['attachment_url'];
 
     public function getAttachmentUrlAttribute(): ?string

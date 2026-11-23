@@ -4,21 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Sales Matrix → Stage 4 (Price Shared) entries.
- *
- *  One row per quoted price the salesperson shares with the customer.
- *  Multiple rows per (lead, product) are intentional — IDIMS treats this
- *  as an append-only history; the most recent row is the current quote.
- *
- *  Joins:
- *    lead_id          → leads.id            (cascade on delete)
- *    lead_product_id  → lead_products.id    (cascade on delete)
- *    created_by       → users.id            (null on delete)
- *
- *  The price is captured in the lead_product row's `currency`. We don't
- *  re-store the currency here to avoid the two values drifting.
- */
 return new class extends Migration
 {
     public function up(): void

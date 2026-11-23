@@ -10,29 +10,10 @@ use App\Models\Masters\LeaveTypes;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Opt-in seeder that hydrates the leave module with realistic test data:
- *   - 7 leave types (catalog)
- *   - 2 leave plans (Default + Executives)
- *   - Types assigned to both plans with a worked-out Setup config on a few
- *   - Up to 10 existing employees auto-assigned to the default plan
- *
- * Idempotent: re-running won't duplicate rows; it'll only fill what's missing.
- *
- * Run with:
- *   php artisan db:seed --class=LeaveSeeder
- *
- * Not wired into DatabaseSeeder so a fresh `migrate --seed` doesn't pollute
- * production data — QA runs this on demand.
- */
 class LeaveSeeder extends Seeder
 {
     public function run(): void
     {
-        // Pick a branch to seed under. Prefer the first branch that already
-        // has employees (so the Leave Balances tab has rows to render after
-        // we assign them to the seeded plan). Fall back to the first branch
-        // in the DB if none have employees yet.
         $branchWithEmployees = Branch::query()
             ->whereExists(function ($q) {
                 $q->select(DB::raw(1))
@@ -54,9 +35,6 @@ class LeaveSeeder extends Seeder
             $this->command?->warn(' • This branch has 0 employees — Leave Balances tab will be empty until you create employees and re-run this seeder, or assign them via the Plan -> Employees flow.');
         }
 
-        // ────────────────────────────────────────────────────────────────
-        // 1. Leave Type catalog
-        // ────────────────────────────────────────────────────────────────
         $catalog = [
             ['name' => 'Sick Leave',           'short_code' => 'SL',   'type' => 'Regular',              'paid_unpaid' => 'Paid',   'is_sick_medical' => true,  'gender_restriction' => 'None'],
             ['name' => 'Casual Leave',         'short_code' => 'CL',   'type' => 'Regular',              'paid_unpaid' => 'Paid',   'is_sick_medical' => false, 'gender_restriction' => 'None'],
@@ -83,9 +61,6 @@ class LeaveSeeder extends Seeder
         }
         $this->command?->info(' • Leave types: ' . count($typeIdByCode) . ' present');
 
-        // ────────────────────────────────────────────────────────────────
-        // 2. Leave Plans
-        // ────────────────────────────────────────────────────────────────
         $defaultPlan = LeavePlans::firstOrCreate(
             ['branch_id' => $branchId, 'plan_name' => 'Default Leave Policy'],
             [
@@ -114,10 +89,6 @@ class LeaveSeeder extends Seeder
         );
         $this->command?->info(' • Leave plans: 2 present (Default, Executives)');
 
-        // ────────────────────────────────────────────────────────────────
-        // 3. Assign types to plans (+ Setup config on a few so the
-        //    Configuration table doesn't show all "Not Setup")
-        // ────────────────────────────────────────────────────────────────
         $configFor = function (int $yearlyQuota, string $carryForward, int $cap = 0): array {
             return [
                 'accrual' => [
@@ -160,7 +131,7 @@ class LeaveSeeder extends Seeder
                 ],
                 'yearEnd' => [
                     'encashmentAllowed' => false,
-                    'carryForward' => $carryForward, // 'reset' | 'carry_capped' | 'carry_all'
+                    'carryForward' => $carryForward,
                     'carryForwardCap' => $cap,
                     'carriedExpiresIn' => ['enabled' => false, 'days' => 90],
                     'expiryUnchanged' => true,
@@ -188,15 +159,12 @@ class LeaveSeeder extends Seeder
             return "Carry up to {$cap}";
         };
 
-        // (plan, type, quota, carry-forward mode, cap)
         $assignments = [
-            // Default plan
             [$defaultPlan->id, 'SL',  12, 'carry_capped', 5,  true],
             [$defaultPlan->id, 'CL',  8,  'reset',        0,  true],
             [$defaultPlan->id, 'PL',  15, 'carry_capped', 10, true],
-            [$defaultPlan->id, 'LOP', 0,  'reset',        0,  false], // unconfigured to show "Not Setup"
+            [$defaultPlan->id, 'LOP', 0,  'reset',        0,  false],
             [$defaultPlan->id, 'FL',  2,  'reset',        0,  true],
-            // Executives plan — higher quotas
             [$execPlan->id,    'SL',  20, 'carry_capped', 10, true],
             [$execPlan->id,    'CL',  12, 'reset',        0,  true],
             [$execPlan->id,    'PL',  25, 'carry_all',    0,  true],
@@ -220,10 +188,6 @@ class LeaveSeeder extends Seeder
         }
         $this->command?->info(' • Plan-type assignments: ' . count($assignments) . ' present (8 with full Setup, 2 left "Not Setup")');
 
-        // ────────────────────────────────────────────────────────────────
-        // 4. Assign existing employees to the default plan so the
-        //    Leave Balances tab has rows to render.
-        // ────────────────────────────────────────────────────────────────
         $employees = Employee::query()
             ->where('branch_id', $branchId)
             ->orderBy('id')

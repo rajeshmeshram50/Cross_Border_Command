@@ -8,7 +8,6 @@ use App\Models\ClmTradeLicense;
 use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
-
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -34,7 +33,7 @@ class ClmTradeLicenseController extends Controller
 
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-           
+
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
@@ -87,7 +86,7 @@ class ClmTradeLicenseController extends Controller
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
             $msg = "A trade licence named \"{$name}\" already exists.";
-            
+
             return response()->json([
                 'status'  => false,
                 'message' => $msg,
@@ -103,7 +102,7 @@ class ClmTradeLicenseController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmTradeLicense::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   
+                'branch_id'  => $user->branch_id,
                 'code'       => $this->nextCode($user->client_id, $user->branch_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],

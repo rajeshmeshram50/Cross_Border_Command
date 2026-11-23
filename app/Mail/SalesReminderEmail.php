@@ -9,38 +9,25 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Gentle follow-up reminder for a previously emailed Quotation / PI.
- *
- * Sent by SalesPdfController::remindQuotation / remindProformaInvoice
- * AFTER the initial document email has already been delivered (the
- * controller refuses to send a reminder until `emailed_at` is set on
- * the row, so the customer never gets a "reminder" for something they
- * never received in the first place).
- *
- * Body comes from `emails.sales-reminder` — short, polite nudge that
- * references the document code and asks for feedback. PDF is attached
- * again so the customer doesn't have to dig through their inbox.
- */
 class SalesReminderEmail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public string $docKind;        // 'Quotation' | 'Proforma Invoice'
-    public string $docLabel;       // 'QT' | 'PI' — used in the info-card label
-    public string $docCode;        // QT/2026-27/6
-    public string $docDate;        // 25/05/2026
+    public string $docKind;
+    public string $docLabel;
+    public string $docCode;
+    public string $docDate;
     public string $branchName;
     public ?string $branchEmail;
     public ?string $branchWebsite;
     public string $customerName;
-    public int $reminderNumber;    // 1, 2, 3 … displayed in subject ("Reminder #2: …")
-    public int $productsCount;     // line-item count for the info card
-    public float $grandTotal;      // total amount on the doc (shown in the total card)
-    public string $currency;       // currency code
-    public string $docType;        // "International" | "Domestic"
-    public ?string $viewUrl;       // signed public URL that opens the PDF in a browser
-    public ?string $logoPath;      // absolute filesystem path to branch logo (for CID embed)
+    public int $reminderNumber;
+    public int $productsCount;
+    public float $grandTotal;
+    public string $currency;
+    public string $docType;
+    public ?string $viewUrl;
+    public ?string $logoPath;
     public ?string $pdfPath;
     public string $pdfFilename;
 
@@ -67,10 +54,6 @@ class SalesReminderEmail extends Mailable
 
     public function envelope(): Envelope
     {
-        // Subject reads like a finance follow-up:
-        //   "Reminder: Quotation QT/2026-27/6 from Inorbvict Agrotech"
-        // After the first reminder we add the count so the customer can
-        // tell repeat follow-ups apart in their inbox.
         $prefix = $this->reminderNumber > 1
             ? "Reminder #{$this->reminderNumber}"
             : 'Reminder';
@@ -115,5 +98,4 @@ class SalesReminderEmail extends Mailable
         }
         return [];
     }
-    
 }

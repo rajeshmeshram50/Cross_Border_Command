@@ -12,12 +12,6 @@ class Assets extends Model
 {
     protected $table = 'master_assets';
 
-    /**
-     * Auto-generate the asset code (AST-0001, AST-0002, …) on create when
-     * the caller doesn't supply one. We pull the highest existing AST-NNNN
-     * suffix in PHP so the value matches the preview the frontend computes
-     * from the record list (db-agnostic — works on PG / MySQL / SQLite).
-     */
     protected static function booted(): void
     {
         static::creating(function (self $row) {

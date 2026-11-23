@@ -8,19 +8,9 @@ use App\Models\EmployeeDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-
 class EmployeeDocumentController extends Controller
 {
-    /** Per-document upload size cap (MB). Catalogue can override later. */
     private const MAX_MB = 2;
-    // Canonical MIME list. Variants below cover platform quirks:
-    //   - image/x-png: legacy / IE-era PNG MIME some Windows servers
-    //     still emit via mime_content_type().
-    //   - image/pjpeg: progressive JPEG variant emitted by some old
-    //     PHP/Symfony combinations.
-    // We also fall back to the file extension when the MIME doesn't
-    // match, so prod servers with a stale magic.mime database still
-    // accept valid uploads.
     private const MIME_ALLOWED = [
         'application/pdf',
         'image/jpeg', 'image/jpg', 'image/pjpeg',
@@ -31,10 +21,6 @@ class EmployeeDocumentController extends Controller
 
     public function index(Request $request, $employeeId)
     {
-        // Defensive: if the employee doesn't exist (deleted or wrong id),
-        // return an empty array instead of letting implicit binding throw
-        // a 404. This prevents the SPA from breaking when it asks for
-        // documents for a removed/unknown employee.
         $employee = Employee::withTrashed()->find($employeeId);
         if (!$employee) {
             return response()->json([]);
@@ -54,40 +40,22 @@ class EmployeeDocumentController extends Controller
     public function store(Request $request, Employee $employee)
     {
         $this->authorizeEmployeeAccess($request, $employee);
-        // Don't accept document uploads for a disabled employee (soft-deleted
-        // or terminal status). Restore/re-activate them first. Mirrors the
-        // EmployeeController edit guard so the whole profile is frozen.
         if ($employee->isDisabled()) {
             abort(422, 'This employee is disabled — restore/re-activate them before adding documents.');
         }
 
         $data = $request->validate([
             'document_key' => 'required|string|max:60',
-            // OB-15: a content-based `mimes` backstop so a renamed binary
-            // (evil.html → evil.pdf) can't pass on extension alone. The
-            // two-signal MIME/ext check below still runs for the friendlier
-            // error message and to tolerate non-canonical server MIMEs.
             'file'         => 'required|file|max:' . (self::MAX_MB * 1024) . '|mimes:pdf,jpg,jpeg,png,webp',
         ]);
 
         $file = $request->file('file');
-        // Two-signal check (mirrors the frontend validator). Some prod
-        // servers return non-canonical MIMEs from getMimeType() (e.g.
-        // image/x-png), and some browsers/proxies strip the MIME header
-        // entirely. As long as EITHER the MIME or the file extension
-        // is in the allowed list, accept the upload. The list of
-        // accepted extensions is the canonical one — frontend has
-        // already enforced the picker filter, so anything reaching here
-        // with a .pdf/.jpg/.png/.webp extension is safe to trust.
         $mime = strtolower((string) ($file->getMimeType() ?: $file->getClientMimeType() ?: ''));
         $ext  = strtolower((string) $file->getClientOriginalExtension());
         $mimeOk = $mime !== '' && in_array($mime, self::MIME_ALLOWED, true);
         $extOk  = $ext  !== '' && in_array($ext,  self::EXT_ALLOWED,  true);
         if (!$mimeOk && !$extOk) {
             return response()->json([
-                // Surface what we actually saw so the user can fix it
-                // (e.g. "got 'image/heic'") instead of staring at a
-                // generic rejection.
                 'message' => sprintf(
                     'Only PDF / JPG / PNG / WEBP files are allowed. (got "%s")',
                     $mime ?: ($ext ?: 'unknown'),
@@ -96,25 +64,14 @@ class EmployeeDocumentController extends Controller
         }
 
         $key = trim($data['document_key']);
-        // withTrashed() — the unique constraint (employee_id, document_key)
-        // is NOT scoped to deleted_at IS NULL, so a row that was soft-
-        // deleted earlier will still trip the constraint on INSERT. We
-        // pull the trashed row too, restore it if needed, and overwrite
-        // its file/metadata below. Without this, a delete-and-reupload
-        // cycle crashed with 23505 ("duplicate key value").
         $existing = EmployeeDocument::withTrashed()
             ->where('employee_id', $employee->id)
             ->where('document_key', $key)
             ->first();
 
-        // If we're replacing, drop the previous file from disk so we
-        // don't leak storage. Eloquent + soft-deletes don't auto-prune
-        // the file — we manage it explicitly.
         if ($existing && $existing->file_path) {
-            try { Storage::disk('public')->delete($existing->file_path); } catch (\Throwable $e) { /* best-effort */ }
+            try { Storage::disk('public')->delete($existing->file_path); } catch (\Throwable $e) { }
         }
-        // If we found a soft-deleted row, bring it back so the existing
-        // primary key can be re-used by the fill() below.
         if ($existing && method_exists($existing, 'trashed') && $existing->trashed()) {
             $existing->restore();
         }
@@ -139,8 +96,6 @@ class EmployeeDocumentController extends Controller
             'rejection_reason' => null,
             'uploaded_by'     => $request->user()?->id,
             'uploaded_at'     => now(),
-            // Re-upload after a rejection clears the previous verify info
-            // so HR is forced to re-review.
             'verified_by'     => null,
             'verified_at'     => null,
         ]);
@@ -186,20 +141,12 @@ class EmployeeDocumentController extends Controller
     {
         $this->authorizeDocumentAccess($request, $document);
         if ($document->file_path) {
-            try { Storage::disk('public')->delete($document->file_path); } catch (\Throwable $e) { /* best-effort */ }
+            try { Storage::disk('public')->delete($document->file_path); } catch (\Throwable $e) { }
         }
         $document->delete();
         return response()->json(['message' => 'Removed.']);
     }
 
-    /**
-     * Stream the document through the app (same-origin) with an attachment
-     * disposition so it DOWNLOADS instead of opening a preview. A plain file
-     * URL points straight at Azure Blob on prod (cross-origin, no CORS, served
-     * inline) — which only ever opens in a new tab. Routing the bytes through
-     * here mirrors how the customer Evidence Vault downloads its segment
-     * uploads via /segment-uploads/download.
-     */
     public function download(Request $request, EmployeeDocument $document)
     {
         $this->authorizeDocumentAccess($request, $document);
@@ -210,18 +157,11 @@ class EmployeeDocumentController extends Controller
         return Storage::disk('public')->download($document->file_path, $name);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  Helpers
-     * ───────────────────────────────────────────────────────────────── */
-
-    /** Allow access if the user can view employees in the row's tenant. */
     private function authorizeEmployeeAccess(Request $request, Employee $employee): void
     {
         $user = $request->user();
         if (!$user) abort(401);
         if ($user->isSuperAdmin()) return;
-        // Strict tenant match — a null client_id must NOT pass for scoped users
-        // (that previously let any tenant reach a client-less employee's docs).
         if ((int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'Document belongs to a different organization.');
         }
@@ -232,13 +172,11 @@ class EmployeeDocumentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         if ($user->isSuperAdmin()) return;
-        // Strict tenant match (null client_id must not pass for scoped users).
         if ((int) $doc->client_id !== (int) $user->client_id) {
             abort(403, 'Document belongs to a different organization.');
         }
     }
 
-    /** Wire-format a row for the SPA. Public URL is built off the public disk. */
     private function formatRow(EmployeeDocument $d): array
     {
         return [

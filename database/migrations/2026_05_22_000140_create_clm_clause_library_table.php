@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Central CLM → Clause Library · Library tab.
- *
- * Reusable individual clauses (Force Majeure, Governing Law, Payment Terms
- * Net 30, Liability Cap, Arbitration, NDA-5y, …). Each row carries a
- * Type name (matching a row in clm_clause_types) and a party CSV.
- *
- * `content` holds the actual clause body so authoring tools elsewhere in
- * the app can insert it verbatim into an agreement.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -23,14 +13,11 @@ return new class extends Migration
 
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
 
-            $table->string('code', 16);          // CL-001
-            $table->string('clause_type', 255);  // "Core Legal", "Financial", …
+            $table->string('code', 16);
+            $table->string('clause_type', 255);
             $table->string('name', 255);
-            /* Party was dropped from the Add Clause modal in the redesign
-             * — kept on the schema for backward compatibility but now
-             * nullable so the API can omit it. */
-            $table->string('party', 255)->nullable();  // CSV
-            $table->string('clause_status', 32)->default('Active');  // Active | Draft
+            $table->string('party', 255)->nullable();
+            $table->string('clause_status', 32)->default('Active');
 
             $table->text('content')->nullable();
 
