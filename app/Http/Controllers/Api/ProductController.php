@@ -287,7 +287,10 @@ class ProductController extends Controller
         return null;
     }
 
-    private const SELLING_FIELDS = ['base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom'];
+    // Price fields hidden from Purchase. gst_id / gst_percentage are NOT here:
+    // Purchase maps the GST and must see it round-trip (it drives the supplier
+    // GST calc) — only the money (price, amount, total, markup) stays hidden.
+    private const SELLING_FIELDS = ['base_price', 'gst_amount', 'total_price', 'mark_bottom'];
 
     private function departmentHiddenGroups(Request $request): array
     {
@@ -319,7 +322,7 @@ class ProductController extends Controller
                     $payload[$field] = null;
                 }
             }
-            unset($payload['gst_percentage']);
+            // gst_percentage stays: Purchase maps the GST and needs the rate back.
         }
         if ($hide['vendor']) {
             if (\array_key_exists('vendor_maps', $payload)) {
