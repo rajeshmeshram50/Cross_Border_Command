@@ -5094,6 +5094,18 @@
   color: #ef4444 !important;
 }
 
+/* The upload boxes are not inputs, so none of the rules above reached them:
+   the two image fields were the only required ones on the form that failed
+   silently. Dashed border and tint turn red the same way. */
+.apm-field.has-error .apm-dropzone {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, .05) !important;
+}
+
+[data-bs-theme="dark"] .apm-field.has-error .apm-dropzone {
+  background: rgba(239, 68, 68, .12) !important;
+}
+
 .apm-field.is-disabled {
   opacity: .55;
 }

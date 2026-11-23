@@ -1595,6 +1595,7 @@ export default function AddProductModal(props: {
                     <UploadDropzone
                       label="Product Primary Image"
                       required
+                      error={fieldErrors.primaryImage}
                       hint="Click to upload primary image"
                       multiple={false}
                       preview={primaryPreview ? [primaryPreview] : []}
@@ -1604,6 +1605,7 @@ export default function AddProductModal(props: {
                     <UploadDropzone
                       label="Product Secondary Images"
                       required
+                      error={fieldErrors.secondaryImage}
                       hint="You Can Add Multiple Attachments"
                       multiple
                       preview={secondaryPreviews}
@@ -2674,6 +2676,7 @@ function UploadDropzone(props: {
   fileMode?: boolean;
   fileName?: string;
   accept?: string;
+  error?: string;
 }) {
   const MAX_VISIBLE = 6;
   const [showAll, setShowAll] = useState(false);
@@ -2683,7 +2686,7 @@ function UploadDropzone(props: {
   const hasFile = !!props.fileMode && total > 0;
 
   return (
-    <div className="apm-field apm-upload-field">
+    <div className={`apm-field apm-upload-field${props.error ? ' has-error' : ''}`}>
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
       </span>
@@ -2804,6 +2807,12 @@ function UploadDropzone(props: {
             </div>
           </div>
         </div>
+      )}
+
+      {props.error && (
+        <span className="apm-field-error">
+          <i className="ri-error-warning-line" /> {props.error}
+        </span>
       )}
     </div>
   );
