@@ -10,50 +10,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-/**
- * Zoho Sign API client.
- *
- * Wraps the OAuth refresh-token dance, the multipart "create request" call,
- * the "submit with signer fields" call, and the signed-PDF / certificate
- * downloads. Lifted out of New_IDIMS_6.0's monolithic DocumentController
- * into a service so [[ClmSignatureController]] (and any future
- * Consignee/Vendor controllers) stays focused on persistence + presentation.
- *
- * All public methods either return the decoded JSON body, raw PDF bytes,
- * or throw RuntimeException with the upstream error embedded — callers
- * surface that as 500s with the Zoho message intact so the user can act on
- * it (Zoho's errors are usually actionable: bad email, scope missing,
- * etc.).
- */
 class ZohoSignService
 {
     private const TOKEN_CACHE_KEY = 'zoho_sign_access_token';
 
-    // Default signature-field placement. The send modal can override these
-    // per-document via document_settings[{docId}] but a sensible default
-    // matches what [[New_IDIMS_6.0]] ships with (bottom-right area, first
-    // page). Coordinates are in PDF points (1pt = 1/72 in); A4 is 595×842.
     public const DEFAULT_FIELD_X      = 380;
     public const DEFAULT_FIELD_Y      = 720;
     public const DEFAULT_FIELD_PAGE   = 0;
     public const DEFAULT_FIELD_WIDTH  = 150;
     public const DEFAULT_FIELD_HEIGHT = 45;
 
-    /**
-     * Optional sub-pt fine-tuning applied to every signature field BEFORE
-     * it ships to Zoho. The SPA drag overlay and Zoho both use a top-left
-     * page origin and a top-left field anchor in A4 points, so the base
-     * mapping is a direct 1:1 passthrough (x_coord = x, y_coord = y) and
-     * these default to 0. Set a small value here ONLY if a specific tenant
-     * PDF template lands consistently off by a couple of pt.
-     *   - SIG_X_NUDGE_PT  shifts the field horizontally (negative = left)
-     *   - SIG_Y_NUDGE_PT  shifts the field vertically   (positive = down)
-     *
-     * History: these were once -4 / +4 alongside a "+ height" Y term that
-     * assumed Zoho anchored the field's BOTTOM edge. QA confirmed that
-     * pushed every signature one box-height too low and ~4pt left, so the
-     * height term was removed and the nudges zeroed.
-     */
     public const SIG_X_NUDGE_PT = 0;
     public const SIG_Y_NUDGE_PT = 0;
 
@@ -77,16 +43,12 @@ class ZohoSignService
         $this->testingMode  = (bool)   ($cfg['testing_mode']  ?? false);
     }
 
-    /** Exposed so the controller can warn the user when sandbox mode is on. */
     public function isTestingMode(): bool { return $this->testingMode; }
 
-    /** True once the env keys are filled — used by the controller to 503 cleanly. */
     public function isConfigured(): bool
     {
         return $this->clientId !== '' && $this->clientSecret !== '' && $this->refreshToken !== '';
     }
-
-    /* ─────────────────────── Auth ─────────────────────── */
 
     private function getAccessToken(): string
     {
@@ -120,21 +82,12 @@ class ZohoSignService
             throw new RuntimeException('Zoho refresh response missing access_token: ' . $resp->body());
         }
 
-        // 10-min safety buffer before Zoho's stated expiry so an inflight
-        // request never gets a 401 mid-flow.
         $ttl = max(60, ((int) ($data['expires_in'] ?? 3600)) - 600);
         Cache::put(self::TOKEN_CACHE_KEY, $token, now()->addSeconds($ttl));
 
         return $token;
     }
 
-    /* ─────────────────────── Low-level HTTP ─────────────────────── */
-
-    /**
-     * JSON / form / GET requests against /api/{version}/{endpoint}.
-     * Pass $data['data'] = [...] to body-POST the way Zoho expects ("data=
-     * <json>" form-urlencoded — not a real JSON body).
-     */
     public function makeRequest(string $method, string $endpoint, array $data = []): array
     {
         $token = $this->getAccessToken();
@@ -149,9 +102,6 @@ class ZohoSignService
 
             case 'POST':
                 if (array_key_exists('data', $data)) {
-                    // Zoho's "submit" / "recall" / "remind" endpoints want the
-                    // payload wrapped as `data=<json>` in a form body, NOT a
-                    // raw JSON POST. New_IDIMS hit the same quirk.
                     $payload = is_string($data['data']) ? $data['data'] : json_encode($data['data']);
                     $resp = Http::withHeaders($headers)->asForm()->post($url, ['data' => $payload]);
                 } elseif (empty($data)) {
@@ -187,22 +137,10 @@ class ZohoSignService
         return $resp->json() ?? [];
     }
 
-    /**
-     * Multipart POST to /requests — Zoho expects `data` (JSON) + N x `file`
-     * (PDF) parts. Returns the decoded response body containing the new
-     * request_id under `requests.request_id`.
-     *
-     * @param  array<int, string>  $pdfPaths
-     * @param  array<int, string>  $filenames  Parallel array, same order as $pdfPaths.
-     * @param  array               $requestData  The Zoho-shaped `requests` payload (with `actions[]`).
-     */
     public function createRequestMultipart(array $pdfPaths, array $filenames, array $requestData): array
     {
         $token = $this->getAccessToken();
         $url   = "{$this->baseUrl}/api/{$this->apiVersion}/requests";
-        // Sandbox flag — only attached to the request-creation endpoint
-        // (Zoho ignores it elsewhere). Lets free-tier orgs side-step
-        // error 12000 for end-to-end smoke testing.
         if ($this->testingMode) {
             $url .= '?testing=true';
         }
@@ -234,15 +172,6 @@ class ZohoSignService
         return $resp->json() ?? [];
     }
 
-    /**
-     * Build the signer×field payload and POST /requests/{id}/submit.
-     * $perDocCoords is keyed by the *Zoho* document_id you got back from
-     * createRequestMultipart() — pass [] to use defaults everywhere.
-     *
-     * @param  array<int, array{action_id?:string, recipient_email?:string, recipient_name?:string, action_type?:string}>  $actions
-     * @param  array<int, array{document_id?:string}>                                                                       $documentIds
-     * @param  array<string, array{x?:float, y?:float, page?:int, width?:float, height?:float}>                             $perDocCoords
-     */
     public function submitWithFields(string $requestId, array $actions, array $documentIds, array $perDocCoords = []): array
     {
         $submitActions = [];
@@ -261,51 +190,12 @@ class ZohoSignService
                     $docId = $doc['document_id'] ?? null;
                     if (!$docId) continue;
 
-                    /* Per-role lookup (agreement multi-signer case).
-                     * When the SPA drags Buyer and Consignee boxes
-                     * independently it sends:
-                     *   document_settings[agreementId] = {
-                     *     buyer:     {x, y, page, width, height},
-                     *     consignee: {x, y, page, width, height},
-                     *   }
-                     * which mapClientCoordsToZohoDocIds rebins as
-                     *   $perDocCoords[$zohoDocId] = {buyer:..., consignee:...}
-                     * The controller stamps `cbc_role` onto each Zoho
-                     * action before calling us, so we pick the role-
-                     * specific coord here. Falls back to the flat
-                     * shape so trade-doc single-signer sends keep
-                     * working unchanged. */
                     $docCoords = $perDocCoords[$docId] ?? [];
                     $role      = (string) ($action['cbc_role'] ?? '');
                     $roleSlice = ($role !== '' && isset($docCoords[$role]) && is_array($docCoords[$role]))
                         ? $docCoords[$role]
                         : null;
                     $c = $roleSlice ?? (isset($docCoords['x']) ? $docCoords : []);
-                    // Zoho rejects field coords with too many decimal places
-                    // (error 9011 "You have entered too many characters") —
-                    // the front-end PDF.js detector returns sub-pt-precision
-                    // floats like 380.74832749827493, so round to whole pts
-                    // before serialising. Sub-point precision is invisible
-                    // to a signer anyway.
-                    //
-                    // Coordinate convention — Zoho Sign and the SPA drag
-                    // overlay BOTH use a top-left page origin and anchor the
-                    // field by its TOP-LEFT corner, in PDF points on the same
-                    // A4 page. So the mapping is a direct 1:1 passthrough:
-                    // x_coord = x, y_coord = y.
-                    //
-                    // (An earlier version added the field height to y on the
-                    // assumption Zoho anchored the field's BOTTOM edge. QA
-                    // confirmed that pushed every signature one box-height too
-                    // LOW — and the old -4 X nudge put it ~4pt too far LEFT —
-                    // so the height term is gone and the nudges default to 0.
-                    // The SIG_*_NUDGE_PT knobs survive for per-tenant tweaks.)
-                    // One signer can be asked to sign the SAME document in
-                    // multiple places: when the coords carry a `boxes` array, drop
-                    // one signature field per box. Otherwise fall back to the
-                    // single flat box — the existing behaviour for every other
-                    // flow, so customer / agreement / Buyer+Consignee sends are
-                    // completely unchanged.
                     $boxes = (isset($c['boxes']) && is_array($c['boxes']) && $c['boxes'])
                         ? array_values(array_filter($c['boxes'], 'is_array'))
                         : [$c];
@@ -320,8 +210,6 @@ class ZohoSignService
                         $yPtAdj = $yPt + self::SIG_Y_NUDGE_PT;
                         $fields[] = [
                             'document_id'     => $docId,
-                            // Suffix only when there's more than one box so the
-                            // single-box field name stays exactly as before.
                             'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1) . ($multi ? '_' . ($bIdx + 1) : ''),
                             'field_label'     => 'Signature',
                             'field_type_name' => 'Signature',
@@ -341,45 +229,17 @@ class ZohoSignService
             $submitActions[] = $submitAction;
         }
 
-        // Carry the sandbox flag onto the SUBMIT (the actual send) too, not just
-        // create — otherwise a free-tier org's submit trips error 12000
-        // ("Upgrade Zoho Sign license to send documents via API") even though the
-        // request was created in testing mode.
         $submitEndpoint = "requests/{$requestId}/submit" . ($this->testingMode ? '?testing=true' : '');
         return $this->makeRequest('POST', $submitEndpoint, [
             'data' => ['requests' => ['actions' => $submitActions]],
         ]);
     }
 
-    /* ─────────────────────── Convenience wrappers ─────────────────────── */
-
     public function getRequest(string $requestId): array
     {
         return $this->makeRequest('GET', "requests/{$requestId}");
     }
 
-    /**
-     * The details of SEVERAL requests, fetched concurrently.
-     *
-     * The signature list polls Zoho once per still-open request, in a loop, on
-     * a request the browser is waiting on. Measured locally at ~295ms per
-     * round-trip: three open requests cost 887ms of a 1056ms response, and a
-     * party with a dozen agreements out for signature costs seconds (QA #7).
-     *
-     * They are independent GETs that share one cached bearer token, so there
-     * is nothing to serialise: a pool makes the wall time that of the slowest
-     * call rather than the sum of all of them. Same data, same freshness — no
-     * row is skipped or deferred.
-     *
-     * Returns [zohoRequestId => details|null] for EVERY id it attempted — null
-     * where that call failed. The key is present either way on purpose: a
-     * caller can tell "Zoho said no" from "not asked" and skip the row instead
-     * of asking a second time. (A dead id — a request deleted at Zoho's end —
-     * otherwise costs two failing round-trips per poll instead of one.)
-     *
-     * @param  string[]  $requestIds
-     * @return array<string, array|null>
-     */
     public function getRequestsBatch(array $requestIds): array
     {
         $ids = array_values(array_unique(array_filter(array_map('strval', $requestIds), 'strlen')));
@@ -398,7 +258,6 @@ class ZohoSignService
         $unauthorised = false;
         foreach ($ids as $id) {
             $resp = $responses[$id] ?? null;
-            // A pooled call that threw comes back as the exception itself.
             if (!$resp instanceof Response) {
                 Log::warning('Zoho batch call failed for request ' . $id . ': '
                     . ($resp instanceof \Throwable ? $resp->getMessage() : 'no response'));
@@ -414,12 +273,6 @@ class ZohoSignService
             }
             $out[$id] = $resp->json() ?? [];
         }
-        /* The pool carries ONE token for the whole batch, taken before the
-           calls go out; makeRequest's own refresh-and-retry cannot reach
-           inside it. Dropping the cached token on a 401 means the next poll
-           re-authenticates instead of repeating the whole batch unauthorised.
-           The token is cached 10 minutes short of Zoho's stated expiry, so
-           this is the rare case, not the normal one. */
         if ($unauthorised) Cache::forget(self::TOKEN_CACHE_KEY);
         return $out;
     }
@@ -436,12 +289,6 @@ class ZohoSignService
         ]);
     }
 
-    /* ─────────────────────── PDF / certificate downloads ─────────────────────── */
-
-    /**
-     * Some Zoho endpoints return the PDF as raw bytes, others wrap it in
-     * `{"document":"<base64>"}`. Detect and decode either shape.
-     */
     private function unwrapPdfPayload(string $body): string
     {
         $maybeJson = json_decode($body, true);
@@ -463,13 +310,6 @@ class ZohoSignService
         return $this->unwrapPdfPayload($resp->body());
     }
 
-    /**
-     * Request-level signed PDF — the whole completed request as one PDF
-     * (all its documents combined). This is the fallback for environments
-     * where the per-document endpoint above fails (e.g. a refresh token
-     * scoped without per-document read access). For single-document
-     * requests this returns exactly the same signed PDF.
-     */
     public function downloadRequestPdf(string $requestId): string
     {
         $token = $this->getAccessToken();
