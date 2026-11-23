@@ -139,8 +139,8 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
         role="dialog"
         aria-label="Notifications"
       >
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
-          <h5 className="text-[19px] font-bold text-text leading-tight">Notifications</h5>
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <h5 className="text-[15px] font-bold text-text leading-tight mb-0">Notifications</h5>
           <div className="flex items-center gap-4">
             {/* The unread filter as a switch, where it is looked for. The track
                 must be block-level: as an inline span its width was ignored, so
@@ -173,18 +173,26 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
           </div>
         </div>
 
-        <div className="flex items-center gap-5 px-5 border-b border-border">
-          {([['all', `All (${items.length})`], ['unread', `Unread (${unread})`]] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`py-2 text-[12.5px] font-semibold transition-colors cursor-pointer border-b-2 ${tab === key ? 'text-primary border-primary' : 'text-muted border-transparent hover:text-text'}`}
-            >
-              {label}
-            </button>
-          ))}
+        {/* Tabs left, Mark all read hard right. `ml-auto` on the button was
+            not pushing it over — the split is structural now. */}
+        <div className="flex items-center justify-between gap-4 px-3 border-b border-border">
+          <div className="flex items-center gap-4">
+            {([['all', `All (${items.length})`], ['unread', `Unread (${unread})`]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`py-2 text-[12.5px] font-semibold transition-colors cursor-pointer border-b-2 ${tab === key ? 'text-primary border-primary' : 'text-muted border-transparent hover:text-text'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {unread > 0 && (
-            <button type="button" onClick={markAllRead} className="ml-auto text-[11.5px] text-primary hover:underline cursor-pointer">
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="flex-shrink-0 text-[11.5px] text-primary hover:underline cursor-pointer whitespace-nowrap"
+            >
               Mark all read
             </button>
           )}
@@ -204,14 +212,14 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
           ) : (
             groupByDay(visible).map(([label, group]) => (
               <div key={label}>
-                <div className="px-5 pt-4 pb-1 text-[11.5px] font-bold text-muted uppercase tracking-wide">{label}</div>
+                <div className="px-3 pt-3 pb-1 text-[11.5px] font-bold text-muted uppercase tracking-wide">{label}</div>
                 {group.map((n) => <NotificationRow key={n.id} item={n} viewerId={user?.id} onClick={() => openItem(n)} />)}
               </div>
             ))
           )}
         </div>
 
-        <div className="border-t border-border px-5 py-3">
+        <div className="border-t border-border px-3 py-2">
           <button
             type="button"
             onClick={() => { onClose(); navigate('/inbox'); }}
@@ -361,7 +369,7 @@ function NotificationRow({ item, onClick, viewerId }: { item: InAppNotification;
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-start gap-3 px-5 py-3 text-left hover:bg-surface-2 transition-colors cursor-pointer"
+      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-surface-2 transition-colors cursor-pointer"
     >
       <span className={`rounded-full flex-shrink-0 flex items-center justify-center ${meta.cls}`} style={{ width: 32, height: 32 }}>
         <i className={meta.icon} style={{ fontSize: 15 }} />
