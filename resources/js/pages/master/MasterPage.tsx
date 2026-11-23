@@ -1591,14 +1591,15 @@ function MasterPageInner({
               </div>
             )}
             {!hasStatus && cfg.slug !== 'roles' && (
-              /* A master with no Active / Inactive status still gets its tab
-                 strip: one "All" tab with the record count. */
-              <div className="spi-seg" role="tablist" aria-label={mpPlural(singular)}>
-                <button type="button" role="tab" aria-selected className="spi-seg-btn is-active">
-                  <span className="spi-seg-ico">{MP_STATUS_TABS[0].icon}</span>
-                  All {mpPlural(singular)}
-                  <span className="spi-seg-c">{statusCounts.all}</span>
-                </button>
+              /* A master with no Active / Inactive status gets a heading -- its
+                 name, the record count and what it holds -- not a tab strip
+                 with a single tab in it. */
+              <div className="mp-subhead">
+                <div className="mp-subhead__title">
+                  {mpPlural(singular)}
+                  <span className="mp-subhead__count">{statusCounts.all}</span>
+                </div>
+                <div className="mp-subhead__sub">{cfg.desc}</div>
               </div>
             )}
             {cfg.slug === 'roles' && (

@@ -540,6 +540,19 @@
 .mp-inv .dt-toolbar-actions:not(:empty) { padding-right: 20px; }
 .mp-inv .dt-lead:has(+ .dt-toolbar-actions:not(:empty)) > .spi-segrow { padding-right: 0; }
 .mp-inv .dt-lead > .spi-segrow .spi-seg { flex-shrink: 0; }
+/* Heading for a master with no status tabs (the CLM toolbar heading's sizes). */
+.mp-subhead { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding-left: 6px; flex: 0 1 auto; }
+.mp-subhead__title { display: inline-flex; align-items: center; gap: 9px; font-size: 14.5px; font-weight: 800; letter-spacing: -.3px; line-height: 1.2; color: #0c4a6e; white-space: nowrap; }
+.mp-subhead__count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 20px; padding: 0 7px; border-radius: 999px;
+  background: #cffafe; color: #0e7490; border: 1px solid rgba(6, 182, 212, .30);
+  font-size: 10.5px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.mp-subhead__sub { max-width: 100%; font-size: 10px; font-weight: 500; line-height: 1.3; color: #0e7490; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-bs-theme="dark"] .mp-subhead__title { color: #e2e8f0; }
+[data-bs-theme="dark"] .mp-subhead__sub { color: #7dd3fc; }
+[data-bs-theme="dark"] .mp-subhead__count { background: rgba(6, 182, 212, .18); color: #67e8f9; border-color: rgba(34, 211, 238, .30); }
 /* One toolbar height, at every width: the tab rail (a 40px tab inside 3px of
    padding and a 1px border) and the search are both 48px. order.css sizes the
    tabs 42 / 38px and the search 52 / 46px, so the two never matched. */
