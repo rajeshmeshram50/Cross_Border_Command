@@ -61,7 +61,10 @@ class PaymentController extends Controller
     public function stats(Request $request)
     {
         $user = $request->user();
-        $query = Payment::query();
+        // Same base scope as index(): only payments whose client still exists,
+        // or the KPI total counts an orphan-client payment the All list hides
+        // (the 99-vs-98 mismatch).
+        $query = Payment::query()->whereHas('client');
 
         if ($user->isClientAdmin()) {
             $query->where('client_id', $user->client_id);
