@@ -6,13 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Sales Matrix → Lead (My Workplace).
- *
- * Sender info denormalized — no separate `lead_customers` table. When the
- * lead is promoted, `customer_id` / `consignee_id` link to the real
- * masters; until then the sender_* columns are the source of truth.
- */
 class Lead extends Model
 {
     use HasFactory;
@@ -50,8 +43,6 @@ class Lead extends Model
         'lead_stage_id'   => 'integer',
     ];
 
-    // ── Relationships ──
-
     public function client()
     {
         return $this->belongsTo(Client::class);
@@ -87,29 +78,16 @@ class Lead extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /**
-     * Stage 1 (Inquiry Received) → Task Manager row. One-to-one; the
-     * controller upserts via POST /sales/leads/{lead}/task-manager.
-     */
     public function taskManager()
     {
         return $this->hasOne(LeadTaskManager::class);
     }
 
-    /**
-     * Stage 2 (Lead Acknowledgement) → activity log. Append-only;
-     * Stage 2 saves one row per picked master reason. Latest row's
-     * opportunity_type drives the lead's qualified/disqualified flags.
-     */
     public function acknowledgements()
     {
         return $this->hasMany(LeadAcknowledgement::class)->latest('id');
     }
 
-    /**
-     * Lead ↔ Product mapping rows — drives the Product Directory pill
-     * on the matrix toolbar plus the Stage 3+ pricing flows.
-     */
     public function leadProducts()
     {
         return $this->hasMany(LeadProduct::class);
